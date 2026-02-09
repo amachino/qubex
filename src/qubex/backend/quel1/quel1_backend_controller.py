@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Collection, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -386,7 +387,87 @@ class Quel1BackendController:
         box = self.qubecalib.create_box(box_name, reconnect=False)
         return box.link_status()
 
-    def connect(self, box_names: str | list[str] | None = None) -> None:
+    def _create_boxpool_parallel(self, box_names: list[str]) -> BoxPool:
+        """
+        Create a box pool with parallel reconnects.
+
+        Parameters
+        ----------
+        box_names : list[str]
+            Box names to add to the pool.
+
+        Returns
+        -------
+        BoxPool
+            Created box pool with connected boxes.
+        """
+        db = self.qubecalib.system_config_database
+        boxpool = BoxPool()
+        if db._clockmaster_setting is not None:
+            boxpool.create_clock_master(ipaddr=str(db._clockmaster_setting.ipaddr))
+
+        boxes_to_reconnect = []
+        for box_name in box_names:
+            if box_name not in db._box_settings:
+                raise ValueError(f"box({box_name}) is not defined")
+            setting = db._box_settings[box_name]
+            box = boxpool.create(
+                box_name,
+                ipaddr_wss=str(setting.ipaddr_wss),
+                ipaddr_sss=str(setting.ipaddr_sss),
+                ipaddr_css=str(setting.ipaddr_css),
+                boxtype=setting.boxtype,
+            )
+            boxes_to_reconnect.append(box)
+
+        max_workers = max(1, len(boxes_to_reconnect))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(box.reconnect) for box in boxes_to_reconnect]
+            for future in futures:
+                future.result()
+
+        return boxpool
+
+    def _create_quel1system_from_boxpool(
+        self,
+        box_names: list[str],
+    ) -> Quel1System:
+        """
+        Build a Quel1System from already-connected boxpool entries.
+
+        Parameters
+        ----------
+        box_names : list[str]
+            Box names to include in the system.
+
+        Returns
+        -------
+        Quel1System
+            Initialized system instance.
+        """
+        if self._boxpool is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
+
+        db = self.qubecalib.system_config_database
+        clockmaster_setting = db._clockmaster_setting
+        if clockmaster_setting is None:
+            raise ValueError("clock master is not found")
+
+        boxes: list[Any] = [self._boxpool._boxes[box_name][0] for box_name in box_names]
+        system = Quel1System.create(
+            clockmaster=QuBEMasterClient(str(clockmaster_setting.ipaddr)),
+            boxes=boxes,
+        )
+        system.initialize()
+        db.refresh_quel1system(system)
+        return system
+
+    def connect(
+        self,
+        box_names: str | list[str] | None = None,
+        *,
+        parallel: bool | None = None,
+    ) -> None:
         """
         Connect to the boxes.
 
@@ -394,13 +475,24 @@ class Quel1BackendController:
         ----------
         box_names : str | list[str], optional
             List of box names to connect to. If None, connect to all available boxes.
+        parallel : bool | None, optional
+            If True, use parallel box reconnect implementation. If False, use
+            legacy qubecalib implementation. Defaults to False.
         """
+        if parallel is None:
+            parallel = False
         if box_names is None:
             box_names = self.available_boxes
         if isinstance(box_names, str):
             box_names = [box_names]
-        self._boxpool = self.qubecalib.create_boxpool(*box_names)
-        self._quel1system = self.qubecalib.sysdb.create_quel1system(*box_names)
+
+        if parallel:
+            self._boxpool = self._create_boxpool_parallel(box_names)
+            self._quel1system = self._create_quel1system_from_boxpool(box_names)
+        else:
+            self._boxpool = self.qubecalib.create_boxpool(*box_names)
+            self._quel1system = self.qubecalib.sysdb.create_quel1system(*box_names)
+
         self._cap_resource_map = self.create_resource_map("cap")
         self._gen_resource_map = self.create_resource_map("gen")
 

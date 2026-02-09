@@ -94,14 +94,15 @@ class MeasurementBackendManager:
         sync_clocks : bool | None, optional
             Whether to resync clocks, by default True.
         parallel : bool | None, optional
-            Whether to fetch backend settings in parallel, by default True.
+            Whether to use parallel backend connect path and fetch backend
+            settings in parallel, by default True.
         """
         if sync_clocks is None:
             sync_clocks = True
         if len(self.box_ids) == 0:
             logger.warning("No boxes are selected. Please check the configuration.")
             return
-        self.backend_controller.connect(self.box_ids)
+        self.backend_controller.connect(self.box_ids, parallel=parallel)
         self.system_manager.pull(self.box_ids, parallel=parallel)
         if sync_clocks:
             self.backend_controller.resync_clocks(self.box_ids)
