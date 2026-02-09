@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         Action,
         AwgId,
         AwgSetting,
+        NamedBox,
         RunitId,
         RunitSetting,
         TriggerSetting,
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
         Converter,
         WaveSequenceTools,
     )
-    from quel_clock_master import QuBEMasterClient
+    from quel_clock_master import QuBEMasterClient, SequencerClient
     from quel_ic_config import Quel1Box, Quel1ConfigOption
 
 _QUBECALIB_IMPORT_DONE = False
@@ -50,11 +51,11 @@ def _ensure_qubecalib_imports() -> None:
     """Import qubecalib/quel dependencies on demand."""
     global _QUBECALIB_IMPORT_DONE, _QUBECALIB_IMPORT_ERROR
     global QubeCalib, Sequencer, Quel1System
-    global Action, AwgId, AwgSetting, RunitId, RunitSetting, TriggerSetting
+    global Action, AwgId, AwgSetting, NamedBox, RunitId, RunitSetting, TriggerSetting
     global Skew
     global DEFAULT_SAMPLING_PERIOD, CapSampledSequence, GenSampledSequence
     global BoxPool, CaptureParamTools, Converter, WaveSequenceTools
-    global QuBEMasterClient, Quel1Box, Quel1ConfigOption
+    global QuBEMasterClient, SequencerClient, Quel1Box, Quel1ConfigOption
 
     if _QUBECALIB_IMPORT_DONE:
         return
@@ -68,6 +69,7 @@ def _ensure_qubecalib_imports() -> None:
             Action,
             AwgId,
             AwgSetting,
+            NamedBox,
             RunitId,
             RunitSetting,
             TriggerSetting,
@@ -84,7 +86,7 @@ def _ensure_qubecalib_imports() -> None:
             Converter,
             WaveSequenceTools,
         )
-        from quel_clock_master import QuBEMasterClient  # lazy import
+        from quel_clock_master import QuBEMasterClient, SequencerClient  # lazy import
         from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
     except ImportError as e:
         _QUBECALIB_IMPORT_ERROR = e
@@ -384,10 +386,15 @@ class Quel1BackendController:
             If the box is not in the available boxes.
         """
         self._check_box_availability(box_name)
-        box = self.qubecalib.create_box(box_name, reconnect=False)
+        box = self._create_box(box_name, reconnect=False)
         return box.link_status()
 
-    def _create_boxpool_parallel(self, box_names: list[str]) -> BoxPool:
+    def _create_boxpool_parallel(
+        self,
+        box_names: list[str],
+        *,
+        parallel_reconnects: bool = True,
+    ) -> BoxPool:
         """
         Create a box pool with parallel reconnects.
 
@@ -395,6 +402,8 @@ class Quel1BackendController:
         ----------
         box_names : list[str]
             Box names to add to the pool.
+        parallel_reconnects : bool, optional
+            Whether to reconnect boxes in parallel.
 
         Returns
         -------
@@ -420,13 +429,42 @@ class Quel1BackendController:
             )
             boxes_to_reconnect.append(box)
 
-        max_workers = max(1, len(boxes_to_reconnect))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(box.reconnect) for box in boxes_to_reconnect]
-            for future in futures:
-                future.result()
+        if parallel_reconnects and boxes_to_reconnect:
+            max_workers = max(1, len(boxes_to_reconnect))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(box.reconnect) for box in boxes_to_reconnect]
+                for future in futures:
+                    future.result()
+        else:
+            for box in boxes_to_reconnect:
+                box.reconnect()
 
         return boxpool
+
+    def _create_box(self, box_name: str, *, reconnect: bool = True) -> Quel1Box:
+        """
+        Create a box from the system configuration.
+
+        Parameters
+        ----------
+        box_name : str
+            Box name to create.
+        reconnect : bool, optional
+            Whether to reconnect the box on creation.
+
+        Returns
+        -------
+        Quel1Box
+            Created box instance.
+
+        Raises
+        ------
+        ValueError
+            If the box is not in the available boxes.
+        """
+        self._check_box_availability(box_name)
+        db = self.qubecalib.system_config_database
+        return db.create_box(box_name, reconnect=reconnect)
 
     def _create_quel1system_from_boxpool(
         self,
@@ -453,7 +491,10 @@ class Quel1BackendController:
         if clockmaster_setting is None:
             raise ValueError("clock master is not found")
 
-        boxes: list[Any] = [self._boxpool._boxes[box_name][0] for box_name in box_names]
+        boxes: list[Any] = [
+            NamedBox(name=box_name, box=self._boxpool._boxes[box_name][0])
+            for box_name in box_names
+        ]
         system = Quel1System.create(
             clockmaster=QuBEMasterClient(str(clockmaster_setting.ipaddr)),
             boxes=boxes,
@@ -486,12 +527,11 @@ class Quel1BackendController:
         if isinstance(box_names, str):
             box_names = [box_names]
 
-        if parallel:
-            self._boxpool = self._create_boxpool_parallel(box_names)
-            self._quel1system = self._create_quel1system_from_boxpool(box_names)
-        else:
-            self._boxpool = self.qubecalib.create_boxpool(*box_names)
-            self._quel1system = self.qubecalib.sysdb.create_quel1system(*box_names)
+        self._boxpool = self._create_boxpool_parallel(
+            box_names,
+            parallel_reconnects=parallel,
+        )
+        self._quel1system = self._create_quel1system_from_boxpool(box_names)
 
         self._cap_resource_map = self.create_resource_map("cap")
         self._gen_resource_map = self.create_resource_map("gen")
@@ -517,7 +557,7 @@ class Quel1BackendController:
         """
         self._check_box_availability(box_name)
         if self._boxpool is None or box_name not in self._boxpool._boxes:
-            box = self.qubecalib.create_box(box_name, reconnect=reconnect)
+            box = self._create_box(box_name, reconnect=reconnect)
         else:
             box = self._boxpool._boxes[box_name][0]
         return box
@@ -569,7 +609,7 @@ class Quel1BackendController:
         # check if the box is available
         self._check_box_availability(box_name)
         # connect to the box
-        box = self.qubecalib.create_box(box_name, reconnect=False)
+        box = self._create_box(box_name, reconnect=False)
 
         if noise_threshold is not None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
@@ -628,7 +668,7 @@ class Quel1BackendController:
         """
         if noise_threshold is None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
-        box = self.qubecalib.create_box(box_name, reconnect=False)
+        box = self._create_box(box_name, reconnect=False)
         if box.boxtype == "quel1se-riken8":
             config_options = [Quel1ConfigOption.SE8_MXFE1_AWG2222]
         else:
@@ -663,7 +703,12 @@ class Quel1BackendController:
         list[tuple[bool, int, int]]
             List of clocks.
         """
-        result = list(self.qubecalib.read_clock(*box_list))
+        db = self.qubecalib.system_config_database
+        result: list[tuple[bool, int, int]] = []
+        for box_name in box_list:
+            self._check_box_availability(box_name)
+            ipaddr_sss = str(db._box_settings[box_name].ipaddr_sss)
+            result.append(SequencerClient(target_ipaddr=ipaddr_sss).read_clock())
         return result
 
     def check_clocks(self, box_list: list[str]) -> bool:
@@ -680,7 +725,7 @@ class Quel1BackendController:
         bool
             True if the clocks are synchronized, False otherwise.
         """
-        result = self.qubecalib.read_clock(*box_list)
+        result = self.read_clocks(box_list)
         timestamps: list[str] = []
         accuracy = -8
         for _, clock, sysref_latch in result:
@@ -702,7 +747,13 @@ class Quel1BackendController:
         if len(box_list) < 2:
             # NOTE: clockmaster will crash if there is only one box
             return True
-        self.qubecalib.resync(*box_list)
+        db = self.qubecalib.system_config_database
+        if db._clockmaster_setting is None:
+            raise ValueError("clock master is not found")
+        master = QuBEMasterClient(master_ipaddr=str(db._clockmaster_setting.ipaddr))
+        master.kick_clock_synch(
+            [str(db._box_settings[box_name].ipaddr_sss) for box_name in box_list]
+        )
         return self.check_clocks(box_list)
 
     def sync_clocks(self, box_list: list[str]) -> bool:

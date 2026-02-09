@@ -81,12 +81,6 @@ class _FakeQubeCalib:
     def __init__(self) -> None:
         self.sysdb = _FakeSysDb()
         self.system_config_database = self.sysdb
-        self.create_boxpool_calls: list[tuple[str, ...]] = []
-
-    def create_boxpool(self, *box_names: str) -> str:
-        """Record and return a fake legacy boxpool marker."""
-        self.create_boxpool_calls.append(tuple(box_names))
-        return "legacy-boxpool"
 
 
 def _make_controller() -> Quel1BackendController:
@@ -95,22 +89,37 @@ def _make_controller() -> Quel1BackendController:
     return controller
 
 
-def test_connect_uses_legacy_mode_by_default() -> None:
-    """Given default mode, connect uses legacy qubecalib APIs."""
+def test_connect_uses_boxpool_by_default(monkeypatch) -> None:
+    """Given default mode, connect builds a boxpool and system."""
     controller = _make_controller()
     controller.create_resource_map = lambda _type: {}  # type: ignore[method-assign]
+    fake_quel1_system = object()
+
+    monkeypatch.setattr(
+        "qubex.backend.quel1.quel1_backend_controller.BoxPool",
+        _FakeBoxPool,
+    )
+
+    def _fake_create_from_boxpool(self: Quel1BackendController, box_names: list[str]):
+        assert box_names == ["A", "B"]
+        return fake_quel1_system
+
+    monkeypatch.setattr(
+        Quel1BackendController,
+        "_create_quel1system_from_boxpool",
+        _fake_create_from_boxpool,
+    )
 
     controller.connect(["A", "B"])
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
-    assert qubecalib.create_boxpool_calls == [("A", "B")]
-    assert qubecalib.sysdb.create_quel1system_calls == [("A", "B")]
-    assert controller._boxpool == "legacy-boxpool"
-    assert controller._quel1system == "legacy-system"
+    assert qubecalib.sysdb.create_quel1system_calls == []
+    assert isinstance(controller._boxpool, _FakeBoxPool)
+    assert controller._quel1system is fake_quel1_system
 
 
 def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> None:
-    """Given parallel mode, connect bypasses legacy boxpool creation."""
+    """Given parallel mode, connect builds a boxpool and system."""
     controller = _make_controller()
     controller.create_resource_map = lambda _type: {}  # type: ignore[method-assign]
     fake_quel1_system = object()
@@ -133,7 +142,6 @@ def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> No
     controller.connect(["A", "B"], parallel=True)
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
-    assert qubecalib.create_boxpool_calls == []
     assert qubecalib.sysdb.create_quel1system_calls == []
     assert isinstance(controller._boxpool, _FakeBoxPool)
     assert controller._quel1system is fake_quel1_system
