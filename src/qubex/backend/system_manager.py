@@ -23,7 +23,7 @@ from qubex.typing import ConfigurationMode
 from .config_loader import ConfigLoader
 from .control_system import Box, CapPort, GenPort, PortType
 from .experiment_system import ExperimentSystem
-from .quel1.quel1_backend_constants import DEFAULT_MONITOR_CAPTURE_DELAY
+from .quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
 from .quel1.quel1_backend_controller import Quel1BackendController
 
 logger = logging.getLogger(__name__)
@@ -607,7 +607,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
                             continue
                         ndelay_or_nwait = control_params.get_capture_delay(mux.index)
                     elif port.type == PortType.MNTR_IN:
-                        ndelay_or_nwait = DEFAULT_MONITOR_CAPTURE_DELAY
+                        ndelay_or_nwait = DEFAULT_CAPTURE_DELAY
                     else:
                         ndelay_or_nwait = 0
                     qc.define_channel(

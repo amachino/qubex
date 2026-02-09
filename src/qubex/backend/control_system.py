@@ -10,16 +10,16 @@ from pydantic import Field
 from pydantic.dataclasses import dataclass
 
 from .model import Model
-
-# TODO: Remove hardcoded defaults
-DEFAULT_CLOCK_MASTER_ADDRESS: Final = "10.3.0.255"
-DEFAULT_LO_FREQ: Final = 9_000_000_000
-DEFAULT_CNCO_FREQ: Final = 1_500_000_000
-DEFAULT_FNCO_FREQ: Final = 0
-DEFAULT_VATT: Final = 3072  # 0xC00
-DEFAULT_FULLSCALE_CURRENT: Final = 40527
-DEFAULT_NDELAY: Final = 7
-DEFAULT_NWAIT: Final = 0
+from .quel1.quel1_backend_constants import (
+    DEFAULT_CLOCK_MASTER_ADDRESS,
+    DEFAULT_CNCO_FREQ,
+    DEFAULT_FNCO_FREQ,
+    DEFAULT_FULLSCALE_CURRENT,
+    DEFAULT_LO_FREQ,
+    DEFAULT_NDELAY,
+    DEFAULT_NWAIT,
+    DEFAULT_VATT,
+)
 
 
 class BoxType(Enum):
