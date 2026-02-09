@@ -3385,6 +3385,42 @@ class Experiment:
             plot=plot,
         )
 
+    def calibrate_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        coarse: bool | None = None,
+    ) -> Result:
+        """Run one-qubit calibration workflow."""
+        return self.calibration_service.calibrate_1q(
+            targets=targets,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            coarse=coarse,
+        )
+
+    def calibrate_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        cr_calib_params: dict | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """Run two-qubit calibration workflow."""
+        return self.calibration_service.calibrate_2q(
+            targets=targets,
+            cr_calib_params=cr_calib_params,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
     # endregion
 
     # region characterization_service methods
@@ -4312,6 +4348,50 @@ class Experiment:
             max_n_cliffords=max_n_cliffords,
             x90=x90,
             zx90=zx90,
+            in_parallel=in_parallel,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def benchmark_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        n_trials: int | None = None,
+        in_parallel: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> None:
+        """Run standard 1Q benchmarking suite."""
+        return self.benchmarking_service.benchmark_1q(
+            targets=targets,
+            n_trials=n_trials,
+            in_parallel=in_parallel,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def benchmark_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        n_trials: int | None = None,
+        in_parallel: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> None:
+        """Run standard 2Q benchmarking suite."""
+        return self.benchmarking_service.benchmark_2q(
+            targets=targets,
+            n_trials=n_trials,
             in_parallel=in_parallel,
             shots=shots,
             interval=interval,
