@@ -28,11 +28,9 @@ from typing_extensions import deprecated
 
 from qubex.analysis import fitting
 from qubex.analysis import visualization as viz
-from qubex.backend import BoxType, MixingUtil, Target
+from qubex.backend import MixingUtil, Target
 from qubex.backend.experiment_system import (
     CNCO_CENTER_CTRL,
-    CNCO_CENTER_READ,
-    CNCO_CENTER_READ_R8,
 )
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
@@ -1771,10 +1769,9 @@ class CharacterizationService:
             amplitude = 1.0
 
         if frequency_range is None:
-            if read_box.type == BoxType.QUEL1SE_R8:
-                frequency_range = np.arange(5.90, 5.95, 0.001)
-            else:
-                frequency_range = np.arange(9.90, 9.95, 0.001)
+            f_start, f_stop, _ = read_box.traits.default_readout_frequency_range
+            center = (f_start + f_stop) / 2
+            frequency_range = np.arange(center - 0.025, center + 0.025, 0.001)
         else:
             frequency_range = np.array(frequency_range)
         # split frequency range to avoid the frequency sweep range limit
@@ -1791,10 +1788,7 @@ class CharacterizationService:
         # phase offset to avoid the phase jump after changing the LO/NCO frequency
         phase_offset = 0.0
 
-        if read_box.type == BoxType.QUEL1SE_R8:
-            cnco_center = CNCO_CENTER_READ_R8
-        else:
-            cnco_center = CNCO_CENTER_READ
+        cnco_center = read_box.traits.readout_cnco_center
 
         for subrange in subranges:
             # change LO/NCO frequency to the center of the subrange
@@ -1960,10 +1954,7 @@ class CharacterizationService:
                     print("Operation cancelled.")
                     return  # type: ignore
 
-            if read_box.type == BoxType.QUEL1SE_R8:
-                cnco_center = CNCO_CENTER_READ_R8
-            else:
-                cnco_center = CNCO_CENTER_READ
+            cnco_center = read_box.traits.readout_cnco_center
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_start * 1e9,
                 ssb=ssb,
@@ -2058,10 +2049,8 @@ class CharacterizationService:
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
 
         if frequency_range is None:
-            if read_box.type == BoxType.QUEL1SE_R8:
-                frequency_range = np.arange(5.75, 6.75, 0.002)
-            else:
-                frequency_range = np.arange(9.75, 10.75, 0.002)
+            f_start, f_stop, f_step = read_box.traits.default_readout_frequency_range
+            frequency_range = np.arange(f_start, f_stop, f_step)
         else:
             frequency_range = np.array(frequency_range)
 
@@ -2108,12 +2097,8 @@ class CharacterizationService:
         idx = 0
         phase_offset = 0.0
 
-        if read_box.type == BoxType.QUEL1SE_R8:
-            ssb = "L"
-            cnco_center = CNCO_CENTER_READ_R8
-        else:
-            ssb = "U"
-            cnco_center = CNCO_CENTER_READ
+        ssb = read_box.traits.readout_ssb
+        cnco_center = read_box.traits.readout_cnco_center
 
         for subrange in subranges:
             self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
@@ -2427,10 +2412,8 @@ class CharacterizationService:
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
 
         if frequency_range is None:
-            if read_box.type == BoxType.QUEL1SE_R8:
-                frequency_range = np.arange(5.75, 6.75, 0.002)
-            else:
-                frequency_range = np.arange(9.75, 10.75, 0.002)
+            f_start, f_stop, f_step = read_box.traits.default_readout_frequency_range
+            frequency_range = np.arange(f_start, f_stop, f_step)
         else:
             frequency_range = np.array(frequency_range)
 
@@ -2682,10 +2665,8 @@ class CharacterizationService:
 
         # split frequency range to avoid the frequency sweep range limit
         if frequency_range is None:
-            if ctrl_box.type == BoxType.QUEL1SE_R8:
-                frequency_range = np.arange(3.0, 5.0, 0.005)
-            else:
-                frequency_range = np.arange(6.5, 9.5, 0.005)
+            f_start, f_stop, f_step = ctrl_box.traits.default_control_frequency_range
+            frequency_range = np.arange(f_start, f_stop, f_step)
         else:
             frequency_range = np.array(frequency_range)
 
@@ -2711,12 +2692,8 @@ class CharacterizationService:
         # result buffer
         signals = []
 
-        if ctrl_box.type == BoxType.QUEL1SE_R8:
-            ssb = None
-            cnco_center = CNCO_CENTER_CTRL
-        else:
-            ssb = "L"
-            cnco_center = CNCO_CENTER_CTRL
+        ssb = ctrl_box.traits.ctrl_ssb
+        cnco_center = CNCO_CENTER_CTRL
 
         # measure the phase and amplitude
         idx = 0

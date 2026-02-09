@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from enum import Enum
 from typing import Final, Literal
 
@@ -12,6 +13,8 @@ from typing_extensions import deprecated
 from qubex.core import MutableModel
 
 from .quel1.quel1_backend_constants import (
+    CNCO_CENTER_READ,
+    CNCO_CENTER_READ_R8,
     DEFAULT_CLOCK_MASTER_ADDRESS,
     DEFAULT_CNCO_FREQ,
     DEFAULT_FNCO_FREQ,
@@ -35,6 +38,47 @@ class BoxType(Enum):
     QUEL1SE_A = "quel1se-fujitsu11-a"
     QUEL1SE_B = "quel1se-fujitsu11-b"
     QUEL1SE_R8 = "quel1se-riken8"
+
+
+@dataclass(frozen=True)
+class BoxTraits:
+    """Hardware traits used to configure per-box behavior without type branches."""
+
+    ctrl_uses_lo: bool
+    ctrl_ssb: Literal["L", "U"] | None
+    ctrl_min_frequency_hz: float
+    ctrl_uses_vatt: bool
+    readout_ssb: Literal["L", "U"]
+    readout_cnco_center: int
+    default_readout_frequency_range: tuple[float, float, float]
+    default_control_frequency_range: tuple[float, float, float]
+
+
+_DEFAULT_BOX_TRAITS: Final = BoxTraits(
+    ctrl_uses_lo=True,
+    ctrl_ssb="L",
+    ctrl_min_frequency_hz=6.5e9,
+    ctrl_uses_vatt=True,
+    readout_ssb="U",
+    readout_cnco_center=CNCO_CENTER_READ,
+    default_readout_frequency_range=(9.75, 10.75, 0.002),
+    default_control_frequency_range=(6.5, 9.5, 0.005),
+)
+
+_R8_BOX_TRAITS: Final = BoxTraits(
+    ctrl_uses_lo=False,
+    ctrl_ssb=None,
+    ctrl_min_frequency_hz=0.0,
+    ctrl_uses_vatt=False,
+    readout_ssb="L",
+    readout_cnco_center=CNCO_CENTER_READ_R8,
+    default_readout_frequency_range=(5.75, 6.75, 0.002),
+    default_control_frequency_range=(3.0, 5.0, 0.005),
+)
+
+_BOX_TRAITS_BY_TYPE: Final[dict[BoxType, BoxTraits]] = {
+    BoxType.QUEL1SE_R8: _R8_BOX_TRAITS,
+}
 
 
 class PortType(Enum):
@@ -586,6 +630,11 @@ class Box(MutableModel):
     def input_ports(self) -> list[CapPort]:
         """Return input ports for capture."""
         return [port for port in self.ports if isinstance(port, CapPort)]
+
+    @property
+    def traits(self) -> BoxTraits:
+        """Return behavioral traits for this box type."""
+        return _BOX_TRAITS_BY_TYPE.get(self.type, _DEFAULT_BOX_TRAITS)
 
     @property
     def output_ports(self) -> list[GenPort]:

@@ -15,7 +15,6 @@ from qubex.typing import ConfigurationMode
 
 from .control_system import (
     Box,
-    BoxType,
     CapPort,
     ControlSystem,
     GenPort,
@@ -26,7 +25,6 @@ from .quel1.quel1_backend_constants import (
     AWG_MAX,
     CNCO_CENTER_CTRL,
     CNCO_CENTER_READ,
-    CNCO_CENTER_READ_R8,
     DEFAULT_CAPTURE_DELAY,
     DEFAULT_CAPTURE_DELAY_WORD,
     DEFAULT_CONTROL_AMPLITUDE,
@@ -580,14 +578,10 @@ class ExperimentSystem:
         if qubit is None or not qubit.is_valid:
             return
 
-        if box.type == BoxType.QUEL1SE_R8:
-            ssb = None
-            min_frequency = 0.0
-            vatt = None
-        else:
-            ssb = "L"
-            min_frequency = 6.5e9
-            vatt = params.get_control_vatt(qubit.label)
+        traits = box.traits
+        ssb = traits.ctrl_ssb
+        min_frequency = traits.ctrl_min_frequency_hz
+        vatt = params.get_control_vatt(qubit.label) if traits.ctrl_uses_vatt else None
 
         config = self._create_control_configuration(
             mode=mode,
@@ -733,12 +727,9 @@ class ExperimentSystem:
         if mux.is_not_available:
             return
 
-        if box.type == BoxType.QUEL1SE_R8:
-            ssb = "L"
-            cnco_center = CNCO_CENTER_READ_R8
-        else:
-            ssb = "U"
-            cnco_center = CNCO_CENTER_READ
+        traits = box.traits
+        ssb = traits.readout_ssb
+        cnco_center = traits.readout_cnco_center
 
         config = self._create_readout_configuration(
             mux,
@@ -780,12 +771,9 @@ class ExperimentSystem:
         if mux.is_not_available:
             return
 
-        if box.type == BoxType.QUEL1SE_R8:
-            ssb = "L"
-            cnco_center = CNCO_CENTER_READ_R8
-        else:
-            ssb = "U"
-            cnco_center = CNCO_CENTER_READ
+        traits = box.traits
+        ssb = traits.readout_ssb
+        cnco_center = traits.readout_cnco_center
 
         config = self._create_readout_configuration(
             mux,

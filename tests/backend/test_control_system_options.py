@@ -50,3 +50,37 @@ def test_r8_box_rejects_multiple_awg_options() -> None:
             adapter="A0",
             options=("se8_mxfe1_awg1331", "se8_mxfe1_awg2222"),
         )
+
+
+def test_box_traits_for_r8_reflect_direct_nco_control() -> None:
+    """Given R8 box, when reading traits, then control and readout traits match R8 behavior."""
+    box = Box.new(
+        id="B0",
+        name="R8",
+        type="quel1se-riken8",
+        address="192.0.2.10",
+        adapter="A0",
+    )
+
+    assert box.traits.ctrl_uses_lo is False
+    assert box.traits.ctrl_ssb is None
+    assert box.traits.ctrl_uses_vatt is False
+    assert box.traits.readout_ssb == "L"
+    assert box.traits.default_control_frequency_range == (3.0, 5.0, 0.005)
+
+
+def test_box_traits_for_non_r8_keep_legacy_defaults() -> None:
+    """Given non-R8 box, when reading traits, then legacy LO/SSB defaults are preserved."""
+    box = Box.new(
+        id="B1",
+        name="Q1",
+        type="quel1-a",
+        address="192.0.2.11",
+        adapter="A1",
+    )
+
+    assert box.traits.ctrl_uses_lo is True
+    assert box.traits.ctrl_ssb == "L"
+    assert box.traits.ctrl_uses_vatt is True
+    assert box.traits.readout_ssb == "U"
+    assert box.traits.default_control_frequency_range == (6.5, 9.5, 0.005)
