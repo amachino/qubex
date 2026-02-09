@@ -583,6 +583,9 @@ This operation will overwrite the existing backend settings. Do you want to cont
             ipaddr=control_system.clock_master_address,
             reset=True,  # this option has no effect and will be removed in the future
         )
+        self.backend_controller.set_box_options(
+            {box.id: box.options for box in control_system.boxes}
+        )
 
         for box in control_system.boxes:
             qc.define_box(

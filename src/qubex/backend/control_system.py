@@ -353,11 +353,50 @@ NUMBER_OF_CHANNELS: Final = {
     },
 }
 
+_QUEL1SE_R8_AWG_OPTIONS: Final[set[str]] = {
+    "se8_mxfe1_awg1331",
+    "se8_mxfe1_awg2222",
+    "se8_mxfe1_awg3113",
+}
+_QUEL1SE_R8_DEFAULT_AWG_OPTION: Final = "se8_mxfe1_awg2222"
+_QUEL1SE_R8_PORTS_BY_AWG_OPTION: Final[dict[str, dict[int, int]]] = {
+    "se8_mxfe1_awg1331": {6: 1, 7: 3, 8: 3, 9: 1},
+    "se8_mxfe1_awg2222": {6: 2, 7: 2, 8: 2, 9: 2},
+    "se8_mxfe1_awg3113": {6: 3, 7: 1, 8: 1, 9: 3},
+}
+
+
+def resolve_quel1se_r8_awg_option(options: Sequence[str] | None = None) -> str:
+    """Resolve a single AWG option for QuEL-1 SE R8 from optional labels."""
+    option_labels = tuple(options or ())
+    awg_options = [label for label in option_labels if label in _QUEL1SE_R8_AWG_OPTIONS]
+    if len(awg_options) > 1:
+        raise ValueError("Multiple AWG options are not allowed for quel1se-riken8.")
+    if len(awg_options) == 1:
+        return awg_options[0]
+    return _QUEL1SE_R8_DEFAULT_AWG_OPTION
+
+
+def get_number_of_channels(
+    box_type: BoxType,
+    port_number: int | tuple[int, int],
+    options: Sequence[str] | None = None,
+) -> int:
+    """Return the number of channels for a box port with optional profile overrides."""
+    if box_type == BoxType.QUEL1SE_R8:
+        awg_option = resolve_quel1se_r8_awg_option(options)
+        if isinstance(port_number, int):
+            override = _QUEL1SE_R8_PORTS_BY_AWG_OPTION[awg_option].get(port_number)
+            if override is not None:
+                return override
+    return NUMBER_OF_CHANNELS[box_type].get(port_number, 0)
+
 
 def create_ports(
     box_id: str,
     box_type: BoxType,
     port_numbers: Sequence[int] | None = None,
+    options: Sequence[str] | None = None,
 ) -> tuple[GenPort | CapPort, ...]:
     """Create ports for a box based on mapping rules."""
     ports: list[GenPort | CapPort] = []
@@ -395,7 +434,7 @@ def create_ports(
             port_id = f"{box_id}.FOGI{index}"
         else:
             raise ValueError(f"Invalid port type: {port_type}")
-        n_channels = NUMBER_OF_CHANNELS[box_type].get(port_num, 0)
+        n_channels = get_number_of_channels(box_type, port_num, options=options)
         port: GenPort | CapPort | Port
         if port_type == PortType.NOT_AVAILABLE:
             continue
@@ -515,6 +554,7 @@ class Box(MutableModel):
     type: BoxType
     address: str
     adapter: str
+    options: tuple[str, ...] = ()
     ports: tuple[GenPort | CapPort, ...]
 
     @classmethod
@@ -527,16 +567,19 @@ class Box(MutableModel):
         address: str,
         adapter: str,
         port_numbers: Sequence[int] | None = None,
+        options: Sequence[str] | None = None,
     ) -> Box:
         """Create a box with ports from settings."""
         type = BoxType(type) if isinstance(type, str) else type
+        options_tuple = tuple(options or ())
         return cls(
             id=id,
             name=name,
             type=type,
             address=address,
             adapter=adapter,
-            ports=create_ports(id, type, port_numbers),
+            options=options_tuple,
+            ports=create_ports(id, type, port_numbers, options=options_tuple),
         )
 
     @property

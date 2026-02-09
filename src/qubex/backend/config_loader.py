@@ -480,6 +480,7 @@ class ConfigLoader:
                 address=box["address"],
                 adapter=box["adapter"],
                 port_numbers=box_ports[id],
+                options=box.get("options"),
             )
             for id, box in self._box_dict.items()
             if id in box_ports

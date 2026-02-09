@@ -7,6 +7,7 @@
 #   type: <box_type>
 #   address: <ip_address>
 #   adapter: <adapter_id>
+#   options: [<quel1_config_option>, ...]  # optional
 #
 # Fields
 # ------
@@ -20,6 +21,9 @@
 #     IP address of the FPGA board inside the box.
 # adapter_id : str
 #     Unique identifier printed on the adapter label (also visible via xsdb).
+# options : list[str], optional
+#     Additional Quel1 config options. For `quel1se-riken8`, AWG options such as
+#     `se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113` can be set.
 
 
 Q2A:

@@ -40,7 +40,35 @@ Q2A:
   type: "quel1-a"
   address: "10.0.x.x"
   adapter: "adapter-name"
+
+S159A:
+  name: "QuEL-1 SE R8"
+  type: "quel1se-riken8"
+  address: "10.0.y.y"
+  adapter: "adapter-name"
+  options:  # optional
+    - "se8_mxfe1_awg1331"
 ```
+
+### Box options (`box.yaml`)
+
+`box.yaml` entries support an optional `options` field:
+
+```yaml
+<box_id>:
+  ...
+  options:
+    - "<quel1_config_option>"
+```
+
+- `options` is optional. If omitted, behavior is backward-compatible.
+- Each value must match a valid `Quel1ConfigOption` string supported by your backend stack.
+- For `type: "quel1se-riken8"`, AWG layout options can be selected explicitly:
+  - `se8_mxfe1_awg1331`
+  - `se8_mxfe1_awg2222`
+  - `se8_mxfe1_awg3113`
+- For `quel1se-riken8`, if no AWG option is specified, `se8_mxfe1_awg2222` is used by default.
+- For `quel1se-riken8`, specifying multiple AWG options at once is invalid and raises an error.
 
 ```yaml
 # wiring.yaml

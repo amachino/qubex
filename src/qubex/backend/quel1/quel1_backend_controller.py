@@ -10,7 +10,7 @@ from collections.abc import Collection, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from typing_extensions import deprecated
 
@@ -98,6 +98,21 @@ def _ensure_qubecalib_imports() -> None:
 
 # TODO: use appropriate noise threshold
 _RELAXED_NOISE_THRESHOLD = 10000
+_QUEL1SE_R8_AWG_OPTIONS = {
+    "se8_mxfe1_awg1331",
+    "se8_mxfe1_awg2222",
+    "se8_mxfe1_awg3113",
+}
+_QUEL1SE_R8_DEFAULT_AWG_OPTION = "se8_mxfe1_awg2222"
+
+
+def _resolve_quel1se_r8_awg_option(options: list[str]) -> str:
+    awg_options = [label for label in options if label in _QUEL1SE_R8_AWG_OPTIONS]
+    if len(awg_options) > 1:
+        raise ValueError("Multiple AWG options are not allowed for quel1se-riken8.")
+    if len(awg_options) == 1:
+        return awg_options[0]
+    return _QUEL1SE_R8_DEFAULT_AWG_OPTION
 
 
 @dataclass
@@ -132,6 +147,7 @@ class Quel1BackendController:
         self._gen_resource_map: dict | None = None
         self._boxpool: BoxPool | None = None
         self._quel1system: Quel1System | None = None
+        self._box_options: dict[str, tuple[str, ...]] = {}
 
     @property
     def is_connected(self) -> bool:
@@ -350,6 +366,38 @@ class Quel1BackendController:
         """Clear cached box configuration data."""
         if self._boxpool is not None:
             self._boxpool._box_config_cache.clear()
+
+    def set_box_options(self, box_options: dict[str, tuple[str, ...]]) -> None:
+        """Set box option labels used for relinkup config options."""
+        self._box_options = {
+            box_name: tuple(option_labels)
+            for box_name, option_labels in box_options.items()
+        }
+
+    def _resolve_config_options(
+        self,
+        *,
+        box_name: str,
+        boxtype: str,
+    ) -> list[Quel1ConfigOption] | None:
+        """Resolve config options for relinkup from optional per-box labels."""
+        option_labels = list(self._box_options.get(box_name, ()))
+        if boxtype == "quel1se-riken8":
+            awg_option = _resolve_quel1se_r8_awg_option(option_labels)
+            if awg_option not in option_labels:
+                option_labels.insert(0, awg_option)
+        if not option_labels:
+            return None
+        config_options: list[Quel1ConfigOption] = []
+        option_map = Quel1ConfigOption._value2member_map_
+        for option_label in option_labels:
+            option = option_map.get(option_label)
+            if option is None:
+                raise ValueError(
+                    f"Unknown Quel1 config option `{option_label}` for box `{box_name}`."
+                )
+            config_options.append(cast(Quel1ConfigOption, option))
+        return config_options
 
     @deprecated("Use qubecalib.sysdb.load_skew_yaml instead.")
     def load_skew_file(self, box_list: list[str], file_path: str | Path) -> None:
@@ -616,10 +664,10 @@ class Quel1BackendController:
 
         # relinkup the box if any of the links are down
         if not all(box.link_status().values()):
-            if box.boxtype == "quel1se-riken8":
-                config_options = [Quel1ConfigOption.SE8_MXFE1_AWG2222]
-            else:
-                config_options = None
+            config_options = self._resolve_config_options(
+                box_name=box_name,
+                boxtype=box.boxtype,
+            )
             box.relinkup(
                 use_204b=False,
                 background_noise_threshold=noise_threshold,
@@ -669,10 +717,10 @@ class Quel1BackendController:
         if noise_threshold is None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
         box = self._create_box(box_name, reconnect=False)
-        if box.boxtype == "quel1se-riken8":
-            config_options = [Quel1ConfigOption.SE8_MXFE1_AWG2222]
-        else:
-            config_options = None
+        config_options = self._resolve_config_options(
+            box_name=box_name,
+            boxtype=box.boxtype,
+        )
         box.relinkup(
             use_204b=False,
             background_noise_threshold=noise_threshold,

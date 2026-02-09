@@ -315,3 +315,53 @@ def test_load_param_data_requires_structured_yaml(tmp_path: Path) -> None:
             config_dir=config_dir,
             params_dir=params_dir,
         )
+
+
+def test_control_system_box_options_loaded_from_box_yaml(tmp_path: Path) -> None:
+    """Given box options in box.yaml, when loading config, then box options are preserved."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1se-riken8",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+                "options": ["se8_mxfe1_awg1331", "refclk_corrected_mxfe1"],
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-3", "BOX1-6", "BOX1-7", "BOX1-8"],
+                    "pump": "BOX1-2",
+                }
+            ]
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+    box = system.control_system.get_box("BOX1")
+
+    assert box.options == ("se8_mxfe1_awg1331", "refclk_corrected_mxfe1")
