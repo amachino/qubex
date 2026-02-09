@@ -12,9 +12,7 @@ Qubex uses YAML files to describe chip topology, wiring, and control parameters.
     wiring.yaml
     skew.yaml
   params/
-    params.yaml      # legacy
-    props.yaml       # legacy
-    <section>.yaml   # structured (recommended)
+    <section>.yaml
 ```
 
 By default, `<base>` is `/home/shared/qubex-config`. You can override paths using `config_dir` and `params_dir`.
@@ -55,12 +53,7 @@ Q2A:
 
 ## Parameter files
 
-Qubex supports two formats:
-
-1. **Legacy monolithic files**: `params.yaml` and `props.yaml`.
-2. **Structured per-section files**: `params/<section>.yaml` with `meta` and `data` keys.
-
-When a per-section file exists, its `data` overrides entries in the legacy files. If it is absent, Qubex falls back to legacy values.
+Qubex uses structured per-section files: `params/<section>.yaml` with `meta` and `data` keys.
 
 ### Structured format
 
@@ -79,8 +72,10 @@ Supported units include `Hz`, `kHz`, `MHz`, `GHz`, `s`, `ms`, `us`, `ns`. Values
 
 ## Common parameter sections
 
-- `qubit_frequency`, `resonator_frequency`
 - `control_amplitude`, `readout_amplitude`
+- `qubit_frequency`, `resonator_frequency`
+- `control_frequency`, `readout_frequency`
+- `capture_delay`
 - `control_vatt`, `readout_vatt`, `pump_vatt`
 - `t1`, `t2_star`, `t2_echo`
 - `average_readout_fidelity`, `x90_gate_fidelity`, `x180_gate_fidelity`
@@ -98,3 +93,33 @@ cfg = ConfigLoader(
 
 system = cfg.get_experiment_system()
 ```
+
+## Example files in repository
+
+The repository includes ready-to-read examples under `docs/examples/configuration/`.
+
+### Config examples (`docs/examples/configuration/config`)
+
+- `chip.yaml`
+  Defines chip metadata such as chip name and `n_qubits`.
+- `box.yaml`
+  Defines available control boxes (type, IP address, adapter).
+- `wiring.yaml`
+  Defines mux-level port assignment (`ctrl`, `read_out`, `read_in`, optional `pump`).
+
+### Parameter examples (`docs/examples/configuration/params`)
+
+- `control_frequency.yaml`
+  Per-qubit control frequencies (`Q00`-style keys, unit: `GHz`).
+- `readout_frequency.yaml`
+  Per-qubit readout frequencies (`Q00`-style keys, unit: `GHz`).
+- `control_amplitude.yaml`
+  Per-qubit control amplitudes (dimensionless, so `unit` is blank).
+- `readout_amplitude.yaml`
+  Per-qubit readout amplitudes (dimensionless, so `unit` is blank).
+- `capture_delay.yaml`
+  Per-mux capture delay using mux index keys (`0`, `1`, ...).
+  Delay unit is 128 ns per count.
+
+These samples are intended as templates. In your own setup, copy the structure
+and replace values with your chip-calibrated parameters.
