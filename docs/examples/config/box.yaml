@@ -1,5 +1,109 @@
+# Example configuration for QuBE, QuEL-1, QuEL-1 SE boxes.
+#
+# Format
+# ------
+# <box_id>:
+#   name: <box_name>
+#   type: <box_type>
+#   address: <ip_address>
+#   adapter: <adapter_id>
+#
+# Fields
+# ------
+# box_id : str
+#     User-defined unique identifier for each box.
+# box_name : str
+#     Descriptive name for the box.
+# box_type : str
+#     Box type identifier defined in quelware.
+# ip_address : str
+#     IP address of the FPGA board inside the box.
+# adapter_id : str
+#     Unique identifier printed on the adapter label (also visible via xsdb).
+
+
 Q2A:
-  name: "..."
+  name: "QuBE OU #1-02"
   type: "quel1-a"
-  address: "10.0.x.x"
-  adapter: "..."
+  address: "10.1.0.2"
+  adapter: "500202A504YAA"
+U7B:
+  name: "QuBE OU #2-03"
+  type: "qube-riken-a"
+  address: "10.1.0.7"
+  adapter: "500202A504AAA"
+U10B:
+  name: "QuBE OU #2-06"
+  type: "qube-ou-b"
+  address: "10.1.0.10"
+  adapter: "500202A503YAA"
+U11A:
+  name: "QuBE OU #2-"
+  type: "qube-ou-a"
+  address: "10.1.0.11"
+  adapter: ""
+U13B:
+  name: "QuBE OU #2-09"
+  type: "qube-ou-b"
+  address: "10.1.0.13"
+  adapter: "500202A507XAA"
+U14A:
+  name: "QuBE OU #2-10"
+  type: "qube-ou-a"
+  address: "10.1.0.14"
+  adapter: "500202A502YAA"
+U15A:
+  name: "QuBE OU #2-11"
+  type: "qube-ou-a"
+  address: "10.1.0.15"
+  adapter: "500202A501OAA"
+R19A:
+  name: "QuBE Riken #1-01"
+  type: "qube-riken-a"
+  address: "10.1.0.19"
+  adapter: "500202A502CAA"
+R20A:
+  name: "QuBE Riken #1-02"
+  type: "qube-riken-a"
+  address: "10.1.0.20"
+  adapter: "500202A500IAA"
+R21B:
+  name: "QuBE Riken #1-03"
+  type: "qube-riken-b"
+  address: "10.1.0.21"
+  adapter: "500202A501DAA"
+R23A:
+  name: "QuBE Riken #1-05"
+  type: "qube-riken-a"
+  address: "10.1.0.23"
+  adapter: "500202A509IAA"
+R25A:
+  name: "QuBE Riken #1-07"
+  type: "qube-riken-a"
+  address: "10.1.0.25"
+  adapter: "500202A501QAA"
+R26A:
+  name: "QuBE Riken #1-08"
+  type: "qube-riken-a"
+  address: "10.1.0.26"
+  adapter: "500202A503EAA"
+R28A:
+  name: "QuBE Riken #1-10"
+  type: "qube-riken-a"
+  address: "10.1.0.28"
+  adapter: "500202A504RAA"
+R31A:
+  name: "QuBE OU #3-01"
+  type: "qube-riken-a"
+  address: "10.1.0.31"
+  adapter: "500202A505PAA"
+Q73A:
+  name: "QuEL-1 #5-01"
+  type: "quel1-a"
+  address: "10.1.0.73"
+  adapter: "500202A50TAAA"
+S159A:
+  name: "QuEL-1 SE (7-11GHz)"
+  type: "quel1se-fujitsu11-a"
+  address: "10.1.0.159"
+  adapter: "500202A800QAA"
