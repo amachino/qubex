@@ -14,10 +14,10 @@ class _FrozenHashModel(Model):
     calls: ClassVar[int] = 0
     value: int
 
-    def _canonical_hash_bytes(self) -> bytes:
-        """Count canonical serialization calls for cache checks."""
+    def to_dict(self) -> dict:
+        """Count serialization calls for hash computation checks."""
         type(self).calls += 1
-        return super()._canonical_hash_bytes()
+        return super().to_dict()
 
 
 class _MutableHashModel(MutableModel):
@@ -26,10 +26,10 @@ class _MutableHashModel(MutableModel):
     calls: ClassVar[int] = 0
     value: int
 
-    def _canonical_hash_bytes(self) -> bytes:
-        """Count canonical serialization calls for cache checks."""
+    def to_dict(self) -> dict:
+        """Count serialization calls for hash computation checks."""
         type(self).calls += 1
-        return super()._canonical_hash_bytes()
+        return super().to_dict()
 
 
 class _Mode(Enum):
@@ -45,8 +45,8 @@ class _EnumModel(Model):
     mode: _Mode
 
 
-def test_model_hash_is_cached() -> None:
-    """Given frozen models, when reading hash twice, then it is computed once."""
+def test_model_hash_is_recomputed() -> None:
+    """Given frozen models, when reading hash twice, then it is recomputed."""
     _FrozenHashModel.calls = 0
     model = _FrozenHashModel(value=1)
 
@@ -54,7 +54,7 @@ def test_model_hash_is_cached() -> None:
     second = model.hash
 
     assert first == second
-    assert _FrozenHashModel.calls == 1
+    assert _FrozenHashModel.calls == 2
 
 
 def test_mutable_model_hash_is_not_cached() -> None:
