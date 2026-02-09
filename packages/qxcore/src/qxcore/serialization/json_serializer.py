@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from enum import Enum
 from typing import TYPE_CHECKING, Any, TypeGuard
 
 import numpy as np
@@ -325,6 +326,8 @@ def serialize_value(value: Any) -> Any:
         return serialize_complex(value)
     if is_tunits(value):
         return serialize_tunits(value)
+    if isinstance(value, Enum):
+        return value.value
     if isinstance(value, Mapping):
         return {k: serialize_value(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import ClassVar
 
 from qubex.core import Model, MutableModel
@@ -29,6 +30,19 @@ class _MutableHashModel(MutableModel):
         """Count canonical serialization calls for cache checks."""
         type(self).calls += 1
         return super()._canonical_hash_bytes()
+
+
+class _Mode(Enum):
+    """Simple enum for serialization tests."""
+
+    A = "A"
+    B = "B"
+
+
+class _EnumModel(Model):
+    """Model with enum field for serialization tests."""
+
+    mode: _Mode
 
 
 def test_model_hash_is_cached() -> None:
@@ -64,3 +78,13 @@ def test_mutable_model_hash_changes_after_assignment() -> None:
     after = model.hash
 
     assert before != after
+
+
+def test_model_json_roundtrip_supports_enum_fields() -> None:
+    """Given enum fields, when JSON round-tripped, then values are preserved."""
+    original = _EnumModel(mode=_Mode.B)
+
+    payload = original.to_json()
+    restored = _EnumModel.from_json(payload)
+
+    assert restored.mode is _Mode.B
