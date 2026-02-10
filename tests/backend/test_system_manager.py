@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 
@@ -44,6 +45,11 @@ class FakeBackendController:
         """Return a predefined box configuration."""
         return self._configs.get(box_id, {})
 
+    @property
+    def hash(self) -> int:
+        """Return a stable hash for controller state."""
+        return 0
+
 
 class FakeExperimentSystem:
     """Experiment system stub with box lookup."""
@@ -55,13 +61,64 @@ class FakeExperimentSystem:
         """Return a fake box."""
         return self._boxes[box_id]
 
+    @property
+    def hash(self) -> int:
+        """Return a stable hash for experiment system state."""
+        return 0
+
+
+class FakeControlSystem:
+    """Control-system stub that records set_port_params calls."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def set_port_params(self, **kwargs) -> None:
+        """Record a set_port_params call."""
+        self.calls.append(kwargs)
+
+    @property
+    def hash(self) -> int:
+        """Return a hash derived from recorded calls."""
+        frozen = tuple(
+            (
+                call["box_id"],
+                call["port_number"],
+                call["sideband"],
+                call["lo_freq"],
+                call["cnco_freq"],
+                tuple(call["fnco_freqs"]),
+                call["fullscale_current"],
+            )
+            for call in self.calls
+        )
+        return hash(frozen)
+
+
+class FakeExperimentSystemForBackendSettings:
+    """Experiment-system stub with mutable control-system parameters."""
+
+    def __init__(self, boxes: list[FakeBox]) -> None:
+        self.control_system = FakeControlSystem()
+        self.boxes = boxes
+        self._boxes = {box.id: box for box in boxes}
+
+    def get_box(self, box_id: str) -> FakeBox:
+        """Return a fake box."""
+        return self._boxes[box_id]
+
+    @property
+    def hash(self) -> int:
+        """Return a hash reflecting control-system changes."""
+        return self.control_system.hash
+
 
 @pytest.mark.parametrize("parallel", [True, False])
-def test_fetch_backend_settings_collects_ports(
+def test_fetch_backend_settings_from_hardware_collects_ports(
     monkeypatch: pytest.MonkeyPatch,
     parallel: bool,
 ) -> None:
-    """Given boxes, when fetching settings, then cache and ports are filled."""
+    """Given boxes, when fetching and syncing, then cache and ports are filled."""
     # Arrange
     box_a = FakeBox(
         id="A",
@@ -86,14 +143,76 @@ def test_fetch_backend_settings_collects_ports(
     )
 
     # Act
-    result = manager._fetch_backend_settings(  # noqa: SLF001
+    manager._fetch_backend_settings_from_hardware(  # noqa: SLF001
         ["A", "B"],
         parallel=parallel,
     )
+    manager._sync_backend_settings_to_device_controller()  # noqa: SLF001
 
     # Assert
-    assert result == {
+    assert manager._backend_settings == {  # noqa: SLF001
         "A": {"ports": {1: {"mode": "ctrl"}, 3: {"mode": "read"}}},
         "B": {"ports": {4: {"mode": "read"}}},
     }
     assert manager.backend_controller.boxpool._box_config_cache == configs  # noqa: SLF001
+
+
+def test_sync_backend_settings_to_experiment_system_updates_in_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given backend settings, when applying them, then the same experiment system is updated."""
+    manager = SystemManager.shared()
+    box = FakeBox(id="A", ports=())
+    experiment_system = FakeExperimentSystemForBackendSettings([box])
+    monkeypatch.setattr(manager, "_experiment_system", experiment_system)
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
+    backend_settings = {
+        "A": {
+            "ports": {
+                1: {
+                    "direction": "out",
+                    "sideband": "L",
+                    "lo_freq": 10_000_000_000,
+                    "cnco_freq": 1_500,
+                    "fullscale_current": 40_527,
+                    "channels": {
+                        0: {"fnco_freq": 100},
+                        1: {"fnco_freq": 200},
+                    },
+                },
+                2: {
+                    "direction": "in",
+                    "lo_freq": 8_000_000_000,
+                    "cnco_freq": 2_500,
+                    "runits": {
+                        0: {"fnco_freq": 300},
+                    },
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(manager, "_backend_settings", backend_settings)
+
+    original_id = id(manager.experiment_system)
+    manager._sync_backend_settings_to_experiment_system()  # noqa: SLF001
+
+    assert id(manager.experiment_system) == original_id
+    assert len(experiment_system.control_system.calls) == 2
+    assert experiment_system.control_system.calls[0] == {
+        "box_id": "A",
+        "port_number": 1,
+        "sideband": "L",
+        "lo_freq": 10_000_000_000,
+        "cnco_freq": 1_500,
+        "fnco_freqs": [100, 200],
+        "fullscale_current": 40_527,
+    }
+    assert experiment_system.control_system.calls[1] == {
+        "box_id": "A",
+        "port_number": 2,
+        "sideband": None,
+        "lo_freq": 8_000_000_000,
+        "cnco_freq": 2_500,
+        "fnco_freqs": [300],
+        "fullscale_current": None,
+    }

@@ -15,7 +15,8 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from qubex.backend import LatticeGraph, SystemManager
+from qubex.backend import LatticeGraph, PortType, SystemManager
+from qubex.backend.control_system import CapPort, GenPort
 from qubex.diagnostics import ChipInspector
 
 if TYPE_CHECKING:
@@ -643,7 +644,109 @@ def print_box_info(box_id: str, fetch: bool | None = None) -> None:
     """Print the information of a box."""
     if fetch is None:
         fetch = True
-    system_manager.print_box_info(box_id, fetch=fetch)
+    experiment_system = system_manager.experiment_system
+    box_ids = [box.id for box in experiment_system.boxes]
+    if box_id not in box_ids:
+        logger.warning(f"Box {box_id} is not found.")
+        return
+    box = experiment_system.get_box(box_id)
+
+    table1 = Table(
+        show_header=True,
+        header_style="bold",
+        title=f"BOX INFO ({box.id})",
+    )
+    table2 = Table(
+        show_header=True,
+        header_style="bold",
+    )
+    table1.add_column("PORT", justify="center")
+    table1.add_column("TYPE", justify="center")
+    table1.add_column("SSB", justify="center")
+    table1.add_column("LO", justify="right")
+    table1.add_column("CNCO", justify="right")
+    table1.add_column("VATT", justify="right")
+    table1.add_column("FSC", justify="right")
+    table2.add_column("PORT", justify="center")
+    table2.add_column("TYPE", justify="center")
+    table2.add_column("SSB", justify="center")
+    table2.add_column("FNCO-0", justify="right")
+    table2.add_column("FNCO-1", justify="right")
+    table2.add_column("FNCO-2", justify="right")
+
+    if fetch:
+        box_config = system_manager.backend_controller.dump_box(box_id)
+        ports_config = box_config.get("ports", {})
+        for port in box.ports:
+            if port.type == PortType.MNTR_OUT:
+                continue
+            if not isinstance(port.number, int):
+                continue
+            config = ports_config.get(port.number, ports_config.get(str(port.number)))
+            if config is None:
+                continue
+
+            number = str(port.number)
+            type = port.type.value
+            direction = config.get("direction")
+            lo_freq = config.get("lo_freq")
+            cnco_freq = config.get("cnco_freq")
+
+            if direction == "in":
+                ssb = ""
+                lo = f"{int(lo_freq):_}" if lo_freq is not None else ""
+                cnco = f"{int(cnco_freq):_}" if cnco_freq is not None else ""
+                vatt = ""
+                fsc = ""
+            else:
+                sideband = config.get("sideband")
+                ssb = sideband if sideband is not None else ""
+                lo = f"{int(lo_freq):_}" if lo_freq is not None else ""
+                cnco = f"{int(cnco_freq):_}" if cnco_freq is not None else ""
+                vatt_value = config.get("vatt")
+                vatt = str(vatt_value) if vatt_value is not None else ""
+                fsc_value = config.get("fullscale_current")
+                fsc = str(fsc_value) if fsc_value is not None else ""
+
+            table1.add_row(number, type, ssb, lo, cnco, vatt, fsc)
+
+            if direction != "in":
+                channels = config.get("channels", {})
+                fnco_values = [
+                    f"{int(ch['fnco_freq']):_}"
+                    for _, ch in sorted(channels.items(), key=lambda item: int(item[0]))
+                ]
+                table2.add_row(number, type, ssb, *fnco_values)
+    else:
+        for port in box.ports:
+            number = str(port.number)
+            type = port.type.value
+            if port.type == PortType.MNTR_OUT:
+                continue
+            if isinstance(port, CapPort):
+                ssb = ""
+                lo = f"{port.lo_freq:_}"
+                cnco = f"{port.cnco_freq:_}"
+                vatt = ""
+                fsc = ""
+            elif isinstance(port, GenPort):
+                ssb = port.sideband if port.sideband is not None else ""
+                lo = f"{port.lo_freq:_}" if port.lo_freq is not None else ""
+                cnco = f"{port.cnco_freq:_}"
+                vatt = str(port.vatt) if port.vatt is not None else ""
+                fsc = str(port.fullscale_current)
+
+            table1.add_row(number, type, ssb, lo, cnco, vatt, fsc)
+            if isinstance(port, GenPort):
+                table2.add_row(
+                    number,
+                    type,
+                    ssb,
+                    *[f"{ch.fnco_freq:_}" for ch in port.channels],
+                )
+
+    console.print(table1)
+    console.print(table2)
 
 
 def print_target_frequencies(qubits: Collection[str] | str | None = None) -> None:

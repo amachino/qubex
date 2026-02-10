@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
-from functools import cached_property, reduce
+from functools import reduce
 from pathlib import Path
 from typing import Final
 
@@ -72,7 +72,6 @@ class MeasurementClient:
         load_configs: bool = True,
         connect_devices: bool = False,
         configuration_mode: ConfigurationMode = "ge-cr-cr",
-        measurement_schedule_executor: MeasurementScheduleExecutor | None = None,
     ):
         """
         Initialize the MeasurementClient.
@@ -93,8 +92,6 @@ class MeasurementClient:
             Whether to connect the devices, by default False.
         configuration_mode : ConfigurationMode, optional
             The configuration mode, by default "ge-cr-cr".
-        measurement_schedule_executor : MeasurementScheduleExecutor, optional
-            Executor used by `execute_measurement_schedule()`.
 
         Examples
         --------
@@ -108,7 +105,6 @@ class MeasurementClient:
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
-        self._measurement_schedule_executor = measurement_schedule_executor
         self._backend_manager = MeasurementBackendManager(
             system_manager=self._system_manager,
             qubits=self._qubits,
@@ -183,12 +179,12 @@ class MeasurementClient:
         """Get the list of qubit labels."""
         return self._qubits
 
-    @cached_property
+    @property
     def box_ids(self) -> list[str]:
         """Get the list of box IDs."""
         return self.backend_manager.box_ids
 
-    @cached_property
+    @property
     def mux_dict(self) -> dict[str, Mux]:
         """Get a dictionary of Mux objects indexed by qubit labels."""
         return self.backend_manager.mux_dict
@@ -221,7 +217,7 @@ class MeasurementClient:
             mux_dict=self.mux_dict,
         )
 
-    @cached_property
+    @property
     def measurement_config_factory(self) -> MeasurementConfigFactory:
         """Create a measurement config factory from current system state."""
         return MeasurementConfigFactory(
@@ -246,14 +242,10 @@ class MeasurementClient:
     @property
     def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:
         """Return executor implementation used by schedule execution APIs."""
-        if self._measurement_schedule_executor is None:
-            self._measurement_schedule_executor = (
-                MeasurementScheduleExecutor.create_default(
-                    backend_controller=self.backend_controller,
-                    experiment_system=self.experiment_system,
-                )
-            )
-        return self._measurement_schedule_executor
+        return MeasurementScheduleExecutor.create_default(
+            backend_controller=self.backend_controller,
+            experiment_system=self.experiment_system,
+        )
 
     @property
     def control_params(self) -> ControlParams:

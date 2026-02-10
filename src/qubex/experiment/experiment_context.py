@@ -202,7 +202,7 @@ class ExperimentContext:
             chip_id=chip_id,
             file_path=calib_note_path,
         )
-        self.system_manager.load_skew_file(self.box_ids)
+        self._load_skew_file()
         self.print_environment(verbose=False)
         self._load_classifiers()
 
@@ -232,6 +232,17 @@ class ExperimentContext:
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
+
+    def _load_skew_file(self) -> None:
+        """Load skew calibration data from the current config directory."""
+        skew_file_path = self.config_loader.config_path / "skew.yaml"
+        if not skew_file_path.exists():
+            logger.warning(f"Skew file not found: {skew_file_path}")
+            return
+        try:
+            self.backend_controller.load_skew_yaml(skew_file_path)
+        except Exception:
+            logger.exception("Failed to load the skew file.")
 
     def _create_qubit_labels(
         self,

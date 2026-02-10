@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
-from functools import cached_property
 from pathlib import Path
 
 from qubex.backend import (
@@ -49,13 +48,13 @@ class MeasurementBackendManager:
         """Return the backend controller."""
         return self._system_manager.backend_controller
 
-    @cached_property
+    @property
     def box_ids(self) -> list[str]:
         """Return box IDs corresponding to configured qubits."""
         boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
         return [box.id for box in boxes]
 
-    @cached_property
+    @property
     def mux_dict(self) -> dict[str, Mux]:
         """Return mux map keyed by qubit label."""
         return {
@@ -78,7 +77,18 @@ class MeasurementBackendManager:
             params_dir=params_dir,
             configuration_mode=configuration_mode,
         )
-        self.system_manager.load_skew_file(self.box_ids)
+        self.load_skew_file()
+
+    def load_skew_file(self) -> None:
+        """Load skew calibration data from the current config directory."""
+        skew_file_path = self.config_loader.config_path / "skew.yaml"
+        if not skew_file_path.exists():
+            logger.warning(f"Skew file not found: {skew_file_path}")
+            return
+        try:
+            self.backend_controller.load_skew_yaml(skew_file_path)
+        except Exception:
+            logger.exception("Failed to load the skew file.")
 
     def connect(
         self,

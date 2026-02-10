@@ -10,6 +10,7 @@ from qxpulse import PulseSchedule
 
 from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
+from qubex.measurement.measurement_schedule_executor import MeasurementScheduleExecutor
 from qubex.measurement.models import (
     DspConfig,
     FrequencyConfig,
@@ -148,7 +149,9 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
-def test_execute_measurement_schedule_delegates_to_executor() -> None:
+def test_execute_measurement_schedule_delegates_to_executor(
+    monkeypatch,
+) -> None:
     """Given schedule execution inputs, when method is called, then it delegates to executor."""
     measurement = object.__new__(MeasurementClient)
 
@@ -172,8 +175,28 @@ def test_execute_measurement_schedule_delegates_to_executor() -> None:
             called["config"] = config
             return expected
 
-    measurement.__dict__["_measurement_schedule_executor"] = _Executor()
+    experiment_system = type("_ES", (), {})()
+    backend_controller = type("_BC", (), {})()
+    measurement.__dict__["_backend_manager"] = type(
+        "_BM",
+        (),
+        {
+            "backend_controller": backend_controller,
+            "experiment_system": experiment_system,
+        },
+    )()
 
+    monkeypatch.setattr(
+        MeasurementScheduleExecutor,
+        "create_default",
+        classmethod(
+            lambda cls,
+            *,
+            backend_controller,
+            experiment_system,
+            execution_mode="legacy": _Executor()
+        ),
+    )
     result = measurement.execute_measurement_schedule(schedule=schedule, config=config)
 
     assert called["schedule"] is schedule
