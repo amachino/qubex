@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from qubex.backend.quel1.execution import SequencerExecutionEngine
@@ -51,3 +52,20 @@ def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -
     assert called["sequencer"] is sequencer
     assert called["boxpool"] is controller.boxpool
     assert called["system"] is controller.quel1system
+
+
+def test_dump_box_async_delegates_to_dump_box(monkeypatch) -> None:
+    """Given async dump, when invoked, then sync dump_box result is returned."""
+    controller = Quel1BackendController()
+    called: list[str] = []
+
+    def _fake_dump_box(box_name: str) -> dict[str, str]:
+        called.append(box_name)
+        return {"box": box_name}
+
+    monkeypatch.setattr(controller, "dump_box", _fake_dump_box)
+
+    result = asyncio.run(controller.dump_box_async("A"))
+
+    assert result == {"box": "A"}
+    assert called == ["A"]

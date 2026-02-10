@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Collection, Iterator
@@ -951,6 +952,22 @@ class Quel1BackendController:
             logger.exception(f"Failed to dump box {box_name}.")
             box_config = {}
         return box_config
+
+    async def dump_box_async(self, box_name: str) -> dict:
+        """
+        Dump the box configuration asynchronously.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+
+        Returns
+        -------
+        dict
+            Dictionary of box configuration.
+        """
+        return await asyncio.to_thread(self.dump_box, box_name)
 
     def dump_port(self, box_name: str, port_number: int | tuple[int, int]) -> dict:
         """

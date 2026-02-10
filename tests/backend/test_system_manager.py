@@ -34,9 +34,17 @@ class FakeBackendController:
     def __init__(self, configs: dict[str, dict]) -> None:
         self._configs = configs
         self._box_config_cache: dict[str, dict] = {}
+        self.dumped_box_ids: list[str] = []
+        self.dumped_box_async_ids: list[str] = []
 
     def dump_box(self, box_id: str) -> dict:
         """Return a predefined box configuration."""
+        self.dumped_box_ids.append(box_id)
+        return self._configs.get(box_id, {})
+
+    async def dump_box_async(self, box_id: str) -> dict:
+        """Return a predefined box configuration asynchronously."""
+        self.dumped_box_async_ids.append(box_id)
         return self._configs.get(box_id, {})
 
     def get_box_config_cache(self) -> dict[str, dict]:
@@ -272,6 +280,26 @@ def test_fetch_backend_settings_from_hardware_has_no_side_effect(
 
     assert fetched == {"A": {"ports": {1: {"mode": "ctrl"}}}}
     assert manager._backend_settings == {"stale": {"ports": {}}}  # noqa: SLF001
+
+
+def test_fetch_backend_settings_from_hardware_parallel_uses_async_dump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given parallel fetch, when collecting settings, then async dump is used."""
+    manager = SystemManager.shared()
+    box = FakeBox(id="A", ports=(FakePort(number=1, type=PortType.CTRL),))
+    backend_controller = FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}})
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    monkeypatch.setattr(manager, "_experiment_system", FakeExperimentSystem([box]))
+
+    fetched = manager._fetch_backend_settings_from_hardware(  # noqa: SLF001
+        ["A"],
+        parallel=True,
+    )
+
+    assert fetched == {"A": {"ports": {1: {"mode": "ctrl"}}}}
+    assert backend_controller.dumped_box_async_ids == ["A"]
+    assert backend_controller.dumped_box_ids == []
 
 
 def test_is_synced_has_no_side_effect_on_backend_settings(
