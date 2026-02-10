@@ -65,10 +65,16 @@ class _FakeQuBEMasterClient:
     def __init__(self, master_ipaddr: str) -> None:
         self.master_ipaddr = master_ipaddr
         self.kick_calls: list[list[str]] = []
+        self.reset_calls = 0
 
     def kick_clock_synch(self, target_addrs: list[str]) -> bool:
         """Record target addresses and report success."""
         self.kick_calls.append(list(target_addrs))
+        return True
+
+    def reset(self) -> bool:
+        """Record reset requests and report success."""
+        self.reset_calls += 1
         return True
 
 
@@ -132,3 +138,18 @@ def test_resync_clocks_raises_without_clockmaster(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="clock master is not found"):
         controller.resync_clocks(["A", "B"])
+
+
+def test_reset_clockmaster_uses_master_client(monkeypatch) -> None:
+    """Given an IP address, reset_clockmaster delegates to QuBEMasterClient.reset."""
+    controller = _make_controller()
+    master = _FakeQuBEMasterClient("192.0.2.99")
+
+    monkeypatch.setattr(
+        "qubex.backend.quel1.quel1_backend_controller.QuBEMasterClient",
+        lambda master_ipaddr: master,
+    )
+
+    assert controller.reset_clockmaster("192.0.2.99") is True
+    assert master.master_ipaddr == "192.0.2.99"
+    assert master.reset_calls == 1

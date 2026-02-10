@@ -163,6 +163,17 @@ class Quel1BackendController:
             raise ModuleNotFoundError(name="qubecalib")
         return self._qubecalib
 
+    def get_qubecalib(self) -> QubeCalib:
+        """
+        Return the underlying QubeCalib instance.
+
+        Returns
+        -------
+        QubeCalib
+            QubeCalib instance.
+        """
+        return self.qubecalib
+
     @property
     def box_config(self) -> dict[str, Any]:
         """Get the box configuration."""
@@ -415,6 +426,60 @@ class Quel1BackendController:
         )
         skew = Skew(system, qubecalib=self.qubecalib)
         skew.load(str(file_path))
+
+    def load_skew_yaml(self, file_path: str | Path) -> None:
+        """
+        Load skew calibration YAML into the system database.
+
+        Parameters
+        ----------
+        file_path : str | Path
+            Path to the skew calibration YAML file.
+        """
+        self.qubecalib.sysdb.load_skew_yaml(str(file_path))
+
+    def run_skew_measurement(
+        self,
+        *,
+        skew_yaml_path: str | Path,
+        box_yaml_path: str | Path,
+        clockmaster_ip: str,
+        box_names: list[str],
+        estimate: bool = True,
+    ) -> tuple[Any, Any]:
+        """
+        Measure skew from YAML settings and return skew object and figure.
+
+        Parameters
+        ----------
+        skew_yaml_path : str | Path
+            Path to skew YAML.
+        box_yaml_path : str | Path
+            Path to box YAML.
+        clockmaster_ip : str
+            Clock master IP address.
+        box_names : list[str]
+            Boxes to include in the measurement.
+        estimate : bool, optional
+            Whether to run estimation after measurement.
+
+        Returns
+        -------
+        tuple[Any, Any]
+            A tuple of (skew object, plotly figure).
+        """
+        skew = Skew.from_yaml(
+            str(skew_yaml_path),
+            box_yaml=str(box_yaml_path),
+            clockmaster_ip=clockmaster_ip,
+            boxes=box_names,
+        )
+        skew.system.resync()
+        skew.measure()
+        if estimate:
+            skew.estimate()
+        fig = skew.plot()
+        return skew, fig
 
     def link_status(self, box_name: str) -> dict[int, bool]:
         """
@@ -806,6 +871,22 @@ class Quel1BackendController:
         )
         return self.check_clocks(box_list)
 
+    def reset_clockmaster(self, ipaddr: str) -> bool:
+        """
+        Reset the clock master.
+
+        Parameters
+        ----------
+        ipaddr : str
+            Clock master IP address.
+
+        Returns
+        -------
+        bool
+            True if reset succeeds.
+        """
+        return QuBEMasterClient(master_ipaddr=ipaddr).reset()
+
     def sync_clocks(self, box_list: list[str]) -> bool:
         """
         Sync the clocks of the boxes if not synchronized.
@@ -1004,6 +1085,255 @@ class Quel1BackendController:
     def clear_command_queue(self) -> None:
         """Clear the command queue."""
         self.qubecalib.clear_command_queue()
+
+    def define_clockmaster(self, *, ipaddr: str, reset: bool = True) -> None:
+        """
+        Define the clock master in qube-calib.
+
+        Parameters
+        ----------
+        ipaddr : str
+            Clock master IP address.
+        reset : bool, optional
+            Whether to reset clock master on define.
+        """
+        self.qubecalib.define_clockmaster(ipaddr=ipaddr, reset=reset)
+
+    def define_box(
+        self,
+        *,
+        box_name: str,
+        ipaddr_wss: str,
+        boxtype: str,
+    ) -> None:
+        """
+        Define a box in qube-calib.
+
+        Parameters
+        ----------
+        box_name : str
+            Box name.
+        ipaddr_wss : str
+            WSS IP address.
+        boxtype : str
+            Box type label.
+        """
+        self.qubecalib.define_box(
+            box_name=box_name,
+            ipaddr_wss=ipaddr_wss,
+            boxtype=boxtype,
+        )
+
+    def define_port(
+        self,
+        *,
+        port_name: str,
+        box_name: str,
+        port_number: int,
+    ) -> None:
+        """
+        Define a port in qube-calib.
+
+        Parameters
+        ----------
+        port_name : str
+            Port name.
+        box_name : str
+            Box name owning the port.
+        port_number : int | tuple[int, int]
+            Port number.
+        """
+        self.qubecalib.define_port(
+            port_name=port_name,
+            box_name=box_name,
+            port_number=port_number,
+        )
+
+    def define_channel(
+        self,
+        *,
+        channel_name: str,
+        port_name: str,
+        channel_number: int,
+        ndelay_or_nwait: int = 0,
+    ) -> None:
+        """
+        Define a channel in qube-calib.
+
+        Parameters
+        ----------
+        channel_name : str
+            Channel name.
+        port_name : str
+            Port name owning the channel.
+        channel_number : int
+            Channel number.
+        ndelay_or_nwait : int, optional
+            Capture delay or wait words.
+        """
+        self.qubecalib.define_channel(
+            channel_name=channel_name,
+            port_name=port_name,
+            channel_number=channel_number,
+            ndelay_or_nwait=ndelay_or_nwait,
+        )
+
+    def add_channel_target_relation(self, channel_name: str, target_name: str) -> None:
+        """
+        Add a channel-target relation if it does not already exist.
+
+        Parameters
+        ----------
+        channel_name : str
+            Channel name.
+        target_name : str
+            Target name.
+        """
+        rel = (channel_name, target_name)
+        if rel not in self.qubecalib.sysdb._relation_channel_target:
+            self.qubecalib.sysdb._relation_channel_target.append(rel)
+
+    def create_quel1_sequencer(
+        self,
+        *,
+        gen_sampled_sequence: dict[str, Any],
+        cap_sampled_sequence: dict[str, Any],
+        resource_map: dict[str, list[dict]],
+        interval: int,
+    ) -> Sequencer:
+        """
+        Create a QuEL-1 sequencer wired to this controller's system resources.
+
+        Parameters
+        ----------
+        gen_sampled_sequence : dict[str, Any]
+            Generator sampled sequence map.
+        cap_sampled_sequence : dict[str, Any]
+            Capture sampled sequence map.
+        resource_map : dict[str, list[dict]]
+            Target resource map.
+        interval : int
+            Sequence interval in ns.
+
+        Returns
+        -------
+        Sequencer
+            Constructed sequencer.
+        """
+        from qubex.backend.quel1.quel1_sequencer import Quel1Sequencer
+
+        return Quel1Sequencer(
+            gen_sampled_sequence=gen_sampled_sequence,
+            cap_sampled_sequence=cap_sampled_sequence,
+            resource_map=resource_map,  # type: ignore[arg-type]
+            interval=interval,
+            sysdb=self.qubecalib.sysdb,
+            driver=self.quel1system,
+        )
+
+    def create_gen_sampled_sequence(
+        self,
+        *,
+        target_name: str,
+        real: Any,
+        imag: Any,
+        modulation_frequency: float,
+    ) -> Any:
+        """
+        Create a generator sampled sequence via qubecalib.neopulse.
+
+        Parameters
+        ----------
+        target_name : str
+            Target label.
+        real : Any
+            Real samples.
+        imag : Any
+            Imaginary samples.
+        modulation_frequency : float
+            Modulation frequency.
+
+        Returns
+        -------
+        Any
+            GenSampledSequence object.
+        """
+        from qubecalib import neopulse as pls
+
+        return pls.GenSampledSequence(
+            target_name=target_name,
+            prev_blank=0,
+            post_blank=None,
+            original_prev_blank=0,
+            original_post_blank=None,
+            modulation_frequency=modulation_frequency,
+            sub_sequences=[
+                pls.GenSampledSubSequence(
+                    real=real,
+                    imag=imag,
+                    repeats=1,
+                    post_blank=None,
+                    original_post_blank=None,
+                )
+            ],
+        )
+
+    def create_cap_sampled_sequence(
+        self,
+        *,
+        target_name: str,
+        modulation_frequency: float,
+        capture_delay: int,
+        capture_slots: list[tuple[int, int]],
+    ) -> Any:
+        """
+        Create a capture sampled sequence via qubecalib.neopulse.
+
+        Parameters
+        ----------
+        target_name : str
+            Target label.
+        modulation_frequency : float
+            Modulation frequency.
+        capture_delay : int
+            Capture delay in samples.
+        capture_slots : list[tuple[int, int]]
+            List of ``(duration, post_blank)`` sample counts.
+
+        Returns
+        -------
+        Any
+            CapSampledSequence object.
+        """
+        from qubecalib import neopulse as pls
+
+        cap_sub_sequence = pls.CapSampledSubSequence(
+            capture_slots=[],
+            repeats=None,
+            prev_blank=capture_delay,
+            post_blank=None,
+            original_prev_blank=0,
+            original_post_blank=None,
+        )
+        for duration, post_blank in capture_slots:
+            cap_sub_sequence.capture_slots.append(
+                pls.CaptureSlots(
+                    duration=duration,
+                    post_blank=post_blank,
+                    original_duration=None,  # type: ignore[arg-type]
+                    original_post_blank=None,  # type: ignore[arg-type]
+                )
+            )
+        return pls.CapSampledSequence(
+            target_name=target_name,
+            repeats=None,
+            prev_blank=0,
+            post_blank=None,
+            original_prev_blank=0,
+            original_post_blank=None,
+            modulation_frequency=modulation_frequency,
+            sub_sequences=[cap_sub_sequence],
+        )
 
     def execute(
         self,

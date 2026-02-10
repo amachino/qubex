@@ -2,29 +2,24 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import math
 import subprocess
 from collections import defaultdict
 from collections.abc import Collection
 from pathlib import Path
-from typing import Literal, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 import yaml
-
-with contextlib.suppress(ImportError):
-    import quel_clock_master as qcm
-    from qubecalib import QubeCalib
-    from qubecalib.instrument.quel.quel1.tool.skew import Skew
-    from quel_ic_config import Quel1Box
-
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
 from qubex.backend import LatticeGraph, SystemManager
 from qubex.diagnostics import ChipInspector
+
+if TYPE_CHECKING:
+    from qubex.backend.quel1.quel1_backend_controller import QubeCalib, Quel1Box
 
 logger = logging.getLogger(__name__)
 
@@ -83,17 +78,13 @@ Do you want to continue?
         return {}
 
     all_box_ids = list({*box_ids, ref_port})
-    skew = Skew.from_yaml(
-        str(skew_file_path),
-        box_yaml=str(box_file_path),
+    skew, fig = system_manager.backend_controller.run_skew_measurement(
+        skew_yaml_path=skew_file_path,
+        box_yaml_path=box_file_path,
         clockmaster_ip=clock_master_address,
-        boxes=all_box_ids,
+        box_names=all_box_ids,
+        estimate=estimate,
     )
-    skew.system.resync()
-    skew.measure()
-    if estimate:
-        skew.estimate()
-    fig = skew.plot()
     fig.update_layout(
         title=f"Skew : {', '.join(box_ids)!s} (Ref. {ref_port})",
         width=800,
@@ -107,13 +98,12 @@ Do you want to continue?
 
 def get_qubecalib() -> QubeCalib:
     """Get the QubeCalib instance."""
-    return system_manager.backend_controller.qubecalib
+    return system_manager.backend_controller.get_qubecalib()
 
 
 def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
-    qc = system_manager.backend_controller.qubecalib
-    box = qc.create_box(box_id, reconnect=False)
+    box = system_manager.backend_controller.get_box(box_id, reconnect=False)
     # TODO: use appropriate noise threshold
     box.reconnect(background_noise_threshold=10000)
     return box
@@ -177,7 +167,7 @@ def reset_clockmaster(
     if ipaddr is None:
         ipaddr = system_manager.experiment_system.control_system.clock_master_address
 
-    return qcm.QuBEMasterClient(ipaddr).reset()
+    return system_manager.backend_controller.reset_clockmaster(ipaddr)
 
 
 def resync_clocks(box_ids: Collection[str]) -> bool:
@@ -831,7 +821,7 @@ def _configure_loopback(mux: str | int, *, enable: bool) -> None:
     """
     qubits = system_manager.experiment_system.quantum_system.get_qubits_in_mux(mux)
 
-    boxes: dict[str, Quel1Box] = {}
+    boxes: dict[str, Any] = {}
     box_confs: dict[str, dict] = defaultdict(dict)
 
     # Switch configuration pattern

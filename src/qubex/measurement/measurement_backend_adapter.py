@@ -151,7 +151,7 @@ class Quel1MeasurementBackendAdapter:
     ) -> BackendExecutionRequest:
         """Build a QuEL backend execution request from measurement inputs."""
         measure_mode = MeasureMode(config.mode)
-        interval = (
+        interval = int(
             math.ceil(
                 (schedule.pulse_schedule.duration + config.interval) / BLOCK_DURATION
             )
@@ -163,15 +163,11 @@ class Quel1MeasurementBackendAdapter:
         targets = list(gen_sampled_sequence.keys() | cap_sampled_sequence.keys())
         resource_map = self._backend_controller.get_resource_map(targets)
 
-        from qubex.backend.quel1.quel1_sequencer import Quel1Sequencer
-
-        sequencer = Quel1Sequencer(
+        sequencer = self._backend_controller.create_quel1_sequencer(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
-            resource_map=resource_map,  # type: ignore[arg-type]
+            resource_map=resource_map,
             interval=interval,
-            sysdb=self._backend_controller.qubecalib.sysdb,
-            driver=self._backend_controller.quel1system,
         )
         payload = Quel1ExecutionPayload(
             sequencer=sequencer,
@@ -193,11 +189,6 @@ class Quel1MeasurementBackendAdapter:
         schedule: MeasurementSchedule,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Create sampled sequences from measurement schedule."""
-        try:
-            from qubecalib import neopulse as pls
-        except ImportError as exc:
-            raise ModuleNotFoundError(name="qubecalib") from exc
-
         pulse_schedule = schedule.pulse_schedule
         capture_schedule = schedule.capture_schedule
         capture_delays = self._experiment_system.control_params.capture_delay_word
@@ -226,22 +217,15 @@ class Quel1MeasurementBackendAdapter:
         for target, waveform in sampled_sequences.items():
             if self._experiment_system.get_target(target).sideband != "L":
                 waveform = np.conj(waveform)
-            gen_sequences[target] = pls.GenSampledSequence(
-                target_name=target,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self._experiment_system.get_awg_frequency(target),
-                sub_sequences=[
-                    pls.GenSampledSubSequence(
-                        real=np.real(waveform),
-                        imag=np.imag(waveform),
-                        repeats=1,
-                        post_blank=None,
-                        original_post_blank=None,
-                    )
-                ],
+            gen_sequences[target] = (
+                self._backend_controller.create_gen_sampled_sequence(
+                    target_name=target,
+                    modulation_frequency=self._experiment_system.get_awg_frequency(
+                        target
+                    ),
+                    real=np.real(waveform),
+                    imag=np.imag(waveform),
+                )
             )
 
         cap_sequences: dict[str, Any] = {}
@@ -250,15 +234,7 @@ class Quel1MeasurementBackendAdapter:
             if not sorted_captures:
                 continue
 
-            cap_sub_sequence = pls.CapSampledSubSequence(
-                capture_slots=[],
-                repeats=None,
-                prev_blank=capture_delay_sample[target],
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-            )
-
+            capture_slots: list[tuple[int, int]] = []
             for idx, current_capture in enumerate(sorted_captures):
                 current_start = round(current_capture.start_time / SAMPLING_PERIOD)
                 capture_range_length = round(current_capture.duration / SAMPLING_PERIOD)
@@ -273,25 +249,17 @@ class Quel1MeasurementBackendAdapter:
                     post_blank_length = pulse_schedule.length - (
                         current_start + capture_range_length
                     )
+                capture_slots.append((capture_range_length, post_blank_length))
 
-                cap_sub_sequence.capture_slots.append(
-                    pls.CaptureSlots(
-                        duration=capture_range_length,
-                        post_blank=post_blank_length,
-                        original_duration=None,  # type: ignore[arg-type]
-                        original_post_blank=None,  # type: ignore[arg-type]
-                    )
+            cap_sequences[target] = (
+                self._backend_controller.create_cap_sampled_sequence(
+                    target_name=target,
+                    modulation_frequency=self._experiment_system.get_awg_frequency(
+                        target
+                    ),
+                    capture_delay=capture_delay_sample[target],
+                    capture_slots=capture_slots,
                 )
-
-            cap_sequences[target] = pls.CapSampledSequence(
-                target_name=target,
-                repeats=None,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self._experiment_system.get_awg_frequency(target),
-                sub_sequences=[cap_sub_sequence],
             )
 
         return gen_sequences, cap_sequences

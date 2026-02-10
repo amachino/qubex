@@ -300,9 +300,7 @@ class SystemManager:
             logger.warning(f"Skew file not found: {skew_file_path}")
         else:
             try:
-                self.backend_controller.qubecalib.sysdb.load_skew_yaml(
-                    str(skew_file_path)
-                )
+                self.backend_controller.load_skew_yaml(skew_file_path)
             except Exception:
                 logger.exception("Failed to load the skew file.")
 
@@ -577,9 +575,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
 
-        qc = self.backend_controller.qubecalib
-
-        qc.define_clockmaster(
+        self.backend_controller.define_clockmaster(
             ipaddr=control_system.clock_master_address,
             reset=True,  # this option has no effect and will be removed in the future
         )
@@ -588,7 +584,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         )
 
         for box in control_system.boxes:
-            qc.define_box(
+            self.backend_controller.define_box(
                 box_name=box.id,
                 ipaddr_wss=box.address,
                 boxtype=box.type.value,
@@ -597,7 +593,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             for port in box.ports:
                 if port.type == PortType.NOT_AVAILABLE:
                     continue
-                qc.define_port(
+                self.backend_controller.define_port(
                     port_name=port.id,
                     box_name=box.id,
                     port_number=port.number,  # type: ignore
@@ -613,7 +609,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
                         ndelay_or_nwait = DEFAULT_CAPTURE_DELAY
                     else:
                         ndelay_or_nwait = 0
-                    qc.define_channel(
+                    self.backend_controller.define_channel(
                         channel_name=channel.id,
                         port_name=port.id,
                         channel_number=channel.number,
@@ -625,19 +621,20 @@ This operation will overwrite the existing backend settings. Do you want to cont
                     PortType.MNTR_OUT,
                     PortType.MNTR_IN,
                 ):
-                    rel = (port.channels[0].id, port.id)
-                    if rel not in qc.sysdb._relation_channel_target:  # noqa: SLF001
-                        qc.sysdb._relation_channel_target.append(rel)  # noqa: SLF001
+                    self.backend_controller.add_channel_target_relation(
+                        port.channels[0].id,
+                        port.id,
+                    )
 
         for target in experiment_system.all_targets:
-            qc.define_target(
+            self.backend_controller.define_target(
                 target_name=target.label,
                 channel_name=target.channel.id,
                 target_frequency=target.frequency,
             )
 
         # reset the cache
-        qc.clear_command_queue()
+        self.backend_controller.clear_command_queue()
         self.backend_controller.clear_cache()
 
     def _create_experiment_system(
