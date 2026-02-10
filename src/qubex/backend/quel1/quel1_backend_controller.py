@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from typing_extensions import deprecated
 
+from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
+
 from .execution import SequencerExecutionEngine
 
 logger = logging.getLogger(__name__)
@@ -101,6 +103,7 @@ def _ensure_qubecalib_imports() -> None:
 
 # TODO: use appropriate noise threshold
 _RELAXED_NOISE_THRESHOLD = 10000
+_MAX_BOX_PARALLEL_WORKERS = 32
 _QUEL1SE_R8_AWG_OPTIONS = {
     "se8_mxfe1_awg1331",
     "se8_mxfe1_awg2222",
@@ -702,6 +705,8 @@ class Quel1BackendController:
     def initialize_awg_and_capunits(
         self,
         box_names: str | Collection[str],
+        *,
+        parallel: bool | None = None,
     ) -> None:
         """
         Initialize all awg and capture units in the specified boxes.
@@ -710,14 +715,30 @@ class Quel1BackendController:
         ----------
         box_names : str | list[str]
             List of box names to initialize.
+        parallel : bool | None, optional
+            Whether to initialize boxes in parallel. If `None`, defaults to
+            `True`.
         """
         if isinstance(box_names, str):
             box_names = [box_names]
-        for box_name in box_names:
-            self._check_box_availability(box_name)
-            box = self.get_box(box_name, reconnect=False)
-            box.initialize_all_awgs()
-            box.initialize_all_capunits()
+        if parallel is None:
+            parallel = True
+        if not parallel:
+            for box_name in box_names:
+                self._initialize_box_awg_and_capunits(box_name)
+            return
+        run_parallel_each(
+            list(box_names),
+            self._initialize_box_awg_and_capunits,
+            max_workers=_MAX_BOX_PARALLEL_WORKERS,
+        )
+
+    def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
+        """Initialize AWG and capture units for one box."""
+        self._check_box_availability(box_name)
+        box = self.get_box(box_name, reconnect=False)
+        box.initialize_all_awgs()
+        box.initialize_all_capunits()
 
     def linkup(
         self,
@@ -776,23 +797,79 @@ class Quel1BackendController:
         self,
         box_list: list[str],
         noise_threshold: int | None = None,
+        *,
+        parallel: bool | None = None,
     ) -> dict[str, Quel1Box]:
         """
         Linkup all the boxes in the list.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box names.
+        noise_threshold : int | None, optional
+            Threshold for linkup noise checks.
+        parallel : bool | None, optional
+            Whether to link up boxes in parallel. If `None`, defaults to
+            `True`.
 
         Returns
         -------
         dict[str, Quel1Box]
             Dictionary of linked up boxes.
         """
-        boxes = {}
-        try:
+        if parallel is None:
+            parallel = True
+        if not parallel:
+            boxes = {}
             for box_name in box_list:
-                boxes[box_name] = self.linkup(box_name, noise_threshold=noise_threshold)
-                logger.info(f"{box_name:5} : Linked up")
-        except Exception:
-            logger.exception(f"{box_name:5} : Error during linkup")
+                linked_box = self._safe_linkup_box(
+                    box_name=box_name,
+                    noise_threshold=noise_threshold,
+                )
+                if linked_box is not None:
+                    boxes[box_name] = linked_box
+            return boxes
+
+        results = run_parallel_map(
+            box_list,
+            lambda box_name: self.linkup(box_name, noise_threshold=noise_threshold),
+            key=lambda box_name: box_name,
+            max_workers=_MAX_BOX_PARALLEL_WORKERS,
+            on_error=self._fallback_linkup_box_result,
+        )
+        boxes = {}
+        for box_name, linked_box in results.items():
+            if linked_box is None:
+                continue
+            boxes[box_name] = linked_box
+            logger.info(f"{box_name:5} : Linked up")
         return boxes
+
+    def _safe_linkup_box(
+        self,
+        *,
+        box_name: str,
+        noise_threshold: int | None,
+    ) -> Quel1Box | None:
+        """Link up one box and log failures without raising."""
+        try:
+            linked_box = self.linkup(box_name, noise_threshold=noise_threshold)
+            logger.info(f"{box_name:5} : Linked up")
+        except Exception as exc:
+            logger.exception(f"{box_name:5} : Error during linkup", exc_info=exc)
+            return None
+        else:
+            return linked_box
+
+    @staticmethod
+    def _fallback_linkup_box_result(
+        box_name: str,
+        exc: BaseException,
+    ) -> Quel1Box | None:
+        """Log a linkup error and return no box for the failed item."""
+        logger.exception(f"{box_name:5} : Error during linkup", exc_info=exc)
+        return None
 
     def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
         """
@@ -821,10 +898,39 @@ class Quel1BackendController:
         self,
         box_list: list[str],
         noise_threshold: int | None = None,
+        *,
+        parallel: bool | None = None,
     ) -> None:
-        """Relink all the boxes in the list."""
-        for box_name in box_list:
-            self.relinkup(box_name, noise_threshold=noise_threshold)
+        """
+        Relink all the boxes in the list.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box names.
+        noise_threshold : int | None, optional
+            Threshold for relinkup noise checks.
+        parallel : bool | None, optional
+            Whether to relink boxes in parallel. If `None`, defaults to
+            `True`.
+        """
+        if parallel is None:
+            parallel = True
+        if not parallel:
+            for box_name in box_list:
+                self.relinkup(box_name, noise_threshold=noise_threshold)
+            return
+        run_parallel_each(
+            box_list,
+            lambda box_name: self.relinkup(box_name, noise_threshold=noise_threshold),
+            max_workers=_MAX_BOX_PARALLEL_WORKERS,
+            on_error=self._log_relinkup_error,
+        )
+
+    @staticmethod
+    def _log_relinkup_error(box_name: str, exc: BaseException) -> None:
+        """Log a relinkup error for one box."""
+        logger.exception(f"{box_name:5} : Error during relinkup", exc_info=exc)
 
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
         """

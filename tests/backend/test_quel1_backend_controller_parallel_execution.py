@@ -51,3 +51,57 @@ def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -
     assert called["sequencer"] is sequencer
     assert called["boxpool"] is controller.boxpool
     assert called["system"] is controller.quel1system
+
+
+def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> None:
+    """Given parallel init, when initializing boxes, then each box is processed once."""
+    controller = Quel1BackendController()
+    called: list[str] = []
+
+    def _fake_initialize(box_name: str) -> None:
+        called.append(box_name)
+
+    monkeypatch.setattr(
+        controller, "_initialize_box_awg_and_capunits", _fake_initialize
+    )
+
+    controller.initialize_awg_and_capunits(["A", "B"], parallel=True)
+
+    assert set(called) == {"A", "B"}
+    assert len(called) == 2
+
+
+def test_linkup_boxes_parallel_collects_successes(monkeypatch) -> None:
+    """Given parallel linkup, when one box fails, then successful boxes are returned."""
+    controller = Quel1BackendController()
+    called: list[str] = []
+
+    def _fake_linkup(box_name: str, **kwargs: object) -> object:
+        _ = kwargs
+        called.append(box_name)
+        if box_name == "B":
+            raise RuntimeError("boom")
+        return object()
+
+    monkeypatch.setattr(controller, "linkup", _fake_linkup)
+
+    boxes = controller.linkup_boxes(["A", "B"], parallel=True)
+
+    assert set(called) == {"A", "B"}
+    assert list(boxes) == ["A"]
+
+
+def test_relinkup_boxes_parallel_calls_each_box(monkeypatch) -> None:
+    """Given parallel relinkup, when executing, then relinkup is called for each box."""
+    controller = Quel1BackendController()
+    called: list[str] = []
+
+    def _fake_relinkup(box_name: str, noise_threshold: int | None = None) -> None:
+        _ = noise_threshold
+        called.append(box_name)
+
+    monkeypatch.setattr(controller, "relinkup", _fake_relinkup)
+
+    controller.relinkup_boxes(["A", "B"], parallel=True)
+
+    assert set(called) == {"A", "B"}

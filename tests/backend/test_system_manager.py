@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import qubex.backend.system_manager as system_manager_module
 from qubex.backend.control_system import PortType
 from qubex.backend.system_manager import BackendSettings, SystemManager
 
@@ -375,29 +374,7 @@ def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
     def _fake_sync_box(box: FakeBox) -> None:
         called.append(box.id)
 
-    class _FakeFuture:
-        def __init__(self, value: None = None) -> None:
-            self._value = value
-
-        def result(self) -> None:
-            return self._value
-
-    class _FakeExecutor:
-        def __init__(self, *, max_workers: int) -> None:
-            self.max_workers = max_workers
-
-        def __enter__(self) -> _FakeExecutor:
-            return self
-
-        def __exit__(self, exc_type, exc, tb) -> bool:  # type: ignore[no-untyped-def]
-            return False
-
-        def submit(self, fn, *args, **kwargs) -> _FakeFuture:  # type: ignore[no-untyped-def]
-            fn(*args, **kwargs)
-            return _FakeFuture()
-
     monkeypatch.setattr(manager, "_sync_box_to_hardware", _fake_sync_box)
-    monkeypatch.setattr(system_manager_module, "ThreadPoolExecutor", _FakeExecutor)
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]

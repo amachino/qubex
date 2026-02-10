@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -21,12 +20,11 @@ from qubex.typing import ConfigurationMode
 from .config_loader import ConfigLoader
 from .control_system import Box, CapPort, GenPort, PortType
 from .experiment_system import ExperimentSystem
+from .parallel_box_executor import run_parallel_each, run_parallel_map
 from .quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
 from .quel1.quel1_backend_controller import Quel1BackendController
 
 logger = logging.getLogger(__name__)
-
-_MAX_BOX_PARALLEL_WORKERS = 32
 
 
 class BackendSettings(dict[str, dict]):
@@ -460,21 +458,16 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 self._sync_box_to_hardware(box)
             return
 
-        max_workers = min(_MAX_BOX_PARALLEL_WORKERS, len(boxes))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_box = {
-                executor.submit(self._sync_box_to_hardware, box): box for box in boxes
-            }
-            for future, box in future_to_box.items():
-                self._await_box_sync_future(future=future, box_id=box.id)
+        run_parallel_each(
+            boxes,
+            self._sync_box_to_hardware,
+            on_error=self._log_box_sync_error,
+        )
 
     @staticmethod
-    def _await_box_sync_future(*, future: Any, box_id: str) -> None:
-        """Resolve one box-sync future and log a per-box failure."""
-        try:
-            future.result()
-        except Exception:
-            logger.exception("Failed to configure box %s", box_id)
+    def _log_box_sync_error(box: Box, exc: BaseException) -> None:
+        """Log a failure during per-box hardware synchronization."""
+        logger.exception("Failed to configure box %s", box.id, exc_info=exc)
 
     def _sync_box_to_hardware(self, box: Box) -> None:
         """Apply experiment-system port/channel parameters to one hardware box."""
@@ -562,18 +555,22 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 result[box.id] = self.backend_controller.dump_box(box.id)
             return result
 
-        max_workers = min(_MAX_BOX_PARALLEL_WORKERS, len(boxes))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_box = {executor.submit(_dump_box, box): box for box in boxes}
-            for future in as_completed(future_to_box):
-                box = future_to_box[future]
-                try:
-                    box_config = future.result()
-                except Exception:
-                    logger.exception("Failed to dump box %s", box.id)
-                    box_config = {}
-                result[box.id] = box_config
+        result.update(
+            run_parallel_map(
+                boxes,
+                _dump_box,
+                key=lambda box: box.id,
+                as_completed_order=True,
+                on_error=self._fallback_dump_box_result,
+            )
+        )
         return result
+
+    @staticmethod
+    def _fallback_dump_box_result(box: Box, exc: BaseException) -> dict[str, Any]:
+        """Log a box dump failure and return an empty fallback config."""
+        logger.exception("Failed to dump box %s", box.id, exc_info=exc)
+        return {}
 
     def _sync_backend_settings_to_device_controller(
         self,
