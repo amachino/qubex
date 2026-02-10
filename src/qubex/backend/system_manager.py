@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -506,24 +506,25 @@ This operation will overwrite the existing backend settings. Do you want to cont
         if not boxes:
             return result
 
+        def _dump_box(box: Box) -> dict[str, Any]:
+            return self.backend_controller.dump_box(box.id)
+
         if not parallel:
             for box in boxes:
                 result[box.id] = self.backend_controller.dump_box(box.id)
             return result
 
-        async def _fetch_parallel() -> list[dict[str, Any] | BaseException]:
-            dump_tasks = [
-                self.backend_controller.dump_box_async(box.id) for box in boxes
-            ]
-            return await asyncio.gather(*dump_tasks, return_exceptions=True)
-
-        dump_results = asyncio.run(_fetch_parallel())
-        for box, dump_result in zip(boxes, dump_results, strict=True):
-            if isinstance(dump_result, BaseException):
-                logger.exception("Failed to dump box %s", box.id, exc_info=dump_result)
-                result[box.id] = {}
-            else:
-                result[box.id] = dump_result
+        max_workers = min(32, len(boxes))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_box = {executor.submit(_dump_box, box): box for box in boxes}
+            for future in as_completed(future_to_box):
+                box = future_to_box[future]
+                try:
+                    box_config = future.result()
+                except Exception:
+                    logger.exception("Failed to dump box %s", box.id)
+                    box_config = {}
+                result[box.id] = box_config
         return result
 
     def _sync_backend_settings_to_device_controller(
