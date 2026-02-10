@@ -26,6 +26,8 @@ from .quel1.quel1_backend_controller import Quel1BackendController
 
 logger = logging.getLogger(__name__)
 
+_MAX_BOX_PARALLEL_WORKERS = 32
+
 
 class BackendSettings(dict[str, dict]):
     """Raw per-box settings returned by `backend_controller.dump_box`."""
@@ -313,6 +315,8 @@ class SystemManager:
         self,
         box_ids: Sequence[str],
         confirm: bool = True,
+        *,
+        parallel: bool | None = None,
     ) -> None:
         """
         Push software experiment-system settings to selected hardware boxes.
@@ -327,6 +331,9 @@ class SystemManager:
             Box IDs to push to hardware.
         confirm : bool, optional
             Whether to prompt before applying hardware writes.
+        parallel : bool | None, optional
+            Whether to configure selected boxes in parallel. If `None`,
+            defaults to `True`.
         """
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         boxes_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
@@ -345,9 +352,13 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 logger.info("Operation cancelled.")
                 return
 
-        self._sync_experiment_system_to_hardware(boxes=boxes)
+        self._sync_experiment_system_to_hardware(
+            boxes=boxes,
+            parallel=parallel,
+        )
         fetched_backend_settings = self._fetch_backend_settings_from_hardware(
-            box_ids=box_ids
+            box_ids=box_ids,
+            parallel=parallel,
         )
         previous_backend_settings = BackendSettings(self.backend_settings)
         previous_box_cache = self.backend_controller.get_box_config_cache()
@@ -427,51 +438,88 @@ This operation will overwrite the existing backend settings. Do you want to cont
         self,
         *,
         boxes: Sequence[Box],
+        parallel: bool | None = None,
     ) -> None:
-        """Apply experiment-system port/channel parameters to hardware boxes."""
-        for box in boxes:
-            for port in box.ports:
-                if isinstance(port, GenPort):
-                    if port.type in (PortType.CTRL, PortType.READ_OUT, PortType.PUMP):
-                        try:
-                            self.backend_controller.config_port(
+        """
+        Apply experiment-system port/channel parameters to hardware boxes.
+
+        Parameters
+        ----------
+        boxes : Sequence[Box]
+            Target boxes to configure on hardware.
+        parallel : bool | None, optional
+            Whether to configure boxes in parallel. If `None`, defaults to
+            `True`.
+        """
+        if parallel is None:
+            parallel = True
+        if not boxes:
+            return
+        if not parallel:
+            for box in boxes:
+                self._sync_box_to_hardware(box)
+            return
+
+        max_workers = min(_MAX_BOX_PARALLEL_WORKERS, len(boxes))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_box = {
+                executor.submit(self._sync_box_to_hardware, box): box for box in boxes
+            }
+            for future, box in future_to_box.items():
+                self._await_box_sync_future(future=future, box_id=box.id)
+
+    @staticmethod
+    def _await_box_sync_future(*, future: Any, box_id: str) -> None:
+        """Resolve one box-sync future and log a per-box failure."""
+        try:
+            future.result()
+        except Exception:
+            logger.exception("Failed to configure box %s", box_id)
+
+    def _sync_box_to_hardware(self, box: Box) -> None:
+        """Apply experiment-system port/channel parameters to one hardware box."""
+        for port in box.ports:
+            if isinstance(port, GenPort):
+                if port.type in (PortType.CTRL, PortType.READ_OUT, PortType.PUMP):
+                    try:
+                        self.backend_controller.config_port(
+                            box_name=box.id,
+                            port=port.number,
+                            lo_freq=port.lo_freq,
+                            cnco_freq=port.cnco_freq,
+                            vatt=port.vatt,
+                            sideband=port.sideband,
+                            fullscale_current=port.fullscale_current,
+                            rfswitch=port.rfswitch,
+                        )
+                        for gen_channel in port.channels:
+                            self.backend_controller.config_channel(
                                 box_name=box.id,
                                 port=port.number,
-                                lo_freq=port.lo_freq,
-                                cnco_freq=port.cnco_freq,
-                                vatt=port.vatt,
-                                sideband=port.sideband,
-                                fullscale_current=port.fullscale_current,
-                                rfswitch=port.rfswitch,
+                                channel=gen_channel.number,
+                                fnco_freq=gen_channel.fnco_freq,
                             )
-                            for gen_channel in port.channels:
-                                self.backend_controller.config_channel(
-                                    box_name=box.id,
-                                    port=port.number,
-                                    channel=gen_channel.number,
-                                    fnco_freq=gen_channel.fnco_freq,
-                                )
-                        except Exception:
-                            logger.exception("Failed to configure %s", port.id)
-                elif isinstance(port, CapPort):
-                    if port.type in (PortType.READ_IN,):
-                        try:
-                            self.backend_controller.config_port(
+                    except Exception:
+                        logger.exception("Failed to configure %s", port.id)
+            elif isinstance(port, CapPort):
+                if port.type in (PortType.READ_IN,):
+                    try:
+                        self.backend_controller.config_port(
+                            box_name=box.id,
+                            port=port.number,
+                            lo_freq=port.lo_freq,
+                            cnco_freq=port.cnco_freq,
+                            rfswitch=port.rfswitch,
+                        )
+                        for cap_channel in port.channels:
+                            self.backend_controller.config_runit(
                                 box_name=box.id,
                                 port=port.number,
-                                lo_freq=port.lo_freq,
-                                cnco_freq=port.cnco_freq,
-                                rfswitch=port.rfswitch,
+                                runit=cap_channel.number,
+                                fnco_freq=cap_channel.fnco_freq,
                             )
-                            for cap_channel in port.channels:
-                                self.backend_controller.config_runit(
-                                    box_name=box.id,
-                                    port=port.number,
-                                    runit=cap_channel.number,
-                                    fnco_freq=cap_channel.fnco_freq,
-                                )
-                        except Exception:
-                            logger.exception("Failed to configure %s", port.id)
+                    except Exception:
+                        logger.exception("Failed to configure %s", port.id)
 
     def _fetch_backend_settings_from_hardware(
         self,
@@ -514,7 +562,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 result[box.id] = self.backend_controller.dump_box(box.id)
             return result
 
-        max_workers = min(32, len(boxes))
+        max_workers = min(_MAX_BOX_PARALLEL_WORKERS, len(boxes))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_box = {executor.submit(_dump_box, box): box for box in boxes}
             for future in as_completed(future_to_box):
