@@ -10,6 +10,7 @@ from collections.abc import Collection, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -383,6 +384,7 @@ class Quel1BackendController:
         """Clear cached box configuration data."""
         if self._boxpool is not None:
             self._boxpool._box_config_cache.clear()
+        self._clear_quel1system_box_cache()
 
     def get_box_config_cache(self) -> dict[str, Any]:
         """Return a snapshot of the box-config cache."""
@@ -395,6 +397,7 @@ class Quel1BackendController:
                 raise ValueError("Boxes not connected. Call connect() method first.")
             return
         self._boxpool._box_config_cache = deepcopy(box_configs)
+        self._replace_quel1system_box_cache(box_configs)
 
     def update_box_config_cache(self, box_configs: dict[str, Any]) -> None:
         """Update cached box configurations by box name."""
@@ -404,6 +407,53 @@ class Quel1BackendController:
             return
         for box_name, box_config in box_configs.items():
             self._boxpool._box_config_cache[box_name] = deepcopy(box_config)
+        self._update_quel1system_box_cache(box_configs)
+
+    def _get_quel1system_box_cache(self) -> dict[str, Any] | None:
+        """Return mutable Quel1System box cache if available."""
+        if self._quel1system is None:
+            return None
+        system = cast(Any, self._quel1system)
+        if isinstance(getattr(system, "box_cache", None), dict):
+            return cast(dict[str, Any], system.box_cache)
+        if isinstance(getattr(system, "config_cache", None), dict):
+            return cast(dict[str, Any], system.config_cache)
+        return None
+
+    def _clear_quel1system_box_cache(self) -> None:
+        """Clear the Quel1System-side box cache."""
+        cache = self._get_quel1system_box_cache()
+        if cache is not None:
+            cache.clear()
+        self._set_quel1system_config_fetched_at(None)
+
+    def _replace_quel1system_box_cache(self, box_configs: dict[str, Any]) -> None:
+        """Replace the Quel1System-side box cache."""
+        cache = self._get_quel1system_box_cache()
+        if cache is None:
+            return
+        cache.clear()
+        for box_name, box_config in box_configs.items():
+            cache[box_name] = deepcopy(box_config)
+        self._set_quel1system_config_fetched_at(datetime.now() if cache else None)
+
+    def _update_quel1system_box_cache(self, box_configs: dict[str, Any]) -> None:
+        """Update entries in the Quel1System-side box cache."""
+        cache = self._get_quel1system_box_cache()
+        if cache is None:
+            return
+        for box_name, box_config in box_configs.items():
+            cache[box_name] = deepcopy(box_config)
+        if cache:
+            self._set_quel1system_config_fetched_at(datetime.now())
+
+    def _set_quel1system_config_fetched_at(self, fetched_at: datetime | None) -> None:
+        """Set Quel1System config timestamp when the attribute exists."""
+        if self._quel1system is None:
+            return
+        system = cast(Any, self._quel1system)
+        if hasattr(system, "config_fetched_at"):
+            system.config_fetched_at = fetched_at
 
     def set_box_options(self, box_options: dict[str, tuple[str, ...]]) -> None:
         """Set box option labels used for relinkup config options."""
@@ -638,9 +688,8 @@ class Quel1BackendController:
         system = Quel1System.create(
             clockmaster=QuBEMasterClient(str(clockmaster_setting.ipaddr)),
             boxes=boxes,
+            update_copnfig_cache=False,
         )
-        system.initialize()
-        db.refresh_quel1system(system)
         return system
 
     def connect(
