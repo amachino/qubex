@@ -94,6 +94,18 @@ class MeasurementService:
         """Return the pulse service."""
         return self._pulse_service
 
+    @staticmethod
+    def unique_in_order(labels: Sequence[str]) -> list[str]:
+        """Return labels de-duplicated while preserving first appearance order."""
+        return list(dict.fromkeys(labels))
+
+    @staticmethod
+    def ordered_qubit_labels(labels: Sequence[str]) -> list[str]:
+        """Return qubit labels in first appearance order from target labels."""
+        return MeasurementService.unique_in_order(
+            [Target.qubit_label(label) for label in labels]
+        )
+
     def check_noise(
         self,
         targets: Collection[str] | str | None = None,
@@ -257,7 +269,9 @@ class MeasurementService:
                 raise ValueError("Invalid pulse schedule.")
 
             if initial_states is not None:
-                labels = list(set(sequence.labels) | set(initial_states.keys()))
+                labels = self.unique_in_order(
+                    [*sequence.labels, *initial_states.keys()]
+                )
                 with PulseSchedule(labels) as ps:
                     for target, state in initial_states.items():
                         if target in self.ctx.qubit_labels:
@@ -273,7 +287,9 @@ class MeasurementService:
                 waveforms = sequence.get_sampled_sequences()
         else:
             if initial_states is not None:
-                labels = list(set(sequence.keys()) | set(initial_states.keys()))
+                labels = self.unique_in_order(
+                    [*sequence.keys(), *initial_states.keys()]
+                )
                 with PulseSchedule(labels) as ps:
                     for target, state in initial_states.items():
                         if target in self.ctx.qubit_labels:
@@ -556,9 +572,7 @@ class MeasurementService:
                     .get_sampled_sequences(copy=False)
                     for param in sweep_range
                 ]
-                qubits = {
-                    Target.qubit_label(target) for target in initial_sequence.labels
-                }
+                ordered_qubits = self.ordered_qubit_labels(initial_sequence.labels)
             elif isinstance(initial_sequence, dict):
                 sequences = [
                     {
@@ -567,21 +581,23 @@ class MeasurementService:
                     }
                     for param in sweep_range
                 ]
-                qubits = {Target.qubit_label(target) for target in initial_sequence}
+                ordered_qubits = self.ordered_qubit_labels(list(initial_sequence))
+            else:
+                raise TypeError("Invalid sequence.")
         else:
             raise TypeError("Invalid sequence.")
 
-        signals = defaultdict(list)
+        signals: dict[str, list[object]] = {qubit: [] for qubit in ordered_qubits}
         plotter = IQPlotter(
             {
                 qubit: self.ctx.state_centers[qubit]
-                for qubit in qubits
+                for qubit in ordered_qubits
                 if qubit in self.ctx.state_centers
             }
         )
 
         # initialize awgs and capture units
-        self.ctx.reset_awg_and_capunits(qubits=qubits)
+        self.ctx.reset_awg_and_capunits(qubits=set(ordered_qubits))
 
         with self.ctx.modified_frequencies(frequencies):
             for seq in tqdm(
@@ -601,10 +617,21 @@ class MeasurementService:
                     readout_post_margin=readout_post_margin,
                     reset_awg_and_capunits=False,
                 )
+                for target in ordered_qubits:
+                    if target in result.data:
+                        signals[target].append(result.data[target].kerneled)
                 for target, data in result.data.items():
-                    signals[target].append(data.kerneled)
+                    if target in signals:
+                        continue
+                    signals[target] = [data.kerneled]
                 if plot:
-                    plotter.update(signals)
+                    plotter.update(
+                        {
+                            target: np.asarray(values)
+                            for target, values in signals.items()
+                            if values
+                        }
+                    )
 
         if plot:
             plotter.show()
@@ -623,6 +650,7 @@ class MeasurementService:
                 yaxis_type=yaxis_type,
             )
             for target, values in signals.items()
+            if values
         }
         result = ExperimentResult(
             data=sweep_data,
@@ -682,13 +710,20 @@ class MeasurementService:
 
         rabi_params = self.pulse.ge_rabi_params
 
-        signals = defaultdict(list)
-        plotter = IQPlotter(self.ctx.state_centers)
+        initial_sequence = sequence(sweep_range[0])
+        ordered_targets = self.unique_in_order(list(initial_sequence.labels))
+        ordered_qubits = self.ordered_qubit_labels(ordered_targets)
+        signals: dict[str, list[object]] = {target: [] for target in ordered_targets}
+        plotter = IQPlotter(
+            {
+                qubit: self.ctx.state_centers[qubit]
+                for qubit in ordered_qubits
+                if qubit in self.ctx.state_centers
+            }
+        )
 
         # initialize awgs and capture units
-        initial_sequence = sequence(sweep_range[0])
-        qubits = {Target.qubit_label(target) for target in initial_sequence.labels}
-        self.ctx.reset_awg_and_capunits(qubits=qubits)
+        self.ctx.reset_awg_and_capunits(qubits=set(ordered_qubits))
 
         with self.ctx.modified_frequencies(frequencies):
             for param in sweep_range:
@@ -704,10 +739,21 @@ class MeasurementService:
                     reset_awg_and_capunits=False,
                     add_last_measurement=add_last_measurement,
                 )
+                for target in ordered_targets:
+                    if target in result.data:
+                        signals[target].append(result.data[target][-1].kerneled)
                 for target, data in result.data.items():
-                    signals[target].append(data[-1].kerneled)
+                    if target in signals:
+                        continue
+                    signals[target] = [data[-1].kerneled]
                 if plot:
-                    plotter.update(signals)
+                    plotter.update(
+                        {
+                            target: np.asarray(values)
+                            for target, values in signals.items()
+                            if values
+                        }
+                    )
 
         if plot:
             plotter.show()
@@ -726,6 +772,7 @@ class MeasurementService:
                 yaxis_type=yaxis_type,
             )
             for target, values in signals.items()
+            if values
         }
         result = ExperimentResult(
             data=sweep_data,
@@ -1868,17 +1915,17 @@ class MeasurementService:
 
         buffer: dict[str, list[float]] = defaultdict(list)
 
-        qubits = {Target.qubit_label(target) for target in sequence}
-        targets = list(qubits | sequence.keys())
+        ordered_qubits = self.ordered_qubit_labels(list(sequence))
+        targets = self.unique_in_order([*sequence.keys(), *ordered_qubits])
 
         if reset_awg_and_capunits:
-            self.ctx.reset_awg_and_capunits(qubits=qubits)
+            self.ctx.reset_awg_and_capunits(qubits=set(ordered_qubits))
 
         for basis in ["X", "Y", "Z"]:
             with PulseSchedule(targets) as ps:
                 # Initialization pulses
                 if initial_state is not None:
-                    for qubit in qubits:
+                    for qubit in ordered_qubits:
                         if qubit in initial_state:
                             init_pulse = self.pulse.get_pulse_for_state(
                                 target=qubit,
@@ -1893,7 +1940,7 @@ class MeasurementService:
                 ps.barrier()
 
                 # Basis transformation pulses
-                for qubit in qubits:
+                for qubit in ordered_qubits:
                     x90p = x90[qubit]
                     y90m = x90p.shifted(-np.pi / 2)
                     if basis == "X":
@@ -2001,12 +2048,10 @@ class MeasurementService:
         if reset_awg_and_capunits:
             initial_sequence = sequences[0]
             if isinstance(initial_sequence, PulseSchedule):
-                qubits = {
-                    Target.qubit_label(target) for target in initial_sequence.labels
-                }
+                ordered_qubits = self.ordered_qubit_labels(initial_sequence.labels)
             else:
-                qubits = {Target.qubit_label(target) for target in initial_sequence}
-            self.ctx.reset_awg_and_capunits(qubits=qubits)
+                ordered_qubits = self.ordered_qubit_labels(list(initial_sequence))
+            self.ctx.reset_awg_and_capunits(qubits=set(ordered_qubits))
 
         for sequence in tqdm(sequences):
             state_vectors = self.state_tomography(

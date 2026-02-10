@@ -160,7 +160,9 @@ class Quel1MeasurementBackendAdapter:
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
         )
-        targets = list(gen_sampled_sequence.keys() | cap_sampled_sequence.keys())
+        targets = list(
+            dict.fromkeys([*gen_sampled_sequence.keys(), *cap_sampled_sequence.keys()])
+        )
         resource_map = self._backend_controller.get_resource_map(targets)
 
         sequencer = self._backend_controller.create_quel1_sequencer(

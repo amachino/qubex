@@ -70,11 +70,13 @@ class MeasurementScheduleBuilder:
             schedule.pad(total_duration=sequence_duration, pad_side="right")
 
             readout_targets = list(
-                {
-                    Target.read_label(label)
-                    for label in schedule.labels
-                    if not self._targets[label].is_pump
-                }
+                dict.fromkeys(
+                    [
+                        Target.read_label(label)
+                        for label in schedule.labels
+                        if not self._targets[label].is_pump
+                    ]
+                )
             )
             with PulseSchedule(schedule.labels + readout_targets) as ps:
                 ps.call(schedule)

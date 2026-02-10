@@ -20,6 +20,7 @@ class IQPlotter:
     ):
         self._state_centers = state_centers or {}
         self._colors = [f"rgba{color}" for color in get_colors(alpha=0.8)]
+        self._color_index_by_label: dict[str, int] = {}
         self._num_scatters = -1
         self._output = Output()
         self._widget = go.FigureWidget()
@@ -53,6 +54,7 @@ class IQPlotter:
         if len(self._state_centers) > 0:
             colors = get_colors(alpha=0.1)
             for idx, (label, centers) in enumerate(self._state_centers.items()):
+                self._color_index_by_label[label] = idx
                 color = colors[idx % len(colors)]
                 center_values = list(centers.values())
                 x = np.real(center_values)
@@ -95,16 +97,17 @@ class IQPlotter:
             display(self._output)
             with self._output:
                 display(self._widget)
-            for idx, qubit in enumerate(data):
-                if qubit in self._state_centers:
-                    idx = list(self._state_centers.keys()).index(qubit)
+            for legend_index, qubit in enumerate(data):
+                if qubit not in self._color_index_by_label:
+                    self._color_index_by_label[qubit] = len(self._color_index_by_label)
+                idx = self._color_index_by_label[qubit]
                 color = self._colors[idx % len(self._colors)]
                 self._widget.add_scatter(
                     name=qubit,
                     meta=qubit,
                     mode="markers",
                     marker=dict(size=4, color=color),
-                    legendrank=idx,
+                    legendrank=legend_index,
                 )
             self._num_scatters = len(data)
         if len(data) != self._num_scatters:
