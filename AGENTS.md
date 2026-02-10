@@ -1,4 +1,4 @@
 - Python commands must run in project env: use `uv run ...`, or `source .venv/bin/activate`
 - Use `uv run ruff check`, `uv run ruff format`, `uv run pyright` and `uv run pytest` to maintain code quality.
-- Write docstrings following the guideline in docs/developer-guide/docstring-guidelines.md (NumPy style).
+- Write docstrings following the guideline in docs/developer-guide/docstring-guidelines.md.
 - Follow the test guideline in docs/developer-guide/test-guidelines.md: write tests first and use 1-line spec docstrings.

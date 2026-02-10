@@ -8,6 +8,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Collection, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -379,6 +380,27 @@ class Quel1BackendController:
         """Clear cached box configuration data."""
         if self._boxpool is not None:
             self._boxpool._box_config_cache.clear()
+
+    def get_box_config_cache(self) -> dict[str, Any]:
+        """Return a snapshot of the box-config cache."""
+        return deepcopy(self.box_config)
+
+    def replace_box_config_cache(self, box_configs: dict[str, Any]) -> None:
+        """Replace the box-config cache with the provided snapshot."""
+        if self._boxpool is None:
+            if box_configs:
+                raise ValueError("Boxes not connected. Call connect() method first.")
+            return
+        self._boxpool._box_config_cache = deepcopy(box_configs)
+
+    def update_box_config_cache(self, box_configs: dict[str, Any]) -> None:
+        """Update cached box configurations by box name."""
+        if self._boxpool is None:
+            if box_configs:
+                raise ValueError("Boxes not connected. Call connect() method first.")
+            return
+        for box_name, box_config in box_configs.items():
+            self._boxpool._box_config_cache[box_name] = deepcopy(box_config)
 
     def set_box_options(self, box_options: dict[str, tuple[str, ...]]) -> None:
         """Set box option labels used for relinkup config options."""

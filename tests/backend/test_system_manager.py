@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
 
 from qubex.backend.control_system import PortType
-from qubex.backend.system_manager import SystemManager
+from qubex.backend.system_manager import BackendSettings, SystemManager
 
 
 @dataclass(frozen=True)
@@ -27,23 +28,29 @@ class FakeBox:
     ports: tuple[FakePort, ...]
 
 
-class FakeBoxPool:
-    """Minimal box pool cache holder."""
-
-    def __init__(self) -> None:
-        self._box_config_cache: dict[str, dict] = {}
-
-
 class FakeBackendController:
     """Backend controller stub for backend settings tests."""
 
     def __init__(self, configs: dict[str, dict]) -> None:
         self._configs = configs
-        self.boxpool = FakeBoxPool()
+        self._box_config_cache: dict[str, dict] = {}
 
     def dump_box(self, box_id: str) -> dict:
         """Return a predefined box configuration."""
         return self._configs.get(box_id, {})
+
+    def get_box_config_cache(self) -> dict[str, dict]:
+        """Return a copy of the current box-cache snapshot."""
+        return deepcopy(self._box_config_cache)
+
+    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Replace the full box-cache snapshot."""
+        self._box_config_cache = deepcopy(box_configs)
+
+    def update_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Update per-box entries in the box cache."""
+        for box_id, box_config in box_configs.items():
+            self._box_config_cache[box_id] = deepcopy(box_config)
 
     @property
     def hash(self) -> int:
@@ -113,12 +120,31 @@ class FakeExperimentSystemForBackendSettings:
         return self.control_system.hash
 
 
+def test_backend_settings_hash_is_order_independent() -> None:
+    """Given same nested content, hash is identical regardless of key insertion order."""
+    settings_a = BackendSettings(
+        {
+            "A": {"ports": {1: {"v": 1}, 2: {"v": 2}}},
+            "B": {"ports": {3: {"v": 3}}},
+        }
+    )
+    settings_b = BackendSettings(
+        {
+            "B": {"ports": {3: {"v": 3}}},
+            "A": {"ports": {2: {"v": 2}, 1: {"v": 1}}},
+        }
+    )
+
+    assert settings_a == settings_b
+    assert settings_a.hash == settings_b.hash
+
+
 @pytest.mark.parametrize("parallel", [True, False])
 def test_fetch_backend_settings_from_hardware_collects_ports(
     monkeypatch: pytest.MonkeyPatch,
     parallel: bool,
 ) -> None:
-    """Given boxes, when fetching and syncing, then cache and ports are filled."""
+    """Given boxes, when fetching and syncing, then raw dump data is propagated."""
     # Arrange
     box_a = FakeBox(
         id="A",
@@ -137,24 +163,28 @@ def test_fetch_backend_settings_from_hardware_collects_ports(
         "B": {"ports": {4: {"mode": "read"}}},
     }
     manager = SystemManager.shared()
-    monkeypatch.setattr(manager, "_backend_controller", FakeBackendController(configs))
+    backend_controller = FakeBackendController(configs)
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
     monkeypatch.setattr(
         manager, "_experiment_system", FakeExperimentSystem([box_a, box_b])
     )
+    monkeypatch.setattr(manager, "_backend_settings", {"stale": {"ports": {}}})
 
     # Act
-    manager._fetch_backend_settings_from_hardware(  # noqa: SLF001
+    fetched = manager._fetch_backend_settings_from_hardware(  # noqa: SLF001
         ["A", "B"],
         parallel=parallel,
     )
+    manager._backend_settings = fetched  # noqa: SLF001
     manager._sync_backend_settings_to_device_controller()  # noqa: SLF001
 
     # Assert
-    assert manager._backend_settings == {  # noqa: SLF001
+    assert fetched == {
         "A": {"ports": {1: {"mode": "ctrl"}, 3: {"mode": "read"}}},
         "B": {"ports": {4: {"mode": "read"}}},
     }
-    assert manager.backend_controller.boxpool._box_config_cache == configs  # noqa: SLF001
+    assert manager._backend_settings == fetched  # noqa: SLF001
+    assert backend_controller.get_box_config_cache() == configs
 
 
 def test_sync_backend_settings_to_experiment_system_updates_in_place(
@@ -162,7 +192,13 @@ def test_sync_backend_settings_to_experiment_system_updates_in_place(
 ) -> None:
     """Given backend settings, when applying them, then the same experiment system is updated."""
     manager = SystemManager.shared()
-    box = FakeBox(id="A", ports=())
+    box = FakeBox(
+        id="A",
+        ports=(
+            FakePort(number=1, type=PortType.READ_OUT),
+            FakePort(number=2, type=PortType.READ_IN),
+        ),
+    )
     experiment_system = FakeExperimentSystemForBackendSettings([box])
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
     monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
@@ -216,3 +252,109 @@ def test_sync_backend_settings_to_experiment_system_updates_in_place(
         "fnco_freqs": [300],
         "fullscale_current": None,
     }
+
+
+def test_fetch_backend_settings_from_hardware_has_no_side_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given current cache, when fetching, then manager backend settings stay unchanged."""
+    manager = SystemManager.shared()
+    box = FakeBox(id="A", ports=(FakePort(number=1, type=PortType.CTRL),))
+    monkeypatch.setattr(
+        manager,
+        "_backend_controller",
+        FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}}),
+    )
+    monkeypatch.setattr(manager, "_experiment_system", FakeExperimentSystem([box]))
+    monkeypatch.setattr(manager, "_backend_settings", {"stale": {"ports": {}}})
+
+    fetched = manager._fetch_backend_settings_from_hardware(["A"])  # noqa: SLF001
+
+    assert fetched == {"A": {"ports": {1: {"mode": "ctrl"}}}}
+    assert manager._backend_settings == {"stale": {"ports": {}}}  # noqa: SLF001
+
+
+def test_is_synced_has_no_side_effect_on_backend_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given mismatch, when checking sync, then backend settings stay unchanged."""
+    manager = SystemManager.shared()
+    box = FakeBox(id="A", ports=(FakePort(number=1, type=PortType.CTRL),))
+    monkeypatch.setattr(
+        manager,
+        "_backend_controller",
+        FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}}),
+    )
+    monkeypatch.setattr(manager, "_experiment_system", FakeExperimentSystem([box]))
+    monkeypatch.setattr(manager, "_backend_settings", {"stale": {"ports": {}}})
+    monkeypatch.setattr(manager, "_cached_state", manager.current_state)
+
+    with pytest.warns(
+        UserWarning,
+        match="The current backend settings are different from the fetched backend settings.",
+    ):
+        result = manager.is_synced(box_ids=["A"])
+
+    assert not result
+    assert manager._backend_settings == {"stale": {"ports": {}}}  # noqa: SLF001
+
+
+def test_pull_merges_partial_backend_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given partial pull, when applied, then non-target box settings are preserved."""
+    manager = SystemManager.shared()
+    box_a = FakeBox(id="A", ports=())
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        FakeExperimentSystemForBackendSettings([box_a]),
+    )
+    backend_controller = FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}})
+    backend_controller.replace_box_config_cache({"B": {"ports": {2: {"mode": "read"}}}})
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    monkeypatch.setattr(
+        manager,
+        "_backend_settings",
+        {
+            "B": {"ports": {2: {"mode": "read"}}},
+        },
+    )
+
+    manager.pull(["A"], parallel=False)
+
+    assert manager.backend_settings == {
+        "A": {"ports": {1: {"mode": "ctrl"}}},
+        "B": {"ports": {2: {"mode": "read"}}},
+    }
+    assert backend_controller.get_box_config_cache() == {
+        "A": {"ports": {1: {"mode": "ctrl"}}},
+        "B": {"ports": {2: {"mode": "read"}}},
+    }
+
+
+def test_is_synced_compares_requested_box_subset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given extra cached boxes, when checking subset, then only requested boxes are compared."""
+    manager = SystemManager.shared()
+    box_a = FakeBox(id="A", ports=())
+    monkeypatch.setattr(manager, "_experiment_system", FakeExperimentSystem([box_a]))
+    monkeypatch.setattr(
+        manager,
+        "_backend_controller",
+        FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}}),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_backend_settings",
+        {
+            "A": {"ports": {1: {"mode": "ctrl"}}},
+            "B": {"ports": {2: {"mode": "read"}}},
+        },
+    )
+    monkeypatch.setattr(manager, "_cached_state", manager.current_state)
+
+    result = manager.is_synced(box_ids=["A"])
+
+    assert result

@@ -1,16 +1,16 @@
-"""System management for experiment and device control."""
+"""Coordinate synchronization between software and hardware states."""
 
 from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
@@ -27,9 +27,40 @@ from .quel1.quel1_backend_controller import Quel1BackendController
 logger = logging.getLogger(__name__)
 
 
+class BackendSettings(dict[str, dict]):
+    """Raw per-box settings returned by `backend_controller.dump_box`."""
+
+    def __init__(self, initial: Mapping[str, dict] | None = None) -> None:
+        """
+        Initialize backend settings.
+
+        Parameters
+        ----------
+        initial : Mapping[str, dict] | None, optional
+            Initial per-box settings.
+        """
+        super().__init__(deepcopy(dict(initial or {})))
+
+    @property
+    def hash(self) -> int:
+        """Return a stable hash of nested settings content."""
+        return hash(self._freeze(self))
+
+    @classmethod
+    def _freeze(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return tuple(
+                (key, cls._freeze(item))
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            )
+        if isinstance(value, list):
+            return tuple(cls._freeze(item) for item in value)
+        return value
+
+
 @dataclass
 class SystemState:
-    """Hash values for system state components."""
+    """Hash summary of synchronization-relevant state components."""
 
     experiment_system: int
     backend_controller: int
@@ -48,21 +79,30 @@ class SystemState:
 
 class SystemManager:
     """
-    Singleton class to manage the system state.
+    Coordinate synchronization between software and hardware states.
+
+    This singleton owns three related states:
+
+    - experiment-system state (in-memory model used by application logic)
+    - backend-controller state (qubecalib system model and caches)
+    - backend-settings state (raw `dump_box` snapshots indexed by box ID)
+
+    It exposes explicit pull/push operations and keeps a cached hash-based
+    snapshot for consistency checks.
 
     Attributes
     ----------
     _instance : SystemManager
-        Shared instance of the SystemManager.
+        Shared singleton instance.
     _initialized : bool
-        Whether the SystemManager is initialized.
+        Whether one-time initialization is complete.
     """
 
     _instance = None
     _initialized = False
 
     def __new__(cls, *args, **kwargs) -> SystemManager:
-        """Create or return the singleton instance."""
+        """Return the singleton instance."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -70,7 +110,7 @@ class SystemManager:
     @classmethod
     def shared(cls) -> SystemManager:
         """
-        Get the shared instance of the SystemManager.
+        Return the shared singleton instance.
 
         Returns
         -------
@@ -83,94 +123,95 @@ class SystemManager:
 
     def __init__(self) -> None:
         """
-        Initialize the SystemManager.
+        Initialize singleton-managed runtime state once.
 
         Notes
         -----
-        This class is a singleton. Use `SystemManager.shared()` to get the shared instance.
+        This class is a singleton. Use `SystemManager.shared()` to access it.
         """
         if self._initialized:
             return
         self._experiment_system = None
         self._backend_controller = Quel1BackendController()
-        self._backend_settings: dict[str, Any] = {}
-        self._backend_box_configs: dict[str, dict[str, Any]] = {}
+        self._backend_settings: BackendSettings = BackendSettings()
         self._cached_state = SystemState(0, 0, 0)
         self._rawdata_dir = None
         self._initialized = True
 
     @property
     def rawdata_dir(self) -> Path | None:
-        """Get the directory for raw data."""
+        """Return the current raw-data output directory."""
         return self._rawdata_dir
 
     @property
     def config_loader(self) -> ConfigLoader:
-        """Get the configuration loader."""
+        """Return the active configuration loader."""
         return self._config_loader
 
     @property
     def is_loaded(self) -> bool:
-        """Check if the experiment system is loaded."""
+        """Return whether an experiment system has been loaded."""
         return self._experiment_system is not None
 
     @property
     def experiment_system(self) -> ExperimentSystem:
-        """Get the experiment system."""
+        """Return the loaded experiment system."""
         if self._experiment_system is None:
             raise ValueError("Experiment system is not loaded.")
         return self._experiment_system
 
     @property
     def backend_controller(self) -> Quel1BackendController:
-        """Get the backend controller."""
+        """Return the backend controller."""
         return self._backend_controller
 
     @property
     @deprecated("Use `backend_controller` property instead.")
     def device_controller(self) -> Quel1BackendController:
-        """Get the device controller (backward-compatible alias)."""
+        """Backward-compatible alias of `backend_controller`."""
         return self.backend_controller
 
     @property
-    def backend_settings(self) -> dict[str, Any]:
-        """Get the backend settings."""
-        return self._backend_settings or {}
+    def backend_settings(self) -> BackendSettings:
+        """Return cached backend settings snapshots keyed by box ID."""
+        if isinstance(self._backend_settings, BackendSettings):
+            return self._backend_settings
+        return BackendSettings(self._backend_settings)
 
     @property
     @deprecated("Use `backend_settings` property instead.")
-    def device_settings(self) -> dict[str, Any]:
-        """Get the device settings (backward-compatible alias)."""
-        return self.backend_settings
+    def device_settings(self) -> dict[str, dict]:
+        """Backward-compatible alias of `backend_settings`."""
+        return dict(self.backend_settings)
 
     @property
     def current_state(self) -> SystemState:
-        """Get the current synchronization state."""
+        """Return hash summary of current in-memory state."""
         return SystemState(
             experiment_system=self.experiment_system.hash,
             backend_controller=self.backend_controller.hash,
-            backend_settings=hash(str(self.backend_settings)),
+            backend_settings=self.backend_settings.hash,
         )
 
     @property
     @deprecated("Use `current_state` property instead.")
     def state(self) -> SystemState:
-        """Get the current state (backward-compatible alias)."""
+        """Backward-compatible alias of `current_state`."""
         return self.current_state
 
     @property
     def cached_state(self) -> SystemState:
-        """Get the cached state."""
+        """Return hash summary captured at last successful sync."""
         return self._cached_state
 
     def set_rawdata_dir(self, value: Path | str | None) -> None:
         """
-        Update the directory for raw data.
+        Set the raw-data output directory.
 
         Parameters
         ----------
         value : Path | str | None
-            The directory path for raw data.
+            Target directory path. If `None`, output is disabled.
         """
         if value is None:
             self._rawdata_dir = None
@@ -189,20 +230,22 @@ class SystemManager:
         mock_mode: bool = False,
     ) -> None:
         """
-        Load the experiment system and device controller.
+        Load configuration and rebuild runtime software/controller model state.
 
         Parameters
         ----------
         chip_id : str
-            Chip ID.
+            Chip identifier.
         config_dir : Path | str, optional
-            Configuration directory.
+            Directory containing configuration files.
         params_dir : Path | str, optional
-            Parameters directory.
+            Directory containing parameter files.
         targets_to_exclude : list[str], optional
-            List of target labels to exclude, by default None.
+            Target labels to exclude from the loaded model.
         configuration_mode : ConfigurationMode, optional
-            Configuration mode, by default "ge-cr-cr".
+            Configuration mode passed to `ConfigLoader`.
+        mock_mode : bool, optional
+            If `True`, skip backend-controller model synchronization.
         """
         self._config_loader = ConfigLoader(
             chip_id=chip_id,
@@ -226,20 +269,45 @@ class SystemManager:
         parallel: bool | None = None,
     ) -> None:
         """
-        Pull the hardware state to the software state.
+        Pull selected hardware boxes into software-managed state.
 
-        This method updates the software state to reflect the hardware state.
+        The method fetches raw backend settings from hardware for `box_ids`,
+        merges them into cached settings, then applies the same subset to:
+
+        - backend-controller cache
+        - experiment-system control parameters
 
         Parameters
         ----------
         box_ids : Sequence[str]
-            Box IDs to fetch the backend settings for.
+            Box IDs to pull from hardware.
         parallel : bool | None, optional
-            Whether to fetch backend settings in parallel, by default True.
+            Whether to fetch per-box settings in parallel. If `None`, defaults
+            to `True`.
         """
-        self._fetch_backend_settings_from_hardware(box_ids=box_ids, parallel=parallel)
-        self._sync_backend_settings_to_device_controller()
-        self._sync_backend_settings_to_experiment_system()
+        fetched_backend_settings = self._fetch_backend_settings_from_hardware(
+            box_ids=box_ids,
+            parallel=parallel,
+        )
+        previous_backend_settings = BackendSettings(self.backend_settings)
+        previous_box_cache = self.backend_controller.get_box_config_cache()
+        merged_backend_settings = self._merge_backend_settings(
+            base_settings=previous_backend_settings,
+            patch_settings=fetched_backend_settings,
+        )
+        try:
+            self._set_backend_settings(merged_backend_settings)
+            self._sync_backend_settings_to_device_controller(
+                backend_settings=fetched_backend_settings
+            )
+            self._sync_backend_settings_to_experiment_system(
+                backend_settings=fetched_backend_settings
+            )
+        except Exception:
+            self._set_backend_settings(previous_backend_settings)
+            self.backend_controller.replace_box_config_cache(previous_box_cache)
+            raise
+        self._update_cached_state()
 
     def push(
         self,
@@ -247,16 +315,18 @@ class SystemManager:
         confirm: bool = True,
     ) -> None:
         """
-        Push the software state to the hardware state.
+        Push software experiment-system settings to selected hardware boxes.
 
-        This method updates the hardware state to reflect the software state.
+        After hardware writes, this method re-fetches raw backend settings for
+        `box_ids` and merges them into cached backend settings to keep cache
+        state consistent with hardware.
 
         Parameters
         ----------
         box_ids : Sequence[str]
-            Box IDs to configure.
+            Box IDs to push to hardware.
         confirm : bool, optional
-            Whether to confirm the operation, by default True.
+            Whether to prompt before applying hardware writes.
         """
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         boxes_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
@@ -276,8 +346,25 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 return
 
         self._sync_experiment_system_to_hardware(boxes=boxes)
-        self._fetch_backend_settings_from_hardware(box_ids=box_ids)
-        self._sync_backend_settings_to_device_controller()
+        fetched_backend_settings = self._fetch_backend_settings_from_hardware(
+            box_ids=box_ids
+        )
+        previous_backend_settings = BackendSettings(self.backend_settings)
+        previous_box_cache = self.backend_controller.get_box_config_cache()
+        merged_backend_settings = self._merge_backend_settings(
+            base_settings=previous_backend_settings,
+            patch_settings=fetched_backend_settings,
+        )
+        try:
+            self._set_backend_settings(merged_backend_settings)
+            self._sync_backend_settings_to_device_controller(
+                backend_settings=fetched_backend_settings
+            )
+        except Exception:
+            self._set_backend_settings(previous_backend_settings)
+            self.backend_controller.replace_box_config_cache(previous_box_cache)
+            raise
+        self._update_cached_state()
 
     def is_synced(
         self,
@@ -285,17 +372,18 @@ This operation will overwrite the existing backend settings. Do you want to cont
         box_ids: Sequence[str],
     ) -> bool:
         """
-        Check if the state is synced.
+        Check synchronization status for selected boxes.
 
         Parameters
         ----------
         box_ids : Sequence[str]
-            Box IDs to check.
+            Box IDs to validate against current hardware snapshots.
 
         Returns
         -------
         bool
-            Whether the state is synced.
+            `True` if cached state hash matches and selected backend settings
+            are identical to freshly fetched hardware snapshots.
         """
         if self.current_state != self.cached_state:
             warnings.warn(
@@ -304,13 +392,13 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 stacklevel=2,
             )
             return False
-        current_backend_settings = self._backend_settings
-        current_backend_box_configs = self._backend_box_configs
-        self._fetch_backend_settings_from_hardware(box_ids=box_ids)
-        fetched_backend_settings = self._backend_settings
-        self._backend_settings = current_backend_settings
-        self._backend_box_configs = current_backend_box_configs
-        if self.backend_settings != fetched_backend_settings:
+        fetched_backend_settings = self._fetch_backend_settings_from_hardware(
+            box_ids=box_ids
+        )
+        current_backend_settings_subset = {
+            box_id: self.backend_settings.get(box_id, {}) for box_id in box_ids
+        }
+        if current_backend_settings_subset != fetched_backend_settings:
             warnings.warn(
                 "The current backend settings are different from the fetched backend settings. ",
                 category=UserWarning,
@@ -319,12 +407,28 @@ This operation will overwrite the existing backend settings. Do you want to cont
             return False
         return True
 
+    @staticmethod
+    def _merge_backend_settings(
+        *,
+        base_settings: BackendSettings,
+        patch_settings: BackendSettings,
+    ) -> BackendSettings:
+        """Return merged backend settings where `patch_settings` overrides `base_settings`."""
+        merged = BackendSettings(base_settings)
+        for box_id, box_config in patch_settings.items():
+            merged[box_id] = deepcopy(box_config)
+        return merged
+
+    def _set_backend_settings(self, backend_settings: Mapping[str, dict]) -> None:
+        """Replace cached backend settings with normalized `BackendSettings`."""
+        self._backend_settings = BackendSettings(backend_settings)
+
     def _sync_experiment_system_to_hardware(
         self,
         *,
         boxes: Sequence[Box],
     ) -> None:
-        """Sync experiment-system port/channel settings to hardware."""
+        """Apply experiment-system port/channel parameters to hardware boxes."""
         for box in boxes:
             for port in box.ports:
                 if isinstance(port, GenPort):
@@ -374,43 +478,41 @@ This operation will overwrite the existing backend settings. Do you want to cont
         box_ids: Sequence[str],
         *,
         parallel: bool | None = None,
-    ) -> None:
+    ) -> BackendSettings:
+        """
+        Fetch raw backend settings from hardware for selected boxes.
+
+        Parameters
+        ----------
+        box_ids : Sequence[str]
+            Box IDs to read from hardware.
+        parallel : bool | None, optional
+            Whether to perform concurrent per-box reads. If `None`, defaults
+            to `True`.
+
+        Returns
+        -------
+        BackendSettings
+            Raw `dump_box` snapshots keyed by box ID.
+
+        Notes
+        -----
+        This method has no side effects on `SystemManager` state.
+        """
         if parallel is None:
             parallel = True
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
-        result: dict[str, Any] = {}
-        box_configs: dict[str, dict[str, Any]] = {}
+        result = BackendSettings()
         if not boxes:
-            self._backend_settings = result
-            self._backend_box_configs = box_configs
-            return
+            return result
 
         def _dump_box(box: Box) -> dict[str, Any]:
             return self.backend_controller.dump_box(box.id)
 
-        def _collect_ports(box: Box, box_config: dict[str, Any]) -> None:
-            box_configs[box.id] = box_config
-            result[box.id] = {"ports": {}}
-            for port in box.ports:
-                if port.type not in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
-                    try:
-                        result[box.id]["ports"][port.number] = box_config["ports"][
-                            port.number
-                        ]
-                    except Exception:
-                        logger.exception(
-                            "Failed to fetch port %s for box %s",
-                            port.number,
-                            box.id,
-                        )
-
         if not parallel:
             for box in boxes:
-                box_config = self.backend_controller.dump_box(box.id)
-                _collect_ports(box, box_config)
-            self._backend_settings = result
-            self._backend_box_configs = box_configs
-            return
+                result[box.id] = self.backend_controller.dump_box(box.id)
+            return result
 
         max_workers = min(32, len(boxes))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -422,57 +524,132 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 except Exception:
                     logger.exception("Failed to dump box %s", box.id)
                     box_config = {}
-                _collect_ports(box, box_config)
-        self._backend_settings = result
-        self._backend_box_configs = box_configs
+                result[box.id] = box_config
+        return result
 
     def _sync_backend_settings_to_device_controller(
         self,
+        *,
+        backend_settings: BackendSettings | None = None,
     ) -> None:
-        """Sync fetched hardware box configs to backend-controller cache."""
-        for box_id, box_config in self._backend_box_configs.items():
-            self.backend_controller.boxpool._box_config_cache[box_id] = box_config  # noqa: SLF001
-        self._update_cached_state()
-
-    def _sync_backend_settings_to_experiment_system(self) -> None:
         """
-        Sync backend settings to the in-memory experiment system.
+        Apply backend-settings snapshots to backend-controller cache.
+
+        Parameters
+        ----------
+        backend_settings : BackendSettings | None, optional
+            Settings to apply. If `None`, uses `self._backend_settings`.
+        """
+        if backend_settings is None:
+            backend_settings = self._backend_settings
+        self.backend_controller.update_box_config_cache(backend_settings)
+
+    def _sync_backend_settings_to_experiment_system(
+        self,
+        *,
+        backend_settings: BackendSettings | None = None,
+    ) -> None:
+        """
+        Apply backend-settings snapshots to the in-memory experiment system.
+
+        Parameters
+        ----------
+        backend_settings : BackendSettings | None, optional
+            Settings to apply. If `None`, uses `self._backend_settings`.
 
         Notes
         -----
-        This method also updates the experiment system to reflect backend settings.
+        Only synchronization-target ports are applied.
         """
-        for box_id, box in self._backend_settings.items():
-            for port_number, port in box["ports"].items():
-                direction = port["direction"]
-                lo_freq = port.get("lo_freq")
+        updates: list[
+            tuple[
+                str,
+                int,
+                Literal["U", "L"] | None,
+                int | None,
+                int,
+                list[int],
+                int | None,
+            ]
+        ] = []
+        if backend_settings is None:
+            backend_settings = self._backend_settings
+        for box_id, box_config in backend_settings.items():
+            ports_config = box_config.get("ports", {})
+            try:
+                box = self.experiment_system.get_box(box_id)
+            except KeyError:
+                logger.warning("Box %s is not found.", box_id)
+                continue
+            for experiment_port in box.ports:
+                if experiment_port.type in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
+                    continue
+                port_number = experiment_port.number
+                if not isinstance(port_number, int):
+                    continue
+                port_config = ports_config.get(port_number)
+                if not isinstance(port_config, dict):
+                    continue
+                direction = port_config.get("direction")
+                lo_freq = port_config.get("lo_freq")
                 lo_freq = int(lo_freq) if lo_freq is not None else None
-                cnco_freq = int(port["cnco_freq"])
+                cnco_freq = int(port_config["cnco_freq"])
                 if direction == "out":
-                    sideband = port.get("sideband")
-                    fullscale_current = int(port["fullscale_current"])
+                    raw_sideband = port_config.get("sideband")
+                    sideband: Literal["U", "L"] | None = (
+                        raw_sideband if raw_sideband in ("U", "L") else None
+                    )
+                    fullscale_current = port_config.get("fullscale_current")
+                    fullscale_current = (
+                        int(fullscale_current)
+                        if fullscale_current is not None
+                        else None
+                    )
                     fnco_freqs = [
                         int(channel["fnco_freq"])
-                        for channel in port["channels"].values()
+                        for channel in port_config.get("channels", {}).values()
                     ]
                 elif direction == "in":
                     sideband = None
                     fullscale_current = None
                     fnco_freqs = [
-                        int(channel["fnco_freq"]) for channel in port["runits"].values()
+                        int(channel["fnco_freq"])
+                        for channel in port_config.get("runits", {}).values()
                     ]
-                self.experiment_system.control_system.set_port_params(
-                    box_id=box_id,
-                    port_number=port_number,
-                    sideband=sideband,
-                    lo_freq=lo_freq,
-                    cnco_freq=cnco_freq,
-                    fnco_freqs=fnco_freqs,
-                    fullscale_current=fullscale_current,
+                else:
+                    continue
+                updates.append(
+                    (
+                        box_id,
+                        port_number,
+                        sideband,
+                        lo_freq,
+                        cnco_freq,
+                        fnco_freqs,
+                        fullscale_current,
+                    )
                 )
-        self._update_cached_state()
+        for (
+            box_id,
+            port_number,
+            sideband,
+            lo_freq,
+            cnco_freq,
+            fnco_freqs,
+            fullscale_current,
+        ) in updates:
+            self.experiment_system.control_system.set_port_params(
+                box_id=box_id,
+                port_number=port_number,
+                sideband=sideband,
+                lo_freq=lo_freq,
+                cnco_freq=cnco_freq,
+                fnco_freqs=fnco_freqs,
+                fullscale_current=fullscale_current,
+            )
 
     def _sync_experiment_system_to_backend_controller(self) -> None:
+        """Rebuild backend-controller model objects from experiment-system state."""
         experiment_system = self.experiment_system
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
@@ -541,7 +718,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         self._update_cached_state()
 
     def _update_cached_state(self) -> None:
-        """Update cached state from the current system state."""
+        """Refresh `cached_state` from current hash summaries."""
         self._cached_state = self.current_state
 
     @contextmanager
@@ -549,12 +726,12 @@ This operation will overwrite the existing backend settings. Do you want to cont
         self, target_frequencies: dict[str, float]
     ) -> Iterator[None]:
         """
-        Temporarily modify the target frequencies.
+        Temporarily override target frequencies on software and controller.
 
         Parameters
         ----------
         target_frequencies : dict[str, float]
-            The target frequencies to be modified.
+            Mapping from target label to temporary frequency.
         """
         original_frequencies = {
             target.label: target.frequency
@@ -579,12 +756,18 @@ This operation will overwrite the existing backend settings. Do you want to cont
         fnco_freq: int,
     ) -> Iterator[None]:
         """
-        Temporarily modify the backend settings.
+        Temporarily override backend settings for one target channel path.
 
         Parameters
         ----------
-        backend_settings : dict[str, Any]
-            The backend settings to be modified.
+        label : str
+            Target label.
+        lo_freq : int | None
+            Temporary LO frequency.
+        cnco_freq : int
+            Temporary CNCO frequency.
+        fnco_freq : int
+            Temporary FNCO frequency.
 
         Examples
         --------
@@ -599,7 +782,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         target = self.experiment_system.get_target(label)
         channel = target.channel
         port = channel.port
-        box_cache = self.backend_controller.boxpool._box_config_cache  # noqa: SLF001
+        box_cache = self.backend_controller.get_box_config_cache()
 
         original_lo_freq = port.lo_freq
         original_cnco_freq = port.cnco_freq
@@ -622,6 +805,9 @@ This operation will overwrite the existing backend settings. Do you want to cont
         port_cache["lo_freq"] = lo_freq
         port_cache["cnco_freq"] = cnco_freq
         port_cache["channels"][channel.number]["fnco_freq"] = fnco_freq
+        self.backend_controller.update_box_config_cache(
+            {port.box_id: box_cache[port.box_id]}
+        )
         self.backend_controller.initialize_awg_and_capunits(port.box_id)
 
         if target.is_read:
@@ -643,6 +829,9 @@ This operation will overwrite the existing backend settings. Do you want to cont
             cap_port_cache["lo_freq"] = lo_freq
             cap_port_cache["cnco_freq"] = cnco_freq
             cap_port_cache["runits"][cap_channel.number]["fnco_freq"] = fnco_freq
+            self.backend_controller.update_box_config_cache(
+                {cap_port.box_id: box_cache[cap_port.box_id]}
+            )
             self.backend_controller.initialize_awg_and_capunits(cap_port.box_id)
 
         self.experiment_system.update_port_params(
@@ -688,7 +877,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 )
 
             # restore the original box config
-            self.backend_controller.boxpool._box_config_cache = original_box_cache  # noqa: SLF001
+            self.backend_controller.replace_box_config_cache(original_box_cache)
 
     @deprecated("This method will be removed in future versions.")
     @contextmanager
@@ -700,7 +889,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         cnco_freq: int,
         fnco_freq: int,
     ) -> Iterator[None]:
-        """Temporarily modify the device settings (backward-compatible alias)."""
+        """Backward-compatible alias of `modified_backend_settings`."""
         with self.modified_backend_settings(
             label,
             lo_freq=lo_freq,
@@ -717,14 +906,14 @@ This operation will overwrite the existing backend settings. Do you want to cont
         tag: str | None = None,
     ) -> Iterator[None]:
         """
-        Context manager to save raw data to a specified directory.
+        Temporarily set a raw-data output directory for a code block.
 
         Parameters
         ----------
         rawdata_dir : Path | str | None, optional
-            Directory to save raw data.
+            Base output directory.
         tag : str | None, optional
-            Tag to append to the raw data file name, by default None.
+            Optional subdirectory tag appended under `rawdata_dir`.
         """
         original_rawdata_dir = self.rawdata_dir
         rawdata_dir = Path(rawdata_dir)
