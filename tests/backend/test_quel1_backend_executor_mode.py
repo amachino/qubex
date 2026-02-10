@@ -25,8 +25,8 @@ def _make_payload() -> Quel1ExecutionPayload:
     )
 
 
-def test_execute_uses_legacy_mode_by_default() -> None:
-    """Given default mode, execute delegates to execute_sequencer."""
+def test_execute_uses_parallel_mode_by_default() -> None:
+    """Given default mode, execute delegates to execute_sequencer_parallel."""
     called: dict[str, Any] = {}
 
     class _Controller:
@@ -44,13 +44,13 @@ def test_execute_uses_legacy_mode_by_default() -> None:
 
     result = executor.execute(request=BackendExecutionRequest(payload=_make_payload()))
 
-    assert result == "legacy"
-    assert "legacy" in called
-    assert "parallel" not in called
+    assert result == "parallel"
+    assert "parallel" in called
+    assert "legacy" not in called
 
 
-def test_execute_uses_parallel_mode_when_configured() -> None:
-    """Given parallel mode, execute delegates to execute_sequencer_parallel."""
+def test_execute_uses_legacy_mode_when_configured() -> None:
+    """Given legacy mode, execute delegates to execute_sequencer."""
     called: dict[str, Any] = {}
 
     class _Controller:
@@ -64,14 +64,14 @@ def test_execute_uses_parallel_mode_when_configured() -> None:
 
     executor = Quel1BackendExecutor(
         backend_controller=cast(Quel1BackendController, _Controller()),
-        execution_mode="parallel",
+        execution_mode="legacy",
     )
 
     result = executor.execute(request=BackendExecutionRequest(payload=_make_payload()))
 
-    assert result == "parallel"
-    assert "parallel" in called
-    assert "legacy" not in called
+    assert result == "legacy"
+    assert "legacy" in called
+    assert "parallel" not in called
 
 
 def test_init_raises_for_unknown_execution_mode() -> None:
