@@ -94,7 +94,11 @@ filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
 include = ["src", "packages", "tests"]
+exclude = ["packages/qube-calib"]
 typeCheckingMode = "basic"
+
+[tool.ruff]
+extend-exclude = ["packages/qube-calib"]
 
 [tool.ruff.lint]
 select = [
