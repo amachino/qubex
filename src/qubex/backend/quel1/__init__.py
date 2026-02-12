@@ -3,6 +3,8 @@
 from .quel1_backend_constants import (
     BLOCK_DURATION,
     BLOCK_LENGTH,
+    DEFAULT_CLOCK_HEALTH_CHECKS,
+    DEFAULT_EXECUTION_MODE,
     EXTRA_CAPTURE_DURATION,
     EXTRA_CAPTURE_LENGTH,
     EXTRA_POST_BLANK_LENGTH,
@@ -10,6 +12,7 @@ from .quel1_backend_constants import (
     SAMPLING_PERIOD,
     WORD_DURATION,
     WORD_LENGTH,
+    ExecutionMode,
 )
 from .quel1_backend_controller import (
     DeviceController,
@@ -22,6 +25,8 @@ from .quel1_sequencer import Quel1Sequencer, SequencerMod
 __all__ = [
     "BLOCK_DURATION",
     "BLOCK_LENGTH",
+    "DEFAULT_CLOCK_HEALTH_CHECKS",
+    "DEFAULT_EXECUTION_MODE",
     "EXTRA_CAPTURE_DURATION",
     "EXTRA_CAPTURE_LENGTH",
     "EXTRA_POST_BLANK_LENGTH",
@@ -30,6 +35,7 @@ __all__ = [
     "WORD_DURATION",
     "WORD_LENGTH",
     "DeviceController",  # TODO: Remove this alias in future versions.
+    "ExecutionMode",
     "Quel1BackendController",
     "Quel1BackendExecutor",
     "Quel1BackendRawResult",

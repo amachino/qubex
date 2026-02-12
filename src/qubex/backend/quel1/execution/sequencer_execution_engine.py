@@ -7,7 +7,10 @@ from logging import Logger
 from typing import Any, Protocol, TypeAlias, cast
 
 from .capture_result_parser import parse_capture_results_with_cprms
-from .parallel_action_builder import build_parallel_multi_action
+from .parallel_action_builder import (
+    ClockHealthCheckOptions,
+    build_parallel_multi_action,
+)
 
 PortType: TypeAlias = Any
 CommonSetting: TypeAlias = Any
@@ -243,6 +246,7 @@ class SequencerExecutionEngine:
         awg_setting_factory: Callable[..., Any],
         awg_id_factory: Callable[..., Any],
         logger: Logger,
+        clock_health_checks: ClockHealthCheckOptions | None = None,
     ) -> tuple[CaptureStatusByTarget, CaptureDataByTarget, BackendConfigPayload]:
         """
         Execute a sequencer using parallelized multi-box action preparation.
@@ -267,6 +271,8 @@ class SequencerExecutionEngine:
             Factory for direct AWG identifiers.
         logger : Logger
             Logger for parallel action diagnostics.
+        clock_health_checks : ClockHealthCheckOptions | None, optional
+            Clock-validation options for parallel multi-action execution.
 
         Returns
         -------
@@ -303,6 +309,7 @@ class SequencerExecutionEngine:
             settings=settings,
             action_builder=action_builder,
             logger=logger,
+            clock_health_checks=clock_health_checks,
         )
         action = cast(_ActionLike, action)
         status, raw_results = action.action()

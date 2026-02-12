@@ -123,8 +123,8 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
     assert result is expected
 
 
-def test_create_default_uses_parallel_mode_by_default(monkeypatch) -> None:
-    """Given default factory call, when creating executor, then backend mode defaults to parallel."""
+def test_create_default_passes_none_to_delegate_backend_defaults(monkeypatch) -> None:
+    """Given default factory call, when creating executor, then backend defaults are delegated."""
     called: dict[str, object] = {}
 
     class _BackendExecutor:
@@ -132,10 +132,12 @@ def test_create_default_uses_parallel_mode_by_default(monkeypatch) -> None:
             self,
             *,
             backend_controller: object,
-            execution_mode: str,
+            execution_mode: str | None,
+            clock_health_checks: bool | None,
         ) -> None:
             called["backend_controller"] = backend_controller
             called["execution_mode"] = execution_mode
+            called["clock_health_checks"] = clock_health_checks
 
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
@@ -152,4 +154,5 @@ def test_create_default_uses_parallel_mode_by_default(monkeypatch) -> None:
 
     assert isinstance(executor, MeasurementScheduleExecutor)
     assert called["backend_controller"] is backend_controller
-    assert called["execution_mode"] == "parallel"
+    assert called["execution_mode"] is None
+    assert called["clock_health_checks"] is None

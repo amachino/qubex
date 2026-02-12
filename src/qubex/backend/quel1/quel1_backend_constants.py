@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
+
+ExecutionMode = Literal["legacy", "parallel"]
+DEFAULT_EXECUTION_MODE: Final[ExecutionMode] = "legacy"
+DEFAULT_CLOCK_HEALTH_CHECKS: Final[bool] = True
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
 WORD_LENGTH: Final[int] = 4  # samples

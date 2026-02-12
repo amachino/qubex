@@ -19,6 +19,7 @@ from typing_extensions import deprecated
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 
 from .execution import SequencerExecutionEngine
+from .execution.parallel_action_builder import ClockHealthCheckOptions
 
 logger = logging.getLogger(__name__)
 
@@ -1587,7 +1588,7 @@ class Quel1BackendController:
             Measurement result.
         """
         SequencerExecutionEngine.set_measurement_options(
-            sequencer=sequencer,
+            sequencer=cast(Any, sequencer),
             repeats=repeats,
             integral_mode=integral_mode,
             dsp_demodulation=dsp_demodulation,
@@ -1616,6 +1617,7 @@ class Quel1BackendController:
         enable_classification: bool = False,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
+        clock_health_checks: bool = False,
     ) -> Quel1BackendRawResult:
         """
         Execute a single sequence with parallelized multi-box action build.
@@ -1640,6 +1642,9 @@ class Quel1BackendController:
             Classifier line parameter 0.
         line_param1 : tuple[float, float, float] | None, optional
             Classifier line parameter 1.
+        clock_health_checks : bool, optional
+            Whether to enable additional clock-health diagnostics and
+            inter-box timediff estimation.
 
         Returns
         -------
@@ -1647,7 +1652,7 @@ class Quel1BackendController:
             Measurement result with qubecalib-compatible parsed payload.
         """
         SequencerExecutionEngine.set_measurement_options(
-            sequencer=sequencer,
+            sequencer=cast(Any, sequencer),
             repeats=repeats,
             integral_mode=integral_mode,
             dsp_demodulation=dsp_demodulation,
@@ -1659,7 +1664,7 @@ class Quel1BackendController:
         )
         parsed_status, parsed_data, parsed_config = (
             SequencerExecutionEngine.execute_parallel(
-                sequencer=sequencer,
+                sequencer=cast(Any, sequencer),
                 boxpool=self.boxpool,
                 system=self.quel1system,
                 action_builder=Action.build,
@@ -1668,6 +1673,16 @@ class Quel1BackendController:
                 awg_setting_factory=AwgSetting,
                 awg_id_factory=AwgId,
                 logger=logger,
+                clock_health_checks=(
+                    None
+                    if not clock_health_checks
+                    else ClockHealthCheckOptions(
+                        read_master_clock=True,
+                        read_box_latched_clock_on_build=True,
+                        measure_average_sysref_offset=True,
+                        validate_sysref_fluctuation_on_emit=True,
+                    )
+                ),
             )
         )
         return Quel1BackendRawResult(

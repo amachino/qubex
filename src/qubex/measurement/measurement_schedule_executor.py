@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from qubex.backend import (
     BackendExecutor,
     ExperimentSystem,
 )
-from qubex.backend.quel1 import Quel1BackendController, Quel1BackendExecutor
+from qubex.backend.quel1 import (
+    ExecutionMode,
+    Quel1BackendController,
+    Quel1BackendExecutor,
+)
 
 from .measurement_backend_adapter import (
     MeasurementBackendAdapter,
@@ -42,7 +44,8 @@ class MeasurementScheduleExecutor:
         *,
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
-        execution_mode: Literal["legacy", "parallel"] = "parallel",
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
     ) -> MeasurementScheduleExecutor:
         """
         Create the default QuEL-backed schedule executor.
@@ -53,13 +56,16 @@ class MeasurementScheduleExecutor:
             Backend controller bound to connected hardware.
         experiment_system : ExperimentSystem
             Experiment-system model used by adapter/result conversion.
-        execution_mode : {"legacy", "parallel"}, optional
+        execution_mode : ExecutionMode | None, optional
             Backend execution mode.
+        clock_health_checks : bool | None, optional
+            Whether to enable additional clock-health I/O in parallel mode.
         """
         return cls(
             backend_executor=Quel1BackendExecutor(
                 backend_controller=backend_controller,
                 execution_mode=execution_mode,
+                clock_health_checks=clock_health_checks,
             ),
             measurement_backend_adapter=Quel1MeasurementBackendAdapter(
                 backend_controller=backend_controller,

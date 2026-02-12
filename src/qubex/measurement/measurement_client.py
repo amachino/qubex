@@ -22,7 +22,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.backend.quel1 import Quel1BackendController
+from qubex.backend.quel1 import ExecutionMode, Quel1BackendController
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
@@ -62,6 +62,12 @@ class MeasurementClient:
     class.
     """
 
+    _execution_mode: ExecutionMode | None = None
+    _clock_health_checks: bool | None = None
+    DEFAULT_LOAD_CONFIGS: Final[bool] = True
+    DEFAULT_CONNECT_DEVICES: Final[bool] = False
+    DEFAULT_CONFIGURATION_MODE: Final[ConfigurationMode] = "ge-cr-cr"
+
     def __init__(
         self,
         *,
@@ -69,9 +75,11 @@ class MeasurementClient:
         qubits: Collection[str],
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
-        load_configs: bool = True,
-        connect_devices: bool = False,
-        configuration_mode: ConfigurationMode = "ge-cr-cr",
+        load_configs: bool | None = None,
+        connect_devices: bool | None = None,
+        configuration_mode: ConfigurationMode | None = None,
+        _execution_mode: ExecutionMode | None = None,
+        _clock_health_checks: bool | None = None,
     ):
         """
         Initialize the MeasurementClient.
@@ -86,12 +94,19 @@ class MeasurementClient:
             The configuration directory.
         params_dir : Path | str, optional
             The parameters directory.
-        load_configs : bool, optional
-            Whether to load the configurations, by default True.
-        connect_devices : bool, optional
-            Whether to connect the devices, by default False.
-        configuration_mode : ConfigurationMode, optional
-            The configuration mode, by default "ge-cr-cr".
+        load_configs : bool | None, optional
+            Whether to load configurations. If ``None``, ``DEFAULT_LOAD_CONFIGS``
+            is used.
+        connect_devices : bool | None, optional
+            Whether to connect devices. If ``None``,
+            ``DEFAULT_CONNECT_DEVICES`` is used.
+        configuration_mode : ConfigurationMode | None, optional
+            Configuration mode. If ``None``, ``DEFAULT_CONFIGURATION_MODE``
+            is used.
+        _execution_mode : ExecutionMode | None, optional
+            Private backend execution mode override used by schedule executor.
+        _clock_health_checks : bool | None, optional
+            Private flag to enable clock-health checks in parallel execution.
 
         Examples
         --------
@@ -103,12 +118,20 @@ class MeasurementClient:
         """
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
+        self._execution_mode: Final[ExecutionMode | None] = _execution_mode
+        self._clock_health_checks: Final[bool | None] = _clock_health_checks
         self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
         self._backend_manager = MeasurementBackendManager(
             system_manager=self._system_manager,
             qubits=self._qubits,
         )
+        if load_configs is None:
+            load_configs = self.DEFAULT_LOAD_CONFIGS
+        if connect_devices is None:
+            connect_devices = self.DEFAULT_CONNECT_DEVICES
+        if configuration_mode is None:
+            configuration_mode = self.DEFAULT_CONFIGURATION_MODE
         if load_configs:
             self.load(
                 config_dir=config_dir,
@@ -245,6 +268,8 @@ class MeasurementClient:
         return MeasurementScheduleExecutor.create_default(
             backend_controller=self.backend_controller,
             experiment_system=self.experiment_system,
+            execution_mode=self._execution_mode,
+            clock_health_checks=self._clock_health_checks,
         )
 
     @property

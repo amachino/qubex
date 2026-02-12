@@ -58,8 +58,12 @@ def _make_multiple_result() -> MultipleMeasureResult:
 
 def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     """Given execute inputs, when execute is called, then it builds schedule and delegates to schedule execution."""
-    measurement = object.__new__(MeasurementClient)
-    measurement.__dict__["_classifiers"] = {}
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
     pulse_schedule = PulseSchedule(["Q00"])
     built_schedule = MeasurementSchedule(
         pulse_schedule=PulseSchedule(["RQ00"]),
@@ -131,7 +135,12 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
 
 def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     """Given measure inputs, when measure is called, then it delegates to execute and flattens first capture."""
-    measurement = object.__new__(MeasurementClient)
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
     multiple = _make_multiple_result()
     called: dict[str, Any] = {}
 
@@ -153,7 +162,12 @@ def test_execute_measurement_schedule_delegates_to_executor(
     monkeypatch,
 ) -> None:
     """Given schedule execution inputs, when method is called, then it delegates to executor."""
-    measurement = object.__new__(MeasurementClient)
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
 
     pulse_schedule = PulseSchedule(["RQ00"])
     schedule = MeasurementSchedule(
@@ -194,7 +208,8 @@ def test_execute_measurement_schedule_delegates_to_executor(
             *,
             backend_controller,
             experiment_system,
-            execution_mode="legacy": _Executor()
+            execution_mode="legacy",
+            clock_health_checks=False: _Executor()
         ),
     )
     result = measurement.execute_measurement_schedule(schedule=schedule, config=config)
