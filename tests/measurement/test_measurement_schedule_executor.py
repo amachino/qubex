@@ -15,9 +15,7 @@ from qubex.backend.quel1 import Quel1BackendController, Quel1BackendRawResult
 from qubex.measurement.measurement_backend_adapter import MeasurementBackendAdapter
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_result_factory import MeasurementResultFactory
-from qubex.measurement.measurement_schedule_executor import (
-    MeasurementScheduleExecutor,
-)
+from qubex.measurement.measurement_schedule_executor import MeasurementScheduleExecutor
 from qubex.measurement.models import (
     DspConfig,
     FrequencyConfig,
@@ -123,3 +121,35 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
     assert typed_kwargs["measurement_config"] is config
     assert typed_kwargs["device_config"] == {"shots": 2}
     assert result is expected
+
+
+def test_create_default_uses_parallel_mode_by_default(monkeypatch) -> None:
+    """Given default factory call, when creating executor, then backend mode defaults to parallel."""
+    called: dict[str, object] = {}
+
+    class _BackendExecutor:
+        def __init__(
+            self,
+            *,
+            backend_controller: object,
+            execution_mode: str,
+        ) -> None:
+            called["backend_controller"] = backend_controller
+            called["execution_mode"] = execution_mode
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _BackendExecutor,
+    )
+
+    backend_controller = object()
+    experiment_system = object()
+
+    executor = MeasurementScheduleExecutor.create_default(
+        backend_controller=cast(Quel1BackendController, backend_controller),
+        experiment_system=cast(Any, experiment_system),
+    )
+
+    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert called["backend_controller"] is backend_controller
+    assert called["execution_mode"] == "parallel"

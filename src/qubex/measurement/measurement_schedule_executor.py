@@ -42,7 +42,7 @@ class MeasurementScheduleExecutor:
         *,
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
-        execution_mode: Literal["legacy", "parallel"] = "legacy",
+        execution_mode: Literal["legacy", "parallel"] = "parallel",
     ) -> MeasurementScheduleExecutor:
         """
         Create the default QuEL-backed schedule executor.
