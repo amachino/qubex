@@ -31,6 +31,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Update submodules
+        run: git submodule update --init --recursive --remote
+
       - name: Install uv and Python
         uses: astral-sh/setup-uv@v7
         with:
