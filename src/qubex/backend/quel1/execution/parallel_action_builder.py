@@ -260,17 +260,6 @@ def build_parallel_multi_action(
         """Build one box-scoped direct single action."""
         box_name, box_settings = item
         box = system.box[box_name]
-        awg_ids = [
-            (setting.awg.port, setting.awg.channel)
-            for setting in box_settings
-            if isinstance(setting, direct_single.AwgSetting)
-        ]
-        box.prepare_for_emission(awg_ids)
-        current_time, last_sysref_time = box.read_current_and_latched_clock()
-        logger.debug(
-            f"clock of {box_name}, current: {current_time}, last sysref: {last_sysref_time}, "
-            f"last sysref offset: {direct_multi.Action._mod_by_sysref(last_sysref_time)}"
-        )
         single_action = direct_single.Action.build(
             box=cast(Any, box),
             settings=cast(Any, box_settings),
