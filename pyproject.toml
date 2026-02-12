@@ -72,6 +72,7 @@ qubex = ["py.typed", "clifford/**/*.json"]
 cache-dir = ".cache/uv"
 
 [tool.uv.sources]
+qubecalib = { workspace = true }
 qxcore = { workspace = true }
 qxpulse = { workspace = true }
 qxschema = { workspace = true }
@@ -79,6 +80,7 @@ qxsimulator = { workspace = true }
 
 [tool.uv.workspace]
 members = [
+    "packages/qube-calib",
     "packages/qxcore",
     "packages/qxpulse",
     "packages/qxschema",

@@ -1,0 +1,4 @@
+[submodule "packages/qube-calib"]
+	path = packages/qube-calib
+	url = https://github.com/amachino/qube-calib.git
+	branch = qubex-integration

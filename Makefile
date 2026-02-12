@@ -2,6 +2,7 @@
 
 # Install dependencies
 sync:
+	git submodule update --init --recursive --remote
 	uv sync --all-groups --all-extras
 
 # Run unit tests
