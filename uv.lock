@@ -3542,8 +3542,8 @@ wheels = [
 
 [[package]]
 name = "qubecalib"
-version = "3.1.16b1"
-source = { git = "https://github.com/qiqb-osaka/qube-calib.git?rev=3.1.16beta1#487227c1154aa087e55b9fee1eabda2a164d299c" }
+version = "3.1.16b2"
+source = { git = "https://github.com/amachino/qube-calib.git?rev=qubex-integration#8a5dbb7d086b5d5a36dd487886a0e5f3c3897c30" }
 dependencies = [
     { name = "aiocoap" },
     { name = "e7awgsw" },
@@ -3633,7 +3633,7 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
-    { name = "qubecalib", marker = "extra == 'backend'", git = "https://github.com/qiqb-osaka/qube-calib.git?rev=3.1.16beta1" },
+    { name = "qubecalib", marker = "extra == 'backend'", git = "https://github.com/amachino/qube-calib.git?rev=qubex-integration" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "qxschema", editable = "packages/qxschema" },

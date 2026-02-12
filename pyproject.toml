@@ -38,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 backend = [
-    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.16beta1",
+    "qubecalib @ git+https://github.com/amachino/qube-calib.git@qubex-integration",
 ]
 
 [project.scripts]
