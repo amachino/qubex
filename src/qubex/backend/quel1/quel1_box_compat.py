@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
+from itertools import groupby
 from typing import Any, Literal
 
 ApiGeneration = Literal["quelware08", "quelware10"]
@@ -38,6 +39,48 @@ class _CompletedTask:
     def done(self) -> bool:
         """Return True because the task is already completed."""
         return True
+
+
+@dataclass(frozen=True)
+class _LegacyCaptureReader:
+    """Minimal legacy reader exposing a `rawwave()` method."""
+
+    _iq: Any
+
+    def rawwave(self) -> Any:
+        """Return raw captured IQ waveform."""
+        return self._iq
+
+
+@dataclass(frozen=True)
+class _LegacyCaptureTask:
+    """Future-like wrapper converting legacy capture result shape."""
+
+    _futures_by_port: dict[Any, Any]
+
+    def result(self, timeout: float | None = None) -> dict[tuple[Any, int], Any]:
+        """Wait for all legacy capture futures and normalize reader mapping."""
+        readers: dict[tuple[Any, int], Any] = {}
+        for port, future in self._futures_by_port.items():
+            _status, captured = future.result(timeout=timeout)
+            for runit, iq in captured.items():
+                readers[(port, runit)] = _LegacyCaptureReader(iq)
+        return readers
+
+    def cancel(self) -> bool:
+        """Best-effort cancellation of wrapped futures."""
+        cancelled = False
+        for future in self._futures_by_port.values():
+            if hasattr(future, "cancel"):
+                cancelled = bool(future.cancel()) or cancelled
+        return cancelled
+
+    def done(self) -> bool:
+        """Return True only when all wrapped futures are completed."""
+        return all(
+            bool(getattr(future, "done", lambda: False)())
+            for future in self._futures_by_port.values()
+        )
 
 
 @dataclass(frozen=True)
@@ -93,6 +136,52 @@ class Quel1BoxCompatAdapter:
         else:
             self._box.reserve_emission(channels, timecounter)
         return _CompletedTask()
+
+    def start_capture_now(self, runits: set[tuple[Any, int]]) -> Any:
+        """Start immediate capture across API generations."""
+        if hasattr(self._box, "start_capture_now"):
+            return self._box.start_capture_now(runits)
+
+        # legacy path: dispatch one capture_start per port.
+        futures_by_port: dict[Any, Any] = {}
+        sorted_runits = sorted(runits, key=lambda item: repr(item[0]))
+        for port, group in groupby(sorted_runits, key=lambda item: item[0]):
+            futures_by_port[port] = self._box.capture_start(
+                port=port,
+                runits=[r for _, r in group],
+                triggering_channel=None,
+            )
+        return _LegacyCaptureTask(futures_by_port)
+
+    def start_capture_by_awg_trigger(
+        self,
+        runits: set[tuple[Any, int]],
+        channels: set[tuple[Any, int]],
+        timecounter: int | None = None,
+    ) -> tuple[Any, Any]:
+        """Start capture with AWG trigger across API generations."""
+        if hasattr(self._box, "start_capture_by_awg_trigger"):
+            return self._box.start_capture_by_awg_trigger(
+                runits=runits,
+                channels=channels,
+                timecounter=timecounter,
+            )
+
+        # legacy path: emulate by capture_start(triggering_channel=...) + wavegen.
+        if not channels:
+            raise ValueError("channels must not be empty for triggered capture")
+        trigger_channel = sorted(channels, key=repr)[0]
+        futures_by_port: dict[Any, Any] = {}
+        sorted_runits = sorted(runits, key=lambda item: repr(item[0]))
+        for port, group in groupby(sorted_runits, key=lambda item: item[0]):
+            futures_by_port[port] = self._box.capture_start(
+                port=port,
+                runits=[r for _, r in group],
+                triggering_channel=trigger_channel,
+            )
+        cap_task = _LegacyCaptureTask(futures_by_port)
+        gen_task = self.start_wavegen(channels, timecounter=timecounter)
+        return cap_task, gen_task
 
 
 def adapt_quel1_box(box: Any) -> Quel1BoxCompatAdapter:
