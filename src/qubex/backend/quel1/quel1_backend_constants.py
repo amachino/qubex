@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final, Literal
 
 ExecutionMode = Literal["legacy", "parallel"]
-DEFAULT_EXECUTION_MODE: Final[ExecutionMode] = "legacy"
+DEFAULT_EXECUTION_MODE: Final[ExecutionMode] = "parallel"
 DEFAULT_CLOCK_HEALTH_CHECKS: Final[bool] = True
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns

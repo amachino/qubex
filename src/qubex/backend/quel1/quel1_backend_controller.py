@@ -727,7 +727,7 @@ class Quel1BackendController:
             legacy qubecalib implementation. Defaults to False.
         """
         if parallel is None:
-            parallel = False
+            parallel = True
         if self.is_connected:
             logger.info("Already connected. Skipping backend reconnect.")
             return
