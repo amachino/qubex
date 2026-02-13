@@ -18,6 +18,7 @@ from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_
 
 from .execution import SequencerExecutionEngine
 from .execution.parallel_action_builder import ClockHealthCheckOptions
+from .quel1_box_compat import adapt_quel1_box
 
 logger = logging.getLogger(__name__)
 
@@ -769,7 +770,7 @@ class Quel1BackendController:
     def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
         """Initialize AWG and capture units for one box."""
         self._check_box_availability(box_name)
-        box = self.get_box(box_name, reconnect=False)
+        box = adapt_quel1_box(self.get_box(box_name, reconnect=False))
         box.initialize_all_awgunits()
         box.initialize_all_capunits()
 

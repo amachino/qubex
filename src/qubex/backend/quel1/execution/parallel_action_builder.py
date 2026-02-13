@@ -12,6 +12,8 @@ from logging import Logger
 from types import MappingProxyType
 from typing import Any, Final, Protocol, TypeAlias, cast
 
+from qubex.backend.quel1.quel1_box_compat import adapt_quel1_box
+
 PortType: TypeAlias = Any
 CommonSetting: TypeAlias = Any
 SingleSetting: TypeAlias = Any
@@ -303,7 +305,7 @@ class _QubexMultiAction:
         When clock validation is enabled, this method performs additional
         latched-clock reads and fluctuation checks before scheduling emission.
         """
-        reference_box = self._system.box[self._reference_box_name]
+        reference_box = adapt_quel1_box(self._system.box[self._reference_box_name])
 
         if self._clock_options.validate_sysref_fluctuation_on_emit:
             for name, action in self._actions.items():
@@ -441,7 +443,7 @@ def build_parallel_multi_action(
     ) -> tuple[str, _SingleActionLike]:
         """Build one box-scoped direct single action."""
         box_name, box_settings = item
-        box = system.box[box_name]
+        box = adapt_quel1_box(system.box[box_name])
         if clock_health_checks.read_box_latched_clock_on_build:
             current_time = box.get_current_timecounter()
             last_sysref_time = box.get_latest_sysref_timecounter()
