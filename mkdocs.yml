@@ -88,6 +88,7 @@ nav:
       - Document guidelines: developer-guide/document-guidelines.md
       - Docstring guidelines: developer-guide/docstring-guidelines.md
       - Dependency guidelines: developer-guide/dependency-guidelines.md
+      - quel_ic_config 0.10 migration plan: developer-guide/quel-ic-config-0-10-migration.md
       - Test guidelines: developer-guide/test-guidelines.md
       - Contrib module guidelines: developer-guide/contrib-guidelines.md
       - Issue guidelines: developer-guide/issue-guidelines.md

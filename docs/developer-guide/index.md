@@ -6,6 +6,7 @@ This section contains contributor-facing guidelines and internal development not
 - [Document guidelines](document-guidelines.md)
 - [Docstring guidelines](docstring-guidelines.md)
 - [Dependency guidelines](dependency-guidelines.md)
+- [quel_ic_config 0.10 migration plan](quel-ic-config-0-10-migration.md)
 - [Test guidelines](test-guidelines.md)
 - [Contrib module guidelines](contrib-guidelines.md)
 - [Issue guidelines](issue-guidelines.md)
