@@ -564,14 +564,14 @@ class Quel1BackendController:
         box = self._create_box(box_name, reconnect=False)
         return box.link_status()
 
-    def _create_boxpool_parallel(
+    def _create_boxpool(
         self,
         box_names: list[str],
         *,
         parallel_reconnects: bool = True,
     ) -> BoxPool:
         """
-        Create a box pool with parallel reconnects.
+        Create a box pool and reconnect boxes.
 
         Parameters
         ----------
@@ -701,7 +701,7 @@ class Quel1BackendController:
         if isinstance(box_names, str):
             box_names = [box_names]
 
-        self._boxpool = self._create_boxpool_parallel(
+        self._boxpool = self._create_boxpool(
             box_names,
             parallel_reconnects=parallel,
         )

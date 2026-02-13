@@ -147,15 +147,15 @@ def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> No
     assert controller._quel1system is fake_quel1_system
 
 
-def test_create_boxpool_parallel_reconnects_all_boxes(monkeypatch) -> None:
-    """Given valid boxes, parallel pool creation reconnects each box once."""
+def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
+    """Given valid boxes, pool creation reconnects each box once."""
     controller = _make_controller()
     monkeypatch.setattr(
         "qubex.backend.quel1.quel1_backend_controller.BoxPool",
         _FakeBoxPool,
     )
 
-    boxpool = cast(_FakeBoxPool, controller._create_boxpool_parallel(["A", "B"]))
+    boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A", "B"]))
 
     assert isinstance(boxpool, _FakeBoxPool)
     assert boxpool.clockmaster_ip == "192.0.2.1"
@@ -164,8 +164,8 @@ def test_create_boxpool_parallel_reconnects_all_boxes(monkeypatch) -> None:
     assert boxpool._boxes["B"][0].reconnect_count == 1
 
 
-def test_create_boxpool_parallel_raises_for_unknown_box(monkeypatch) -> None:
-    """Given an unknown box, parallel pool creation raises ValueError."""
+def test_create_boxpool_raises_for_unknown_box(monkeypatch) -> None:
+    """Given an unknown box, pool creation raises ValueError."""
     controller = _make_controller()
     monkeypatch.setattr(
         "qubex.backend.quel1.quel1_backend_controller.BoxPool",
@@ -173,7 +173,7 @@ def test_create_boxpool_parallel_raises_for_unknown_box(monkeypatch) -> None:
     )
 
     with pytest.raises(ValueError, match=r"box\(Z\) is not defined") as exc:
-        controller._create_boxpool_parallel(["A", "Z"])
+        controller._create_boxpool(["A", "Z"])
     assert exc.value.args
     if exc.value.args:
         assert "box(Z) is not defined" in str(exc)
