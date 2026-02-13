@@ -109,6 +109,25 @@ def test_linkup_boxes_parallel_collects_successes(monkeypatch) -> None:
     assert list(boxes) == ["A"]
 
 
+def test_linkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
+    """Given duplicate box names, parallel linkup calls each box only once."""
+    controller = Quel1BackendController()
+    called: list[str] = []
+
+    def _fake_linkup(box_name: str, **kwargs: object) -> object:
+        _ = kwargs
+        called.append(box_name)
+        return object()
+
+    monkeypatch.setattr(controller, "linkup", _fake_linkup)
+
+    boxes = controller.linkup_boxes(["A", "A", "B"], parallel=True)
+
+    assert set(called) == {"A", "B"}
+    assert len(called) == 2
+    assert list(boxes) == ["A", "B"]
+
+
 def test_relinkup_boxes_parallel_calls_each_box(monkeypatch) -> None:
     """Given parallel relinkup, when executing, then relinkup is called for each box."""
     controller = Quel1BackendController()
@@ -123,3 +142,87 @@ def test_relinkup_boxes_parallel_calls_each_box(monkeypatch) -> None:
     controller.relinkup_boxes(["A", "B"], parallel=True)
 
     assert set(called) == {"A", "B"}
+
+
+def test_relinkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
+    """Given duplicate box names, parallel relinkup calls each box only once."""
+    controller = Quel1BackendController()
+    called: list[str] = []
+
+    def _fake_relinkup(box_name: str, noise_threshold: int | None = None) -> None:
+        _ = noise_threshold
+        called.append(box_name)
+
+    monkeypatch.setattr(controller, "relinkup", _fake_relinkup)
+
+    controller.relinkup_boxes(["A", "A", "B"], parallel=True)
+
+    assert set(called) == {"A", "B"}
+    assert len(called) == 2
+
+
+def test_linkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None:
+    """Given pooled box, linkup reuses it and does not create another proxy."""
+
+    class _FakeBox:
+        boxtype = "quel1-a"
+
+        def link_status(self) -> dict[int, bool]:
+            return {0: True}
+
+        def reconnect(self, **kwargs: object) -> None:
+            _ = kwargs
+
+    class _FakeBoxPool:
+        def __init__(self, box: object) -> None:
+            self._boxes = {"A": (box, object())}
+
+    controller = Quel1BackendController()
+    fake_box = _FakeBox()
+    controller.__dict__["_boxpool"] = _FakeBoxPool(fake_box)
+
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
+    monkeypatch.setattr(
+        controller,
+        "_create_box",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("must not create a new box")
+        ),
+    )
+
+    linked_box = controller.linkup("A")
+
+    assert linked_box is fake_box
+
+
+def test_relinkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None:
+    """Given pooled box, relinkup reuses it and does not create another proxy."""
+
+    class _FakeBox:
+        boxtype = "quel1-a"
+
+        def relinkup(self, **kwargs: object) -> None:
+            _ = kwargs
+
+        def reconnect(self, **kwargs: object) -> None:
+            _ = kwargs
+
+    class _FakeBoxPool:
+        def __init__(self, box: object) -> None:
+            self._boxes = {"A": (box, object())}
+
+    controller = Quel1BackendController()
+    fake_box = _FakeBox()
+    controller.__dict__["_boxpool"] = _FakeBoxPool(fake_box)
+
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
+    monkeypatch.setattr(controller, "_resolve_config_options", lambda **_: [])
+    monkeypatch.setattr(
+        controller,
+        "_create_box",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("must not create a new box")
+        ),
+    )
+
+    controller.relinkup("A")

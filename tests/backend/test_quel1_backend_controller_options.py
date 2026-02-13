@@ -48,6 +48,7 @@ def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -
     controller = _make_controller()
     fake_box = _FakeBox("quel1se-riken8", {0: False})
     monkeypatch.setattr(module, "Quel1ConfigOption", _FakeQuel1ConfigOption)
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(controller, "_create_box", lambda *args, **kwargs: fake_box)
 
     controller.relinkup("B0")
@@ -63,6 +64,7 @@ def test_relinkup_maps_explicit_options(monkeypatch: pytest.MonkeyPatch) -> None
     controller = _make_controller()
     fake_box = _FakeBox("quel1se-riken8", {0: False})
     monkeypatch.setattr(module, "Quel1ConfigOption", _FakeQuel1ConfigOption)
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(controller, "_create_box", lambda *args, **kwargs: fake_box)
     controller.set_box_options(
         {
@@ -89,8 +91,60 @@ def test_relinkup_rejects_conflicting_awg_options(
     controller = _make_controller()
     fake_box = _FakeBox("quel1se-riken8", {0: False})
     monkeypatch.setattr(module, "Quel1ConfigOption", _FakeQuel1ConfigOption)
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(controller, "_create_box", lambda *args, **kwargs: fake_box)
     controller.set_box_options({"B0": ("se8_mxfe1_awg1331", "se8_mxfe1_awg2222")})
 
     with pytest.raises(ValueError, match="Multiple AWG options are not allowed"):
         controller.relinkup("B0")
+
+
+def test_linkup_uses_relaxed_noise_threshold_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given no threshold, when linkup runs, then relaxed threshold is used."""
+    controller = _make_controller()
+    fake_box = _FakeBox("quel1se-riken8", {0: True})
+    reconnect_calls: list[dict[str, Any]] = []
+
+    def _fake_reconnect(**kwargs: Any) -> None:
+        reconnect_calls.append(kwargs)
+
+    fake_box.reconnect = _fake_reconnect  # type: ignore[method-assign]
+
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
+    monkeypatch.setattr(
+        controller, "_get_existing_or_create_box", lambda *args, **kwargs: fake_box
+    )
+
+    controller.linkup("B0")
+
+    assert reconnect_calls
+    assert (
+        reconnect_calls[0]["background_noise_threshold"]
+        == module._RELAXED_NOISE_THRESHOLD
+    )
+
+
+def test_linkup_keeps_explicit_noise_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given explicit threshold, when linkup runs, then provided threshold is used."""
+    controller = _make_controller()
+    fake_box = _FakeBox("quel1se-riken8", {0: True})
+    reconnect_calls: list[dict[str, Any]] = []
+
+    def _fake_reconnect(**kwargs: Any) -> None:
+        reconnect_calls.append(kwargs)
+
+    fake_box.reconnect = _fake_reconnect  # type: ignore[method-assign]
+
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
+    monkeypatch.setattr(
+        controller, "_get_existing_or_create_box", lambda *args, **kwargs: fake_box
+    )
+
+    controller.linkup("B0", noise_threshold=12345)
+
+    assert reconnect_calls
+    assert reconnect_calls[0]["background_noise_threshold"] == 12345

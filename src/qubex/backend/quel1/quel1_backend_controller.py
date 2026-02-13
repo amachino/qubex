@@ -561,8 +561,19 @@ class Quel1BackendController:
             If the box is not in the available boxes.
         """
         self._check_box_availability(box_name)
-        box = self._create_box(box_name, reconnect=False)
+        box = self._get_existing_or_create_box(box_name, reconnect=False)
         return box.link_status()
+
+    def _get_existing_or_create_box(
+        self,
+        box_name: str,
+        *,
+        reconnect: bool,
+    ) -> Quel1Box:
+        """Return an existing pooled box or create one when absent."""
+        if self._boxpool is not None and box_name in self._boxpool._boxes:
+            return self._boxpool._boxes[box_name][0]
+        return self._create_box(box_name, reconnect=reconnect)
 
     def _create_boxpool(
         self,
@@ -730,11 +741,7 @@ class Quel1BackendController:
             If the box is not in the available boxes.
         """
         self._check_box_availability(box_name)
-        if self._boxpool is None or box_name not in self._boxpool._boxes:
-            box = self._create_box(box_name, reconnect=True)
-        else:
-            box = self._boxpool._boxes[box_name][0]
-        return box
+        return self._get_existing_or_create_box(box_name, reconnect=True)
 
     def initialize_awg_and_capunits(
         self,
@@ -804,9 +811,9 @@ class Quel1BackendController:
         # check if the box is available
         self._check_box_availability(box_name)
         # connect to the box
-        box = self._create_box(box_name, reconnect=False)
+        box = self._get_existing_or_create_box(box_name, reconnect=False)
 
-        if noise_threshold is not None:
+        if noise_threshold is None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
 
         # relinkup the box if any of the links are down
@@ -855,6 +862,9 @@ class Quel1BackendController:
         dict[str, Quel1Box]
             Dictionary of linked up boxes.
         """
+        # Avoid concurrent linkup of the same box name, which can create
+        # duplicated low-level proxy objects for the same endpoint.
+        box_list = list(dict.fromkeys(box_list))
         if parallel is None:
             parallel = True
         if not parallel:
@@ -917,9 +927,10 @@ class Quel1BackendController:
         box_name : str
             Name of the box to relinkup.
         """
+        self._check_box_availability(box_name)
         if noise_threshold is None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
-        box = self._create_box(box_name, reconnect=False)
+        box = self._get_existing_or_create_box(box_name, reconnect=False)
         config_options = self._resolve_config_options(
             box_name=box_name,
             boxtype=box.boxtype,
@@ -951,6 +962,8 @@ class Quel1BackendController:
             Whether to relink boxes in parallel. If `None`, defaults to
             `True`.
         """
+        # Avoid duplicate relinkup operations for the same box in one call.
+        box_list = list(dict.fromkeys(box_list))
         if parallel is None:
             parallel = True
         if not parallel:
