@@ -14,8 +14,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from typing_extensions import deprecated
-
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 
 from .execution import SequencerExecutionEngine
@@ -487,21 +485,6 @@ class Quel1BackendController:
                 )
             config_options.append(cast(Quel1ConfigOption, option))
         return config_options
-
-    @deprecated("Use qubecalib.sysdb.load_skew_yaml instead.")
-    def load_skew_file(self, box_list: list[str], file_path: str | Path) -> None:
-        """Load skew calibration data from a file."""
-        if len(box_list) == 0:
-            return
-        clockmaster_setting = self.qubecalib.sysdb._clockmaster_setting
-        if clockmaster_setting is None:
-            raise ValueError("Clockmaster setting not found in system configuration.")
-        system = Quel1System.create(
-            clockmaster=QuBEMasterClient(str(clockmaster_setting.ipaddr)),
-            boxes=[self.get_box(box_name, reconnect=False) for box_name in box_list],  # type: ignore
-        )
-        skew = Skew(system, qubecalib=self.qubecalib)
-        skew.load(str(file_path))
 
     def load_skew_yaml(self, file_path: str | Path) -> None:
         """
