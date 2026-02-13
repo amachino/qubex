@@ -579,7 +579,7 @@ class Quel1BackendController:
         self,
         box_names: list[str],
         *,
-        parallel_reconnects: bool = True,
+        parallel: bool = True,
     ) -> BoxPool:
         """
         Create a box pool and reconnect boxes.
@@ -588,8 +588,8 @@ class Quel1BackendController:
         ----------
         box_names : list[str]
             Box names to add to the pool.
-        parallel_reconnects : bool, optional
-            Whether to reconnect boxes in parallel.
+        parallel : bool, optional
+            Whether to process box creation/reconnect in parallel.
 
         Returns
         -------
@@ -601,21 +601,42 @@ class Quel1BackendController:
         if db._clockmaster_setting is not None:
             boxpool.create_clock_master(ipaddr=str(db._clockmaster_setting.ipaddr))
 
-        boxes_to_reconnect = []
+        settings_by_name = {}
         for box_name in box_names:
             if box_name not in db._box_settings:
                 raise ValueError(f"box({box_name}) is not defined")
-            setting = db._box_settings[box_name]
-            box = boxpool.create(
-                box_name,
-                ipaddr_wss=str(setting.ipaddr_wss),
-                ipaddr_sss=str(setting.ipaddr_sss),
-                ipaddr_css=str(setting.ipaddr_css),
-                boxtype=setting.boxtype,
-            )
-            boxes_to_reconnect.append(box)
+            settings_by_name[box_name] = db._box_settings[box_name]
 
-        if parallel_reconnects and boxes_to_reconnect:
+        boxes_to_reconnect = []
+        if parallel and box_names:
+            created_boxes = run_parallel_map(
+                box_names,
+                lambda box_name: db.create_box(box_name, reconnect=False),
+                key=lambda box_name: box_name,
+                max_workers=min(_MAX_BOX_PARALLEL_WORKERS, len(box_names)),
+            )
+            for box_name in box_names:
+                setting = settings_by_name[box_name]
+                box = created_boxes[box_name]
+                boxpool._boxes[box_name] = (
+                    box,
+                    SequencerClient(str(setting.ipaddr_sss)),
+                )
+                boxpool._linkstatus[box_name] = False
+                boxes_to_reconnect.append(box)
+        else:
+            for box_name in box_names:
+                setting = settings_by_name[box_name]
+                box = boxpool.create(
+                    box_name,
+                    ipaddr_wss=str(setting.ipaddr_wss),
+                    ipaddr_sss=str(setting.ipaddr_sss),
+                    ipaddr_css=str(setting.ipaddr_css),
+                    boxtype=setting.boxtype,
+                )
+                boxes_to_reconnect.append(box)
+
+        if parallel and boxes_to_reconnect:
             max_workers = max(1, len(boxes_to_reconnect))
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = [executor.submit(box.reconnect) for box in boxes_to_reconnect]
@@ -717,7 +738,7 @@ class Quel1BackendController:
 
         self._boxpool = self._create_boxpool(
             box_names,
-            parallel_reconnects=parallel,
+            parallel=parallel,
         )
         self._quel1system = self._create_quel1system_from_boxpool(box_names)
 

@@ -40,6 +40,7 @@ class _FakeBox:
 class _FakeBoxPool:
     def __init__(self) -> None:
         self._boxes: dict[str, tuple[_FakeBox, object]] = {}
+        self._linkstatus: dict[str, bool] = {}
         self.clockmaster_ip: str | None = None
 
     def create_clock_master(self, *, ipaddr: str) -> None:
@@ -70,6 +71,12 @@ class _FakeSysDb:
             "B": _BoxSetting("10.0.0.2", "10.0.1.2", "10.0.2.2", "type-b"),
         }
         self.create_quel1system_calls: list[tuple[str, ...]] = []
+        self.create_box_calls: list[tuple[str, bool]] = []
+
+    def create_box(self, box_name: str, reconnect: bool = True) -> _FakeBox:
+        """Create a fake box and record call arguments."""
+        self.create_box_calls.append((box_name, reconnect))
+        return _FakeBox(box_name)
 
     def create_quel1system(self, *box_names: str) -> str:
         """Record and return a fake system marker."""
@@ -154,6 +161,10 @@ def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
         "qubex.backend.quel1.quel1_backend_controller.BoxPool",
         _FakeBoxPool,
     )
+    monkeypatch.setattr(
+        "qubex.backend.quel1.quel1_backend_controller.SequencerClient",
+        lambda _ipaddr: object(),
+    )
 
     boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A", "B"]))
 
@@ -185,6 +196,10 @@ def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
     monkeypatch.setattr(
         "qubex.backend.quel1.quel1_backend_controller.BoxPool",
         _FakeBoxPool,
+    )
+    monkeypatch.setattr(
+        "qubex.backend.quel1.quel1_backend_controller.SequencerClient",
+        lambda _ipaddr: object(),
     )
     boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A"]))
     cast(Any, controller)._boxpool = boxpool
