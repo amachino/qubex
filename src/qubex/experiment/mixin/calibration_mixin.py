@@ -3051,5 +3051,7 @@ class CalibrationMixin(
                 "fig_c": fig_c,
                 "fig_t": fig_t,
                 "figs_s": figs_s,
+                "fig_t_3d": fig_t_3d,
+                "figs_s_3d": figs_s_3d,
             }
         )
