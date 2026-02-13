@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import Any, cast
 
 import numpy as np
-from e7awgsw import CaptureParam, WaveSequence
+from qubecalib.e7compat import CaptureParam, WaveSequence
 from qubecalib.instrument.quel.quel1.driver.single import Action, AwgId, RunitId
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 

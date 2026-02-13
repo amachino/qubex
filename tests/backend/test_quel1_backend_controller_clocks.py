@@ -153,3 +153,22 @@ def test_reset_clockmaster_uses_master_client(monkeypatch) -> None:
     assert controller.reset_clockmaster("192.0.2.99") is True
     assert master.master_ipaddr == "192.0.2.99"
     assert master.reset_calls == 1
+
+
+def test_reset_clockmaster_returns_false_when_reset_is_unsupported(monkeypatch) -> None:
+    """Given compatibility client reset failure, reset_clockmaster returns False."""
+    controller = _make_controller()
+
+    class _MasterWithUnsupportedReset:
+        def __init__(self, master_ipaddr: str) -> None:
+            self.master_ipaddr = master_ipaddr
+
+        def reset(self) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        "qubex.backend.quel1.quel1_backend_controller.QuBEMasterClient",
+        _MasterWithUnsupportedReset,
+    )
+
+    assert controller.reset_clockmaster("192.0.2.99") is False

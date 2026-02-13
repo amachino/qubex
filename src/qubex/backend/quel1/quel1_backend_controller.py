@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from qubecalib import QubeCalib, Sequencer
+    from qubecalib.clockmaster_compat import QuBEMasterClient, SequencerClient
     from qubecalib.instrument.quel.quel1 import Quel1System
     from qubecalib.instrument.quel.quel1.driver import (
         Action,
@@ -46,7 +47,6 @@ if TYPE_CHECKING:
         Converter,
         WaveSequenceTools,
     )
-    from quel_clock_master import QuBEMasterClient, SequencerClient
     from quel_ic_config import Quel1Box, Quel1ConfigOption
 
 _QUBECALIB_IMPORT_DONE = False
@@ -70,6 +70,10 @@ def _ensure_qubecalib_imports() -> None:
 
     try:
         from qubecalib import QubeCalib, Sequencer  # lazy import
+        from qubecalib.clockmaster_compat import (  # lazy import
+            QuBEMasterClient,
+            SequencerClient,
+        )
         from qubecalib.instrument.quel.quel1 import Quel1System  # lazy import
         from qubecalib.instrument.quel.quel1.driver import (  # lazy import
             Action,
@@ -92,7 +96,6 @@ def _ensure_qubecalib_imports() -> None:
             Converter,
             WaveSequenceTools,
         )
-        from quel_clock_master import QuBEMasterClient, SequencerClient  # lazy import
         from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
     except ImportError as e:
         _QUBECALIB_IMPORT_ERROR = e
