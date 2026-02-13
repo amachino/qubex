@@ -707,6 +707,9 @@ class Quel1BackendController:
         """
         if parallel is None:
             parallel = False
+        if self.is_connected:
+            logger.info("Already connected. Skipping backend reconnect.")
+            return
         if box_names is None:
             box_names = self.available_boxes
         if isinstance(box_names, str):

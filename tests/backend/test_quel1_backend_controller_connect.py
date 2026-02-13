@@ -195,3 +195,23 @@ def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
 
     assert box is boxpool._boxes["A"][0]
     assert boxpool._boxes["A"][0].reconnect_count == reconnect_count_before
+
+
+def test_connect_skips_reconnect_when_already_connected(monkeypatch) -> None:
+    """Given existing connection, connect skips creating a new boxpool."""
+    controller = _make_controller()
+    existing_system = object()
+    cast(Any, controller)._quel1system = existing_system
+
+    def _raise_if_called(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("connect path should be skipped when already connected")
+
+    monkeypatch.setattr(controller, "_create_boxpool", _raise_if_called)
+    monkeypatch.setattr(
+        controller, "_create_quel1system_from_boxpool", _raise_if_called
+    )
+    monkeypatch.setattr(controller, "create_resource_map", _raise_if_called)
+
+    controller.connect(["A"])
+
+    assert controller._quel1system is existing_system
