@@ -770,7 +770,7 @@ class Quel1BackendController:
         """Initialize AWG and capture units for one box."""
         self._check_box_availability(box_name)
         box = self.get_box(box_name, reconnect=False)
-        box.initialize_all_awgs()
+        box.initialize_all_awgunits()
         box.initialize_all_capunits()
 
     def linkup(

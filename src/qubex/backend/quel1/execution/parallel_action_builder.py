@@ -30,20 +30,20 @@ class _ClockmasterLike(Protocol):
 class _BoxLike(Protocol):
     """Protocol for box operations required to build direct actions."""
 
-    def read_current_and_latched_clock(self) -> tuple[int, int]:
-        """Read current clock and latest latched SYSREF clock."""
+    def get_current_timecounter(self) -> int:
+        """Read current box clock counter."""
         ...
 
-    def read_current_clock(self) -> int:
-        """Read current box clock."""
+    def get_latest_sysref_timecounter(self) -> int:
+        """Read latest latched SYSREF clock counter."""
         ...
 
-    def reserve_emission(
+    def start_wavegen(
         self,
         channels: set[tuple[PortType, int]],
-        time_count: int,
-    ) -> None:
-        """Reserve future emission timing for channels."""
+        timecounter: int | None = None,
+    ) -> Any:
+        """Start waveform generation."""
         ...
 
 
@@ -307,11 +307,12 @@ class _QubexMultiAction:
 
         if self._clock_options.validate_sysref_fluctuation_on_emit:
             for name, action in self._actions.items():
-                _, last_sysref = action.box.read_current_and_latched_clock()
+                last_sysref = action.box.get_latest_sysref_timecounter()
                 self._logger.debug(
                     f"sysref offset of {name}: latest: {self._mod_by_sysref(last_sysref)}"
                 )
-            current_time, last_sysref = reference_box.read_current_and_latched_clock()
+            current_time = reference_box.get_current_timecounter()
+            last_sysref = reference_box.get_latest_sysref_timecounter()
             fluctuation = (
                 self._mod_by_sysref(last_sysref) - self._ref_sysref_time_offset
             )
@@ -321,7 +322,7 @@ class _QubexMultiAction:
                     fluctuation,
                 )
         else:
-            current_time = reference_box.read_current_clock()
+            current_time = reference_box.get_current_timecounter()
 
         awgs_by_box = {
             name: {(spec.port, spec.channel) for spec in action._wseqs}
@@ -332,11 +333,20 @@ class _QubexMultiAction:
         base_time += align_offset + displacement + self.TIMING_OFFSET
 
         timing_shift = self._system.timing_shift
+        tasks: list[Any] = []
         for name, action in self._actions.items():
+            if getattr(action, "_triggers", {}):
+                continue
             scheduled_time = (
                 base_time + self._estimated_timediff[name] + timing_shift[name]
             )
-            action.box.reserve_emission(awgs_by_box[name], scheduled_time)
+            if awgs_by_box[name]:
+                tasks.append(
+                    action.box.start_wavegen(
+                        awgs_by_box[name],
+                        timecounter=scheduled_time,
+                    )
+                )
             self._logger.debug(
                 "reserving emission of %s at %s : base_time=%s, timediff=%s, timing_shift=%s",
                 name,
@@ -345,6 +355,8 @@ class _QubexMultiAction:
                 self._estimated_timediff[name],
                 timing_shift[name],
             )
+        for task in tasks:
+            task.result()
 
 
 def build_parallel_multi_action(
@@ -431,7 +443,8 @@ def build_parallel_multi_action(
         box_name, box_settings = item
         box = system.box[box_name]
         if clock_health_checks.read_box_latched_clock_on_build:
-            current_time, last_sysref_time = box.read_current_and_latched_clock()
+            current_time = box.get_current_timecounter()
+            last_sysref_time = box.get_latest_sysref_timecounter()
             logger.debug(
                 "clock of %s, current: %s, last sysref: %s, last sysref offset: %s",
                 box_name,
