@@ -367,7 +367,7 @@ class Quel1BackendController:
             for box_name, port_name, channel_number in bpc_list:
                 if box_name not in self._boxpool._boxes:
                     continue
-                box = self.get_box(box_name, reconnect=False)
+                box = self.get_box(box_name)
                 port_setting = db._port_settings[port_name]
                 if (type == "cap" and port_setting.port in box.get_input_ports()) or (
                     type == "gen" and port_setting.port in box.get_output_ports()
@@ -710,7 +710,7 @@ class Quel1BackendController:
         self._cap_resource_map = self.create_resource_map("cap")
         self._gen_resource_map = self.create_resource_map("gen")
 
-    def get_box(self, box_name: str, reconnect: bool = True) -> Quel1Box:
+    def get_box(self, box_name: str) -> Quel1Box:
         """
         Get the box object.
 
@@ -731,7 +731,7 @@ class Quel1BackendController:
         """
         self._check_box_availability(box_name)
         if self._boxpool is None or box_name not in self._boxpool._boxes:
-            box = self._create_box(box_name, reconnect=reconnect)
+            box = self._create_box(box_name, reconnect=True)
         else:
             box = self._boxpool._boxes[box_name][0]
         return box
@@ -755,6 +755,9 @@ class Quel1BackendController:
         """
         if isinstance(box_names, str):
             box_names = [box_names]
+        # Avoid concurrent initialization of the same box when multiple qubits
+        # map to one box.
+        box_names = list(dict.fromkeys(box_names))
         if parallel is None:
             parallel = True
         if not parallel:
@@ -770,7 +773,7 @@ class Quel1BackendController:
     def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
         """Initialize AWG and capture units for one box."""
         self._check_box_availability(box_name)
-        box = adapt_quel1_box(self.get_box(box_name, reconnect=False))
+        box = adapt_quel1_box(self.get_box(box_name))
         box.initialize_all_awgunits()
         box.initialize_all_capunits()
 

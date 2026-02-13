@@ -104,7 +104,7 @@ def get_qubecalib() -> QubeCalib:
 
 def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
-    box = system_manager.backend_controller.get_box(box_id, reconnect=False)
+    box = system_manager.backend_controller.get_box(box_id)
     # TODO: use appropriate noise threshold
     box.reconnect(background_noise_threshold=10000)
     return box

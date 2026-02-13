@@ -177,3 +177,21 @@ def test_create_boxpool_raises_for_unknown_box(monkeypatch) -> None:
     assert exc.value.args
     if exc.value.args:
         assert "box(Z) is not defined" in str(exc)
+
+
+def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
+    """Given pooled box, get_box returns it without reconnecting."""
+    controller = _make_controller()
+    monkeypatch.setattr(
+        "qubex.backend.quel1.quel1_backend_controller.BoxPool",
+        _FakeBoxPool,
+    )
+    boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A"]))
+    cast(Any, controller)._boxpool = boxpool
+    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
+
+    reconnect_count_before = boxpool._boxes["A"][0].reconnect_count
+    box = controller.get_box("A")
+
+    assert box is boxpool._boxes["A"][0]
+    assert boxpool._boxes["A"][0].reconnect_count == reconnect_count_before

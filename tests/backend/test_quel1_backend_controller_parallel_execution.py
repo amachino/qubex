@@ -71,6 +71,24 @@ def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> Non
     assert len(called) == 2
 
 
+def test_initialize_awg_and_capunits_parallel_deduplicates_boxes(monkeypatch) -> None:
+    """Given duplicate boxes, each box is initialized only once."""
+    controller = Quel1BackendController()
+    called: list[str] = []
+
+    def _fake_initialize(box_name: str) -> None:
+        called.append(box_name)
+
+    monkeypatch.setattr(
+        controller, "_initialize_box_awg_and_capunits", _fake_initialize
+    )
+
+    controller.initialize_awg_and_capunits(["A", "A", "B"], parallel=True)
+
+    assert set(called) == {"A", "B"}
+    assert len(called) == 2
+
+
 def test_linkup_boxes_parallel_collects_successes(monkeypatch) -> None:
     """Given parallel linkup, when one box fails, then successful boxes are returned."""
     controller = Quel1BackendController()

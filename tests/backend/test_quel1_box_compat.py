@@ -21,7 +21,9 @@ class _LegacyBox:
     def start_emission(self, channels: set[tuple[int, int]]) -> None:
         self.calls.append(("start_emission", channels))
 
-    def reserve_emission(self, channels: set[tuple[int, int]], timecounter: int) -> None:
+    def reserve_emission(
+        self, channels: set[tuple[int, int]], timecounter: int
+    ) -> None:
         self.calls.append(("reserve_emission", (channels, timecounter)))
 
 
@@ -90,4 +92,3 @@ def test_adapter_passthroughs_modern_methods() -> None:
     task = box.start_wavegen({(2, 0)}, timecounter=10_000)
     task.result()
     assert ("start_wavegen", ({(2, 0)}, 10_000)) in modern.calls
-
