@@ -25,37 +25,22 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from quel_ic_config import Quel1Box, Quel1ConfigOption
-    try:
-        from qxdriver_quel import QubeCalib, Sequencer
-        from qxdriver_quel.instrument.quel.quel1 import Quel1System
-        from qxdriver_quel.instrument.quel.quel1.driver import (
-            AwgSetting,
-            RunitSetting,
-            TriggerSetting,
-        )
-        from qxdriver_quel.neopulse import (
-            DEFAULT_SAMPLING_PERIOD,
-            CapSampledSequence,
-            GenSampledSequence,
-        )
-        from qxdriver_quel.qubecalib import BoxPool
-    except ImportError:
-        from qubecalib import QubeCalib, Sequencer
-        from qubecalib.instrument.quel.quel1 import Quel1System
-        from qubecalib.instrument.quel.quel1.driver import (
-            AwgSetting,
-            RunitSetting,
-            TriggerSetting,
-        )
-        from qubecalib.neopulse import (
-            DEFAULT_SAMPLING_PERIOD,
-            CapSampledSequence,
-            GenSampledSequence,
-        )
-        from qubecalib.qubecalib import BoxPool
+    from qxdriver_quel import QubeCalib, Sequencer
+    from qxdriver_quel.instrument.quel.quel1 import Quel1System
+    from qxdriver_quel.instrument.quel.quel1.driver import (
+        AwgSetting,
+        RunitSetting,
+        TriggerSetting,
+    )
+    from qxdriver_quel.neopulse import (
+        DEFAULT_SAMPLING_PERIOD,
+        CapSampledSequence,
+        GenSampledSequence,
+    )
+    from qxdriver_quel.qubecalib import BoxPool
 
-_QUBECALIB_IMPORT_DONE = False
-_QUBECALIB_IMPORT_ERROR: ImportError | None = None
+_DRIVER_IMPORT_DONE = False
+_DRIVER_IMPORT_ERROR: ImportError | None = None
 neopulse_module: Any = None
 _driver_QubeCalib: Any = None
 _driver_QuBEMasterClient: Any = None
@@ -75,9 +60,9 @@ _driver_Converter: Any = None
 _driver_WaveSequenceTools: Any = None
 
 
-def _ensure_qubecalib_imports() -> None:
-    """Import qubecalib/quel dependencies on demand."""
-    global _QUBECALIB_IMPORT_DONE, _QUBECALIB_IMPORT_ERROR
+def _ensure_driver_imports() -> None:
+    """Import selected driver dependencies on demand."""
+    global _DRIVER_IMPORT_DONE, _DRIVER_IMPORT_ERROR
     global _driver_QubeCalib, _driver_QuBEMasterClient, _driver_SequencerClient
     global _driver_Quel1System, _driver_Action, _driver_AwgId, _driver_AwgSetting
     global _driver_NamedBox, _driver_RunitId, _driver_RunitSetting
@@ -85,10 +70,10 @@ def _ensure_qubecalib_imports() -> None:
     global _driver_CaptureParamTools, _driver_Converter, _driver_WaveSequenceTools
     global Quel1Box, Quel1ConfigOption
 
-    if _QUBECALIB_IMPORT_DONE:
+    if _DRIVER_IMPORT_DONE:
         return
-    if _QUBECALIB_IMPORT_ERROR is not None:
-        raise _QUBECALIB_IMPORT_ERROR
+    if _DRIVER_IMPORT_ERROR is not None:
+        raise _DRIVER_IMPORT_ERROR
 
     try:
         from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
@@ -115,11 +100,11 @@ def _ensure_qubecalib_imports() -> None:
         _driver_WaveSequenceTools = driver.WaveSequenceTools
         globals()["neopulse_module"] = driver.neopulse_module
     except ImportError as e:
-        _QUBECALIB_IMPORT_ERROR = e
+        _DRIVER_IMPORT_ERROR = e
         logger.info(e)
         raise
 
-    _QUBECALIB_IMPORT_DONE = True
+    _DRIVER_IMPORT_DONE = True
 
 
 # TODO: use appropriate noise threshold
@@ -201,7 +186,7 @@ class Quel1BackendController:
         config_path: str | Path | None = None,
     ):
         try:
-            _ensure_qubecalib_imports()
+            _ensure_driver_imports()
             if config_path is None:
                 self._qubecalib = _driver_QubeCalib()
             else:

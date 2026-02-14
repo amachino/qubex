@@ -9,10 +9,7 @@ from typing_extensions import override
 from .driver_loader import load_quel_driver
 
 if TYPE_CHECKING:
-    try:
-        from qxdriver_quel.qubecalib import Sequencer as Sequencer
-    except ImportError:
-        from qubecalib.qubecalib import Sequencer as Sequencer
+    from qxdriver_quel.qubecalib import Sequencer as Sequencer
 else:
     Sequencer = load_quel_driver().Sequencer
 
