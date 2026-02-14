@@ -14,6 +14,8 @@
 - 2026-02-14: `qubex -> qubecalib` 互換 API の契約テストを追加。
 - 2026-02-14: `qxdriver_quel` 名前空間を追加し、`qubecalib` への
   top-level / `qxdriver_quel.qubecalib` の互換 re-export を開始。
+- 2026-02-14: `qxdriver_quel.clockmaster_compat` と
+  `qxdriver_quel.instrument.quel.quel1.*` の import パス互換 shim を追加。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
