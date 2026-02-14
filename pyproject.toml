@@ -94,7 +94,6 @@ filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
 include = ["src", "packages", "tests"]
-exclude = ["**/.cache/**", "**/no_test*.py"]
 typeCheckingMode = "basic"
 
 [tool.ruff.lint]
