@@ -76,9 +76,9 @@ def _ensure_driver_imports() -> None:
         raise _DRIVER_IMPORT_ERROR
 
     try:
-        from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
-
         driver = load_quel_driver()
+        globals()["Quel1Box"] = driver.Quel1Box
+        globals()["Quel1ConfigOption"] = driver.Quel1ConfigOption
         _driver_QubeCalib = driver.QubeCalib
         _driver_QuBEMasterClient = driver.QuBEMasterClient
         _driver_SequencerClient = driver.SequencerClient
