@@ -30,6 +30,8 @@
   `qubecalib.clockmaster_compat` は thin shim 化。
 - 2026-02-14: `e7compat` の実体を `qxdriver_quel` 側へ移し、
   `qubecalib.e7compat` は thin shim 化。
+- 2026-02-14: `qubecalib.py` の実体を `qxdriver_quel.qubecalib` へ反転し、
+  `qubecalib.qubecalib` は thin shim 化。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
