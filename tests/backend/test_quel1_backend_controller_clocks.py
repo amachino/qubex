@@ -95,7 +95,7 @@ def test_read_clocks_uses_sequencer_clients(monkeypatch) -> None:
         "10.0.1.2": (True, 789, 1011),
     }
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.SequencerClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
         _FakeSequencerClient,
     )
 
@@ -115,11 +115,11 @@ def test_resync_clocks_kicks_clockmaster(monkeypatch) -> None:
     master = _FakeQuBEMasterClient("192.0.2.1")
 
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.SequencerClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
         _FakeSequencerClient,
     )
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.QuBEMasterClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
         lambda master_ipaddr: master,
     )
 
@@ -132,7 +132,7 @@ def test_resync_clocks_raises_without_clockmaster(monkeypatch) -> None:
     """Given no clockmaster, resync_clocks raises ValueError."""
     controller = _make_controller(include_clockmaster=False)
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.QuBEMasterClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
         _FakeQuBEMasterClient,
     )
 
@@ -146,7 +146,7 @@ def test_reset_clockmaster_uses_master_client(monkeypatch) -> None:
     master = _FakeQuBEMasterClient("192.0.2.99")
 
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.QuBEMasterClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
         lambda master_ipaddr: master,
     )
 
@@ -167,7 +167,7 @@ def test_reset_clockmaster_returns_false_when_reset_is_unsupported(monkeypatch) 
             return False
 
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.QuBEMasterClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
         _MasterWithUnsupportedReset,
     )
 

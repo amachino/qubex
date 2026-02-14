@@ -18,6 +18,8 @@
   `qxdriver_quel.instrument.quel.quel1.*` の import パス互換 shim を追加。
 - 2026-02-14: `qubex` backend (`quel1`) の実装 import を
   `qubecalib` から `qxdriver_quel` へ切替開始。
+- 2026-02-14: `qubex` 側に driver loader を追加し、
+  `auto: qxdriver_quel -> qubecalib` fallback を実装開始。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
@@ -154,6 +156,19 @@ packages/qxdriver-quel/
   - sampled sequence から direct action 設定への変換・実行
 - `QubeCalibCompat` (`compat.qubecalib`)
   - 旧 `QubeCalib` シグネチャを受け取り、新コアへ委譲
+
+### 2.3 出し分け戦略 (qubex 側)
+
+- `qubex` は `driver_loader` から driver package を解決し、
+  実装コードは loader が返す互換クラス/モジュールだけを参照する。
+- 優先順位:
+  - `QUBEX_QUEL_DRIVER=qxdriver_quel` -> `qxdriver_quel` を強制
+  - `QUBEX_QUEL_DRIVER=qubecalib` -> `qubecalib` を強制
+  - `QUBEX_QUEL_DRIVER=auto` (既定) -> `qxdriver_quel` を試し、失敗時に `qubecalib`
+- 方針:
+  - 旧ディレクトリ構成の維持は必須ではない。
+  - 必要なのは `qubex` が使う互換クラス/関数の契約面のみ。
+  - 旧 `qubecalib` 側は最終的に thin shim へ縮退させる。
 
 ## 3. 実装方針
 

@@ -1,24 +1,31 @@
-"""Qubex-specific Sequencer wrapper on top of qxdriver_quel Sequencer."""
+"""Qubex-specific Sequencer wrapper on top of selected driver Sequencer."""
 
 from __future__ import annotations
 
-from qxdriver_quel.qubecalib import Sequencer
+from typing import TYPE_CHECKING
+
 from typing_extensions import override
+
+from .driver_loader import load_quel_driver
+
+if TYPE_CHECKING:
+    from qxdriver_quel.qubecalib import Sequencer as Sequencer
+else:
+    Sequencer = load_quel_driver().Sequencer
 
 
 class Quel1Sequencer(Sequencer):
     """
-    Sequencer variant that keeps qxdriver_quel behavior except first-padding insertion.
+    Sequencer variant that keeps driver behavior except first-padding insertion.
 
     Notes
     -----
-    We intentionally rely on the base qxdriver_quel.qubecalib.Sequencer
-    implementation for port-direction checks and PortConfigAcquirer setup, so
-    driver is used in the same way as the compatibility runtime.
+    We intentionally rely on the selected driver package's base Sequencer
+    implementation for port-direction checks and PortConfigAcquirer setup.
 
     The only behavioral difference is that automatic first-padding insertion is
     disabled. Qubex already prepares waveform timing beforehand, and adding extra
-    padding at the qxdriver_quel layer would modify those prepared timings again.
+    padding at the driver layer would modify those prepared timings again.
     """
 
     @override

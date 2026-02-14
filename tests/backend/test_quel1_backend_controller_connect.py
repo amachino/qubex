@@ -103,7 +103,7 @@ def test_connect_uses_boxpool_by_default(monkeypatch) -> None:
     fake_quel1_system = object()
 
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.BoxPool",
+        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
         _FakeBoxPool,
     )
 
@@ -132,7 +132,7 @@ def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> No
     fake_quel1_system = object()
 
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.BoxPool",
+        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
         _FakeBoxPool,
     )
 
@@ -158,11 +158,11 @@ def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
     """Given valid boxes, pool creation reconnects each box once."""
     controller = _make_controller()
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.BoxPool",
+        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
         _FakeBoxPool,
     )
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.SequencerClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
         lambda _ipaddr: object(),
     )
 
@@ -179,7 +179,7 @@ def test_create_boxpool_raises_for_unknown_box(monkeypatch) -> None:
     """Given an unknown box, pool creation raises ValueError."""
     controller = _make_controller()
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.BoxPool",
+        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
         _FakeBoxPool,
     )
 
@@ -194,11 +194,11 @@ def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
     """Given pooled box, get_box returns it without reconnecting."""
     controller = _make_controller()
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.BoxPool",
+        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
         _FakeBoxPool,
     )
     monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller.SequencerClient",
+        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
         lambda _ipaddr: object(),
     )
     boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A"]))

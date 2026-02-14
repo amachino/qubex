@@ -12,6 +12,7 @@ from logging import Logger
 from types import MappingProxyType
 from typing import Any, Final, Protocol, TypeAlias, cast
 
+from qubex.backend.quel1.driver_loader import load_quel_driver
 from qubex.backend.quel1.quel1_box_compat import adapt_quel1_box
 
 PortType: TypeAlias = Any
@@ -407,8 +408,9 @@ def build_parallel_multi_action(
     >>> isinstance(cprms, dict)
     True
     """
-    from qxdriver_quel.instrument.quel.quel1.driver import multi as direct_multi
-    from qxdriver_quel.instrument.quel.quel1.driver import single as direct_single
+    driver = load_quel_driver()
+    direct_multi = driver.direct_multi_module
+    direct_single = driver.direct_single_module
 
     if clock_health_checks is None:
         clock_health_checks = ClockHealthCheckOptions()
