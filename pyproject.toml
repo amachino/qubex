@@ -94,11 +94,8 @@ filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
 include = ["src", "packages", "tests"]
-exclude = ["packages/qube-calib"]
+exclude = ["**/.cache/**", "**/no_test*.py"]
 typeCheckingMode = "basic"
-
-[tool.ruff]
-extend-exclude = ["packages/qube-calib"]
 
 [tool.ruff.lint]
 select = [
@@ -166,6 +163,12 @@ ignore = [
     "S101", # assert
 ]
 "tests/**/*.py" = [
+    "ANN", # flake8-annotations
+
+    # flake8-bandit
+    "S101", # assert
+]
+"packages/**/tests/**/*.py" = [
     "ANN", # flake8-annotations
 
     # flake8-bandit

@@ -125,6 +125,48 @@ def _resolve_quel1se_r8_awg_option(options: list[str]) -> str:
     return _QUEL1SE_R8_DEFAULT_AWG_OPTION
 
 
+def _db_clockmaster_setting(db: Any) -> Any:
+    try:
+        return db.clockmaster_setting
+    except AttributeError:
+        return db._clockmaster_setting
+
+
+def _db_box_settings(db: Any) -> dict[str, Any]:
+    try:
+        return db.box_settings
+    except AttributeError:
+        return db._box_settings
+
+
+def _db_port_settings(db: Any) -> dict[str, Any]:
+    try:
+        return db.port_settings
+    except AttributeError:
+        return db._port_settings
+
+
+def _db_target_settings(db: Any) -> dict[str, Any]:
+    try:
+        return db.target_settings
+    except AttributeError:
+        return db._target_settings
+
+
+def _db_relation_channel_target(db: Any) -> list[tuple[str, str]]:
+    try:
+        return db.relation_channel_target
+    except AttributeError:
+        return db._relation_channel_target
+
+
+def _boxpool_boxes(boxpool: Any) -> dict[str, Any]:
+    try:
+        return boxpool.boxes
+    except AttributeError:
+        return boxpool._boxes
+
+
 @dataclass
 class Quel1BackendRawResult:
     """Raw status, data, and config returned from qube-calib execution."""
@@ -188,7 +230,10 @@ class Quel1BackendController:
         if self._boxpool is None:
             box_config = {}
         else:
-            box_config = self._boxpool._box_config_cache
+            try:
+                box_config = cast(dict[str, Any], self._boxpool.box_config_cache)
+            except AttributeError:
+                box_config = cast(dict[str, Any], self._boxpool._box_config_cache)
         return box_config
 
     @property
@@ -307,19 +352,22 @@ class Quel1BackendController:
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
         """Build a resource map for the requested targets."""
         db = self.qubecalib.system_config_database
+        target_settings = _db_target_settings(db)
+        box_settings = _db_box_settings(db)
+        port_settings = _db_port_settings(db)
         result = {}
         for target in targets:
-            if target not in db._target_settings:
+            if target not in target_settings:
                 raise ValueError(f"Target {target} not in available targets.")
 
             channels = db.get_channels_by_target(target)
             bpc_list = [db.get_channel(channel) for channel in channels]
             result[target] = [
                 {
-                    "box": db._box_settings[box_name],
-                    "port": db._port_settings[port_name],
+                    "box": box_settings[box_name],
+                    "port": port_settings[port_name],
                     "channel_number": channel_number,
-                    "target": db._target_settings[target],
+                    "target": target_settings[target],
                 }
                 for box_name, port_name, channel_number in bpc_list
             ]
@@ -363,30 +411,37 @@ class Quel1BackendController:
         if self._boxpool is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
         db = self.qubecalib.system_config_database
+        target_settings = _db_target_settings(db)
+        box_settings = _db_box_settings(db)
+        port_settings = _db_port_settings(db)
+        pooled_boxes = _boxpool_boxes(self._boxpool)
         result = {}
-        for target in db._target_settings:
+        for target in target_settings:
             channels = db.get_channels_by_target(target)
             bpc_list = [db.get_channel(channel) for channel in channels]
             for box_name, port_name, channel_number in bpc_list:
-                if box_name not in self._boxpool._boxes:
+                if box_name not in pooled_boxes:
                     continue
                 box = self.get_box(box_name)
-                port_setting = db._port_settings[port_name]
+                port_setting = port_settings[port_name]
                 if (type == "cap" and port_setting.port in box.get_input_ports()) or (
                     type == "gen" and port_setting.port in box.get_output_ports()
                 ):
                     result[target] = {
-                        "box": db._box_settings[box_name],
-                        "port": db._port_settings[port_name],
+                        "box": box_settings[box_name],
+                        "port": port_settings[port_name],
                         "channel_number": channel_number,
-                        "target": db._target_settings[target],
+                        "target": target_settings[target],
                     }
         return result
 
     def clear_cache(self) -> None:
         """Clear cached box configuration data."""
         if self._boxpool is not None:
-            self._boxpool._box_config_cache.clear()
+            try:
+                self._boxpool.clear_box_config_cache()
+            except AttributeError:
+                self._boxpool._box_config_cache.clear()
         self._clear_quel1system_box_cache()
 
     def get_box_config_cache(self) -> dict[str, Any]:
@@ -399,7 +454,10 @@ class Quel1BackendController:
             if box_configs:
                 raise ValueError("Boxes not connected. Call connect() method first.")
             return
-        self._boxpool._box_config_cache = deepcopy(box_configs)
+        try:
+            self._boxpool.replace_box_config_cache(deepcopy(box_configs))
+        except AttributeError:
+            self._boxpool._box_config_cache = deepcopy(box_configs)
         self._replace_quel1system_box_cache(box_configs)
 
     def update_box_config_cache(self, box_configs: dict[str, Any]) -> None:
@@ -408,8 +466,11 @@ class Quel1BackendController:
             if box_configs:
                 raise ValueError("Boxes not connected. Call connect() method first.")
             return
-        for box_name, box_config in box_configs.items():
-            self._boxpool._box_config_cache[box_name] = deepcopy(box_config)
+        try:
+            self._boxpool.update_box_config_cache(deepcopy(box_configs))
+        except AttributeError:
+            for box_name, box_config in box_configs.items():
+                self._boxpool._box_config_cache[box_name] = deepcopy(box_config)
         self._update_quel1system_box_cache(box_configs)
 
     def _get_quel1system_box_cache(self) -> dict[str, Any] | None:
@@ -574,8 +635,8 @@ class Quel1BackendController:
         reconnect: bool,
     ) -> Quel1Box:
         """Return an existing pooled box or create one when absent."""
-        if self._boxpool is not None and box_name in self._boxpool._boxes:
-            return self._boxpool._boxes[box_name][0]
+        if self._boxpool is not None and box_name in _boxpool_boxes(self._boxpool):
+            return _boxpool_boxes(self._boxpool)[box_name][0]
         return self._create_box(box_name, reconnect=reconnect)
 
     def _create_boxpool(
@@ -601,14 +662,16 @@ class Quel1BackendController:
         """
         db = self.qubecalib.system_config_database
         boxpool = BoxPool()
-        if db._clockmaster_setting is not None:
-            boxpool.create_clock_master(ipaddr=str(db._clockmaster_setting.ipaddr))
+        clockmaster_setting = _db_clockmaster_setting(db)
+        if clockmaster_setting is not None:
+            boxpool.create_clock_master(ipaddr=str(clockmaster_setting.ipaddr))
 
+        box_settings = _db_box_settings(db)
         settings_by_name = {}
         for box_name in box_names:
-            if box_name not in db._box_settings:
+            if box_name not in box_settings:
                 raise ValueError(f"box({box_name}) is not defined")
-            settings_by_name[box_name] = db._box_settings[box_name]
+            settings_by_name[box_name] = box_settings[box_name]
 
         boxes_to_reconnect = []
         if parallel and box_names:
@@ -621,11 +684,16 @@ class Quel1BackendController:
             for box_name in box_names:
                 setting = settings_by_name[box_name]
                 box = created_boxes[box_name]
-                boxpool._boxes[box_name] = (
-                    box,
-                    SequencerClient(str(setting.ipaddr_sss)),
-                )
-                boxpool._linkstatus[box_name] = False
+                sequencer = SequencerClient(str(setting.ipaddr_sss))
+                try:
+                    boxpool.register_existing_box(
+                        box_name=box_name,
+                        box=box,
+                        sequencer=sequencer,
+                    )
+                except AttributeError:
+                    boxpool._boxes[box_name] = (box, sequencer)
+                    boxpool._linkstatus[box_name] = False
                 boxes_to_reconnect.append(box)
         else:
             for box_name in box_names:
@@ -697,12 +765,13 @@ class Quel1BackendController:
             raise ValueError("Boxes not connected. Call connect() method first.")
 
         db = self.qubecalib.system_config_database
-        clockmaster_setting = db._clockmaster_setting
+        clockmaster_setting = _db_clockmaster_setting(db)
         if clockmaster_setting is None:
             raise ValueError("clock master is not found")
 
+        pooled_boxes = _boxpool_boxes(self._boxpool)
         boxes: list[Any] = [
-            NamedBox(name=box_name, box=self._boxpool._boxes[box_name][0])
+            NamedBox(name=box_name, box=pooled_boxes[box_name][0])
             for box_name in box_names
         ]
         system = Quel1System.create(
@@ -1024,10 +1093,11 @@ class Quel1BackendController:
             List of clocks.
         """
         db = self.qubecalib.system_config_database
+        box_settings = _db_box_settings(db)
         result: list[tuple[bool, int, int]] = []
         for box_name in box_list:
             self._check_box_availability(box_name)
-            ipaddr_sss = str(db._box_settings[box_name].ipaddr_sss)
+            ipaddr_sss = str(box_settings[box_name].ipaddr_sss)
             result.append(SequencerClient(target_ipaddr=ipaddr_sss).read_clock())
         return result
 
@@ -1068,11 +1138,13 @@ class Quel1BackendController:
             # NOTE: clockmaster will crash if there is only one box
             return True
         db = self.qubecalib.system_config_database
-        if db._clockmaster_setting is None:
+        clockmaster_setting = _db_clockmaster_setting(db)
+        if clockmaster_setting is None:
             raise ValueError("clock master is not found")
-        master = QuBEMasterClient(master_ipaddr=str(db._clockmaster_setting.ipaddr))
+        master = QuBEMasterClient(master_ipaddr=str(clockmaster_setting.ipaddr))
+        box_settings = _db_box_settings(db)
         master.kick_clock_synch(
-            [str(db._box_settings[box_name].ipaddr_sss) for box_name in box_list]
+            [str(box_settings[box_name].ipaddr_sss) for box_name in box_list]
         )
         return self.check_clocks(box_list)
 
@@ -1281,7 +1353,10 @@ class Quel1BackendController:
         sequencer : Sequencer
             The sequencer to add to the queue.
         """
-        self.qubecalib._executor.add_command(sequencer)
+        try:
+            self.qubecalib.executor.add_command(sequencer)
+        except AttributeError:
+            self.qubecalib._executor.add_command(sequencer)
 
     def show_command_queue(self) -> None:
         """Show the current command queue."""
@@ -1395,8 +1470,15 @@ class Quel1BackendController:
             Target name.
         """
         rel = (channel_name, target_name)
-        if rel not in self.qubecalib.sysdb._relation_channel_target:
-            self.qubecalib.sysdb._relation_channel_target.append(rel)
+        sysdb = self.qubecalib.sysdb
+        if rel not in _db_relation_channel_target(sysdb):
+            try:
+                sysdb.assign_target_to_channel(
+                    channel=channel_name,
+                    target=target_name,
+                )
+            except AttributeError:
+                sysdb._relation_channel_target.append(rel)
 
     def create_quel1_sequencer(
         self,
