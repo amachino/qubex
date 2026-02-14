@@ -28,6 +28,8 @@
   関連テスト (`tests/unit/units/test_unit.py`) を削除。
 - 2026-02-14: `clockmaster_compat` の実体を `qxdriver_quel` 側へ移し、
   `qubecalib.clockmaster_compat` は thin shim 化。
+- 2026-02-14: `e7compat` の実体を `qxdriver_quel` 側へ移し、
+  `qubecalib.e7compat` は thin shim 化。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
