@@ -26,6 +26,8 @@
   (`docs/developer-guide/qxdriver-quel-shim-reduction-inventory.md`)
 - 2026-02-14: 未参照モジュール (`task/interface.py`, `utils/*`, `units.py`) と
   関連テスト (`tests/unit/units/test_unit.py`) を削除。
+- 2026-02-14: `clockmaster_compat` の実体を `qxdriver_quel` 側へ移し、
+  `qubecalib.clockmaster_compat` は thin shim 化。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
