@@ -16,9 +16,9 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "qubecalib",
     "qubex",
     "qxcore",
-    "qxdriver-quel",
     "qxpulse",
     "qxschema",
     "qxsimulator",
@@ -3050,6 +3050,34 @@ wheels = [
 ]
 
 [[package]]
+name = "qubecalib"
+source = { editable = "packages/qxdriver-quel" }
+dependencies = [
+    { name = "numpy" },
+    { name = "plotly" },
+    { name = "pyyaml" },
+    { name = "quel-ic-config" },
+    { name = "tqdm" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.0" },
+    { name = "plotly", specifier = ">=5.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "quel-ic-config", specifier = ">=0.10,<0.11" },
+    { name = "tqdm", specifier = ">=4.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest" }]
+
+[[package]]
 name = "qubex"
 version = "1.5.0a1"
 source = { editable = "." }
@@ -3083,7 +3111,7 @@ dependencies = [
 
 [package.optional-dependencies]
 backend = [
-    { name = "qxdriver-quel" },
+    { name = "qubecalib" },
 ]
 
 [package.dev-dependencies]
@@ -3121,8 +3149,8 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
+    { name = "qubecalib", marker = "extra == 'backend'", editable = "packages/qxdriver-quel" },
     { name = "qxcore", editable = "packages/qxcore" },
-    { name = "qxdriver-quel", marker = "extra == 'backend'", editable = "packages/qxdriver-quel" },
     { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "qxschema", editable = "packages/qxschema" },
     { name = "qxsimulator", editable = "packages/qxsimulator" },
@@ -3239,34 +3267,6 @@ requires-dist = [
     { name = "typedunits", specifier = ">=0.0" },
     { name = "typing-extensions", specifier = ">=4.5" },
 ]
-
-[[package]]
-name = "qxdriver-quel"
-source = { editable = "packages/qxdriver-quel" }
-dependencies = [
-    { name = "numpy" },
-    { name = "plotly" },
-    { name = "pyyaml" },
-    { name = "quel-ic-config" },
-    { name = "tqdm" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.0" },
-    { name = "plotly", specifier = ">=5.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "quel-ic-config", specifier = ">=0.10,<0.11" },
-    { name = "tqdm", specifier = ">=4.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest" }]
 
 [[package]]
 name = "qxpulse"

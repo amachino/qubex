@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+import importlib
 from types import MappingProxyType
 from typing import Any, cast
 
 import numpy as np
-from qxdriver_quel.e7compat import CaptureParam, WaveSequence
-from qxdriver_quel.instrument.quel.quel1.driver.single import Action, AwgId, RunitId
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
+
+try:
+    _e7compat = importlib.import_module("qxdriver_quel.e7compat")
+    _single = importlib.import_module("qxdriver_quel.instrument.quel.quel1.driver.single")
+except ModuleNotFoundError:
+    _e7compat = importlib.import_module("qubecalib.e7compat")
+    _single = importlib.import_module("qubecalib.instrument.quel.quel1.driver.single")
+
+CaptureParam = _e7compat.CaptureParam
+WaveSequence = _e7compat.WaveSequence
+Action = _single.Action
+AwgId = _single.AwgId
+RunitId = _single.RunitId
 
 
 class _Reader:

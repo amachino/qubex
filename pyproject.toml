@@ -38,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 backend = [
-    "qxdriver-quel @ git+https://github.com/amachino/qube-calib.git@qubex-quelware-v0.10",
+    "qubecalib @ git+https://github.com/amachino/qube-calib.git@qubex-quelware-v0.10",
 ]
 
 [project.scripts]
@@ -72,7 +72,7 @@ qubex = ["py.typed", "clifford/**/*.json"]
 cache-dir = ".cache/uv"
 
 [tool.uv.sources]
-"qxdriver-quel" = { workspace = true }
+qubecalib = { workspace = true }
 qxcore = { workspace = true }
 qxpulse = { workspace = true }
 qxschema = { workspace = true }

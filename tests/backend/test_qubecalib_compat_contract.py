@@ -2,27 +2,43 @@
 
 from __future__ import annotations
 
-from qxdriver_quel import QubeCalib, Sequencer, neopulse
-from qxdriver_quel.clockmaster_compat import QuBEMasterClient, SequencerClient
-from qxdriver_quel.instrument.quel.quel1 import Quel1System
-from qxdriver_quel.instrument.quel.quel1.driver import (
-    Action,
-    AwgId,
-    AwgSetting,
-    NamedBox,
-    RunitId,
-    RunitSetting,
-    TriggerSetting,
-    multi,
-    single,
-)
-from qxdriver_quel.instrument.quel.quel1.tool import Skew
-from qxdriver_quel.qubecalib import (
-    BoxPool,
-    CaptureParamTools,
-    Converter,
-    WaveSequenceTools,
-)
+import importlib
+
+try:
+    _root = importlib.import_module("qxdriver_quel")
+    _clockmaster = importlib.import_module("qxdriver_quel.clockmaster_compat")
+    _quel1 = importlib.import_module("qxdriver_quel.instrument.quel.quel1")
+    _driver = importlib.import_module("qxdriver_quel.instrument.quel.quel1.driver")
+    _tool = importlib.import_module("qxdriver_quel.instrument.quel.quel1.tool")
+    _qcalib = importlib.import_module("qxdriver_quel.qubecalib")
+except ModuleNotFoundError:
+    _root = importlib.import_module("qubecalib")
+    _clockmaster = importlib.import_module("qubecalib.clockmaster_compat")
+    _quel1 = importlib.import_module("qubecalib.instrument.quel.quel1")
+    _driver = importlib.import_module("qubecalib.instrument.quel.quel1.driver")
+    _tool = importlib.import_module("qubecalib.instrument.quel.quel1.tool")
+    _qcalib = importlib.import_module("qubecalib.qubecalib")
+
+QubeCalib = _root.QubeCalib
+Sequencer = _root.Sequencer
+neopulse = _root.neopulse
+QuBEMasterClient = _clockmaster.QuBEMasterClient
+SequencerClient = _clockmaster.SequencerClient
+Quel1System = _quel1.Quel1System
+Action = _driver.Action
+AwgId = _driver.AwgId
+AwgSetting = _driver.AwgSetting
+NamedBox = _driver.NamedBox
+RunitId = _driver.RunitId
+RunitSetting = _driver.RunitSetting
+TriggerSetting = _driver.TriggerSetting
+single = _driver.single
+multi = _driver.multi
+Skew = _tool.Skew
+BoxPool = _qcalib.BoxPool
+Converter = _qcalib.Converter
+CaptureParamTools = _qcalib.CaptureParamTools
+WaveSequenceTools = _qcalib.WaveSequenceTools
 
 
 def test_qubecalib_import_paths_required_by_qubex_are_available() -> None:
