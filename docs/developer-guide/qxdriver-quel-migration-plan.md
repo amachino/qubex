@@ -24,6 +24,8 @@
   二重解決を許容し、`QUBEX_QUEL_DRIVER` env 指定のテストを追加。
 - 2026-02-14: `qubecalib` の thin shim 化に向けた削減インベントリを追加。
   (`docs/developer-guide/qxdriver-quel-shim-reduction-inventory.md`)
+- 2026-02-14: 未参照モジュール (`task/interface.py`, `utils/*`, `units.py`) と
+  関連テスト (`tests/unit/units/test_unit.py`) を削除。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 

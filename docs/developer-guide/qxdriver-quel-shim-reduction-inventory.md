@@ -59,3 +59,13 @@
 - このインベントリは `qubex` 観点の最適化。外部利用者向け公開 API は別途評価が必要。
 - 旧 `qubecalib` のディレクトリ構成維持は必須ではないが、
   `qubex` が使う互換シンボルは維持する。
+
+## Applied on 2026-02-14
+
+以下を削除済み。
+
+- `packages/qube-calib/src/qubecalib/task/interface.py`
+- `packages/qube-calib/src/qubecalib/utils/__init__.py`
+- `packages/qube-calib/src/qubecalib/utils/pca.py`
+- `packages/qube-calib/src/qubecalib/units.py`
+- `packages/qube-calib/tests/unit/units/test_unit.py`
