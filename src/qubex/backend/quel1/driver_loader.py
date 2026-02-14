@@ -70,7 +70,7 @@ def _normalize_preference(preference: str | None) -> str:
 def _import_driver_package(package_name: str) -> QuelDriverModules:
     """Import one driver package and return required backend-facing symbols."""
     root_module = importlib.import_module(package_name)
-    clockmaster_module = importlib.import_module(f"{package_name}.clockmaster_compat")
+    clockmaster_module = _import_clockmaster_module(package_name)
     quel1_module = importlib.import_module(f"{package_name}.instrument.quel.quel1")
     driver_module = importlib.import_module(
         f"{package_name}.instrument.quel.quel1.driver"
@@ -117,6 +117,20 @@ def _import_driver_package(package_name: str) -> QuelDriverModules:
         Converter=qubecalib_module.Converter,
         WaveSequenceTools=qubecalib_module.WaveSequenceTools,
     )
+
+
+def _import_clockmaster_module(package_name: str) -> ModuleType:
+    """Import clockmaster compatibility module with support for old qubecalib layouts."""
+    preferred_module = f"{package_name}.clockmaster_compat"
+    try:
+        return importlib.import_module(preferred_module)
+    except ModuleNotFoundError as preferred_error:
+        if package_name != _PREFERENCE_QUBECALIB:
+            raise
+        try:
+            return importlib.import_module("quel_clock_master")
+        except ModuleNotFoundError:
+            raise preferred_error from None
 
 
 @lru_cache(maxsize=4)

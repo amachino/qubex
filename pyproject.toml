@@ -39,6 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 backend = [
     "qxdriver_quel @ git+https://github.com/amachino/qube-calib.git@qubex-quelware-v0.10",
+    # "qubecalib @ git+https://github.com/amachino/qube-calib.git@qubex-quelware-v0.8",
 ]
 
 [project.scripts]

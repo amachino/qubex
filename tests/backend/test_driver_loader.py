@@ -129,3 +129,30 @@ def test_load_quel_driver_uses_env_preference(monkeypatch) -> None:
     modules = driver_loader.load_quel_driver()
 
     assert modules.package_name == "qubecalib"
+
+
+def test_load_quel_driver_qubecalib_falls_back_to_legacy_clockmaster(
+    monkeypatch,
+) -> None:
+    """Given old qubecalib layout, when clockmaster_compat is missing, then legacy module is used."""
+    mapping = _build_fake_driver_modules("qubecalib")
+    legacy_clockmaster = cast(Any, ModuleType("quel_clock_master"))
+    legacy_clockmaster.QuBEMasterClient = type("QuBEMasterClient", (), {})
+    legacy_clockmaster.SequencerClient = type("SequencerClient", (), {})
+    mapping["quel_clock_master"] = legacy_clockmaster
+
+    def _fake_import(name: str) -> ModuleType:
+        if name == "qubecalib.clockmaster_compat":
+            raise ModuleNotFoundError(name)
+        if name in mapping:
+            return mapping[name]
+        raise ModuleNotFoundError(name)
+
+    driver_loader.clear_quel_driver_cache()
+    monkeypatch.setattr(driver_loader.importlib, "import_module", _fake_import)
+
+    modules = driver_loader.load_quel_driver("qubecalib")
+
+    assert modules.package_name == "qubecalib"
+    assert modules.QuBEMasterClient.__name__ == "QuBEMasterClient"
+    assert modules.SequencerClient.__name__ == "SequencerClient"
