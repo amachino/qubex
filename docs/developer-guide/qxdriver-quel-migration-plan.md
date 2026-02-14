@@ -9,6 +9,12 @@
 - 互換条件: `qubex` が現在 `qubecalib` に依存している API は互換レイヤーとして維持
 - 非互換条件: `qubex` が使っていない既存処理は削除
 
+## Progress
+
+- 2026-02-14: `qubex -> qubecalib` 互換 API の契約テストを追加。
+- 2026-02-14: `qxdriver_quel` 名前空間を追加し、`qubecalib` への
+  top-level / `qxdriver_quel.qubecalib` の互換 re-export を開始。
+
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
 以下は `src/qubex` を静的走査して得た「実使用 API」。
