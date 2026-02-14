@@ -25,19 +25,34 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from quel_ic_config import Quel1Box, Quel1ConfigOption
-    from qxdriver_quel import QubeCalib, Sequencer
-    from qxdriver_quel.instrument.quel.quel1 import Quel1System
-    from qxdriver_quel.instrument.quel.quel1.driver import (
-        AwgSetting,
-        RunitSetting,
-        TriggerSetting,
-    )
-    from qxdriver_quel.neopulse import (
-        DEFAULT_SAMPLING_PERIOD,
-        CapSampledSequence,
-        GenSampledSequence,
-    )
-    from qxdriver_quel.qubecalib import BoxPool
+    try:
+        from qxdriver_quel import QubeCalib, Sequencer
+        from qxdriver_quel.instrument.quel.quel1 import Quel1System
+        from qxdriver_quel.instrument.quel.quel1.driver import (
+            AwgSetting,
+            RunitSetting,
+            TriggerSetting,
+        )
+        from qxdriver_quel.neopulse import (
+            DEFAULT_SAMPLING_PERIOD,
+            CapSampledSequence,
+            GenSampledSequence,
+        )
+        from qxdriver_quel.qubecalib import BoxPool
+    except ImportError:
+        from qubecalib import QubeCalib, Sequencer
+        from qubecalib.instrument.quel.quel1 import Quel1System
+        from qubecalib.instrument.quel.quel1.driver import (
+            AwgSetting,
+            RunitSetting,
+            TriggerSetting,
+        )
+        from qubecalib.neopulse import (
+            DEFAULT_SAMPLING_PERIOD,
+            CapSampledSequence,
+            GenSampledSequence,
+        )
+        from qubecalib.qubecalib import BoxPool
 
 _QUBECALIB_IMPORT_DONE = False
 _QUBECALIB_IMPORT_ERROR: ImportError | None = None
@@ -77,6 +92,7 @@ def _ensure_qubecalib_imports() -> None:
 
     try:
         from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
+
         driver = load_quel_driver()
         _driver_QubeCalib = driver.QubeCalib
         _driver_QuBEMasterClient = driver.QuBEMasterClient
@@ -1099,7 +1115,9 @@ class Quel1BackendController:
         for box_name in box_list:
             self._check_box_availability(box_name)
             ipaddr_sss = str(box_settings[box_name].ipaddr_sss)
-            result.append(_driver_SequencerClient(target_ipaddr=ipaddr_sss).read_clock())
+            result.append(
+                _driver_SequencerClient(target_ipaddr=ipaddr_sss).read_clock()
+            )
         return result
 
     def check_clocks(self, box_list: list[str]) -> bool:

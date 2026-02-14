@@ -111,3 +111,21 @@ def test_load_quel_driver_auto_falls_back_to_qubecalib(monkeypatch) -> None:
     modules = driver_loader.load_quel_driver("auto")
 
     assert modules.package_name == "qubecalib"
+
+
+def test_load_quel_driver_uses_env_preference(monkeypatch) -> None:
+    """Given env preference, when no explicit preference is passed, then env value is used."""
+    mapping = _build_fake_driver_modules("qubecalib")
+
+    def _fake_import(name: str) -> ModuleType:
+        if name in mapping:
+            return mapping[name]
+        raise ModuleNotFoundError(name)
+
+    driver_loader.clear_quel_driver_cache()
+    monkeypatch.setenv("QUBEX_QUEL_DRIVER", "qubecalib")
+    monkeypatch.setattr(driver_loader.importlib, "import_module", _fake_import)
+
+    modules = driver_loader.load_quel_driver()
+
+    assert modules.package_name == "qubecalib"

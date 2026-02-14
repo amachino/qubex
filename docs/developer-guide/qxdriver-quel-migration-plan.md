@@ -20,6 +20,8 @@
   `qubecalib` から `qxdriver_quel` へ切替開始。
 - 2026-02-14: `qubex` 側に driver loader を追加し、
   `auto: qxdriver_quel -> qubecalib` fallback を実装開始。
+- 2026-02-14: `TYPE_CHECKING` 含めて `qxdriver_quel` / `qubecalib` の
+  二重解決を許容し、`QUBEX_QUEL_DRIVER` env 指定のテストを追加。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
