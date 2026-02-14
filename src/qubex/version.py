@@ -123,4 +123,57 @@ def get_version(package_name: str | None = None) -> str:
     return f"{version}+g{commit_hash}"
 
 
+def get_optional_version(package_name: str) -> str | None:
+    """
+    Return package version with editable git hash suffix, or ``None`` if missing.
+
+    Parameters
+    ----------
+    package_name : str
+        Distribution name.
+
+    Returns
+    -------
+    str | None
+        Version string when installed, otherwise ``None``.
+    """
+    try:
+        version = _get_installed_version(package_name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+    source_dir = _get_editable_source_dir(package_name)
+    if source_dir is None:
+        return version
+
+    commit_hash = _get_git_commit(source_dir)
+    if commit_hash is None:
+        return version
+
+    return f"{version}+g{commit_hash}"
+
+
+def resolve_first_available_version(
+    package_names: tuple[str, ...],
+) -> tuple[str, str] | None:
+    """
+    Resolve first installed package version from a preference-ordered list.
+
+    Parameters
+    ----------
+    package_names : tuple[str, ...]
+        Candidate package names in preference order.
+
+    Returns
+    -------
+    tuple[str, str] | None
+        ``(package_name, version)`` for the first installed package, else ``None``.
+    """
+    for package_name in package_names:
+        version = get_optional_version(package_name)
+        if version is not None:
+            return package_name, version
+    return None
+
+
 VERSION = get_version()

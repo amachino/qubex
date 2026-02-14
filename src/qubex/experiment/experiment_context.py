@@ -43,7 +43,7 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_PRE_MARGIN,
 )
 from qubex.typing import ConfigurationMode, TargetMap
-from qubex.version import get_version
+from qubex.version import get_version, resolve_first_available_version
 
 from . import experiment_tool
 from .experiment_constants import (
@@ -296,7 +296,14 @@ class ExperimentContext:
             logger.info(f"numpy: {get_version('numpy')}")
             logger.info(f"quel_ic_config: {get_version('quel_ic_config')}")
             logger.info(f"quel_clock_master: {get_version('quel_clock_master')}")
-            logger.info(f"qubecalib: {get_version('qubecalib')}")
+            quel_driver_version = resolve_first_available_version(
+                ("qxdriver-quel", "qubecalib")
+            )
+            if quel_driver_version is None:
+                logger.info("qubecalib: Package 'qubecalib' is not installed.")
+            else:
+                package_name, version = quel_driver_version
+                logger.info(f"{package_name}: {version}")
         logger.info(f"qubex: {get_version('qubex')}")
         logger.info(f"env: {sys.prefix}")
         logger.info(f"config: {self.config_path}")

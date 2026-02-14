@@ -39,6 +39,8 @@
 - 2026-02-14: `facade/sysconfdb/runtime/e7utils/resource_map` と
   `instrument/quel/quel1/tool` の実体を `qxdriver_quel` 側へ反転し、
   `qubecalib` 側は thin shim 化。
+- 2026-02-14: `qubex` の環境表示で配布名を
+  `qxdriver-quel` 優先 (`qubecalib` fallback) で解決する版管理ヘルパを追加。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
