@@ -1,4 +1,4 @@
-"""Regression tests for qubecalib single.Action triggered capture flow."""
+"""Regression tests for driver single.Action triggered capture flow."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from types import MappingProxyType
 from typing import Any, cast
 
 import numpy as np
-from qubecalib.e7compat import CaptureParam, WaveSequence
-from qubecalib.instrument.quel.quel1.driver.single import Action, AwgId, RunitId
+from qxdriver_quel.e7compat import CaptureParam, WaveSequence
+from qxdriver_quel.instrument.quel.quel1.driver.single import Action, AwgId, RunitId
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
 

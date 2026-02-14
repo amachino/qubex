@@ -47,6 +47,8 @@
   実行時のみ loader (`auto: qxdriver_quel -> qubecalib`) で切替える形に統一。
 - 2026-02-14: `packages/qube-calib/tests` の `qubecalib` 参照を
   `qxdriver_quel` 基準に移行し、実体モジュール削除前のテスト依存を縮小。
+- 2026-02-14: `packages/qube-calib/src/qubecalib` 実装を削除し、
+  モノレポ内実装を `qxdriver_quel` のみに一本化。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 

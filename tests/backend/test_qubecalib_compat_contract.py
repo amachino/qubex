@@ -1,11 +1,11 @@
-"""Compatibility contract tests for qubecalib APIs consumed by qubex."""
+"""Compatibility contract tests for QuEL driver APIs consumed by qubex."""
 
 from __future__ import annotations
 
-from qubecalib import QubeCalib, Sequencer, neopulse
-from qubecalib.clockmaster_compat import QuBEMasterClient, SequencerClient
-from qubecalib.instrument.quel.quel1 import Quel1System
-from qubecalib.instrument.quel.quel1.driver import (
+from qxdriver_quel import QubeCalib, Sequencer, neopulse
+from qxdriver_quel.clockmaster_compat import QuBEMasterClient, SequencerClient
+from qxdriver_quel.instrument.quel.quel1 import Quel1System
+from qxdriver_quel.instrument.quel.quel1.driver import (
     Action,
     AwgId,
     AwgSetting,
@@ -16,8 +16,13 @@ from qubecalib.instrument.quel.quel1.driver import (
     multi,
     single,
 )
-from qubecalib.instrument.quel.quel1.tool import Skew
-from qubecalib.qubecalib import BoxPool, CaptureParamTools, Converter, WaveSequenceTools
+from qxdriver_quel.instrument.quel.quel1.tool import Skew
+from qxdriver_quel.qubecalib import (
+    BoxPool,
+    CaptureParamTools,
+    Converter,
+    WaveSequenceTools,
+)
 
 
 def test_qubecalib_import_paths_required_by_qubex_are_available() -> None:
