@@ -45,6 +45,8 @@
   `qxdriver-quel` へ切替 (`qubecalib` import は互換 shim で継続)。
 - 2026-02-14: `qubex` backend の `TYPE_CHECKING` import を `qxdriver_quel` 基準へ整理し、
   実行時のみ loader (`auto: qxdriver_quel -> qubecalib`) で切替える形に統一。
+- 2026-02-14: `packages/qube-calib/tests` の `qubecalib` 参照を
+  `qxdriver_quel` 基準に移行し、実体モジュール削除前のテスト依存を縮小。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 
