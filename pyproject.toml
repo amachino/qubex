@@ -80,7 +80,7 @@ qxsimulator = { workspace = true }
 
 [tool.uv.workspace]
 members = [
-    "packages/qube-calib",
+    "packages/qxdriver-quel",
     "packages/qxcore",
     "packages/qxpulse",
     "packages/qxschema",

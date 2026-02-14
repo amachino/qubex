@@ -1,4 +1,4 @@
-[submodule "packages/qube-calib"]
-	path = packages/qube-calib
+[submodule "packages/qxdriver-quel"]
+	path = packages/qxdriver-quel
 	url = https://github.com/amachino/qube-calib.git
 	branch = qubex-quelware-v0.10

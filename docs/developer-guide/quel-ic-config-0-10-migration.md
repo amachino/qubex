@@ -2,7 +2,7 @@
 
 ## Scope and objective
 
-This document identifies the required work to migrate `qubex` and `packages/qube-calib` from `quel_ic_config` 0.8.x to 0.10.x.
+This document identifies the required work to migrate `qubex` and `packages/qxdriver-quel` from `quel_ic_config` 0.8.x to 0.10.x.
 
 - Migration target: `quel_ic_config` 0.10.x (current upstream `main`: 0.10.7)
 - Primary references:
@@ -32,17 +32,17 @@ This document identifies the required work to migrate `qubex` and `packages/qube
 
 ### qube-calib
 
-- `packages/qube-calib/pyproject.toml`
-- `packages/qube-calib/src/qubecalib/qubecalib.py`
-- `packages/qube-calib/src/qubecalib/sysconfdb.py`
-- `packages/qube-calib/src/qubecalib/e7utils.py`
-- `packages/qube-calib/src/qubecalib/instrument/quel/quel1/driver/common.py`
-- `packages/qube-calib/src/qubecalib/instrument/quel/quel1/driver/single.py`
-- `packages/qube-calib/src/qubecalib/instrument/quel/quel1/driver/multi.py`
-- `packages/qube-calib/tests/unit/task/quelware/direct/conftest.py`
-- `packages/qube-calib/tests/unit/task/quelware/direct/test_direct.py`
-- `packages/qube-calib/tests/unit/task/quelware/direct/test_single.py`
-- `packages/qube-calib/tests/unit/task/quelware/direct/test_multi.py`
+- `packages/qxdriver-quel/pyproject.toml`
+- `packages/qxdriver-quel/src/qubecalib/qubecalib.py`
+- `packages/qxdriver-quel/src/qubecalib/sysconfdb.py`
+- `packages/qxdriver-quel/src/qubecalib/e7utils.py`
+- `packages/qxdriver-quel/src/qubecalib/instrument/quel/quel1/driver/common.py`
+- `packages/qxdriver-quel/src/qubecalib/instrument/quel/quel1/driver/single.py`
+- `packages/qxdriver-quel/src/qubecalib/instrument/quel/quel1/driver/multi.py`
+- `packages/qxdriver-quel/tests/unit/task/quelware/direct/conftest.py`
+- `packages/qxdriver-quel/tests/unit/task/quelware/direct/test_direct.py`
+- `packages/qxdriver-quel/tests/unit/task/quelware/direct/test_single.py`
+- `packages/qxdriver-quel/tests/unit/task/quelware/direct/test_multi.py`
 
 ### qubex
 
@@ -53,12 +53,12 @@ This document identifies the required work to migrate `qubex` and `packages/qube
 
 ## Phase 0: dependency and compatibility baseline
 
-- Update `packages/qube-calib/pyproject.toml`:
+- Update `packages/qxdriver-quel/pyproject.toml`:
   - bump `quel_ic_config` to 0.10.x
   - remove `e7awgsw` dependency
   - remove `quel_clock_master` dependency
 - Update version-assert test:
-  - `packages/qube-calib/tests/unit/task/quelware/direct/test_direct.py`
+  - `packages/qxdriver-quel/tests/unit/task/quelware/direct/test_direct.py`
 
 ## Phase 1: qube-calib direct driver migration (core)
 

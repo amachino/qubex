@@ -2,7 +2,7 @@
 
 ## Goal
 
-`packages/qube-calib` を、`qubex` から QuEL 装置 (quelware 0.10) を制御する専用ドライバーへ再構成する。
+`packages/qxdriver-quel` を、`qubex` から QuEL 装置 (quelware 0.10) を制御する専用ドライバーへ再構成する。
 
 - リポジトリ名: `qxdriver-quel`
 - Python パッケージ名: `qxdriver_quel`
@@ -41,13 +41,13 @@
   `qubecalib` 側は thin shim 化。
 - 2026-02-14: `qubex` の環境表示で配布名を
   `qxdriver-quel` 優先 (`qubecalib` fallback) で解決する版管理ヘルパを追加。
-- 2026-02-14: `packages/qube-calib` の配布メタデータ名を
+- 2026-02-14: `packages/qxdriver-quel` の配布メタデータ名を
   `qxdriver-quel` へ切替 (`qubecalib` import は互換 shim で継続)。
 - 2026-02-14: `qubex` backend の `TYPE_CHECKING` import を `qxdriver_quel` 基準へ整理し、
   実行時のみ loader (`auto: qxdriver_quel -> qubecalib`) で切替える形に統一。
-- 2026-02-14: `packages/qube-calib/tests` の `qubecalib` 参照を
+- 2026-02-14: `packages/qxdriver-quel/tests` の `qubecalib` 参照を
   `qxdriver_quel` 基準に移行し、実体モジュール削除前のテスト依存を縮小。
-- 2026-02-14: `packages/qube-calib/src/qubecalib` 実装を削除し、
+- 2026-02-14: `packages/qxdriver-quel/src/qubecalib` 実装を削除し、
   モノレポ内実装を `qxdriver_quel` のみに一本化。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
@@ -215,7 +215,7 @@ packages/qxdriver-quel/
    - `qubex` の実使用 API をテスト化
    - `qubecalib` 側の不要モジュール棚卸し
 2. **Phase B: rename + package split**
-   - `packages/qube-calib -> packages/qxdriver-quel`
+   - `packages/qxdriver-quel -> packages/qxdriver-quel`
    - import パスを `qxdriver_quel` に移行
    - `qubecalib` 名は compat shim として残す（当面）
 3. **Phase C: 新コア移行**
@@ -233,7 +233,7 @@ packages/qxdriver-quel/
 ## 4. 直近の実施順 (次に着手する作業)
 
 1. `qubex` 側に「互換 API 契約テスト」を追加し、現行実装でグリーン化
-2. `packages/qube-calib` 内で、互換対象外モジュール一覧を作成
+2. `packages/qxdriver-quel` 内で、互換対象外モジュール一覧を作成
 3. その一覧に基づいて `qxdriver_quel` 新構成へリネーム＋移設
 4. compat shim を配置して `qubex` 側コード無変更で通る状態を作る
 

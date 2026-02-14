@@ -3122,7 +3122,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
     { name = "qxcore", editable = "packages/qxcore" },
-    { name = "qxdriver-quel", marker = "extra == 'backend'", editable = "packages/qube-calib" },
+    { name = "qxdriver-quel", marker = "extra == 'backend'", editable = "packages/qxdriver-quel" },
     { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "qxschema", editable = "packages/qxschema" },
     { name = "qxsimulator", editable = "packages/qxsimulator" },
@@ -3242,7 +3242,7 @@ requires-dist = [
 
 [[package]]
 name = "qxdriver-quel"
-source = { editable = "packages/qube-calib" }
+source = { editable = "packages/qxdriver-quel" }
 dependencies = [
     { name = "numpy" },
     { name = "plotly" },
