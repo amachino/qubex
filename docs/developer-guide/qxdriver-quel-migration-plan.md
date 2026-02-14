@@ -16,6 +16,8 @@
   top-level / `qxdriver_quel.qubecalib` の互換 re-export を開始。
 - 2026-02-14: `qxdriver_quel.clockmaster_compat` と
   `qxdriver_quel.instrument.quel.quel1.*` の import パス互換 shim を追加。
+- 2026-02-14: `qubex` backend (`quel1`) の実装 import を
+  `qubecalib` から `qxdriver_quel` へ切替開始。
 
 ## 1. qubex が実際に使っている qubecalib API (互換対象)
 

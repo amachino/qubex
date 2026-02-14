@@ -23,10 +23,11 @@ from .quel1_box_compat import adapt_quel1_box
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from qubecalib import QubeCalib, Sequencer
-    from qubecalib.clockmaster_compat import QuBEMasterClient, SequencerClient
-    from qubecalib.instrument.quel.quel1 import Quel1System
-    from qubecalib.instrument.quel.quel1.driver import (
+    from quel_ic_config import Quel1Box, Quel1ConfigOption
+    from qxdriver_quel import QubeCalib, Sequencer
+    from qxdriver_quel.clockmaster_compat import QuBEMasterClient, SequencerClient
+    from qxdriver_quel.instrument.quel.quel1 import Quel1System
+    from qxdriver_quel.instrument.quel.quel1.driver import (
         Action,
         AwgId,
         AwgSetting,
@@ -35,19 +36,18 @@ if TYPE_CHECKING:
         RunitSetting,
         TriggerSetting,
     )
-    from qubecalib.instrument.quel.quel1.tool import Skew
-    from qubecalib.neopulse import (
+    from qxdriver_quel.instrument.quel.quel1.tool import Skew
+    from qxdriver_quel.neopulse import (
         DEFAULT_SAMPLING_PERIOD,
         CapSampledSequence,
         GenSampledSequence,
     )
-    from qubecalib.qubecalib import (
+    from qxdriver_quel.qubecalib import (
         BoxPool,
         CaptureParamTools,
         Converter,
         WaveSequenceTools,
     )
-    from quel_ic_config import Quel1Box, Quel1ConfigOption
 
 _QUBECALIB_IMPORT_DONE = False
 _QUBECALIB_IMPORT_ERROR: ImportError | None = None
@@ -69,13 +69,14 @@ def _ensure_qubecalib_imports() -> None:
         raise _QUBECALIB_IMPORT_ERROR
 
     try:
-        from qubecalib import QubeCalib, Sequencer  # lazy import
-        from qubecalib.clockmaster_compat import (  # lazy import
+        from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
+        from qxdriver_quel import QubeCalib, Sequencer  # lazy import
+        from qxdriver_quel.clockmaster_compat import (  # lazy import
             QuBEMasterClient,
             SequencerClient,
         )
-        from qubecalib.instrument.quel.quel1 import Quel1System  # lazy import
-        from qubecalib.instrument.quel.quel1.driver import (  # lazy import
+        from qxdriver_quel.instrument.quel.quel1 import Quel1System  # lazy import
+        from qxdriver_quel.instrument.quel.quel1.driver import (  # lazy import
             Action,
             AwgId,
             AwgSetting,
@@ -84,19 +85,18 @@ def _ensure_qubecalib_imports() -> None:
             RunitSetting,
             TriggerSetting,
         )
-        from qubecalib.instrument.quel.quel1.tool import Skew  # lazy import
-        from qubecalib.neopulse import (  # lazy import
+        from qxdriver_quel.instrument.quel.quel1.tool import Skew  # lazy import
+        from qxdriver_quel.neopulse import (  # lazy import
             DEFAULT_SAMPLING_PERIOD,
             CapSampledSequence,
             GenSampledSequence,
         )
-        from qubecalib.qubecalib import (  # lazy import
+        from qxdriver_quel.qubecalib import (  # lazy import
             BoxPool,
             CaptureParamTools,
             Converter,
             WaveSequenceTools,
         )
-        from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
     except ImportError as e:
         _QUBECALIB_IMPORT_ERROR = e
         logger.info(e)
@@ -1545,7 +1545,7 @@ class Quel1BackendController:
         Any
             GenSampledSequence object.
         """
-        from qubecalib import neopulse as pls
+        from qxdriver_quel import neopulse as pls
 
         return pls.GenSampledSequence(
             target_name=target_name,
@@ -1592,7 +1592,7 @@ class Quel1BackendController:
         Any
             CapSampledSequence object.
         """
-        from qubecalib import neopulse as pls
+        from qxdriver_quel import neopulse as pls
 
         cap_sub_sequence = pls.CapSampledSubSequence(
             capture_slots=[],

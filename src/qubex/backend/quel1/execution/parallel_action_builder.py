@@ -407,8 +407,8 @@ def build_parallel_multi_action(
     >>> isinstance(cprms, dict)
     True
     """
-    from qubecalib.instrument.quel.quel1.driver import multi as direct_multi
-    from qubecalib.instrument.quel.quel1.driver import single as direct_single
+    from qxdriver_quel.instrument.quel.quel1.driver import multi as direct_multi
+    from qxdriver_quel.instrument.quel.quel1.driver import single as direct_single
 
     if clock_health_checks is None:
         clock_health_checks = ClockHealthCheckOptions()
