@@ -411,7 +411,9 @@ def build_parallel_multi_action(
     >>> isinstance(cprms, dict)
     True
     """
-    driver = cast(QuelDriverModulesProtocol, load_quel_driver())
+    driver = load_quel_driver()
+    if TYPE_CHECKING:
+        driver = cast(QuelDriverModulesProtocol, driver)
     direct_multi = driver.direct_multi_module
     direct_single = driver.direct_single_module
 
