@@ -3,8 +3,6 @@
 from qubex.backend.quel1 import SAMPLING_PERIOD as BACKEND_SAMPLING_PERIOD
 from qubex.measurement.measurement_defaults import (
     DEFAULT_INTERVAL as MEASUREMENT_DEFAULT_INTERVAL,
-)
-from qubex.measurement.measurement_defaults import (
     DEFAULT_SHOTS as MEASUREMENT_DEFAULT_SHOTS,
 )
 

@@ -26,8 +26,7 @@ from rich.prompt import Confirm
 from tqdm import tqdm
 from typing_extensions import deprecated
 
-from qubex.analysis import fitting
-from qubex.analysis import visualization as viz
+from qubex.analysis import fitting, visualization as viz
 from qubex.backend import MixingUtil, Target
 from qubex.backend.experiment_system import (
     CNCO_CENTER_CTRL,

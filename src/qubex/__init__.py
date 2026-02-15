@@ -6,8 +6,7 @@ import qxpulse as pulse
 from qxpulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
 
 from . import core
-from .analysis import fitting as fit
-from .analysis import visualization as viz
+from .analysis import fitting as fit, visualization as viz
 from .core import Frequency, FrequencyArray, Time, TimeArray, units
 from .experiment import Experiment
 from .logging import set_log_level

@@ -996,7 +996,9 @@ class Quel1BackendController:
         clockmaster_setting = db._clockmaster_setting
         if clockmaster_setting is None:
             raise ValueError("clock master is not found")
-        master = self._driver.QuBEMasterClient(master_ipaddr=str(clockmaster_setting.ipaddr))
+        master = self._driver.QuBEMasterClient(
+            master_ipaddr=str(clockmaster_setting.ipaddr)
+        )
         box_settings = db._box_settings
         master.kick_clock_synch(
             [str(box_settings[box_name].ipaddr_sss) for box_name in box_list]

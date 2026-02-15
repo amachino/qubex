@@ -8,8 +8,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import ArrayLike
 
-from qubex.analysis import fitting
-from qubex.analysis import visualization as viz
+from qubex.analysis import fitting, visualization as viz
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,

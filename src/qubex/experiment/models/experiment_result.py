@@ -11,8 +11,7 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
-from qubex.analysis import FitResult, fitting, util
-from qubex.analysis import visualization as viz
+from qubex.analysis import FitResult, fitting, util, visualization as viz
 from qubex.typing import TargetMap
 
 from .experiment_record import ExperimentRecord

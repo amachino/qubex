@@ -11,7 +11,9 @@ from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 
 try:
     _e7compat = importlib.import_module("qxdriver_quel.e7compat")
-    _single = importlib.import_module("qxdriver_quel.instrument.quel.quel1.driver.single")
+    _single = importlib.import_module(
+        "qxdriver_quel.instrument.quel.quel1.driver.single"
+    )
 except ModuleNotFoundError:
     _e7compat = importlib.import_module("qubecalib.e7compat")
     _single = importlib.import_module("qubecalib.instrument.quel.quel1.driver.single")

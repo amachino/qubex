@@ -25,8 +25,7 @@ from qxpulse import (
 from rich.console import Console
 from tqdm import tqdm
 
-from qubex.analysis import IQPlotter, fitting
-from qubex.analysis import visualization as viz
+from qubex.analysis import IQPlotter, fitting, visualization as viz
 from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,

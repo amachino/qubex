@@ -21,8 +21,7 @@ from qxpulse import (
     Waveform,
 )
 
-from qubex.analysis import FitResult, fitting, util
-from qubex.analysis import visualization as viz
+from qubex.analysis import FitResult, fitting, util, visualization as viz
 from qubex.backend import Target
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
