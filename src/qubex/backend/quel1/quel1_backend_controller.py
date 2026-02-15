@@ -24,32 +24,31 @@ from .quel1_box_compat import adapt_quel1_box
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-    from typing import ClassVar, Protocol, TypeAlias
+    from typing import TypeAlias
 
-    from qxdriver_quel import QubeCalib, Sequencer
-    from qxdriver_quel.instrument.quel.quel1 import Quel1System
-    from qxdriver_quel.instrument.quel.quel1.driver import (
-        AwgSetting,
-        RunitSetting,
-        TriggerSetting,
+    from .driver_protocols import (
+        QubeCalibProtocol,
+        Quel1ConfigOptionProtocol,
+        QuelDriverModulesProtocol,
+        SequencerProtocol,
     )
-    from qxdriver_quel.neopulse import (
-        DEFAULT_SAMPLING_PERIOD,
-        CapSampledSequence,
-        GenSampledSequence,
-    )
-    from qxdriver_quel.qubecalib import BoxPool
 
-    class _Quel1ConfigOptionLike(Protocol):
-        _value2member_map_: ClassVar[Mapping[str, Any]]
-
+    QubeCalib: TypeAlias = QubeCalibProtocol
+    Sequencer: TypeAlias = SequencerProtocol
+    Quel1ConfigOption: TypeAlias = Quel1ConfigOptionProtocol
+    Quel1System: TypeAlias = Any
     Quel1Box: TypeAlias = Any
-    Quel1ConfigOption: TypeAlias = _Quel1ConfigOptionLike
+    BoxPool: TypeAlias = Any
+    AwgSetting: TypeAlias = Any
+    RunitSetting: TypeAlias = Any
+    TriggerSetting: TypeAlias = Any
 
 _DRIVER_IMPORT_DONE = False
 _DRIVER_IMPORT_ERROR: ImportError | None = None
 neopulse_module: Any = None
+DEFAULT_SAMPLING_PERIOD: Any = None
+CapSampledSequence: Any = None
+GenSampledSequence: Any = None
 _driver_QubeCalib: Any = None
 _driver_QuBEMasterClient: Any = None
 _driver_SequencerClient: Any = None
@@ -84,7 +83,7 @@ def _ensure_driver_imports() -> None:
         raise _DRIVER_IMPORT_ERROR
 
     try:
-        driver = load_quel_driver()
+        driver = cast(QuelDriverModulesProtocol, load_quel_driver())
         globals()["Quel1Box"] = driver.Quel1Box
         globals()["Quel1ConfigOption"] = driver.Quel1ConfigOption
         _driver_QubeCalib = driver.QubeCalib
