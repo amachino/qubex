@@ -295,7 +295,6 @@ class ExperimentContext:
         if verbose:
             logger.info(f"numpy: {get_version('numpy')}")
             logger.info(f"quel_ic_config: {get_version('quel_ic_config')}")
-            logger.info(f"quel_clock_master: {get_version('quel_clock_master')}")
             quel_driver_version = resolve_first_available_version(
                 ("qxdriver-quel", "qubecalib")
             )
