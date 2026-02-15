@@ -10,13 +10,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from logging import Logger
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, Protocol, TypeAlias, cast
+from typing import Any, Final, Protocol, TypeAlias, cast
 
 from qubex.backend.quel1.quel1_box_compat import adapt_quel1_box
 from qubex.backend.quel1.quel1_driver_loader import load_quel1_driver
-
-if TYPE_CHECKING:
-    from qubex.backend.quel1.quel1_driver_protocols import QuelDriverClassesProtocol
 
 PortType: TypeAlias = Any
 CommonSetting: TypeAlias = Any
@@ -424,8 +421,6 @@ def build_parallel_multi_action(
     True
     """
     driver = load_quel1_driver()
-    if TYPE_CHECKING:
-        driver = cast(QuelDriverClassesProtocol, driver)
     direct_multi_action = driver.DirectMultiAction
     direct_single_action = driver.DirectSingleAction
 

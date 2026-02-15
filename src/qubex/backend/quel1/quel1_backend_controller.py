@@ -33,7 +33,6 @@ if TYPE_CHECKING:
         Quel1BoxProtocol,
         Quel1ConfigOptionProtocol,
         Quel1SystemProtocol,
-        QuelDriverClassesProtocol,
         RunitSettingProtocol,
         SequencerProtocol,
         TriggerSettingProtocol,
@@ -120,10 +119,7 @@ class Quel1BackendController:
         self,
         config_path: str | Path | None = None,
     ):
-        driver = load_quel1_driver()
-        if TYPE_CHECKING:
-            driver = cast(QuelDriverClassesProtocol, driver)
-        self._driver = driver
+        self._driver = load_quel1_driver()
 
         try:
             if config_path is None:
