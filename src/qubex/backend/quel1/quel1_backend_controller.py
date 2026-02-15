@@ -72,16 +72,35 @@ _driver_CaptureParamTools: Any = None
 _driver_Converter: Any = None
 _driver_WaveSequenceTools: Any = None
 
+_DRIVER_GLOBAL_BINDINGS: dict[str, str] = {
+    "Quel1Box": "Quel1Box",
+    "Quel1ConfigOption": "Quel1ConfigOption",
+    "_driver_QubeCalib": "QubeCalib",
+    "_driver_QuBEMasterClient": "QuBEMasterClient",
+    "_driver_SequencerClient": "SequencerClient",
+    "_driver_Quel1System": "Quel1System",
+    "_driver_Action": "Action",
+    "_driver_AwgId": "AwgId",
+    "_driver_AwgSetting": "AwgSetting",
+    "_driver_NamedBox": "NamedBox",
+    "_driver_RunitId": "RunitId",
+    "_driver_RunitSetting": "RunitSetting",
+    "_driver_TriggerSetting": "TriggerSetting",
+    "_driver_Skew": "Skew",
+    "DEFAULT_SAMPLING_PERIOD": "DEFAULT_SAMPLING_PERIOD",
+    "CapSampledSequence": "CapSampledSequence",
+    "GenSampledSequence": "GenSampledSequence",
+    "_driver_BoxPool": "BoxPool",
+    "_driver_CaptureParamTools": "CaptureParamTools",
+    "_driver_Converter": "Converter",
+    "_driver_WaveSequenceTools": "WaveSequenceTools",
+    "neopulse_module": "neopulse_module",
+}
+
 
 def _ensure_driver_imports() -> None:
     """Import selected driver dependencies on demand."""
     global _DRIVER_IMPORT_DONE, _DRIVER_IMPORT_ERROR
-    global _driver_QubeCalib, _driver_QuBEMasterClient, _driver_SequencerClient
-    global _driver_Quel1System, _driver_Action, _driver_AwgId, _driver_AwgSetting
-    global _driver_NamedBox, _driver_RunitId, _driver_RunitSetting
-    global _driver_TriggerSetting, _driver_Skew, _driver_BoxPool
-    global _driver_CaptureParamTools, _driver_Converter, _driver_WaveSequenceTools
-    global Quel1Box, Quel1ConfigOption
 
     if _DRIVER_IMPORT_DONE:
         return
@@ -92,28 +111,8 @@ def _ensure_driver_imports() -> None:
         driver = load_quel_driver()
         if TYPE_CHECKING:
             driver = cast(QuelDriverModulesProtocol, driver)
-        globals()["Quel1Box"] = driver.Quel1Box
-        globals()["Quel1ConfigOption"] = driver.Quel1ConfigOption
-        _driver_QubeCalib = driver.QubeCalib
-        _driver_QuBEMasterClient = driver.QuBEMasterClient
-        _driver_SequencerClient = driver.SequencerClient
-        _driver_Quel1System = driver.Quel1System
-        _driver_Action = driver.Action
-        _driver_AwgId = driver.AwgId
-        _driver_AwgSetting = driver.AwgSetting
-        _driver_NamedBox = driver.NamedBox
-        _driver_RunitId = driver.RunitId
-        _driver_RunitSetting = driver.RunitSetting
-        _driver_TriggerSetting = driver.TriggerSetting
-        _driver_Skew = driver.Skew
-        globals()["DEFAULT_SAMPLING_PERIOD"] = driver.DEFAULT_SAMPLING_PERIOD
-        globals()["CapSampledSequence"] = driver.CapSampledSequence
-        globals()["GenSampledSequence"] = driver.GenSampledSequence
-        _driver_BoxPool = driver.BoxPool
-        _driver_CaptureParamTools = driver.CaptureParamTools
-        _driver_Converter = driver.Converter
-        _driver_WaveSequenceTools = driver.WaveSequenceTools
-        globals()["neopulse_module"] = driver.neopulse_module
+        for global_name, attribute_name in _DRIVER_GLOBAL_BINDINGS.items():
+            globals()[global_name] = getattr(driver, attribute_name)
     except ImportError as e:
         _DRIVER_IMPORT_ERROR = e
         logger.info(e)
