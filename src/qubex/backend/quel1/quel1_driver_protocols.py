@@ -13,185 +13,39 @@ DataMap = dict[str, Any]
 ConfigMap = dict[str, Any]
 
 
-class Quel1ConfigOptionProtocol(Protocol):
-    """Protocol for Quel1 config option enum-like classes."""
+class ActionProtocol(Protocol):
+    """Protocol for direct action class symbols."""
 
-    _value2member_map_: ClassVar[Mapping[str, Any]]
-
-
-class QuBEMasterClientProtocol(Protocol):
-    """Protocol for clock-master client compatibility wrappers."""
-
-    def __init__(
-        self,
-        master_ipaddr: str | None = None,
+    @classmethod
+    def build(
+        cls,
         *,
-        ipaddr: str | None = None,
-    ) -> None:
-        """Create a clock-master client."""
-        ...
-
-    def kick_clock_synch(self, box_sss_ipaddrs: Sequence[str]) -> None:
-        """Trigger clock synchronization for the given SSS endpoints."""
-        ...
-
-    def read_clock(self) -> tuple[bool, int]:
-        """Read clock-master counter value."""
-        ...
-
-    def reset(self) -> bool:
-        """Reset clock master when supported by the backend."""
+        system: Quel1SystemProtocol,
+        settings: list[
+            RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
+        ],
+    ) -> DirectActionProtocol:
+        """Build an action Any from direct-driver settings."""
         ...
 
 
-class SequencerClientProtocol(Protocol):
-    """Protocol for sequencer clock readers."""
+class AwgIdProtocol(Protocol):
+    """Protocol for AWG identifier objects."""
 
-    def __init__(self, target_ipaddr: str, *, box: Any | None = None) -> None:
-        """Create a sequencer client."""
-        ...
-
-    def read_clock(self) -> tuple[bool, int, int]:
-        """Read current and SYSREF counters."""
-        ...
-
-
-class Quel1BoxProtocol(Protocol):
-    """Protocol for APIs shared by Quel1Box and Quel1BoxWithRawWss."""
-
-    boxtype: str
-
-    def reconnect(self, *args: Any, **kwargs: Any) -> Any:
-        """Reconnect links and return backend-specific status payload."""
-        ...
-
-    def relinkup(self, *args: Any, **kwargs: Any) -> Any:
-        """Relink box JESD links with optional config options."""
-        ...
-
-    def link_status(self) -> dict[int, bool]:
-        """Return link status by lane/group index."""
-        ...
-
-    def get_input_ports(self) -> Sequence[PortType]:
-        """Return iterable of input port identifiers."""
-        ...
-
-    def get_output_ports(self) -> Sequence[PortType]:
-        """Return iterable of output port identifiers."""
-        ...
-
-    def dump_box(self) -> dict[str, Any]:
-        """Return current box configuration dump."""
-        ...
-
-    def dump_port(self, port: PortType) -> dict[str, Any]:
-        """Return current port configuration dump."""
-        ...
-
-    def config_port(
-        self,
-        *,
-        port: PortType,
-        lo_freq: float | None = None,
-        cnco_freq: float | None = None,
-        vatt: int | None = None,
-        sideband: str | None = None,
-        fullscale_current: int | None = None,
-        rfswitch: str | None = None,
-    ) -> None:
-        """Apply port-level configuration."""
-        ...
-
-    def config_channel(
-        self,
-        *,
-        port: PortType,
-        channel: int,
-        fnco_freq: float | None = None,
-    ) -> None:
-        """Apply channel-level configuration."""
-        ...
-
-    def config_runit(
-        self,
-        *,
-        port: PortType,
-        runit: int,
-        fnco_freq: float | None = None,
-    ) -> None:
-        """Apply runit-level configuration."""
-        ...
-
-
-class BoxSettingProtocol(Protocol):
-    """Protocol for one box setting row in system config database."""
-
-    box_name: str
-    boxtype: str
-    ipaddr_wss: Any
-    ipaddr_sss: Any
-    ipaddr_css: Any
-
-
-class PortSettingProtocol(Protocol):
-    """Protocol for one port setting row in system config database."""
-
+    box: str
     port: PortType
+    channel: int
 
-
-class ClockmasterSettingProtocol(Protocol):
-    """Protocol for clockmaster setting row in system config database."""
-
-    ipaddr: Any
-
-
-class SystemConfigDatabaseProtocol(Protocol):
-    """Protocol for qubecalib system configuration database Any."""
-
-    _target_settings: dict[str, Any]
-    _box_settings: dict[str, BoxSettingProtocol]
-    _port_settings: dict[str, PortSettingProtocol]
-    _clockmaster_setting: ClockmasterSettingProtocol | None
-
-    def asdict(self) -> dict[str, Any]:
-        """Return whole configuration as dictionary."""
-        ...
-
-    def asjson(self) -> str:
-        """Return whole configuration as JSON."""
-        ...
-
-    def get_channels_by_target(self, target: str) -> list[str]:
-        """Return channel names linked to the target."""
-        ...
-
-    def get_channel(self, channel_name: str) -> tuple[str, str, int]:
-        """Return ``(box_name, port_name, channel_number)`` for one channel."""
-        ...
-
-    def create_box(
-        self, box_name: str, *, reconnect: bool = True
-    ) -> Quel1BoxProtocol:
-        """Create one box Any from database settings."""
+    def __init__(self, box: str, port: PortType, channel: int) -> None:
+        """Create an AWG identifier."""
         ...
 
 
-class SysdbProtocol(Protocol):
-    """Protocol for low-level sysdb helpers used by qubex."""
+class AwgSettingProtocol(Protocol):
+    """Protocol for driver AWG setting objects."""
 
-    _relation_channel_target: list[tuple[str, str]]
-
-    def load_skew_yaml(self, path: str) -> None:
-        """Load skew YAML file into sysdb."""
-        ...
-
-
-class ExecutorProtocol(Protocol):
-    """Protocol for queued command executor used by qubecalib."""
-
-    def add_command(self, command: Any) -> None:
-        """Append one command to queue."""
+    def __init__(self, awg: AwgIdProtocol, wseq: Any) -> None:
+        """Create one AWG setting."""
         ...
 
 
@@ -219,69 +73,86 @@ class BoxPoolProtocol(Protocol):
         ...
 
 
-class Quel1SystemProtocol(Protocol):
-    """Protocol for direct multi-box system objects used by qubex."""
+class BoxSettingProtocol(Protocol):
+    """Protocol for one box setting row in system config database."""
 
-    config_cache: dict[str, dict[str, Any]]
-    config_fetched_at: datetime | None
+    box_name: str
+    boxtype: str
+    ipaddr_wss: Any
+    ipaddr_sss: Any
+    ipaddr_css: Any
+
+
+class CapSampledSequenceProtocol(Protocol):
+    """Protocol for capture sampled-sequence objects."""
+
+    modulation_frequency: float | None
+
+
+class CapSampledSubSequenceProtocol(Protocol):
+    """Protocol for capture sub-sequence objects."""
+
+    capture_slots: list[CaptureSlotsProtocol]
+
+
+class CaptureParamToolsProtocol(Protocol):
+    """Protocol for capture-parameter helper class symbols."""
 
     @classmethod
     def create(
         cls,
         *,
-        clockmaster: QuBEMasterClientProtocol,
-        boxes: Sequence[NamedBoxProtocol],
-        update_copnfig_cache: bool = False,
-    ) -> Quel1SystemProtocol:
-        """Create a system from pre-constructed clockmaster/box objects."""
+        sequence: CapSampledSequenceProtocol,
+        capture_delay_words: int,
+        repeats: int,
+        interval_samples: int,
+    ) -> Any:
+        """Create one capture parameter Any."""
+        ...
+
+    @classmethod
+    def enable_integration(cls, *, capprm: Any) -> None:
+        """Enable integration mode on capture parameters."""
+        ...
+
+    @classmethod
+    def enable_demodulation(cls, *, capprm: Any, f_GHz: float) -> None:
+        """Enable DSP demodulation with the given IF frequency."""
         ...
 
 
-class AwgIdProtocol(Protocol):
-    """Protocol for AWG identifier objects."""
+class CaptureSlotsProtocol(Protocol):
+    """Protocol for one capture slot entry."""
 
-    box: str
-    port: PortType
-    channel: int
-
-    def __init__(self, box: str, port: PortType, channel: int) -> None:
-        """Create an AWG identifier."""
+    def __init__(
+        self,
+        *,
+        duration: int,
+        post_blank: int,
+        original_duration: int | None,
+        original_post_blank: int | None,
+    ) -> None:
+        """Create one capture slot."""
         ...
 
 
-class RunitIdProtocol(Protocol):
-    """Protocol for runit identifier objects."""
+class ClockmasterSettingProtocol(Protocol):
+    """Protocol for clockmaster setting row in system config database."""
 
-    box: str
-    port: PortType
-    runit: int
-
-    def __init__(self, box: str, port: PortType, runit: int) -> None:
-        """Create a runit identifier."""
-        ...
+    ipaddr: Any
 
 
-class AwgSettingProtocol(Protocol):
-    """Protocol for driver AWG setting objects."""
+class ConverterProtocol(Protocol):
+    """Protocol for waveform conversion helper class symbols."""
 
-    def __init__(self, awg: AwgIdProtocol, wseq: Any) -> None:
-        """Create one AWG setting."""
-        ...
-
-
-class RunitSettingProtocol(Protocol):
-    """Protocol for driver runit setting objects."""
-
-    def __init__(self, runit: RunitIdProtocol, cprm: Any) -> None:
-        """Create one runit setting."""
-        ...
-
-
-class TriggerSettingProtocol(Protocol):
-    """Protocol for driver trigger setting objects."""
-
-    def __init__(self, trigger_awg: AwgIdProtocol, triggerd_port: PortType) -> None:
-        """Create one trigger setting."""
+    @classmethod
+    def multiplex(
+        cls,
+        *,
+        sequences: Mapping[str, GenSampledSequenceProtocol],
+        modfreqs: Mapping[str, float],
+    ) -> Any:
+        """Multiplex generator sequences into one waveform sequence."""
         ...
 
 
@@ -298,36 +169,22 @@ class DirectActionProtocol(Protocol):
         ...
 
 
-class ActionProtocol(Protocol):
-    """Protocol for direct action class symbols."""
+class ExecutorProtocol(Protocol):
+    """Protocol for queued command executor used by qubecalib."""
 
-    @classmethod
-    def build(
-        cls,
-        *,
-        system: Quel1SystemProtocol,
-        settings: list[
-            RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
-        ],
-    ) -> DirectActionProtocol:
-        """Build an action Any from direct-driver settings."""
+    def add_command(self, command: Any) -> None:
+        """Append one command to queue."""
         ...
 
 
-class SingleActionProtocol(Protocol):
-    """Protocol for single-action class symbols."""
+class GenSampledSequenceProtocol(Protocol):
+    """Protocol for generation sampled-sequence objects."""
 
-    @classmethod
-    def build(
-        cls,
-        *,
-        box: Quel1BoxProtocol,
-        settings: list[
-            RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
-        ],
-    ) -> Any:
-        """Build one single-box action from settings."""
-        ...
+    modulation_frequency: float | None
+
+
+class GenSampledSubSequenceProtocol(Protocol):
+    """Protocol for generation sub-sequence objects."""
 
 
 class MultiActionProtocol(Protocol):
@@ -360,139 +217,35 @@ class NamedBoxProtocol(Protocol):
         ...
 
 
-class SkewSystemProtocol(Protocol):
-    """Protocol for skew-associated system Any."""
+class PortSettingProtocol(Protocol):
+    """Protocol for one port setting row in system config database."""
 
-    def resync(self) -> None:
-        """Resynchronize device clocks."""
-        ...
+    port: PortType
 
 
-class SkewRuntimeProtocol(Protocol):
-    """Protocol for skew runtime Any returned from ``Skew.from_yaml``."""
-
-    system: SkewSystemProtocol
-
-    def measure(self) -> None:
-        """Run skew measurement."""
-        ...
-
-    def estimate(self) -> None:
-        """Estimate skew model from measurements."""
-        ...
-
-    def plot(self) -> Any:
-        """Return plotly figure Any."""
-        ...
-
-
-class SkewProtocol(Protocol):
-    """Protocol for skew tool class symbols."""
-
-    @classmethod
-    def from_yaml(
-        cls,
-        path: str,
-        *,
-        box_yaml: str,
-        clockmaster_ip: str,
-        boxes: Sequence[str],
-    ) -> SkewRuntimeProtocol:
-        """Create skew Any from YAML and connectivity settings."""
-        ...
-
-
-class CaptureParamToolsProtocol(Protocol):
-    """Protocol for capture-parameter helper class symbols."""
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        sequence: CapSampledSequenceProtocol,
-        capture_delay_words: int,
-        repeats: int,
-        interval_samples: int,
-    ) -> Any:
-        """Create one capture parameter Any."""
-        ...
-
-    @classmethod
-    def enable_integration(cls, *, capprm: Any) -> None:
-        """Enable integration mode on capture parameters."""
-        ...
-
-    @classmethod
-    def enable_demodulation(cls, *, capprm: Any, f_GHz: float) -> None:
-        """Enable DSP demodulation with the given IF frequency."""
-        ...
-
-
-class ConverterProtocol(Protocol):
-    """Protocol for waveform conversion helper class symbols."""
-
-    @classmethod
-    def multiplex(
-        cls,
-        *,
-        sequences: Mapping[str, GenSampledSequenceProtocol],
-        modfreqs: Mapping[str, float],
-    ) -> Any:
-        """Multiplex generator sequences into one waveform sequence."""
-        ...
-
-
-class WaveSequenceToolsProtocol(Protocol):
-    """Protocol for waveform-sequence helper class symbols."""
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        sequence: Any,
-        wait_words: int,
-        repeats: int,
-        interval_samples: int,
-    ) -> Any:
-        """Create one wave-sequence Any from multiplexed samples."""
-        ...
-
-
-class CaptureSlotsProtocol(Protocol):
-    """Protocol for one capture slot entry."""
+class QuBEMasterClientProtocol(Protocol):
+    """Protocol for clock-master client compatibility wrappers."""
 
     def __init__(
         self,
+        master_ipaddr: str | None = None,
         *,
-        duration: int,
-        post_blank: int,
-        original_duration: int | None,
-        original_post_blank: int | None,
+        ipaddr: str | None = None,
     ) -> None:
-        """Create one capture slot."""
+        """Create a clock-master client."""
         ...
 
+    def kick_clock_synch(self, box_sss_ipaddrs: Sequence[str]) -> None:
+        """Trigger clock synchronization for the given SSS endpoints."""
+        ...
 
-class CapSampledSubSequenceProtocol(Protocol):
-    """Protocol for capture sub-sequence objects."""
+    def read_clock(self) -> tuple[bool, int]:
+        """Read clock-master counter value."""
+        ...
 
-    capture_slots: list[CaptureSlotsProtocol]
-
-
-class CapSampledSequenceProtocol(Protocol):
-    """Protocol for capture sampled-sequence objects."""
-
-    modulation_frequency: float | None
-
-
-class GenSampledSubSequenceProtocol(Protocol):
-    """Protocol for generation sub-sequence objects."""
-
-
-class GenSampledSequenceProtocol(Protocol):
-    """Protocol for generation sampled-sequence objects."""
-
-    modulation_frequency: float | None
+    def reset(self) -> bool:
+        """Reset clock master when supported by the backend."""
+        ...
 
 
 class QubeCalibProtocol(Protocol):
@@ -593,6 +346,163 @@ class QubeCalibProtocol(Protocol):
         ...
 
 
+class Quel1BoxProtocol(Protocol):
+    """Protocol for APIs shared by Quel1Box and Quel1BoxWithRawWss."""
+
+    boxtype: str
+
+    def reconnect(self, *args: Any, **kwargs: Any) -> Any:
+        """Reconnect links and return backend-specific status payload."""
+        ...
+
+    def relinkup(self, *args: Any, **kwargs: Any) -> Any:
+        """Relink box JESD links with optional config options."""
+        ...
+
+    def link_status(self) -> dict[int, bool]:
+        """Return link status by lane/group index."""
+        ...
+
+    def get_input_ports(self) -> Sequence[PortType]:
+        """Return iterable of input port identifiers."""
+        ...
+
+    def get_output_ports(self) -> Sequence[PortType]:
+        """Return iterable of output port identifiers."""
+        ...
+
+    def dump_box(self) -> dict[str, Any]:
+        """Return current box configuration dump."""
+        ...
+
+    def dump_port(self, port: PortType) -> dict[str, Any]:
+        """Return current port configuration dump."""
+        ...
+
+    def config_port(
+        self,
+        *,
+        port: PortType,
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+    ) -> None:
+        """Apply port-level configuration."""
+        ...
+
+    def config_channel(
+        self,
+        *,
+        port: PortType,
+        channel: int,
+        fnco_freq: float | None = None,
+    ) -> None:
+        """Apply channel-level configuration."""
+        ...
+
+    def config_runit(
+        self,
+        *,
+        port: PortType,
+        runit: int,
+        fnco_freq: float | None = None,
+    ) -> None:
+        """Apply runit-level configuration."""
+        ...
+
+
+class Quel1ConfigOptionProtocol(Protocol):
+    """Protocol for Quel1 config option enum-like classes."""
+
+    _value2member_map_: ClassVar[Mapping[str, Any]]
+
+
+class Quel1SystemProtocol(Protocol):
+    """Protocol for direct multi-box system objects used by qubex."""
+
+    config_cache: dict[str, dict[str, Any]]
+    config_fetched_at: datetime | None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        clockmaster: QuBEMasterClientProtocol,
+        boxes: Sequence[NamedBoxProtocol],
+        update_copnfig_cache: bool = False,
+    ) -> Quel1SystemProtocol:
+        """Create a system from pre-constructed clockmaster/box objects."""
+        ...
+
+
+class QuelDriverClassesProtocol(Protocol):
+    """Protocol for driver-loader class bundle consumed by qubex."""
+
+    package_name: str
+    DEFAULT_SAMPLING_PERIOD: float | int
+    Action: type[ActionProtocol]
+    AwgId: type[AwgIdProtocol]
+    AwgSetting: type[AwgSettingProtocol]
+    BoxPool: type[BoxPoolProtocol]
+    CapSampledSequence: type[CapSampledSequenceProtocol]
+    CapSampledSubSequence: type[CapSampledSubSequenceProtocol]
+    CaptureParamTools: type[CaptureParamToolsProtocol]
+    CaptureSlots: type[CaptureSlotsProtocol]
+    Converter: type[ConverterProtocol]
+    GenSampledSequence: type[GenSampledSequenceProtocol]
+    GenSampledSubSequence: type[GenSampledSubSequenceProtocol]
+    MultiAction: type[MultiActionProtocol]
+    NamedBox: type[NamedBoxProtocol]
+    QuBEMasterClient: type[QuBEMasterClientProtocol]
+    QubeCalib: type[QubeCalibProtocol]
+    Quel1Box: type[Quel1BoxProtocol]
+    Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
+    Quel1System: type[Quel1SystemProtocol]
+    RunitId: type[RunitIdProtocol]
+    RunitSetting: type[RunitSettingProtocol]
+    Sequencer: type[SequencerProtocol]
+    SequencerClient: type[SequencerClientProtocol]
+    SingleAction: type[SingleActionProtocol]
+    Skew: type[SkewProtocol]
+    TriggerSetting: type[TriggerSettingProtocol]
+    WaveSequenceTools: type[WaveSequenceToolsProtocol]
+
+
+class RunitIdProtocol(Protocol):
+    """Protocol for runit identifier objects."""
+
+    box: str
+    port: PortType
+    runit: int
+
+    def __init__(self, box: str, port: PortType, runit: int) -> None:
+        """Create a runit identifier."""
+        ...
+
+
+class RunitSettingProtocol(Protocol):
+    """Protocol for driver runit setting objects."""
+
+    def __init__(self, runit: RunitIdProtocol, cprm: Any) -> None:
+        """Create one runit setting."""
+        ...
+
+
+class SequencerClientProtocol(Protocol):
+    """Protocol for sequencer clock readers."""
+
+    def __init__(self, target_ipaddr: str, *, box: Any | None = None) -> None:
+        """Create a sequencer client."""
+        ...
+
+    def read_clock(self) -> tuple[bool, int, int]:
+        """Read current and SYSREF counters."""
+        ...
+
+
 class SequencerProtocol(Protocol):
     """Protocol for qube-calib sequencer compatibility objects."""
 
@@ -643,34 +553,122 @@ class SequencerProtocol(Protocol):
         ...
 
 
-class QuelDriverClassesProtocol(Protocol):
-    """Protocol for driver-loader class bundle consumed by qubex."""
+class SingleActionProtocol(Protocol):
+    """Protocol for single-action class symbols."""
 
-    package_name: str
-    DEFAULT_SAMPLING_PERIOD: float | int
-    QubeCalib: type[QubeCalibProtocol]
-    Sequencer: type[SequencerProtocol]
-    QuBEMasterClient: type[QuBEMasterClientProtocol]
-    SequencerClient: type[SequencerClientProtocol]
-    Quel1System: type[Quel1SystemProtocol]
-    Action: type[ActionProtocol]
-    MultiAction: type[MultiActionProtocol]
-    SingleAction: type[SingleActionProtocol]
-    AwgId: type[AwgIdProtocol]
-    AwgSetting: type[AwgSettingProtocol]
-    NamedBox: type[NamedBoxProtocol]
-    RunitId: type[RunitIdProtocol]
-    RunitSetting: type[RunitSettingProtocol]
-    TriggerSetting: type[TriggerSettingProtocol]
-    Skew: type[SkewProtocol]
-    CapSampledSequence: type[CapSampledSequenceProtocol]
-    CapSampledSubSequence: type[CapSampledSubSequenceProtocol]
-    CaptureSlots: type[CaptureSlotsProtocol]
-    GenSampledSequence: type[GenSampledSequenceProtocol]
-    GenSampledSubSequence: type[GenSampledSubSequenceProtocol]
-    BoxPool: type[BoxPoolProtocol]
-    CaptureParamTools: type[CaptureParamToolsProtocol]
-    Converter: type[ConverterProtocol]
-    WaveSequenceTools: type[WaveSequenceToolsProtocol]
-    Quel1Box: type[Quel1BoxProtocol]
-    Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
+    @classmethod
+    def build(
+        cls,
+        *,
+        box: Quel1BoxProtocol,
+        settings: list[
+            RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
+        ],
+    ) -> Any:
+        """Build one single-box action from settings."""
+        ...
+
+
+class SkewProtocol(Protocol):
+    """Protocol for skew tool class symbols."""
+
+    @classmethod
+    def from_yaml(
+        cls,
+        path: str,
+        *,
+        box_yaml: str,
+        clockmaster_ip: str,
+        boxes: Sequence[str],
+    ) -> SkewRuntimeProtocol:
+        """Create skew Any from YAML and connectivity settings."""
+        ...
+
+
+class SkewRuntimeProtocol(Protocol):
+    """Protocol for skew runtime Any returned from ``Skew.from_yaml``."""
+
+    system: SkewSystemProtocol
+
+    def measure(self) -> None:
+        """Run skew measurement."""
+        ...
+
+    def estimate(self) -> None:
+        """Estimate skew model from measurements."""
+        ...
+
+    def plot(self) -> Any:
+        """Return plotly figure Any."""
+        ...
+
+
+class SkewSystemProtocol(Protocol):
+    """Protocol for skew-associated system Any."""
+
+    def resync(self) -> None:
+        """Resynchronize device clocks."""
+        ...
+
+
+class SysdbProtocol(Protocol):
+    """Protocol for low-level sysdb helpers used by qubex."""
+
+    _relation_channel_target: list[tuple[str, str]]
+
+    def load_skew_yaml(self, path: str) -> None:
+        """Load skew YAML file into sysdb."""
+        ...
+
+
+class SystemConfigDatabaseProtocol(Protocol):
+    """Protocol for qubecalib system configuration database Any."""
+
+    _target_settings: dict[str, Any]
+    _box_settings: dict[str, BoxSettingProtocol]
+    _port_settings: dict[str, PortSettingProtocol]
+    _clockmaster_setting: ClockmasterSettingProtocol | None
+
+    def asdict(self) -> dict[str, Any]:
+        """Return whole configuration as dictionary."""
+        ...
+
+    def asjson(self) -> str:
+        """Return whole configuration as JSON."""
+        ...
+
+    def get_channels_by_target(self, target: str) -> list[str]:
+        """Return channel names linked to the target."""
+        ...
+
+    def get_channel(self, channel_name: str) -> tuple[str, str, int]:
+        """Return ``(box_name, port_name, channel_number)`` for one channel."""
+        ...
+
+    def create_box(self, box_name: str, *, reconnect: bool = True) -> Quel1BoxProtocol:
+        """Create one box Any from database settings."""
+        ...
+
+
+class TriggerSettingProtocol(Protocol):
+    """Protocol for driver trigger setting objects."""
+
+    def __init__(self, trigger_awg: AwgIdProtocol, triggerd_port: PortType) -> None:
+        """Create one trigger setting."""
+        ...
+
+
+class WaveSequenceToolsProtocol(Protocol):
+    """Protocol for waveform-sequence helper class symbols."""
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        sequence: Any,
+        wait_words: int,
+        repeats: int,
+        interval_samples: int,
+    ) -> Any:
+        """Create one wave-sequence Any from multiplexed samples."""
+        ...

@@ -18,4 +18,3 @@ def test_get_optional_version_returns_none_for_missing_distribution(
     monkeypatch.setattr(version_module, "_get_installed_version", _raise_not_found)
 
     assert version_module.get_optional_version("qxdriver-quel") is None
-

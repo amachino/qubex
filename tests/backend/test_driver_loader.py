@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from importlib.metadata import PackageNotFoundError
 from types import ModuleType
 from typing import Any, cast
@@ -9,6 +10,14 @@ from typing import Any, cast
 import pytest
 
 from qubex.backend.quel1 import quel1_driver_loader
+
+
+@pytest.fixture(autouse=True)
+def _clear_driver_loader_cache() -> Generator[None, None, None]:
+    """Isolate tests by clearing driver cache before and after each test."""
+    quel1_driver_loader.clear_quel1_driver_cache()
+    yield
+    quel1_driver_loader.clear_quel1_driver_cache()
 
 
 def _fake_class(name: str, module: str) -> type:
@@ -274,10 +283,10 @@ def test_load_quel1_driver_does_not_fall_back_to_quel_clock_master(monkeypatch) 
         quel1_driver_loader.load_quel1_driver()
 
 
-def test_load_quel1_driver_resolves_quel1boxwithrawwss_symbol(
+def test_load_quel1_driver_resolves_quel1box_symbol(
     monkeypatch,
 ) -> None:
-    """Given qubecalib box symbol, loader maps Quel1BoxWithRawWss."""
+    """Given qubecalib box symbol, loader maps Quel1Box."""
     mapping = _build_fake_driver_modules("qubecalib")
 
     def _fake_import(name: str) -> ModuleType:
@@ -292,7 +301,7 @@ def test_load_quel1_driver_resolves_quel1boxwithrawwss_symbol(
     modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qubecalib"
-    assert modules.Quel1BoxWithRawWss.__name__ == "Quel1BoxWithRawWss"
+    assert modules.Quel1Box.__name__ == "Quel1BoxWithRawWss"
 
 
 def test_load_quel1_driver_applies_qubex_runtime_patches(monkeypatch) -> None:

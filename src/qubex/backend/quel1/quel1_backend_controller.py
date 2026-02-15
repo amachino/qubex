@@ -1329,6 +1329,55 @@ class Quel1BackendController:
         if relation not in sysdb._relation_channel_target:
             sysdb._relation_channel_target.append(relation)
 
+    def define_target(
+        self,
+        target_name: str,
+        channel_name: str,
+        target_frequency: float | None = None,
+    ) -> None:
+        """
+        Define a target.
+
+        Parameters
+        ----------
+        target_name : str
+            Name of the target.
+        channel_name : str
+            Name of the channel.
+        target_frequency : float, optional
+            Frequency of the target in GHz.
+        """
+        self.qubecalib.define_target(
+            target_name=target_name,
+            channel_name=channel_name,
+            target_frequency=target_frequency,
+        )
+
+    def modify_target_frequency(self, target: str, frequency: float) -> None:
+        """
+        Modify the target frequency.
+
+        Parameters
+        ----------
+        target : str
+            Name of the target.
+        frequency : float
+            Modified frequency in GHz.
+        """
+        self.qubecalib.modify_target_frequency(target, frequency)
+
+    def modify_target_frequencies(self, frequencies: dict[str, float]) -> None:
+        """
+        Modify the target frequencies.
+
+        Parameters
+        ----------
+        frequencies : dict[str, float]
+            Dictionary of target frequencies.
+        """
+        for target, frequency in frequencies.items():
+            self.modify_target_frequency(target, frequency)
+
     def create_quel1_sequencer(
         self,
         *,
@@ -1777,55 +1826,6 @@ class Quel1BackendController:
             status=status,
             data=data,
             config=config,
-        )
-
-    def modify_target_frequency(self, target: str, frequency: float) -> None:
-        """
-        Modify the target frequency.
-
-        Parameters
-        ----------
-        target : str
-            Name of the target.
-        frequency : float
-            Modified frequency in GHz.
-        """
-        self.qubecalib.modify_target_frequency(target, frequency)
-
-    def modify_target_frequencies(self, frequencies: dict[str, float]) -> None:
-        """
-        Modify the target frequencies.
-
-        Parameters
-        ----------
-        frequencies : dict[str, float]
-            Dictionary of target frequencies.
-        """
-        for target, frequency in frequencies.items():
-            self.modify_target_frequency(target, frequency)
-
-    def define_target(
-        self,
-        target_name: str,
-        channel_name: str,
-        target_frequency: float | None = None,
-    ) -> None:
-        """
-        Define a target.
-
-        Parameters
-        ----------
-        target_name : str
-            Name of the target.
-        channel_name : str
-            Name of the channel.
-        target_frequency : float, optional
-            Frequency of the target in GHz.
-        """
-        self.qubecalib.define_target(
-            target_name=target_name,
-            channel_name=channel_name,
-            target_frequency=target_frequency,
         )
 
 

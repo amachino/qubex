@@ -167,42 +167,17 @@ def _import_driver_symbols(package_name: DriverPackageName) -> Que1lDriver:
     importlib.import_module(package_name)
     apply_quelware_runtime_patches()
 
-    resolved_symbols: dict[str, Any] = {}
-    for symbol_name in _SYMBOL_IMPORT_PATHS:
-        resolved_symbols[symbol_name] = _resolve_symbol(
+    resolved_symbols = {
+        symbol_name: _resolve_symbol(
             package_name=package_name,
             symbol_name=symbol_name,
         )
+        for symbol_name in _SYMBOL_IMPORT_PATHS
+    }
 
     return Que1lDriver(
         package_name=package_name,
-        QubeCalib=resolved_symbols["QubeCalib"],
-        Sequencer=resolved_symbols["Sequencer"],
-        QuBEMasterClient=resolved_symbols["QuBEMasterClient"],
-        SequencerClient=resolved_symbols["SequencerClient"],
-        Quel1System=resolved_symbols["Quel1System"],
-        Action=resolved_symbols["Action"],
-        MultiAction=resolved_symbols["MultiAction"],
-        SingleAction=resolved_symbols["SingleAction"],
-        AwgId=resolved_symbols["AwgId"],
-        AwgSetting=resolved_symbols["AwgSetting"],
-        NamedBox=resolved_symbols["NamedBox"],
-        RunitId=resolved_symbols["RunitId"],
-        RunitSetting=resolved_symbols["RunitSetting"],
-        TriggerSetting=resolved_symbols["TriggerSetting"],
-        Skew=resolved_symbols["Skew"],
-        DEFAULT_SAMPLING_PERIOD=resolved_symbols["DEFAULT_SAMPLING_PERIOD"],
-        CapSampledSequence=resolved_symbols["CapSampledSequence"],
-        CapSampledSubSequence=resolved_symbols["CapSampledSubSequence"],
-        CaptureSlots=resolved_symbols["CaptureSlots"],
-        GenSampledSequence=resolved_symbols["GenSampledSequence"],
-        GenSampledSubSequence=resolved_symbols["GenSampledSubSequence"],
-        BoxPool=resolved_symbols["BoxPool"],
-        CaptureParamTools=resolved_symbols["CaptureParamTools"],
-        Converter=resolved_symbols["Converter"],
-        WaveSequenceTools=resolved_symbols["WaveSequenceTools"],
-        Quel1Box=resolved_symbols["Quel1Box"],
-        Quel1ConfigOption=resolved_symbols["Quel1ConfigOption"],
+        **resolved_symbols,
     )
 
 
