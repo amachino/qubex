@@ -139,6 +139,7 @@ def _convert_to_box_setting_dict(
             settings_by_box[setting.runit.box].append(
                 runit_setting_class(
                     runit_id_class(
+                        setting.runit.box,
                         setting.runit.port,
                         setting.runit.runit,
                     ),
@@ -149,6 +150,7 @@ def _convert_to_box_setting_dict(
             settings_by_box[setting.awg.box].append(
                 awg_setting_class(
                     awg_id_class(
+                        setting.awg.box,
                         setting.awg.port,
                         setting.awg.channel,
                     ),
@@ -159,6 +161,7 @@ def _convert_to_box_setting_dict(
             settings_by_box[setting.trigger_awg.box].append(
                 trigger_setting_class(
                     awg_id_class(
+                        setting.trigger_awg.box,
                         setting.trigger_awg.port,
                         setting.trigger_awg.channel,
                     ),
