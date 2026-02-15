@@ -318,6 +318,34 @@ def test_load_quel_driver_accepts_legacy_quel1boxwithrawwss_symbol(monkeypatch) 
     assert modules.Quel1Box.__name__ == "Quel1BoxWithRawWss"
 
 
+def test_load_quel_driver_applies_runtime_patches_from_driver_module(
+    monkeypatch,
+) -> None:
+    """Given runtime patch hook, loader calls it while importing the driver package."""
+    mapping = _build_fake_driver_modules("qxdriver_quel")
+    runtime_patches = cast(Any, ModuleType("qxdriver_quel.runtime_patches"))
+    patch_calls: list[str] = []
+
+    def _apply_runtime_patches() -> None:
+        patch_calls.append("called")
+
+    runtime_patches.apply_runtime_patches = _apply_runtime_patches
+    mapping["qxdriver_quel.runtime_patches"] = runtime_patches
+
+    def _fake_import(name: str) -> ModuleType:
+        if name in mapping:
+            return mapping[name]
+        raise ModuleNotFoundError(name)
+
+    driver_loader.clear_quel_driver_cache()
+    monkeypatch.setattr(driver_loader.importlib, "import_module", _fake_import)
+
+    modules = driver_loader.load_quel_driver("qxdriver_quel")
+
+    assert modules.package_name == "qxdriver_quel"
+    assert patch_calls == ["called"]
+
+
 def test_load_quel_driver_resolves_symbols_from_facade_fallback(monkeypatch) -> None:
     """Given alternate class exports, when loading driver, then symbol mapping does not require legacy modules."""
     mapping = _build_fake_driver_modules("qxdriver_quel", include_facade=True)

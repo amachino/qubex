@@ -278,9 +278,31 @@ def _runtime_module_for_symbol(
     return shim_module
 
 
+def _apply_runtime_patches(package_name: str) -> None:
+    """Apply optional runtime patches provided by the resolved driver package."""
+    candidate_modules = (
+        f"{package_name}.runtime_patches",
+        f"{package_name}.compat",
+        f"{package_name}.facade",
+        f"{package_name}.qubecalib",
+    )
+    for module_name in candidate_modules:
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as error:
+            if _is_missing_target_module(error, module_name):
+                continue
+            raise
+        apply_fn = getattr(module, "apply_runtime_patches", None)
+        if callable(apply_fn):
+            apply_fn()
+            return
+
+
 def _import_driver_package(package_name: str) -> QuelDriverModules:
     """Import one driver package and map required backend symbols by class-level paths."""
     root_module = importlib.import_module(package_name)
+    _apply_runtime_patches(package_name)
 
     QubeCalib, _, _ = _resolve_symbol(
         package_name=package_name, symbol_name="QubeCalib"

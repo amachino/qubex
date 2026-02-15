@@ -24,7 +24,9 @@ from .quel1_box_compat import adapt_quel1_box
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from quel_ic_config import Quel1Box, Quel1ConfigOption
+    from collections.abc import Mapping
+    from typing import ClassVar, Protocol, TypeAlias
+
     from qxdriver_quel import QubeCalib, Sequencer
     from qxdriver_quel.instrument.quel.quel1 import Quel1System
     from qxdriver_quel.instrument.quel.quel1.driver import (
@@ -38,6 +40,12 @@ if TYPE_CHECKING:
         GenSampledSequence,
     )
     from qxdriver_quel.qubecalib import BoxPool
+
+    class _Quel1ConfigOptionLike(Protocol):
+        _value2member_map_: ClassVar[Mapping[str, Any]]
+
+    Quel1Box: TypeAlias = Any
+    Quel1ConfigOption: TypeAlias = _Quel1ConfigOptionLike
 
 _DRIVER_IMPORT_DONE = False
 _DRIVER_IMPORT_ERROR: ImportError | None = None

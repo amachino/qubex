@@ -5,9 +5,6 @@ from __future__ import annotations
 import qxpulse as pulse
 from qxpulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
 
-import qubex.patches.quel_ic_config.disable_quelware_filelock_patch
-import qubex.patches.quel_ic_config.linkup_fpga_mxfe_patch  # noqa: F401
-
 from . import core
 from .analysis import fitting as fit
 from .analysis import visualization as viz
