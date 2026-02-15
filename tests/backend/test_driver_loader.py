@@ -31,62 +31,71 @@ def _build_fake_driver_modules(
     include_compat: bool = False,
 ) -> dict[str, ModuleType]:
     """Create fake modules for one driver package namespace."""
+    is_qxdriver = package_name == "qxdriver_quel"
+    quel1_module = (
+        f"{package_name}.quel1"
+        if is_qxdriver
+        else f"{package_name}.instrument.quel.quel1"
+    )
+    driver_module = (
+        f"{package_name}.quel1.driver"
+        if is_qxdriver
+        else f"{package_name}.instrument.quel.quel1.driver"
+    )
+    tool_module = (
+        f"{package_name}.quel1.tool"
+        if is_qxdriver
+        else f"{package_name}.instrument.quel.quel1.tool"
+    )
+    pulse_module = (
+        f"{package_name}.pulse" if is_qxdriver else f"{package_name}.neopulse"
+    )
+    multi_module = (
+        f"{package_name}.quel1.driver.multi"
+        if is_qxdriver
+        else f"{package_name}.instrument.quel.quel1.driver.multi"
+    )
+    single_module = (
+        f"{package_name}.quel1.driver.single"
+        if is_qxdriver
+        else f"{package_name}.instrument.quel.quel1.driver.single"
+    )
+    clockmaster_module = (
+        f"{package_name}.clockmaster.compat"
+        if is_qxdriver
+        else f"{package_name}.clockmaster_compat"
+    )
+
     root = cast(Any, ModuleType(package_name))
     root.QubeCalib = _fake_class("QubeCalib", package_name)
     root.Sequencer = _fake_class("Sequencer", package_name)
 
-    clockmaster = cast(Any, ModuleType(f"{package_name}.clockmaster_compat"))
-    clockmaster.QuBEMasterClient = _fake_class(
-        "QuBEMasterClient", f"{package_name}.clockmaster_compat"
-    )
-    clockmaster.SequencerClient = _fake_class(
-        "SequencerClient", f"{package_name}.clockmaster_compat"
-    )
+    clockmaster = cast(Any, ModuleType(clockmaster_module))
+    clockmaster.QuBEMasterClient = _fake_class("QuBEMasterClient", clockmaster_module)
+    clockmaster.SequencerClient = _fake_class("SequencerClient", clockmaster_module)
 
-    quel1 = cast(Any, ModuleType(f"{package_name}.instrument.quel.quel1"))
-    quel1.Quel1System = _fake_class(
-        "Quel1System", f"{package_name}.instrument.quel.quel1"
-    )
+    quel1 = cast(Any, ModuleType(quel1_module))
+    quel1.Quel1System = _fake_class("Quel1System", quel1_module)
 
-    direct = cast(Any, ModuleType(f"{package_name}.instrument.quel.quel1.driver"))
-    direct.Action = _fake_class(
-        "Action", f"{package_name}.instrument.quel.quel1.driver"
-    )
-    direct.AwgId = _fake_class("AwgId", f"{package_name}.instrument.quel.quel1.driver")
-    direct.AwgSetting = _fake_class(
-        "AwgSetting", f"{package_name}.instrument.quel.quel1.driver"
-    )
-    direct.NamedBox = _fake_class(
-        "NamedBox", f"{package_name}.instrument.quel.quel1.driver"
-    )
-    direct.RunitId = _fake_class(
-        "RunitId", f"{package_name}.instrument.quel.quel1.driver"
-    )
-    direct.RunitSetting = _fake_class(
-        "RunitSetting", f"{package_name}.instrument.quel.quel1.driver"
-    )
-    direct.TriggerSetting = _fake_class(
-        "TriggerSetting", f"{package_name}.instrument.quel.quel1.driver"
-    )
+    direct = cast(Any, ModuleType(driver_module))
+    direct.Action = _fake_class("Action", driver_module)
+    direct.AwgId = _fake_class("AwgId", driver_module)
+    direct.AwgSetting = _fake_class("AwgSetting", driver_module)
+    direct.NamedBox = _fake_class("NamedBox", driver_module)
+    direct.RunitId = _fake_class("RunitId", driver_module)
+    direct.RunitSetting = _fake_class("RunitSetting", driver_module)
+    direct.TriggerSetting = _fake_class("TriggerSetting", driver_module)
 
-    tool = cast(Any, ModuleType(f"{package_name}.instrument.quel.quel1.tool"))
-    tool.Skew = _fake_class("Skew", f"{package_name}.instrument.quel.quel1.tool")
+    tool = cast(Any, ModuleType(tool_module))
+    tool.Skew = _fake_class("Skew", tool_module)
 
-    neopulse = cast(Any, ModuleType(f"{package_name}.neopulse"))
-    neopulse.DEFAULT_SAMPLING_PERIOD = 2
-    neopulse.CapSampledSequence = _fake_class(
-        "CapSampledSequence", f"{package_name}.neopulse"
-    )
-    neopulse.CapSampledSubSequence = _fake_class(
-        "CapSampledSubSequence", f"{package_name}.neopulse"
-    )
-    neopulse.CaptureSlots = _fake_class("CaptureSlots", f"{package_name}.neopulse")
-    neopulse.GenSampledSequence = _fake_class(
-        "GenSampledSequence", f"{package_name}.neopulse"
-    )
-    neopulse.GenSampledSubSequence = _fake_class(
-        "GenSampledSubSequence", f"{package_name}.neopulse"
-    )
+    pulse = cast(Any, ModuleType(pulse_module))
+    pulse.DEFAULT_SAMPLING_PERIOD = 2
+    pulse.CapSampledSequence = _fake_class("CapSampledSequence", pulse_module)
+    pulse.CapSampledSubSequence = _fake_class("CapSampledSubSequence", pulse_module)
+    pulse.CaptureSlots = _fake_class("CaptureSlots", pulse_module)
+    pulse.GenSampledSequence = _fake_class("GenSampledSequence", pulse_module)
+    pulse.GenSampledSubSequence = _fake_class("GenSampledSubSequence", pulse_module)
 
     legacy = cast(Any, ModuleType(f"{package_name}.qubecalib"))
     legacy.BoxPool = _fake_class("BoxPool", f"{package_name}.qubecalib")
@@ -107,29 +116,28 @@ def _build_fake_driver_modules(
         "Quel1ConfigOption", f"{package_name}.qubecalib"
     )
 
-    multi = cast(Any, ModuleType(f"{package_name}.instrument.quel.quel1.driver.multi"))
-    multi.Action = _fake_class(
-        "Action", f"{package_name}.instrument.quel.quel1.driver.multi"
-    )
+    multi = cast(Any, ModuleType(multi_module))
+    multi.Action = _fake_class("Action", multi_module)
 
-    single = cast(
-        Any, ModuleType(f"{package_name}.instrument.quel.quel1.driver.single")
-    )
-    single.Action = _fake_class(
-        "Action", f"{package_name}.instrument.quel.quel1.driver.single"
-    )
+    single = cast(Any, ModuleType(single_module))
+    single.Action = _fake_class("Action", single_module)
 
-    mapping = {
-        package_name: root,
-        f"{package_name}.clockmaster_compat": clockmaster,
-        f"{package_name}.instrument.quel.quel1": quel1,
-        f"{package_name}.instrument.quel.quel1.driver": direct,
-        f"{package_name}.instrument.quel.quel1.tool": tool,
-        f"{package_name}.neopulse": neopulse,
-        f"{package_name}.qubecalib": legacy,
-        f"{package_name}.instrument.quel.quel1.driver.multi": multi,
-        f"{package_name}.instrument.quel.quel1.driver.single": single,
-    }
+    if is_qxdriver:
+        mapping = {
+            package_name: root,
+        }
+    else:
+        mapping = {
+            package_name: root,
+            clockmaster_module: clockmaster,
+            quel1_module: quel1,
+            driver_module: direct,
+            tool_module: tool,
+            pulse_module: pulse,
+            f"{package_name}.qubecalib": legacy,
+            multi_module: multi,
+            single_module: single,
+        }
 
     if include_compat:
         compat = cast(Any, ModuleType(f"{package_name}.compat"))
@@ -146,12 +154,12 @@ def _build_fake_driver_modules(
         compat.RunitSetting = direct.RunitSetting
         compat.TriggerSetting = direct.TriggerSetting
         compat.Skew = tool.Skew
-        compat.DEFAULT_SAMPLING_PERIOD = neopulse.DEFAULT_SAMPLING_PERIOD
-        compat.CapSampledSequence = neopulse.CapSampledSequence
-        compat.CapSampledSubSequence = neopulse.CapSampledSubSequence
-        compat.CaptureSlots = neopulse.CaptureSlots
-        compat.GenSampledSequence = neopulse.GenSampledSequence
-        compat.GenSampledSubSequence = neopulse.GenSampledSubSequence
+        compat.DEFAULT_SAMPLING_PERIOD = pulse.DEFAULT_SAMPLING_PERIOD
+        compat.CapSampledSequence = pulse.CapSampledSequence
+        compat.CapSampledSubSequence = pulse.CapSampledSubSequence
+        compat.CaptureSlots = pulse.CaptureSlots
+        compat.GenSampledSequence = pulse.GenSampledSequence
+        compat.GenSampledSubSequence = pulse.GenSampledSubSequence
         compat.BoxPool = legacy.BoxPool
         compat.CaptureParamTools = legacy.CaptureParamTools
         compat.Converter = legacy.Converter
@@ -352,12 +360,6 @@ def test_load_quel1_driver_requires_compat_layer_for_qxdriver(monkeypatch) -> No
 def test_load_quel1_driver_resolves_symbols_from_compat_layer(monkeypatch) -> None:
     """Given compat exports, when loading driver, then required symbols resolve without legacy module paths."""
     mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
-    del mapping["qxdriver_quel.clockmaster_compat"]
-    del mapping["qxdriver_quel.instrument.quel.quel1.driver"]
-    del mapping["qxdriver_quel.instrument.quel.quel1.driver.multi"]
-    del mapping["qxdriver_quel.instrument.quel.quel1.driver.single"]
-    del mapping["qxdriver_quel.instrument.quel.quel1.tool"]
-    del mapping["qxdriver_quel.qubecalib"]
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:

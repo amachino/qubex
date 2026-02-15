@@ -5,12 +5,27 @@ from __future__ import annotations
 import importlib
 
 try:
-    _root = importlib.import_module("qxdriver_quel")
-    _clockmaster = importlib.import_module("qxdriver_quel.clockmaster_compat")
-    _quel1 = importlib.import_module("qxdriver_quel.instrument.quel.quel1")
-    _driver = importlib.import_module("qxdriver_quel.instrument.quel.quel1.driver")
-    _tool = importlib.import_module("qxdriver_quel.instrument.quel.quel1.tool")
-    _qcalib = importlib.import_module("qxdriver_quel.qubecalib")
+    _compat = importlib.import_module("qxdriver_quel.compat")
+    _sampling_period = _compat.DEFAULT_SAMPLING_PERIOD
+    QubeCalib = _compat.QubeCalib
+    Sequencer = _compat.Sequencer
+    QuBEMasterClient = _compat.QuBEMasterClient
+    SequencerClient = _compat.SequencerClient
+    Quel1System = _compat.Quel1System
+    Action = _compat.Action
+    AwgId = _compat.AwgId
+    AwgSetting = _compat.AwgSetting
+    NamedBox = _compat.NamedBox
+    RunitId = _compat.RunitId
+    RunitSetting = _compat.RunitSetting
+    TriggerSetting = _compat.TriggerSetting
+    single = importlib.import_module(_compat.SingleAction.__module__)
+    multi = importlib.import_module(_compat.MultiAction.__module__)
+    Skew = _compat.Skew
+    BoxPool = _compat.BoxPool
+    Converter = _compat.Converter
+    CaptureParamTools = _compat.CaptureParamTools
+    WaveSequenceTools = _compat.WaveSequenceTools
 except ModuleNotFoundError:
     _root = importlib.import_module("qubecalib")
     try:
@@ -21,34 +36,33 @@ except ModuleNotFoundError:
     _driver = importlib.import_module("qubecalib.instrument.quel.quel1.driver")
     _tool = importlib.import_module("qubecalib.instrument.quel.quel1.tool")
     _qcalib = importlib.import_module("qubecalib.qubecalib")
-
-QubeCalib = _root.QubeCalib
-Sequencer = _root.Sequencer
-neopulse = _root.neopulse
-QuBEMasterClient = _clockmaster.QuBEMasterClient
-SequencerClient = _clockmaster.SequencerClient
-Quel1System = _quel1.Quel1System
-Action = _driver.Action
-AwgId = _driver.AwgId
-AwgSetting = _driver.AwgSetting
-NamedBox = _driver.NamedBox
-RunitId = _driver.RunitId
-RunitSetting = _driver.RunitSetting
-TriggerSetting = _driver.TriggerSetting
-single = _driver.single
-multi = _driver.multi
-Skew = _tool.Skew
-BoxPool = _qcalib.BoxPool
-Converter = _qcalib.Converter
-CaptureParamTools = _qcalib.CaptureParamTools
-WaveSequenceTools = _qcalib.WaveSequenceTools
+    _sampling_period = _root.neopulse.DEFAULT_SAMPLING_PERIOD
+    QubeCalib = _root.QubeCalib
+    Sequencer = _root.Sequencer
+    QuBEMasterClient = _clockmaster.QuBEMasterClient
+    SequencerClient = _clockmaster.SequencerClient
+    Quel1System = _quel1.Quel1System
+    Action = _driver.Action
+    AwgId = _driver.AwgId
+    AwgSetting = _driver.AwgSetting
+    NamedBox = _driver.NamedBox
+    RunitId = _driver.RunitId
+    RunitSetting = _driver.RunitSetting
+    TriggerSetting = _driver.TriggerSetting
+    single = _driver.single
+    multi = _driver.multi
+    Skew = _tool.Skew
+    BoxPool = _qcalib.BoxPool
+    Converter = _qcalib.Converter
+    CaptureParamTools = _qcalib.CaptureParamTools
+    WaveSequenceTools = _qcalib.WaveSequenceTools
 
 
 def test_qubecalib_import_paths_required_by_qubex_are_available() -> None:
     """Given qubex dependencies, when importing qubecalib symbols, then all required paths resolve."""
     assert QubeCalib.__name__ == "QubeCalib"
     assert Sequencer.__name__ == "Sequencer"
-    assert hasattr(neopulse, "DEFAULT_SAMPLING_PERIOD")
+    assert _sampling_period is not None
 
     assert QuBEMasterClient.__name__ == "QuBEMasterClient"
     assert SequencerClient.__name__ == "SequencerClient"
