@@ -153,27 +153,4 @@ def get_optional_version(package_name: str) -> str | None:
     return f"{version}+g{commit_hash}"
 
 
-def resolve_first_available_version(
-    package_names: tuple[str, ...],
-) -> tuple[str, str] | None:
-    """
-    Resolve first installed package version from a preference-ordered list.
-
-    Parameters
-    ----------
-    package_names : tuple[str, ...]
-        Candidate package names in preference order.
-
-    Returns
-    -------
-    tuple[str, str] | None
-        ``(package_name, version)`` for the first installed package, else ``None``.
-    """
-    for package_name in package_names:
-        version = get_optional_version(package_name)
-        if version is not None:
-            return package_name, version
-    return None
-
-
 VERSION = get_version()

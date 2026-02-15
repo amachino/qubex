@@ -43,7 +43,7 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_PRE_MARGIN,
 )
 from qubex.typing import ConfigurationMode, TargetMap
-from qubex.version import get_version, resolve_first_available_version
+from qubex.version import get_version
 
 from . import experiment_tool
 from .experiment_constants import (
@@ -292,17 +292,17 @@ class ExperimentContext:
         logger.info("========================================")
         logger.info(f"date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"python: {sys.version.split()[0]}")
-        if verbose:
-            logger.info(f"numpy: {get_version('numpy')}")
-            quel_driver_version = resolve_first_available_version(
-                ("qxdriver-quel", "qubecalib")
-            )
-            if quel_driver_version is None:
-                logger.info("qubecalib: Package 'qubecalib' is not installed.")
-            else:
-                package_name, version = quel_driver_version
-                logger.info(f"{package_name}: {version}")
         logger.info(f"qubex: {get_version('qubex')}")
+        if verbose:
+            logger.info(f"  qxcore: {get_version('qxcore')}")
+            logger.info(f"  qxdriver-quel: {get_version('qxdriver-quel')}")
+            logger.info(f"  qxpulse: {get_version('qxpulse')}")
+            logger.info(f"  qxschema: {get_version('qxschema')}")
+            logger.info(f"  qxsimulator: {get_version('qxsimulator')}")
+            logger.info(f"  quel_ic_config: {get_version('quel_ic_config')}")
+            logger.info(f"  numpy: {get_version('numpy')}")
+            logger.info(f"  scipy: {get_version('scipy')}")
+            logger.info(f"  scikit-learn: {get_version('scikit-learn')}")
         logger.info(f"env: {sys.prefix}")
         logger.info(f"config: {self.config_path}")
         logger.info(f"params: {self.params_path}")
