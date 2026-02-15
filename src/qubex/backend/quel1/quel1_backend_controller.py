@@ -26,29 +26,13 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from .quel1_driver_protocols import (
         AwgSettingProtocol as AwgSetting,
-    )
-    from .quel1_driver_protocols import (
         BoxPoolProtocol as BoxPool,
-    )
-    from .quel1_driver_protocols import (
         QubeCalibProtocol as QubeCalib,
-    )
-    from .quel1_driver_protocols import (
         Quel1BoxProtocol as Quel1Box,
-    )
-    from .quel1_driver_protocols import (
         Quel1ConfigOptionProtocol as Quel1ConfigOption,
-    )
-    from .quel1_driver_protocols import (
         Quel1SystemProtocol as Quel1System,
-    )
-    from .quel1_driver_protocols import (
         RunitSettingProtocol as RunitSetting,
-    )
-    from .quel1_driver_protocols import (
         SequencerProtocol as Sequencer,
-    )
-    from .quel1_driver_protocols import (
         TriggerSettingProtocol as TriggerSetting,
     )
 
