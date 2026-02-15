@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import pytest
@@ -96,16 +96,20 @@ def _make_controller() -> Quel1BackendController:
     return controller
 
 
+def _override_driver_classes(
+    controller: Quel1BackendController, **overrides: Any
+) -> None:
+    """Replace selected driver classes in one controller instance."""
+    cast(Any, controller)._driver = replace(cast(Any, controller)._driver, **overrides)
+
+
 def test_connect_uses_boxpool_by_default(monkeypatch) -> None:
     """Given default mode, connect builds a boxpool and system."""
     controller = _make_controller()
     controller.create_resource_map = lambda _type: {}  # type: ignore[method-assign]
     fake_quel1_system = object()
 
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
-        _FakeBoxPool,
-    )
+    _override_driver_classes(controller, BoxPool=_FakeBoxPool)
 
     def _fake_create_from_boxpool(self: Quel1BackendController, box_names: list[str]):
         assert box_names == ["A", "B"]
@@ -131,10 +135,7 @@ def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> No
     controller.create_resource_map = lambda _type: {}  # type: ignore[method-assign]
     fake_quel1_system = object()
 
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
-        _FakeBoxPool,
-    )
+    _override_driver_classes(controller, BoxPool=_FakeBoxPool)
 
     def _fake_create_from_boxpool(self: Quel1BackendController, box_names: list[str]):
         assert box_names == ["A", "B"]
@@ -157,13 +158,10 @@ def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> No
 def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
     """Given valid boxes, pool creation reconnects each box once."""
     controller = _make_controller()
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
-        _FakeBoxPool,
-    )
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
-        lambda _ipaddr: object(),
+    _override_driver_classes(
+        controller,
+        BoxPool=_FakeBoxPool,
+        SequencerClient=lambda _ipaddr: object(),
     )
 
     boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A", "B"]))
@@ -178,10 +176,7 @@ def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
 def test_create_boxpool_raises_for_unknown_box(monkeypatch) -> None:
     """Given an unknown box, pool creation raises ValueError."""
     controller = _make_controller()
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
-        _FakeBoxPool,
-    )
+    _override_driver_classes(controller, BoxPool=_FakeBoxPool)
 
     with pytest.raises(ValueError, match=r"box\(Z\) is not defined") as exc:
         controller._create_boxpool(["A", "Z"])
@@ -193,13 +188,10 @@ def test_create_boxpool_raises_for_unknown_box(monkeypatch) -> None:
 def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
     """Given pooled box, get_box returns it without reconnecting."""
     controller = _make_controller()
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_BoxPool",
-        _FakeBoxPool,
-    )
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
-        lambda _ipaddr: object(),
+    _override_driver_classes(
+        controller,
+        BoxPool=_FakeBoxPool,
+        SequencerClient=lambda _ipaddr: object(),
     )
     boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A"]))
     cast(Any, controller)._boxpool = boxpool

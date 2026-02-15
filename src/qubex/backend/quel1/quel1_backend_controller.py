@@ -49,63 +49,6 @@ if TYPE_CHECKING:
     RunitSetting: TypeAlias = RunitSettingProtocol
     TriggerSetting: TypeAlias = TriggerSettingProtocol
 
-DEFAULT_SAMPLING_PERIOD: Any = None
-CapSampledSequence: Any = None
-GenSampledSequence: Any = None
-_driver_CapSampledSubSequence: Any = None
-_driver_GenSampledSubSequence: Any = None
-_driver_CaptureSlots: Any = None
-_driver_QubeCalib: Any = None
-_driver_QuBEMasterClient: Any = None
-_driver_SequencerClient: Any = None
-_driver_Quel1System: Any = None
-_driver_Action: Any = None
-_driver_AwgId: Any = None
-_driver_AwgSetting: Any = None
-_driver_NamedBox: Any = None
-_driver_RunitId: Any = None
-_driver_RunitSetting: Any = None
-_driver_TriggerSetting: Any = None
-_driver_Skew: Any = None
-_driver_BoxPool: Any = None
-_driver_CaptureParamTools: Any = None
-_driver_Converter: Any = None
-_driver_WaveSequenceTools: Any = None
-
-_DRIVER_GLOBAL_BINDINGS: dict[str, str] = {
-    "Quel1Box": "Quel1Box",
-    "Quel1ConfigOption": "Quel1ConfigOption",
-    "_driver_QubeCalib": "QubeCalib",
-    "_driver_QuBEMasterClient": "QuBEMasterClient",
-    "_driver_SequencerClient": "SequencerClient",
-    "_driver_Quel1System": "Quel1System",
-    "_driver_Action": "Action",
-    "_driver_AwgId": "AwgId",
-    "_driver_AwgSetting": "AwgSetting",
-    "_driver_NamedBox": "NamedBox",
-    "_driver_RunitId": "RunitId",
-    "_driver_RunitSetting": "RunitSetting",
-    "_driver_TriggerSetting": "TriggerSetting",
-    "_driver_Skew": "Skew",
-    "DEFAULT_SAMPLING_PERIOD": "DEFAULT_SAMPLING_PERIOD",
-    "CapSampledSequence": "CapSampledSequence",
-    "GenSampledSequence": "GenSampledSequence",
-    "_driver_CapSampledSubSequence": "CapSampledSubSequence",
-    "_driver_GenSampledSubSequence": "GenSampledSubSequence",
-    "_driver_CaptureSlots": "CaptureSlots",
-    "_driver_BoxPool": "BoxPool",
-    "_driver_CaptureParamTools": "CaptureParamTools",
-    "_driver_Converter": "Converter",
-    "_driver_WaveSequenceTools": "WaveSequenceTools",
-}
-
-
-def _bind_driver_symbols(driver: Any) -> None:
-    """Bind resolved driver symbols to module-level runtime aliases."""
-    for global_name, attribute_name in _DRIVER_GLOBAL_BINDINGS.items():
-        globals()[global_name] = getattr(driver, attribute_name)
-
-
 # TODO: use appropriate noise threshold
 _RELAXED_NOISE_THRESHOLD = 10000
 _MAX_BOX_PARALLEL_WORKERS = 32
@@ -177,16 +120,17 @@ class Quel1BackendController:
         self,
         config_path: str | Path | None = None,
     ):
+        driver = load_quel1_driver()
+        if TYPE_CHECKING:
+            driver = cast(QuelDriverClassesProtocol, driver)
+        self._driver = driver
+
         try:
-            driver = load_quel1_driver()
-            if TYPE_CHECKING:
-                driver = cast(QuelDriverClassesProtocol, driver)
-            _bind_driver_symbols(driver)
             if config_path is None:
-                self._qubecalib = _driver_QubeCalib()
+                self._qubecalib = self._driver.QubeCalib()
             else:
                 try:
-                    self._qubecalib = _driver_QubeCalib(str(config_path))
+                    self._qubecalib = self._driver.QubeCalib(str(config_path))
                 except FileNotFoundError:
                     logger.warning(f"Configuration file {config_path} not found.")
                     raise
@@ -508,14 +452,14 @@ class Quel1BackendController:
         if not option_labels:
             return None
         config_options: list[Quel1ConfigOption] = []
-        option_map = Quel1ConfigOption._value2member_map_
+        option_map = self._driver.Quel1ConfigOption._value2member_map_
         for option_label in option_labels:
             option = option_map.get(option_label)
             if option is None:
                 raise ValueError(
                     f"Unknown Quel1 config option `{option_label}` for box `{box_name}`."
                 )
-            config_options.append(cast(Quel1ConfigOption, option))
+            config_options.append(cast(Any, option))
         return config_options
 
     def load_skew_yaml(self, file_path: str | Path) -> None:
@@ -559,7 +503,7 @@ class Quel1BackendController:
         tuple[Any, Any]
             A tuple of (skew object, plotly figure).
         """
-        skew = _driver_Skew.from_yaml(
+        skew = self._driver.Skew.from_yaml(
             str(skew_yaml_path),
             box_yaml=str(box_yaml_path),
             clockmaster_ip=clockmaster_ip,
@@ -628,7 +572,7 @@ class Quel1BackendController:
             Created box pool with connected boxes.
         """
         db = self.qubecalib.system_config_database
-        boxpool = _driver_BoxPool()
+        boxpool = self._driver.BoxPool()
         clockmaster_setting = _db_clockmaster_setting(db)
         if clockmaster_setting is not None:
             boxpool.create_clock_master(ipaddr=str(clockmaster_setting.ipaddr))
@@ -651,7 +595,7 @@ class Quel1BackendController:
             for box_name in box_names:
                 setting = settings_by_name[box_name]
                 box = created_boxes[box_name]
-                sequencer = _driver_SequencerClient(str(setting.ipaddr_sss))
+                sequencer = self._driver.SequencerClient(str(setting.ipaddr_sss))
                 boxpool._boxes[box_name] = (box, sequencer)
                 boxpool._linkstatus[box_name] = False
                 boxes_to_reconnect.append(box)
@@ -731,11 +675,11 @@ class Quel1BackendController:
 
         pooled_boxes = _boxpool_boxes(self._boxpool)
         boxes: list[Any] = [
-            _driver_NamedBox(name=box_name, box=pooled_boxes[box_name][0])
+            self._driver.NamedBox(name=box_name, box=pooled_boxes[box_name][0])
             for box_name in box_names
         ]
-        system = _driver_Quel1System.create(
-            clockmaster=_driver_QuBEMasterClient(str(clockmaster_setting.ipaddr)),
+        system = self._driver.Quel1System.create(
+            clockmaster=self._driver.QuBEMasterClient(str(clockmaster_setting.ipaddr)),
             boxes=boxes,
             update_copnfig_cache=False,
         )
@@ -1059,7 +1003,7 @@ class Quel1BackendController:
             self._check_box_availability(box_name)
             ipaddr_sss = str(box_settings[box_name].ipaddr_sss)
             result.append(
-                _driver_SequencerClient(target_ipaddr=ipaddr_sss).read_clock()
+                self._driver.SequencerClient(target_ipaddr=ipaddr_sss).read_clock()
             )
         return result
 
@@ -1103,7 +1047,7 @@ class Quel1BackendController:
         clockmaster_setting = _db_clockmaster_setting(db)
         if clockmaster_setting is None:
             raise ValueError("clock master is not found")
-        master = _driver_QuBEMasterClient(master_ipaddr=str(clockmaster_setting.ipaddr))
+        master = self._driver.QuBEMasterClient(master_ipaddr=str(clockmaster_setting.ipaddr))
         box_settings = _db_box_settings(db)
         master.kick_clock_synch(
             [str(box_settings[box_name].ipaddr_sss) for box_name in box_list]
@@ -1124,7 +1068,7 @@ class Quel1BackendController:
         bool
             True if reset succeeds.
         """
-        return _driver_QuBEMasterClient(master_ipaddr=ipaddr).reset()
+        return self._driver.QuBEMasterClient(master_ipaddr=ipaddr).reset()
 
     def sync_clocks(self, box_list: list[str]) -> bool:
         """
@@ -1498,7 +1442,7 @@ class Quel1BackendController:
         Any
             GenSampledSequence object.
         """
-        return GenSampledSequence(
+        return self._driver.GenSampledSequence(
             target_name=target_name,
             prev_blank=0,
             post_blank=None,
@@ -1506,7 +1450,7 @@ class Quel1BackendController:
             original_post_blank=None,
             modulation_frequency=modulation_frequency,
             sub_sequences=[
-                _driver_GenSampledSubSequence(
+                self._driver.GenSampledSubSequence(
                     real=real,
                     imag=imag,
                     repeats=1,
@@ -1543,7 +1487,7 @@ class Quel1BackendController:
         Any
             CapSampledSequence object.
         """
-        cap_sub_sequence = _driver_CapSampledSubSequence(
+        cap_sub_sequence = self._driver.CapSampledSubSequence(
             capture_slots=[],
             repeats=None,
             prev_blank=capture_delay,
@@ -1553,14 +1497,14 @@ class Quel1BackendController:
         )
         for duration, post_blank in capture_slots:
             cap_sub_sequence.capture_slots.append(
-                _driver_CaptureSlots(
+                self._driver.CaptureSlots(
                     duration=duration,
                     post_blank=post_blank,
                     original_duration=None,  # type: ignore[arg-type]
                     original_post_blank=None,  # type: ignore[arg-type]
                 )
             )
-        return CapSampledSequence(
+        return self._driver.CapSampledSequence(
             target_name=target_name,
             repeats=None,
             prev_blank=0,
@@ -1725,11 +1669,11 @@ class Quel1BackendController:
                 sequencer=cast(Any, sequencer),
                 boxpool=self.boxpool,
                 system=self.quel1system,
-                action_builder=_driver_Action.build,
-                runit_setting_factory=_driver_RunitSetting,
-                runit_id_factory=_driver_RunitId,
-                awg_setting_factory=_driver_AwgSetting,
-                awg_id_factory=_driver_AwgId,
+                action_builder=self._driver.Action.build,
+                runit_setting_factory=self._driver.RunitSetting,
+                runit_id_factory=self._driver.RunitId,
+                awg_setting_factory=self._driver.AwgSetting,
+                awg_id_factory=self._driver.AwgId,
                 logger=logger,
                 clock_health_checks=(
                     None
@@ -1769,11 +1713,13 @@ class Quel1BackendController:
             if sequencer.interval is None:
                 raise ValueError("Interval is not set.")
             else:
-                if sequencer.interval % DEFAULT_SAMPLING_PERIOD != 0:
+                if sequencer.interval % self._driver.DEFAULT_SAMPLING_PERIOD != 0:
                     raise ValueError(
-                        f"Interval {sequencer.interval} is not a multiple of {DEFAULT_SAMPLING_PERIOD}"
+                        f"Interval {sequencer.interval} is not a multiple of {self._driver.DEFAULT_SAMPLING_PERIOD}"
                     )
-                interval_samples = int(sequencer.interval / DEFAULT_SAMPLING_PERIOD)
+                interval_samples = int(
+                    sequencer.interval / self._driver.DEFAULT_SAMPLING_PERIOD
+                )
 
         if capture_delay_words is None:
             capture_delay_words = 7 * 16
@@ -1781,7 +1727,7 @@ class Quel1BackendController:
         settings: list[RunitSetting | AwgSetting | TriggerSetting] = []
 
         # capture settings
-        cap_sequences_map = defaultdict(dict[str, CapSampledSequence])
+        cap_sequences_map = defaultdict(dict[str, Any])
         for cap_label, cap_sequence in sequencer.cap_sampled_sequence.items():
             cap_resource = self.cap_resource_map[cap_label]
             cap_id = (
@@ -1797,24 +1743,24 @@ class Quel1BackendController:
                     f"Duplicate capture ID found: {cap_id}\n{cap_sequences}"
                 )
             cap_sequence = next(iter(cap_sequences.values()))
-            cap_param = _driver_CaptureParamTools.create(
+            cap_param = self._driver.CaptureParamTools.create(
                 sequence=cap_sequence,
                 capture_delay_words=capture_delay_words,
                 repeats=repeats,
                 interval_samples=interval_samples,
             )
             if integral_mode == "integral":
-                _driver_CaptureParamTools.enable_integration(
+                self._driver.CaptureParamTools.enable_integration(
                     capprm=cap_param,
                 )
             if dsp_demodulation:
-                _driver_CaptureParamTools.enable_demodulation(
+                self._driver.CaptureParamTools.enable_demodulation(
                     capprm=cap_param,
                     f_GHz=cap_sequence.modulation_frequency or 0,
                 )
             settings.append(
-                _driver_RunitSetting(
-                    runit=_driver_RunitId(
+                self._driver.RunitSetting(
+                    runit=self._driver.RunitId(
                         box=cap_id[0],
                         port=cap_id[1],
                         runit=cap_id[2],
@@ -1824,7 +1770,7 @@ class Quel1BackendController:
             )
 
         # awg settings
-        gen_sequences_map = defaultdict(dict[str, GenSampledSequence])
+        gen_sequences_map = defaultdict(dict[str, Any])
         for gen_label, gen_sequence in sequencer.gen_sampled_sequence.items():
             gen_resource = self.gen_resource_map[gen_label]
             gen_id = (
@@ -1835,22 +1781,22 @@ class Quel1BackendController:
             gen_sequences_map[gen_id][gen_label] = gen_sequence
 
         for gen_id, gen_sequences in gen_sequences_map.items():
-            muxed_sequence = _driver_Converter.multiplex(
+            muxed_sequence = self._driver.Converter.multiplex(
                 sequences=gen_sequences,
                 modfreqs={
                     label: gen_sequence.modulation_frequency or 0
                     for label, gen_sequence in gen_sequences.items()
                 },
             )
-            wave_seq = _driver_WaveSequenceTools.create(
+            wave_seq = self._driver.WaveSequenceTools.create(
                 sequence=muxed_sequence,
                 wait_words=wait_words,
                 repeats=repeats,
                 interval_samples=interval_samples,
             )
             settings.append(
-                _driver_AwgSetting(
-                    awg=_driver_AwgId(
+                self._driver.AwgSetting(
+                    awg=self._driver.AwgId(
                         box=gen_id[0],
                         port=gen_id[1],
                         channel=gen_id[2],
@@ -1866,7 +1812,7 @@ class Quel1BackendController:
             raise ValueError("no settings")
 
         # execute
-        action = _driver_Action.build(system=self.quel1system, settings=settings)
+        action = self._driver.Action.build(system=self.quel1system, settings=settings)
         status, results = action.action()
         status, data, config = sequencer.parse_capture_results(
             status=status,

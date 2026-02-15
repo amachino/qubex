@@ -147,15 +147,27 @@ class Quel1SystemProtocol(Protocol):
 
 
 class AwgSettingProtocol(Protocol):
-    """Marker protocol for driver AWG setting objects."""
+    """Protocol for driver AWG setting objects."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Create one AWG setting."""
+        ...
 
 
 class RunitSettingProtocol(Protocol):
-    """Marker protocol for driver runit setting objects."""
+    """Protocol for driver runit setting objects."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Create one runit setting."""
+        ...
 
 
 class TriggerSettingProtocol(Protocol):
-    """Marker protocol for driver trigger setting objects."""
+    """Protocol for driver trigger setting objects."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Create one trigger setting."""
+        ...
 
 
 class QubeCalibProtocol(Protocol):

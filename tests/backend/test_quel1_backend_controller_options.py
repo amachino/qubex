@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from enum import Enum
 from typing import Any, cast
 
@@ -43,11 +44,18 @@ def _make_controller() -> Quel1BackendController:
     return controller
 
 
+def _override_driver_classes(
+    controller: Quel1BackendController, **overrides: Any
+) -> None:
+    """Replace selected driver classes in one controller instance."""
+    cast(Any, controller)._driver = replace(cast(Any, controller)._driver, **overrides)
+
+
 def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -> None:
     """Given R8 box without options, when relinkup runs, then default awg2222 is used."""
     controller = _make_controller()
     fake_box = _FakeBox("quel1se-riken8", {0: False})
-    monkeypatch.setattr(module, "Quel1ConfigOption", _FakeQuel1ConfigOption)
+    _override_driver_classes(controller, Quel1ConfigOption=_FakeQuel1ConfigOption)
     monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(controller, "_create_box", lambda *args, **kwargs: fake_box)
 
@@ -63,7 +71,7 @@ def test_relinkup_maps_explicit_options(monkeypatch: pytest.MonkeyPatch) -> None
     """Given explicit options, when relinkup runs, then options are converted and passed."""
     controller = _make_controller()
     fake_box = _FakeBox("quel1se-riken8", {0: False})
-    monkeypatch.setattr(module, "Quel1ConfigOption", _FakeQuel1ConfigOption)
+    _override_driver_classes(controller, Quel1ConfigOption=_FakeQuel1ConfigOption)
     monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(controller, "_create_box", lambda *args, **kwargs: fake_box)
     controller.set_box_options(
@@ -90,7 +98,7 @@ def test_relinkup_rejects_conflicting_awg_options(
     """Given conflicting awg options, when relinkup runs, then ValueError is raised."""
     controller = _make_controller()
     fake_box = _FakeBox("quel1se-riken8", {0: False})
-    monkeypatch.setattr(module, "Quel1ConfigOption", _FakeQuel1ConfigOption)
+    _override_driver_classes(controller, Quel1ConfigOption=_FakeQuel1ConfigOption)
     monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(controller, "_create_box", lambda *args, **kwargs: fake_box)
     controller.set_box_options({"B0": ("se8_mxfe1_awg1331", "se8_mxfe1_awg2222")})

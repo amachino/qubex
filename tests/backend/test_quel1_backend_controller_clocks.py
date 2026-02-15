@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar, cast
 
 import pytest
@@ -86,7 +86,14 @@ def _make_controller(*, include_clockmaster: bool = True) -> Quel1BackendControl
     return controller
 
 
-def test_read_clocks_uses_sequencer_clients(monkeypatch) -> None:
+def _override_driver_classes(
+    controller: Quel1BackendController, **overrides: Any
+) -> None:
+    """Replace selected driver classes in one controller instance."""
+    cast(Any, controller)._driver = replace(cast(Any, controller)._driver, **overrides)
+
+
+def test_read_clocks_uses_sequencer_clients() -> None:
     """Given boxes, read_clocks returns sequencer client readings."""
     controller = _make_controller()
     _FakeSequencerClient.calls = []
@@ -94,10 +101,7 @@ def test_read_clocks_uses_sequencer_clients(monkeypatch) -> None:
         "10.0.1.1": (True, 123, 456),
         "10.0.1.2": (True, 789, 1011),
     }
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
-        _FakeSequencerClient,
-    )
+    _override_driver_classes(controller, SequencerClient=_FakeSequencerClient)
 
     result = controller.read_clocks(["A", "B"])
 
@@ -105,7 +109,7 @@ def test_read_clocks_uses_sequencer_clients(monkeypatch) -> None:
     assert _FakeSequencerClient.calls == ["10.0.1.1", "10.0.1.2"]
 
 
-def test_resync_clocks_kicks_clockmaster(monkeypatch) -> None:
+def test_resync_clocks_kicks_clockmaster() -> None:
     """Given multiple boxes, resync_clocks kicks clockmaster and checks."""
     controller = _make_controller()
     _FakeSequencerClient.readings = {
@@ -114,13 +118,10 @@ def test_resync_clocks_kicks_clockmaster(monkeypatch) -> None:
     }
     master = _FakeQuBEMasterClient("192.0.2.1")
 
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_SequencerClient",
-        _FakeSequencerClient,
-    )
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
-        lambda master_ipaddr: master,
+    _override_driver_classes(
+        controller,
+        SequencerClient=_FakeSequencerClient,
+        QuBEMasterClient=lambda master_ipaddr: master,
     )
 
     assert controller.resync_clocks(["A", "B"]) is True
@@ -128,26 +129,23 @@ def test_resync_clocks_kicks_clockmaster(monkeypatch) -> None:
     assert master.kick_calls == [["10.0.1.1", "10.0.1.2"]]
 
 
-def test_resync_clocks_raises_without_clockmaster(monkeypatch) -> None:
+def test_resync_clocks_raises_without_clockmaster() -> None:
     """Given no clockmaster, resync_clocks raises ValueError."""
     controller = _make_controller(include_clockmaster=False)
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
-        _FakeQuBEMasterClient,
-    )
+    _override_driver_classes(controller, QuBEMasterClient=_FakeQuBEMasterClient)
 
     with pytest.raises(ValueError, match="clock master is not found"):
         controller.resync_clocks(["A", "B"])
 
 
-def test_reset_clockmaster_uses_master_client(monkeypatch) -> None:
+def test_reset_clockmaster_uses_master_client() -> None:
     """Given an IP address, reset_clockmaster delegates to QuBEMasterClient.reset."""
     controller = _make_controller()
     master = _FakeQuBEMasterClient("192.0.2.99")
 
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
-        lambda master_ipaddr: master,
+    _override_driver_classes(
+        controller,
+        QuBEMasterClient=lambda master_ipaddr: master,
     )
 
     assert controller.reset_clockmaster("192.0.2.99") is True
@@ -155,7 +153,7 @@ def test_reset_clockmaster_uses_master_client(monkeypatch) -> None:
     assert master.reset_calls == 1
 
 
-def test_reset_clockmaster_returns_false_when_reset_is_unsupported(monkeypatch) -> None:
+def test_reset_clockmaster_returns_false_when_reset_is_unsupported() -> None:
     """Given compatibility client reset failure, reset_clockmaster returns False."""
     controller = _make_controller()
 
@@ -166,9 +164,9 @@ def test_reset_clockmaster_returns_false_when_reset_is_unsupported(monkeypatch) 
         def reset(self) -> bool:
             return False
 
-    monkeypatch.setattr(
-        "qubex.backend.quel1.quel1_backend_controller._driver_QuBEMasterClient",
-        _MasterWithUnsupportedReset,
+    _override_driver_classes(
+        controller,
+        QuBEMasterClient=_MasterWithUnsupportedReset,
     )
 
     assert controller.reset_clockmaster("192.0.2.99") is False
