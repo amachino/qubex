@@ -16,7 +16,7 @@ except ModuleNotFoundError:
     try:
         _clockmaster = importlib.import_module("qubecalib.clockmaster_compat")
     except ModuleNotFoundError:
-        _clockmaster = importlib.import_module("quel_clock_master")
+        _clockmaster = importlib.import_module("qubecalib.qubecalib")
     _quel1 = importlib.import_module("qubecalib.instrument.quel.quel1")
     _driver = importlib.import_module("qubecalib.instrument.quel.quel1.driver")
     _tool = importlib.import_module("qubecalib.instrument.quel.quel1.tool")

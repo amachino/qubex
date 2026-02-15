@@ -87,11 +87,13 @@ _BASE_SYMBOL_CANDIDATES: dict[str, tuple[_SymbolCandidate, ...]] = {
     "QuBEMasterClient": (
         ("{package}.compat", "QuBEMasterClient"),
         ("{package}.clockmaster_compat", "QuBEMasterClient"),
+        ("{package}.qubecalib", "QuBEMasterClient"),
         ("{package}.facade", "QuBEMasterClient"),
     ),
     "SequencerClient": (
         ("{package}.compat", "SequencerClient"),
         ("{package}.clockmaster_compat", "SequencerClient"),
+        ("{package}.qubecalib", "SequencerClient"),
         ("{package}.facade", "SequencerClient"),
     ),
     "Quel1System": (
@@ -187,18 +189,13 @@ _BASE_SYMBOL_CANDIDATES: dict[str, tuple[_SymbolCandidate, ...]] = {
     "Quel1Box": (
         ("{package}.compat", "Quel1Box"),
         ("{package}.facade", "Quel1Box"),
-        ("quel_ic_config", "Quel1Box"),
+        ("{package}.qubecalib", "Quel1Box"),
     ),
     "Quel1ConfigOption": (
         ("{package}.compat", "Quel1ConfigOption"),
         ("{package}.facade", "Quel1ConfigOption"),
-        ("quel_ic_config", "Quel1ConfigOption"),
+        ("{package}.qubecalib", "Quel1ConfigOption"),
     ),
-}
-
-_QUBECALIB_ONLY_SYMBOL_CANDIDATES: dict[str, tuple[_SymbolCandidate, ...]] = {
-    "QuBEMasterClient": (("quel_clock_master", "QuBEMasterClient"),),
-    "SequencerClient": (("quel_clock_master", "SequencerClient"),),
 }
 
 
@@ -231,9 +228,6 @@ def _resolve_symbol(
 ) -> tuple[Any, ModuleType, str]:
     """Resolve one required symbol from package-specific candidate paths."""
     candidates = list(_BASE_SYMBOL_CANDIDATES[symbol_name])
-    if package_name == _PREFERENCE_QUBECALIB:
-        candidates.extend(_QUBECALIB_ONLY_SYMBOL_CANDIDATES.get(symbol_name, ()))
-
     for module_template, attr_path in candidates:
         module_name = module_template.format(package=package_name)
         try:

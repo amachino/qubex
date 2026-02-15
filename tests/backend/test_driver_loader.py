@@ -88,6 +88,12 @@ def _build_fake_driver_modules(
     legacy.WaveSequenceTools = _fake_class(
         "WaveSequenceTools", f"{package_name}.qubecalib"
     )
+    legacy.QuBEMasterClient = clockmaster.QuBEMasterClient
+    legacy.SequencerClient = clockmaster.SequencerClient
+    legacy.Quel1Box = _fake_class("Quel1Box", f"{package_name}.qubecalib")
+    legacy.Quel1ConfigOption = _fake_class(
+        "Quel1ConfigOption", f"{package_name}.qubecalib"
+    )
 
     multi = cast(Any, ModuleType(f"{package_name}.instrument.quel.quel1.driver.multi"))
     multi.Action = _fake_class(
@@ -113,13 +119,6 @@ def _build_fake_driver_modules(
         f"{package_name}.instrument.quel.quel1.driver.single": single,
     }
 
-    quel_ic_config = cast(Any, ModuleType("quel_ic_config"))
-    quel_ic_config.Quel1Box = _fake_class("Quel1Box", "quel_ic_config")
-    quel_ic_config.Quel1ConfigOption = _fake_class(
-        "Quel1ConfigOption", "quel_ic_config"
-    )
-    mapping["quel_ic_config"] = quel_ic_config
-
     if include_facade:
         facade = cast(Any, ModuleType(f"{package_name}.facade"))
         facade.QuBEMasterClient = clockmaster.QuBEMasterClient
@@ -128,8 +127,8 @@ def _build_fake_driver_modules(
         facade.CaptureParamTools = legacy.CaptureParamTools
         facade.Converter = legacy.Converter
         facade.WaveSequenceTools = legacy.WaveSequenceTools
-        facade.Quel1Box = quel_ic_config.Quel1Box
-        facade.Quel1ConfigOption = quel_ic_config.Quel1ConfigOption
+        facade.Quel1Box = legacy.Quel1Box
+        facade.Quel1ConfigOption = legacy.Quel1ConfigOption
         facade.direct = SimpleNamespace(
             Action=direct.Action,
             AwgId=direct.AwgId,
@@ -169,8 +168,8 @@ def _build_fake_driver_modules(
         compat.CaptureParamTools = legacy.CaptureParamTools
         compat.Converter = legacy.Converter
         compat.WaveSequenceTools = legacy.WaveSequenceTools
-        compat.Quel1Box = quel_ic_config.Quel1Box
-        compat.Quel1ConfigOption = quel_ic_config.Quel1ConfigOption
+        compat.Quel1Box = legacy.Quel1Box
+        compat.Quel1ConfigOption = legacy.Quel1ConfigOption
         compat.DirectMultiAction = multi.Action
         compat.DirectSingleAction = single.Action
         mapping[f"{package_name}.compat"] = compat
@@ -242,23 +241,14 @@ def test_load_quel_driver_uses_env_preference(monkeypatch) -> None:
     assert modules.package_name == "qubecalib"
 
 
-def test_load_quel_driver_qubecalib_falls_back_to_legacy_clockmaster(
+def test_load_quel_driver_qubecalib_resolves_clockmaster_from_qubecalib_module(
     monkeypatch,
 ) -> None:
-    """Given old qubecalib layout, when clockmaster_compat is missing, then legacy module is used."""
+    """Given missing clockmaster_compat, loader resolves clock symbols from qubecalib package paths."""
     mapping = _build_fake_driver_modules("qubecalib")
-    legacy_clockmaster = cast(Any, ModuleType("quel_clock_master"))
-    legacy_clockmaster.QuBEMasterClient = _fake_class(
-        "QuBEMasterClient", "quel_clock_master"
-    )
-    legacy_clockmaster.SequencerClient = _fake_class(
-        "SequencerClient", "quel_clock_master"
-    )
-    mapping["quel_clock_master"] = legacy_clockmaster
+    del mapping["qubecalib.clockmaster_compat"]
 
     def _fake_import(name: str) -> ModuleType:
-        if name == "qubecalib.clockmaster_compat":
-            raise ModuleNotFoundError(name)
         if name in mapping:
             return mapping[name]
         raise ModuleNotFoundError(name)
@@ -271,6 +261,38 @@ def test_load_quel_driver_qubecalib_falls_back_to_legacy_clockmaster(
     assert modules.package_name == "qubecalib"
     assert modules.QuBEMasterClient.__name__ == "QuBEMasterClient"
     assert modules.SequencerClient.__name__ == "SequencerClient"
+
+
+def test_load_quel_driver_does_not_fall_back_to_quel_clock_master(monkeypatch) -> None:
+    """Given no package clock symbols, direct quel_clock_master fallback is not used."""
+    mapping = _build_fake_driver_modules("qubecalib")
+    del mapping["qubecalib.clockmaster_compat"]
+    legacy = cast(Any, mapping["qubecalib.qubecalib"])
+    del legacy.QuBEMasterClient
+    del legacy.SequencerClient
+
+    quel_clock_master = cast(Any, ModuleType("quel_clock_master"))
+    quel_clock_master.QuBEMasterClient = _fake_class(
+        "QuBEMasterClient", "quel_clock_master"
+    )
+    quel_clock_master.SequencerClient = _fake_class(
+        "SequencerClient", "quel_clock_master"
+    )
+    mapping["quel_clock_master"] = quel_clock_master
+
+    def _fake_import(name: str) -> ModuleType:
+        if name in mapping:
+            return mapping[name]
+        raise ModuleNotFoundError(name)
+
+    driver_loader.clear_quel_driver_cache()
+    monkeypatch.setattr(driver_loader.importlib, "import_module", _fake_import)
+
+    with pytest.raises(
+        ModuleNotFoundError,
+        match=r"Could not resolve symbol 'QuBEMasterClient' for package 'qubecalib'\.",
+    ):
+        driver_loader.load_quel_driver("qubecalib")
 
 
 def test_load_quel_driver_resolves_symbols_from_facade_fallback(monkeypatch) -> None:
