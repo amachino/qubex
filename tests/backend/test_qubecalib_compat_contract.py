@@ -84,11 +84,12 @@ def test_qubecalib_instance_exposes_methods_required_by_qubex() -> None:
     assert callable(qc.show_command_queue)
     assert callable(qc.clear_command_queue)
     assert callable(qc.step_execute)
-    assert hasattr(qc, "executor") or hasattr(qc, "_executor")
+    assert hasattr(qc, "_executor")
+    assert hasattr(qc._executor, "add_command")  # noqa: SLF001
 
 
 def test_system_config_database_and_sysdb_contract_required_by_qubex() -> None:
-    """Given qubex DB access patterns, when inspecting sysdb, then public and fallback attributes exist."""
+    """Given qubex DB access patterns, system DB exposes the legacy private contract."""
     qc = QubeCalib()
     db = qc.system_config_database
 
@@ -100,12 +101,18 @@ def test_system_config_database_and_sysdb_contract_required_by_qubex() -> None:
     assert callable(db.get_channel)
     assert callable(db.create_box)
     assert callable(db.load_skew_yaml)
-    assert callable(db.assign_target_to_channel)
 
-    assert hasattr(db, "clockmaster_setting") or hasattr(db, "_clockmaster_setting")
-    assert hasattr(db, "box_settings") or hasattr(db, "_box_settings")
-    assert hasattr(db, "port_settings") or hasattr(db, "_port_settings")
-    assert hasattr(db, "target_settings") or hasattr(db, "_target_settings")
-    assert hasattr(db, "relation_channel_target") or hasattr(
-        db, "_relation_channel_target"
-    )
+    assert hasattr(db, "_clockmaster_setting")
+    assert hasattr(db, "_box_settings")
+    assert hasattr(db, "_port_settings")
+    assert hasattr(db, "_target_settings")
+    assert hasattr(db, "_relation_channel_target")
+
+
+def test_boxpool_contract_required_by_qubex() -> None:
+    """Given qubex runtime access patterns, BoxPool exposes required private fields."""
+    boxpool = BoxPool()
+
+    assert hasattr(boxpool, "_boxes")
+    assert hasattr(boxpool, "_linkstatus")
+    assert hasattr(boxpool, "_box_config_cache")

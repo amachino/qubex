@@ -44,11 +44,11 @@ def test_update_box_config_cache_syncs_to_quel1system_config_cache() -> None:
     assert isinstance(system.config_fetched_at, datetime.datetime)
 
 
-def test_replace_box_config_cache_syncs_to_quel1system_box_cache() -> None:
-    """Given replacement data, when replacing cache, then both boxpool and system box_cache are replaced."""
+def test_replace_box_config_cache_syncs_to_quel1system_config_cache() -> None:
+    """Given replacement data, when replacing cache, then both boxpool and system config_cache are replaced."""
     controller = _make_controller()
     system = SimpleNamespace(
-        box_cache={"stale": {"ports": {99: {}}}},
+        config_cache={"stale": {"ports": {99: {}}}},
         config_fetched_at=None,
     )
     cast(Any, controller)._quel1system = system
@@ -58,9 +58,9 @@ def test_replace_box_config_cache_syncs_to_quel1system_box_cache() -> None:
     controller.replace_box_config_cache(replacement)
 
     assert controller.boxpool._box_config_cache == replacement
-    assert system.box_cache == replacement
+    assert system.config_cache == replacement
     assert controller.boxpool._box_config_cache is not replacement
-    assert system.box_cache is not replacement
+    assert system.config_cache is not replacement
     assert isinstance(system.config_fetched_at, datetime.datetime)
 
 

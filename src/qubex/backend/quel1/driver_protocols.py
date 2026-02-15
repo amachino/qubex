@@ -51,6 +51,114 @@ class SequencerClientProtocol(Protocol):
         ...
 
 
+class Quel1BoxProtocol(Protocol):
+    """Protocol for Quel1 box objects used by qubex backend flows."""
+
+    boxtype: str
+
+    def reconnect(self, *args: Any, **kwargs: Any) -> Any:
+        """Reconnect links and return backend-specific status payload."""
+        ...
+
+    def relinkup(self, *args: Any, **kwargs: Any) -> Any:
+        """Relink box JESD links with optional config options."""
+        ...
+
+    def link_status(self) -> dict[int, bool]:
+        """Return link status by lane/group index."""
+        ...
+
+    def initialize_all_awgunits(self) -> None:
+        """Initialize all AWG units."""
+        ...
+
+    def initialize_all_capunits(self) -> None:
+        """Initialize all capture units."""
+        ...
+
+    def get_input_ports(self) -> Any:
+        """Return iterable of input port identifiers."""
+        ...
+
+    def get_output_ports(self) -> Any:
+        """Return iterable of output port identifiers."""
+        ...
+
+    def dump_box(self) -> dict[str, Any]:
+        """Return current box configuration dump."""
+        ...
+
+    def dump_port(self, port: Any) -> dict[str, Any]:
+        """Return current port configuration dump."""
+        ...
+
+    def config_port(self, *args: Any, **kwargs: Any) -> None:
+        """Apply port-level configuration."""
+        ...
+
+    def config_channel(self, *args: Any, **kwargs: Any) -> None:
+        """Apply channel-level configuration."""
+        ...
+
+    def config_runit(self, *args: Any, **kwargs: Any) -> None:
+        """Apply runit-level configuration."""
+        ...
+
+
+class BoxPoolProtocol(Protocol):
+    """Protocol for legacy-style box pool state and helpers."""
+
+    _boxes: dict[str, tuple[Quel1BoxProtocol, Any]]
+    _linkstatus: dict[str, bool]
+    _box_config_cache: dict[str, dict[str, Any]]
+
+    def create_clock_master(self, *, ipaddr: str) -> None:
+        """Create clock master client for the pool."""
+        ...
+
+    def create(
+        self,
+        box_name: str,
+        *,
+        ipaddr_wss: str,
+        ipaddr_sss: str,
+        ipaddr_css: str,
+        boxtype: Any,
+    ) -> Quel1BoxProtocol:
+        """Create and register one box instance."""
+        ...
+
+
+class Quel1SystemProtocol(Protocol):
+    """Protocol for direct multi-box system objects used by qubex."""
+
+    config_cache: dict[str, dict[str, Any]]
+    config_fetched_at: Any
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        clockmaster: Any,
+        boxes: list[Any],
+        update_copnfig_cache: bool = False,
+    ) -> Any:
+        """Create a system from pre-constructed clockmaster/box objects."""
+        ...
+
+
+class AwgSettingProtocol(Protocol):
+    """Marker protocol for driver AWG setting objects."""
+
+
+class RunitSettingProtocol(Protocol):
+    """Marker protocol for driver runit setting objects."""
+
+
+class TriggerSettingProtocol(Protocol):
+    """Marker protocol for driver trigger setting objects."""
+
+
 class QubeCalibProtocol(Protocol):
     """Protocol for QubeCalib facade objects consumed by qubex."""
 
@@ -193,21 +301,21 @@ class QuelDriverModulesProtocol(Protocol):
     Sequencer: type[SequencerProtocol]
     QuBEMasterClient: type[QuBEMasterClientProtocol]
     SequencerClient: type[SequencerClientProtocol]
-    Quel1System: Any
+    Quel1System: type[Quel1SystemProtocol]
     Action: Any
     AwgId: Any
-    AwgSetting: Any
+    AwgSetting: type[AwgSettingProtocol]
     NamedBox: Any
     RunitId: Any
-    RunitSetting: Any
-    TriggerSetting: Any
+    RunitSetting: type[RunitSettingProtocol]
+    TriggerSetting: type[TriggerSettingProtocol]
     Skew: Any
     DEFAULT_SAMPLING_PERIOD: Any
     CapSampledSequence: Any
     GenSampledSequence: Any
-    BoxPool: Any
+    BoxPool: type[BoxPoolProtocol]
     CaptureParamTools: Any
     Converter: Any
     WaveSequenceTools: Any
-    Quel1Box: Any
+    Quel1Box: type[Quel1BoxProtocol]
     Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
