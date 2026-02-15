@@ -190,6 +190,7 @@ _BASE_SYMBOL_CANDIDATES: dict[str, tuple[_SymbolCandidate, ...]] = {
         ("{package}.compat", "Quel1Box"),
         ("{package}.facade", "Quel1Box"),
         ("{package}.qubecalib", "Quel1Box"),
+        ("{package}.qubecalib", "Quel1BoxWithRawWss"),
     ),
     "Quel1ConfigOption": (
         ("{package}.compat", "Quel1ConfigOption"),

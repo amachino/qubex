@@ -3,25 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, version
 from itertools import groupby
-from typing import Any, Literal
-
-ApiGeneration = Literal["quelware08", "quelware10"]
-
-
-def _detect_api_generation() -> ApiGeneration:
-    """Detect quel_ic_config API generation from installed package version."""
-    try:
-        v = version("quel_ic_config")
-    except PackageNotFoundError:
-        return "quelware10"
-    parts = v.split(".")
-    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-        major, minor = int(parts[0]), int(parts[1])
-        if major == 0 and minor < 10:
-            return "quelware08"
-    return "quelware10"
+from typing import Any
 
 
 class _CompletedTask:
@@ -88,7 +71,6 @@ class Quel1BoxCompatAdapter:
     """Adapt legacy and modern Quel1Box interfaces to a common API."""
 
     _box: Any
-    _api_generation: ApiGeneration
 
     def __getattr__(self, name: str) -> Any:
         """Delegate unknown attributes to the wrapped box."""
@@ -186,4 +168,4 @@ class Quel1BoxCompatAdapter:
 
 def adapt_quel1_box(box: Any) -> Quel1BoxCompatAdapter:
     """Wrap a Quel1Box-like object with version-aware compatibility adapter."""
-    return Quel1BoxCompatAdapter(box, _detect_api_generation())
+    return Quel1BoxCompatAdapter(box)

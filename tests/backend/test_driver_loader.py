@@ -91,6 +91,9 @@ def _build_fake_driver_modules(
     legacy.QuBEMasterClient = clockmaster.QuBEMasterClient
     legacy.SequencerClient = clockmaster.SequencerClient
     legacy.Quel1Box = _fake_class("Quel1Box", f"{package_name}.qubecalib")
+    legacy.Quel1BoxWithRawWss = _fake_class(
+        "Quel1BoxWithRawWss", f"{package_name}.qubecalib"
+    )
     legacy.Quel1ConfigOption = _fake_class(
         "Quel1ConfigOption", f"{package_name}.qubecalib"
     )
@@ -293,6 +296,26 @@ def test_load_quel_driver_does_not_fall_back_to_quel_clock_master(monkeypatch) -
         match=r"Could not resolve symbol 'QuBEMasterClient' for package 'qubecalib'\.",
     ):
         driver_loader.load_quel_driver("qubecalib")
+
+
+def test_load_quel_driver_accepts_legacy_quel1boxwithrawwss_symbol(monkeypatch) -> None:
+    """Given legacy qubecalib box symbol, loader maps Quel1Box from Quel1BoxWithRawWss."""
+    mapping = _build_fake_driver_modules("qubecalib")
+    legacy = cast(Any, mapping["qubecalib.qubecalib"])
+    del legacy.Quel1Box
+
+    def _fake_import(name: str) -> ModuleType:
+        if name in mapping:
+            return mapping[name]
+        raise ModuleNotFoundError(name)
+
+    driver_loader.clear_quel_driver_cache()
+    monkeypatch.setattr(driver_loader.importlib, "import_module", _fake_import)
+
+    modules = driver_loader.load_quel_driver("qubecalib")
+
+    assert modules.package_name == "qubecalib"
+    assert modules.Quel1Box.__name__ == "Quel1BoxWithRawWss"
 
 
 def test_load_quel_driver_resolves_symbols_from_facade_fallback(monkeypatch) -> None:
