@@ -112,6 +112,22 @@ def test_apply_patch_does_not_fail_when_quelware_missing(monkeypatch) -> None:
     patch.apply_quelware_filelock_patch()
 
 
+def test_apply_patch_skips_for_quelware_0_8(monkeypatch) -> None:
+    """Given quelware 0.8.x, when patch applies, then target modules are not imported."""
+    monkeypatch.setattr(patch, "_is_quelware_0_10_or_later", lambda: False)
+    import_calls: list[str] = []
+
+    def _import_module(name: str):
+        import_calls.append(name)
+        raise AssertionError("import must not be called for quelware 0.8.x")
+
+    monkeypatch.setattr(patch.importlib, "import_module", _import_module)
+
+    patch.apply_quelware_filelock_patch()
+
+    assert import_calls == []
+
+
 def test_apply_patch_replaces_filelock_classes(monkeypatch) -> None:
     """Given quelware modules, when patch applies, then file-lock classes become dummy lock."""
     sock_mod = SimpleNamespace(

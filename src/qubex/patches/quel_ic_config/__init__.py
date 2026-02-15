@@ -1,1 +1,12 @@
 """Patches for Quel IC configuration tooling."""
+
+from __future__ import annotations
+
+from .disable_quelware_filelock_patch import apply_quelware_filelock_patch
+from .linkup_fpga_mxfe_patch import apply_linkup_fpga_mxfe_patch
+
+
+def apply_quelware_runtime_patches() -> None:
+    """Apply runtime patches needed by qubex for quelware integration."""
+    apply_quelware_filelock_patch()
+    apply_linkup_fpga_mxfe_patch()

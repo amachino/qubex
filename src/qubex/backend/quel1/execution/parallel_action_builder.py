@@ -424,8 +424,8 @@ def build_parallel_multi_action(
     True
     """
     driver = load_quel1_driver()
-    direct_multi_action = driver.DirectMultiAction
-    direct_single_action = driver.DirectSingleAction
+    direct_multi_action = driver.MultiAction
+    direct_single_action = driver.SingleAction
 
     if clock_health_checks is None:
         clock_health_checks = ClockHealthCheckOptions()

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from types import ModuleType, SimpleNamespace
+from importlib.metadata import PackageNotFoundError
+from types import ModuleType
 from typing import Any, cast
 
 import pytest
@@ -18,7 +19,6 @@ def _fake_class(name: str, module: str) -> type:
 def _build_fake_driver_modules(
     package_name: str,
     *,
-    include_facade: bool = False,
     include_compat: bool = False,
 ) -> dict[str, ModuleType]:
     """Create fake modules for one driver package namespace."""
@@ -122,30 +122,6 @@ def _build_fake_driver_modules(
         f"{package_name}.instrument.quel.quel1.driver.single": single,
     }
 
-    if include_facade:
-        facade = cast(Any, ModuleType(f"{package_name}.facade"))
-        facade.QuBEMasterClient = clockmaster.QuBEMasterClient
-        facade.SequencerClient = clockmaster.SequencerClient
-        facade.BoxPool = legacy.BoxPool
-        facade.CaptureParamTools = legacy.CaptureParamTools
-        facade.Converter = legacy.Converter
-        facade.WaveSequenceTools = legacy.WaveSequenceTools
-        facade.Quel1Box = legacy.Quel1Box
-        facade.Quel1ConfigOption = legacy.Quel1ConfigOption
-        facade.direct = SimpleNamespace(
-            Action=direct.Action,
-            AwgId=direct.AwgId,
-            AwgSetting=direct.AwgSetting,
-            NamedBox=direct.NamedBox,
-            RunitId=direct.RunitId,
-            RunitSetting=direct.RunitSetting,
-            TriggerSetting=direct.TriggerSetting,
-            Quel1System=quel1.Quel1System,
-            multi=SimpleNamespace(Action=multi.Action),
-            single=SimpleNamespace(Action=single.Action),
-        )
-        mapping[f"{package_name}.facade"] = facade
-
     if include_compat:
         compat = cast(Any, ModuleType(f"{package_name}.compat"))
         compat.QubeCalib = root.QubeCalib
@@ -173,24 +149,16 @@ def _build_fake_driver_modules(
         compat.WaveSequenceTools = legacy.WaveSequenceTools
         compat.Quel1Box = legacy.Quel1Box
         compat.Quel1ConfigOption = legacy.Quel1ConfigOption
-        compat.DirectMultiAction = multi.Action
-        compat.DirectSingleAction = single.Action
+        compat.MultiAction = multi.Action
+        compat.SingleAction = single.Action
         mapping[f"{package_name}.compat"] = compat
 
     return mapping
 
 
-def test_load_quel1_driver_rejects_invalid_preference() -> None:
-    """Given invalid preference, when loading driver, then ValueError is raised."""
-    quel1_driver_loader.clear_quel1_driver_cache()
-
-    with pytest.raises(ValueError, match="Invalid QUBEX_QUEL_DRIVER"):
-        quel1_driver_loader.load_quel1_driver("invalid")
-
-
-def test_load_quel1_driver_respects_explicit_preference(monkeypatch) -> None:
-    """Given explicit preference, when loading driver, then selected package is returned."""
-    mapping = _build_fake_driver_modules("qxdriver_quel")
+def test_load_quel1_driver_uses_qxdriver_for_non_0_8_quelware(monkeypatch) -> None:
+    """Given quelware not 0.8.x, when loading driver, then qxdriver_quel is selected."""
+    mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:
@@ -198,36 +166,18 @@ def test_load_quel1_driver_respects_explicit_preference(monkeypatch) -> None:
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.10.0")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
-    modules = quel1_driver_loader.load_quel1_driver("qxdriver_quel")
+    modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qxdriver_quel"
     assert modules.QubeCalib.__name__ == "QubeCalib"
     assert modules.Action.__name__ == "Action"
 
 
-def test_load_quel1_driver_auto_falls_back_to_qubecalib(monkeypatch) -> None:
-    """Given qxdriver_quel import failure, when loading auto mode, then qubecalib is selected."""
-    mapping = _build_fake_driver_modules("qubecalib")
-
-    def _fake_import(name: str) -> ModuleType:
-        if name.startswith("qxdriver_quel"):
-            raise ModuleNotFoundError(name)
-        if name in mapping:
-            return mapping[name]
-        raise ModuleNotFoundError(name)
-
-    quel1_driver_loader.clear_quel1_driver_cache()
-    monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
-
-    modules = quel1_driver_loader.load_quel1_driver("auto")
-
-    assert modules.package_name == "qubecalib"
-
-
-def test_load_quel1_driver_uses_env_preference(monkeypatch) -> None:
-    """Given env preference, when no explicit preference is passed, then env value is used."""
+def test_load_quel1_driver_uses_qubecalib_for_quelware_0_8(monkeypatch) -> None:
+    """Given quelware 0.8.x, when loading driver, then qubecalib is selected."""
     mapping = _build_fake_driver_modules("qubecalib")
 
     def _fake_import(name: str) -> ModuleType:
@@ -236,12 +186,35 @@ def test_load_quel1_driver_uses_env_preference(monkeypatch) -> None:
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
-    monkeypatch.setenv("QUBEX_QUEL_DRIVER", "qubecalib")
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.8.9")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
     modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qubecalib"
+
+
+def test_load_quel1_driver_defaults_to_qxdriver_when_quelware_missing(
+    monkeypatch,
+) -> None:
+    """Given missing quelware package, when loading driver, then qxdriver_quel is selected."""
+    mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
+
+    def _fake_version(_: str) -> str:
+        raise PackageNotFoundError
+
+    def _fake_import(name: str) -> ModuleType:
+        if name in mapping:
+            return mapping[name]
+        raise ModuleNotFoundError(name)
+
+    quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", _fake_version)
+    monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
+
+    modules = quel1_driver_loader.load_quel1_driver()
+
+    assert modules.package_name == "qxdriver_quel"
 
 
 def test_load_quel1_driver_qubecalib_resolves_clockmaster_from_qubecalib_module(
@@ -257,9 +230,10 @@ def test_load_quel1_driver_qubecalib_resolves_clockmaster_from_qubecalib_module(
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.8.2")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
-    modules = quel1_driver_loader.load_quel1_driver("qubecalib")
+    modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qubecalib"
     assert modules.QuBEMasterClient.__name__ == "QuBEMasterClient"
@@ -289,13 +263,14 @@ def test_load_quel1_driver_does_not_fall_back_to_quel_clock_master(monkeypatch) 
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.8.2")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
     with pytest.raises(
         ModuleNotFoundError,
         match=r"Could not resolve symbol 'QuBEMasterClient' for package 'qubecalib'\.",
     ):
-        quel1_driver_loader.load_quel1_driver("qubecalib")
+        quel1_driver_loader.load_quel1_driver()
 
 
 def test_load_quel1_driver_accepts_legacy_quel1boxwithrawwss_symbol(
@@ -312,27 +287,22 @@ def test_load_quel1_driver_accepts_legacy_quel1boxwithrawwss_symbol(
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.8.1")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
-    modules = quel1_driver_loader.load_quel1_driver("qubecalib")
+    modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qubecalib"
     assert modules.Quel1Box.__name__ == "Quel1BoxWithRawWss"
 
 
-def test_load_quel1_driver_applies_runtime_patches_from_driver_module(
-    monkeypatch,
-) -> None:
-    """Given runtime patch hook, loader calls it while importing the driver package."""
-    mapping = _build_fake_driver_modules("qxdriver_quel")
-    runtime_patches = cast(Any, ModuleType("qxdriver_quel.runtime_patches"))
+def test_load_quel1_driver_applies_qubex_runtime_patches(monkeypatch) -> None:
+    """Given driver load, when importing package, then qubex runtime patches are applied."""
+    mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
     patch_calls: list[str] = []
 
-    def _apply_runtime_patches() -> None:
+    def _apply_qubex_runtime_patches() -> None:
         patch_calls.append("called")
-
-    runtime_patches.apply_runtime_patches = _apply_runtime_patches
-    mapping["qxdriver_quel.runtime_patches"] = runtime_patches
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:
@@ -340,19 +310,23 @@ def test_load_quel1_driver_applies_runtime_patches_from_driver_module(
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.10.0")
+    monkeypatch.setattr(
+        quel1_driver_loader,
+        "apply_quelware_runtime_patches",
+        _apply_qubex_runtime_patches,
+    )
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
-    modules = quel1_driver_loader.load_quel1_driver("qxdriver_quel")
+    modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qxdriver_quel"
     assert patch_calls == ["called"]
 
 
-def test_load_quel1_driver_resolves_symbols_from_facade_fallback(monkeypatch) -> None:
-    """Given alternate class exports, when loading driver, then symbol mapping does not require legacy modules."""
-    mapping = _build_fake_driver_modules("qxdriver_quel", include_facade=True)
-    del mapping["qxdriver_quel.clockmaster_compat"]
-    del mapping["qxdriver_quel.qubecalib"]
+def test_load_quel1_driver_requires_compat_layer_for_qxdriver(monkeypatch) -> None:
+    """Given qxdriver_quel without compat layer, when loading driver, then import fails."""
+    mapping = _build_fake_driver_modules("qxdriver_quel")
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:
@@ -360,13 +334,11 @@ def test_load_quel1_driver_resolves_symbols_from_facade_fallback(monkeypatch) ->
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.10.0")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
-    modules = quel1_driver_loader.load_quel1_driver("qxdriver_quel")
-
-    assert modules.package_name == "qxdriver_quel"
-    assert modules.QuBEMasterClient.__name__ == "QuBEMasterClient"
-    assert modules.BoxPool.__name__ == "BoxPool"
+    with pytest.raises(ModuleNotFoundError, match=r"symbol 'QubeCalib'"):
+        quel1_driver_loader.load_quel1_driver()
 
 
 def test_load_quel1_driver_resolves_symbols_from_compat_layer(monkeypatch) -> None:
@@ -385,9 +357,10 @@ def test_load_quel1_driver_resolves_symbols_from_compat_layer(monkeypatch) -> No
         raise ModuleNotFoundError(name)
 
     quel1_driver_loader.clear_quel1_driver_cache()
+    monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.10.0")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
-    modules = quel1_driver_loader.load_quel1_driver("qxdriver_quel")
+    modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qxdriver_quel"
     assert modules.Action.__name__ == "Action"

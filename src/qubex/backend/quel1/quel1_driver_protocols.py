@@ -179,8 +179,8 @@ class ActionProtocol(Protocol):
         ...
 
 
-class DirectSingleActionProtocol(Protocol):
-    """Protocol for direct single-action class symbols."""
+class SingleActionProtocol(Protocol):
+    """Protocol for single-action class symbols."""
 
     @classmethod
     def build(cls, *, box: Any, settings: list[Any]) -> Any:
@@ -188,8 +188,8 @@ class DirectSingleActionProtocol(Protocol):
         ...
 
 
-class DirectMultiActionProtocol(Protocol):
-    """Protocol for direct multi-action class symbols."""
+class MultiActionProtocol(Protocol):
+    """Protocol for multi-action class symbols."""
 
     @classmethod
     def _mod_by_sysref(cls, t: int) -> int:
@@ -446,8 +446,8 @@ class QuelDriverClassesProtocol(Protocol):
     SequencerClient: type[SequencerClientProtocol]
     Quel1System: type[Quel1SystemProtocol]
     Action: type[ActionProtocol]
-    DirectMultiAction: type[DirectMultiActionProtocol]
-    DirectSingleAction: type[DirectSingleActionProtocol]
+    MultiAction: type[MultiActionProtocol]
+    SingleAction: type[SingleActionProtocol]
     AwgId: type[AwgIdProtocol]
     AwgSetting: type[AwgSettingProtocol]
     NamedBox: type[NamedBoxProtocol]

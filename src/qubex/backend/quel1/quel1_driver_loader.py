@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import importlib
-import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
-from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+
+from qubex.patches.quel_ic_config import apply_quelware_runtime_patches
 
 if TYPE_CHECKING:
     from .quel1_driver_protocols import (
@@ -17,8 +19,7 @@ if TYPE_CHECKING:
         BoxPoolProtocol,
         CaptureParamToolsProtocol,
         ConverterProtocol,
-        DirectMultiActionProtocol,
-        DirectSingleActionProtocol,
+        MultiActionProtocol,
         NamedBoxProtocol,
         QubeCalibProtocol,
         QuBEMasterClientProtocol,
@@ -29,211 +30,93 @@ if TYPE_CHECKING:
         RunitSettingProtocol,
         SequencerClientProtocol,
         SequencerProtocol,
+        SingleActionProtocol,
         SkewProtocol,
         TriggerSettingProtocol,
         WaveSequenceToolsProtocol,
     )
 
-_DRIVER_ENV_VAR = "QUBEX_QUEL_DRIVER"
-_PREFERENCE_AUTO = "auto"
-_PREFERENCE_QXDRIVER = "qxdriver_quel"
-_PREFERENCE_QUBECALIB = "qubecalib"
-_VALID_PREFERENCES = {
-    _PREFERENCE_AUTO,
-    _PREFERENCE_QXDRIVER,
-    _PREFERENCE_QUBECALIB,
+DriverPackageName: TypeAlias = Literal["qxdriver_quel", "qubecalib"]
+
+# Canonical import paths in qubecalib namespace.
+_SYMBOL_IMPORT_PATHS: dict[str, str] = {
+    "DEFAULT_SAMPLING_PERIOD": "qubecalib.neopulse.DEFAULT_SAMPLING_PERIOD",
+    "Action": "qubecalib.instrument.quel.quel1.driver.Action",
+    "AwgId": "qubecalib.instrument.quel.quel1.driver.AwgId",
+    "AwgSetting": "qubecalib.instrument.quel.quel1.driver.AwgSetting",
+    "BoxPool": "qubecalib.qubecalib.BoxPool",
+    "CapSampledSequence": "qubecalib.neopulse.CapSampledSequence",
+    "CapSampledSubSequence": "qubecalib.neopulse.CapSampledSubSequence",
+    "CaptureParamTools": "qubecalib.qubecalib.CaptureParamTools",
+    "CaptureSlots": "qubecalib.neopulse.CaptureSlots",
+    "Converter": "qubecalib.qubecalib.Converter",
+    "GenSampledSequence": "qubecalib.neopulse.GenSampledSequence",
+    "GenSampledSubSequence": "qubecalib.neopulse.GenSampledSubSequence",
+    "MultiAction": "qubecalib.instrument.quel.quel1.driver.multi.Action",
+    "NamedBox": "qubecalib.instrument.quel.quel1.driver.NamedBox",
+    "QuBEMasterClient": "qubecalib.qubecalib.QuBEMasterClient",
+    "QubeCalib": "qubecalib.QubeCalib",
+    "Quel1Box": "qubecalib.qubecalib.Quel1BoxWithRawWss",
+    "Quel1ConfigOption": "qubecalib.qubecalib.Quel1ConfigOption",
+    "Quel1System": "qubecalib.instrument.quel.quel1.Quel1System",
+    "RunitId": "qubecalib.instrument.quel.quel1.driver.RunitId",
+    "RunitSetting": "qubecalib.instrument.quel.quel1.driver.RunitSetting",
+    "Sequencer": "qubecalib.Sequencer",
+    "SequencerClient": "qubecalib.qubecalib.SequencerClient",
+    "SingleAction": "qubecalib.instrument.quel.quel1.driver.single.Action",
+    "Skew": "qubecalib.instrument.quel.quel1.tool.Skew",
+    "TriggerSetting": "qubecalib.instrument.quel.quel1.driver.TriggerSetting",
+    "WaveSequenceTools": "qubecalib.qubecalib.WaveSequenceTools",
 }
 
 
 @dataclass(frozen=True)
-class QuelDriverClasses:
+class Que1lDriver:
     """Resolved class symbols used by QuEL backend runtime."""
 
-    package_name: str
-    QubeCalib: type[QubeCalibProtocol]
-    Sequencer: type[SequencerProtocol]
-    QuBEMasterClient: type[QuBEMasterClientProtocol]
-    SequencerClient: type[SequencerClientProtocol]
-    Quel1System: type[Quel1SystemProtocol]
+    package_name: DriverPackageName
+    DEFAULT_SAMPLING_PERIOD: float | int
     Action: type[ActionProtocol]
-    DirectMultiAction: type[DirectMultiActionProtocol]
-    DirectSingleAction: type[DirectSingleActionProtocol]
     AwgId: type[AwgIdProtocol]
     AwgSetting: type[AwgSettingProtocol]
-    NamedBox: type[NamedBoxProtocol]
-    RunitId: type[RunitIdProtocol]
-    RunitSetting: type[RunitSettingProtocol]
-    TriggerSetting: type[TriggerSettingProtocol]
-    Skew: type[SkewProtocol]
-    DEFAULT_SAMPLING_PERIOD: float | int
+    BoxPool: type[BoxPoolProtocol]
     CapSampledSequence: type[Any]
     CapSampledSubSequence: type[Any]
+    CaptureParamTools: type[CaptureParamToolsProtocol]
     CaptureSlots: type[Any]
+    Converter: type[ConverterProtocol]
     GenSampledSequence: type[Any]
     GenSampledSubSequence: type[Any]
-    BoxPool: type[BoxPoolProtocol]
-    CaptureParamTools: type[CaptureParamToolsProtocol]
-    Converter: type[ConverterProtocol]
-    WaveSequenceTools: type[WaveSequenceToolsProtocol]
+    MultiAction: type[MultiActionProtocol]
+    NamedBox: type[NamedBoxProtocol]
+    QuBEMasterClient: type[QuBEMasterClientProtocol]
+    QubeCalib: type[QubeCalibProtocol]
     Quel1Box: type[Quel1BoxProtocol]
     Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
+    Quel1System: type[Quel1SystemProtocol]
+    RunitId: type[RunitIdProtocol]
+    RunitSetting: type[RunitSettingProtocol]
+    Sequencer: type[SequencerProtocol]
+    SequencerClient: type[SequencerClientProtocol]
+    SingleAction: type[SingleActionProtocol]
+    Skew: type[SkewProtocol]
+    TriggerSetting: type[TriggerSettingProtocol]
+    WaveSequenceTools: type[WaveSequenceToolsProtocol]
 
 
-def _normalize_preference(preference: str | None) -> str:
-    """Resolve and validate the current driver preference label."""
-    resolved = preference or os.getenv(_DRIVER_ENV_VAR, _PREFERENCE_AUTO)
-    if resolved not in _VALID_PREFERENCES:
-        raise ValueError(
-            f"Invalid {_DRIVER_ENV_VAR}='{resolved}'. "
-            f"Expected one of {sorted(_VALID_PREFERENCES)}."
-        )
-    return resolved
+def _is_quelware_0_8_x() -> bool:
+    """Return whether installed quelware major/minor version is 0.8."""
+    try:
+        installed_version = version("quel_ic_config")
+    except PackageNotFoundError:
+        return False
 
+    matched = re.match(r"^(\d+)\.(\d+)", installed_version)
+    if not matched:
+        return False
 
-_SymbolCandidate = tuple[str, str]
-
-_BASE_SYMBOL_CANDIDATES: dict[str, tuple[_SymbolCandidate, ...]] = {
-    "QubeCalib": (
-        ("{package}.compat", "QubeCalib"),
-        ("{package}", "QubeCalib"),
-        ("{package}.qubecalib", "QubeCalib"),
-        ("{package}.facade", "QubeCalib"),
-    ),
-    "Sequencer": (
-        ("{package}.compat", "Sequencer"),
-        ("{package}", "Sequencer"),
-        ("{package}.qubecalib", "Sequencer"),
-        ("{package}.facade", "Sequencer"),
-    ),
-    "QuBEMasterClient": (
-        ("{package}.compat", "QuBEMasterClient"),
-        ("{package}.clockmaster_compat", "QuBEMasterClient"),
-        ("{package}.qubecalib", "QuBEMasterClient"),
-        ("{package}.facade", "QuBEMasterClient"),
-    ),
-    "SequencerClient": (
-        ("{package}.compat", "SequencerClient"),
-        ("{package}.clockmaster_compat", "SequencerClient"),
-        ("{package}.qubecalib", "SequencerClient"),
-        ("{package}.facade", "SequencerClient"),
-    ),
-    "Quel1System": (
-        ("{package}.compat", "Quel1System"),
-        ("{package}.instrument.quel.quel1", "Quel1System"),
-        ("{package}.instrument.quel.quel1.driver", "Quel1System"),
-        ("{package}.facade", "direct.Quel1System"),
-    ),
-    "Action": (
-        ("{package}.compat", "Action"),
-        ("{package}.instrument.quel.quel1.driver", "Action"),
-        ("{package}.facade", "direct.Action"),
-    ),
-    "AwgId": (
-        ("{package}.compat", "AwgId"),
-        ("{package}.instrument.quel.quel1.driver", "AwgId"),
-        ("{package}.facade", "direct.AwgId"),
-    ),
-    "AwgSetting": (
-        ("{package}.compat", "AwgSetting"),
-        ("{package}.instrument.quel.quel1.driver", "AwgSetting"),
-        ("{package}.facade", "direct.AwgSetting"),
-    ),
-    "NamedBox": (
-        ("{package}.compat", "NamedBox"),
-        ("{package}.instrument.quel.quel1.driver", "NamedBox"),
-        ("{package}.facade", "direct.NamedBox"),
-    ),
-    "RunitId": (
-        ("{package}.compat", "RunitId"),
-        ("{package}.instrument.quel.quel1.driver", "RunitId"),
-        ("{package}.facade", "direct.RunitId"),
-    ),
-    "RunitSetting": (
-        ("{package}.compat", "RunitSetting"),
-        ("{package}.instrument.quel.quel1.driver", "RunitSetting"),
-        ("{package}.facade", "direct.RunitSetting"),
-    ),
-    "TriggerSetting": (
-        ("{package}.compat", "TriggerSetting"),
-        ("{package}.instrument.quel.quel1.driver", "TriggerSetting"),
-        ("{package}.facade", "direct.TriggerSetting"),
-    ),
-    "Skew": (
-        ("{package}.compat", "Skew"),
-        ("{package}.instrument.quel.quel1.tool", "Skew"),
-    ),
-    "DEFAULT_SAMPLING_PERIOD": (
-        ("{package}.compat", "DEFAULT_SAMPLING_PERIOD"),
-        ("{package}.neopulse", "DEFAULT_SAMPLING_PERIOD"),
-        ("{package}", "neopulse.DEFAULT_SAMPLING_PERIOD"),
-    ),
-    "CapSampledSequence": (
-        ("{package}.compat", "CapSampledSequence"),
-        ("{package}.neopulse", "CapSampledSequence"),
-        ("{package}", "neopulse.CapSampledSequence"),
-    ),
-    "CapSampledSubSequence": (
-        ("{package}.compat", "CapSampledSubSequence"),
-        ("{package}.neopulse", "CapSampledSubSequence"),
-        ("{package}", "neopulse.CapSampledSubSequence"),
-    ),
-    "CaptureSlots": (
-        ("{package}.compat", "CaptureSlots"),
-        ("{package}.neopulse", "CaptureSlots"),
-        ("{package}", "neopulse.CaptureSlots"),
-    ),
-    "GenSampledSequence": (
-        ("{package}.compat", "GenSampledSequence"),
-        ("{package}.neopulse", "GenSampledSequence"),
-        ("{package}", "neopulse.GenSampledSequence"),
-    ),
-    "GenSampledSubSequence": (
-        ("{package}.compat", "GenSampledSubSequence"),
-        ("{package}.neopulse", "GenSampledSubSequence"),
-        ("{package}", "neopulse.GenSampledSubSequence"),
-    ),
-    "BoxPool": (
-        ("{package}.compat", "BoxPool"),
-        ("{package}.qubecalib", "BoxPool"),
-        ("{package}.facade", "BoxPool"),
-    ),
-    "CaptureParamTools": (
-        ("{package}.compat", "CaptureParamTools"),
-        ("{package}.qubecalib", "CaptureParamTools"),
-        ("{package}.facade", "CaptureParamTools"),
-    ),
-    "Converter": (
-        ("{package}.compat", "Converter"),
-        ("{package}.qubecalib", "Converter"),
-        ("{package}.facade", "Converter"),
-    ),
-    "WaveSequenceTools": (
-        ("{package}.compat", "WaveSequenceTools"),
-        ("{package}.qubecalib", "WaveSequenceTools"),
-        ("{package}.facade", "WaveSequenceTools"),
-    ),
-    "DirectMultiAction": (
-        ("{package}.compat", "DirectMultiAction"),
-        ("{package}.instrument.quel.quel1.driver.multi", "Action"),
-        ("{package}.facade", "direct.multi.Action"),
-    ),
-    "DirectSingleAction": (
-        ("{package}.compat", "DirectSingleAction"),
-        ("{package}.instrument.quel.quel1.driver.single", "Action"),
-        ("{package}.facade", "direct.single.Action"),
-    ),
-    "Quel1Box": (
-        ("{package}.compat", "Quel1Box"),
-        ("{package}.facade", "Quel1Box"),
-        ("{package}.qubecalib", "Quel1Box"),
-        ("{package}.qubecalib", "Quel1BoxWithRawWss"),
-    ),
-    "Quel1ConfigOption": (
-        ("{package}.compat", "Quel1ConfigOption"),
-        ("{package}.facade", "Quel1ConfigOption"),
-        ("{package}.qubecalib", "Quel1ConfigOption"),
-    ),
-}
+    major, minor = int(matched.group(1)), int(matched.group(2))
+    return major == 0 and minor == 8
 
 
 def _is_missing_target_module(error: ModuleNotFoundError, module_name: str) -> bool:
@@ -250,73 +133,48 @@ def _is_missing_target_module(error: ModuleNotFoundError, module_name: str) -> b
     )
 
 
-def _resolve_attr_from_module(module: ModuleType, attr_path: str) -> Any:
-    """Resolve dotted attributes from a module object."""
-    value: Any = module
-    for attr in attr_path.split("."):
-        value = getattr(value, attr)
-    return value
+def _resolve_symbol(*, package_name: DriverPackageName, symbol_name: str) -> Any:
+    """Resolve one required symbol from package-specific import rules."""
+    symbol_path = _SYMBOL_IMPORT_PATHS[symbol_name]
+    module_path, resolved_attr_name = symbol_path.rsplit(".", maxsplit=1)
 
+    if package_name == "qxdriver_quel":
+        module_name = f"{package_name}.compat"
+        attr_name = symbol_name
+    else:
+        module_name = module_path
+        attr_name = resolved_attr_name
 
-def _resolve_symbol(
-    *,
-    package_name: str,
-    symbol_name: str,
-) -> Any:
-    """Resolve one required symbol from package-specific candidate paths."""
-    candidates = list(_BASE_SYMBOL_CANDIDATES[symbol_name])
-    for module_template, attr_path in candidates:
-        module_name = module_template.format(package=package_name)
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as error:
-            if _is_missing_target_module(error, module_name):
-                continue
-            raise
-        try:
-            return _resolve_attr_from_module(module, attr_path)
-        except AttributeError:
-            continue
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as error:
+        if _is_missing_target_module(error, module_name):
+            raise ModuleNotFoundError(
+                f"Could not resolve symbol '{symbol_name}' for package '{package_name}'."
+            ) from error
+        raise
+
+    if hasattr(module, attr_name):
+        return getattr(module, attr_name)
 
     raise ModuleNotFoundError(
         f"Could not resolve symbol '{symbol_name}' for package '{package_name}'."
     )
 
 
-def _apply_runtime_patches(package_name: str) -> None:
-    """Apply optional runtime patches provided by the resolved driver package."""
-    candidate_modules = (
-        f"{package_name}.runtime_patches",
-        f"{package_name}.compat",
-        f"{package_name}.facade",
-        f"{package_name}.qubecalib",
-    )
-    for module_name in candidate_modules:
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as error:
-            if _is_missing_target_module(error, module_name):
-                continue
-            raise
-        apply_fn = getattr(module, "apply_runtime_patches", None)
-        if callable(apply_fn):
-            apply_fn()
-            return
-
-
-def _import_driver_package(package_name: str) -> QuelDriverClasses:
+def _import_driver_symbols(package_name: DriverPackageName) -> Que1lDriver:
     """Import one driver package and map required backend symbols by class-level paths."""
     importlib.import_module(package_name)
-    _apply_runtime_patches(package_name)
+    apply_quelware_runtime_patches()
 
     resolved_symbols: dict[str, Any] = {}
-    for symbol_name in _BASE_SYMBOL_CANDIDATES:
+    for symbol_name in _SYMBOL_IMPORT_PATHS:
         resolved_symbols[symbol_name] = _resolve_symbol(
             package_name=package_name,
             symbol_name=symbol_name,
         )
 
-    return QuelDriverClasses(
+    return Que1lDriver(
         package_name=package_name,
         QubeCalib=resolved_symbols["QubeCalib"],
         Sequencer=resolved_symbols["Sequencer"],
@@ -324,8 +182,8 @@ def _import_driver_package(package_name: str) -> QuelDriverClasses:
         SequencerClient=resolved_symbols["SequencerClient"],
         Quel1System=resolved_symbols["Quel1System"],
         Action=resolved_symbols["Action"],
-        DirectMultiAction=resolved_symbols["DirectMultiAction"],
-        DirectSingleAction=resolved_symbols["DirectSingleAction"],
+        MultiAction=resolved_symbols["MultiAction"],
+        SingleAction=resolved_symbols["SingleAction"],
         AwgId=resolved_symbols["AwgId"],
         AwgSetting=resolved_symbols["AwgSetting"],
         NamedBox=resolved_symbols["NamedBox"],
@@ -348,20 +206,13 @@ def _import_driver_package(package_name: str) -> QuelDriverClasses:
     )
 
 
-@lru_cache(maxsize=4)
-def load_quel1_driver(preference: str | None = None) -> QuelDriverClasses:
-    """Load the preferred driver package with compatibility fallback."""
-    resolved = _normalize_preference(preference)
-
-    if resolved == _PREFERENCE_QXDRIVER:
-        return _import_driver_package(_PREFERENCE_QXDRIVER)
-    if resolved == _PREFERENCE_QUBECALIB:
-        return _import_driver_package(_PREFERENCE_QUBECALIB)
-
-    try:
-        return _import_driver_package(_PREFERENCE_QXDRIVER)
-    except ModuleNotFoundError:
-        return _import_driver_package(_PREFERENCE_QUBECALIB)
+@lru_cache(maxsize=1)
+def load_quel1_driver() -> Que1lDriver:
+    """Load one driver package selected by installed quelware version."""
+    package_name: DriverPackageName = (
+        "qubecalib" if _is_quelware_0_8_x() else "qxdriver_quel"
+    )
+    return _import_driver_symbols(package_name)
 
 
 def clear_quel1_driver_cache() -> None:

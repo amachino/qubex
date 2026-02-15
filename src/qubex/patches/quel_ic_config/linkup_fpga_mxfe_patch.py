@@ -1,9 +1,13 @@
 """Patch helpers for link-up of FPGA MxFE configuration."""
 
-import contextlib
+from __future__ import annotations
 
-from quel_ic_config import LinkupFpgaMxfe
 
-with contextlib.suppress(ImportError):
-    # Patch default background noise threshold
-    LinkupFpgaMxfe._DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT = 100000  # noqa # type: ignore
+def apply_linkup_fpga_mxfe_patch() -> None:
+    """Patch default background-noise threshold used at reconnect."""
+    try:
+        from quel_ic_config import LinkupFpgaMxfe
+    except ImportError:
+        return
+
+    LinkupFpgaMxfe._DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT = 100000  # noqa: SLF001  # type: ignore[attr-defined]
