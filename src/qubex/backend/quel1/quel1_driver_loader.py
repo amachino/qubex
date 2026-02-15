@@ -376,7 +376,7 @@ def _import_driver_package(package_name: str) -> QuelDriverModules:
 
 
 @lru_cache(maxsize=4)
-def load_quel_driver(preference: str | None = None) -> QuelDriverModules:
+def load_quel1_driver(preference: str | None = None) -> QuelDriverModules:
     """Load the preferred driver package with compatibility fallback."""
     resolved = _normalize_preference(preference)
 
@@ -391,6 +391,6 @@ def load_quel_driver(preference: str | None = None) -> QuelDriverModules:
         return _import_driver_package(_PREFERENCE_QUBECALIB)
 
 
-def clear_quel_driver_cache() -> None:
+def clear_quel1_driver_cache() -> None:
     """Clear cached driver resolution results."""
-    load_quel_driver.cache_clear()
+    load_quel1_driver.cache_clear()

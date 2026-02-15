@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 
 from typing_extensions import override
 
-from .driver_loader import load_quel_driver
+from .quel1_driver_loader import load_quel1_driver
 
 if TYPE_CHECKING:
-    from .driver_protocols import SequencerProtocol as Sequencer
+    from .quel1_driver_protocols import SequencerProtocol as Sequencer
 else:
-    Sequencer = load_quel_driver().Sequencer
+    Sequencer = load_quel1_driver().Sequencer
 
 
 class Quel1Sequencer(Sequencer):

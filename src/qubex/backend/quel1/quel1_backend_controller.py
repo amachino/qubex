@@ -16,17 +16,17 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 
-from .driver_loader import load_quel_driver
 from .execution import SequencerExecutionEngine
 from .execution.parallel_action_builder import ClockHealthCheckOptions
 from .quel1_box_compat import adapt_quel1_box
+from .quel1_driver_loader import load_quel1_driver
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from typing import TypeAlias
 
-    from .driver_protocols import (
+    from .quel1_driver_protocols import (
         AwgSettingProtocol,
         BoxPoolProtocol,
         QubeCalibProtocol,
@@ -174,7 +174,7 @@ class Quel1BackendController:
         config_path: str | Path | None = None,
     ):
         try:
-            driver = load_quel_driver()
+            driver = load_quel1_driver()
             if TYPE_CHECKING:
                 driver = cast(QuelDriverModulesProtocol, driver)
             _bind_driver_symbols(driver)
