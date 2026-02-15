@@ -49,8 +49,6 @@ if TYPE_CHECKING:
     RunitSetting: TypeAlias = RunitSettingProtocol
     TriggerSetting: TypeAlias = TriggerSettingProtocol
 
-_DRIVER_IMPORT_DONE = False
-_DRIVER_IMPORT_ERROR: ImportError | None = None
 neopulse_module: Any = None
 DEFAULT_SAMPLING_PERIOD: Any = None
 CapSampledSequence: Any = None
@@ -98,27 +96,10 @@ _DRIVER_GLOBAL_BINDINGS: dict[str, str] = {
 }
 
 
-def _ensure_driver_imports() -> None:
-    """Import selected driver dependencies on demand."""
-    global _DRIVER_IMPORT_DONE, _DRIVER_IMPORT_ERROR
-
-    if _DRIVER_IMPORT_DONE:
-        return
-    if _DRIVER_IMPORT_ERROR is not None:
-        raise _DRIVER_IMPORT_ERROR
-
-    try:
-        driver = load_quel_driver()
-        if TYPE_CHECKING:
-            driver = cast(QuelDriverModulesProtocol, driver)
-        for global_name, attribute_name in _DRIVER_GLOBAL_BINDINGS.items():
-            globals()[global_name] = getattr(driver, attribute_name)
-    except ImportError as e:
-        _DRIVER_IMPORT_ERROR = e
-        logger.info(e)
-        raise
-
-    _DRIVER_IMPORT_DONE = True
+def _bind_driver_symbols(driver: Any) -> None:
+    """Bind resolved driver symbols to module-level runtime aliases."""
+    for global_name, attribute_name in _DRIVER_GLOBAL_BINDINGS.items():
+        globals()[global_name] = getattr(driver, attribute_name)
 
 
 # TODO: use appropriate noise threshold
@@ -193,7 +174,10 @@ class Quel1BackendController:
         config_path: str | Path | None = None,
     ):
         try:
-            _ensure_driver_imports()
+            driver = load_quel_driver()
+            if TYPE_CHECKING:
+                driver = cast(QuelDriverModulesProtocol, driver)
+            _bind_driver_symbols(driver)
             if config_path is None:
                 self._qubecalib = _driver_QubeCalib()
             else:

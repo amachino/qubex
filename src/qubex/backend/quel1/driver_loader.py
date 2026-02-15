@@ -304,161 +304,74 @@ def _import_driver_package(package_name: str) -> QuelDriverModules:
     root_module = importlib.import_module(package_name)
     _apply_runtime_patches(package_name)
 
-    QubeCalib, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="QubeCalib"
-    )
-    Sequencer, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="Sequencer"
-    )
-    QuBEMasterClient, clockmaster_source_module, clockmaster_source_attr = (
-        _resolve_symbol(package_name=package_name, symbol_name="QuBEMasterClient")
-    )
-    SequencerClient, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="SequencerClient"
-    )
-    Quel1System, quel1_source_module, quel1_source_attr = _resolve_symbol(
-        package_name=package_name, symbol_name="Quel1System"
-    )
-    Action, driver_source_module, driver_source_attr = _resolve_symbol(
-        package_name=package_name, symbol_name="Action"
-    )
-    AwgId, _, _ = _resolve_symbol(package_name=package_name, symbol_name="AwgId")
-    AwgSetting, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="AwgSetting"
-    )
-    NamedBox, _, _ = _resolve_symbol(package_name=package_name, symbol_name="NamedBox")
-    RunitId, _, _ = _resolve_symbol(package_name=package_name, symbol_name="RunitId")
-    RunitSetting, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="RunitSetting"
-    )
-    TriggerSetting, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="TriggerSetting"
-    )
-    Skew, tool_source_module, tool_source_attr = _resolve_symbol(
-        package_name=package_name, symbol_name="Skew"
-    )
-    DEFAULT_SAMPLING_PERIOD, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="DEFAULT_SAMPLING_PERIOD"
-    )
-    CapSampledSequence, neopulse_source_module, neopulse_source_attr = _resolve_symbol(
-        package_name=package_name, symbol_name="CapSampledSequence"
-    )
-    GenSampledSequence, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="GenSampledSequence"
-    )
-    BoxPool, qubecalib_source_module, qubecalib_source_attr = _resolve_symbol(
-        package_name=package_name, symbol_name="BoxPool"
-    )
-    CaptureParamTools, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="CaptureParamTools"
-    )
-    Converter, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="Converter"
-    )
-    WaveSequenceTools, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="WaveSequenceTools"
-    )
-    direct_multi_action, direct_multi_source_module, direct_multi_source_attr = (
-        _resolve_symbol(package_name=package_name, symbol_name="DirectMultiAction")
-    )
-    direct_single_action, direct_single_source_module, direct_single_source_attr = (
-        _resolve_symbol(package_name=package_name, symbol_name="DirectSingleAction")
-    )
-    Quel1Box, _, _ = _resolve_symbol(package_name=package_name, symbol_name="Quel1Box")
-    Quel1ConfigOption, _, _ = _resolve_symbol(
-        package_name=package_name, symbol_name="Quel1ConfigOption"
-    )
+    resolved_symbols: dict[str, Any] = {}
+    symbol_sources: dict[str, tuple[ModuleType, str]] = {}
+    for symbol_name in _BASE_SYMBOL_CANDIDATES:
+        symbol, source_module, source_attr = _resolve_symbol(
+            package_name=package_name,
+            symbol_name=symbol_name,
+        )
+        resolved_symbols[symbol_name] = symbol
+        symbol_sources[symbol_name] = (source_module, source_attr)
 
-    clockmaster_module = _runtime_module_for_symbol(
-        source_module=clockmaster_source_module,
-        source_attr_path=clockmaster_source_attr,
-        runtime_attr_name="QuBEMasterClient",
-        symbol=QuBEMasterClient,
-        symbol_name="QuBEMasterClient",
-    )
-    quel1_module = _runtime_module_for_symbol(
-        source_module=quel1_source_module,
-        source_attr_path=quel1_source_attr,
-        runtime_attr_name="Quel1System",
-        symbol=Quel1System,
-        symbol_name="Quel1System",
-    )
-    driver_module = _runtime_module_for_symbol(
-        source_module=driver_source_module,
-        source_attr_path=driver_source_attr,
-        runtime_attr_name="Action",
-        symbol=Action,
-        symbol_name="Action",
-    )
-    tool_module = _runtime_module_for_symbol(
-        source_module=tool_source_module,
-        source_attr_path=tool_source_attr,
-        runtime_attr_name="Skew",
-        symbol=Skew,
-        symbol_name="Skew",
-    )
-    neopulse_module = _runtime_module_for_symbol(
-        source_module=neopulse_source_module,
-        source_attr_path=neopulse_source_attr,
-        runtime_attr_name="CapSampledSequence",
-        symbol=CapSampledSequence,
-        symbol_name="CapSampledSequence",
-    )
-    qubecalib_module = _runtime_module_for_symbol(
-        source_module=qubecalib_source_module,
-        source_attr_path=qubecalib_source_attr,
-        runtime_attr_name="BoxPool",
-        symbol=BoxPool,
-        symbol_name="BoxPool",
-    )
-    direct_multi_module = _runtime_module_for_symbol(
-        source_module=direct_multi_source_module,
-        source_attr_path=direct_multi_source_attr,
-        runtime_attr_name="Action",
-        symbol=direct_multi_action,
-        symbol_name="DirectMultiAction",
-    )
-    direct_single_module = _runtime_module_for_symbol(
-        source_module=direct_single_source_module,
-        source_attr_path=direct_single_source_attr,
-        runtime_attr_name="Action",
-        symbol=direct_single_action,
-        symbol_name="DirectSingleAction",
-    )
+    runtime_module_specs: dict[str, tuple[str, str]] = {
+        "clockmaster_module": ("QuBEMasterClient", "QuBEMasterClient"),
+        "quel1_module": ("Quel1System", "Quel1System"),
+        "driver_module": ("Action", "Action"),
+        "tool_module": ("Skew", "Skew"),
+        "neopulse_module": ("CapSampledSequence", "CapSampledSequence"),
+        "qubecalib_module": ("BoxPool", "BoxPool"),
+        "direct_multi_module": ("DirectMultiAction", "Action"),
+        "direct_single_module": ("DirectSingleAction", "Action"),
+    }
+    runtime_modules: dict[str, ModuleType] = {}
+    for field_name, (
+        source_symbol_name,
+        runtime_attr_name,
+    ) in runtime_module_specs.items():
+        source_module, source_attr = symbol_sources[source_symbol_name]
+        symbol = resolved_symbols[source_symbol_name]
+        runtime_modules[field_name] = _runtime_module_for_symbol(
+            source_module=source_module,
+            source_attr_path=source_attr,
+            runtime_attr_name=runtime_attr_name,
+            symbol=symbol,
+            symbol_name=source_symbol_name,
+        )
 
     return QuelDriverModules(
         package_name=package_name,
         root_module=root_module,
-        clockmaster_module=clockmaster_module,
-        quel1_module=quel1_module,
-        driver_module=driver_module,
-        tool_module=tool_module,
-        neopulse_module=neopulse_module,
-        qubecalib_module=qubecalib_module,
-        direct_multi_module=direct_multi_module,
-        direct_single_module=direct_single_module,
-        QubeCalib=QubeCalib,
-        Sequencer=Sequencer,
-        QuBEMasterClient=QuBEMasterClient,
-        SequencerClient=SequencerClient,
-        Quel1System=Quel1System,
-        Action=Action,
-        AwgId=AwgId,
-        AwgSetting=AwgSetting,
-        NamedBox=NamedBox,
-        RunitId=RunitId,
-        RunitSetting=RunitSetting,
-        TriggerSetting=TriggerSetting,
-        Skew=Skew,
-        DEFAULT_SAMPLING_PERIOD=DEFAULT_SAMPLING_PERIOD,
-        CapSampledSequence=CapSampledSequence,
-        GenSampledSequence=GenSampledSequence,
-        BoxPool=BoxPool,
-        CaptureParamTools=CaptureParamTools,
-        Converter=Converter,
-        WaveSequenceTools=WaveSequenceTools,
-        Quel1Box=Quel1Box,
-        Quel1ConfigOption=Quel1ConfigOption,
+        clockmaster_module=runtime_modules["clockmaster_module"],
+        quel1_module=runtime_modules["quel1_module"],
+        driver_module=runtime_modules["driver_module"],
+        tool_module=runtime_modules["tool_module"],
+        neopulse_module=runtime_modules["neopulse_module"],
+        qubecalib_module=runtime_modules["qubecalib_module"],
+        direct_multi_module=runtime_modules["direct_multi_module"],
+        direct_single_module=runtime_modules["direct_single_module"],
+        QubeCalib=resolved_symbols["QubeCalib"],
+        Sequencer=resolved_symbols["Sequencer"],
+        QuBEMasterClient=resolved_symbols["QuBEMasterClient"],
+        SequencerClient=resolved_symbols["SequencerClient"],
+        Quel1System=resolved_symbols["Quel1System"],
+        Action=resolved_symbols["Action"],
+        AwgId=resolved_symbols["AwgId"],
+        AwgSetting=resolved_symbols["AwgSetting"],
+        NamedBox=resolved_symbols["NamedBox"],
+        RunitId=resolved_symbols["RunitId"],
+        RunitSetting=resolved_symbols["RunitSetting"],
+        TriggerSetting=resolved_symbols["TriggerSetting"],
+        Skew=resolved_symbols["Skew"],
+        DEFAULT_SAMPLING_PERIOD=resolved_symbols["DEFAULT_SAMPLING_PERIOD"],
+        CapSampledSequence=resolved_symbols["CapSampledSequence"],
+        GenSampledSequence=resolved_symbols["GenSampledSequence"],
+        BoxPool=resolved_symbols["BoxPool"],
+        CaptureParamTools=resolved_symbols["CaptureParamTools"],
+        Converter=resolved_symbols["Converter"],
+        WaveSequenceTools=resolved_symbols["WaveSequenceTools"],
+        Quel1Box=resolved_symbols["Quel1Box"],
+        Quel1ConfigOption=resolved_symbols["Quel1ConfigOption"],
     )
 
 
