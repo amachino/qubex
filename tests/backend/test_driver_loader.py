@@ -148,6 +148,7 @@ def _build_fake_driver_modules(
         compat.Converter = legacy.Converter
         compat.WaveSequenceTools = legacy.WaveSequenceTools
         compat.Quel1Box = legacy.Quel1Box
+        compat.Quel1BoxWithRawWss = legacy.Quel1BoxWithRawWss
         compat.Quel1ConfigOption = legacy.Quel1ConfigOption
         compat.MultiAction = multi.Action
         compat.SingleAction = single.Action
@@ -273,13 +274,11 @@ def test_load_quel1_driver_does_not_fall_back_to_quel_clock_master(monkeypatch) 
         quel1_driver_loader.load_quel1_driver()
 
 
-def test_load_quel1_driver_accepts_legacy_quel1boxwithrawwss_symbol(
+def test_load_quel1_driver_resolves_quel1boxwithrawwss_symbol(
     monkeypatch,
 ) -> None:
-    """Given legacy qubecalib box symbol, loader maps Quel1Box from Quel1BoxWithRawWss."""
+    """Given qubecalib box symbol, loader maps Quel1BoxWithRawWss."""
     mapping = _build_fake_driver_modules("qubecalib")
-    legacy = cast(Any, mapping["qubecalib.qubecalib"])
-    del legacy.Quel1Box
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:
@@ -293,7 +292,7 @@ def test_load_quel1_driver_accepts_legacy_quel1boxwithrawwss_symbol(
     modules = quel1_driver_loader.load_quel1_driver()
 
     assert modules.package_name == "qubecalib"
-    assert modules.Quel1Box.__name__ == "Quel1BoxWithRawWss"
+    assert modules.Quel1BoxWithRawWss.__name__ == "Quel1BoxWithRawWss"
 
 
 def test_load_quel1_driver_applies_qubex_runtime_patches(monkeypatch) -> None:
@@ -337,7 +336,7 @@ def test_load_quel1_driver_requires_compat_layer_for_qxdriver(monkeypatch) -> No
     monkeypatch.setattr(quel1_driver_loader, "version", lambda _: "0.10.0")
     monkeypatch.setattr(quel1_driver_loader.importlib, "import_module", _fake_import)
 
-    with pytest.raises(ModuleNotFoundError, match=r"symbol 'QubeCalib'"):
+    with pytest.raises(ModuleNotFoundError, match=r"Could not resolve symbol"):
         quel1_driver_loader.load_quel1_driver()
 
 

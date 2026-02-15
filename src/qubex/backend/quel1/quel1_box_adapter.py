@@ -67,7 +67,7 @@ class _LegacyCaptureTask:
 
 
 @dataclass(frozen=True)
-class Quel1BoxCompatAdapter:
+class Quel1BoxAdapter:
     """Adapt legacy and modern Quel1Box interfaces to a common API."""
 
     _box: Any
@@ -166,6 +166,6 @@ class Quel1BoxCompatAdapter:
         return cap_task, gen_task
 
 
-def adapt_quel1_box(box: Any) -> Quel1BoxCompatAdapter:
+def adapt_quel1_box(box: Any) -> Quel1BoxAdapter:
     """Wrap a Quel1Box-like object with version-aware compatibility adapter."""
-    return Quel1BoxCompatAdapter(box)
+    return Quel1BoxAdapter(box)

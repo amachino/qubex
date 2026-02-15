@@ -12,7 +12,7 @@ from logging import Logger
 from types import MappingProxyType
 from typing import Any, Final, Protocol, TypeAlias, cast
 
-from qubex.backend.quel1.quel1_box_compat import adapt_quel1_box
+from qubex.backend.quel1.quel1_box_adapter import adapt_quel1_box
 from qubex.backend.quel1.quel1_driver_loader import load_quel1_driver
 
 PortType: TypeAlias = Any

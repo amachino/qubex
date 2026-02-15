@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import numpy as np
 
-from qubex.backend.quel1.quel1_box_compat import adapt_quel1_box
+from qubex.backend.quel1.quel1_box_adapter import adapt_quel1_box
 
 
 class _Task:

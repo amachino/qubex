@@ -18,7 +18,7 @@ from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_
 
 from .execution import SequencerExecutionEngine
 from .execution.parallel_action_builder import ClockHealthCheckOptions
-from .quel1_box_compat import adapt_quel1_box
+from .quel1_box_adapter import adapt_quel1_box
 from .quel1_driver_loader import load_quel1_driver
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from .quel1_driver_protocols import (
         AwgSettingProtocol as AwgSetting,
         BoxPoolProtocol as BoxPool,
+        BoxSettingProtocol as BoxSetting,
         QubeCalibProtocol as QubeCalib,
         Quel1BoxProtocol as Quel1Box,
         Quel1ConfigOptionProtocol as Quel1ConfigOption,
@@ -120,7 +121,7 @@ class Quel1BackendController:
         if self._boxpool is None:
             box_config = {}
         else:
-            box_config = cast(dict[str, Any], self._boxpool._box_config_cache)
+            box_config = self._boxpool._box_config_cache
         return box_config
 
     @property
@@ -355,7 +356,7 @@ class Quel1BackendController:
         """Clear the Quel1System-side box cache."""
         if self._quel1system is None:
             return
-        system = cast(Any, self._quel1system)
+        system = self._quel1system
         system.config_cache.clear()
         system.config_fetched_at = None
 
@@ -363,7 +364,7 @@ class Quel1BackendController:
         """Replace the Quel1System-side box cache."""
         if self._quel1system is None:
             return
-        system = cast(Any, self._quel1system)
+        system = self._quel1system
         system.config_cache.clear()
         for box_name, box_config in box_configs.items():
             system.config_cache[box_name] = deepcopy(box_config)
@@ -373,7 +374,7 @@ class Quel1BackendController:
         """Update entries in the Quel1System-side box cache."""
         if self._quel1system is None:
             return
-        system = cast(Any, self._quel1system)
+        system = self._quel1system
         for box_name, box_config in box_configs.items():
             system.config_cache[box_name] = deepcopy(box_config)
         if system.config_cache:
@@ -527,13 +528,13 @@ class Quel1BackendController:
             boxpool.create_clock_master(ipaddr=str(clockmaster_setting.ipaddr))
 
         box_settings = db._box_settings
-        settings_by_name = {}
+        settings_by_name: dict[str, BoxSetting] = {}
         for box_name in box_names:
             if box_name not in box_settings:
                 raise ValueError(f"box({box_name}) is not defined")
             settings_by_name[box_name] = box_settings[box_name]
 
-        boxes_to_reconnect = []
+        boxes_to_reconnect: list[Quel1Box] = []
         if parallel and box_names:
             created_boxes = run_parallel_map(
                 box_names,
