@@ -393,6 +393,6 @@ def test_load_quel1_driver_resolves_symbols_from_compat_layer(monkeypatch) -> No
     assert modules.Action.__name__ == "Action"
     assert modules.Skew.__name__ == "Skew"
     assert modules.BoxPool.__name__ == "BoxPool"
-    assert hasattr(modules.neopulse_module, "GenSampledSubSequence")
-    assert hasattr(modules.neopulse_module, "CapSampledSubSequence")
-    assert hasattr(modules.neopulse_module, "CaptureSlots")
+    assert modules.GenSampledSubSequence.__name__ == "GenSampledSubSequence"
+    assert modules.CapSampledSubSequence.__name__ == "CapSampledSubSequence"
+    assert modules.CaptureSlots.__name__ == "CaptureSlots"

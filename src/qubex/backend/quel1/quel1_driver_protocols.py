@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from os import PathLike
-from types import ModuleType
 from typing import Any, ClassVar, Protocol
 
 
@@ -284,38 +283,38 @@ class SequencerProtocol(Protocol):
         ...
 
 
-class QuelDriverModulesProtocol(Protocol):
-    """Protocol for driver-loader module bundle consumed by qubex."""
+class QuelDriverClassesProtocol(Protocol):
+    """Protocol for driver-loader class bundle consumed by qubex."""
 
     package_name: str
-    root_module: ModuleType
-    clockmaster_module: ModuleType
-    quel1_module: ModuleType
-    driver_module: ModuleType
-    tool_module: ModuleType
-    neopulse_module: ModuleType
-    qubecalib_module: ModuleType
-    direct_multi_module: ModuleType
-    direct_single_module: ModuleType
     QubeCalib: type[QubeCalibProtocol]
     Sequencer: type[SequencerProtocol]
     QuBEMasterClient: type[QuBEMasterClientProtocol]
     SequencerClient: type[SequencerClientProtocol]
     Quel1System: type[Quel1SystemProtocol]
-    Action: Any
-    AwgId: Any
+    Action: type[Any]
+    DirectMultiAction: type[Any]
+    DirectSingleAction: type[Any]
+    AwgId: type[Any]
     AwgSetting: type[AwgSettingProtocol]
-    NamedBox: Any
-    RunitId: Any
+    NamedBox: type[Any]
+    RunitId: type[Any]
     RunitSetting: type[RunitSettingProtocol]
     TriggerSetting: type[TriggerSettingProtocol]
-    Skew: Any
-    DEFAULT_SAMPLING_PERIOD: Any
-    CapSampledSequence: Any
-    GenSampledSequence: Any
+    Skew: type[Any]
+    DEFAULT_SAMPLING_PERIOD: float | int
+    CapSampledSequence: type[Any]
+    CapSampledSubSequence: type[Any]
+    CaptureSlots: type[Any]
+    GenSampledSequence: type[Any]
+    GenSampledSubSequence: type[Any]
     BoxPool: type[BoxPoolProtocol]
-    CaptureParamTools: Any
-    Converter: Any
-    WaveSequenceTools: Any
+    CaptureParamTools: type[Any]
+    Converter: type[Any]
+    WaveSequenceTools: type[Any]
     Quel1Box: type[Quel1BoxProtocol]
     Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
+
+
+# TODO: Remove legacy alias once all imports migrate.
+QuelDriverModulesProtocol = QuelDriverClassesProtocol

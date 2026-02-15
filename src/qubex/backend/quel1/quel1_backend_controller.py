@@ -33,7 +33,7 @@ if TYPE_CHECKING:
         Quel1BoxProtocol,
         Quel1ConfigOptionProtocol,
         Quel1SystemProtocol,
-        QuelDriverModulesProtocol,
+        QuelDriverClassesProtocol,
         RunitSettingProtocol,
         SequencerProtocol,
         TriggerSettingProtocol,
@@ -49,10 +49,12 @@ if TYPE_CHECKING:
     RunitSetting: TypeAlias = RunitSettingProtocol
     TriggerSetting: TypeAlias = TriggerSettingProtocol
 
-neopulse_module: Any = None
 DEFAULT_SAMPLING_PERIOD: Any = None
 CapSampledSequence: Any = None
 GenSampledSequence: Any = None
+_driver_CapSampledSubSequence: Any = None
+_driver_GenSampledSubSequence: Any = None
+_driver_CaptureSlots: Any = None
 _driver_QubeCalib: Any = None
 _driver_QuBEMasterClient: Any = None
 _driver_SequencerClient: Any = None
@@ -88,11 +90,13 @@ _DRIVER_GLOBAL_BINDINGS: dict[str, str] = {
     "DEFAULT_SAMPLING_PERIOD": "DEFAULT_SAMPLING_PERIOD",
     "CapSampledSequence": "CapSampledSequence",
     "GenSampledSequence": "GenSampledSequence",
+    "_driver_CapSampledSubSequence": "CapSampledSubSequence",
+    "_driver_GenSampledSubSequence": "GenSampledSubSequence",
+    "_driver_CaptureSlots": "CaptureSlots",
     "_driver_BoxPool": "BoxPool",
     "_driver_CaptureParamTools": "CaptureParamTools",
     "_driver_Converter": "Converter",
     "_driver_WaveSequenceTools": "WaveSequenceTools",
-    "neopulse_module": "neopulse_module",
 }
 
 
@@ -176,7 +180,7 @@ class Quel1BackendController:
         try:
             driver = load_quel1_driver()
             if TYPE_CHECKING:
-                driver = cast(QuelDriverModulesProtocol, driver)
+                driver = cast(QuelDriverClassesProtocol, driver)
             _bind_driver_symbols(driver)
             if config_path is None:
                 self._qubecalib = _driver_QubeCalib()
@@ -1494,9 +1498,7 @@ class Quel1BackendController:
         Any
             GenSampledSequence object.
         """
-        pls = cast(Any, neopulse_module)
-
-        return pls.GenSampledSequence(
+        return GenSampledSequence(
             target_name=target_name,
             prev_blank=0,
             post_blank=None,
@@ -1504,7 +1506,7 @@ class Quel1BackendController:
             original_post_blank=None,
             modulation_frequency=modulation_frequency,
             sub_sequences=[
-                pls.GenSampledSubSequence(
+                _driver_GenSampledSubSequence(
                     real=real,
                     imag=imag,
                     repeats=1,
@@ -1541,9 +1543,7 @@ class Quel1BackendController:
         Any
             CapSampledSequence object.
         """
-        pls = cast(Any, neopulse_module)
-
-        cap_sub_sequence = pls.CapSampledSubSequence(
+        cap_sub_sequence = _driver_CapSampledSubSequence(
             capture_slots=[],
             repeats=None,
             prev_blank=capture_delay,
@@ -1553,14 +1553,14 @@ class Quel1BackendController:
         )
         for duration, post_blank in capture_slots:
             cap_sub_sequence.capture_slots.append(
-                pls.CaptureSlots(
+                _driver_CaptureSlots(
                     duration=duration,
                     post_blank=post_blank,
                     original_duration=None,  # type: ignore[arg-type]
                     original_post_blank=None,  # type: ignore[arg-type]
                 )
             )
-        return pls.CapSampledSequence(
+        return CapSampledSequence(
             target_name=target_name,
             repeats=None,
             prev_blank=0,

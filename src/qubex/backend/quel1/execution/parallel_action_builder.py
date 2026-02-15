@@ -16,7 +16,7 @@ from qubex.backend.quel1.quel1_box_compat import adapt_quel1_box
 from qubex.backend.quel1.quel1_driver_loader import load_quel1_driver
 
 if TYPE_CHECKING:
-    from qubex.backend.quel1.quel1_driver_protocols import QuelDriverModulesProtocol
+    from qubex.backend.quel1.quel1_driver_protocols import QuelDriverClassesProtocol
 
 PortType: TypeAlias = Any
 CommonSetting: TypeAlias = Any
@@ -107,7 +107,11 @@ class _ActionBuilderLike(Protocol):
 def _convert_to_box_setting_dict(
     *,
     settings: list[CommonSetting],
-    direct_single: Any,
+    awg_id_class: type[Any],
+    awg_setting_class: type[Any],
+    runit_id_class: type[Any],
+    runit_setting_class: type[Any],
+    trigger_setting_class: type[Any],
 ) -> dict[str, list[SingleSetting]]:
     """
     Convert common direct-driver settings into per-box single-driver settings.
@@ -116,8 +120,16 @@ def _convert_to_box_setting_dict(
     ----------
     settings : list[CommonSetting]
         Flat common settings where each entry includes a ``box`` location.
-    direct_single : Any
-        Imported ``driver.single`` module that provides setting/id factories.
+    awg_id_class : type[Any]
+        AWG identifier class.
+    awg_setting_class : type[Any]
+        AWG setting class.
+    runit_id_class : type[Any]
+        Runit identifier class.
+    runit_setting_class : type[Any]
+        Runit setting class.
+    trigger_setting_class : type[Any]
+        Trigger setting class.
 
     Returns
     -------
@@ -128,8 +140,8 @@ def _convert_to_box_setting_dict(
     for setting in settings:
         if hasattr(setting, "runit") and hasattr(setting, "cprm"):
             settings_by_box[setting.runit.box].append(
-                direct_single.RunitSetting(
-                    direct_single.RunitId(
+                runit_setting_class(
+                    runit_id_class(
                         setting.runit.port,
                         setting.runit.runit,
                     ),
@@ -138,8 +150,8 @@ def _convert_to_box_setting_dict(
             )
         elif hasattr(setting, "awg") and hasattr(setting, "wseq"):
             settings_by_box[setting.awg.box].append(
-                direct_single.AwgSetting(
-                    direct_single.AwgId(
+                awg_setting_class(
+                    awg_id_class(
                         setting.awg.port,
                         setting.awg.channel,
                     ),
@@ -148,8 +160,8 @@ def _convert_to_box_setting_dict(
             )
         elif hasattr(setting, "trigger_awg") and hasattr(setting, "triggerd_port"):
             settings_by_box[setting.trigger_awg.box].append(
-                direct_single.TriggerSetting(
-                    direct_single.AwgId(
+                trigger_setting_class(
+                    awg_id_class(
                         setting.trigger_awg.port,
                         setting.trigger_awg.channel,
                     ),
@@ -413,16 +425,20 @@ def build_parallel_multi_action(
     """
     driver = load_quel1_driver()
     if TYPE_CHECKING:
-        driver = cast(QuelDriverModulesProtocol, driver)
-    direct_multi = driver.direct_multi_module
-    direct_single = driver.direct_single_module
+        driver = cast(QuelDriverClassesProtocol, driver)
+    direct_multi_action = driver.DirectMultiAction
+    direct_single_action = driver.DirectSingleAction
 
     if clock_health_checks is None:
         clock_health_checks = ClockHealthCheckOptions()
 
     settings_by_box = _convert_to_box_setting_dict(
         settings=settings,
-        direct_single=direct_single,
+        awg_id_class=driver.AwgId,
+        awg_setting_class=driver.AwgSetting,
+        runit_id_class=driver.RunitId,
+        runit_setting_class=driver.RunitSetting,
+        trigger_setting_class=driver.TriggerSetting,
     )
 
     # Single-box path keeps existing builder behavior and avoids multi-action
@@ -459,9 +475,9 @@ def build_parallel_multi_action(
                 box_name,
                 current_time,
                 last_sysref_time,
-                direct_multi.Action._mod_by_sysref(last_sysref_time),
+                direct_multi_action._mod_by_sysref(last_sysref_time),
             )
-        single_action = direct_single.Action.build(
+        single_action = direct_single_action.build(
             box=cast(Any, box),
             settings=cast(Any, box_settings),
         )
@@ -471,14 +487,14 @@ def build_parallel_multi_action(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         actions = dict(executor.map(_build_single_action, settings_by_box.items()))
 
-    reference_box_name = direct_multi.Action._get_reference_box_name(cast(Any, actions))
+    reference_box_name = direct_multi_action._get_reference_box_name(cast(Any, actions))
     if clock_health_checks.measure_average_sysref_offset:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             average_offsets_at_sysref_clock = dict(
                 executor.map(
                     lambda item: (
                         item[0],
-                        direct_multi.Action._measure_average_offset_at_sysref_clock(
+                        direct_multi_action._measure_average_offset_at_sysref_clock(
                             item[1].box
                         ),
                     ),

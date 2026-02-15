@@ -7,7 +7,22 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .quel1_driver_protocols import (
+        AwgSettingProtocol,
+        BoxPoolProtocol,
+        QubeCalibProtocol,
+        QuBEMasterClientProtocol,
+        Quel1BoxProtocol,
+        Quel1ConfigOptionProtocol,
+        Quel1SystemProtocol,
+        RunitSettingProtocol,
+        SequencerClientProtocol,
+        SequencerProtocol,
+        TriggerSettingProtocol,
+    )
 
 _DRIVER_ENV_VAR = "QUBEX_QUEL_DRIVER"
 _PREFERENCE_AUTO = "auto"
@@ -21,41 +36,37 @@ _VALID_PREFERENCES = {
 
 
 @dataclass(frozen=True)
-class QuelDriverModules:
-    """Resolved module and symbol set used by QuEL backend runtime."""
+class QuelDriverClasses:
+    """Resolved class symbols used by QuEL backend runtime."""
 
     package_name: str
-    root_module: ModuleType
-    clockmaster_module: ModuleType
-    quel1_module: ModuleType
-    driver_module: ModuleType
-    tool_module: ModuleType
-    neopulse_module: ModuleType
-    qubecalib_module: ModuleType
-    direct_multi_module: ModuleType
-    direct_single_module: ModuleType
-    QubeCalib: Any
-    Sequencer: Any
-    QuBEMasterClient: Any
-    SequencerClient: Any
-    Quel1System: Any
-    Action: Any
-    AwgId: Any
-    AwgSetting: Any
-    NamedBox: Any
-    RunitId: Any
-    RunitSetting: Any
-    TriggerSetting: Any
-    Skew: Any
-    DEFAULT_SAMPLING_PERIOD: Any
-    CapSampledSequence: Any
-    GenSampledSequence: Any
-    BoxPool: Any
-    CaptureParamTools: Any
-    Converter: Any
-    WaveSequenceTools: Any
-    Quel1Box: Any
-    Quel1ConfigOption: Any
+    QubeCalib: type[QubeCalibProtocol]
+    Sequencer: type[SequencerProtocol]
+    QuBEMasterClient: type[QuBEMasterClientProtocol]
+    SequencerClient: type[SequencerClientProtocol]
+    Quel1System: type[Quel1SystemProtocol]
+    Action: type[Any]
+    DirectMultiAction: type[Any]
+    DirectSingleAction: type[Any]
+    AwgId: type[Any]
+    AwgSetting: type[AwgSettingProtocol]
+    NamedBox: type[Any]
+    RunitId: type[Any]
+    RunitSetting: type[RunitSettingProtocol]
+    TriggerSetting: type[TriggerSettingProtocol]
+    Skew: type[Any]
+    DEFAULT_SAMPLING_PERIOD: float | int
+    CapSampledSequence: type[Any]
+    CapSampledSubSequence: type[Any]
+    CaptureSlots: type[Any]
+    GenSampledSequence: type[Any]
+    GenSampledSubSequence: type[Any]
+    BoxPool: type[BoxPoolProtocol]
+    CaptureParamTools: type[Any]
+    Converter: type[Any]
+    WaveSequenceTools: type[Any]
+    Quel1Box: type[Quel1BoxProtocol]
+    Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
 
 
 def _normalize_preference(preference: str | None) -> str:
@@ -151,10 +162,25 @@ _BASE_SYMBOL_CANDIDATES: dict[str, tuple[_SymbolCandidate, ...]] = {
         ("{package}.neopulse", "CapSampledSequence"),
         ("{package}", "neopulse.CapSampledSequence"),
     ),
+    "CapSampledSubSequence": (
+        ("{package}.compat", "CapSampledSubSequence"),
+        ("{package}.neopulse", "CapSampledSubSequence"),
+        ("{package}", "neopulse.CapSampledSubSequence"),
+    ),
+    "CaptureSlots": (
+        ("{package}.compat", "CaptureSlots"),
+        ("{package}.neopulse", "CaptureSlots"),
+        ("{package}", "neopulse.CaptureSlots"),
+    ),
     "GenSampledSequence": (
         ("{package}.compat", "GenSampledSequence"),
         ("{package}.neopulse", "GenSampledSequence"),
         ("{package}", "neopulse.GenSampledSequence"),
+    ),
+    "GenSampledSubSequence": (
+        ("{package}.compat", "GenSampledSubSequence"),
+        ("{package}.neopulse", "GenSampledSubSequence"),
+        ("{package}", "neopulse.GenSampledSubSequence"),
     ),
     "BoxPool": (
         ("{package}.compat", "BoxPool"),
@@ -226,7 +252,7 @@ def _resolve_symbol(
     *,
     package_name: str,
     symbol_name: str,
-) -> tuple[Any, ModuleType, str]:
+) -> Any:
     """Resolve one required symbol from package-specific candidate paths."""
     candidates = list(_BASE_SYMBOL_CANDIDATES[symbol_name])
     for module_template, attr_path in candidates:
@@ -238,44 +264,13 @@ def _resolve_symbol(
                 continue
             raise
         try:
-            return _resolve_attr_from_module(module, attr_path), module, attr_path
+            return _resolve_attr_from_module(module, attr_path)
         except AttributeError:
             continue
 
     raise ModuleNotFoundError(
         f"Could not resolve symbol '{symbol_name}' for package '{package_name}'."
     )
-
-
-def _runtime_module_for_symbol(
-    *,
-    source_module: ModuleType,
-    source_attr_path: str,
-    runtime_attr_name: str,
-    symbol: Any,
-    symbol_name: str,
-) -> ModuleType:
-    """Resolve runtime module for a symbol, with shim fallback for re-export-only paths."""
-    if hasattr(source_module, runtime_attr_name):
-        if getattr(source_module, runtime_attr_name) is symbol:
-            return source_module
-
-    module_name = getattr(symbol, "__module__", None)
-    if isinstance(module_name, str):
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as error:
-            if not _is_missing_target_module(error, module_name):
-                raise
-        else:
-            if hasattr(module, runtime_attr_name):
-                if getattr(module, runtime_attr_name) is symbol:
-                    return module
-
-    shim_name = f"{source_module.__name__}.__shim__.{symbol_name}.{source_attr_path}"
-    shim_module = ModuleType(shim_name)
-    setattr(shim_module, runtime_attr_name, symbol)
-    return shim_module
 
 
 def _apply_runtime_patches(package_name: str) -> None:
@@ -299,63 +294,28 @@ def _apply_runtime_patches(package_name: str) -> None:
             return
 
 
-def _import_driver_package(package_name: str) -> QuelDriverModules:
+def _import_driver_package(package_name: str) -> QuelDriverClasses:
     """Import one driver package and map required backend symbols by class-level paths."""
-    root_module = importlib.import_module(package_name)
+    importlib.import_module(package_name)
     _apply_runtime_patches(package_name)
 
     resolved_symbols: dict[str, Any] = {}
-    symbol_sources: dict[str, tuple[ModuleType, str]] = {}
     for symbol_name in _BASE_SYMBOL_CANDIDATES:
-        symbol, source_module, source_attr = _resolve_symbol(
+        resolved_symbols[symbol_name] = _resolve_symbol(
             package_name=package_name,
             symbol_name=symbol_name,
         )
-        resolved_symbols[symbol_name] = symbol
-        symbol_sources[symbol_name] = (source_module, source_attr)
 
-    runtime_module_specs: dict[str, tuple[str, str]] = {
-        "clockmaster_module": ("QuBEMasterClient", "QuBEMasterClient"),
-        "quel1_module": ("Quel1System", "Quel1System"),
-        "driver_module": ("Action", "Action"),
-        "tool_module": ("Skew", "Skew"),
-        "neopulse_module": ("CapSampledSequence", "CapSampledSequence"),
-        "qubecalib_module": ("BoxPool", "BoxPool"),
-        "direct_multi_module": ("DirectMultiAction", "Action"),
-        "direct_single_module": ("DirectSingleAction", "Action"),
-    }
-    runtime_modules: dict[str, ModuleType] = {}
-    for field_name, (
-        source_symbol_name,
-        runtime_attr_name,
-    ) in runtime_module_specs.items():
-        source_module, source_attr = symbol_sources[source_symbol_name]
-        symbol = resolved_symbols[source_symbol_name]
-        runtime_modules[field_name] = _runtime_module_for_symbol(
-            source_module=source_module,
-            source_attr_path=source_attr,
-            runtime_attr_name=runtime_attr_name,
-            symbol=symbol,
-            symbol_name=source_symbol_name,
-        )
-
-    return QuelDriverModules(
+    return QuelDriverClasses(
         package_name=package_name,
-        root_module=root_module,
-        clockmaster_module=runtime_modules["clockmaster_module"],
-        quel1_module=runtime_modules["quel1_module"],
-        driver_module=runtime_modules["driver_module"],
-        tool_module=runtime_modules["tool_module"],
-        neopulse_module=runtime_modules["neopulse_module"],
-        qubecalib_module=runtime_modules["qubecalib_module"],
-        direct_multi_module=runtime_modules["direct_multi_module"],
-        direct_single_module=runtime_modules["direct_single_module"],
         QubeCalib=resolved_symbols["QubeCalib"],
         Sequencer=resolved_symbols["Sequencer"],
         QuBEMasterClient=resolved_symbols["QuBEMasterClient"],
         SequencerClient=resolved_symbols["SequencerClient"],
         Quel1System=resolved_symbols["Quel1System"],
         Action=resolved_symbols["Action"],
+        DirectMultiAction=resolved_symbols["DirectMultiAction"],
+        DirectSingleAction=resolved_symbols["DirectSingleAction"],
         AwgId=resolved_symbols["AwgId"],
         AwgSetting=resolved_symbols["AwgSetting"],
         NamedBox=resolved_symbols["NamedBox"],
@@ -365,7 +325,10 @@ def _import_driver_package(package_name: str) -> QuelDriverModules:
         Skew=resolved_symbols["Skew"],
         DEFAULT_SAMPLING_PERIOD=resolved_symbols["DEFAULT_SAMPLING_PERIOD"],
         CapSampledSequence=resolved_symbols["CapSampledSequence"],
+        CapSampledSubSequence=resolved_symbols["CapSampledSubSequence"],
+        CaptureSlots=resolved_symbols["CaptureSlots"],
         GenSampledSequence=resolved_symbols["GenSampledSequence"],
+        GenSampledSubSequence=resolved_symbols["GenSampledSubSequence"],
         BoxPool=resolved_symbols["BoxPool"],
         CaptureParamTools=resolved_symbols["CaptureParamTools"],
         Converter=resolved_symbols["Converter"],
@@ -376,7 +339,7 @@ def _import_driver_package(package_name: str) -> QuelDriverModules:
 
 
 @lru_cache(maxsize=4)
-def load_quel1_driver(preference: str | None = None) -> QuelDriverModules:
+def load_quel1_driver(preference: str | None = None) -> QuelDriverClasses:
     """Load the preferred driver package with compatibility fallback."""
     resolved = _normalize_preference(preference)
 
