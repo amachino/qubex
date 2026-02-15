@@ -11,17 +11,27 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .quel1_driver_protocols import (
+        ActionProtocol,
+        AwgIdProtocol,
         AwgSettingProtocol,
         BoxPoolProtocol,
+        CaptureParamToolsProtocol,
+        ConverterProtocol,
+        DirectMultiActionProtocol,
+        DirectSingleActionProtocol,
+        NamedBoxProtocol,
         QubeCalibProtocol,
         QuBEMasterClientProtocol,
         Quel1BoxProtocol,
         Quel1ConfigOptionProtocol,
         Quel1SystemProtocol,
+        RunitIdProtocol,
         RunitSettingProtocol,
         SequencerClientProtocol,
         SequencerProtocol,
+        SkewProtocol,
         TriggerSettingProtocol,
+        WaveSequenceToolsProtocol,
     )
 
 _DRIVER_ENV_VAR = "QUBEX_QUEL_DRIVER"
@@ -45,16 +55,16 @@ class QuelDriverClasses:
     QuBEMasterClient: type[QuBEMasterClientProtocol]
     SequencerClient: type[SequencerClientProtocol]
     Quel1System: type[Quel1SystemProtocol]
-    Action: type[Any]
-    DirectMultiAction: type[Any]
-    DirectSingleAction: type[Any]
-    AwgId: type[Any]
+    Action: type[ActionProtocol]
+    DirectMultiAction: type[DirectMultiActionProtocol]
+    DirectSingleAction: type[DirectSingleActionProtocol]
+    AwgId: type[AwgIdProtocol]
     AwgSetting: type[AwgSettingProtocol]
-    NamedBox: type[Any]
-    RunitId: type[Any]
+    NamedBox: type[NamedBoxProtocol]
+    RunitId: type[RunitIdProtocol]
     RunitSetting: type[RunitSettingProtocol]
     TriggerSetting: type[TriggerSettingProtocol]
-    Skew: type[Any]
+    Skew: type[SkewProtocol]
     DEFAULT_SAMPLING_PERIOD: float | int
     CapSampledSequence: type[Any]
     CapSampledSubSequence: type[Any]
@@ -62,9 +72,9 @@ class QuelDriverClasses:
     GenSampledSequence: type[Any]
     GenSampledSubSequence: type[Any]
     BoxPool: type[BoxPoolProtocol]
-    CaptureParamTools: type[Any]
-    Converter: type[Any]
-    WaveSequenceTools: type[Any]
+    CaptureParamTools: type[CaptureParamToolsProtocol]
+    Converter: type[ConverterProtocol]
+    WaveSequenceTools: type[WaveSequenceToolsProtocol]
     Quel1Box: type[Quel1BoxProtocol]
     Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
 

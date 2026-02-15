@@ -170,6 +170,147 @@ class TriggerSettingProtocol(Protocol):
         ...
 
 
+class ActionProtocol(Protocol):
+    """Protocol for direct action class symbols."""
+
+    @classmethod
+    def build(cls, *, system: Any, settings: list[Any]) -> Any:
+        """Build an action object from direct-driver settings."""
+        ...
+
+
+class DirectSingleActionProtocol(Protocol):
+    """Protocol for direct single-action class symbols."""
+
+    @classmethod
+    def build(cls, *, box: Any, settings: list[Any]) -> Any:
+        """Build one single-box action from settings."""
+        ...
+
+
+class DirectMultiActionProtocol(Protocol):
+    """Protocol for direct multi-action class symbols."""
+
+    @classmethod
+    def _mod_by_sysref(cls, t: int) -> int:
+        """Map raw clock counter into SYSREF-period local offset."""
+        ...
+
+    @classmethod
+    def _get_reference_box_name(cls, actions: Mapping[str, Any]) -> str:
+        """Return the reference box name used for timing alignment."""
+        ...
+
+    @classmethod
+    def _measure_average_offset_at_sysref_clock(cls, box: Any) -> int:
+        """Measure average SYSREF offset for one box."""
+        ...
+
+
+class AwgIdProtocol(Protocol):
+    """Protocol for AWG identifier objects."""
+
+    box: str
+    port: Any
+    channel: int
+
+    def __init__(self, box: str, port: Any, channel: int) -> None:
+        """Create an AWG identifier."""
+        ...
+
+
+class RunitIdProtocol(Protocol):
+    """Protocol for runit identifier objects."""
+
+    box: str
+    port: Any
+    runit: int
+
+    def __init__(self, box: str, port: Any, runit: int) -> None:
+        """Create a runit identifier."""
+        ...
+
+
+class NamedBoxProtocol(Protocol):
+    """Protocol for named-box wrapper objects."""
+
+    name: str
+    box: Quel1BoxProtocol
+
+    def __init__(self, *, name: str, box: Quel1BoxProtocol) -> None:
+        """Create a named box wrapper."""
+        ...
+
+
+class SkewProtocol(Protocol):
+    """Protocol for skew tool class symbols."""
+
+    @classmethod
+    def from_yaml(
+        cls,
+        path: str,
+        *,
+        box_yaml: str,
+        clockmaster_ip: str,
+        boxes: list[str],
+    ) -> Any:
+        """Create skew object from YAML and connectivity settings."""
+        ...
+
+
+class CaptureParamToolsProtocol(Protocol):
+    """Protocol for capture-parameter helper class symbols."""
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        sequence: Any,
+        capture_delay_words: int,
+        repeats: int,
+        interval_samples: int,
+    ) -> Any:
+        """Create one capture parameter object."""
+        ...
+
+    @classmethod
+    def enable_integration(cls, *, capprm: Any) -> None:
+        """Enable integration mode on capture parameters."""
+        ...
+
+    @classmethod
+    def enable_demodulation(cls, *, capprm: Any, f_GHz: float) -> None:
+        """Enable DSP demodulation with the given IF frequency."""
+        ...
+
+
+class ConverterProtocol(Protocol):
+    """Protocol for waveform conversion helper class symbols."""
+
+    @classmethod
+    def multiplex(
+        cls, *, sequences: Mapping[str, Any], modfreqs: Mapping[str, float]
+    ) -> Any:
+        """Multiplex generator sequences into one waveform sequence."""
+        ...
+
+
+class WaveSequenceToolsProtocol(Protocol):
+    """Protocol for waveform-sequence helper class symbols."""
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        sequence: Any,
+        wait_words: int,
+        repeats: int,
+        interval_samples: int,
+    ) -> Any:
+        """Create one wave-sequence object from multiplexed samples."""
+        ...
+
+
 class QubeCalibProtocol(Protocol):
     """Protocol for QubeCalib facade objects consumed by qubex."""
 
@@ -304,16 +445,16 @@ class QuelDriverClassesProtocol(Protocol):
     QuBEMasterClient: type[QuBEMasterClientProtocol]
     SequencerClient: type[SequencerClientProtocol]
     Quel1System: type[Quel1SystemProtocol]
-    Action: type[Any]
-    DirectMultiAction: type[Any]
-    DirectSingleAction: type[Any]
-    AwgId: type[Any]
+    Action: type[ActionProtocol]
+    DirectMultiAction: type[DirectMultiActionProtocol]
+    DirectSingleAction: type[DirectSingleActionProtocol]
+    AwgId: type[AwgIdProtocol]
     AwgSetting: type[AwgSettingProtocol]
-    NamedBox: type[Any]
-    RunitId: type[Any]
+    NamedBox: type[NamedBoxProtocol]
+    RunitId: type[RunitIdProtocol]
     RunitSetting: type[RunitSettingProtocol]
     TriggerSetting: type[TriggerSettingProtocol]
-    Skew: type[Any]
+    Skew: type[SkewProtocol]
     DEFAULT_SAMPLING_PERIOD: float | int
     CapSampledSequence: type[Any]
     CapSampledSubSequence: type[Any]
@@ -321,9 +462,9 @@ class QuelDriverClassesProtocol(Protocol):
     GenSampledSequence: type[Any]
     GenSampledSubSequence: type[Any]
     BoxPool: type[BoxPoolProtocol]
-    CaptureParamTools: type[Any]
-    Converter: type[Any]
-    WaveSequenceTools: type[Any]
+    CaptureParamTools: type[CaptureParamToolsProtocol]
+    Converter: type[ConverterProtocol]
+    WaveSequenceTools: type[WaveSequenceToolsProtocol]
     Quel1Box: type[Quel1BoxProtocol]
     Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
 
