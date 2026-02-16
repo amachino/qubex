@@ -50,7 +50,7 @@ class Quel1BackendExecutor:
         backend_controller : Quel1BackendController
             Backend controller used to execute sequencers.
         execution_mode : ExecutionMode | None, optional
-            Execution path selector. ``"legacy"`` uses qubecalib's direct action
+            Execution path selector. ``"serial"`` uses qubecalib's direct action
             flow, while ``"parallel"`` uses the qubex-side parallelized flow.
             If ``None``, ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE`` is used.
         clock_health_checks : bool | None, optional
@@ -61,7 +61,7 @@ class Quel1BackendExecutor:
             execution_mode = DEFAULT_EXECUTION_MODE
         if clock_health_checks is None:
             clock_health_checks = DEFAULT_CLOCK_HEALTH_CHECKS
-        if execution_mode not in {"legacy", "parallel"}:
+        if execution_mode not in {"serial", "parallel"}:
             raise ValueError(f"Unsupported execution mode: {execution_mode}")
         self._backend_controller = backend_controller
         self._execution_mode = execution_mode
@@ -76,7 +76,7 @@ class Quel1BackendExecutor:
             )
         execute_impl = (
             self._backend_controller.execute_sequencer
-            if self._execution_mode == "legacy"
+            if self._execution_mode == "serial"
             else self._backend_controller.execute_sequencer_parallel
         )
         execute_kwargs = dict(

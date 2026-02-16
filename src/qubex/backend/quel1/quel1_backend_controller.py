@@ -18,6 +18,7 @@ from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_
 
 from .execution import SequencerExecutionEngine
 from .execution.parallel_action_builder import ClockHealthCheckOptions
+from .quel1_backend_constants import DEFAULT_EXECUTION_MODE
 from .quel1_box_adapter import adapt_quel1_box
 from .quel1_driver_loader import load_quel1_driver
 
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
 # TODO: use appropriate noise threshold
 _RELAXED_NOISE_THRESHOLD = 10000
 _MAX_BOX_PARALLEL_WORKERS = 32
+_DEFAULT_PARALLEL_MODE = DEFAULT_EXECUTION_MODE == "parallel"
 _QUEL1SE_R8_AWG_OPTIONS = {
     "se8_mxfe1_awg1331",
     "se8_mxfe1_awg2222",
@@ -504,7 +506,7 @@ class Quel1BackendController:
         self,
         box_names: list[str],
         *,
-        parallel: bool = True,
+        parallel: bool | None = None,
     ) -> BoxPool:
         """
         Create a box pool and reconnect boxes.
@@ -521,6 +523,8 @@ class Quel1BackendController:
         BoxPool
             Created box pool with connected boxes.
         """
+        if parallel is None:
+            parallel = _DEFAULT_PARALLEL_MODE
         db = self.qubecalib.system_config_database
         boxpool = self._driver.BoxPool()
         clockmaster_setting = db._clockmaster_setting
@@ -650,10 +654,11 @@ class Quel1BackendController:
             List of box names to connect to. If None, connect to all available boxes.
         parallel : bool | None, optional
             If True, use parallel box reconnect implementation. If False, use
-            legacy qubecalib implementation. Defaults to False.
+            legacy qubecalib implementation. If ``None``, it follows
+            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
         """
         if parallel is None:
-            parallel = True
+            parallel = _DEFAULT_PARALLEL_MODE
         if self.is_connected:
             logger.info("Already connected. Skipping backend reconnect.")
             return
@@ -707,8 +712,8 @@ class Quel1BackendController:
         box_names : str | list[str]
             List of box names to initialize.
         parallel : bool | None, optional
-            Whether to initialize boxes in parallel. If `None`, defaults to
-            `True`.
+            Whether to initialize boxes in parallel. If `None`, it follows
+            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
         """
         if isinstance(box_names, str):
             box_names = [box_names]
@@ -716,7 +721,7 @@ class Quel1BackendController:
         # map to one box.
         box_names = list(dict.fromkeys(box_names))
         if parallel is None:
-            parallel = True
+            parallel = _DEFAULT_PARALLEL_MODE
         if not parallel:
             for box_name in box_names:
                 self._initialize_box_awg_and_capunits(box_name)
@@ -804,8 +809,8 @@ class Quel1BackendController:
         noise_threshold : int | None, optional
             Threshold for linkup noise checks.
         parallel : bool | None, optional
-            Whether to link up boxes in parallel. If `None`, defaults to
-            `True`.
+            Whether to link up boxes in parallel. If `None`, it follows
+            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
 
         Returns
         -------
@@ -816,7 +821,7 @@ class Quel1BackendController:
         # duplicated low-level proxy objects for the same endpoint.
         box_list = list(dict.fromkeys(box_list))
         if parallel is None:
-            parallel = True
+            parallel = _DEFAULT_PARALLEL_MODE
         if not parallel:
             boxes = {}
             for box_name in box_list:
@@ -909,13 +914,13 @@ class Quel1BackendController:
         noise_threshold : int | None, optional
             Threshold for relinkup noise checks.
         parallel : bool | None, optional
-            Whether to relink boxes in parallel. If `None`, defaults to
-            `True`.
+            Whether to relink boxes in parallel. If `None`, it follows
+            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
         """
         # Avoid duplicate relinkup operations for the same box in one call.
         box_list = list(dict.fromkeys(box_list))
         if parallel is None:
-            parallel = True
+            parallel = _DEFAULT_PARALLEL_MODE
         if not parallel:
             for box_name in box_list:
                 self.relinkup(box_name, noise_threshold=noise_threshold)

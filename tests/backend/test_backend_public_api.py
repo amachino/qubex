@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import get_args
+
 import qubex.backend as backend
 from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
+    ExecutionMode,
     Quel1BackendController,
     Quel1BackendExecutor,
     Quel1BackendRawResult,
@@ -28,3 +31,4 @@ def test_backend_quel1_module_exposes_quel1_specific_symbols() -> None:
     assert Quel1ExecutionPayload.__name__ == "Quel1ExecutionPayload"
     assert Quel1BackendRawResult.__name__ == "Quel1BackendRawResult"
     assert isinstance(SAMPLING_PERIOD, float)
+    assert set(get_args(ExecutionMode)) == {"serial", "parallel"}

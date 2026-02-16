@@ -208,7 +208,7 @@ def test_execute_measurement_schedule_delegates_to_executor(
             *,
             backend_controller,
             experiment_system,
-            execution_mode="legacy",
+            execution_mode="serial",
             clock_health_checks=False: _Executor()
         ),
     )

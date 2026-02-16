@@ -22,7 +22,10 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.backend.quel1 import ExecutionMode, Quel1BackendController
+from qubex.backend.quel1 import (
+    ExecutionMode,
+    Quel1BackendController,
+)
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
@@ -180,7 +183,7 @@ class MeasurementClient:
         sync_clocks : bool | None, optional
             Whether to resync clocks, by default True.
         parallel : bool | None, optional
-            Whether to fetch backend settings in parallel, by default True.
+            Whether to fetch backend settings in parallel.
         """
         self.backend_manager.connect(sync_clocks=sync_clocks, parallel=parallel)
 

@@ -31,8 +31,8 @@ def test_execute_uses_parallel_mode_by_default() -> None:
 
     class _Controller:
         def execute_sequencer(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
-            called["legacy"] = kwargs
-            return "legacy"
+            called["serial"] = kwargs
+            return "serial"
 
         def execute_sequencer_parallel(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
             called["parallel"] = kwargs
@@ -47,17 +47,17 @@ def test_execute_uses_parallel_mode_by_default() -> None:
     assert result == "parallel"
     assert "parallel" in called
     assert called["parallel"]["clock_health_checks"] is True
-    assert "legacy" not in called
+    assert "serial" not in called
 
 
-def test_execute_uses_legacy_mode_when_configured() -> None:
-    """Given legacy mode, execute delegates to execute_sequencer."""
+def test_execute_uses_serial_mode_when_configured() -> None:
+    """Given serial mode, execute delegates to execute_sequencer."""
     called: dict[str, Any] = {}
 
     class _Controller:
         def execute_sequencer(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
-            called["legacy"] = kwargs
-            return "legacy"
+            called["serial"] = kwargs
+            return "serial"
 
         def execute_sequencer_parallel(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
             called["parallel"] = kwargs
@@ -65,13 +65,13 @@ def test_execute_uses_legacy_mode_when_configured() -> None:
 
     executor = Quel1BackendExecutor(
         backend_controller=cast(Quel1BackendController, _Controller()),
-        execution_mode="legacy",
+        execution_mode="serial",
     )
 
     result = executor.execute(request=BackendExecutionRequest(payload=_make_payload()))
 
-    assert result == "legacy"
-    assert "legacy" in called
+    assert result == "serial"
+    assert "serial" in called
     assert "parallel" not in called
 
 
@@ -80,7 +80,7 @@ def test_init_raises_for_unknown_execution_mode() -> None:
 
     class _Controller:
         def execute_sequencer(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
-            return "legacy"
+            return "serial"
 
     with pytest.raises(ValueError, match="Unsupported execution mode"):
         Quel1BackendExecutor(
