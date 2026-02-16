@@ -39,6 +39,7 @@ from qubex.backend import (
 )
 from qubex.backend.quel1 import DeviceController, Quel1BackendController
 from qubex.clifford.clifford import Clifford
+from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (
     MeasurementClient,
     MeasureResult,
@@ -239,6 +240,14 @@ class Experiment:
             The experiment result.
         """
         return task.execute(self)
+
+    def print_environment(self, verbose: bool | None = None) -> None:
+        """Print runtime and configuration environment information."""
+        return self.ctx.print_environment(verbose=verbose)
+
+    def print_boxes(self) -> None:
+        """Print connected box information as a table."""
+        return self.ctx.print_boxes()
 
     @property
     def pulse(self) -> PulseService:
@@ -455,6 +464,16 @@ class Experiment:
     def state_centers(self) -> dict[str, dict[int, complex]]:
         """Return state centers from calibration notes."""
         return self.ctx.state_centers
+
+    @property
+    def clifford_generator(self) -> CliffordGenerator:
+        """Return the Clifford generator instance."""
+        return self.benchmarking_service.clifford_generator
+
+    @property
+    def clifford(self) -> dict[str, Clifford]:
+        """Return the Clifford dictionary."""
+        return self.benchmarking_service.clifford
 
     @property
     def configuration_mode(self) -> ConfigurationMode:

@@ -31,6 +31,23 @@ class _BenchmarkingServiceStub:
         self.calls.append(("benchmark_2q", kwargs))
 
 
+class _ExperimentContextStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def print_environment(self, verbose: bool | None = None) -> None:
+        self.calls.append(("print_environment", {"verbose": verbose}))
+
+    def print_boxes(self) -> None:
+        self.calls.append(("print_boxes", {}))
+
+
+class _BenchmarkingServicePropertyStub:
+    def __init__(self) -> None:
+        self.clifford_generator = object()
+        self.clifford: dict[str, Any] = {"I": object()}
+
+
 def test_calibrate_1q_delegates_to_calibration_service() -> None:
     """Given calibrate_1q arguments, when called, then it delegates to calibration service."""
     exp = object.__new__(Experiment)
@@ -153,3 +170,50 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
             },
         )
     ]
+
+
+def test_print_environment_delegates_to_context() -> None:
+    """Given print_environment args, when called, then it delegates to experiment context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.print_environment(verbose=False)
+
+    assert context_stub.calls == [
+        (
+            "print_environment",
+            {
+                "verbose": False,
+            },
+        )
+    ]
+
+
+def test_print_boxes_delegates_to_context() -> None:
+    """Given print_boxes call, when called, then it delegates to experiment context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.print_boxes()
+
+    assert context_stub.calls == [("print_boxes", {})]
+
+
+def test_clifford_generator_property_delegates_to_benchmarking_service() -> None:
+    """Given benchmarking service, when clifford_generator is accessed, then it returns delegated value."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServicePropertyStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    assert exp.clifford_generator is benchmarking_stub.clifford_generator
+
+
+def test_clifford_property_delegates_to_benchmarking_service() -> None:
+    """Given benchmarking service, when clifford is accessed, then it returns delegated value."""
+    exp = object.__new__(Experiment)
+    benchmarking_stub = _BenchmarkingServicePropertyStub()
+    exp.__dict__["_benchmarking_service"] = benchmarking_stub
+
+    assert exp.clifford is benchmarking_stub.clifford
