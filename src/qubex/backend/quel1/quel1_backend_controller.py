@@ -986,6 +986,20 @@ class Quel1BackendController:
         synchronized = len(timestamps) == 1
         return synchronized
 
+    def _get_clockmaster_setting_ipaddr(self) -> str | None:
+        """Return configured clockmaster IP address if available."""
+        db = self.qubecalib.system_config_database
+        clockmaster_setting = db._clockmaster_setting
+        if clockmaster_setting is None:
+            return None
+        return str(clockmaster_setting.ipaddr)
+
+    def _get_connected_clockmaster(self) -> Any | None:
+        """Return clockmaster from connected Quel1System when available."""
+        if self._quel1system is None:
+            return None
+        return self._quel1system._clockmaster
+
     def resync_clocks(self, box_list: list[str]) -> bool:
         """
         Resync the clock of the boxes.
@@ -998,13 +1012,13 @@ class Quel1BackendController:
         if len(box_list) < 2:
             # NOTE: clockmaster will crash if there is only one box
             return True
+        master = self._get_connected_clockmaster()
+        if master is None:
+            clockmaster_ipaddr = self._get_clockmaster_setting_ipaddr()
+            if clockmaster_ipaddr is None:
+                raise ValueError("clock master is not found")
+            master = self._driver.QuBEMasterClient(master_ipaddr=clockmaster_ipaddr)
         db = self.qubecalib.system_config_database
-        clockmaster_setting = db._clockmaster_setting
-        if clockmaster_setting is None:
-            raise ValueError("clock master is not found")
-        master = self._driver.QuBEMasterClient(
-            master_ipaddr=str(clockmaster_setting.ipaddr)
-        )
         box_settings = db._box_settings
         master.kick_clock_synch(
             [str(box_settings[box_name].ipaddr_sss) for box_name in box_list]
@@ -1025,6 +1039,10 @@ class Quel1BackendController:
         bool
             True if reset succeeds.
         """
+        connected_master = self._get_connected_clockmaster()
+        configured_ipaddr = self._get_clockmaster_setting_ipaddr()
+        if connected_master is not None and configured_ipaddr == ipaddr:
+            return connected_master.reset()
         return self._driver.QuBEMasterClient(master_ipaddr=ipaddr).reset()
 
     def sync_clocks(self, box_list: list[str]) -> bool:

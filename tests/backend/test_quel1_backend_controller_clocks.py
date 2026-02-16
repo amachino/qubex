@@ -78,6 +78,11 @@ class _FakeQuBEMasterClient:
         return True
 
 
+class _FakeQuel1System:
+    def __init__(self, clockmaster: _FakeQuBEMasterClient) -> None:
+        self._clockmaster = clockmaster
+
+
 def _make_controller(*, include_clockmaster: bool = True) -> Quel1BackendController:
     controller = Quel1BackendController()
     cast(Any, controller)._qubecalib = _FakeQubeCalib(
@@ -129,6 +134,29 @@ def test_resync_clocks_kicks_clockmaster() -> None:
     assert master.kick_calls == [["10.0.1.1", "10.0.1.2"]]
 
 
+def test_resync_clocks_reuses_connected_quel1system_clockmaster() -> None:
+    """Given connected system, resync_clocks reuses its clockmaster."""
+    controller = _make_controller()
+    _FakeSequencerClient.readings = {
+        "10.0.1.1": (True, 123_456_789_000, 123_456_789_999),
+        "10.0.1.2": (True, 123_456_789_000, 123_456_789_999),
+    }
+    master = _FakeQuBEMasterClient("192.0.2.1")
+    cast(Any, controller)._quel1system = _FakeQuel1System(clockmaster=master)
+
+    def _raise_if_instantiated(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("QuBEMasterClient must not be instantiated")
+
+    _override_driver_classes(
+        controller,
+        SequencerClient=_FakeSequencerClient,
+        QuBEMasterClient=_raise_if_instantiated,
+    )
+
+    assert controller.resync_clocks(["A", "B"]) is True
+    assert master.kick_calls == [["10.0.1.1", "10.0.1.2"]]
+
+
 def test_resync_clocks_raises_without_clockmaster() -> None:
     """Given no clockmaster, resync_clocks raises ValueError."""
     controller = _make_controller(include_clockmaster=False)
@@ -150,6 +178,24 @@ def test_reset_clockmaster_uses_master_client() -> None:
 
     assert controller.reset_clockmaster("192.0.2.99") is True
     assert master.master_ipaddr == "192.0.2.99"
+    assert master.reset_calls == 1
+
+
+def test_reset_clockmaster_reuses_connected_quel1system_clockmaster() -> None:
+    """Given connected system, reset_clockmaster reuses its clockmaster."""
+    controller = _make_controller()
+    master = _FakeQuBEMasterClient("192.0.2.1")
+    cast(Any, controller)._quel1system = _FakeQuel1System(clockmaster=master)
+
+    def _raise_if_instantiated(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("QuBEMasterClient must not be instantiated")
+
+    _override_driver_classes(
+        controller,
+        QuBEMasterClient=_raise_if_instantiated,
+    )
+
+    assert controller.reset_clockmaster("192.0.2.1") is True
     assert master.reset_calls == 1
 
 
