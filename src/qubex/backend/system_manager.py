@@ -347,6 +347,11 @@ This operation will overwrite the existing backend settings. Do you want to cont
 """
             )
             if not confirmed:
+                # `load()` clears backend-controller caches before `push()`.
+                # When push is canceled, restore the previous cache snapshot from
+                # backend settings so subsequent read paths can continue to work.
+                self._sync_backend_settings_to_device_controller()
+                self._update_cached_state()
                 logger.info("Operation cancelled.")
                 return
 

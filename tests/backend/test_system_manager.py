@@ -446,3 +446,39 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
     )
 
     assert called == ["A", "B"]
+
+
+def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given canceled push, when confirmation is denied, then backend cache is restored from backend settings."""
+    manager = SystemManager.shared()
+    backend_settings = {"A": {"ports": {1: {"mode": "ctrl"}}}}
+    backend_controller = FakeBackendController({})
+    backend_controller.replace_box_config_cache({})
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    monkeypatch.setattr(manager, "_backend_settings", backend_settings)
+
+    box = SimpleNamespace(id="A", name="Alpha")
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            get_box=lambda box_id: box,
+            hash=0,
+        ),
+    )
+    monkeypatch.setattr("qubex.backend.system_manager.Confirm.ask", lambda _: False)
+
+    called_sync_hardware = False
+
+    def _should_not_run(**_: object) -> None:
+        nonlocal called_sync_hardware
+        called_sync_hardware = True
+
+    monkeypatch.setattr(manager, "_sync_experiment_system_to_hardware", _should_not_run)
+
+    manager.push(["A"], confirm=True)
+
+    assert called_sync_hardware is False
+    assert backend_controller.get_box_config_cache() == backend_settings
