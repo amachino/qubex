@@ -74,19 +74,10 @@ Use this option when you need a pinned version for reproducibility.
 ### Install for development
 
 Use this setup to prepare a local environment for developing and testing Qubex.
+Development commands in this repository assume a `uv`-managed environment.
 
-=== "uv"
-    ```bash
-    git clone https://github.com/amachino/qubex.git
-    cd qubex
-
-    uv sync --dev
-    ```
-
-=== "pip"
-    ```bash
-    git clone https://github.com/amachino/qubex.git
-    cd qubex
-
-    pip install -e .
-    ```
+```bash
+git clone https://github.com/amachino/qubex.git
+cd qubex
+make sync
+```

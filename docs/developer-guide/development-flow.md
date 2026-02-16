@@ -14,6 +14,8 @@ This page defines the standard contribution flow for Qubex.
 
 ## Recommended steps
 
+Development commands in this repository assume a `uv`-managed environment.
+
 1. Sync your local default branch.
 2. Create a topic branch.
 3. Add or update tests first when possible.

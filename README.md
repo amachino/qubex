@@ -51,15 +51,12 @@ Check available versions on the [Release Page](https://github.com/amachino/qubex
 
 ### Install for development
 
+Development in this repository assumes a `uv`-managed environment.
+
 ```bash
 git clone https://github.com/amachino/qubex.git
 cd qubex
-
-# uv
-uv sync --dev
-
-# pip
-pip install -e .
+make sync
 ```
 
 ## Documentation
