@@ -46,7 +46,7 @@ def test_execute_uses_parallel_mode_by_default() -> None:
 
     assert result == "parallel"
     assert "parallel" in called
-    assert called["parallel"]["clock_health_checks"] is True
+    assert called["parallel"]["clock_health_checks"] is False
     assert "serial" not in called
 
 

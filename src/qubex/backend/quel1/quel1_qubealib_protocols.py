@@ -1,11 +1,11 @@
-"""Type-checking protocols for QuEL driver symbols resolved by loader."""
+"""Protocols for qubecalib backward compatibility symbols."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
 from os import PathLike
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol, TypeAlias
 
 from typing_extensions import Self
 
@@ -13,10 +13,17 @@ PortType = int | tuple[int, int]
 StatusMap = dict[str, Any]
 DataMap = dict[str, Any]
 ConfigMap = dict[str, Any]
+CaptureStatusKey: TypeAlias = tuple[str, PortType]
+CaptureResultKey: TypeAlias = tuple[str, PortType, int]
+RawCaptureStatusMap: TypeAlias = Mapping[CaptureStatusKey, Any]
+RawCaptureResultsMap: TypeAlias = Mapping[CaptureResultKey, Any]
+CaptureParamMap: TypeAlias = Mapping[CaptureResultKey, Any]
+CaptureResourceEntry: TypeAlias = Mapping[str, Any]
+CaptureResourceMap: TypeAlias = Mapping[str, CaptureResourceEntry]
 
 
 class ActionProtocol(Protocol):
-    """Protocol for direct action class symbols and their built instances."""
+    """Protocol for action class symbols and their built instances."""
 
     _action: Any
 
@@ -29,14 +36,14 @@ class ActionProtocol(Protocol):
             RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
         ],
     ) -> ActionProtocol:
-        """Build an action Any from direct-driver settings."""
+        """Build an action Any from driver settings."""
         ...
 
     def action(
         self,
     ) -> tuple[
-        dict[tuple[str, PortType], Any],
-        dict[tuple[str, PortType, int], Any],
+        dict[CaptureStatusKey, Any],
+        dict[CaptureResultKey, Any],
     ]:
         """Execute action and return status/data maps."""
         ...
@@ -466,7 +473,7 @@ class Quel1ConfigOptionProtocol(Protocol):
 
 
 class Quel1SystemProtocol(Protocol):
-    """Protocol for direct multi-box system objects used by qubex."""
+    """Protocol for multi-box system objects used by qubex."""
 
     boxes: Mapping[str, Quel1BoxProtocol]
     box: Mapping[str, Quel1BoxProtocol]
@@ -607,6 +614,17 @@ class SequencerProtocol(Protocol):
         """Execute against the given box pool."""
         ...
 
+    def set_measurement_option(self, **kwargs: Any) -> None:
+        """Apply measurement options before execution."""
+        ...
+
+    def generate_e7_settings(
+        self,
+        boxpool: BoxPoolProtocol,
+    ) -> tuple[RawCaptureResultsMap, RawCaptureResultsMap, CaptureResourceMap]:
+        """Generate driver capture and waveform settings."""
+        ...
+
     def select_trigger(
         self,
         system: Quel1SystemProtocol,
@@ -620,12 +638,21 @@ class SequencerProtocol(Protocol):
     def parse_capture_results(
         self,
         *,
-        status: dict[tuple[str, PortType], Any],
-        results: dict[tuple[str, PortType, int], Any],
+        status: RawCaptureStatusMap,
+        results: RawCaptureResultsMap,
         action: ActionProtocol,
-        crmap: dict[str, dict[str, Any]],
+        crmap: CaptureResourceMap,
     ) -> tuple[StatusMap, DataMap, ConfigMap]:
         """Parse low-level capture results into qubex-compatible payload."""
+        ...
+
+    def parse_capture_result(
+        self,
+        status: Any,
+        data: Any,
+        cprm: Any,
+    ) -> tuple[Any, Any]:
+        """Parse one backend capture payload with one capture parameter."""
         ...
 
     def calc_first_padding(self) -> int:

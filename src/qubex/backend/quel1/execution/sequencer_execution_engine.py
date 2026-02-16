@@ -4,7 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from logging import Logger
-from typing import Any, Protocol, TypeAlias, cast
+from typing import TypeAlias
+
+from qubex.backend.quel1.quel1_qubealib_protocols import (
+    ActionProtocol,
+    AwgIdProtocol,
+    AwgSettingProtocol,
+    BoxPoolProtocol,
+    CaptureResourceMap,
+    ConfigMap,
+    DataMap,
+    Quel1SystemProtocol,
+    RunitIdProtocol,
+    RunitSettingProtocol,
+    SequencerProtocol,
+    StatusMap,
+    TriggerSettingProtocol,
+)
 
 from .capture_result_parser import parse_capture_results_with_cprms
 from .parallel_action_builder import (
@@ -12,48 +28,14 @@ from .parallel_action_builder import (
     build_parallel_multi_action,
 )
 
-PortType: TypeAlias = Any
-CommonSetting: TypeAlias = Any
-CaptureStatusByTarget: TypeAlias = dict[str, Any]
-CaptureDataByTarget: TypeAlias = dict[str, Any]
-BackendConfigPayload: TypeAlias = dict
-
-
-class _SequencerLike(Protocol):
-    """Protocol for sequencer methods consumed by this execution engine."""
-
-    interval: Any
-
-    def set_measurement_option(self, **kwargs: Any) -> None:
-        """Apply measurement options before execution."""
-        ...
-
-    def generate_e7_settings(self, boxpool: Any) -> tuple[Any, Any, dict[str, Any]]:
-        """Generate direct-driver capture/generator settings."""
-        ...
-
-    def select_trigger(self, system: Any, settings: list[Any]) -> list[Any]:
-        """Generate trigger settings derived from system and settings."""
-        ...
-
-    def parse_capture_result(
-        self,
-        status: Any,
-        data: Any,
-        cprm: Any,
-    ) -> tuple[Any, Any]:
-        """Parse one backend capture result into public result format."""
-        ...
-
-
-class _ActionLike(Protocol):
-    """Protocol for direct action objects created by builders."""
-
-    def action(
-        self,
-    ) -> tuple[dict[tuple[str, Any], Any], dict[tuple[str, Any, int], Any]]:
-        """Run action and return raw capture status/data."""
-        ...
+CommonSetting: TypeAlias = (
+    RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
+)
+ActionBuilder: TypeAlias = Callable[..., ActionProtocol]
+RunitSettingFactory: TypeAlias = Callable[..., RunitSettingProtocol]
+RunitIdFactory: TypeAlias = Callable[..., RunitIdProtocol]
+AwgSettingFactory: TypeAlias = Callable[..., AwgSettingProtocol]
+AwgIdFactory: TypeAlias = Callable[..., AwgIdProtocol]
 
 
 class SequencerExecutionEngine:
@@ -83,7 +65,7 @@ class SequencerExecutionEngine:
     @staticmethod
     def set_measurement_options(
         *,
-        sequencer: _SequencerLike,
+        sequencer: SequencerProtocol,
         repeats: int,
         integral_mode: str,
         dsp_demodulation: bool,
@@ -98,7 +80,7 @@ class SequencerExecutionEngine:
 
         Parameters
         ----------
-        sequencer : _SequencerLike
+        sequencer : SequencerProtocol
             Sequencer instance providing ``set_measurement_option``.
         repeats : int
             Number of repetitions for one backend execution call.
@@ -150,37 +132,37 @@ class SequencerExecutionEngine:
     @staticmethod
     def create_direct_settings(
         *,
-        sequencer: _SequencerLike,
-        boxpool: Any,
-        system: Any,
-        runit_setting_factory: Callable[..., Any],
-        runit_id_factory: Callable[..., Any],
-        awg_setting_factory: Callable[..., Any],
-        awg_id_factory: Callable[..., Any],
-    ) -> tuple[list[Any], dict[str, Any]]:
+        sequencer: SequencerProtocol,
+        boxpool: BoxPoolProtocol,
+        system: Quel1SystemProtocol,
+        runit_setting_factory: RunitSettingFactory,
+        runit_id_factory: RunitIdFactory,
+        awg_setting_factory: AwgSettingFactory,
+        awg_id_factory: AwgIdFactory,
+    ) -> tuple[list[CommonSetting], CaptureResourceMap]:
         """
         Convert sequencer device settings into direct-driver setting objects.
 
         Parameters
         ----------
-        sequencer : _SequencerLike
+        sequencer : SequencerProtocol
             Sequencer producing capture/generator settings.
-        boxpool : Any
+        boxpool : BoxPoolProtocol
             Backend boxpool forwarded to ``generate_e7_settings``.
-        system : Any
+        system : Quel1SystemProtocol
             Quel1System-like object passed to trigger selection.
-        runit_setting_factory : Callable[..., Any]
+        runit_setting_factory : RunitSettingFactory
             Factory for direct runit settings.
-        runit_id_factory : Callable[..., Any]
+        runit_id_factory : RunitIdFactory
             Factory for runit identifiers.
-        awg_setting_factory : Callable[..., Any]
+        awg_setting_factory : AwgSettingFactory
             Factory for direct AWG settings.
-        awg_id_factory : Callable[..., Any]
+        awg_id_factory : AwgIdFactory
             Factory for AWG identifiers.
 
         Returns
         -------
-        tuple[list[Any], dict[str, Any]]
+        tuple[list[CommonSetting], CaptureResourceMap]
             Flat direct-driver settings and capture resource map.
 
         Raises
@@ -205,7 +187,7 @@ class SequencerExecutionEngine:
         cap_settings, gen_settings, cap_resource_map = sequencer.generate_e7_settings(
             boxpool
         )
-        settings: list[Any] = []
+        settings: list[CommonSetting] = []
         for (name, cap_port, runit), capture_param in cap_settings.items():
             settings.append(
                 runit_setting_factory(
@@ -228,7 +210,7 @@ class SequencerExecutionEngine:
                     wseq=wave_seq,
                 )
             )
-        settings += sequencer.select_trigger(system, settings)
+        settings.extend(sequencer.select_trigger(system, settings))
         if len(settings) == 0:
             raise ValueError("no settings")
         return settings, cap_resource_map
@@ -237,37 +219,37 @@ class SequencerExecutionEngine:
     def execute_parallel(
         cls,
         *,
-        sequencer: _SequencerLike,
-        boxpool: Any,
-        system: Any,
-        action_builder: Callable[..., Any],
-        runit_setting_factory: Callable[..., Any],
-        runit_id_factory: Callable[..., Any],
-        awg_setting_factory: Callable[..., Any],
-        awg_id_factory: Callable[..., Any],
+        sequencer: SequencerProtocol,
+        boxpool: BoxPoolProtocol,
+        system: Quel1SystemProtocol,
+        action_builder: ActionBuilder,
+        runit_setting_factory: RunitSettingFactory,
+        runit_id_factory: RunitIdFactory,
+        awg_setting_factory: AwgSettingFactory,
+        awg_id_factory: AwgIdFactory,
         logger: Logger,
         clock_health_checks: ClockHealthCheckOptions | None = None,
-    ) -> tuple[CaptureStatusByTarget, CaptureDataByTarget, BackendConfigPayload]:
+    ) -> tuple[StatusMap, DataMap, ConfigMap]:
         """
         Execute a sequencer using parallelized multi-box action preparation.
 
         Parameters
         ----------
-        sequencer : _SequencerLike
+        sequencer : SequencerProtocol
             Sequencer that generates settings and parses capture results.
-        boxpool : Any
+        boxpool : BoxPoolProtocol
             Backend boxpool for sequencer setting generation.
-        system : Any
+        system : Quel1SystemProtocol
             Quel1System-like object for direct action execution.
-        action_builder : Callable[..., Any]
+        action_builder : ActionBuilder
             Fallback-compatible action builder for single-box cases.
-        runit_setting_factory : Callable[..., Any]
+        runit_setting_factory : RunitSettingFactory
             Factory for direct runit setting objects.
-        runit_id_factory : Callable[..., Any]
+        runit_id_factory : RunitIdFactory
             Factory for direct runit identifiers.
-        awg_setting_factory : Callable[..., Any]
+        awg_setting_factory : AwgSettingFactory
             Factory for direct AWG setting objects.
-        awg_id_factory : Callable[..., Any]
+        awg_id_factory : AwgIdFactory
             Factory for direct AWG identifiers.
         logger : Logger
             Logger for parallel action diagnostics.
@@ -276,7 +258,7 @@ class SequencerExecutionEngine:
 
         Returns
         -------
-        tuple[CaptureStatusByTarget, CaptureDataByTarget, BackendConfigPayload]
+        tuple[StatusMap, DataMap, ConfigMap]
             Parsed status, parsed data, and backend config payload.
 
         Examples
@@ -311,7 +293,6 @@ class SequencerExecutionEngine:
             logger=logger,
             clock_health_checks=clock_health_checks,
         )
-        action = cast(_ActionLike, action)
         status, raw_results = action.action()
         return parse_capture_results_with_cprms(
             sequencer=sequencer,
