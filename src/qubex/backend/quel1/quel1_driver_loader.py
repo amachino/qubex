@@ -198,7 +198,16 @@ def _import_driver_symbols(package_name: DriverPackageName) -> Que1lDriver:
 
 @lru_cache(maxsize=1)
 def load_quel1_driver() -> Que1lDriver:
-    """Load one driver package selected by installed quelware version."""
+    """
+    Load one driver package selected by installed quelware version.
+
+    Notes
+    -----
+    This function is cached by `functools.lru_cache(maxsize=1)`.
+    Calling it from multiple places is safe: module import and symbol
+    resolution happen only on the first call in a process unless the
+    cache is explicitly cleared via `clear_quel1_driver_cache`.
+    """
     package_name: DriverPackageName = (
         "qubecalib" if _is_quelware_0_8_x() else "qxdriver_quel"
     )

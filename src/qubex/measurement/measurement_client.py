@@ -98,13 +98,13 @@ class MeasurementClient:
         params_dir : Path | str, optional
             The parameters directory.
         load_configs : bool | None, optional
-            Whether to load configurations. If ``None``, ``DEFAULT_LOAD_CONFIGS``
+            Whether to load configurations. If `None`, `DEFAULT_LOAD_CONFIGS`
             is used.
         connect_devices : bool | None, optional
-            Whether to connect devices. If ``None``,
-            ``DEFAULT_CONNECT_DEVICES`` is used.
+            Whether to connect devices. If `None`,
+            `DEFAULT_CONNECT_DEVICES` is used.
         configuration_mode : ConfigurationMode | None, optional
-            Configuration mode. If ``None``, ``DEFAULT_CONFIGURATION_MODE``
+            Configuration mode. If `None`, `DEFAULT_CONFIGURATION_MODE`
             is used.
         _execution_mode : ExecutionMode | None, optional
             Private backend execution mode override used by schedule executor.

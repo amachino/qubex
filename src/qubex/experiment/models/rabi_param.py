@@ -13,10 +13,8 @@ class RabiParam:
     """
     Represents the parameters for a Rabi oscillation experiment.
 
-    ```
-    rabi_1d = amplitude * cos(2π * frequency * time + phase) + offset)
-    rabi_2d = (distance + 1j * rabi_1d) * exp(1j * angle) ± noise
-    ```
+    `rabi_1d = amplitude * cos(2π * frequency * time + phase) + offset`
+    `rabi_2d = (distance + 1j * rabi_1d) * exp(1j * angle) ± noise`
 
     Attributes
     ----------

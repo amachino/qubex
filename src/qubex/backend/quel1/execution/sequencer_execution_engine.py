@@ -81,7 +81,7 @@ class SequencerExecutionEngine:
         Parameters
         ----------
         sequencer : SequencerProtocol
-            Sequencer instance providing ``set_measurement_option``.
+            Sequencer instance providing `set_measurement_option`.
         repeats : int
             Number of repetitions for one backend execution call.
         integral_mode : str
@@ -95,9 +95,9 @@ class SequencerExecutionEngine:
         enable_classification : bool
             Whether to enable DSP classification.
         line_param0 : tuple[float, float, float] | None
-            Classifier line parameter 0. If ``None``, ``(1, 0, 0)`` is used.
+            Classifier line parameter 0. If `None`, `(1, 0, 0)` is used.
         line_param1 : tuple[float, float, float] | None
-            Classifier line parameter 1. If ``None``, ``(0, 1, 0)`` is used.
+            Classifier line parameter 1. If `None`, `(0, 1, 0)` is used.
 
         Examples
         --------
@@ -148,7 +148,7 @@ class SequencerExecutionEngine:
         sequencer : SequencerProtocol
             Sequencer producing capture/generator settings.
         boxpool : BoxPoolProtocol
-            Backend boxpool forwarded to ``generate_e7_settings``.
+            Backend boxpool forwarded to `generate_e7_settings`.
         system : Quel1SystemProtocol
             Quel1System-like object passed to trigger selection.
         runit_setting_factory : RunitSettingFactory

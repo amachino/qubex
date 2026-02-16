@@ -740,7 +740,7 @@ class SimulationResult:
 
 
 class QuantumSimulator:
-    """Simulate dynamics of a :class:`QuantumSystem`."""
+    """Simulate dynamics of a `QuantumSystem`."""
 
     def __init__(
         self,

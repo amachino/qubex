@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+import qubex.backend.quel1.quel1_sequencer as sequencer_module
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
 
@@ -126,3 +127,29 @@ def test_add_channel_target_relation_is_idempotent() -> None:
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
     assert qubecalib.sysdb._relation_channel_target == [("Q00-1-0", "Q00-1")]
+
+
+def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
+    monkeypatch: Any,
+) -> None:
+    """Given controller sequencer creation, when constructing, then driver is passed for compatibility."""
+    controller = _make_controller()
+    fake_driver = object()
+    cast(Any, controller)._quel1system = fake_driver
+    created_kwargs: dict[str, Any] = {}
+
+    class _FakeSequencer:
+        def __init__(self, **kwargs: Any) -> None:
+            created_kwargs.update(kwargs)
+
+    monkeypatch.setattr(sequencer_module, "Quel1Sequencer", _FakeSequencer)
+
+    controller.create_quel1_sequencer(
+        gen_sampled_sequence={},
+        cap_sampled_sequence={},
+        resource_map={},
+        interval=128,
+    )
+
+    assert created_kwargs["driver"] is fake_driver
+    assert created_kwargs["sysdb"] is controller.qubecalib.sysdb

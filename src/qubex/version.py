@@ -100,7 +100,7 @@ def get_version(package_name: str | None = None) -> str:
     Parameters
     ----------
     package_name : str | None
-        The package name. If None, defaults to ``qubex``.
+        The package name. If None, defaults to `qubex`.
 
     Returns
     -------
@@ -125,7 +125,7 @@ def get_version(package_name: str | None = None) -> str:
 
 def get_optional_version(package_name: str) -> str | None:
     """
-    Return package version with editable git hash suffix, or ``None`` if missing.
+    Return package version with editable git hash suffix, or `None` if missing.
 
     Parameters
     ----------
@@ -135,7 +135,7 @@ def get_optional_version(package_name: str) -> str | None:
     Returns
     -------
     str | None
-        Version string when installed, otherwise ``None``.
+        Version string when installed, otherwise `None`.
     """
     try:
         version = _get_installed_version(package_name)

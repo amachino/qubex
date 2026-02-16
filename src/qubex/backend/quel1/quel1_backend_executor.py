@@ -50,12 +50,12 @@ class Quel1BackendExecutor:
         backend_controller : Quel1BackendController
             Backend controller used to execute sequencers.
         execution_mode : ExecutionMode | None, optional
-            Execution path selector. ``"serial"`` uses qubecalib's direct action
-            flow, while ``"parallel"`` uses the qubex-side parallelized flow.
-            If ``None``, ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE`` is used.
+            Execution path selector. `"serial"` uses qubecalib's direct action
+            flow, while `"parallel"` uses the qubex-side parallelized flow.
+            If `None`, `qubex.backend.quel1.DEFAULT_EXECUTION_MODE` is used.
         clock_health_checks : bool | None, optional
             Whether to enable clock-health checks in parallel execution.
-            If ``None``, ``qubex.backend.quel1.DEFAULT_CLOCK_HEALTH_CHECKS`` is used.
+            If `None`, `qubex.backend.quel1.DEFAULT_CLOCK_HEALTH_CHECKS` is used.
         """
         if execution_mode is None:
             execution_mode = DEFAULT_EXECUTION_MODE

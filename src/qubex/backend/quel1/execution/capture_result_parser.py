@@ -34,7 +34,7 @@ def _build_target_lookup(
     Returns
     -------
     dict[CaptureResultKey, str]
-        Mapping keyed by ``(box_name, port, runit)``.
+        Mapping keyed by `(box_name, port, runit)`.
     """
     bpc_to_target: dict[CaptureResultKey, str] = {}
     for target, mapping in cap_resource_map.items():
@@ -59,15 +59,15 @@ def parse_capture_results_with_cprms(
     Parameters
     ----------
     sequencer : SequencerProtocol
-        Sequencer providing ``parse_capture_result``.
+        Sequencer providing `parse_capture_result`.
     status : RawCaptureStatusMap
-        Raw capture status keyed by ``(box_name, port)``.
+        Raw capture status keyed by `(box_name, port)`.
     results : RawCaptureResultsMap
-        Raw capture data keyed by ``(box_name, port, runit)``.
+        Raw capture data keyed by `(box_name, port, runit)`.
     cap_resource_map : CaptureResourceMap
         Target capture-resource mapping.
     cprms : CaptureParamMap
-        Capture parameters keyed by ``(box_name, port, runit)``.
+        Capture parameters keyed by `(box_name, port, runit)`.
 
     Returns
     -------

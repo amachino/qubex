@@ -654,8 +654,8 @@ class Quel1BackendController:
             List of box names to connect to. If None, connect to all available boxes.
         parallel : bool | None, optional
             If True, use parallel box reconnect implementation. If False, use
-            legacy qubecalib implementation. If ``None``, it follows
-            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
+            legacy qubecalib implementation. If `None`, it follows
+            `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
         if parallel is None:
             parallel = _DEFAULT_PARALLEL_MODE
@@ -713,7 +713,7 @@ class Quel1BackendController:
             List of box names to initialize.
         parallel : bool | None, optional
             Whether to initialize boxes in parallel. If `None`, it follows
-            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
+            `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
         if isinstance(box_names, str):
             box_names = [box_names]
@@ -810,7 +810,7 @@ class Quel1BackendController:
             Threshold for linkup noise checks.
         parallel : bool | None, optional
             Whether to link up boxes in parallel. If `None`, it follows
-            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
+            `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
 
         Returns
         -------
@@ -915,7 +915,7 @@ class Quel1BackendController:
             Threshold for relinkup noise checks.
         parallel : bool | None, optional
             Whether to relink boxes in parallel. If `None`, it follows
-            ``qubex.backend.quel1.DEFAULT_EXECUTION_MODE``.
+            `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
         # Avoid duplicate relinkup operations for the same box in one call.
         box_list = list(dict.fromkeys(box_list))
@@ -1418,6 +1418,10 @@ class Quel1BackendController:
             resource_map=resource_map,  # type: ignore[arg-type]
             interval=interval,
             sysdb=self.qubecalib.sysdb,
+            # TODO: Keep passing driver for constructor compatibility across
+            # old/new driver packages. `Quel1Sequencer` itself must continue to
+            # resolve port configs on boxpool path to avoid readout-sideband
+            # mismatches on R8.
             driver=self.quel1system,
         )
 
@@ -1486,7 +1490,7 @@ class Quel1BackendController:
         capture_delay : int
             Capture delay in samples.
         capture_slots : list[tuple[int, int]]
-            List of ``(duration, post_blank)`` sample counts.
+            List of `(duration, post_blank)` sample counts.
 
         Returns
         -------

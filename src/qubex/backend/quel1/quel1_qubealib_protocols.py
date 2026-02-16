@@ -117,6 +117,30 @@ class BoxPoolProtocol(Protocol):
         """Create and register one box instance."""
         ...
 
+    def get_box(
+        self,
+        box_name: str,
+    ) -> tuple[Quel1BoxCommonProtocol, SequencerClientProtocol]:
+        """Return box and sequencer-client pair for one registered box."""
+        ...
+
+    def get_port_direction(
+        self,
+        box_name: str,
+        port: PortType,
+    ) -> str:
+        """Return cached port direction (`in` or `out`)."""
+        ...
+
+    def ensure_box_config_cache(
+        self,
+        *,
+        box_name: str,
+        box: Quel1BoxCommonProtocol,
+    ) -> dict[str, Any]:
+        """Ensure per-box dump cache and return cached box payload."""
+        ...
+
 
 class BoxSettingProtocol(Protocol):
     """Protocol for one box setting row in system config database."""
@@ -200,6 +224,41 @@ class ConverterProtocol(Protocol):
         """Multiplex generator sequences into one waveform sequence."""
         ...
 
+    @classmethod
+    def convert_to_cap_device_specific_sequence(
+        cls,
+        *,
+        gen_sampled_sequence: Mapping[str, GenSampledSequenceProtocol],
+        cap_sampled_sequence: Mapping[str, CapSampledSequenceProtocol],
+        resource_map: Mapping[str, Mapping[str, Any]],
+        port_config: Mapping[str, PortConfigAcquirerProtocol],
+        repeats: int,
+        interval: float,
+        integral_mode: str,
+        dsp_demodulation: bool,
+        software_demodulation: bool,
+        enable_sum: bool,
+        enable_classification: bool = False,
+        line_param0: tuple[float, float, float] = (1.0, 0.0, 0.0),
+        line_param1: tuple[float, float, float] = (0.0, 1.0, 0.0),
+    ) -> dict[tuple[str, PortType, int], Any]:
+        """Convert capture sampled sequences into per-runit capture params."""
+        ...
+
+    @classmethod
+    def convert_to_gen_device_specific_sequence(
+        cls,
+        *,
+        gen_sampled_sequence: Mapping[str, GenSampledSequenceProtocol],
+        cap_sampled_sequence: Mapping[str, CapSampledSequenceProtocol],
+        resource_map: Mapping[str, Mapping[str, Any]],
+        port_config: Mapping[str, PortConfigAcquirerProtocol],
+        repeats: int,
+        interval: float,
+    ) -> dict[tuple[str, PortType, int], Any]:
+        """Convert generation sampled sequences into per-awg wave sequences."""
+        ...
+
 
 class ExecutorProtocol(Protocol):
     """Protocol for queued command executor used by qubecalib."""
@@ -253,6 +312,32 @@ class PortSettingProtocol(Protocol):
     """Protocol for one port setting row in system config database."""
 
     port: PortType
+
+
+class PortConfigAcquirerProtocol(Protocol):
+    """Protocol for port-config snapshots used during sequence conversion."""
+
+    dump_config: dict[str, Any]
+    lo_freq: float | None
+    cnco_freq: float
+    fnco_freq: float
+    sideband: str
+    box_name: str
+    port: PortType
+    channel: int
+
+    def __init__(
+        self,
+        boxpool: BoxPoolProtocol,
+        box_name: str,
+        box: Quel1BoxCommonProtocol,
+        port: PortType,
+        channel: int,
+        *,
+        driver: Quel1SystemProtocol | None = None,
+    ) -> None:
+        """Capture effective port settings for one target channel mapping."""
+        ...
 
 
 class QuBEMasterClientProtocol(Protocol):
@@ -594,8 +679,18 @@ class SequencerProtocol(Protocol):
     """Protocol for qube-calib sequencer compatibility objects."""
 
     interval: int | None
+    resource_map: Mapping[str, Sequence[dict[str, Any]]]
     cap_sampled_sequence: Mapping[str, CapSampledSequenceProtocol]
     gen_sampled_sequence: Mapping[str, GenSampledSequenceProtocol]
+    repeats: int
+    integral_mode: str
+    dsp_demodulation: bool
+    software_demodulation: bool
+    enable_sum: bool
+    enable_classification: bool
+    line_param0: tuple[float, float, float]
+    line_param1: tuple[float, float, float]
+    driver: Quel1SystemProtocol | None
 
     def __init__(
         self,
@@ -605,7 +700,7 @@ class SequencerProtocol(Protocol):
         resource_map: dict[str, list[dict[str, Any]]],
         interval: int,
         sysdb: SysdbProtocol,
-        driver: Quel1SystemProtocol,
+        driver: Quel1SystemProtocol | None = None,
     ) -> None:
         """Create sequencer from sampled sequences and runtime objects."""
         ...
@@ -711,7 +806,7 @@ class SkewProtocol(Protocol):
 
 
 class SkewRuntimeProtocol(Protocol):
-    """Protocol for skew runtime Any returned from ``Skew.from_yaml``."""
+    """Protocol for skew runtime Any returned from `Skew.from_yaml`."""
 
     system: SkewSystemProtocol
 
@@ -767,7 +862,7 @@ class SystemConfigDatabaseProtocol(Protocol):
         ...
 
     def get_channel(self, channel_name: str) -> tuple[str, str, int]:
-        """Return ``(box_name, port_name, channel_number)`` for one channel."""
+        """Return `(box_name, port_name, channel_number)` for one channel."""
         ...
 
     def create_box(

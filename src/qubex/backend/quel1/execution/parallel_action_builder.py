@@ -211,7 +211,7 @@ def _convert_to_box_setting_dict(
     Parameters
     ----------
     settings : Sequence[object]
-        Flat common settings where each entry includes a ``box`` location.
+        Flat common settings where each entry includes a `box` location.
     awg_id_class : FactoryLike
         AWG identifier class.
     awg_setting_class : FactoryLike
@@ -283,12 +283,12 @@ def _collect_single_action_cprms(
     box_name : str
         Box name associated with the given action.
     single_action : SingleActionProtocol
-        Built single action exposing ``_cprms``.
+        Built single action exposing `_cprms`.
 
     Returns
     -------
     CaptureParamMap
-        Capture parameter map keyed by ``(box_name, port, runit)``.
+        Capture parameter map keyed by `(box_name, port, runit)`.
     """
     cprms: CaptureParamMap = {}
     for runit_id, capture_param in single_action._cprms.items():
@@ -599,7 +599,7 @@ def build_parallel_multi_action(
     Build a multi action with per-box setup parallelized across boxes.
 
     For multi-box execution, this function mirrors qubecalib's
-    ``multi.Action.build`` semantics while parallelizing the expensive per-box
+    `multi.Action.build` semantics while parallelizing the expensive per-box
     setup and SYSREF offset measurements.
 
     Parameters
@@ -609,18 +609,18 @@ def build_parallel_multi_action(
     settings : Sequence[object]
         Common driver settings.
     action_builder : _ActionBuilderProtocol
-        Builder compatible with ``Action.build(system=..., settings=...)``.
+        Builder compatible with `Action.build(system=..., settings=...)`.
     logger : Logger
         Logger used for clock/timediff diagnostics.
     clock_health_checks : ClockHealthCheckOptions | None, optional
-        Clock-related validation/diagnostics options. If ``None``, all checks
+        Clock-related validation/diagnostics options. If `None`, all checks
         are disabled to maximize execution speed.
 
     Returns
     -------
     tuple[ActionProtocol | QubexMultiAction, CaptureParamMap]
         Built action instance and capture-param mapping keyed by
-        ``(box_name, port, runit)``.
+        `(box_name, port, runit)`.
 
     Examples
     --------
