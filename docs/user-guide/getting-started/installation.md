@@ -77,7 +77,7 @@ Use this setup to prepare a local environment for developing and testing Qubex.
 Development commands in this repository assume a `uv`-managed environment.
 
 ```bash
-git clone https://github.com/amachino/qubex.git
+git clone -b develop-next https://github.com/amachino/qubex.git
 cd qubex
 make sync
 ```

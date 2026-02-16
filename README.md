@@ -54,7 +54,7 @@ Check available versions on the [Release Page](https://github.com/amachino/qubex
 Development in this repository assumes a `uv`-managed environment.
 
 ```bash
-git clone https://github.com/amachino/qubex.git
+git clone -b develop-next https://github.com/amachino/qubex.git
 cd qubex
 make sync
 ```
