@@ -321,7 +321,7 @@ class PortConfigAcquirerProtocol(Protocol):
     lo_freq: float | None
     cnco_freq: float
     fnco_freq: float
-    sideband: str
+    sideband: str | None
     box_name: str
     port: PortType
     channel: int
