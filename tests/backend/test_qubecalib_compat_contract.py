@@ -18,6 +18,11 @@ try:
     NamedBox = _compat.NamedBox
     RunitId = _compat.RunitId
     RunitSetting = _compat.RunitSetting
+    SingleAwgId = _compat.SingleAwgId
+    SingleAwgSetting = _compat.SingleAwgSetting
+    SingleRunitId = _compat.SingleRunitId
+    SingleRunitSetting = _compat.SingleRunitSetting
+    SingleTriggerSetting = _compat.SingleTriggerSetting
     TriggerSetting = _compat.TriggerSetting
     single = importlib.import_module(_compat.SingleAction.__module__)
     multi = importlib.import_module(_compat.MultiAction.__module__)
@@ -48,6 +53,11 @@ except ModuleNotFoundError:
     NamedBox = _driver.NamedBox
     RunitId = _driver.RunitId
     RunitSetting = _driver.RunitSetting
+    SingleAwgId = _driver.single.AwgId
+    SingleAwgSetting = _driver.single.AwgSetting
+    SingleRunitId = _driver.single.RunitId
+    SingleRunitSetting = _driver.single.RunitSetting
+    SingleTriggerSetting = _driver.single.TriggerSetting
     TriggerSetting = _driver.TriggerSetting
     single = _driver.single
     multi = _driver.multi
@@ -75,6 +85,11 @@ def test_qubecalib_import_paths_required_by_qubex_are_available() -> None:
     assert NamedBox.__name__ == "NamedBox"
     assert RunitId.__name__ == "RunitId"
     assert RunitSetting.__name__ == "RunitSetting"
+    assert SingleAwgId.__name__ == "AwgId"
+    assert SingleAwgSetting.__name__ == "AwgSetting"
+    assert SingleRunitId.__name__ == "RunitId"
+    assert SingleRunitSetting.__name__ == "RunitSetting"
+    assert SingleTriggerSetting.__name__ == "TriggerSetting"
     assert TriggerSetting.__name__ == "TriggerSetting"
     assert hasattr(single, "Action")
     assert hasattr(multi, "Action")

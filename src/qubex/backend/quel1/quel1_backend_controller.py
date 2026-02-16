@@ -30,7 +30,7 @@ if TYPE_CHECKING:
         BoxPoolProtocol as BoxPool,
         BoxSettingProtocol as BoxSetting,
         QubeCalibProtocol as QubeCalib,
-        Quel1BoxProtocol as Quel1Box,
+        Quel1BoxCommonProtocol as Quel1Box,
         Quel1ConfigOptionProtocol as Quel1ConfigOption,
         Quel1SystemProtocol as Quel1System,
         RunitSettingProtocol as RunitSetting,

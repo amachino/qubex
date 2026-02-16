@@ -121,6 +121,11 @@ def _build_fake_driver_modules(
 
     single = cast(Any, ModuleType(single_module))
     single.Action = _fake_class("Action", single_module)
+    single.AwgId = _fake_class("AwgId", single_module)
+    single.AwgSetting = _fake_class("AwgSetting", single_module)
+    single.RunitId = _fake_class("RunitId", single_module)
+    single.RunitSetting = _fake_class("RunitSetting", single_module)
+    single.TriggerSetting = _fake_class("TriggerSetting", single_module)
 
     if is_qxdriver:
         mapping = {
@@ -169,6 +174,11 @@ def _build_fake_driver_modules(
         compat.Quel1ConfigOption = legacy.Quel1ConfigOption
         compat.MultiAction = multi.Action
         compat.SingleAction = single.Action
+        compat.SingleAwgId = single.AwgId
+        compat.SingleAwgSetting = single.AwgSetting
+        compat.SingleRunitId = single.RunitId
+        compat.SingleRunitSetting = single.RunitSetting
+        compat.SingleTriggerSetting = single.TriggerSetting
         mapping[f"{package_name}.compat"] = compat
 
     return mapping
@@ -192,6 +202,7 @@ def test_load_quel1_driver_uses_qxdriver_for_non_0_8_quelware(monkeypatch) -> No
     assert modules.package_name == "qxdriver_quel"
     assert modules.QubeCalib.__name__ == "QubeCalib"
     assert modules.Action.__name__ == "Action"
+    assert modules.SingleRunitSetting.__module__.endswith(".single")
 
 
 def test_load_quel1_driver_uses_qubecalib_for_quelware_0_8(monkeypatch) -> None:

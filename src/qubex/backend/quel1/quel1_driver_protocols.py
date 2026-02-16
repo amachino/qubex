@@ -49,10 +49,29 @@ class AwgSettingProtocol(Protocol):
         ...
 
 
+class SingleAwgIdProtocol(Protocol):
+    """Protocol for single-box AWG identifier objects."""
+
+    port: PortType
+    channel: int
+
+    def __init__(self, port: PortType, channel: int) -> None:
+        """Create a single-box AWG identifier."""
+        ...
+
+
+class SingleAwgSettingProtocol(Protocol):
+    """Protocol for single-box AWG setting objects."""
+
+    def __init__(self, awg: SingleAwgIdProtocol, wseq: Any) -> None:
+        """Create one single-box AWG setting."""
+        ...
+
+
 class BoxPoolProtocol(Protocol):
     """Protocol for legacy-style box pool state and helpers."""
 
-    _boxes: dict[str, tuple[Quel1BoxProtocol, SequencerClientProtocol]]
+    _boxes: dict[str, tuple[Quel1BoxCommonProtocol, SequencerClientProtocol]]
     _linkstatus: dict[str, bool]
     _box_config_cache: dict[str, dict[str, Any]]
 
@@ -68,7 +87,7 @@ class BoxPoolProtocol(Protocol):
         ipaddr_sss: str,
         ipaddr_css: str,
         boxtype: str,
-    ) -> Quel1BoxProtocol:
+    ) -> Quel1BoxCommonProtocol:
         """Create and register one box instance."""
         ...
 
@@ -210,9 +229,9 @@ class NamedBoxProtocol(Protocol):
     """Protocol for named-box wrapper objects."""
 
     name: str
-    box: Quel1BoxProtocol
+    box: Quel1BoxCommonProtocol
 
-    def __init__(self, *, name: str, box: Quel1BoxProtocol) -> None:
+    def __init__(self, *, name: str, box: Quel1BoxCommonProtocol) -> None:
         """Create a named box wrapper."""
         ...
 
@@ -346,7 +365,7 @@ class QubeCalibProtocol(Protocol):
         ...
 
 
-class Quel1BoxProtocol(Protocol):
+class Quel1BoxCommonProtocol(Protocol):
     """Protocol for APIs shared by Quel1Box and Quel1BoxWithRawWss."""
 
     boxtype: str
@@ -414,6 +433,26 @@ class Quel1BoxProtocol(Protocol):
         ...
 
 
+class Quel1BoxProtocol(Quel1BoxCommonProtocol, Protocol):
+    """Protocol for box APIs additionally required by parallel action builder."""
+
+    def get_current_timecounter(self) -> int:
+        """Return current box timecounter."""
+        ...
+
+    def get_latest_sysref_timecounter(self) -> int:
+        """Return latest latched SYSREF timecounter."""
+        ...
+
+    def start_wavegen(
+        self,
+        channels: set[tuple[PortType, int]],
+        timecounter: int | None = None,
+    ) -> Any:
+        """Start wave generation immediately or at reserved time."""
+        ...
+
+
 class Quel1ConfigOptionProtocol(Protocol):
     """Protocol for Quel1 config option enum-like classes."""
 
@@ -423,6 +462,11 @@ class Quel1ConfigOptionProtocol(Protocol):
 class Quel1SystemProtocol(Protocol):
     """Protocol for direct multi-box system objects used by qubex."""
 
+    boxes: Mapping[str, Quel1BoxProtocol]
+    box: Mapping[str, Quel1BoxProtocol]
+    _clockmaster: QuBEMasterClientProtocol
+    timing_shift: dict[str, int]
+    displacement: int
     config_cache: dict[str, dict[str, Any]]
     config_fetched_at: datetime | None
 
@@ -458,7 +502,7 @@ class QuelDriverClassesProtocol(Protocol):
     NamedBox: type[NamedBoxProtocol]
     QuBEMasterClient: type[QuBEMasterClientProtocol]
     QubeCalib: type[QubeCalibProtocol]
-    Quel1Box: type[Quel1BoxProtocol]
+    Quel1Box: type[Quel1BoxCommonProtocol]
     Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
     Quel1System: type[Quel1SystemProtocol]
     RunitId: type[RunitIdProtocol]
@@ -466,6 +510,11 @@ class QuelDriverClassesProtocol(Protocol):
     Sequencer: type[SequencerProtocol]
     SequencerClient: type[SequencerClientProtocol]
     SingleAction: type[SingleActionProtocol]
+    SingleAwgId: type[SingleAwgIdProtocol]
+    SingleAwgSetting: type[SingleAwgSettingProtocol]
+    SingleRunitId: type[SingleRunitIdProtocol]
+    SingleRunitSetting: type[SingleRunitSettingProtocol]
+    SingleTriggerSetting: type[SingleTriggerSettingProtocol]
     Skew: type[SkewProtocol]
     TriggerSetting: type[TriggerSettingProtocol]
     WaveSequenceTools: type[WaveSequenceToolsProtocol]
@@ -488,6 +537,25 @@ class RunitSettingProtocol(Protocol):
 
     def __init__(self, runit: RunitIdProtocol, cprm: Any) -> None:
         """Create one runit setting."""
+        ...
+
+
+class SingleRunitIdProtocol(Protocol):
+    """Protocol for single-box runit identifier objects."""
+
+    port: PortType
+    runit: int
+
+    def __init__(self, port: PortType, runit: int) -> None:
+        """Create a single-box runit identifier."""
+        ...
+
+
+class SingleRunitSettingProtocol(Protocol):
+    """Protocol for single-box runit setting objects."""
+
+    def __init__(self, runit: SingleRunitIdProtocol, cprm: Any) -> None:
+        """Create one single-box runit setting."""
         ...
 
 
@@ -560,9 +628,11 @@ class SingleActionProtocol(Protocol):
     def build(
         cls,
         *,
-        box: Quel1BoxProtocol,
+        box: Quel1BoxCommonProtocol,
         settings: list[
-            RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
+            SingleRunitSettingProtocol
+            | SingleAwgSettingProtocol
+            | SingleTriggerSettingProtocol
         ],
     ) -> Any:
         """Build one single-box action from settings."""
@@ -645,7 +715,9 @@ class SystemConfigDatabaseProtocol(Protocol):
         """Return ``(box_name, port_name, channel_number)`` for one channel."""
         ...
 
-    def create_box(self, box_name: str, *, reconnect: bool = True) -> Quel1BoxProtocol:
+    def create_box(
+        self, box_name: str, *, reconnect: bool = True
+    ) -> Quel1BoxCommonProtocol:
         """Create one box Any from database settings."""
         ...
 
@@ -655,6 +727,18 @@ class TriggerSettingProtocol(Protocol):
 
     def __init__(self, trigger_awg: AwgIdProtocol, triggerd_port: PortType) -> None:
         """Create one trigger setting."""
+        ...
+
+
+class SingleTriggerSettingProtocol(Protocol):
+    """Protocol for single-box trigger setting objects."""
+
+    def __init__(
+        self,
+        trigger_awg: SingleAwgIdProtocol,
+        triggerd_port: PortType,
+    ) -> None:
+        """Create one single-box trigger setting."""
         ...
 
 

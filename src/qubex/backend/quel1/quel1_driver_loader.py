@@ -23,7 +23,7 @@ if TYPE_CHECKING:
         NamedBoxProtocol,
         QubeCalibProtocol,
         QuBEMasterClientProtocol,
-        Quel1BoxProtocol,
+        Quel1BoxCommonProtocol,
         Quel1ConfigOptionProtocol,
         Quel1SystemProtocol,
         RunitIdProtocol,
@@ -31,6 +31,11 @@ if TYPE_CHECKING:
         SequencerClientProtocol,
         SequencerProtocol,
         SingleActionProtocol,
+        SingleAwgIdProtocol,
+        SingleAwgSettingProtocol,
+        SingleRunitIdProtocol,
+        SingleRunitSettingProtocol,
+        SingleTriggerSettingProtocol,
         SkewProtocol,
         TriggerSettingProtocol,
         WaveSequenceToolsProtocol,
@@ -64,6 +69,11 @@ _SYMBOL_IMPORT_PATHS: dict[str, str] = {
     "Sequencer": "qubecalib.Sequencer",
     "SequencerClient": "qubecalib.qubecalib.SequencerClient",
     "SingleAction": "qubecalib.instrument.quel.quel1.driver.single.Action",
+    "SingleAwgId": "qubecalib.instrument.quel.quel1.driver.single.AwgId",
+    "SingleAwgSetting": "qubecalib.instrument.quel.quel1.driver.single.AwgSetting",
+    "SingleRunitId": "qubecalib.instrument.quel.quel1.driver.single.RunitId",
+    "SingleRunitSetting": "qubecalib.instrument.quel.quel1.driver.single.RunitSetting",
+    "SingleTriggerSetting": "qubecalib.instrument.quel.quel1.driver.single.TriggerSetting",
     "Skew": "qubecalib.instrument.quel.quel1.tool.Skew",
     "TriggerSetting": "qubecalib.instrument.quel.quel1.driver.TriggerSetting",
     "WaveSequenceTools": "qubecalib.qubecalib.WaveSequenceTools",
@@ -91,7 +101,7 @@ class Que1lDriver:
     NamedBox: type[NamedBoxProtocol]
     QuBEMasterClient: type[QuBEMasterClientProtocol]
     QubeCalib: type[QubeCalibProtocol]
-    Quel1Box: type[Quel1BoxProtocol]
+    Quel1Box: type[Quel1BoxCommonProtocol]
     Quel1ConfigOption: type[Quel1ConfigOptionProtocol]
     Quel1System: type[Quel1SystemProtocol]
     RunitId: type[RunitIdProtocol]
@@ -99,6 +109,11 @@ class Que1lDriver:
     Sequencer: type[SequencerProtocol]
     SequencerClient: type[SequencerClientProtocol]
     SingleAction: type[SingleActionProtocol]
+    SingleAwgId: type[SingleAwgIdProtocol]
+    SingleAwgSetting: type[SingleAwgSettingProtocol]
+    SingleRunitId: type[SingleRunitIdProtocol]
+    SingleRunitSetting: type[SingleRunitSettingProtocol]
+    SingleTriggerSetting: type[SingleTriggerSettingProtocol]
     Skew: type[SkewProtocol]
     TriggerSetting: type[TriggerSettingProtocol]
     WaveSequenceTools: type[WaveSequenceToolsProtocol]

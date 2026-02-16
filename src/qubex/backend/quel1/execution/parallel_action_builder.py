@@ -14,50 +14,15 @@ from typing import Any, Final, Protocol, TypeAlias, cast
 
 from qubex.backend.quel1.quel1_box_adapter import adapt_quel1_box
 from qubex.backend.quel1.quel1_driver_loader import load_quel1_driver
+from qubex.backend.quel1.quel1_driver_protocols import (
+    PortType,
+    Quel1SystemProtocol,
+)
 
-PortType: TypeAlias = Any
 CommonSetting: TypeAlias = Any
 SingleSetting: TypeAlias = Any
 CaptureParamMapKey: TypeAlias = tuple[str, PortType, int]
 CaptureParamMap: TypeAlias = dict[CaptureParamMapKey, Any]
-
-
-class _ClockmasterLike(Protocol):
-    """Protocol for clock-master access used only for diagnostics."""
-
-    def read_clock(self) -> Any:
-        """Return current master clock state."""
-        ...
-
-
-class _BoxLike(Protocol):
-    """Protocol for box operations required to build direct actions."""
-
-    def get_current_timecounter(self) -> int:
-        """Read current box clock counter."""
-        ...
-
-    def get_latest_sysref_timecounter(self) -> int:
-        """Read latest latched SYSREF clock counter."""
-        ...
-
-    def start_wavegen(
-        self,
-        channels: set[tuple[PortType, int]],
-        timecounter: int | None = None,
-    ) -> Any:
-        """Start waveform generation."""
-        ...
-
-
-class _SystemLike(Protocol):
-    """Protocol for system object consumed by parallel action builder."""
-
-    boxes: Mapping[str, _BoxLike]
-    box: Mapping[str, _BoxLike]
-    _clockmaster: _ClockmasterLike
-    timing_shift: dict[str, int]
-    displacement: int
 
 
 class _RunitIdLike(Protocol):
@@ -71,7 +36,7 @@ class _SingleActionLike(Protocol):
     """Protocol for per-box direct single action objects."""
 
     _cprms: Mapping[_RunitIdLike, Any]
-    box: _BoxLike
+    box: Any
     _wseqs: Mapping[Any, Any]
 
     def capture_start(self) -> dict[PortType, Any]:
@@ -95,10 +60,38 @@ class _ActionBuilderLike(Protocol):
     """Protocol for direct Action.build-compatible callables."""
 
     def __call__(
-        self, *, system: _SystemLike, settings: list[CommonSetting]
+        self, *, system: Quel1SystemProtocol, settings: list[CommonSetting]
     ) -> _WrappedActionLike:
         """Build direct action from common settings."""
         ...
+
+
+def _instantiate_awg_id(
+    *,
+    awg_id_class: type[Any],
+    box: str,
+    port: Any,
+    channel: int,
+) -> Any:
+    """Instantiate AWG ID for either common-style or single-style constructors."""
+    try:
+        return awg_id_class(box=box, port=port, channel=channel)
+    except TypeError:
+        return awg_id_class(port=port, channel=channel)
+
+
+def _instantiate_runit_id(
+    *,
+    runit_id_class: type[Any],
+    box: str,
+    port: Any,
+    runit: int,
+) -> Any:
+    """Instantiate runit ID for either common-style or single-style constructors."""
+    try:
+        return runit_id_class(box=box, port=port, runit=runit)
+    except TypeError:
+        return runit_id_class(port=port, runit=runit)
 
 
 def _convert_to_box_setting_dict(
@@ -138,10 +131,11 @@ def _convert_to_box_setting_dict(
         if hasattr(setting, "runit") and hasattr(setting, "cprm"):
             settings_by_box[setting.runit.box].append(
                 runit_setting_class(
-                    runit_id_class(
-                        setting.runit.box,
-                        setting.runit.port,
-                        setting.runit.runit,
+                    _instantiate_runit_id(
+                        runit_id_class=runit_id_class,
+                        box=setting.runit.box,
+                        port=setting.runit.port,
+                        runit=setting.runit.runit,
                     ),
                     setting.cprm,
                 )
@@ -149,10 +143,11 @@ def _convert_to_box_setting_dict(
         elif hasattr(setting, "awg") and hasattr(setting, "wseq"):
             settings_by_box[setting.awg.box].append(
                 awg_setting_class(
-                    awg_id_class(
-                        setting.awg.box,
-                        setting.awg.port,
-                        setting.awg.channel,
+                    _instantiate_awg_id(
+                        awg_id_class=awg_id_class,
+                        box=setting.awg.box,
+                        port=setting.awg.port,
+                        channel=setting.awg.channel,
                     ),
                     setting.wseq,
                 )
@@ -160,10 +155,11 @@ def _convert_to_box_setting_dict(
         elif hasattr(setting, "trigger_awg") and hasattr(setting, "triggerd_port"):
             settings_by_box[setting.trigger_awg.box].append(
                 trigger_setting_class(
-                    awg_id_class(
-                        setting.trigger_awg.box,
-                        setting.trigger_awg.port,
-                        setting.trigger_awg.channel,
+                    _instantiate_awg_id(
+                        awg_id_class=awg_id_class,
+                        box=setting.trigger_awg.box,
+                        port=setting.trigger_awg.port,
+                        channel=setting.trigger_awg.channel,
                     ),
                     setting.triggerd_port,
                 )
@@ -252,7 +248,7 @@ class ClockHealthCheckOptions:
 class _QubexMultiAction:
     """Qubex-side multi-action with optional clock-health I/O."""
 
-    _system: _SystemLike
+    _system: Quel1SystemProtocol
     _actions: MappingProxyType[str, _SingleActionLike]
     _estimated_timediff: MappingProxyType[str, int]
     _reference_box_name: str
@@ -379,7 +375,7 @@ class _QubexMultiAction:
 
 def build_parallel_multi_action(
     *,
-    system: _SystemLike,
+    system: Quel1SystemProtocol,
     settings: list[CommonSetting],
     action_builder: _ActionBuilderLike,
     logger: Logger,
@@ -394,7 +390,7 @@ def build_parallel_multi_action(
 
     Parameters
     ----------
-    system : _SystemLike
+    system : Quel1SystemProtocol
         Quel1System-like object used by direct action execution.
     settings : list[CommonSetting]
         Common direct-driver settings.
@@ -432,11 +428,11 @@ def build_parallel_multi_action(
 
     settings_by_box = _convert_to_box_setting_dict(
         settings=settings,
-        awg_id_class=driver.AwgId,
-        awg_setting_class=driver.AwgSetting,
-        runit_id_class=driver.RunitId,
-        runit_setting_class=driver.RunitSetting,
-        trigger_setting_class=driver.TriggerSetting,
+        awg_id_class=driver.SingleAwgId,
+        awg_setting_class=driver.SingleAwgSetting,
+        runit_id_class=driver.SingleRunitId,
+        runit_setting_class=driver.SingleRunitSetting,
+        trigger_setting_class=driver.SingleTriggerSetting,
     )
 
     # Single-box path keeps existing builder behavior and avoids multi-action
