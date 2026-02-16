@@ -217,3 +217,24 @@ def test_execute_measurement_schedule_delegates_to_executor(
     assert called["schedule"] is schedule
     assert called["config"] is config
     assert result is expected
+
+
+def test_disconnect_delegates_to_backend_manager() -> None:
+    """Given connected manager, disconnect delegates to backend manager."""
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called = {"disconnect": 0}
+
+    class _BackendManager:
+        def disconnect(self) -> None:
+            called["disconnect"] += 1
+
+    measurement.__dict__["_backend_manager"] = _BackendManager()
+
+    measurement.disconnect()
+
+    assert called["disconnect"] == 1

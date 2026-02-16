@@ -121,6 +121,10 @@ class MeasurementBackendManager:
         """Return True if device controller is connected."""
         return self.backend_controller.is_connected
 
+    def disconnect(self) -> None:
+        """Disconnect backend resources held by the active controller."""
+        self.backend_controller.disconnect()
+
     def check_link_status(self, box_list: list[str]) -> dict:
         """Check link status for the provided box list."""
         link_statuses = {

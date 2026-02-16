@@ -405,6 +405,10 @@ class MeasurementClient:
         """
         return self.backend_manager.is_connected()
 
+    def disconnect(self) -> None:
+        """Disconnect backend resources held by the measurement backend."""
+        self.backend_manager.disconnect()
+
     def check_link_status(self, box_list: list[str]) -> dict:
         """
         Check the link status of the boxes.

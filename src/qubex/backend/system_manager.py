@@ -663,6 +663,25 @@ This operation will overwrite the existing backend settings. Do you want to cont
                     ]
                 else:
                     continue
+                channels = getattr(experiment_port, "channels", ())
+                expected_fnco_count = (
+                    len(channels)
+                    if isinstance(channels, tuple) and len(channels) > 0
+                    else None
+                )
+                if (
+                    expected_fnco_count is not None
+                    and len(fnco_freqs) != expected_fnco_count
+                ):
+                    logger.warning(
+                        "Skipping backend port sync for %s:%s due to fnco count mismatch "
+                        "(expected=%s, actual=%s).",
+                        box_id,
+                        port_number,
+                        expected_fnco_count,
+                        len(fnco_freqs),
+                    )
+                    continue
                 updates.append(
                     (
                         box_id,

@@ -18,6 +18,7 @@ class FakePort:
 
     number: int
     type: PortType
+    channels: tuple[object, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -252,6 +253,44 @@ def test_sync_backend_settings_to_experiment_system_updates_in_place(
         "fnco_freqs": [300],
         "fullscale_current": None,
     }
+
+
+def test_sync_backend_settings_to_experiment_system_skips_fnco_count_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given mismatched fnco count, when syncing, then that port is skipped."""
+    manager = SystemManager.shared()
+    box = FakeBox(
+        id="A",
+        ports=(FakePort(number=1, type=PortType.READ_OUT, channels=(object(),)),),
+    )
+    experiment_system = FakeExperimentSystemForBackendSettings([box])
+    monkeypatch.setattr(manager, "_experiment_system", experiment_system)
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
+    backend_settings = {
+        "A": {
+            "ports": {
+                1: {
+                    "direction": "out",
+                    "sideband": "L",
+                    "lo_freq": 10_000_000_000,
+                    "cnco_freq": 1_500,
+                    "fullscale_current": 40_527,
+                    "channels": {},
+                },
+            }
+        }
+    }
+
+    manager._sync_backend_settings_to_experiment_system(  # noqa: SLF001
+        backend_settings=BackendSettings(backend_settings)
+    )
+
+    assert experiment_system.control_system.calls == []
+    assert (
+        "Skipping backend port sync for A:1 due to fnco count mismatch" in caplog.text
+    )
 
 
 def test_fetch_backend_settings_from_hardware_has_no_side_effect(

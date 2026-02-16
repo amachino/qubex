@@ -688,6 +688,10 @@ class Experiment:
         """Report whether the measurement backend is connected."""
         return self.ctx.is_connected()
 
+    def disconnect(self) -> None:
+        """Disconnect backend resources held by measurement and backend controllers."""
+        return self.ctx.disconnect()
+
     def check_status(self) -> None:
         """Log connectivity, clock, and configuration status."""
         return self.ctx.check_status()

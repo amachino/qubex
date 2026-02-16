@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
@@ -676,6 +676,79 @@ class Quel1BackendController:
         self._cap_resource_map = self.create_resource_map("cap")
         self._gen_resource_map = self.create_resource_map("gen")
 
+    def _append_resource_if_new(
+        self,
+        resources: list[Any],
+        seen: set[int],
+        resource: Any | None,
+    ) -> None:
+        """Append one resource object once by identity."""
+        if resource is None:
+            return
+        resource_id = id(resource)
+        if resource_id in seen:
+            return
+        seen.add(resource_id)
+        resources.append(resource)
+
+    def _collect_held_resources(self) -> list[Any]:
+        """Collect clockmaster and box objects currently held by the controller."""
+        resources: list[Any] = []
+        seen: set[int] = set()
+
+        if self._quel1system is not None:
+            system = self._quel1system
+            self._append_resource_if_new(
+                resources,
+                seen,
+                getattr(system, "_clockmaster", None),
+            )
+            boxes = getattr(system, "boxes", None)
+            if isinstance(boxes, Mapping):
+                for box in boxes.values():
+                    self._append_resource_if_new(resources, seen, box)
+
+        if self._boxpool is not None:
+            boxpool = self._boxpool
+            self._append_resource_if_new(
+                resources,
+                seen,
+                getattr(boxpool, "_clock_master", None),
+            )
+            pooled_boxes = getattr(boxpool, "_boxes", {})
+            if isinstance(pooled_boxes, Mapping):
+                for box, *_ in pooled_boxes.values():
+                    self._append_resource_if_new(resources, seen, box)
+
+        return resources
+
+    def _disconnect_resource(self, resource: Any) -> None:
+        """Disconnect one resource object via close/terminate if available."""
+        for method_name in ("close", "terminate"):
+            method = getattr(resource, method_name, None)
+            if not callable(method):
+                continue
+            method()
+            return
+
+    def _disconnect_resource_safely(self, resource: Any) -> None:
+        """Disconnect one resource and log errors without aborting cleanup."""
+        try:
+            self._disconnect_resource(resource)
+        except Exception:
+            logger.exception("Failed to disconnect backend resource: %r", resource)
+
+    def disconnect(self) -> None:
+        """Disconnect backend resources and reset connection-related state."""
+        for resource in self._collect_held_resources():
+            self._disconnect_resource_safely(resource)
+
+        self._clear_quel1system_box_cache()
+        self._quel1system = None
+        self._boxpool = None
+        self._cap_resource_map = None
+        self._gen_resource_map = None
+
     def get_box(self, box_name: str) -> Quel1Box:
         """
         Get the box object.
@@ -773,16 +846,17 @@ class Quel1BackendController:
 
         # relinkup the box if any of the links are down
         if not all(box.link_status().values()):
-            config_options = self._resolve_config_options(
-                box_name=box_name,
-                boxtype=box.boxtype,
-            )
-            box.relinkup(
-                use_204b=False,
-                background_noise_threshold=noise_threshold,
-                config_options=config_options,
-                **kwargs,
-            )
+            raise ConnectionError(f"Box {box_name} has down links before linkup.")
+            # config_options = self._resolve_config_options(
+            #     box_name=box_name,
+            #     boxtype=box.boxtype,
+            # )
+            # box.relinkup(
+            #     use_204b=False,
+            #     background_noise_threshold=noise_threshold,
+            #     config_options=config_options,
+            #     **kwargs,
+            # )
         box.reconnect(background_noise_threshold=noise_threshold)
 
         # check if all links are up

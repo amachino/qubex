@@ -41,6 +41,9 @@ class _ExperimentContextStub:
     def print_boxes(self) -> None:
         self.calls.append(("print_boxes", {}))
 
+    def disconnect(self) -> None:
+        self.calls.append(("disconnect", {}))
+
 
 class _BenchmarkingServicePropertyStub:
     def __init__(self) -> None:
@@ -217,3 +220,14 @@ def test_clifford_property_delegates_to_benchmarking_service() -> None:
     exp.__dict__["_benchmarking_service"] = benchmarking_stub
 
     assert exp.clifford is benchmarking_stub.clifford
+
+
+def test_disconnect_delegates_to_context() -> None:
+    """Given disconnect call, when called, then it delegates to experiment context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.disconnect()
+
+    assert context_stub.calls == [("disconnect", {})]

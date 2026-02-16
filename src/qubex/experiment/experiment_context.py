@@ -830,6 +830,10 @@ class ExperimentContext:
         """Report whether the measurement backend is connected."""
         return self._measurement.is_connected()
 
+    def disconnect(self) -> None:
+        """Disconnect backend resources held by measurement and backend controllers."""
+        self._measurement.disconnect()
+
     def check_status(self) -> None:
         """Log connectivity, clock, and configuration status."""
         if not self.is_connected():
