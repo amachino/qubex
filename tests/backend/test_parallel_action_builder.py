@@ -108,6 +108,11 @@ class _SingleLikeTriggerSetting:
     triggerd_port: str
 
 
+@dataclass(frozen=True)
+class _UnknownSetting:
+    payload: str
+
+
 def test_convert_to_box_setting_dict_keeps_box_in_rebuilt_driver_ids() -> None:
     """Given mixed settings, when converting by box, then rebuilt IDs keep box/port/channel fields."""
     # Arrange
@@ -123,18 +128,22 @@ def test_convert_to_box_setting_dict_keeps_box_in_rebuilt_driver_ids() -> None:
     # Act
     result = _convert_to_box_setting_dict(
         settings=settings,
-        awg_id_class=_FakeAwgId,
-        awg_setting_class=_FakeAwgSetting,
-        runit_id_class=_FakeRunitId,
-        runit_setting_class=_FakeRunitSetting,
-        trigger_setting_class=_FakeTriggerSetting,
+        awg_id_class=cast(Any, _FakeAwgId),
+        awg_setting_class=cast(Any, _FakeAwgSetting),
+        runit_id_class=cast(Any, _FakeRunitId),
+        runit_setting_class=cast(Any, _FakeRunitSetting),
+        trigger_setting_class=cast(Any, _FakeTriggerSetting),
     )
 
     # Assert
     assert set(result) == {"B0", "B1"}
-    runit_setting = next(item for item in result["B0"] if hasattr(item, "cprm"))
-    awg_setting = next(item for item in result["B0"] if hasattr(item, "wseq"))
-    trigger_setting = result["B1"][0]
+    runit_setting = cast(
+        _FakeRunitSetting, next(item for item in result["B0"] if hasattr(item, "cprm"))
+    )
+    awg_setting = cast(
+        _FakeAwgSetting, next(item for item in result["B0"] if hasattr(item, "wseq"))
+    )
+    trigger_setting = cast(_FakeTriggerSetting, result["B1"][0])
 
     assert runit_setting.runit == _FakeRunitId(box="B0", port="P0", runit=1)
     assert awg_setting.awg == _FakeAwgId(box="B0", port="P1", channel=2)
@@ -154,21 +163,48 @@ def test_convert_to_box_setting_dict_supports_single_style_ids_without_box() -> 
 
     result = _convert_to_box_setting_dict(
         settings=settings,
-        awg_id_class=_SingleLikeAwgId,
-        awg_setting_class=_SingleLikeAwgSetting,
-        runit_id_class=_SingleLikeRunitId,
-        runit_setting_class=_SingleLikeRunitSetting,
-        trigger_setting_class=_SingleLikeTriggerSetting,
+        awg_id_class=cast(Any, _SingleLikeAwgId),
+        awg_setting_class=cast(Any, _SingleLikeAwgSetting),
+        runit_id_class=cast(Any, _SingleLikeRunitId),
+        runit_setting_class=cast(Any, _SingleLikeRunitSetting),
+        trigger_setting_class=cast(Any, _SingleLikeTriggerSetting),
     )
 
-    runit_setting = next(item for item in result["B0"] if hasattr(item, "cprm"))
-    awg_setting = next(item for item in result["B0"] if hasattr(item, "wseq"))
-    trigger_setting = next(
-        item for item in result["B0"] if hasattr(item, "triggerd_port")
+    runit_setting = cast(
+        _SingleLikeRunitSetting,
+        next(item for item in result["B0"] if hasattr(item, "cprm")),
+    )
+    awg_setting = cast(
+        _SingleLikeAwgSetting,
+        next(item for item in result["B0"] if hasattr(item, "wseq")),
+    )
+    trigger_setting = cast(
+        _SingleLikeTriggerSetting,
+        next(item for item in result["B0"] if hasattr(item, "triggerd_port")),
     )
     assert runit_setting.runit == _SingleLikeRunitId(port="P0", runit=1)
     assert awg_setting.awg == _SingleLikeAwgId(port="P1", channel=2)
     assert trigger_setting.trigger_awg == _SingleLikeAwgId(port="P1", channel=2)
+
+
+def test_convert_to_box_setting_dict_ignores_unknown_settings() -> None:
+    """Given unknown settings, conversion skips entries outside expected shape."""
+    settings = [
+        _UnknownSetting(payload="noop"),
+        _RunitConfig(runit=_RunitRef(box="B0", port="P0", runit=1), cprm="CP"),
+    ]
+
+    result = _convert_to_box_setting_dict(
+        settings=settings,
+        awg_id_class=cast(Any, _SingleLikeAwgId),
+        awg_setting_class=cast(Any, _SingleLikeAwgSetting),
+        runit_id_class=cast(Any, _SingleLikeRunitId),
+        runit_setting_class=cast(Any, _SingleLikeRunitSetting),
+        trigger_setting_class=cast(Any, _SingleLikeTriggerSetting),
+    )
+
+    assert set(result) == {"B0"}
+    assert len(result["B0"]) == 1
 
 
 def test_build_parallel_multi_action_uses_driver_single_setting_classes(
@@ -249,3 +285,86 @@ def test_build_parallel_multi_action_uses_driver_single_setting_classes(
     )
 
     assert cprms == {}
+
+
+def test_build_parallel_multi_action_single_box_path_uses_action_builder(
+    monkeypatch,
+) -> None:
+    """Given one box, builder path uses action_builder and still returns capture map."""
+
+    @dataclass(frozen=True)
+    class _CommonRunitId:
+        box: str
+        port: str
+        runit: int
+
+    @dataclass(frozen=True)
+    class _CommonRunitSetting:
+        runit: _CommonRunitId
+        cprm: Any
+
+    @dataclass(frozen=True)
+    class _SingleRunitId:
+        port: str
+        runit: int
+
+    @dataclass(frozen=True)
+    class _SingleRunitSetting:
+        runit: _SingleRunitId
+        cprm: Any
+
+    class _SingleAction:
+        @classmethod
+        def build(cls, *, box: object, settings: list[object]) -> object:
+            _ = box
+            _ = settings
+            raise AssertionError("single build must not run on single-box fast path")
+
+    fake_driver = SimpleNamespace(
+        MultiAction=SimpleNamespace,
+        SingleAction=_SingleAction,
+        SingleAwgId=_SingleLikeAwgId,
+        SingleAwgSetting=_SingleLikeAwgSetting,
+        SingleRunitId=_SingleRunitId,
+        SingleRunitSetting=_SingleRunitSetting,
+        SingleTriggerSetting=_SingleLikeTriggerSetting,
+    )
+    monkeypatch.setattr(
+        parallel_action_builder, "load_quel1_driver", lambda: fake_driver
+    )
+
+    action_single = SimpleNamespace(
+        _cprms={
+            _SingleRunitId(port="P0", runit=1): "CP0",
+            _SingleRunitId(port="P0", runit=2): "CP1",
+        }
+    )
+    action_obj = SimpleNamespace(_action=("B0", action_single))
+    action_builder_calls: dict[str, Any] = {}
+
+    def _action_builder(**kwargs: Any) -> object:
+        action_builder_calls.update(kwargs)
+        return action_obj
+
+    settings = [
+        _CommonRunitSetting(runit=_CommonRunitId(box="B0", port="P0", runit=1), cprm=1)
+    ]
+    system = SimpleNamespace(
+        boxes={"B0": object()},
+        box={"B0": object()},
+        _clockmaster=SimpleNamespace(read_clock=lambda: 0),
+        timing_shift={"B0": 0},
+        displacement=0,
+    )
+
+    action, cprms = build_parallel_multi_action(
+        system=cast(Any, system),
+        settings=settings,
+        action_builder=cast(Any, _action_builder),
+        logger=logging.getLogger(__name__),
+    )
+
+    assert action is action_obj
+    assert action_builder_calls["system"] is system
+    assert action_builder_calls["settings"] == settings
+    assert cprms == {("B0", "P0", 1): "CP0", ("B0", "P0", 2): "CP1"}

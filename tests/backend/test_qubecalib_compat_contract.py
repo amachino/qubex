@@ -13,6 +13,8 @@ try:
     SequencerClient = _compat.SequencerClient
     Quel1System = _compat.Quel1System
     Action = _compat.Action
+    SingleAction = _compat.SingleAction
+    MultiAction = _compat.MultiAction
     AwgId = _compat.AwgId
     AwgSetting = _compat.AwgSetting
     NamedBox = _compat.NamedBox
@@ -48,6 +50,8 @@ except ModuleNotFoundError:
     SequencerClient = _clockmaster.SequencerClient
     Quel1System = _quel1.Quel1System
     Action = _driver.Action
+    SingleAction = _driver.single.Action
+    MultiAction = _driver.multi.Action
     AwgId = _driver.AwgId
     AwgSetting = _driver.AwgSetting
     NamedBox = _driver.NamedBox
@@ -93,6 +97,17 @@ def test_qubecalib_import_paths_required_by_qubex_are_available() -> None:
     assert TriggerSetting.__name__ == "TriggerSetting"
     assert hasattr(single, "Action")
     assert hasattr(multi, "Action")
+    assert SingleAction is single.Action
+    assert MultiAction is multi.Action
+
+    assert Action is not SingleAction
+    assert Action is not MultiAction
+    assert SingleAction is not MultiAction
+    assert AwgId is not SingleAwgId
+    assert AwgSetting is not SingleAwgSetting
+    assert RunitId is not SingleRunitId
+    assert RunitSetting is not SingleRunitSetting
+    assert TriggerSetting is not SingleTriggerSetting
 
     assert BoxPool.__name__ == "BoxPool"
     assert Converter.__name__ == "Converter"

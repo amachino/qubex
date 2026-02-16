@@ -7,6 +7,8 @@ from datetime import datetime
 from os import PathLike
 from typing import Any, ClassVar, Protocol
 
+from typing_extensions import Self
+
 PortType = int | tuple[int, int]
 StatusMap = dict[str, Any]
 DataMap = dict[str, Any]
@@ -14,7 +16,9 @@ ConfigMap = dict[str, Any]
 
 
 class ActionProtocol(Protocol):
-    """Protocol for direct action class symbols."""
+    """Protocol for direct action class symbols and their built instances."""
+
+    _action: Any
 
     @classmethod
     def build(
@@ -24,8 +28,17 @@ class ActionProtocol(Protocol):
         settings: list[
             RunitSettingProtocol | AwgSettingProtocol | TriggerSettingProtocol
         ],
-    ) -> DirectActionProtocol:
+    ) -> ActionProtocol:
         """Build an action Any from direct-driver settings."""
+        ...
+
+    def action(
+        self,
+    ) -> tuple[
+        dict[tuple[str, PortType], Any],
+        dict[tuple[str, PortType, int], Any],
+    ]:
+        """Execute action and return status/data maps."""
         ...
 
 
@@ -43,6 +56,9 @@ class AwgIdProtocol(Protocol):
 
 class AwgSettingProtocol(Protocol):
     """Protocol for driver AWG setting objects."""
+
+    awg: AwgIdProtocol
+    wseq: Any
 
     def __init__(self, awg: AwgIdProtocol, wseq: Any) -> None:
         """Create one AWG setting."""
@@ -62,6 +78,9 @@ class SingleAwgIdProtocol(Protocol):
 
 class SingleAwgSettingProtocol(Protocol):
     """Protocol for single-box AWG setting objects."""
+
+    awg: SingleAwgIdProtocol
+    wseq: Any
 
     def __init__(self, awg: SingleAwgIdProtocol, wseq: Any) -> None:
         """Create one single-box AWG setting."""
@@ -172,19 +191,6 @@ class ConverterProtocol(Protocol):
         modfreqs: Mapping[str, float],
     ) -> Any:
         """Multiplex generator sequences into one waveform sequence."""
-        ...
-
-
-class DirectActionProtocol(Protocol):
-    """Protocol for built action instances returned by ``Action.build``."""
-
-    def action(
-        self,
-    ) -> tuple[
-        dict[tuple[str, PortType], Any],
-        dict[tuple[str, PortType, int], Any],
-    ]:
-        """Execute action and return status/data maps."""
         ...
 
 
@@ -535,6 +541,9 @@ class RunitIdProtocol(Protocol):
 class RunitSettingProtocol(Protocol):
     """Protocol for driver runit setting objects."""
 
+    runit: RunitIdProtocol
+    cprm: Any
+
     def __init__(self, runit: RunitIdProtocol, cprm: Any) -> None:
         """Create one runit setting."""
         ...
@@ -553,6 +562,9 @@ class SingleRunitIdProtocol(Protocol):
 
 class SingleRunitSettingProtocol(Protocol):
     """Protocol for single-box runit setting objects."""
+
+    runit: SingleRunitIdProtocol
+    cprm: Any
 
     def __init__(self, runit: SingleRunitIdProtocol, cprm: Any) -> None:
         """Create one single-box runit setting."""
@@ -610,7 +622,7 @@ class SequencerProtocol(Protocol):
         *,
         status: dict[tuple[str, PortType], Any],
         results: dict[tuple[str, PortType, int], Any],
-        action: DirectActionProtocol,
+        action: ActionProtocol,
         crmap: dict[str, dict[str, Any]],
     ) -> tuple[StatusMap, DataMap, ConfigMap]:
         """Parse low-level capture results into qubex-compatible payload."""
@@ -622,7 +634,12 @@ class SequencerProtocol(Protocol):
 
 
 class SingleActionProtocol(Protocol):
-    """Protocol for single-action class symbols."""
+    """Protocol for single-action class symbols and their built instances."""
+
+    _cprms: Mapping[SingleRunitIdProtocol, Any]
+    _wseqs: Mapping[Any, Any]
+    _triggers: Mapping[Any, Any]
+    box: Quel1BoxProtocol
 
     @classmethod
     def build(
@@ -634,8 +651,19 @@ class SingleActionProtocol(Protocol):
             | SingleAwgSettingProtocol
             | SingleTriggerSettingProtocol
         ],
-    ) -> Any:
+    ) -> Self:
         """Build one single-box action from settings."""
+        ...
+
+    def capture_start(self) -> dict[PortType, Any]:
+        """Start capture and return future map."""
+        ...
+
+    def capture_stop(
+        self,
+        futures: dict[PortType, Any],
+    ) -> tuple[dict[PortType, Any], dict[tuple[PortType, int], Any]]:
+        """Stop capture and collect status/data."""
         ...
 
 
@@ -725,6 +753,9 @@ class SystemConfigDatabaseProtocol(Protocol):
 class TriggerSettingProtocol(Protocol):
     """Protocol for driver trigger setting objects."""
 
+    trigger_awg: AwgIdProtocol
+    triggerd_port: PortType
+
     def __init__(self, trigger_awg: AwgIdProtocol, triggerd_port: PortType) -> None:
         """Create one trigger setting."""
         ...
@@ -732,6 +763,9 @@ class TriggerSettingProtocol(Protocol):
 
 class SingleTriggerSettingProtocol(Protocol):
     """Protocol for single-box trigger setting objects."""
+
+    trigger_awg: SingleAwgIdProtocol
+    triggerd_port: PortType
 
     def __init__(
         self,
