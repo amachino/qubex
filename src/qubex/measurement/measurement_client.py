@@ -653,7 +653,7 @@ class MeasurementClient:
         ----------
         waveforms : Mapping[str, IQArray]
             The control waveforms for each target.
-            Waveforms are complex I/Q arrays with the sampling period of 2 ns.
+            Waveforms are complex I/Q arrays sampled at `self.sampling_period` ns.
         mode : MeasurementMode, optional
             The measurement mode, by default "single".
             - "single": Measure once.

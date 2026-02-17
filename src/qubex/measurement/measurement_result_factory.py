@@ -25,6 +25,8 @@ class MeasurementResultFactory:
         backend_result: Quel1BackendRawResult,
         measurement_config: MeasurementConfig,
         device_config: dict,
+        sampling_period_ns: float | None = None,
+        avg_sample_stride: int | None = None,
     ) -> MeasurementResult:
         """
         Build a measurement result from backend output and runtime config.
@@ -37,6 +39,10 @@ class MeasurementResultFactory:
             Configuration used for the run.
         device_config : dict
             Device configuration snapshot to store in result.
+        sampling_period_ns : float | None, optional
+            Sampling period (ns) used to generate time axes in legacy adapters.
+        avg_sample_stride : int | None, optional
+            Mode-specific stride multiplier for AVG-mode time axes.
 
         Returns
         -------
@@ -82,4 +88,6 @@ class MeasurementResultFactory:
             data=dict(measure_data),
             device_config=device_config,
             measurement_config=measurement_config.to_dict(),
+            sampling_period_ns=sampling_period_ns,
+            avg_sample_stride=avg_sample_stride,
         )

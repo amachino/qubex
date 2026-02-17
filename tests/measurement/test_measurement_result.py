@@ -49,3 +49,28 @@ def test_measure_result_mitigated_counts(measure_result: MeasureResult):
     """MeasureResult should compute mitigated counts per basis label."""
     mitigated = measure_result.get_mitigated_counts()
     assert set(mitigated.keys()) == {"0", "1"}
+
+
+def test_measure_data_times_use_runtime_sampling_period_in_single_mode() -> None:
+    """Given single-mode data with custom dt, when reading times, then dt is used directly."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([[1.0 + 0.0j], [2.0 + 0.0j], [3.0 + 0.0j]]),
+        sampling_period_ns=0.4,
+    )
+
+    assert np.array_equal(data.times, np.array([0.0, 0.4, 0.8]))
+
+
+def test_measure_data_times_use_runtime_sampling_period_in_avg_mode() -> None:
+    """Given avg-mode data with custom dt and stride, when reading times, then dt*stride is used."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.AVG,
+        raw=np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]),
+        sampling_period_ns=0.4,
+        avg_sample_stride=2,
+    )
+
+    assert np.array_equal(data.times, np.array([0.0, 0.8, 1.6]))

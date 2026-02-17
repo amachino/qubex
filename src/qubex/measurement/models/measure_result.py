@@ -23,8 +23,9 @@ from qubex.measurement.classifiers import StateClassifier
 
 from .measurement_record import MeasurementRecord
 
-SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
-SAMPLING_PERIOD_AVG = SAMPLING_PERIOD * 4
+DEFAULT_SAMPLING_PERIOD_NS = SAMPLING_PERIOD
+# AVG mode uses a 4x stride by default due to 4-way multiplexed readout demodulation.
+DEFAULT_AVG_SAMPLE_STRIDE = 4
 
 
 class MeasureMode(Enum):
@@ -52,6 +53,15 @@ class MeasureData:
     mode: MeasureMode
     raw: NDArray
     classifier: StateClassifier | None = None
+    sampling_period_ns: float = DEFAULT_SAMPLING_PERIOD_NS
+    avg_sample_stride: int = DEFAULT_AVG_SAMPLE_STRIDE
+
+    def __post_init__(self) -> None:
+        """Validate sampling metadata values."""
+        if self.sampling_period_ns <= 0:
+            raise ValueError("sampling_period_ns must be positive.")
+        if self.avg_sample_stride <= 0:
+            raise ValueError("avg_sample_stride must be positive.")
 
     @cached_property
     def n_states(self) -> int:
@@ -93,9 +103,11 @@ class MeasureData:
     def times(self) -> NDArray[np.float64]:
         """Return capture times for the measurement mode."""
         if self.mode == MeasureMode.SINGLE:
-            return np.arange(self.length) * SAMPLING_PERIOD_SINGLE
+            return np.arange(self.length) * self.sampling_period_ns
         elif self.mode == MeasureMode.AVG:
-            return np.arange(self.length) * SAMPLING_PERIOD_AVG
+            return np.arange(self.length) * (
+                self.sampling_period_ns * self.avg_sample_stride
+            )
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -250,7 +262,7 @@ class MeasureData:
         elif self.mode == MeasureMode.AVG:
             return viz.plot_waveform(
                 data=self.raw,
-                sampling_period=SAMPLING_PERIOD_AVG,
+                sampling_period=self.sampling_period_ns * self.avg_sample_stride,
                 title=title or f"Readout waveform : {self.target}",
                 xlabel="Capture time (ns)",
                 ylabel="Signal (arb. units)",

@@ -19,7 +19,7 @@ Track improvements discovered during development that are out of the current rel
 | ID | Area | Proposal | Why | Suggested timing | Status |
 | --- | --- | --- | --- | --- | --- |
 | IB-001 | Measurement backend architecture | Add backend capability registry and adapter selection by explicit backend kind, not only controller hints. | Avoid ambiguous mode detection and make multi-backend support safer. | v1.6 planning | proposed |
-| IB-002 | Measurement result model | Carry sampling period metadata per result object and avoid implicit global defaults in downstream visualization. | Prevent silent unit drift across mixed backends. | after v1.5.0 GA | proposed |
+| IB-002 | Measurement result model | Carry sampling period metadata per result object and avoid implicit global defaults in downstream visualization. | Prevent silent unit drift across mixed backends. | after v1.5.0 GA | in_progress (metadata propagation started in v1.5.0 work) |
 | IB-003 | Experiment/contrib timing | Replace remaining pulse-level fixed-period assumptions (for example `Pulse.SAMPLING_PERIOD` based quantization in contrib modules) with backend-aware helpers where feasible. | Improve portability to future relaxed/strict backends. | after v1.5.0 GA | proposed |
 | IB-004 | Hardware validation workflow | Maintain reusable real-hardware checklist/template in `docs/developer-notes/hardware-validation-template.md`. | Make QuEL-1/QuEL-3 regression checks repeatable across releases. | during v1.5.x | in_progress |
 | IB-005 | CI test layering | Split mandatory fast checks and scheduled hardware-integration checks in CI/release workflow. | Keep PR cycle fast while protecting hardware compatibility. | during v1.5.x | proposed |

@@ -9,6 +9,8 @@ import numpy as np
 
 from .classifiers.state_classifier import StateClassifier
 from .models.measure_result import (
+    DEFAULT_AVG_SAMPLE_STRIDE,
+    DEFAULT_SAMPLING_PERIOD_NS,
     MeasureData,
     MeasureMode,
     MeasureResult,
@@ -19,6 +21,32 @@ from .models.measurement_result import MeasurementResult
 
 class MeasurementResultConverter:
     """Convert `MeasurementResult` to and from legacy result classes."""
+
+    @staticmethod
+    def _resolve_sampling_period_ns(
+        *,
+        explicit: float | None,
+        result: MeasurementResult,
+    ) -> float:
+        """Resolve sampling period for legacy result models."""
+        if explicit is not None:
+            return explicit
+        if result.sampling_period_ns is not None:
+            return float(result.sampling_period_ns)
+        return DEFAULT_SAMPLING_PERIOD_NS
+
+    @staticmethod
+    def _resolve_avg_sample_stride(
+        *,
+        explicit: int | None,
+        result: MeasurementResult,
+    ) -> int:
+        """Resolve AVG-mode stride for legacy result models."""
+        if explicit is not None:
+            return explicit
+        if result.avg_sample_stride is not None:
+            return int(result.avg_sample_stride)
+        return DEFAULT_AVG_SAMPLE_STRIDE
 
     @staticmethod
     def from_multiple(multiple: MultipleMeasureResult) -> MeasurementResult:
@@ -39,10 +67,22 @@ class MeasurementResultConverter:
             target: [np.asarray(item.raw) for item in captures]
             for target, captures in multiple.data.items()
         }
+        first_data = next(iter(multiple.data.values()), [])
+        first_capture = first_data[0] if first_data else None
         return MeasurementResult(
             mode=multiple.mode.value,
             data=data,
             device_config=multiple.config,
+            sampling_period_ns=(
+                first_capture.sampling_period_ns
+                if isinstance(first_capture, MeasureData)
+                else None
+            ),
+            avg_sample_stride=(
+                first_capture.avg_sample_stride
+                if isinstance(first_capture, MeasureData)
+                else None
+            ),
         )
 
     @staticmethod
@@ -51,6 +91,8 @@ class MeasurementResultConverter:
         *,
         config: dict[str, Any] | None = None,
         classifiers: Mapping[str, StateClassifier] | None = None,
+        sampling_period_ns: float | None = None,
+        avg_sample_stride: int | None = None,
     ) -> MultipleMeasureResult:
         """
         Convert a canonical result to the legacy multi-capture model.
@@ -74,6 +116,16 @@ class MeasurementResultConverter:
             result.device_config if config is None else config
         )
         classifier_map = {} if classifiers is None else classifiers
+        resolved_sampling_period = (
+            MeasurementResultConverter._resolve_sampling_period_ns(
+                explicit=sampling_period_ns,
+                result=result,
+            )
+        )
+        resolved_avg_stride = MeasurementResultConverter._resolve_avg_sample_stride(
+            explicit=avg_sample_stride,
+            result=result,
+        )
         legacy_data = {
             target: [
                 MeasureData(
@@ -81,6 +133,8 @@ class MeasurementResultConverter:
                     mode=mode,
                     raw=np.asarray(raw),
                     classifier=classifier_map.get(target),
+                    sampling_period_ns=resolved_sampling_period,
+                    avg_sample_stride=resolved_avg_stride,
                 )
                 for raw in captures
             ]
@@ -99,6 +153,8 @@ class MeasurementResultConverter:
         index: int = 0,
         config: dict[str, Any] | None = None,
         classifiers: Mapping[str, StateClassifier] | None = None,
+        sampling_period_ns: float | None = None,
+        avg_sample_stride: int | None = None,
     ) -> MeasureResult:
         """
         Convert one capture index to a legacy per-target result.
@@ -126,6 +182,16 @@ class MeasurementResultConverter:
         """
         mode = MeasureMode(result.mode)
         classifier_map = {} if classifiers is None else classifiers
+        resolved_sampling_period = (
+            MeasurementResultConverter._resolve_sampling_period_ns(
+                explicit=sampling_period_ns,
+                result=result,
+            )
+        )
+        resolved_avg_stride = MeasurementResultConverter._resolve_avg_sample_stride(
+            explicit=avg_sample_stride,
+            result=result,
+        )
         single_data: dict[str, MeasureData] = {}
         for target, captures in result.data.items():
             if not (-len(captures) <= index < len(captures)):
@@ -137,6 +203,8 @@ class MeasurementResultConverter:
                 mode=mode,
                 raw=np.asarray(captures[index]),
                 classifier=classifier_map.get(target),
+                sampling_period_ns=resolved_sampling_period,
+                avg_sample_stride=resolved_avg_stride,
             )
 
         return MeasureResult(

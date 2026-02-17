@@ -78,6 +78,24 @@ def test_to_measure_result_raises_for_invalid_index() -> None:
         MeasurementResultConverter.to_measure_result(result, index=10)
 
 
+def test_to_measure_result_propagates_sampling_metadata() -> None:
+    """Given canonical result with sampling metadata, when converting, then legacy data keeps that metadata."""
+    result = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
+        device_config={"shots": 2},
+        measurement_config={"mode": "avg", "shots": 2},
+        sampling_period_ns=0.4,
+        avg_sample_stride=2,
+    )
+
+    single = MeasurementResultConverter.to_measure_result(result, index=1)
+
+    assert single.data["Q00"].sampling_period_ns == 0.4
+    assert single.data["Q00"].avg_sample_stride == 2
+    assert np.array_equal(single.data["Q00"].times, np.array([0.0]))
+
+
 def test_json_roundtrip_preserves_raw_arrays() -> None:
     """Given serialized measurement result, when deserializing, then raw arrays are preserved."""
     original = MeasurementResult(

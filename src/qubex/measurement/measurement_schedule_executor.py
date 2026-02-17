@@ -106,6 +106,27 @@ class MeasurementScheduleExecutor:
             return MeasurementConstraintProfile.relaxed(sampling_period)
         return MeasurementConstraintProfile.strict_quel1(sampling_period)
 
+    @staticmethod
+    def _resolve_avg_sample_stride(
+        backend_controller: Quel1BackendController,
+        constraint_profile: MeasurementConstraintProfile | None,
+    ) -> int:
+        """Resolve AVG-mode time-stride multiplier from backend capability hints."""
+        backend_stride = getattr(
+            backend_controller,
+            "MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE",
+            None,
+        )
+        if isinstance(backend_stride, int) and backend_stride > 0:
+            return backend_stride
+        if (
+            isinstance(constraint_profile, MeasurementConstraintProfile)
+            and constraint_profile.word_length_samples is not None
+            and constraint_profile.word_length_samples > 0
+        ):
+            return int(constraint_profile.word_length_samples)
+        return 4
+
     def execute(
         self,
         *,
@@ -139,5 +160,14 @@ class MeasurementScheduleExecutor:
             backend_result=backend_result,
             measurement_config=config,
             device_config=self._backend_controller.box_config,
+            sampling_period_ns=getattr(
+                self._measurement_backend_adapter,
+                "sampling_period",
+                self._resolve_sampling_period_ns(self._backend_controller),
+            ),
+            avg_sample_stride=self._resolve_avg_sample_stride(
+                self._backend_controller,
+                getattr(self._measurement_backend_adapter, "constraint_profile", None),
+            ),
         )
         return result

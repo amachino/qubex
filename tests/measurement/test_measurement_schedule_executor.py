@@ -123,6 +123,8 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
     assert typed_kwargs["backend_result"] is backend_result
     assert typed_kwargs["measurement_config"] is config
     assert typed_kwargs["device_config"] == {"shots": 2}
+    assert typed_kwargs["sampling_period_ns"] == 2.0
+    assert typed_kwargs["avg_sample_stride"] == 4
     assert result is expected
 
 

@@ -27,7 +27,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | P0 | Implement QuEL-3 adapter with `quelware-client` | 2026-02-28 | Reference source available at `packages/quelware-client` (not yet tracked in this repo) | TODO |
 | P0 | Prepare compatibility contract tests at `MeasurementClient` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | TODO |
 | P0 | Implement synchronized measurement protocol execution path | 2026-02-29 | Task primitives baseline | TODO |
-| P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | TODO |
+| P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | IN_PROGRESS (measurement result time-axis path migrated) |
 | P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
 | P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-08 | Async primitives | TODO |
 | P1 | Publish beta release notes and migration notes | 2026-02-29 | Major features for beta fixed | TODO |
@@ -131,6 +131,11 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - Replace fixed sampling-period usage in QuEL-3 path with backend/controller `dt`
 - Keep QuEL-1 behavior unchanged by resolving `dt=2.0` through the same source-of-truth mechanism
 - Keep sample-count based constants (`WORD_LENGTH`, `BLOCK_LENGTH`, etc.) and derive durations from `dt`
+
+### Progress notes
+
+- 2026-02-17: `measurement/models/measure_result.py` time-axis generation no longer hardcodes QuEL-1 fixed constants; backend-derived `sampling_period_ns` metadata is propagated through canonical result conversion.
+- 2026-02-17: `avg` mode stride is now explicit metadata (`avg_sample_stride`, default `4`) to preserve 4-way multiplexed readout demodulation semantics while allowing backend-specific override.
 
 ## Commit plan
 
