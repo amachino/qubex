@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from types import MethodType
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from qxpulse import PulseSchedule
 
+from qubex.backend import BackendExecutionRequest
+from qubex.backend.quel1 import Quel1BackendRawResult
 from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_schedule_executor import MeasurementScheduleExecutor
@@ -217,6 +219,132 @@ def test_execute_measurement_schedule_delegates_to_executor(
     assert called["schedule"] is schedule
     assert called["config"] is config
     assert result is expected
+
+
+def test_execute_measurement_schedule_uses_backend_custom_factories(
+    monkeypatch,
+) -> None:
+    """Given backend factory hooks, when executing a schedule, then MeasurementClient uses the custom path."""
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+
+    pulse_schedule = PulseSchedule(["RQ00"])
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    config = _make_config()
+    called: dict[str, object] = {}
+
+    def _unexpected_backend_executor(**kwargs: object) -> object:
+        raise AssertionError("Quel1BackendExecutor fallback should not be used.")
+
+    def _unexpected_adapter(**kwargs: object) -> object:
+        raise AssertionError("Quel1MeasurementBackendAdapter fallback should not be used.")
+
+    def _unexpected_result_factory(**kwargs: object) -> object:
+        raise AssertionError("MeasurementResultFactory fallback should not be used.")
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _unexpected_backend_executor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        _unexpected_adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        _unexpected_result_factory,
+    )
+
+    class _CustomBackendExecutor:
+        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
+            called["request"] = request
+            return Quel1BackendRawResult(status={}, data={}, config={})
+
+    class _CustomAdapter:
+        sampling_period = 0.4
+        constraint_profile = None
+
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            called["validated_schedule"] = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            called["request_schedule"] = schedule
+            called["request_config"] = config
+            return BackendExecutionRequest(payload=object())
+
+    class _CustomResultFactory:
+        def create(self, **kwargs: object) -> MeasurementResult:
+            called["result_kwargs"] = kwargs
+            return MeasurementResult(
+                mode="avg",
+                data={"Q00": [np.array([1.0 + 0.0j])]},
+                device_config={"kind": "quel3"},
+                measurement_config={"mode": "avg"},
+            )
+
+    class _BackendController:
+        box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
+        DEFAULT_SAMPLING_PERIOD: ClassVar[float] = 0.4
+        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "relaxed"
+
+        def create_measurement_backend_executor(
+            self,
+            *,
+            execution_mode: str | None,
+            clock_health_checks: bool | None,
+        ) -> _CustomBackendExecutor:
+            called["execution_mode"] = execution_mode
+            called["clock_health_checks"] = clock_health_checks
+            return _CustomBackendExecutor()
+
+        def create_measurement_backend_adapter(
+            self,
+            *,
+            experiment_system: object,
+            constraint_profile: object,
+        ) -> _CustomAdapter:
+            called["experiment_system"] = experiment_system
+            called["constraint_profile"] = constraint_profile
+            return _CustomAdapter()
+
+        def create_measurement_result_factory(
+            self,
+            *,
+            experiment_system: object,
+        ) -> _CustomResultFactory:
+            called["result_factory_experiment_system"] = experiment_system
+            return _CustomResultFactory()
+
+    experiment_system = object()
+    measurement.__dict__["_backend_manager"] = type(
+        "_BM",
+        (),
+        {
+            "backend_controller": _BackendController(),
+            "experiment_system": experiment_system,
+        },
+    )()
+
+    result = measurement.execute_measurement_schedule(schedule=schedule, config=config)
+
+    assert called["validated_schedule"] is schedule
+    assert called["request_schedule"] is schedule
+    assert called["request_config"] is config
+    assert called["experiment_system"] is experiment_system
+    assert called["result_factory_experiment_system"] is experiment_system
+    assert result.device_config == {"kind": "quel3"}
 
 
 def test_disconnect_delegates_to_backend_manager() -> None:

@@ -25,7 +25,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | --- | --- | --- | --- | --- |
 | P0 | Define QuEL-3 integration design (adapter boundary, lifecycle, error model) | 2026-02-21 | None | TODO |
 | P0 | Implement QuEL-3 adapter with `quelware-client` | 2026-02-28 | Reference source available at `packages/quelware-client` (not yet tracked in this repo) | TODO |
-| P0 | Prepare compatibility contract tests at `MeasurementClient` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | TODO |
+| P0 | Prepare compatibility contract tests at `MeasurementClient` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
 | P0 | Implement synchronized measurement protocol execution path | 2026-02-29 | Task primitives baseline | TODO |
 | P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | IN_PROGRESS (measurement result time-axis path migrated) |
 | P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
@@ -138,6 +138,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-17: `avg` mode stride is now explicit metadata (`avg_sample_stride`, default `4`) to preserve 4-way multiplexed readout demodulation semantics while allowing backend-specific override.
 - 2026-02-17: `MeasurementScheduleExecutor.create_default()` now supports backend-provided custom factories (`create_measurement_backend_executor`, `create_measurement_backend_adapter`) with contract tests, while keeping QuEL-1 defaults unchanged.
 - 2026-02-17: Added `/docs/developer-notes/quel3-adapter-interface-draft.md` with `quelware-client` API mapping, constraint assumptions, and open questions for QuEL-3 adapter implementation.
+- 2026-02-17: Added `MeasurementClient`-level contract test to ensure backend custom factory hooks are honored end-to-end by `execute_measurement_schedule()`.
 
 ## Commit plan
 
