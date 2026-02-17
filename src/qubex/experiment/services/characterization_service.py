@@ -37,7 +37,6 @@ from qubex.experiment.experiment_constants import (
     DEFAULT_RABI_FREQUENCY,
     DEFAULT_RABI_TIME_RANGE,
     DEFAULT_SHOTS,
-    SAMPLING_PERIOD,
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.experiment_util import ExperimentUtil
@@ -1154,16 +1153,12 @@ class CharacterizationService:
                 51,
             )
 
-        if n_cpmg is not None:
-            time_range = self.ctx.util.discretize_time_range(
-                time_range=np.asarray(time_range),
-                sampling_period=2 * SAMPLING_PERIOD * n_cpmg,
-            )
-        else:
-            time_range = self.ctx.util.discretize_time_range(
-                time_range=np.asarray(time_range),
-                sampling_period=2 * SAMPLING_PERIOD,
-            )
+        sampling_period = self.ctx.measurement.sampling_period
+        cpmg_count = n_cpmg if n_cpmg is not None else 1
+        time_range = self.ctx.util.discretize_time_range(
+            time_range=np.asarray(time_range),
+            sampling_period=2 * sampling_period * cpmg_count,
+        )
 
         data: dict[str, T2Data] = {}
 

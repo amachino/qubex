@@ -39,7 +39,6 @@ from qubex.experiment.experiment_constants import (
     DEFAULT_SHOTS,
     HPI_DURATION,
     HPI_RAMPTIME,
-    SAMPLING_PERIOD,
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.experiment_result import (
@@ -2214,7 +2213,7 @@ class MeasurementService:
         )
 
         if plot:
-            times = indices * SAMPLING_PERIOD
+            times = indices * self.ctx.measurement.sampling_period
             for target, states in result.items():
                 viz.plot_bloch_vectors(
                     times=times,

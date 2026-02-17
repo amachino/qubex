@@ -36,7 +36,6 @@ from qubex.experiment.experiment_constants import (
     HPI_RAMPTIME,
     PI_DURATION,
     PI_RAMPTIME,
-    SAMPLING_PERIOD,
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.experiment_result import AmplCalibData, ExperimentResult
@@ -2033,12 +2032,13 @@ class CalibrationService:
             adiabatic_safe_factor = self._adiabatic_safe_factor(
                 control_qubit, target_qubit
             )
+        sampling_period = self.ctx.measurement.sampling_period
 
         def _create_time_range(
             zx90_duration: float,
         ) -> NDArray:
             period = 4 * zx90_duration
-            dt = (period / n_points_per_cycle) // SAMPLING_PERIOD * SAMPLING_PERIOD
+            dt = (period / n_points_per_cycle) // sampling_period * sampling_period
             duration = min(period * n_cycles, max_time_range)
             return np.arange(0, duration + 1, dt)
 

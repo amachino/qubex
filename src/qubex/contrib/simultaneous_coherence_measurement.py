@@ -14,7 +14,6 @@ from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
-    SAMPLING_PERIOD,
 )
 from qubex.experiment.models.experiment_result import (
     ExperimentResult,
@@ -88,9 +87,10 @@ def simultaneous_coherence_measurement(
     if time_range is None:
         time_range = np.arange(0, 50_001, 1000)
 
+    sampling_period = exp.ctx.measurement.sampling_period
     discretized_time_range = exp.ctx.util.discretize_time_range(
         time_range=np.asarray(time_range),
-        sampling_period=2 * SAMPLING_PERIOD,
+        sampling_period=2 * sampling_period,
     )
     if discretized_time_range is None:
         raise ValueError("time_range could not be discretized.")
