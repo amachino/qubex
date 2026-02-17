@@ -18,7 +18,10 @@ from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_
 
 from .execution import SequencerExecutionEngine
 from .execution.parallel_action_builder import ClockHealthCheckOptions
-from .quel1_backend_constants import DEFAULT_EXECUTION_MODE
+from .quel1_backend_constants import (
+    DEFAULT_EXECUTION_MODE,
+    WORD_LENGTH,
+)
 from .quel1_box_adapter import adapt_quel1_box
 from .quel1_driver_loader import load_quel1_driver
 
@@ -70,6 +73,11 @@ class Quel1BackendRawResult:
 
 class Quel1BackendController:
     """Control and query device state through qube-calib."""
+
+    # Measurement capability hints consumed by measurement-layer selector logic.
+    MEASUREMENT_BACKEND_KIND: Literal["quel1"] = "quel1"
+    MEASUREMENT_CONSTRAINT_MODE: Literal["strict"] = "strict"
+    MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = WORD_LENGTH
 
     def __init__(
         self,
