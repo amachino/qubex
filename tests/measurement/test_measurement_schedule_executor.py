@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, ClassVar, cast
 
 import numpy as np
+import pytest
 from qxpulse import PulseSchedule
 
 from qubex.backend import (
@@ -439,3 +440,73 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
     assert isinstance(profile, MeasurementConstraintProfile)
     assert profile.sampling_period_ns == 0.4
     assert profile.enforce_block_alignment is False
+
+
+def test_create_default_requires_custom_executor_for_quel3_backend_kind(
+    monkeypatch,
+) -> None:
+    """Given quel3 backend kind without custom executor, when executing, then clear RuntimeError is raised."""
+
+    class _Adapter:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            return None
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            return BackendExecutionRequest(payload=object())
+
+    class _ResultFactory:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+    def _unexpected_quel1_executor(**kwargs: object) -> object:
+        raise AssertionError("Quel1 executor fallback should not be used for quel3.")
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _unexpected_quel1_executor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel3MeasurementBackendAdapter",
+        _Adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        _ResultFactory,
+    )
+
+    backend_controller = type(
+        "_BC",
+        (),
+        {
+            "box_config": {},
+            "DEFAULT_SAMPLING_PERIOD": 0.4,
+            "MEASUREMENT_CONSTRAINT_MODE": "relaxed",
+            "MEASUREMENT_BACKEND_KIND": "quel3",
+        },
+    )()
+
+    executor = MeasurementScheduleExecutor.create_default(
+        backend_controller=cast(Quel1BackendController, backend_controller),
+        experiment_system=cast(Any, object()),
+    )
+    schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["RQ00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="create_measurement_backend_executor",
+    ):
+        executor.execute(
+            schedule=schedule,
+            config=_make_config(),
+        )

@@ -73,6 +73,7 @@ class MeasurementScheduleExecutor:
                 backend_controller=backend_controller,
                 execution_mode=execution_mode,
                 clock_health_checks=clock_health_checks,
+                backend_kind=backend_kind,
             ),
             measurement_backend_adapter=cls._create_backend_adapter(
                 backend_controller=backend_controller,
@@ -93,6 +94,7 @@ class MeasurementScheduleExecutor:
         backend_controller: Quel1BackendController,
         execution_mode: ExecutionMode | None,
         clock_health_checks: bool | None,
+        backend_kind: str,
     ) -> BackendExecutor:
         """Create backend executor with optional backend-specific factory hook."""
         factory = getattr(
@@ -105,6 +107,8 @@ class MeasurementScheduleExecutor:
                 execution_mode=execution_mode,
                 clock_health_checks=clock_health_checks,
             )
+        if backend_kind == "quel3":
+            return _Quel3BackendExecutorPlaceholder()
         return Quel1BackendExecutor(
             backend_controller=backend_controller,
             execution_mode=execution_mode,
@@ -259,3 +263,12 @@ class MeasurementScheduleExecutor:
             ),
         )
         return result
+
+
+class _Quel3BackendExecutorPlaceholder:
+    """Placeholder executor until quelware execution is wired in backend hooks."""
+
+    def execute(self, *, request: object) -> object:
+        raise RuntimeError(
+            "Quel3 backend execution requires backend_controller.create_measurement_backend_executor(...)."
+        )

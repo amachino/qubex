@@ -141,6 +141,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-17: Added `MeasurementClient`-level contract test to ensure backend custom factory hooks are honored end-to-end by `execute_measurement_schedule()`.
 - 2026-02-17: Added `Quel3MeasurementBackendAdapter` and `Quel3ExecutionPayload` skeleton for relaxed schedule validation and schedule-to-fixed-timeline payload conversion.
 - 2026-02-17: Default adapter selection now supports explicit backend kind hint (`MEASUREMENT_BACKEND_KIND="quel3"`), with tests ensuring Quel3 adapter path selection.
+- 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend executor hook is missing, to avoid accidental QuEL-1 executor fallback.
 
 ## Commit plan
 
