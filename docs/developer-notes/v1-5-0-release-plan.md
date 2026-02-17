@@ -1,0 +1,151 @@
+# v1.5.0 Release Plan
+
+## Release target
+
+- Beta release window: by February 2026
+- GA release window: by March 2026
+
+## Scope
+
+- Add support for QuEL-3 controller using new `quelware-client`
+- Keep backward compatibility with existing controllers
+- Primary compatibility target is `MeasurementClient` level
+- `Experiment` compatibility is expected to be preserved through `MeasurementClient` compatibility
+- Below `MeasurementClient`, implementation may diverge for QuEL-3 specific behavior
+- Remove assumptions tied to fixed 2 ns sampling period; support backend-defined sampling period
+- Enable end-to-end experiment protocols including synchronized measurements
+- Provide task-based, async-friendly new measurement primitive methods
+- Add sweep measurement support in `measurement` layer
+
+## Prioritized TODO
+
+Legend: `P0` = highest, `P1` = important, `P2` = follow-up
+
+| Priority | Task | Due | Dependency | Status |
+| --- | --- | --- | --- | --- |
+| P0 | Define QuEL-3 integration design (adapter boundary, lifecycle, error model) | 2026-02-21 | None | TODO |
+| P0 | Implement QuEL-3 adapter with `quelware-client` | 2026-02-28 | Reference source available at `packages/quelware-client` (not yet tracked in this repo) | TODO |
+| P0 | Prepare compatibility contract tests at `MeasurementClient` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | TODO |
+| P0 | Implement synchronized measurement protocol execution path | 2026-02-29 | Task primitives baseline | TODO |
+| P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | TODO |
+| P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
+| P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-08 | Async primitives | TODO |
+| P1 | Publish beta release notes and migration notes | 2026-02-29 | Major features for beta fixed | TODO |
+| P1 | GA hardening: bug fixes from beta feedback | 2026-03-20 | Beta feedback | TODO |
+| P1 | GA release notes and documentation finalization | 2026-03-25 | GA scope frozen | TODO |
+| P2 | Developer ergonomics improvements (logs/errors/examples) for new flows | 2026-03-25 | Main features implemented | TODO |
+
+## Beta exit criteria (must pass)
+
+- QuEL-3 basic control flow works on target environment
+- Existing controller regression tests all pass
+- QuEL-3 is API-compatible at `MeasurementClient` level
+- `Experiment` core flows remain operational through delegation
+- No blocking fixed `2 ns` assumptions remain in QuEL-3 code path
+- Core synchronized protocol path is executable
+- `mock_mode=True` compatibility path is covered by tests and remains operational
+- Required tests are added and green (`uv run pytest`)
+- Required quality checks are green (`uv run ruff check`, `uv run ruff format`, `uv run pyright`)
+- Beta docs are available (how to run, known limitations)
+
+## GA exit criteria (must pass)
+
+- Beta issues triaged and critical/high issues closed
+- QuEL-3 + existing controllers compatibility verified at `MeasurementClient` level
+- Sampling-period differences are handled without API breakage
+- Synchronized protocol and sweep measurement are documented and tested
+- Migration/upgrade notes finalized
+- Release notes finalized
+
+## Compatibility contract draft (`Experiment` / `MeasurementClient`)
+
+### `Experiment` level (compatibility by delegation)
+
+- `Experiment` is not treated as the primary compatibility contract surface for QuEL-3
+- Keep delegation behavior operational for core flows:
+  - `connect`, `disconnect`, `reload`, `run`
+  - `execute`, `measure`, `measure_state`, `measure_idle_states`
+
+### `MeasurementClient` level (must keep compatible for QuEL-3)
+
+- Public alias compatibility (`Measurement` -> `MeasurementClient`)
+- Constructor compatibility policy is practical/source-compatible:
+  - required args and primary behavior must remain compatible
+  - strict equality of all optional defaults is not required
+- Lifecycle/API compatibility:
+  - `load`, `connect`, `reload`, `disconnect`
+  - `execute_measurement_schedule`, `execute`, `measure`
+  - `create_measurement_config`, `build_measurement_schedule`
+- Legacy delegation behavior from old measurement APIs remains compatible (keep delegation tests green)
+- Measurement result compatibility criteria are type/shape centered
+- Timing semantics must not assume fixed `2 ns`; schedule/config creation must work with backend-defined sampling period
+- Canonical sampling period source is backend/controller `dt`
+
+### Out of scope for compatibility guarantee (allowed to diverge)
+
+- Backend/controller internals below `MeasurementClient`
+- Device-specific execution internals for QuEL-3
+- Internal adapter structure and lower protocol handling
+- High-level `Experiment` contrib APIs (`measure_bell_state`, `measure_ghz_state`, etc.)
+
+## Questions to finalize compatibility contract
+
+- [x] `Experiment` compatibility excludes high-level contrib APIs; only core measurement/lifecycle delegation flows are in scope
+- [x] Constructor compatibility policy: practical/source-compatible (required args + major behavior)
+- [x] Measurement result compatibility policy: type/shape centered
+- [x] `mock_mode=True` is mandatory for v1.5.0 beta compatibility
+- [x] Canonical sampling period source of truth: backend/controller `dt`
+
+## Immediate next actions (this week)
+
+- [ ] Finalize QuEL-3 integration interface based on current `quelware-client` source
+- [ ] Review `packages/quelware-client` API surface and lock adapter mapping points
+- [x] Identify and list current fixed `2 ns` assumptions in `src/` and map each to backend-derived timing
+- [ ] Scaffold adapter and contract test skeletons now
+- [ ] Define minimal synchronized protocol scenario for beta sign-off
+- [ ] Draft beta release notes template and known limitation section
+
+## Sampling-period audit (2026-02-17)
+
+### P0: runtime/data-path blocks
+
+- `src/qubex/backend/quel1/quel1_backend_constants.py`: `SAMPLING_PERIOD = 2.0` is globally fixed
+- `src/qubex/measurement/measurement_schedule_builder.py`: capture start/duration are derived with fixed `SAMPLING_PERIOD`
+- `src/qubex/measurement/measurement_backend_adapter.py`: schedule validation and capture-slot conversion depend on fixed `SAMPLING_PERIOD`
+- `src/qubex/measurement/models/measure_result.py`: result time axis uses fixed single/avg sampling periods
+- `src/qubex/experiment/experiment_constants.py`: experiment-wide sampling period aliases QuEL-1 fixed constant
+
+### P1: experiment/contrib behavior using fixed period assumptions
+
+- `src/qubex/experiment/services/calibration_service.py`: CR time-grid creation snaps to fixed `SAMPLING_PERIOD`
+- `src/qubex/experiment/services/measurement_service.py`: state-evolution plotting uses fixed `SAMPLING_PERIOD`
+- `src/qubex/experiment/services/characterization_service.py`: CPMG discretization uses `2 * SAMPLING_PERIOD`
+- `src/qubex/contrib/simultaneous_coherence_measurement.py`: discretization uses `2 * SAMPLING_PERIOD`
+
+### P2: visualization defaults
+
+- `src/qubex/analysis/visualization.py`: `plot_waveform(..., sampling_period=2.0)` default
+
+### Mapping rule to apply
+
+- Replace fixed sampling-period usage in QuEL-3 path with backend/controller `dt`
+- Keep QuEL-1 behavior unchanged by resolving `dt=2.0` through the same source-of-truth mechanism
+- Keep sample-count based constants (`WORD_LENGTH`, `BLOCK_LENGTH`, etc.) and derive durations from `dt`
+
+## Commit plan
+
+- Commit 1 (today): planning and audit baseline
+- Scope: release plan updates, compatibility contract finalization, sampling-period audit table
+- Message draft: `docs: finalize v1.5.0 compatibility contract and sampling-period audit`
+
+- Commit 2 (next): tests-first for compatibility and `dt` sourcing
+- Scope: add/adjust tests for `MeasurementClient` compatibility, `mock_mode=True`, and `dt` propagation
+- Message draft: `test: add MeasurementClient compatibility and dt-source contract coverage`
+
+- Commit 3 (next): core runtime refactor to `dt`
+- Scope: measurement schedule builder/adapter/result time axis and related constants wiring
+- Message draft: `refactor(measurement): replace fixed sampling period with backend dt`
+
+- Commit 4 (next): experiment/contrib follow-up and docs
+- Scope: calibration/characterization/contrib timing discretization updates and release note deltas
+- Message draft: `feat(experiment): align timing discretization with backend dt for QuEL-3`
