@@ -35,11 +35,18 @@ class MeasurementScheduleBuilder:
         pulse_factory: MeasurementPulseFactory,
         targets: Mapping[str, Target],
         mux_dict: Mapping[str, Mux],
+        sampling_period: float = SAMPLING_PERIOD,
     ) -> None:
         self._control_params = control_params
         self._pulse_factory = pulse_factory
         self._targets = targets
         self._mux_dict = mux_dict
+        self._sampling_period = float(sampling_period)
+
+    @property
+    def sampling_period(self) -> float:
+        """Return sampling period (ns) used for capture-time conversion."""
+        return self._sampling_period
 
     def build(
         self,
@@ -162,7 +169,7 @@ class MeasurementScheduleBuilder:
         """Build a capture schedule aligned to readout windows and workaround capture."""
         captures: list[Capture] = []
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
-        workaround_duration = EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
+        workaround_duration = EXTRA_SUM_SECTION_LENGTH * self._sampling_period
 
         for target in readout_targets:
             ranges = readout_ranges.get(target, [])
@@ -181,8 +188,8 @@ class MeasurementScheduleBuilder:
                 [
                     Capture(
                         channels=[target],
-                        start_time=rng.start * SAMPLING_PERIOD,
-                        duration=len(rng) * SAMPLING_PERIOD,
+                        start_time=rng.start * self._sampling_period,
+                        duration=len(rng) * self._sampling_period,
                     )
                     for rng in ranges
                 ]

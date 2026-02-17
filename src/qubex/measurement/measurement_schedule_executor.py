@@ -7,6 +7,7 @@ from qubex.backend import (
     ExperimentSystem,
 )
 from qubex.backend.quel1 import (
+    SAMPLING_PERIOD,
     ExecutionMode,
     Quel1BackendController,
     Quel1BackendExecutor,
@@ -70,12 +71,23 @@ class MeasurementScheduleExecutor:
             measurement_backend_adapter=Quel1MeasurementBackendAdapter(
                 backend_controller=backend_controller,
                 experiment_system=experiment_system,
+                sampling_period=cls._resolve_sampling_period_ns(backend_controller),
             ),
             measurement_result_factory=MeasurementResultFactory(
                 experiment_system=experiment_system,
             ),
             backend_controller=backend_controller,
         )
+
+    @staticmethod
+    def _resolve_sampling_period_ns(
+        backend_controller: Quel1BackendController,
+    ) -> float:
+        """Resolve sampling period (ns) from backend-controller contract."""
+        sampling_period = getattr(backend_controller, "DEFAULT_SAMPLING_PERIOD", None)
+        if isinstance(sampling_period, (int, float)):
+            return float(sampling_period)
+        return SAMPLING_PERIOD
 
     def execute(
         self,

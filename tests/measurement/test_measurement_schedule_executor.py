@@ -156,3 +156,54 @@ def test_create_default_passes_none_to_delegate_backend_defaults(monkeypatch) ->
     assert called["backend_controller"] is backend_controller
     assert called["execution_mode"] is None
     assert called["clock_health_checks"] is None
+
+
+def test_create_default_passes_backend_sampling_period_to_adapter(monkeypatch) -> None:
+    """Given backend dt, when creating default executor, then adapter receives that sampling period."""
+    called: dict[str, object] = {}
+
+    class _BackendExecutor:
+        def __init__(self, **kwargs: object) -> None:
+            called["backend_executor_kwargs"] = kwargs
+
+    class _Adapter:
+        def __init__(
+            self,
+            *,
+            backend_controller: object,
+            experiment_system: object,
+            sampling_period: float,
+        ) -> None:
+            called["adapter_backend_controller"] = backend_controller
+            called["adapter_experiment_system"] = experiment_system
+            called["adapter_sampling_period"] = sampling_period
+
+    class _ResultFactory:
+        def __init__(self, *, experiment_system: object) -> None:
+            called["result_factory_experiment_system"] = experiment_system
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _BackendExecutor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        _Adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        _ResultFactory,
+    )
+
+    backend_controller = type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 4.0})()
+    experiment_system = object()
+
+    executor = MeasurementScheduleExecutor.create_default(
+        backend_controller=cast(Quel1BackendController, backend_controller),
+        experiment_system=cast(Any, experiment_system),
+    )
+
+    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert called["adapter_backend_controller"] is backend_controller
+    assert called["adapter_experiment_system"] is experiment_system
+    assert called["adapter_sampling_period"] == 4.0

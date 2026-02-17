@@ -23,6 +23,7 @@ from qubex.backend import (
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.backend.quel1 import (
+    SAMPLING_PERIOD,
     ExecutionMode,
     Quel1BackendController,
 )
@@ -241,6 +242,7 @@ class MeasurementClient:
             pulse_factory=self.pulse_factory,
             targets=self.targets,
             mux_dict=self.mux_dict,
+            sampling_period=self.sampling_period,
         )
 
     @property
@@ -264,6 +266,19 @@ class MeasurementClient:
     def backend_controller(self) -> Quel1BackendController:
         """Get the backend controller."""
         return self.backend_manager.backend_controller
+
+    @property
+    def sampling_period(self) -> float:
+        """Resolve sampling period (ns) from backend-controller contract."""
+        try:
+            sampling_period = getattr(
+                self.backend_controller, "DEFAULT_SAMPLING_PERIOD", None
+            )
+        except Exception:
+            return SAMPLING_PERIOD
+        if isinstance(sampling_period, (int, float)):
+            return float(sampling_period)
+        return SAMPLING_PERIOD
 
     @property
     def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:

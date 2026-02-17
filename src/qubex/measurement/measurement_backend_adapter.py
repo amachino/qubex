@@ -51,9 +51,16 @@ class Quel1MeasurementBackendAdapter:
         *,
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
+        sampling_period: float = SAMPLING_PERIOD,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
+        self._sampling_period = float(sampling_period)
+
+    @property
+    def sampling_period(self) -> float:
+        """Return sampling period (ns), preserving legacy `__new__` test paths."""
+        return float(getattr(self, "_sampling_period", SAMPLING_PERIOD))
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate QuEL-1 specific pulse/capture constraints."""
@@ -85,7 +92,7 @@ class Quel1MeasurementBackendAdapter:
                 raise ValueError(
                     f"Capture duration must be a multiple of {WORD_DURATION} ns."
                 )
-            workaround_duration = EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
+            workaround_duration = EXTRA_SUM_SECTION_LENGTH * self.sampling_period
             if not np.isclose(first_capture.duration, workaround_duration):
                 raise ValueError(
                     "The first capture must be the workaround capture with duration "
@@ -108,8 +115,8 @@ class Quel1MeasurementBackendAdapter:
                     f"Capture schedule mismatch for {channel}: expected {len(ranges) + 1} captures."
                 )
             for capture, rng in zip(sorted_captures[1:], ranges, strict=True):
-                expected_start = rng.start * SAMPLING_PERIOD
-                expected_duration = len(rng) * SAMPLING_PERIOD
+                expected_start = rng.start * self.sampling_period
+                expected_duration = len(rng) * self.sampling_period
                 if not np.isclose(capture.start_time, expected_start):
                     raise ValueError(
                         f"Capture start mismatch for {channel}: {capture.start_time} != {expected_start}."
@@ -212,7 +219,7 @@ class Quel1MeasurementBackendAdapter:
             omega = 2 * np.pi * self._experiment_system.get_diff_frequency(target)
             delay = capture_delay_sample[target]
             for rng in ranges:
-                offset = (rng.start + delay) * SAMPLING_PERIOD
+                offset = (rng.start + delay) * self.sampling_period
                 seq[rng] *= np.exp(1j * omega * offset)
 
         gen_sequences: dict[str, Any] = {}
@@ -238,11 +245,13 @@ class Quel1MeasurementBackendAdapter:
 
             capture_slots: list[tuple[int, int]] = []
             for idx, current_capture in enumerate(sorted_captures):
-                current_start = round(current_capture.start_time / SAMPLING_PERIOD)
-                capture_range_length = round(current_capture.duration / SAMPLING_PERIOD)
+                current_start = round(current_capture.start_time / self.sampling_period)
+                capture_range_length = round(
+                    current_capture.duration / self.sampling_period
+                )
                 if idx + 1 < len(sorted_captures):
                     next_start = round(
-                        sorted_captures[idx + 1].start_time / SAMPLING_PERIOD
+                        sorted_captures[idx + 1].start_time / self.sampling_period
                     )
                     post_blank_length = next_start - (
                         current_start + capture_range_length
