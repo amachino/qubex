@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from qubex.backend import (
+    BackendController,
     BackendExecutor,
     ExperimentSystem,
 )
 from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     ExecutionMode,
-    Quel1BackendController,
     Quel1BackendExecutor,
 )
 
@@ -37,7 +37,7 @@ class MeasurementScheduleExecutor:
         backend_executor: BackendExecutor,
         measurement_backend_adapter: MeasurementBackendAdapter,
         measurement_result_factory: MeasurementResultFactory,
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
     ) -> None:
         self._backend_executor = backend_executor
         self._measurement_backend_adapter = measurement_backend_adapter
@@ -48,7 +48,7 @@ class MeasurementScheduleExecutor:
     def create_default(
         cls,
         *,
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
         experiment_system: ExperimentSystem,
         execution_mode: ExecutionMode | None = None,
         clock_health_checks: bool | None = None,
@@ -58,7 +58,7 @@ class MeasurementScheduleExecutor:
 
         Parameters
         ----------
-        backend_controller : Quel1BackendController
+        backend_controller : BackendController
             Backend controller bound to connected hardware.
         experiment_system : ExperimentSystem
             Experiment-system model used by adapter/result conversion.
@@ -92,7 +92,7 @@ class MeasurementScheduleExecutor:
     @staticmethod
     def _create_backend_executor(
         *,
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
         execution_mode: ExecutionMode | None,
         clock_health_checks: bool | None,
         backend_kind: str,
@@ -109,7 +109,7 @@ class MeasurementScheduleExecutor:
                 clock_health_checks=clock_health_checks,
             )
         if backend_kind == "quel3":
-            execute_impl = getattr(backend_controller, "execute_quel3_measurement", None)
+            execute_impl = getattr(backend_controller, "execute_measurement", None)
             if callable(execute_impl):
                 return Quel3BackendExecutor(backend_controller=backend_controller)
             return _Quel3BackendExecutorPlaceholder()
@@ -122,7 +122,7 @@ class MeasurementScheduleExecutor:
     @staticmethod
     def _create_backend_adapter(
         *,
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile,
         backend_kind: str,
@@ -153,7 +153,7 @@ class MeasurementScheduleExecutor:
     @staticmethod
     def _create_result_factory(
         *,
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
         experiment_system: ExperimentSystem,
     ) -> MeasurementResultFactory:
         """Create result factory with optional backend-specific factory hook."""
@@ -170,7 +170,7 @@ class MeasurementScheduleExecutor:
 
     @staticmethod
     def _resolve_sampling_period_ns(
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
     ) -> float:
         """Resolve sampling period (ns) from backend-controller contract."""
         sampling_period = getattr(backend_controller, "DEFAULT_SAMPLING_PERIOD", None)
@@ -181,7 +181,7 @@ class MeasurementScheduleExecutor:
     @classmethod
     def _resolve_constraint_profile(
         cls,
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
     ) -> MeasurementConstraintProfile:
         """Resolve backend constraint profile from controller capability hints."""
         profile = getattr(backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None)
@@ -195,7 +195,7 @@ class MeasurementScheduleExecutor:
         return MeasurementConstraintProfile.strict_quel1(sampling_period)
 
     @staticmethod
-    def _resolve_backend_kind(backend_controller: Quel1BackendController) -> str:
+    def _resolve_backend_kind(backend_controller: BackendController) -> str:
         """Resolve backend kind hint used for default adapter selection."""
         backend_kind = getattr(backend_controller, "MEASUREMENT_BACKEND_KIND", None)
         if backend_kind in {"quel1", "quel3"}:
@@ -204,7 +204,7 @@ class MeasurementScheduleExecutor:
 
     @staticmethod
     def _resolve_avg_sample_stride(
-        backend_controller: Quel1BackendController,
+        backend_controller: BackendController,
         constraint_profile: MeasurementConstraintProfile | None,
     ) -> int:
         """Resolve AVG-mode time-stride multiplier from backend capability hints."""

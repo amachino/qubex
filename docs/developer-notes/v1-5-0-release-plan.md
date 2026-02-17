@@ -144,8 +144,9 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend executor hook is missing, to avoid accidental QuEL-1 executor fallback.
 - 2026-02-17: `MeasurementScheduleExecutor` now supports backend executors returning canonical `MeasurementResult` directly, enabling staged quelware integration before result-factory unification.
 - 2026-02-17: Added built-in `Quel3BackendExecutor` (controller hook delegation) and tests for payload-type checks and hook presence checks.
-- 2026-02-17: Added `instrument_aliases` in Quel3 payload with optional controller hook (`resolve_quel3_instrument_alias`) for target-to-alias mapping.
+- 2026-02-17: Added `instrument_aliases` in Quel3 payload with optional controller hook (`resolve_instrument_alias`) for target-to-alias mapping.
 - 2026-02-17: Added explicit QuEL-1 capability hints on `Quel1BackendController` (`MEASUREMENT_BACKEND_KIND`, `MEASUREMENT_CONSTRAINT_MODE`, `MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE`).
+- 2026-02-17: Added `Quel3BackendController` scaffold and session-scoped backend-family selection (`backend_kind`) in `SystemManager`/`MeasurementClient` (`quel1` or `quel3`, no mixed session).
 
 ## Commit plan
 

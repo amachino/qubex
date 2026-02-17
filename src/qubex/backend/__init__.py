@@ -9,6 +9,7 @@ from .backend_executor import (
 )
 from .config_loader import ConfigLoader
 from .control_system import Box, BoxType, Channel, ControlSystem, Port, PortType
+from .controller_types import BackendController, BackendKind
 from .experiment_system import ControlParams, ExperimentSystem, MixingUtil, WiringInfo
 from .lattice_graph import LatticeGraph
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
@@ -17,9 +18,11 @@ from .target import Target, TargetType
 
 __all__ = [
     "DEFAULT_CONFIG_DIR",
+    "BackendController",
     "BackendExecutionRequest",
     "BackendExecutionResult",
     "BackendExecutor",
+    "BackendKind",
     "Box",
     "BoxType",
     "Channel",

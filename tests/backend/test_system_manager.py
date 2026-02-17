@@ -482,3 +482,43 @@ def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
 
     assert called_sync_hardware is False
     assert backend_controller.get_box_config_cache() == backend_settings
+
+
+def test_create_backend_controller_supports_quel3() -> None:
+    """Given Quel3 kind, when creating backend controller, then Quel3 measurement hint is exposed."""
+    controller = SystemManager._create_backend_controller("quel3")  # noqa: SLF001
+
+    assert getattr(controller, "MEASUREMENT_BACKEND_KIND", None) == "quel3"
+
+
+def test_load_passes_backend_kind_to_selector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given load with backend kind, when loading, then selector is called before sync."""
+    manager = SystemManager.shared()
+    called: list[str] = []
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self, chip_id: str) -> object:
+            return SimpleNamespace(hash=hash(chip_id))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        called.append(f"kind:{kind}")
+
+    def _fake_sync() -> None:
+        called.append("sync")
+
+    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+    monkeypatch.setattr(manager, "_sync_experiment_system_to_backend_controller", _fake_sync)
+
+    manager.load(
+        chip_id="TEST",
+        backend_kind="quel3",
+        mock_mode=False,
+    )
+
+    assert called == ["kind:quel3", "sync"]

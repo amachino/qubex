@@ -19,10 +19,12 @@ from qubex.typing import ConfigurationMode
 
 from .config_loader import ConfigLoader
 from .control_system import Box, CapPort, GenPort, PortType
+from .controller_types import BackendController, BackendKind
 from .experiment_system import ExperimentSystem
 from .parallel_box_executor import run_parallel_each, run_parallel_map
+from .quel1 import Quel1BackendController
 from .quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
-from .quel1.quel1_backend_controller import Quel1BackendController
+from .quel3 import Quel3BackendController
 
 logger = logging.getLogger(__name__)
 
@@ -132,11 +134,44 @@ class SystemManager:
         if self._initialized:
             return
         self._experiment_system = None
-        self._backend_controller = Quel1BackendController()
+        self._backend_kind: BackendKind = "quel1"
+        self._backend_controller = self._create_backend_controller(self._backend_kind)
         self._backend_settings: BackendSettings = BackendSettings()
         self._cached_state = SystemState(0, 0, 0)
         self._rawdata_dir = None
+        self._mock_mode = False
         self._initialized = True
+
+    @staticmethod
+    def _create_backend_controller(backend_kind: BackendKind) -> BackendController:
+        """Create a backend controller instance for one experiment session."""
+        if backend_kind == "quel3":
+            return Quel3BackendController()
+        return Quel1BackendController()
+
+    @property
+    def backend_kind(self) -> BackendKind:
+        """Return backend family selected for the current experiment session."""
+        return self._backend_kind
+
+    def set_backend_kind(self, backend_kind: BackendKind) -> None:
+        """
+        Select backend family for the current experiment session.
+
+        Parameters
+        ----------
+        backend_kind : BackendKind
+            Backend family. One session uses either QuEL-1 or QuEL-3.
+        """
+        if (
+            backend_kind == self._backend_kind
+            and getattr(self._backend_controller, "MEASUREMENT_BACKEND_KIND", None)
+            == backend_kind
+        ):
+            return
+        self._backend_kind = backend_kind
+        self._backend_controller = self._create_backend_controller(backend_kind)
+        self._backend_settings = BackendSettings()
 
     @property
     def rawdata_dir(self) -> Path | None:
@@ -161,13 +196,13 @@ class SystemManager:
         return self._experiment_system
 
     @property
-    def backend_controller(self) -> Quel1BackendController:
+    def backend_controller(self) -> BackendController:
         """Return the backend controller."""
         return self._backend_controller
 
     @property
     @deprecated("Use `backend_controller` property instead.")
-    def device_controller(self) -> Quel1BackendController:
+    def device_controller(self) -> BackendController:
         """Backward-compatible alias of `backend_controller`."""
         return self.backend_controller
 
@@ -227,6 +262,7 @@ class SystemManager:
         params_dir: Path | str | None = None,
         targets_to_exclude: list[str] | None = None,
         configuration_mode: ConfigurationMode | None = None,
+        backend_kind: BackendKind | None = None,
         mock_mode: bool = False,
     ) -> None:
         """
@@ -244,9 +280,13 @@ class SystemManager:
             Target labels to exclude from the loaded model.
         configuration_mode : ConfigurationMode, optional
             Configuration mode passed to `ConfigLoader`.
+        backend_kind : BackendKind | None, optional
+            Backend family used for this experiment session.
         mock_mode : bool, optional
             If `True`, skip backend-controller model synchronization.
         """
+        if backend_kind is not None:
+            self.set_backend_kind(backend_kind)
         self._config_loader = ConfigLoader(
             chip_id=chip_id,
             config_dir=config_dir,

@@ -184,7 +184,7 @@ def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
         (),
         {
             "DEFAULT_SAMPLING_PERIOD": 0.4,
-            "resolve_quel3_instrument_alias": staticmethod(lambda value: f"alias-{value}"),
+            "resolve_instrument_alias": staticmethod(lambda value: f"alias-{value}"),
         },
     )()
     adapter = Quel3MeasurementBackendAdapter(

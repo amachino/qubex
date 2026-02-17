@@ -550,7 +550,7 @@ def test_create_default_uses_builtin_quel3_executor_when_backend_hook_exists(
         MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "relaxed"
         MEASUREMENT_BACKEND_KIND: ClassVar[str] = "quel3"
 
-        def execute_quel3_measurement(self, *, payload: object) -> object:
+        def execute_measurement(self, *, payload: object) -> object:
             return payload
 
     backend_controller = _Controller()

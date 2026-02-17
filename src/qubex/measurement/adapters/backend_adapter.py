@@ -149,7 +149,7 @@ class Quel3MeasurementBackendAdapter:
         instrument_aliases: dict[str, str] = {}
         alias_resolver = getattr(
             self._backend_controller,
-            "resolve_quel3_instrument_alias",
+            "resolve_instrument_alias",
             None,
         )
         for target, waveform in sampled_sequences.items():

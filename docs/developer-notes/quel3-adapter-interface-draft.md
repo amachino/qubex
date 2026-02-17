@@ -22,6 +22,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 
 - Compatibility surface remains `MeasurementClient`.
 - Backend-specific behavior diverges below `MeasurementClient`.
+- One experiment session uses a single backend family (`quel1` or `quel3`), not mixed operation.
 - `MeasurementScheduleExecutor.create_default()` now supports backend-provided hooks:
   - `create_measurement_backend_executor(execution_mode, clock_health_checks)`
   - `create_measurement_backend_adapter(experiment_system, constraint_profile)`
@@ -30,13 +31,15 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 ## Current implementation scaffold
 
 - Added `Quel3MeasurementBackendAdapter` in `src/qubex/measurement/adapters/backend_adapter.py`.
-- Added `Quel3BackendExecutor` in `src/qubex/measurement/adapters/backend_executor.py` (delegates to `execute_quel3_measurement(payload=...)` hook).
+- Added `Quel3BackendExecutor` in `src/qubex/measurement/adapters/backend_executor.py` (delegates to `execute_measurement(payload=...)` hook).
 - Added `Quel3ExecutionPayload`/timeline dataclasses for schedule-to-payload conversion.
-- Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_quel3_instrument_alias(target)` hook when available (fallback: target label itself).
+- Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_instrument_alias(target)` hook when available (fallback: target label itself).
+- Added `Quel3BackendController` scaffold in `src/qubex/backend/quel3/quel3_backend_controller.py`.
+- `SystemManager.load(..., backend_kind=...)` and `MeasurementClient.load(..., backend_kind=...)` now select backend family at session scope.
 - Added default adapter-selection hint: `MEASUREMENT_BACKEND_KIND="quel3"` in `MeasurementScheduleExecutor`.
 - For `MEASUREMENT_BACKEND_KIND="quel3"`, backend must provide either:
   - `create_measurement_backend_executor(...)`, or
-  - `execute_quel3_measurement(payload=...)` (used by built-in `Quel3BackendExecutor`).
+  - `execute_measurement(payload=...)` (used by built-in `Quel3BackendExecutor`).
 - `MeasurementScheduleExecutor.execute()` now accepts a backend executor returning canonical `MeasurementResult` directly (result-factory bypass path).
 - Added adapter tests in `tests/measurement/test_quel3_measurement_backend_adapter.py`.
 - Scope is intentionally minimal: relaxed validation + payload construction; direct quelware invocation remains in follow-up work.
@@ -70,7 +73,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 
 ## Open questions before implementation
 
-1. Final policy for target-to-alias mapping (current scaffold: `resolve_quel3_instrument_alias` hook, fallback to target label).
+1. Final policy for target-to-alias mapping (current scaffold: `resolve_instrument_alias` hook, fallback to target label).
 2. Whether one capture window name should encode target + capture index or use separate lookup table.
 3. How to handle multi-unit trigger orchestration policy when multiple resources are involved.
 4. Whether QuEL-3 returns already-demodulated/integrated payloads or raw sampled windows for each mode.

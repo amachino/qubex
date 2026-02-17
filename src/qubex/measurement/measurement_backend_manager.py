@@ -8,12 +8,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from qubex.backend import (
+    BackendController,
+    BackendKind,
     ConfigLoader,
     ExperimentSystem,
     Mux,
     SystemManager,
 )
-from qubex.backend.quel1 import Quel1BackendController
 from qubex.typing import ConfigurationMode
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ class MeasurementBackendManager:
         return self._system_manager.experiment_system
 
     @property
-    def backend_controller(self) -> Quel1BackendController:
+    def backend_controller(self) -> BackendController:
         """Return the backend controller."""
         return self._system_manager.backend_controller
 
@@ -69,6 +70,7 @@ class MeasurementBackendManager:
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         configuration_mode: ConfigurationMode | None = None,
+        backend_kind: BackendKind | None = None,
     ) -> None:
         """Load configuration and skew settings."""
         self.system_manager.load(
@@ -76,6 +78,7 @@ class MeasurementBackendManager:
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            backend_kind=backend_kind,
         )
         self.load_skew_file()
 

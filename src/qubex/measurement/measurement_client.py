@@ -14,6 +14,8 @@ import numpy.typing as npt
 from qxpulse import PulseSchedule, RampType
 
 from qubex.backend import (
+    BackendController,
+    BackendKind,
     ConfigLoader,
     ControlParams,
     ExperimentSystem,
@@ -25,7 +27,6 @@ from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     ExecutionMode,
-    Quel1BackendController,
 )
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
@@ -83,6 +84,7 @@ class MeasurementClient:
         load_configs: bool | None = None,
         connect_devices: bool | None = None,
         configuration_mode: ConfigurationMode | None = None,
+        backend_kind: BackendKind | None = None,
         _execution_mode: ExecutionMode | None = None,
         _clock_health_checks: bool | None = None,
     ):
@@ -108,6 +110,8 @@ class MeasurementClient:
         configuration_mode : ConfigurationMode | None, optional
             Configuration mode. If `None`, `DEFAULT_CONFIGURATION_MODE`
             is used.
+        backend_kind : BackendKind | None, optional
+            Backend family used for this experiment session.
         _execution_mode : ExecutionMode | None, optional
             Private backend execution mode override used by schedule executor.
         _clock_health_checks : bool | None, optional
@@ -142,6 +146,7 @@ class MeasurementClient:
                 config_dir=config_dir,
                 params_dir=params_dir,
                 configuration_mode=configuration_mode,
+                backend_kind=backend_kind,
             )
         if connect_devices:
             self.connect()
@@ -151,6 +156,7 @@ class MeasurementClient:
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: ConfigurationMode | None = None,
+        backend_kind: BackendKind | None = None,
     ) -> None:
         """
         Load the measurement settings.
@@ -163,12 +169,15 @@ class MeasurementClient:
             The parameters directory.
         configuration_mode : ConfigurationMode, optional
             The configuration mode, by default "ge-cr-cr".
+        backend_kind : BackendKind | None, optional
+            Backend family used for this experiment session.
         """
         self.backend_manager.load(
             chip_id=self._chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            backend_kind=backend_kind,
         )
 
     def connect(
@@ -264,7 +273,7 @@ class MeasurementClient:
         return self.backend_manager.experiment_system
 
     @property
-    def backend_controller(self) -> Quel1BackendController:
+    def backend_controller(self) -> BackendController:
         """Get the backend controller."""
         return self.backend_manager.backend_controller
 
