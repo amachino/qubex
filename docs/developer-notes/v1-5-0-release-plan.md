@@ -149,3 +149,62 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - Commit 4 (next): experiment/contrib follow-up and docs
 - Scope: calibration/characterization/contrib timing discretization updates and release note deltas
 - Message draft: `feat(experiment): align timing discretization with backend dt for QuEL-3`
+
+## Backend constraint architecture (future-proof)
+
+### Design goal
+
+- Support both strict backends (QuEL-1 style) and relaxed backends (QuEL-3 style)
+- Keep `MeasurementClient` API stable while backend-specific rules evolve
+
+### Proposed model
+
+- Introduce backend timing/constraint profile object provided by backend/controller:
+  - `dt_ns` (required)
+  - optional alignment constraints (`word_samples`, `block_samples`)
+  - optional capture constraints (minimum gap, workaround-first-capture, etc.)
+- Keep schedule construction mostly backend-agnostic
+- Apply backend-specific validation and final quantization in adapter layer
+
+### Policy by backend type
+
+- Strict backend profile:
+  - enforce word/block alignment and strict capture constraints
+- Relaxed backend profile:
+  - accept sample-grid placement based on `dt_ns`
+  - delegate final packing/alignment to backend service (quelware)
+
+### Implementation direction
+
+- `MeasurementScheduleBuilder`: depend on `dt_ns` and generic profile inputs, not QuEL-1 constants
+- backend adapters: own the strict/relaxed checks and conversion
+- `MeasurementScheduleExecutor.create_default()`: select adapter/profile based on backend/controller capability
+
+## Development process updates
+
+### Release gates
+
+- Treat real-hardware validation as a release gate for beta and GA.
+- Use `/Users/amachino/qubex/docs/developer-notes/hardware-validation-template.md` as the standard run sheet.
+
+### Test layering
+
+- PR-required checks:
+  - `uv run ruff check`
+  - `uv run ruff format`
+  - `uv run pyright`
+  - `uv run pytest`
+- Hardware-integration checks:
+  - Run on a scheduled basis and before release cut.
+  - Cover both strict (QuEL-1) and relaxed (QuEL-3) backend profiles.
+
+### Compatibility guardrails
+
+- Changes on `MeasurementClient` compatibility surface must include contract-test updates.
+- For profile/adapter changes, include strict and relaxed profile coverage in tests.
+
+### Review DoD additions
+
+- No new fixed `2 ns` assumption is introduced.
+- Time discretization and alignment derive from backend/controller `dt`.
+- Real-hardware validation results are logged with environment and scenario status.
