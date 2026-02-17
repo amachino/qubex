@@ -18,6 +18,7 @@ from qubex.backend.quel1 import (
 from .adapters import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
+    Quel3MeasurementBackendAdapter,
 )
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_result_factory import MeasurementResultFactory
@@ -65,6 +66,7 @@ class MeasurementScheduleExecutor:
         clock_health_checks : bool | None, optional
             Whether to enable additional clock-health I/O in parallel mode.
         """
+        backend_kind = cls._resolve_backend_kind(backend_controller)
         constraint_profile = cls._resolve_constraint_profile(backend_controller)
         return cls(
             backend_executor=cls._create_backend_executor(
@@ -76,6 +78,7 @@ class MeasurementScheduleExecutor:
                 backend_controller=backend_controller,
                 experiment_system=experiment_system,
                 constraint_profile=constraint_profile,
+                backend_kind=backend_kind,
             ),
             measurement_result_factory=cls._create_result_factory(
                 backend_controller=backend_controller,
@@ -114,6 +117,7 @@ class MeasurementScheduleExecutor:
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile,
+        backend_kind: str,
     ) -> MeasurementBackendAdapter:
         """Create backend adapter with optional backend-specific factory hook."""
         factory = getattr(
@@ -123,6 +127,12 @@ class MeasurementScheduleExecutor:
         )
         if isinstance(factory, Callable):
             return factory(
+                experiment_system=experiment_system,
+                constraint_profile=constraint_profile,
+            )
+        if backend_kind == "quel3":
+            return Quel3MeasurementBackendAdapter(
+                backend_controller=backend_controller,
                 experiment_system=experiment_system,
                 constraint_profile=constraint_profile,
             )
@@ -175,6 +185,14 @@ class MeasurementScheduleExecutor:
         if mode == "relaxed":
             return MeasurementConstraintProfile.relaxed(sampling_period)
         return MeasurementConstraintProfile.strict_quel1(sampling_period)
+
+    @staticmethod
+    def _resolve_backend_kind(backend_controller: Quel1BackendController) -> str:
+        """Resolve backend kind hint used for default adapter selection."""
+        backend_kind = getattr(backend_controller, "MEASUREMENT_BACKEND_KIND", None)
+        if backend_kind in {"quel1", "quel3"}:
+            return backend_kind
+        return "quel1"
 
     @staticmethod
     def _resolve_avg_sample_stride(

@@ -368,3 +368,74 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
     profile = called["constraint_profile"]
     assert isinstance(profile, MeasurementConstraintProfile)
     assert profile.sampling_period_ns == 0.4
+
+
+def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
+    monkeypatch,
+) -> None:
+    """Given quel3 backend kind hint, when creating default executor, then Quel3 adapter is selected."""
+    called: dict[str, object] = {}
+
+    class _BackendExecutor:
+        def __init__(self, **kwargs: object) -> None:
+            called["backend_executor_kwargs"] = kwargs
+
+    class _Quel3Adapter:
+        def __init__(
+            self,
+            *,
+            backend_controller: object,
+            experiment_system: object,
+            constraint_profile: MeasurementConstraintProfile,
+        ) -> None:
+            called["adapter_backend_controller"] = backend_controller
+            called["adapter_experiment_system"] = experiment_system
+            called["adapter_constraint_profile"] = constraint_profile
+
+    class _ResultFactory:
+        def __init__(self, *, experiment_system: object) -> None:
+            called["result_factory_experiment_system"] = experiment_system
+
+    def _unexpected_quel1_adapter(**kwargs: object) -> object:
+        raise AssertionError("Quel1 adapter fallback should not be used for quel3.")
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _BackendExecutor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        _unexpected_quel1_adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel3MeasurementBackendAdapter",
+        _Quel3Adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        _ResultFactory,
+    )
+
+    backend_controller = type(
+        "_BC",
+        (),
+        {
+            "DEFAULT_SAMPLING_PERIOD": 0.4,
+            "MEASUREMENT_CONSTRAINT_MODE": "relaxed",
+            "MEASUREMENT_BACKEND_KIND": "quel3",
+        },
+    )()
+    experiment_system = object()
+
+    executor = MeasurementScheduleExecutor.create_default(
+        backend_controller=cast(Quel1BackendController, backend_controller),
+        experiment_system=cast(Any, experiment_system),
+    )
+
+    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert called["adapter_backend_controller"] is backend_controller
+    assert called["adapter_experiment_system"] is experiment_system
+    profile = called["adapter_constraint_profile"]
+    assert isinstance(profile, MeasurementConstraintProfile)
+    assert profile.sampling_period_ns == 0.4
+    assert profile.enforce_block_alignment is False
