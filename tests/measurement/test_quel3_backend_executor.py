@@ -23,6 +23,7 @@ def _make_payload() -> Quel3ExecutionPayload:
     )
     return Quel3ExecutionPayload(
         timelines={"RQ00": timeline},
+        instrument_aliases={"RQ00": "RQ00"},
         interval_ns=10.0,
         repeats=16,
         mode="avg",

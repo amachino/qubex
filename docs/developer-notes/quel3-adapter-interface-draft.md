@@ -32,6 +32,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Added `Quel3MeasurementBackendAdapter` in `src/qubex/measurement/adapters/backend_adapter.py`.
 - Added `Quel3BackendExecutor` in `src/qubex/measurement/adapters/backend_executor.py` (delegates to `execute_quel3_measurement(payload=...)` hook).
 - Added `Quel3ExecutionPayload`/timeline dataclasses for schedule-to-payload conversion.
+- Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_quel3_instrument_alias(target)` hook when available (fallback: target label itself).
 - Added default adapter-selection hint: `MEASUREMENT_BACKEND_KIND="quel3"` in `MeasurementScheduleExecutor`.
 - For `MEASUREMENT_BACKEND_KIND="quel3"`, backend must provide either:
   - `create_measurement_backend_executor(...)`, or
@@ -69,7 +70,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 
 ## Open questions before implementation
 
-1. How to map Qubex target labels to quelware instrument aliases deterministically.
+1. Final policy for target-to-alias mapping (current scaffold: `resolve_quel3_instrument_alias` hook, fallback to target label).
 2. Whether one capture window name should encode target + capture index or use separate lookup table.
 3. How to handle multi-unit trigger orchestration policy when multiple resources are involved.
 4. Whether QuEL-3 returns already-demodulated/integrated payloads or raw sampled windows for each mode.

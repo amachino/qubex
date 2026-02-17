@@ -68,6 +68,7 @@ class Quel3ExecutionPayload:
     """Execution payload that can be translated to quelware fixed-timeline calls."""
 
     timelines: dict[str, Quel3TargetTimeline]
+    instrument_aliases: dict[str, str]
     interval_ns: float
     repeats: int
     mode: str
@@ -145,6 +146,12 @@ class Quel3MeasurementBackendAdapter:
         sampled_sequences = pulse_schedule.get_sampled_sequences(copy=False)
         channel_captures = schedule.capture_schedule.channels
         timelines: dict[str, Quel3TargetTimeline] = {}
+        instrument_aliases: dict[str, str] = {}
+        alias_resolver = getattr(
+            self._backend_controller,
+            "resolve_quel3_instrument_alias",
+            None,
+        )
         for target, waveform in sampled_sequences.items():
             captures = sorted(channel_captures.get(target, []), key=lambda c: c.start_time)
             capture_windows = tuple(
@@ -169,9 +176,14 @@ class Quel3MeasurementBackendAdapter:
                 length_ns=float(pulse_schedule.duration),
                 modulation_frequency_hz=modulation_frequency_hz,
             )
+            if callable(alias_resolver):
+                instrument_aliases[target] = str(alias_resolver(target))
+            else:
+                instrument_aliases[target] = target
         interval_ns = math.ceil(float(pulse_schedule.duration + config.interval))
         payload = Quel3ExecutionPayload(
             timelines=timelines,
+            instrument_aliases=instrument_aliases,
             interval_ns=interval_ns,
             repeats=config.shots,
             mode=config.mode,

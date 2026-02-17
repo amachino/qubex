@@ -148,6 +148,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert payload.interval_ns == 102
     assert payload.repeats == 16
     assert payload.mode == "avg"
+    assert payload.instrument_aliases == {target: target}
     assert target in payload.timelines
     timeline = payload.timelines[target]
     assert timeline.sampling_period_ns == 0.4
@@ -158,3 +159,49 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert timeline.capture_windows[0].name == "capture_0"
     assert timeline.capture_windows[0].start_offset_ns == pytest.approx(0.4)
     assert timeline.capture_windows[0].length_ns == pytest.approx(0.4)
+
+
+def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
+    """Given alias resolver hook, when building request, then payload includes resolved aliases."""
+    target = "RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            waveforms={target: np.array([0.0 + 0.0j], dtype=np.complex128)},
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.4,
+                ),
+            ]
+        ),
+    )
+    backend_controller = type(
+        "_BC",
+        (),
+        {
+            "DEFAULT_SAMPLING_PERIOD": 0.4,
+            "resolve_quel3_instrument_alias": staticmethod(lambda value: f"alias-{value}"),
+        },
+    )()
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=backend_controller,
+        experiment_system=cast(
+            Any,
+            type(
+                "_ES",
+                (),
+                {"get_awg_frequency": staticmethod(lambda _: 100_000_000.0)},
+            )(),
+        ),
+        constraint_profile=MeasurementConstraintProfile.relaxed(0.4),
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.instrument_aliases == {target: "alias-RQ00"}
