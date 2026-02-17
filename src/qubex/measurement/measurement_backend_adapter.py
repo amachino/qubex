@@ -13,8 +13,6 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.quel1 import (
-    SAMPLING_PERIOD,
-    WORD_LENGTH,
     Quel1BackendController,
     Quel1ExecutionPayload,
 )
@@ -50,31 +48,23 @@ class Quel1MeasurementBackendAdapter:
         *,
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
-        sampling_period: float = SAMPLING_PERIOD,
         constraint_profile: MeasurementConstraintProfile | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
         if constraint_profile is None:
-            constraint_profile = MeasurementConstraintProfile.strict_quel1(
-                sampling_period_ns=sampling_period
-            )
+            constraint_profile = MeasurementConstraintProfile.strict_quel1()
         self._constraint_profile = constraint_profile
 
     @property
     def sampling_period(self) -> float:
-        """Return sampling period (ns), preserving legacy `__new__` test paths."""
+        """Return sampling period (ns)."""
         return self.constraint_profile.sampling_period_ns
 
     @property
     def constraint_profile(self) -> MeasurementConstraintProfile:
-        """Return backend measurement constraints with `__new__` compatibility."""
-        profile = getattr(self, "_constraint_profile", None)
-        if isinstance(profile, MeasurementConstraintProfile):
-            return profile
-        return MeasurementConstraintProfile.strict_quel1(
-            sampling_period_ns=float(getattr(self, "_sampling_period", SAMPLING_PERIOD))
-        )
+        """Return backend measurement constraints."""
+        return self._constraint_profile
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate QuEL-1 specific pulse/capture constraints."""
@@ -267,10 +257,14 @@ class Quel1MeasurementBackendAdapter:
         readout_ranges = pulse_schedule.get_pulse_ranges(readout_targets)
 
         capture_delay_sample: dict[str, int] = {}
+        word_length = self.constraint_profile.word_length_samples
+        if word_length is None:
+            raise ValueError(
+                "word_length_samples is required for backend execution request."
+            )
         for target in readout_targets:
             mux = self._experiment_system.get_mux_by_qubit(Target.qubit_label(target))
             capture_delay_word = capture_delays.get(mux.index, 0)
-            word_length = self.constraint_profile.word_length_samples or WORD_LENGTH
             capture_delay_sample[target] = capture_delay_word * word_length
 
         sampled_sequences = pulse_schedule.get_sampled_sequences(copy=False)

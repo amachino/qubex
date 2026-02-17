@@ -82,10 +82,13 @@ def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
         def create_quel1_sequencer(self, **_: Any) -> object:
             return object()
 
-    adapter = cast(Any, object.__new__(Quel1MeasurementBackendAdapter))
     backend_controller = _BackendController()
-    monkeypatch.setattr(
-        adapter, "_backend_controller", backend_controller, raising=False
+    adapter = cast(
+        Any,
+        Quel1MeasurementBackendAdapter(
+            backend_controller=cast(Any, backend_controller),
+            experiment_system=cast(Any, object()),
+        ),
     )
 
     def _sampled_sequences(

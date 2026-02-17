@@ -73,7 +73,10 @@ def test_validate_measurement_schedule_accepts_device_constraints() -> None:
         capture_schedule=capture_schedule,
     )
 
-    adapter = object.__new__(Quel1MeasurementBackendAdapter)
+    adapter = Quel1MeasurementBackendAdapter(
+        backend_controller=object(),  # type: ignore[arg-type]
+        experiment_system=object(),  # type: ignore[arg-type]
+    )
     adapter.validate_schedule(schedule)
 
 
@@ -105,7 +108,10 @@ def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture()
         pulse_schedule=pulse_schedule,
         capture_schedule=capture_schedule,
     )
-    adapter = object.__new__(Quel1MeasurementBackendAdapter)
+    adapter = Quel1MeasurementBackendAdapter(
+        backend_controller=object(),  # type: ignore[arg-type]
+        experiment_system=object(),  # type: ignore[arg-type]
+    )
 
     with pytest.raises(ValueError, match="first capture start"):
         adapter.validate_schedule(schedule)
