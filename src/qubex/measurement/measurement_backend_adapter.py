@@ -13,10 +13,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.quel1 import (
-    BLOCK_DURATION,
-    EXTRA_SUM_SECTION_LENGTH,
     SAMPLING_PERIOD,
-    WORD_DURATION,
     WORD_LENGTH,
     Quel1BackendController,
     Quel1ExecutionPayload,
@@ -24,6 +21,8 @@ from qubex.backend.quel1 import (
 from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+
+from .measurement_constraint_profile import MeasurementConstraintProfile
 
 
 class MeasurementBackendAdapter(Protocol):
@@ -52,24 +51,46 @@ class Quel1MeasurementBackendAdapter:
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
         sampling_period: float = SAMPLING_PERIOD,
+        constraint_profile: MeasurementConstraintProfile | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
-        self._sampling_period = float(sampling_period)
+        if constraint_profile is None:
+            constraint_profile = MeasurementConstraintProfile.strict_quel1(
+                sampling_period_ns=sampling_period
+            )
+        self._constraint_profile = constraint_profile
 
     @property
     def sampling_period(self) -> float:
         """Return sampling period (ns), preserving legacy `__new__` test paths."""
-        return float(getattr(self, "_sampling_period", SAMPLING_PERIOD))
+        return self.constraint_profile.sampling_period_ns
+
+    @property
+    def constraint_profile(self) -> MeasurementConstraintProfile:
+        """Return backend measurement constraints with `__new__` compatibility."""
+        profile = getattr(self, "_constraint_profile", None)
+        if isinstance(profile, MeasurementConstraintProfile):
+            return profile
+        return MeasurementConstraintProfile.strict_quel1(
+            sampling_period_ns=float(getattr(self, "_sampling_period", SAMPLING_PERIOD))
+        )
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate QuEL-1 specific pulse/capture constraints."""
+        profile = self.constraint_profile
+        block_duration = profile.block_duration_ns
+        word_duration = profile.word_duration_ns
         pulse_schedule = schedule.pulse_schedule
         if not pulse_schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
-        if not self._is_multiple(pulse_schedule.duration, BLOCK_DURATION):
+        if (
+            profile.enforce_block_alignment
+            and block_duration is not None
+            and not self._is_multiple(pulse_schedule.duration, block_duration)
+        ):
             raise ValueError(
-                f"Pulse sequence duration must be a multiple of {BLOCK_DURATION} ns."
+                f"Pulse sequence duration must be a multiple of {block_duration} ns."
             )
 
         channel_captures = schedule.capture_schedule.channels
@@ -83,38 +104,60 @@ class Quel1MeasurementBackendAdapter:
                 raise ValueError(f"No capture windows for channel {channel}.")
 
             first_capture = sorted_captures[0]
-            if not self._is_multiple(first_capture.start_time, BLOCK_DURATION):
+            if (
+                profile.enforce_block_alignment
+                and block_duration is not None
+                and not self._is_multiple(first_capture.start_time, block_duration)
+            ):
                 raise ValueError(
                     "The first capture start time must be a multiple of "
-                    f"{BLOCK_DURATION} ns."
+                    f"{block_duration} ns."
                 )
-            if not self._is_multiple(first_capture.duration, WORD_DURATION):
+            if (
+                profile.enforce_word_alignment
+                and word_duration is not None
+                and not self._is_multiple(first_capture.duration, word_duration)
+            ):
                 raise ValueError(
-                    f"Capture duration must be a multiple of {WORD_DURATION} ns."
+                    f"Capture duration must be a multiple of {word_duration} ns."
                 )
-            workaround_duration = EXTRA_SUM_SECTION_LENGTH * self.sampling_period
-            if not np.isclose(first_capture.duration, workaround_duration):
+            workaround_duration = profile.workaround_capture_duration_ns
+            if profile.require_workaround_capture and not np.isclose(
+                first_capture.duration, workaround_duration
+            ):
                 raise ValueError(
                     "The first capture must be the workaround capture with duration "
                     f"{workaround_duration} ns."
                 )
 
             for capture in sorted_captures:
-                if not self._is_multiple(capture.start_time, WORD_DURATION):
+                if (
+                    profile.enforce_word_alignment
+                    and word_duration is not None
+                    and not self._is_multiple(capture.start_time, word_duration)
+                ):
                     raise ValueError(
-                        f"Capture start time must be a multiple of {WORD_DURATION} ns."
+                        f"Capture start time must be a multiple of {word_duration} ns."
                     )
-                if not self._is_multiple(capture.duration, WORD_DURATION):
+                if (
+                    profile.enforce_word_alignment
+                    and word_duration is not None
+                    and not self._is_multiple(capture.duration, word_duration)
+                ):
                     raise ValueError(
-                        f"Capture duration must be a multiple of {WORD_DURATION} ns."
+                        f"Capture duration must be a multiple of {word_duration} ns."
                     )
 
             ranges = readout_ranges.get(channel, [])
-            if len(sorted_captures) != len(ranges) + 1:
+            expected_capture_count = len(ranges) + (
+                1 if profile.require_workaround_capture else 0
+            )
+            if len(sorted_captures) != expected_capture_count:
                 raise ValueError(
-                    f"Capture schedule mismatch for {channel}: expected {len(ranges) + 1} captures."
+                    f"Capture schedule mismatch for {channel}: expected {expected_capture_count} captures."
                 )
-            for capture, rng in zip(sorted_captures[1:], ranges, strict=True):
+            offset = 1 if profile.require_workaround_capture else 0
+            for capture, rng in zip(sorted_captures[offset:], ranges, strict=True):
                 expected_start = rng.start * self.sampling_period
                 expected_duration = len(rng) * self.sampling_period
                 if not np.isclose(capture.start_time, expected_start):
@@ -132,22 +175,34 @@ class Quel1MeasurementBackendAdapter:
                 current = sorted_captures[idx]
                 nxt = sorted_captures[idx + 1]
                 gap = nxt.start_time - (current.start_time + current.duration)
-                if gap < WORD_DURATION:
+                if (
+                    profile.enforce_capture_spacing
+                    and word_duration is not None
+                    and gap < word_duration
+                ):
                     raise ValueError(
-                        f"Capture post-blank must be at least {WORD_DURATION} ns."
+                        f"Capture post-blank must be at least {word_duration} ns."
                     )
-                if not self._is_multiple(gap, WORD_DURATION):
+                if (
+                    profile.enforce_capture_spacing
+                    and word_duration is not None
+                    and not self._is_multiple(gap, word_duration)
+                ):
                     raise ValueError(
-                        f"Capture post-blank must be a multiple of {WORD_DURATION} ns."
+                        f"Capture post-blank must be a multiple of {word_duration} ns."
                     )
 
             last = sorted_captures[-1]
             tail_blank = pulse_schedule.duration - (last.start_time + last.duration)
             if tail_blank < 0:
                 raise ValueError("Capture schedule exceeds pulse schedule duration.")
-            if not self._is_multiple(tail_blank, WORD_DURATION):
+            if (
+                profile.enforce_capture_spacing
+                and word_duration is not None
+                and not self._is_multiple(tail_blank, word_duration)
+            ):
                 raise ValueError(
-                    f"Final post-blank must be a multiple of {WORD_DURATION} ns."
+                    f"Final post-blank must be a multiple of {word_duration} ns."
                 )
 
     def build_execution_request(
@@ -157,13 +212,19 @@ class Quel1MeasurementBackendAdapter:
         config: MeasurementConfig,
     ) -> BackendExecutionRequest:
         """Build a QuEL backend execution request from measurement inputs."""
+        profile = self.constraint_profile
+        block_duration = profile.block_duration_ns
         measure_mode = MeasureMode(config.mode)
-        interval = int(
-            math.ceil(
-                (schedule.pulse_schedule.duration + config.interval) / BLOCK_DURATION
+        if profile.enforce_block_alignment and block_duration is not None:
+            interval = int(
+                math.ceil(
+                    (schedule.pulse_schedule.duration + config.interval)
+                    / block_duration
+                )
+                * block_duration
             )
-            * BLOCK_DURATION
-        )
+        else:
+            interval = math.ceil(schedule.pulse_schedule.duration + config.interval)
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
         )
@@ -209,7 +270,8 @@ class Quel1MeasurementBackendAdapter:
         for target in readout_targets:
             mux = self._experiment_system.get_mux_by_qubit(Target.qubit_label(target))
             capture_delay_word = capture_delays.get(mux.index, 0)
-            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
+            word_length = self.constraint_profile.word_length_samples or WORD_LENGTH
+            capture_delay_sample[target] = capture_delay_word * word_length
 
         sampled_sequences = pulse_schedule.get_sampled_sequences(copy=False)
         for target, ranges in readout_ranges.items():

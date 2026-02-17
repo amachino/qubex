@@ -8,6 +8,9 @@ import pytest
 
 from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.measurement.measurement_backend_adapter import Quel1MeasurementBackendAdapter
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
 from qubex.measurement.measurement_schedule_builder import (
     BLOCK_DURATION,
     EXTRA_SUM_SECTION_LENGTH,
@@ -106,3 +109,34 @@ def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture()
 
     with pytest.raises(ValueError, match="first capture start"):
         adapter.validate_schedule(schedule)
+
+
+def test_validate_measurement_schedule_accepts_relaxed_profile() -> None:
+    """Given relaxed constraints, when validating non-word/non-block schedule, then no error is raised."""
+    target = "RQ00"
+    pulse_schedule = _FakePulseSchedule(
+        duration=123.0,
+        length=62,
+        ranges={target: [_FakeRange(start=5, stop=12)]},
+    )
+    capture_schedule = CaptureSchedule(
+        captures=[
+            Capture(
+                channels=[target],
+                start_time=10.0,
+                duration=14.0,
+            ),
+        ]
+    )
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=capture_schedule,
+    )
+
+    adapter = Quel1MeasurementBackendAdapter(
+        backend_controller=object(),  # type: ignore[arg-type]
+        experiment_system=object(),  # type: ignore[arg-type]
+        constraint_profile=MeasurementConstraintProfile.relaxed(2.0),
+    )
+
+    adapter.validate_schedule(schedule)

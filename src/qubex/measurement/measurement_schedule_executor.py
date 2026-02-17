@@ -17,6 +17,7 @@ from .measurement_backend_adapter import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
 )
+from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_result_factory import MeasurementResultFactory
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
@@ -71,7 +72,7 @@ class MeasurementScheduleExecutor:
             measurement_backend_adapter=Quel1MeasurementBackendAdapter(
                 backend_controller=backend_controller,
                 experiment_system=experiment_system,
-                sampling_period=cls._resolve_sampling_period_ns(backend_controller),
+                constraint_profile=cls._resolve_constraint_profile(backend_controller),
             ),
             measurement_result_factory=MeasurementResultFactory(
                 experiment_system=experiment_system,
@@ -88,6 +89,22 @@ class MeasurementScheduleExecutor:
         if isinstance(sampling_period, (int, float)):
             return float(sampling_period)
         return SAMPLING_PERIOD
+
+    @classmethod
+    def _resolve_constraint_profile(
+        cls,
+        backend_controller: Quel1BackendController,
+    ) -> MeasurementConstraintProfile:
+        """Resolve backend constraint profile from controller capability hints."""
+        profile = getattr(backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None)
+        if isinstance(profile, MeasurementConstraintProfile):
+            return profile
+
+        sampling_period = cls._resolve_sampling_period_ns(backend_controller)
+        mode = getattr(backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "strict")
+        if mode == "relaxed":
+            return MeasurementConstraintProfile.relaxed(sampling_period)
+        return MeasurementConstraintProfile.strict_quel1(sampling_period)
 
     def execute(
         self,

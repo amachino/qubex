@@ -12,17 +12,17 @@ from qubex.backend import (
     Mux,
     Target,
 )
-from qubex.backend.quel1 import (
-    BLOCK_DURATION,
-    EXTRA_CAPTURE_DURATION,
-    EXTRA_SUM_SECTION_LENGTH,
-    SAMPLING_PERIOD,
-    WORD_DURATION,
-)
 
+from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .models.capture_schedule import Capture, CaptureSchedule
 from .models.measurement_schedule import MeasurementSchedule
+
+_STRICT_PROFILE = MeasurementConstraintProfile.strict_quel1()
+WORD_DURATION = _STRICT_PROFILE.word_duration_ns or 0.0
+BLOCK_DURATION = _STRICT_PROFILE.block_duration_ns or 0.0
+EXTRA_SUM_SECTION_LENGTH = _STRICT_PROFILE.extra_sum_section_length_samples
+EXTRA_CAPTURE_DURATION = _STRICT_PROFILE.extra_capture_duration_ns
 
 
 class MeasurementScheduleBuilder:
@@ -35,18 +35,31 @@ class MeasurementScheduleBuilder:
         pulse_factory: MeasurementPulseFactory,
         targets: Mapping[str, Target],
         mux_dict: Mapping[str, Mux],
-        sampling_period: float = SAMPLING_PERIOD,
+        sampling_period: float | None = None,
+        constraint_profile: MeasurementConstraintProfile | None = None,
     ) -> None:
         self._control_params = control_params
         self._pulse_factory = pulse_factory
         self._targets = targets
         self._mux_dict = mux_dict
-        self._sampling_period = float(sampling_period)
+        if constraint_profile is None:
+            if sampling_period is None:
+                constraint_profile = MeasurementConstraintProfile.strict_quel1()
+            else:
+                constraint_profile = MeasurementConstraintProfile.strict_quel1(
+                    sampling_period_ns=sampling_period
+                )
+        self._constraint_profile = constraint_profile
 
     @property
     def sampling_period(self) -> float:
         """Return sampling period (ns) used for capture-time conversion."""
-        return self._sampling_period
+        return self._constraint_profile.sampling_period_ns
+
+    @property
+    def constraint_profile(self) -> MeasurementConstraintProfile:
+        """Return the backend constraint profile used by this builder."""
+        return self._constraint_profile
 
     def build(
         self,
@@ -71,9 +84,15 @@ class MeasurementScheduleBuilder:
             readout_amplitudes = self._control_params.readout_amplitude
 
         if add_last_measurement:
-            sequence_duration = (
-                math.ceil(schedule.duration / WORD_DURATION) * WORD_DURATION
-            )
+            sequence_duration = schedule.duration
+            word_duration = self.constraint_profile.word_duration_ns
+            if (
+                self.constraint_profile.enforce_word_alignment
+                and word_duration is not None
+            ):
+                sequence_duration = (
+                    math.ceil(sequence_duration / word_duration) * word_duration
+                )
             schedule.pad(total_duration=sequence_duration, pad_side="right")
 
             readout_targets = list(
@@ -111,15 +130,22 @@ class MeasurementScheduleBuilder:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
-        schedule.pad(
-            total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
-            pad_side="left",
-        )
+        if self.constraint_profile.require_workaround_capture:
+            schedule.pad(
+                total_duration=schedule.duration
+                + self.constraint_profile.extra_capture_duration_ns,
+                pad_side="left",
+            )
 
-        sequence_duration = (
-            math.ceil(schedule.duration / BLOCK_DURATION) * BLOCK_DURATION
-        )
-        schedule.pad(total_duration=sequence_duration, pad_side="right")
+        block_duration = self.constraint_profile.block_duration_ns
+        if (
+            self.constraint_profile.enforce_block_alignment
+            and block_duration is not None
+        ):
+            sequence_duration = (
+                math.ceil(schedule.duration / block_duration) * block_duration
+            )
+            schedule.pad(total_duration=sequence_duration, pad_side="right")
 
         if add_pump_pulses:
             muxes = []
@@ -169,27 +195,28 @@ class MeasurementScheduleBuilder:
         """Build a capture schedule aligned to readout windows and workaround capture."""
         captures: list[Capture] = []
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
-        workaround_duration = EXTRA_SUM_SECTION_LENGTH * self._sampling_period
+        workaround_duration = self.constraint_profile.workaround_capture_duration_ns
 
         for target in readout_targets:
             ranges = readout_ranges.get(target, [])
             if not ranges:
                 continue
 
-            # WORKAROUND: keep the extra first capture that aligns subsequent captures.
-            captures.append(
-                Capture(
-                    channels=[target],
-                    start_time=0.0,
-                    duration=workaround_duration,
+            if self.constraint_profile.require_workaround_capture:
+                # Keep workaround capture only for strict backends that require it.
+                captures.append(
+                    Capture(
+                        channels=[target],
+                        start_time=0.0,
+                        duration=workaround_duration,
+                    )
                 )
-            )
             captures.extend(
                 [
                     Capture(
                         channels=[target],
-                        start_time=rng.start * self._sampling_period,
-                        duration=len(rng) * self._sampling_period,
+                        start_time=rng.start * self.sampling_period,
+                        duration=len(rng) * self.sampling_period,
                     )
                     for rng in ranges
                 ]

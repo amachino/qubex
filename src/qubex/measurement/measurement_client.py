@@ -36,6 +36,7 @@ from qubex.typing import ConfigurationMode, IQArray, MeasurementMode, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
 from .measurement_backend_manager import MeasurementBackendManager
+from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_schedule_builder import MeasurementScheduleBuilder
@@ -242,7 +243,7 @@ class MeasurementClient:
             pulse_factory=self.pulse_factory,
             targets=self.targets,
             mux_dict=self.mux_dict,
-            sampling_period=self.sampling_period,
+            constraint_profile=self.constraint_profile,
         )
 
     @property
@@ -270,15 +271,32 @@ class MeasurementClient:
     @property
     def sampling_period(self) -> float:
         """Resolve sampling period (ns) from backend-controller contract."""
+        return self.constraint_profile.sampling_period_ns
+
+    @property
+    def constraint_profile(self) -> MeasurementConstraintProfile:
+        """Resolve backend constraint profile from backend-controller hints."""
         try:
+            profile = getattr(
+                self.backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None
+            )
+            mode = getattr(
+                self.backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "strict"
+            )
             sampling_period = getattr(
                 self.backend_controller, "DEFAULT_SAMPLING_PERIOD", None
             )
         except Exception:
-            return SAMPLING_PERIOD
+            return MeasurementConstraintProfile.strict_quel1(SAMPLING_PERIOD)
+        if isinstance(profile, MeasurementConstraintProfile):
+            return profile
+        if mode == "relaxed":
+            if isinstance(sampling_period, (int, float)):
+                return MeasurementConstraintProfile.relaxed(float(sampling_period))
+            return MeasurementConstraintProfile.relaxed(SAMPLING_PERIOD)
         if isinstance(sampling_period, (int, float)):
-            return float(sampling_period)
-        return SAMPLING_PERIOD
+            return MeasurementConstraintProfile.strict_quel1(float(sampling_period))
+        return MeasurementConstraintProfile.strict_quel1(SAMPLING_PERIOD)
 
     @property
     def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:

@@ -13,6 +13,9 @@ from qubex.backend import (
 )
 from qubex.backend.quel1 import Quel1BackendController, Quel1BackendRawResult
 from qubex.measurement.measurement_backend_adapter import MeasurementBackendAdapter
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_result_factory import MeasurementResultFactory
 from qubex.measurement.measurement_schedule_executor import MeasurementScheduleExecutor
@@ -158,8 +161,10 @@ def test_create_default_passes_none_to_delegate_backend_defaults(monkeypatch) ->
     assert called["clock_health_checks"] is None
 
 
-def test_create_default_passes_backend_sampling_period_to_adapter(monkeypatch) -> None:
-    """Given backend dt, when creating default executor, then adapter receives that sampling period."""
+def test_create_default_passes_backend_constraint_profile_to_adapter(
+    monkeypatch,
+) -> None:
+    """Given backend dt, when creating default executor, then adapter receives strict profile with that period."""
     called: dict[str, object] = {}
 
     class _BackendExecutor:
@@ -172,11 +177,11 @@ def test_create_default_passes_backend_sampling_period_to_adapter(monkeypatch) -
             *,
             backend_controller: object,
             experiment_system: object,
-            sampling_period: float,
+            constraint_profile: MeasurementConstraintProfile,
         ) -> None:
             called["adapter_backend_controller"] = backend_controller
             called["adapter_experiment_system"] = experiment_system
-            called["adapter_sampling_period"] = sampling_period
+            called["adapter_constraint_profile"] = constraint_profile
 
     class _ResultFactory:
         def __init__(self, *, experiment_system: object) -> None:
@@ -206,4 +211,61 @@ def test_create_default_passes_backend_sampling_period_to_adapter(monkeypatch) -
     assert isinstance(executor, MeasurementScheduleExecutor)
     assert called["adapter_backend_controller"] is backend_controller
     assert called["adapter_experiment_system"] is experiment_system
-    assert called["adapter_sampling_period"] == 4.0
+    profile = called["adapter_constraint_profile"]
+    assert isinstance(profile, MeasurementConstraintProfile)
+    assert profile.sampling_period_ns == 4.0
+    assert profile.enforce_block_alignment is True
+
+
+def test_create_default_uses_relaxed_constraint_mode(monkeypatch) -> None:
+    """Given relaxed mode hint, when creating default executor, then adapter receives relaxed profile."""
+    called: dict[str, object] = {}
+
+    class _BackendExecutor:
+        def __init__(self, **kwargs: object) -> None:
+            called["backend_executor_kwargs"] = kwargs
+
+    class _Adapter:
+        def __init__(
+            self, *, constraint_profile: MeasurementConstraintProfile, **_: object
+        ) -> None:
+            called["adapter_constraint_profile"] = constraint_profile
+
+    class _ResultFactory:
+        def __init__(self, *, experiment_system: object) -> None:
+            called["result_factory_experiment_system"] = experiment_system
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _BackendExecutor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        _Adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        _ResultFactory,
+    )
+
+    backend_controller = type(
+        "_BC",
+        (),
+        {
+            "DEFAULT_SAMPLING_PERIOD": 0.4,
+            "MEASUREMENT_CONSTRAINT_MODE": "relaxed",
+        },
+    )()
+    experiment_system = object()
+
+    executor = MeasurementScheduleExecutor.create_default(
+        backend_controller=cast(Quel1BackendController, backend_controller),
+        experiment_system=cast(Any, experiment_system),
+    )
+
+    assert isinstance(executor, MeasurementScheduleExecutor)
+    profile = called["adapter_constraint_profile"]
+    assert isinstance(profile, MeasurementConstraintProfile)
+    assert profile.sampling_period_ns == 0.4
+    assert profile.enforce_block_alignment is False
+    assert profile.require_workaround_capture is False

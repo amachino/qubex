@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.measurement.measurement_client import MeasurementClient
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
 
 
 def _make_measurement_client_with_backend(
     *,
     default_sampling_period: float | None,
+    constraint_mode: str | None = None,
 ) -> MeasurementClient:
     measurement = MeasurementClient(
         chip_id="TEST",
@@ -17,11 +21,12 @@ def _make_measurement_client_with_backend(
         connect_devices=False,
     )
 
-    backend_controller = (
-        type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": default_sampling_period})()
-        if default_sampling_period is not None
-        else type("_BC", (), {})()
-    )
+    backend_attrs: dict[str, object] = {}
+    if default_sampling_period is not None:
+        backend_attrs["DEFAULT_SAMPLING_PERIOD"] = default_sampling_period
+    if constraint_mode is not None:
+        backend_attrs["MEASUREMENT_CONSTRAINT_MODE"] = constraint_mode
+    backend_controller = type("_BC", (), backend_attrs)()
     experiment_system = type(
         "_ES",
         (),
@@ -61,3 +66,18 @@ def test_schedule_builder_is_initialized_with_resolved_sampling_period() -> None
     measurement = _make_measurement_client_with_backend(default_sampling_period=8.0)
 
     assert measurement.schedule_builder.sampling_period == 8.0
+
+
+def test_constraint_profile_uses_relaxed_mode_hint() -> None:
+    """Given relaxed mode hint, when resolving profile, then relaxed constraints are returned."""
+    measurement = _make_measurement_client_with_backend(
+        default_sampling_period=0.4,
+        constraint_mode="relaxed",
+    )
+
+    profile = measurement.constraint_profile
+
+    assert isinstance(profile, MeasurementConstraintProfile)
+    assert profile.sampling_period_ns == 0.4
+    assert profile.enforce_block_alignment is False
+    assert profile.require_workaround_capture is False
