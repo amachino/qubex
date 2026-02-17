@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import numpy as np
+import numpy.typing as npt
 
 from qubex.backend import (
     BackendExecutionRequest,
@@ -38,6 +40,147 @@ class MeasurementBackendAdapter(Protocol):
     ) -> BackendExecutionRequest:
         """Build backend execution request from measurement schedule/config."""
         ...
+
+
+@dataclass(frozen=True)
+class Quel3CaptureWindow:
+    """Capture window definition for Quel3 fixed-timeline execution."""
+
+    name: str
+    start_offset_ns: float
+    length_ns: float
+
+
+@dataclass(frozen=True)
+class Quel3TargetTimeline:
+    """Timeline definition for one target in Quel3 execution."""
+
+    sampling_period_ns: float
+    waveform: npt.NDArray[np.complex128]
+    capture_windows: tuple[Quel3CaptureWindow, ...]
+    length_ns: float
+    modulation_frequency_hz: float | None = None
+
+
+@dataclass(frozen=True)
+class Quel3ExecutionPayload:
+    """Execution payload that can be translated to quelware fixed-timeline calls."""
+
+    timelines: dict[str, Quel3TargetTimeline]
+    interval_ns: float
+    repeats: int
+    mode: str
+    dsp_demodulation: bool
+    enable_sum: bool
+    enable_classification: bool
+    line_param0: tuple[float, float, float]
+    line_param1: tuple[float, float, float]
+
+
+class Quel3MeasurementBackendAdapter:
+    """Relaxed backend adapter that builds Quel3 fixed-timeline payloads."""
+
+    def __init__(
+        self,
+        *,
+        backend_controller: Any,
+        experiment_system: ExperimentSystem,
+        constraint_profile: MeasurementConstraintProfile | None = None,
+    ) -> None:
+        self._backend_controller = backend_controller
+        self._experiment_system = experiment_system
+        if constraint_profile is None:
+            sampling_period = getattr(backend_controller, "DEFAULT_SAMPLING_PERIOD", None)
+            if not isinstance(sampling_period, (float, int)):
+                raise ValueError(
+                    "Quel3MeasurementBackendAdapter requires a relaxed constraint profile or backend DEFAULT_SAMPLING_PERIOD."
+                )
+            constraint_profile = MeasurementConstraintProfile.relaxed(
+                sampling_period_ns=float(sampling_period)
+            )
+        self._constraint_profile = constraint_profile
+
+    @property
+    def sampling_period(self) -> float:
+        """Return sampling period (ns)."""
+        return self.constraint_profile.sampling_period_ns
+
+    @property
+    def constraint_profile(self) -> MeasurementConstraintProfile:
+        """Return backend measurement constraints."""
+        return self._constraint_profile
+
+    def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+        """Validate schedule with relaxed Quel3 constraints."""
+        pulse_schedule = schedule.pulse_schedule
+        if not pulse_schedule.is_valid():
+            raise ValueError("Invalid pulse schedule.")
+        channel_captures = schedule.capture_schedule.channels
+        if len(channel_captures) == 0:
+            raise ValueError("Capture schedule must not be empty.")
+        for channel, captures in channel_captures.items():
+            for capture in captures:
+                if capture.start_time < 0:
+                    raise ValueError(
+                        f"Capture start time must be non-negative: {channel}."
+                    )
+                if capture.duration <= 0:
+                    raise ValueError(
+                        f"Capture duration must be positive: {channel}."
+                    )
+                if capture.start_time + capture.duration > pulse_schedule.duration:
+                    raise ValueError(
+                        f"Capture exceeds pulse schedule duration: {channel}."
+                    )
+
+    def build_execution_request(
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> BackendExecutionRequest:
+        """Build backend execution request as Quel3 fixed-timeline payload."""
+        pulse_schedule = schedule.pulse_schedule
+        sampled_sequences = pulse_schedule.get_sampled_sequences(copy=False)
+        channel_captures = schedule.capture_schedule.channels
+        timelines: dict[str, Quel3TargetTimeline] = {}
+        for target, waveform in sampled_sequences.items():
+            captures = sorted(channel_captures.get(target, []), key=lambda c: c.start_time)
+            capture_windows = tuple(
+                Quel3CaptureWindow(
+                    name=f"capture_{index}",
+                    start_offset_ns=float(capture.start_time),
+                    length_ns=float(capture.duration),
+                )
+                for index, capture in enumerate(captures)
+            )
+            modulation_frequency_hz: float | None
+            try:
+                modulation_frequency_hz = float(
+                    self._experiment_system.get_awg_frequency(target)
+                )
+            except Exception:
+                modulation_frequency_hz = None
+            timelines[target] = Quel3TargetTimeline(
+                sampling_period_ns=self.sampling_period,
+                waveform=np.asarray(waveform, dtype=np.complex128),
+                capture_windows=capture_windows,
+                length_ns=float(pulse_schedule.duration),
+                modulation_frequency_hz=modulation_frequency_hz,
+            )
+        interval_ns = math.ceil(float(pulse_schedule.duration + config.interval))
+        payload = Quel3ExecutionPayload(
+            timelines=timelines,
+            interval_ns=interval_ns,
+            repeats=config.shots,
+            mode=config.mode,
+            dsp_demodulation=config.dsp.enable_dsp_demodulation,
+            enable_sum=config.dsp.enable_dsp_sum,
+            enable_classification=config.dsp.enable_dsp_classification,
+            line_param0=config.dsp.line_param0,
+            line_param1=config.dsp.line_param1,
+        )
+        return BackendExecutionRequest(payload=payload)
 
 
 class Quel1MeasurementBackendAdapter:

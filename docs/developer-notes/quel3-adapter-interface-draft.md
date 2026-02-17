@@ -4,6 +4,12 @@
 
 Define a concrete integration draft for QuEL-3 support using `quelware-client` while keeping the `MeasurementClient` compatibility contract.
 
+## Naming convention
+
+- Product name: `QuEL` (for example, `QuEL-3`)
+- Class/type prefix in code: `Quel` (for example, `Quel3MeasurementBackendAdapter`)
+- Middleware/client name: `quelware` (always lowercase, for example, `quelware-client`)
+
 ## Source snapshot (reference)
 
 - `packages/quelware-client/quelware-client/src/quelware_client/client/helpers/sequencer/__init__.py`
@@ -21,9 +27,16 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
   - `create_measurement_backend_adapter(experiment_system, constraint_profile)`
   - `create_measurement_result_factory(experiment_system)`
 
+## Current implementation scaffold
+
+- Added `Quel3MeasurementBackendAdapter` in `src/qubex/measurement/measurement_backend_adapter.py`.
+- Added `Quel3ExecutionPayload`/timeline dataclasses for schedule-to-payload conversion.
+- Added adapter tests in `tests/measurement/test_quel3_measurement_backend_adapter.py`.
+- Scope is intentionally minimal: relaxed validation + payload construction; direct quelware invocation remains in follow-up work.
+
 ## QuEL-3 mapping draft
 
-| Qubex concept | QuELware API candidate | Draft mapping |
+| Qubex concept | quelware API candidate | Draft mapping |
 | --- | --- | --- |
 | schedule waveform samples | `Sequencer.register_waveform` | Register target waveform per logical event block. |
 | schedule pulse placement | `Sequencer.add_event` | Use schedule start offset in ns and waveform name. |

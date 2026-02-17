@@ -5,6 +5,8 @@ from .measurement import Measurement
 from .measurement_backend_adapter import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
+    Quel3ExecutionPayload,
+    Quel3MeasurementBackendAdapter,
 )
 from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_client import MeasurementClient
@@ -44,6 +46,8 @@ __all__ = [
     "MeasurementScheduleExecutor",
     "MultipleMeasureResult",
     "Quel1MeasurementBackendAdapter",
+    "Quel3ExecutionPayload",
+    "Quel3MeasurementBackendAdapter",
     "StateClassifier",
     "StateClassifierGMM",
     "StateClassifierKMeans",
