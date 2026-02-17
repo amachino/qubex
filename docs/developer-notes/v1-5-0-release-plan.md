@@ -147,6 +147,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-17: Added `instrument_aliases` in Quel3 payload with optional controller hook (`resolve_instrument_alias`) for target-to-alias mapping.
 - 2026-02-17: Added explicit QuEL-1 capability hints on `Quel1BackendController` (`MEASUREMENT_BACKEND_KIND`, `MEASUREMENT_CONSTRAINT_MODE`, `MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE`).
 - 2026-02-17: Added `Quel3BackendController` scaffold and session-scoped backend-family selection (`backend_kind`) in `SystemManager`/`MeasurementClient` (`quel1` or `quel3`, no mixed session).
+- 2026-02-17: Implemented initial `Quel3BackendController.execute_measurement(payload)` path that invokes quelware fixed-timeline execution and returns canonical `MeasurementResult` directly (with clear runtime error when quelware dependency is unavailable).
 
 ## Commit plan
 
