@@ -33,6 +33,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Added `Quel3ExecutionPayload`/timeline dataclasses for schedule-to-payload conversion.
 - Added default adapter-selection hint: `MEASUREMENT_BACKEND_KIND="quel3"` in `MeasurementScheduleExecutor`.
 - For `MEASUREMENT_BACKEND_KIND="quel3"`, backend must provide `create_measurement_backend_executor(...)`; otherwise execution raises a clear runtime error.
+- `MeasurementScheduleExecutor.execute()` now accepts a backend executor returning canonical `MeasurementResult` directly (result-factory bypass path).
 - Added adapter tests in `tests/measurement/test_quel3_measurement_backend_adapter.py`.
 - Scope is intentionally minimal: relaxed validation + payload construction; direct quelware invocation remains in follow-up work.
 

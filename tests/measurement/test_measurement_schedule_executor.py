@@ -24,6 +24,7 @@ from qubex.measurement.models import (
     DspConfig,
     FrequencyConfig,
     MeasurementConfig,
+    MeasurementResult,
     MeasurementSchedule,
 )
 from qubex.measurement.models.capture_schedule import CaptureSchedule
@@ -126,6 +127,69 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
     assert typed_kwargs["device_config"] == {"shots": 2}
     assert typed_kwargs["sampling_period_ns"] == 2.0
     assert typed_kwargs["avg_sample_stride"] == 4
+    assert result is expected
+
+
+def test_execute_returns_backend_measurement_result_directly() -> None:
+    """Given backend returns canonical result, when executing, then result factory is not called."""
+    called: dict[str, object] = {}
+    request = BackendExecutionRequest(payload=object())
+    expected = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([1.0 + 0.0j])]},
+        device_config={"kind": "quel3"},
+        measurement_config={"mode": "avg"},
+    )
+
+    class _Adapter:
+        sampling_period = 0.4
+        constraint_profile = MeasurementConstraintProfile.relaxed(0.4)
+
+        def validate_schedule(
+            self,
+            schedule: MeasurementSchedule,
+        ) -> None:
+            called["validated"] = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            called["request_schedule"] = schedule
+            called["request_config"] = config
+            return request
+
+    class _Executor:
+        def execute(self, *, request: BackendExecutionRequest) -> MeasurementResult:
+            called["execute_request"] = request
+            return expected
+
+    class _ResultFactory:
+        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
+            raise AssertionError("result factory should not be called")
+
+    backend_controller = type("_BC", (), {"box_config": {"kind": "quel3"}})()
+    executor = MeasurementScheduleExecutor(
+        backend_executor=cast(BackendExecutor, _Executor()),
+        measurement_backend_adapter=cast(MeasurementBackendAdapter, _Adapter()),
+        measurement_result_factory=cast(MeasurementResultFactory, _ResultFactory()),
+        backend_controller=cast(Quel1BackendController, backend_controller),
+    )
+
+    schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["RQ00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    config = _make_config()
+
+    result = executor.execute(schedule=schedule, config=config)
+
+    assert called["validated"] is schedule
+    assert called["request_schedule"] is schedule
+    assert called["request_config"] is config
+    assert called["execute_request"] is request
     assert result is expected
 
 

@@ -142,6 +142,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-17: Added `Quel3MeasurementBackendAdapter` and `Quel3ExecutionPayload` skeleton for relaxed schedule validation and schedule-to-fixed-timeline payload conversion.
 - 2026-02-17: Default adapter selection now supports explicit backend kind hint (`MEASUREMENT_BACKEND_KIND="quel3"`), with tests ensuring Quel3 adapter path selection.
 - 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend executor hook is missing, to avoid accidental QuEL-1 executor fallback.
+- 2026-02-17: `MeasurementScheduleExecutor` now supports backend executors returning canonical `MeasurementResult` directly, enabling staged quelware integration before result-factory unification.
 
 ## Commit plan
 

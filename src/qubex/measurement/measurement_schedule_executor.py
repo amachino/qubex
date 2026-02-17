@@ -248,6 +248,8 @@ class MeasurementScheduleExecutor:
         backend_result = self._backend_executor.execute(
             request=request,
         )
+        if isinstance(backend_result, MeasurementResult):
+            return backend_result
         result = self._measurement_result_factory.create(
             backend_result=backend_result,
             measurement_config=config,
