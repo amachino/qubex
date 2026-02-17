@@ -8,7 +8,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from qubex.measurement.measurement_backend_adapter import (
+from qubex.measurement.adapters import (
     Quel3ExecutionPayload,
     Quel3MeasurementBackendAdapter,
 )

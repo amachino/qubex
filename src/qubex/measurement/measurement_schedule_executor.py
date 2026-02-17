@@ -15,7 +15,7 @@ from qubex.backend.quel1 import (
     Quel1BackendExecutor,
 )
 
-from .measurement_backend_adapter import (
+from .adapters import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
 )

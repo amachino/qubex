@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from qubex.backend.quel1 import SAMPLING_PERIOD
-from qubex.measurement.measurement_backend_adapter import Quel1MeasurementBackendAdapter
+from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )

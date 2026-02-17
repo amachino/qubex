@@ -18,11 +18,12 @@ from qubex.backend.quel1 import (
     Quel1BackendController,
     Quel1ExecutionPayload,
 )
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
 from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
-
-from .measurement_constraint_profile import MeasurementConstraintProfile
 
 
 class MeasurementBackendAdapter(Protocol):

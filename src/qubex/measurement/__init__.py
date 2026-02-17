@@ -1,13 +1,13 @@
 """Measurement API exports."""
 
-from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
-from .measurement import Measurement
-from .measurement_backend_adapter import (
+from .adapters import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
     Quel3ExecutionPayload,
     Quel3MeasurementBackendAdapter,
 )
+from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
+from .measurement import Measurement
 from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_client import MeasurementClient
 from .measurement_config_factory import MeasurementConfigFactory

@@ -8,7 +8,7 @@ from typing import Any, cast
 from qxpulse import FlatTop, PulseSchedule
 
 from qubex.backend import ControlParams, Target
-from qubex.measurement.measurement_backend_adapter import Quel1MeasurementBackendAdapter
+from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
 from qubex.measurement.models.capture_schedule import CaptureSchedule

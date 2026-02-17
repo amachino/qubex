@@ -111,7 +111,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 
 - `src/qubex/backend/quel1/quel1_backend_constants.py`: `SAMPLING_PERIOD = 2.0` is globally fixed
 - `src/qubex/measurement/measurement_schedule_builder.py`: capture start/duration are derived with fixed `SAMPLING_PERIOD`
-- `src/qubex/measurement/measurement_backend_adapter.py`: schedule validation and capture-slot conversion depend on fixed `SAMPLING_PERIOD`
+- `src/qubex/measurement/adapters/backend_adapter.py`: schedule validation and capture-slot conversion depend on fixed `SAMPLING_PERIOD`
 - `src/qubex/measurement/models/measure_result.py`: result time axis uses fixed single/avg sampling periods
 - `src/qubex/experiment/experiment_constants.py`: experiment-wide sampling period aliases QuEL-1 fixed constant
 

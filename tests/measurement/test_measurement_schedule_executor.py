@@ -12,7 +12,7 @@ from qubex.backend import (
     BackendExecutor,
 )
 from qubex.backend.quel1 import Quel1BackendController, Quel1BackendRawResult
-from qubex.measurement.measurement_backend_adapter import MeasurementBackendAdapter
+from qubex.measurement.adapters import MeasurementBackendAdapter
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
