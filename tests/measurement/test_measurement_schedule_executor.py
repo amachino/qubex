@@ -506,6 +506,66 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
     assert profile.enforce_block_alignment is False
 
 
+def test_create_default_uses_builtin_quel3_executor_when_backend_hook_exists(
+    monkeypatch,
+) -> None:
+    """Given quel3 backend hook, when creating default executor, then built-in Quel3 executor is used."""
+    called: dict[str, object] = {}
+
+    class _Quel3Executor:
+        def __init__(self, *, backend_controller: object) -> None:
+            called["executor_backend_controller"] = backend_controller
+
+    class _Adapter:
+        def __init__(self, **kwargs: object) -> None:
+            called["adapter_kwargs"] = kwargs
+
+    class _ResultFactory:
+        def __init__(self, *, experiment_system: object) -> None:
+            called["result_factory_experiment_system"] = experiment_system
+
+    def _unexpected_quel1_executor(**kwargs: object) -> object:
+        raise AssertionError("Quel1 executor fallback should not be used for quel3.")
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _unexpected_quel1_executor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel3BackendExecutor",
+        _Quel3Executor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel3MeasurementBackendAdapter",
+        _Adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        _ResultFactory,
+    )
+
+    class _Controller:
+        box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
+        DEFAULT_SAMPLING_PERIOD: ClassVar[float] = 0.4
+        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "relaxed"
+        MEASUREMENT_BACKEND_KIND: ClassVar[str] = "quel3"
+
+        def execute_quel3_measurement(self, *, payload: object) -> object:
+            return payload
+
+    backend_controller = _Controller()
+    experiment_system = object()
+
+    executor = MeasurementScheduleExecutor.create_default(
+        backend_controller=cast(Quel1BackendController, backend_controller),
+        experiment_system=cast(Any, experiment_system),
+    )
+
+    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert called["executor_backend_controller"] is backend_controller
+    assert called["result_factory_experiment_system"] is experiment_system
+
+
 def test_create_default_requires_custom_executor_for_quel3_backend_kind(
     monkeypatch,
 ) -> None:

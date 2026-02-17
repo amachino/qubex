@@ -18,6 +18,7 @@ from qubex.backend.quel1 import (
 from .adapters import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
+    Quel3BackendExecutor,
     Quel3MeasurementBackendAdapter,
 )
 from .measurement_constraint_profile import MeasurementConstraintProfile
@@ -108,6 +109,9 @@ class MeasurementScheduleExecutor:
                 clock_health_checks=clock_health_checks,
             )
         if backend_kind == "quel3":
+            execute_impl = getattr(backend_controller, "execute_quel3_measurement", None)
+            if callable(execute_impl):
+                return Quel3BackendExecutor(backend_controller=backend_controller)
             return _Quel3BackendExecutorPlaceholder()
         return Quel1BackendExecutor(
             backend_controller=backend_controller,
