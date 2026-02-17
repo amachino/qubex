@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from qubex.backend import (
     BackendExecutor,
     ExperimentSystem,
@@ -63,21 +65,89 @@ class MeasurementScheduleExecutor:
         clock_health_checks : bool | None, optional
             Whether to enable additional clock-health I/O in parallel mode.
         """
+        constraint_profile = cls._resolve_constraint_profile(backend_controller)
         return cls(
-            backend_executor=Quel1BackendExecutor(
+            backend_executor=cls._create_backend_executor(
                 backend_controller=backend_controller,
                 execution_mode=execution_mode,
                 clock_health_checks=clock_health_checks,
             ),
-            measurement_backend_adapter=Quel1MeasurementBackendAdapter(
+            measurement_backend_adapter=cls._create_backend_adapter(
                 backend_controller=backend_controller,
                 experiment_system=experiment_system,
-                constraint_profile=cls._resolve_constraint_profile(backend_controller),
+                constraint_profile=constraint_profile,
             ),
-            measurement_result_factory=MeasurementResultFactory(
+            measurement_result_factory=cls._create_result_factory(
+                backend_controller=backend_controller,
                 experiment_system=experiment_system,
             ),
             backend_controller=backend_controller,
+        )
+
+    @staticmethod
+    def _create_backend_executor(
+        *,
+        backend_controller: Quel1BackendController,
+        execution_mode: ExecutionMode | None,
+        clock_health_checks: bool | None,
+    ) -> BackendExecutor:
+        """Create backend executor with optional backend-specific factory hook."""
+        factory = getattr(
+            backend_controller,
+            "create_measurement_backend_executor",
+            None,
+        )
+        if isinstance(factory, Callable):
+            return factory(
+                execution_mode=execution_mode,
+                clock_health_checks=clock_health_checks,
+            )
+        return Quel1BackendExecutor(
+            backend_controller=backend_controller,
+            execution_mode=execution_mode,
+            clock_health_checks=clock_health_checks,
+        )
+
+    @staticmethod
+    def _create_backend_adapter(
+        *,
+        backend_controller: Quel1BackendController,
+        experiment_system: ExperimentSystem,
+        constraint_profile: MeasurementConstraintProfile,
+    ) -> MeasurementBackendAdapter:
+        """Create backend adapter with optional backend-specific factory hook."""
+        factory = getattr(
+            backend_controller,
+            "create_measurement_backend_adapter",
+            None,
+        )
+        if isinstance(factory, Callable):
+            return factory(
+                experiment_system=experiment_system,
+                constraint_profile=constraint_profile,
+            )
+        return Quel1MeasurementBackendAdapter(
+            backend_controller=backend_controller,
+            experiment_system=experiment_system,
+            constraint_profile=constraint_profile,
+        )
+
+    @staticmethod
+    def _create_result_factory(
+        *,
+        backend_controller: Quel1BackendController,
+        experiment_system: ExperimentSystem,
+    ) -> MeasurementResultFactory:
+        """Create result factory with optional backend-specific factory hook."""
+        factory = getattr(
+            backend_controller,
+            "create_measurement_result_factory",
+            None,
+        )
+        if isinstance(factory, Callable):
+            return factory(experiment_system=experiment_system)
+        return MeasurementResultFactory(
+            experiment_system=experiment_system,
         )
 
     @staticmethod

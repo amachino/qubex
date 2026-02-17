@@ -99,9 +99,9 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 ## Immediate next actions (this week)
 
 - [ ] Finalize QuEL-3 integration interface based on current `quelware-client` source
-- [ ] Review `packages/quelware-client` API surface and lock adapter mapping points
+- [x] Review `packages/quelware-client` API surface and lock adapter mapping points
 - [x] Identify and list current fixed `2 ns` assumptions in `src/` and map each to backend-derived timing
-- [ ] Scaffold adapter and contract test skeletons now
+- [x] Scaffold adapter and contract test skeletons now
 - [ ] Define minimal synchronized protocol scenario for beta sign-off
 - [ ] Draft beta release notes template and known limitation section
 
@@ -136,6 +136,8 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 
 - 2026-02-17: `measurement/models/measure_result.py` time-axis generation no longer hardcodes QuEL-1 fixed constants; backend-derived `sampling_period_ns` metadata is propagated through canonical result conversion.
 - 2026-02-17: `avg` mode stride is now explicit metadata (`avg_sample_stride`, default `4`) to preserve 4-way multiplexed readout demodulation semantics while allowing backend-specific override.
+- 2026-02-17: `MeasurementScheduleExecutor.create_default()` now supports backend-provided custom factories (`create_measurement_backend_executor`, `create_measurement_backend_adapter`) with contract tests, while keeping QuEL-1 defaults unchanged.
+- 2026-02-17: Added `/docs/developer-notes/quel3-adapter-interface-draft.md` with `quelware-client` API mapping, constraint assumptions, and open questions for QuEL-3 adapter implementation.
 
 ## Commit plan
 

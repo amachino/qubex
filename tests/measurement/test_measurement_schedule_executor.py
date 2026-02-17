@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from qxpulse import PulseSchedule
@@ -271,3 +271,100 @@ def test_create_default_uses_relaxed_constraint_mode(monkeypatch) -> None:
     assert profile.sampling_period_ns == 0.4
     assert profile.enforce_block_alignment is False
     assert profile.require_workaround_capture is False
+
+
+def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
+    """Given backend custom factories, when creating default executor, then custom executor and adapter are used."""
+    called: dict[str, object] = {}
+
+    class _BackendExecutor:
+        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
+            return Quel1BackendRawResult(status={}, data={}, config={})
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            return None
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            return BackendExecutionRequest(payload=object())
+
+    class _ResultFactory:
+        def create(self, **kwargs: object) -> object:
+            return MeasurementResultConverter.from_multiple(_make_multiple_result())
+
+    def _unexpected_backend_executor(**kwargs: object) -> object:
+        raise AssertionError("Quel1BackendExecutor fallback should not be used.")
+
+    def _unexpected_adapter(**kwargs: object) -> object:
+        raise AssertionError("Quel1MeasurementBackendAdapter fallback should not be used.")
+
+    def _unexpected_result_factory(**kwargs: object) -> object:
+        raise AssertionError("MeasurementResultFactory fallback should not be used.")
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        _unexpected_backend_executor,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        _unexpected_adapter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        _unexpected_result_factory,
+    )
+
+    class _Controller:
+        box_config: ClassVar[dict[str, int]] = {"shots": 1}
+        DEFAULT_SAMPLING_PERIOD: ClassVar[float] = 0.4
+
+        def create_measurement_backend_executor(
+            self,
+            *,
+            execution_mode: str | None,
+            clock_health_checks: bool | None,
+        ) -> _BackendExecutor:
+            called["execution_mode"] = execution_mode
+            called["clock_health_checks"] = clock_health_checks
+            return _BackendExecutor()
+
+        def create_measurement_backend_adapter(
+            self,
+            *,
+            experiment_system: object,
+            constraint_profile: MeasurementConstraintProfile,
+        ) -> _Adapter:
+            called["experiment_system"] = experiment_system
+            called["constraint_profile"] = constraint_profile
+            return _Adapter()
+
+        def create_measurement_result_factory(
+            self,
+            *,
+            experiment_system: object,
+        ) -> _ResultFactory:
+            called["result_factory_experiment_system"] = experiment_system
+            return _ResultFactory()
+
+    backend_controller = _Controller()
+    experiment_system = object()
+    executor = MeasurementScheduleExecutor.create_default(
+        backend_controller=cast(Quel1BackendController, backend_controller),
+        experiment_system=cast(Any, experiment_system),
+        execution_mode="parallel",
+        clock_health_checks=True,
+    )
+
+    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert called["execution_mode"] == "parallel"
+    assert called["clock_health_checks"] is True
+    assert called["experiment_system"] is experiment_system
+    assert called["result_factory_experiment_system"] is experiment_system
+    profile = called["constraint_profile"]
+    assert isinstance(profile, MeasurementConstraintProfile)
+    assert profile.sampling_period_ns == 0.4
