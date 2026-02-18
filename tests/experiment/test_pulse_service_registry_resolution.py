@@ -36,8 +36,14 @@ def test_calc_control_amplitudes_resolves_qubits_via_target_registry() -> None:
         def resolve_qubit_label(label: str) -> str:
             return "Q17" if label == "custom-target" else label
 
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_qubit_label=lambda label: _TargetRegistry.resolve_qubit_label(label),
+    )
+
     ctx = SimpleNamespace(
-        experiment_system=SimpleNamespace(target_registry=_TargetRegistry()),
+        experiment_system=experiment_system,
+        resolve_qubit_label=lambda label: experiment_system.resolve_qubit_label(label),
         params=SimpleNamespace(
             get_control_amplitude=lambda qubit: 0.25 if qubit == "Q17" else 0.0
         ),
@@ -101,8 +107,14 @@ def test_calc_control_amplitude_resolves_qubit_for_ef_target() -> None:
         def resolve_qubit_label(label: str) -> str:
             return "Q17" if label == "custom-ef-target" else label
 
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_qubit_label=lambda label: _TargetRegistry.resolve_qubit_label(label),
+    )
+
     ctx = SimpleNamespace(
-        experiment_system=SimpleNamespace(target_registry=_TargetRegistry()),
+        experiment_system=experiment_system,
+        resolve_qubit_label=lambda label: experiment_system.resolve_qubit_label(label),
         ge_targets={},
         ef_targets={"custom-ef-target": object()},
         get_rabi_param=lambda target: _make_rabi_param(target, 0.1),
@@ -127,8 +139,14 @@ def test_ef_rabi_params_resolves_ge_labels_via_target_registry() -> None:
         def resolve_ge_label(label: str) -> str:
             return "Q17" if label == "custom-ef-target" else label
 
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_ge_label=lambda label: _TargetRegistry.resolve_ge_label(label),
+    )
+
     ctx = SimpleNamespace(
-        experiment_system=SimpleNamespace(target_registry=_TargetRegistry()),
+        experiment_system=experiment_system,
+        resolve_ge_label=lambda label: experiment_system.resolve_ge_label(label),
         ge_targets={},
         ef_targets={"custom-ef-target": object()},
         get_rabi_param=lambda target: _make_rabi_param(target, 0.1),

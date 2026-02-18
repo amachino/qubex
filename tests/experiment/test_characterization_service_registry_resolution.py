@@ -21,12 +21,18 @@ def test_calibrate_ef_control_frequency_filters_targets_via_registry() -> None:
         def resolve_ef_label(label: str) -> str:
             return "Q17-ef" if label == "custom-target" else label
 
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_ef_label=lambda label: _TargetRegistry.resolve_ef_label(label),
+    )
+
     captured: dict[str, object] = {}
 
     service = cast(Any, object.__new__(CharacterizationService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
         qubit_labels=["Q17"],
-        experiment_system=SimpleNamespace(target_registry=_TargetRegistry()),
+        experiment_system=experiment_system,
+        resolve_ef_label=lambda label: experiment_system.resolve_ef_label(label),
         targets={"Q17-ef": object()},
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
@@ -100,15 +106,20 @@ def test_measure_electrical_delay_resolves_labels_via_target_registry() -> None:
         )
 
     service = cast(Any, object.__new__(CharacterizationService))
-    service.__dict__["_experiment_context"] = SimpleNamespace(
-        experiment_system=SimpleNamespace(
-            target_registry=_TargetRegistry(),
-            get_mux_by_qubit=lambda _qubit: SimpleNamespace(label="MUX0"),
-            get_readout_box_for_qubit=lambda _qubit: SimpleNamespace(
-                id="BOX0",
-                traits=SimpleNamespace(readout_cnco_center=8.5e9),
-            ),
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_qubit_label=lambda label: _TargetRegistry.resolve_qubit_label(label),
+        resolve_read_label=lambda label: _TargetRegistry.resolve_read_label(label),
+        get_mux_by_qubit=lambda _qubit: SimpleNamespace(label="MUX0"),
+        get_readout_box_for_qubit=lambda _qubit: SimpleNamespace(
+            id="BOX0",
+            traits=SimpleNamespace(readout_cnco_center=8.5e9),
         ),
+    )
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        experiment_system=experiment_system,
+        resolve_qubit_label=lambda label: experiment_system.resolve_qubit_label(label),
+        resolve_read_label=lambda label: experiment_system.resolve_read_label(label),
         targets={
             "RQ17": SimpleNamespace(
                 sideband="U",
@@ -147,6 +158,11 @@ def test_ckp_experiment_resolves_qubit_for_default_readout_amplitude() -> None:
         def resolve_qubit_label(label: str) -> str:
             return "Q17" if label == "custom-target" else label
 
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_qubit_label=lambda label: _TargetRegistry.resolve_qubit_label(label),
+    )
+
     captured: dict[str, object] = {}
     amplitude_calls: list[float] = []
 
@@ -156,7 +172,8 @@ def test_ckp_experiment_resolves_qubit_for_default_readout_amplitude() -> None:
 
     service = cast(Any, object.__new__(CharacterizationService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
-        experiment_system=SimpleNamespace(target_registry=_TargetRegistry()),
+        experiment_system=experiment_system,
+        resolve_qubit_label=lambda label: experiment_system.resolve_qubit_label(label),
         params=SimpleNamespace(get_readout_amplitude=_get_readout_amplitude),
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()

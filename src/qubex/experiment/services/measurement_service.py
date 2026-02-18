@@ -104,52 +104,6 @@ class MeasurementService:
             [Target.qubit_label(label) for label in labels]
         )
 
-    def _resolve_qubit_label(self, label: str) -> str:
-        """Resolve qubit label via target registry with legacy fallback."""
-        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
-        if target_registry is not None:
-            try:
-                return target_registry.resolve_qubit_label(label)
-            except ValueError:
-                pass
-        return Target.qubit_label(label)
-
-    def _resolve_read_label(self, label: str) -> str:
-        """Resolve readout label via target registry with legacy fallback."""
-        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
-        if target_registry is not None:
-            try:
-                return target_registry.resolve_read_label(label)
-            except ValueError:
-                pass
-        return Target.read_label(label)
-
-    def _resolve_ge_label(self, label: str) -> str:
-        """Resolve GE label via target registry with legacy fallback."""
-        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
-        if target_registry is not None:
-            try:
-                return target_registry.resolve_ge_label(label)
-            except ValueError:
-                pass
-        return Target.ge_label(label)
-
-    def _resolve_ef_label(self, label: str) -> str:
-        """Resolve EF label via target registry with legacy fallback."""
-        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
-        if target_registry is not None:
-            try:
-                return target_registry.resolve_ef_label(label)
-            except ValueError:
-                pass
-        return Target.ef_label(label)
-
-    def _ordered_qubit_labels(self, labels: Sequence[str]) -> list[str]:
-        """Return qubit labels in first appearance order using registry resolution."""
-        return MeasurementService.unique_in_order(
-            [self._resolve_qubit_label(label) for label in labels]
-        )
-
     def check_noise(
         self,
         targets: Collection[str] | str | None = None,
@@ -227,7 +181,9 @@ class MeasurementService:
             enable_dsp_sum = mode == "single"
 
         if reset_awg_and_capunits:
-            qubits = {self._resolve_qubit_label(target) for target in schedule.labels}
+            qubits = {
+                self.ctx.resolve_qubit_label(target) for target in schedule.labels
+            }
             self.ctx.reset_awg_and_capunits(qubits=qubits)
 
         with self.ctx.modified_frequencies(frequencies):
@@ -357,7 +313,7 @@ class MeasurementService:
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
 
         if reset_awg_and_capunits:
-            qubits = {self._resolve_qubit_label(target) for target in waveforms}
+            qubits = {self.ctx.resolve_qubit_label(target) for target in waveforms}
             self.ctx.reset_awg_and_capunits(qubits=qubits)
 
         with self.ctx.modified_frequencies(frequencies):
@@ -413,7 +369,7 @@ class MeasurementService:
         for target, state in states.items():
             targets.append(target)
             if state == "f":
-                targets.append(self._resolve_ef_label(target))
+                targets.append(self.ctx.resolve_ef_label(target))
 
         with PulseSchedule(targets) as ps:
             for target, state in states.items():
@@ -426,7 +382,7 @@ class MeasurementService:
                 elif state == "f":
                     ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
                     ps.barrier()
-                    ef_label = self._resolve_ef_label(target)
+                    ef_label = self.ctx.resolve_ef_label(target)
                     ps.add(ef_label, self.pulse.get_hpi_pulse(ef_label).repeated(2))
 
         return self.measure(
@@ -616,7 +572,7 @@ class MeasurementService:
                     .get_sampled_sequences(copy=False)
                     for param in sweep_range
                 ]
-                ordered_qubits = self._ordered_qubit_labels(initial_sequence.labels)
+                ordered_qubits = self.ctx.ordered_qubit_labels(initial_sequence.labels)
             elif isinstance(initial_sequence, dict):
                 sequences = [
                     {
@@ -625,7 +581,7 @@ class MeasurementService:
                     }
                     for param in sweep_range
                 ]
-                ordered_qubits = self._ordered_qubit_labels(list(initial_sequence))
+                ordered_qubits = self.ctx.ordered_qubit_labels(list(initial_sequence))
             else:
                 raise TypeError("Invalid sequence.")
         else:
@@ -756,7 +712,7 @@ class MeasurementService:
 
         initial_sequence = sequence(sweep_range[0])
         ordered_targets = self.unique_in_order(list(initial_sequence.labels))
-        ordered_qubits = self._ordered_qubit_labels(ordered_targets)
+        ordered_qubits = self.ctx.ordered_qubit_labels(ordered_targets)
         signals: dict[str, list[object]] = {target: [] for target in ordered_targets}
         plotter = IQPlotter(
             {
@@ -1018,7 +974,7 @@ class MeasurementService:
         if ramptime is None:
             ramptime = HPI_DURATION - HPI_RAMPTIME
 
-        ef_labels = [self._resolve_ef_label(target) for target in targets]
+        ef_labels = [self.ctx.resolve_ef_label(target) for target in targets]
         ef_targets = [self.ctx.targets[ef] for ef in ef_labels]
 
         amplitudes = {
@@ -1110,7 +1066,9 @@ class MeasurementService:
             targets = list(targets)
 
         if readout_amplitude is not None:
-            readout_targets = [self._resolve_read_label(target) for target in targets]
+            readout_targets = [
+                self.ctx.resolve_read_label(target) for target in targets
+            ]
             readout_amplitudes = dict.fromkeys(readout_targets, readout_amplitude)
         else:
             readout_amplitudes = None
@@ -1413,11 +1371,11 @@ class MeasurementService:
             store_params = False
 
         amplitudes = {
-            self._resolve_ef_label(label): amplitude
+            self.ctx.resolve_ef_label(label): amplitude
             for label, amplitude in amplitudes.items()
         }
-        ge_labels = [self._resolve_ge_label(label) for label in amplitudes]
-        ef_labels = [self._resolve_ef_label(label) for label in amplitudes]
+        ge_labels = [self.ctx.resolve_ge_label(label) for label in amplitudes]
+        ef_labels = [self.ctx.resolve_ef_label(label) for label in amplitudes]
 
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
@@ -1472,7 +1430,7 @@ class MeasurementService:
         ef_rabi_params = {}
         ef_rabi_data = {}
         for qubit, data in sweep_result.data.items():
-            ef_label = self._resolve_ef_label(qubit)
+            ef_label = self.ctx.resolve_ef_label(qubit)
             ge_rabi_param = self.pulse.ge_rabi_params[qubit]
             iq_e = ge_rabi_param.endpoints[1]
             fit_result = fitting.fit_rabi(
@@ -1960,7 +1918,7 @@ class MeasurementService:
 
         buffer: dict[str, list[float]] = defaultdict(list)
 
-        ordered_qubits = self._ordered_qubit_labels(list(sequence))
+        ordered_qubits = self.ctx.ordered_qubit_labels(list(sequence))
         targets = self.unique_in_order([*sequence.keys(), *ordered_qubits])
 
         if reset_awg_and_capunits:
@@ -2093,9 +2051,9 @@ class MeasurementService:
         if reset_awg_and_capunits:
             initial_sequence = sequences[0]
             if isinstance(initial_sequence, PulseSchedule):
-                ordered_qubits = self._ordered_qubit_labels(initial_sequence.labels)
+                ordered_qubits = self.ctx.ordered_qubit_labels(initial_sequence.labels)
             else:
-                ordered_qubits = self._ordered_qubit_labels(list(initial_sequence))
+                ordered_qubits = self.ctx.ordered_qubit_labels(list(initial_sequence))
             self.ctx.reset_awg_and_capunits(qubits=set(ordered_qubits))
 
         for sequence in tqdm(sequences):

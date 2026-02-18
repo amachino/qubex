@@ -35,8 +35,24 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
     def _modified_frequencies(_: object) -> Any:
         yield
 
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_qubit_label=lambda label: _TargetRegistry.resolve_qubit_label(label),
+        resolve_read_label=lambda label: _TargetRegistry.resolve_read_label(label),
+        ordered_qubit_labels=lambda labels: list(
+            dict.fromkeys(
+                _TargetRegistry.resolve_qubit_label(label) for label in labels
+            )
+        ),
+    )
+
     ctx = SimpleNamespace(
-        experiment_system=SimpleNamespace(target_registry=_TargetRegistry()),
+        experiment_system=experiment_system,
+        resolve_qubit_label=lambda label: experiment_system.resolve_qubit_label(label),
+        resolve_read_label=lambda label: experiment_system.resolve_read_label(label),
+        ordered_qubit_labels=lambda labels: experiment_system.ordered_qubit_labels(
+            labels
+        ),
         measurement=SimpleNamespace(
             execute=lambda **kwargs: execute_calls.append(kwargs) or _DummyResult(),
             measure=lambda **kwargs: measure_calls.append(kwargs) or _DummyResult(),
@@ -121,11 +137,17 @@ def test_measure_state_resolves_ef_labels_via_target_registry() -> None:
         def resolve_ef_label(label: str) -> str:
             return "Q17-ef" if label == "custom-target" else label
 
+    experiment_system = SimpleNamespace(
+        target_registry=_TargetRegistry(),
+        resolve_ef_label=lambda label: _TargetRegistry.resolve_ef_label(label),
+    )
+
     captured: dict[str, object] = {}
 
     service = cast(Any, object.__new__(MeasurementService))
     service.__dict__["_ctx"] = SimpleNamespace(
-        experiment_system=SimpleNamespace(target_registry=_TargetRegistry()),
+        experiment_system=experiment_system,
+        resolve_ef_label=lambda label: experiment_system.resolve_ef_label(label),
     )
     service.__dict__["_pulse_service"] = SimpleNamespace(
         get_pulse_for_state=lambda _target, _state: Blank(0),

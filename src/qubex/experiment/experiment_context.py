@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -744,6 +744,26 @@ class ExperimentContext:
             return self.experiment_system.target_registry.resolve_cr_pair(cr_label)
         except ValueError:
             return Target.cr_qubit_pair(cr_label)
+
+    def resolve_qubit_label(self, label: str) -> str:
+        """Resolve qubit label through the experiment system."""
+        return self.experiment_system.resolve_qubit_label(label)
+
+    def resolve_read_label(self, label: str) -> str:
+        """Resolve readout label through the experiment system."""
+        return self.experiment_system.resolve_read_label(label)
+
+    def resolve_ge_label(self, label: str) -> str:
+        """Resolve GE label through the experiment system."""
+        return self.experiment_system.resolve_ge_label(label)
+
+    def resolve_ef_label(self, label: str) -> str:
+        """Resolve EF label through the experiment system."""
+        return self.experiment_system.resolve_ef_label(label)
+
+    def ordered_qubit_labels(self, labels: Sequence[str]) -> list[str]:
+        """Resolve labels to qubits while preserving first appearance order."""
+        return self.experiment_system.ordered_qubit_labels(labels)
 
     def get_rabi_param(
         self,

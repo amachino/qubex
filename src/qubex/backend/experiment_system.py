@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import Final, Literal
 
 import numpy as np
@@ -347,6 +347,30 @@ class ExperimentSystem:
         except KeyError:
             raise KeyError(f"Target `{label}` not found.") from None
 
+    def resolve_qubit_label(self, label: str) -> str:
+        """Resolve qubit label via target registry."""
+        return self.target_registry.resolve_qubit_label(label, allow_legacy=True)
+
+    def resolve_ge_label(self, label: str) -> str:
+        """Resolve GE label via target registry."""
+        return self.target_registry.resolve_ge_label(label, allow_legacy=True)
+
+    def resolve_ef_label(self, label: str) -> str:
+        """Resolve EF label via target registry."""
+        return self.target_registry.resolve_ef_label(label, allow_legacy=True)
+
+    def resolve_read_label(self, label: str) -> str:
+        """Resolve readout label via target registry."""
+        return self.target_registry.resolve_read_label(label, allow_legacy=True)
+
+    def resolve_cr_label(self, label: str) -> str:
+        """Resolve CR label via target registry."""
+        return self.target_registry.resolve_cr_label(label)
+
+    def ordered_qubit_labels(self, labels: Sequence[str]) -> list[str]:
+        """Return qubit labels in first appearance order."""
+        return list(dict.fromkeys(self.resolve_qubit_label(label) for label in labels))
+
     def get_cap_target(self, label: str) -> CapTarget:
         """Return a capture target by label."""
         try:
@@ -356,23 +380,23 @@ class ExperimentSystem:
 
     def get_ge_target(self, label: str) -> Target:
         """Return a ge target by label."""
-        return self.get_target(self.target_registry.resolve_ge_label(label))
+        return self.get_target(self.resolve_ge_label(label))
 
     def get_ef_target(self, label: str) -> Target:
         """Return an ef target by label."""
-        return self.get_target(self.target_registry.resolve_ef_label(label))
+        return self.get_target(self.resolve_ef_label(label))
 
     def get_cr_target(self, label: str) -> Target:
         """Return a cr target by label."""
-        return self.get_target(self.target_registry.resolve_cr_label(label))
+        return self.get_target(self.resolve_cr_label(label))
 
     def get_read_out_target(self, label: str) -> Target:
         """Return a readout target by label."""
-        return self.get_target(self.target_registry.resolve_read_label(label))
+        return self.get_target(self.resolve_read_label(label))
 
     def get_read_in_target(self, label: str) -> CapTarget:
         """Return a read-in target by label."""
-        return self.get_cap_target(label)
+        return self.get_cap_target(self.resolve_read_label(label))
 
     def get_qubit_port_set(self, qubit: int | str) -> QubitPortSet | None:
         """Return the port set for a qubit if available."""

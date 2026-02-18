@@ -132,36 +132,67 @@ class TargetRegistry:
         """Return capture targets keyed by label."""
         return dict(self._cap_target_dict)
 
-    def resolve_qubit_label(self, label: str) -> str:
-        """Resolve a qubit label from a registered target or qubit label."""
+    def resolve_qubit_label(
+        self,
+        label: str,
+        *,
+        allow_legacy: bool = False,
+    ) -> str:
+        """Resolve a qubit label from registry; optionally allow legacy parsing."""
         if label in self._qubit_labels:
             return label
         resolved = self._target_to_qubit.get(label)
         if resolved is not None:
             return resolved
+        if allow_legacy:
+            try:
+                return Target.qubit_label(label)
+            except ValueError:
+                pass
         raise ValueError(f"Qubit label could not be resolved from `{label}`.")
 
-    def resolve_ge_label(self, label: str) -> str:
-        """Resolve the GE target label for a qubit or registered target label."""
-        qubit_label = self.resolve_qubit_label(label)
+    def resolve_ge_label(
+        self,
+        label: str,
+        *,
+        allow_legacy: bool = False,
+    ) -> str:
+        """Resolve a GE target label; optionally allow legacy parsing."""
+        qubit_label = self.resolve_qubit_label(label, allow_legacy=allow_legacy)
         resolved = self._ge_label_by_qubit.get(qubit_label)
         if resolved is None:
+            if allow_legacy:
+                return Target.ge_label(label)
             raise ValueError(f"GE target is not registered for qubit `{qubit_label}`.")
         return resolved
 
-    def resolve_ef_label(self, label: str) -> str:
-        """Resolve the EF target label for a qubit or registered target label."""
-        qubit_label = self.resolve_qubit_label(label)
+    def resolve_ef_label(
+        self,
+        label: str,
+        *,
+        allow_legacy: bool = False,
+    ) -> str:
+        """Resolve an EF target label; optionally allow legacy parsing."""
+        qubit_label = self.resolve_qubit_label(label, allow_legacy=allow_legacy)
         resolved = self._ef_label_by_qubit.get(qubit_label)
         if resolved is None:
+            if allow_legacy:
+                return Target.ef_label(label)
             raise ValueError(f"EF target is not registered for qubit `{qubit_label}`.")
         return resolved
 
-    def resolve_read_label(self, label: str) -> str:
-        """Resolve the readout target label for a qubit or registered target label."""
-        qubit_label = self.resolve_qubit_label(label)
+    def resolve_read_label(
+        self,
+        label: str,
+        *,
+        allow_legacy: bool = False,
+    ) -> str:
+        """Resolve a readout target label; optionally allow legacy parsing."""
+        qubit_label = self.resolve_qubit_label(label, allow_legacy=allow_legacy)
         resolved = self._read_label_by_qubit.get(qubit_label)
         if resolved is None:
+            if allow_legacy:
+                return Target.read_label(label)
             raise ValueError(
                 f"Readout target is not registered for qubit `{qubit_label}`."
             )
