@@ -146,6 +146,9 @@ class IQPlotter:
         self.clear()
         self._widget.show(config=get_config())
 
+    def to_figure(self) -> go.Figure:
+        return go.Figure(self._widget)
+
 
 class IQPlotterPolar:
     """Plot IQ data on a polar plane."""
