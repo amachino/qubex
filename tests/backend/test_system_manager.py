@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -502,8 +503,11 @@ def test_load_passes_backend_kind_to_selector(
         def __init__(self, **_: object) -> None:
             pass
 
-        def get_experiment_system(self, chip_id: str) -> object:
-            return SimpleNamespace(hash=hash(chip_id))
+        def load(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
 
     def _fake_set_backend_kind(kind: str) -> None:
         called.append(f"kind:{kind}")
@@ -524,3 +528,77 @@ def test_load_passes_backend_kind_to_selector(
     )
 
     assert called == ["kind:quel3", "sync"]
+
+
+def test_load_prefers_wiring_v2_for_quel3_when_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quel3 backend and wiring.v2 file, when loading, then ConfigLoader uses wiring.v2.yaml."""
+    manager = SystemManager.shared()
+    captured: dict[str, object] = {}
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "wiring.v2.yaml").write_text(
+        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
+        encoding="utf-8",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def load(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel3",
+        mock_mode=True,
+    )
+
+    assert captured["wiring_file"] == "wiring.v2.yaml"
+
+
+def test_load_falls_back_to_legacy_wiring_for_quel3_when_v2_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quel3 backend without wiring.v2 file, when loading, then ConfigLoader uses wiring.yaml."""
+    manager = SystemManager.shared()
+    captured: dict[str, object] = {}
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+
+    class _FakeConfigLoader:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def load(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel3",
+        mock_mode=True,
+    )
+
+    assert captured["wiring_file"] == "wiring.yaml"

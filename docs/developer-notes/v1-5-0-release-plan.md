@@ -148,6 +148,11 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-17: Added explicit QuEL-1 capability hints on `Quel1BackendController` (`MEASUREMENT_BACKEND_KIND`, `MEASUREMENT_CONSTRAINT_MODE`, `MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE`).
 - 2026-02-17: Added `Quel3BackendController` scaffold and session-scoped backend-family selection (`backend_kind`) in `SystemManager`/`MeasurementClient` (`quel1` or `quel3`, no mixed session).
 - 2026-02-17: Implemented initial `Quel3BackendController.execute_measurement(payload)` path that invokes quelware fixed-timeline execution and returns canonical `MeasurementResult` directly (with clear runtime error when quelware dependency is unavailable).
+- 2026-02-18: Added `ConfigLoader` support for `wiring.v2.yaml` (`schema_version: 2`) including physical-id maps (`control`/`readout`) and port-label normalization (`p2tx`, `p0p1trx`) into runtime wiring rows.
+- 2026-02-18: `SystemManager.load(..., backend_kind="quel3")` now prefers `wiring.v2.yaml` when present and falls back to legacy `wiring.yaml`.
+- 2026-02-18: Started configuration-layer modularization by adding `qubex.configuration.wiring` and delegating wiring-v2 normalization from `ConfigLoader`.
+- 2026-02-18: Moved `ConfigLoader` implementation to `qubex.configuration.config_loader`; kept `qubex.backend.config_loader` as compatibility shim and added import-compatibility tests.
+- 2026-02-18: Added explicit `ConfigLoader.load()` lifecycle with `autoload` transition option; `SystemManager.load()` now uses explicit loader lifecycle (`autoload=False` + `load()`).
 
 ## Commit plan
 

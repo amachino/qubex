@@ -8,6 +8,7 @@ DEFAULT_RAWDATA_DIR: Final = ".rawdata"
 CHIP_FILE: Final = "chip.yaml"
 BOX_FILE: Final = "box.yaml"
 WIRING_FILE: Final = "wiring.yaml"
+WIRING_V2_FILE: Final = "wiring.v2.yaml"
 PROPS_FILE: Final = "props.yaml"  # legacy
 PARAMS_FILE: Final = "params.yaml"  # legacy
 

@@ -365,3 +365,142 @@ def test_control_system_box_options_loaded_from_box_yaml(tmp_path: Path) -> None
     box = system.control_system.get_box("BOX1")
 
     assert box.options == ("se8_mxfe1_awg1331", "refclk_corrected_mxfe1")
+
+
+def test_config_loader_autoload_false_requires_explicit_load(tmp_path: Path) -> None:
+    """Given autoload disabled, when accessing system before load, then RuntimeError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+
+    with pytest.raises(RuntimeError, match="call `load\\(\\)` first"):
+        loader.get_experiment_system()
+
+    loader.load()
+
+    system = loader.get_experiment_system()
+    assert system is not None
+
+
+def test_build_experiment_system_from_wiring_v2_schema(tmp_path: Path) -> None:
+    """Given wiring v2 config, when loading, then wiring is resolved into control/readout ports."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            },
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.v2.yaml",
+        {
+            "schema_version": 2,
+            "chip_id": chip_id,
+            "control": {
+                0: "unit-a:p2tx",
+                1: "unit-a:p4tx",
+                2: "unit-a:p9tx",
+                3: "unit-a:p11tx",
+            },
+            "readout": {
+                0: {
+                    "out": "unit-a:p0p1trx",
+                    "in": "unit-a:p0p1trx",
+                    "pump": "unit-a:p3tx",
+                },
+            },
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        wiring_file="wiring.v2.yaml",
+    )
+    system = loader.get_experiment_system()
+
+    assert len(system.wiring_info.ctrl) == 4
+    assert len(system.wiring_info.read_out) == 1
+    assert len(system.wiring_info.read_in) == 1
+    assert len(system.wiring_info.pump) == 1
+    assert system.wiring_info.ctrl[0][0].label == "Q0"
+    assert system.wiring_info.ctrl[0][1].number == 2
+    assert system.wiring_info.ctrl[3][0].label == "Q3"
+    assert system.wiring_info.ctrl[3][1].number == 11
+    assert system.wiring_info.read_out[0][1].number == 1
+    assert system.wiring_info.read_in[0][1].number == 0
+    assert system.wiring_info.pump[0][1].number == 3
+    assert system.control_system.get_box("unit-a").id == "unit-a"
+
+
+def test_wiring_v2_rejects_unknown_port_specifier(tmp_path: Path) -> None:
+    """Given unknown wiring v2 port label, when loading, then ValueError is raised."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.v2.yaml",
+        {
+            "schema_version": 2,
+            "chip_id": chip_id,
+            "control": {
+                0: "unit-a:unsupported",
+                1: "unit-a:p4tx",
+                2: "unit-a:p9tx",
+                3: "unit-a:p11tx",
+            },
+            "readout": {
+                0: {
+                    "out": "unit-a:p0p1trx",
+                    "in": "unit-a:p0p1trx",
+                    "pump": "unit-a:p3tx",
+                }
+            },
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    with pytest.raises(ValueError, match="Unsupported wiring v2 port specifier"):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            wiring_file="wiring.v2.yaml",
+        )

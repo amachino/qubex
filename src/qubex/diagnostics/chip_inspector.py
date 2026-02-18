@@ -7,8 +7,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Literal
 
-from qubex.backend.config_loader import ConfigLoader
 from qubex.backend.lattice_graph import LatticeGraph
+from qubex.configuration import ConfigLoader
 
 from . import inspection_library
 from .inspection import Inspection

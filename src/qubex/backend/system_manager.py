@@ -14,10 +14,15 @@ from typing import Any, Literal
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
 
-from qubex.constants import DEFAULT_RAWDATA_DIR
+from qubex.configuration import ConfigLoader
+from qubex.constants import (
+    DEFAULT_CONFIG_DIR,
+    DEFAULT_RAWDATA_DIR,
+    WIRING_FILE,
+    WIRING_V2_FILE,
+)
 from qubex.typing import ConfigurationMode
 
-from .config_loader import ConfigLoader
 from .control_system import Box, CapPort, GenPort, PortType
 from .controller_types import BackendController, BackendKind
 from .experiment_system import ExperimentSystem
@@ -254,6 +259,25 @@ class SystemManager:
             self._rawdata_dir = Path(value)
             self._rawdata_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _resolve_wiring_file(
+        *,
+        chip_id: str,
+        config_dir: Path | str | None,
+        backend_kind: BackendKind,
+    ) -> str:
+        """Resolve wiring file name from backend kind and config directory."""
+        if backend_kind != "quel3":
+            return WIRING_FILE
+        config_path = (
+            Path(config_dir)
+            if config_dir is not None
+            else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
+        )
+        if (config_path / WIRING_V2_FILE).exists():
+            return WIRING_V2_FILE
+        return WIRING_FILE
+
     def load(
         self,
         *,
@@ -287,15 +311,24 @@ class SystemManager:
         """
         if backend_kind is not None:
             self.set_backend_kind(backend_kind)
+        wiring_file = self._resolve_wiring_file(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            backend_kind=self._backend_kind,
+        )
         self._config_loader = ConfigLoader(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
+            wiring_file=wiring_file,
+            autoload=False,
+        )
+        self._config_loader.load(
             targets_to_exclude=targets_to_exclude,
             configuration_mode=configuration_mode,
         )
         self._mock_mode = mock_mode
-        self._experiment_system = self._config_loader.get_experiment_system(chip_id)
+        self._experiment_system = self._config_loader.get_experiment_system()
         if self._mock_mode:
             # skip updating backend controller in mock mode
             return

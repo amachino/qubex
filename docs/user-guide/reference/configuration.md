@@ -111,7 +111,7 @@ Supported units include `Hz`, `kHz`, `MHz`, `GHz`, `s`, `ms`, `us`, `ns`. Values
 ## Loading configuration programmatically
 
 ```python
-from qubex.backend import ConfigLoader
+from qubex.configuration import ConfigLoader
 
 cfg = ConfigLoader(
     chip_id="64Q",
@@ -119,6 +119,16 @@ cfg = ConfigLoader(
     params_dir="/path/to/params",
 )
 
+system = cfg.get_experiment_system()
+```
+
+`from qubex.backend import ConfigLoader` also remains available for compatibility.
+
+If you want deferred loading:
+
+```python
+cfg = ConfigLoader(chip_id="64Q", autoload=False)
+cfg.load()
 system = cfg.get_experiment_system()
 ```
 
@@ -136,6 +146,7 @@ The repository includes ready-to-read examples under `docs/examples/configuratio
   Defines mux-level port assignment (`ctrl`, `read_out`, `read_in`, optional `pump`).
 - `wiring.v2.yaml`
   Defines QuEL-3 style physical wiring with zero-based `qubit_id`/`mux_id` mapped to `port_id`.
+  When loading with `backend_kind="quel3"`, Qubex prefers `wiring.v2.yaml` if present and falls back to `wiring.yaml`.
 
 ### Parameter examples (`docs/examples/configuration/params`)
 
