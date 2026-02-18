@@ -8,7 +8,7 @@ Define a clean split between chip metadata and runtime/backend settings.
 
 - Status: baseline for v1.5.0 (implemented for backend selection and QuEL-1 clock-master resolution).
 - Target relation: one `system.yaml` describes one `chip_id`.
-- QuEL-3 runtime section fields are currently staged work; runtime endpoint/port/trigger values are still environment-driven.
+- QuEL-3 runtime section fields are currently staged work; runtime endpoint/port/trigger values use controller defaults.
 
 ## Design decisions
 
@@ -73,4 +73,4 @@ quel3: {}
 ## Migration note
 
 - During transition, `chip.yaml` `backend` is still accepted as a compatibility fallback.
-- For v1.5.0, QuEL-3 runtime endpoint/port/trigger values remain environment-driven.
+- For v1.5.0, QuEL-3 runtime endpoint/port/trigger values use controller defaults.

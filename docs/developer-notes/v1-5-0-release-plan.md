@@ -160,7 +160,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-18: `SystemManager.load(chip_id=...)` backend resolution now supports `system.yaml` (`backend`) with precedence `explicit argument > system.yaml > chip.yaml > quel1 default`.
 - 2026-02-18: `ConfigLoader` now reads optional `system.yaml`; `ControlSystem.clock_master_address` prefers `system.yaml` `quel1.clock_master` and falls back to legacy `chip.yaml` `clock_master`.
 - 2026-02-18: `ExperimentContext.register_custom_target()` now resolves qubits via `TargetRegistry` (or explicit `qubit_label`) and validates port/channel/target-type mapping before registration.
-- 2026-02-18: Updated configuration docs/examples to align with current runtime behavior (`system.yaml` backend selection + `quel1.clock_master` support, QuEL-3 runtime endpoint/port/trigger still environment-driven in v1.5.0 pre-release).
+- 2026-02-18: Updated configuration docs/examples to align with current runtime behavior (`system.yaml` backend selection + `quel1.clock_master` support, QuEL-3 runtime endpoint/port/trigger using controller defaults in v1.5.0 pre-release).
 
 ## Commit plan
 

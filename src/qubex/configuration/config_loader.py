@@ -24,6 +24,7 @@ from qubex.constants import (
     PROPS_FILE,
     SYSTEM_FILE,
     WIRING_FILE,
+    WIRING_V2_FILE,
 )
 from qubex.typing import ConfigurationMode
 
@@ -213,6 +214,127 @@ class ConfigLoader:
                 targets_to_exclude=targets_to_exclude,
                 configuration_mode=configuration_mode,
             )
+
+    @staticmethod
+    def resolve_wiring_file(
+        *,
+        chip_id: str,
+        config_dir: Path | str | None,
+        backend_kind: str,
+    ) -> str:
+        """
+        Resolve wiring file name from backend kind and config directory.
+
+        Parameters
+        ----------
+        chip_id : str
+            Chip identifier.
+        config_dir : Path | str | None
+            Configuration directory. If `None`, default config path is used.
+        backend_kind : str
+            Backend family (`"quel1"` or `"quel3"`).
+
+        Returns
+        -------
+        str
+            Resolved wiring file name.
+        """
+        if backend_kind != "quel3":
+            return WIRING_FILE
+        config_path = (
+            Path(config_dir)
+            if config_dir is not None
+            else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
+        )
+        if (config_path / WIRING_V2_FILE).exists():
+            return WIRING_V2_FILE
+        return WIRING_FILE
+
+    @staticmethod
+    def resolve_backend_kind(
+        *,
+        chip_id: str,
+        config_dir: Path | str | None,
+        system_file: str = SYSTEM_FILE,
+        chip_file: str = CHIP_FILE,
+    ) -> str:
+        """
+        Resolve backend family from `system.yaml` then `chip.yaml`.
+
+        Parameters
+        ----------
+        chip_id : str
+            Chip identifier.
+        config_dir : Path | str | None
+            Configuration directory. If `None`, default config path is used.
+        system_file : str, optional
+            System configuration filename.
+        chip_file : str, optional
+            Chip configuration filename.
+
+        Returns
+        -------
+        str
+            Backend kind (`"quel1"` or `"quel3"`). Defaults to `"quel1"` when
+            no backend is configured.
+        """
+        config_path = (
+            Path(config_dir)
+            if config_dir is not None
+            else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
+        )
+        system_path = config_path / system_file
+        if system_path.exists():
+            with system_path.open(encoding="utf-8") as file:
+                system_dict = yaml.safe_load(file) or {}
+            if not isinstance(system_dict, dict):
+                raise TypeError(f"`{system_file}` must be a mapping at top level.")
+            configured_chip_id = system_dict.get("chip_id")
+            if configured_chip_id is not None and str(configured_chip_id) != chip_id:
+                raise ValueError(
+                    f"`{system_file}` chip_id mismatch: expected `{chip_id}`, got `{configured_chip_id}`."
+                )
+            value = system_dict.get("backend")
+            if value is not None:
+                if isinstance(value, str):
+                    normalized = value.strip().lower()
+                    if normalized in ("quel1", "quel3"):
+                        return normalized
+                raise ValueError(
+                    f"Unsupported backend for chip `{chip_id}` in `{system_file}`: {value!r}"
+                )
+
+        chip_path = config_path / chip_file
+        if not chip_path.exists():
+            logger.debug(
+                "chip config `%s` is missing; defaulting backend kind to quel1",
+                chip_path,
+            )
+            return "quel1"
+        with chip_path.open(encoding="utf-8") as file:
+            chip_dict = yaml.safe_load(file) or {}
+        if not isinstance(chip_dict, dict):
+            raise TypeError(f"`{chip_file}` must be a mapping at top level.")
+        chip_info = chip_dict.get(chip_id)
+        if chip_info is None:
+            logger.debug(
+                "chip `%s` is missing in `%s`; defaulting backend kind to quel1",
+                chip_id,
+                chip_file,
+            )
+            return "quel1"
+        if not isinstance(chip_info, dict):
+            raise TypeError(f"`{chip_file}` entry for `{chip_id}` must be a mapping.")
+        value = chip_info.get("backend")
+        if value is None:
+            return "quel1"
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("quel1", "quel3"):
+                return normalized
+        raise ValueError(
+            f"Unsupported backend for chip `{chip_id}` in `{chip_file}`: {value!r}"
+        )
 
     def load(
         self,

@@ -89,7 +89,9 @@ def test_build_execution_request_adds_one_block_margin_when_interval_nonpositive
         capture_schedule=CaptureSchedule(captures=[]),
     )
 
-    adapter.build_execution_request(schedule=schedule, config=_make_config(interval=0.0))
+    adapter.build_execution_request(
+        schedule=schedule, config=_make_config(interval=0.0)
+    )
 
     # block duration for strict QuEL-1 profile is 128 ns; one extra block is added.
     assert backend.interval_ns == 256

@@ -13,7 +13,6 @@ quel1:
   clock_master: 10.0.0.10
 
 # Optional section reserved for QuEL-3 runtime fields.
-# Current runtime endpoint/port/trigger settings are configured via environment
-# variables (`QUBEX_QUELWARE_ENDPOINT`, `QUBEX_QUELWARE_PORT`,
-# `QUBEX_QUELWARE_TRIGGER_WAIT`).
+# Current runtime endpoint/port/trigger settings use built-in defaults:
+# endpoint=`localhost`, port=`50051`, trigger_wait=`1000000`.
 quel3: {}

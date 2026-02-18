@@ -11,18 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
-import yaml
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
 
 from qubex.configuration import ConfigLoader
+from qubex.configuration.config_loader import ConfigLoader as ConfigurationConfigLoader
 from qubex.constants import (
-    CHIP_FILE,
-    DEFAULT_CONFIG_DIR,
     DEFAULT_RAWDATA_DIR,
-    SYSTEM_FILE,
-    WIRING_FILE,
-    WIRING_V2_FILE,
 )
 from qubex.typing import ConfigurationMode
 
@@ -262,92 +257,6 @@ class SystemManager:
             self._rawdata_dir = Path(value)
             self._rawdata_dir.mkdir(parents=True, exist_ok=True)
 
-    @staticmethod
-    def _resolve_wiring_file(
-        *,
-        chip_id: str,
-        config_dir: Path | str | None,
-        backend_kind: BackendKind,
-    ) -> str:
-        """Resolve wiring file name from backend kind and config directory."""
-        if backend_kind != "quel3":
-            return WIRING_FILE
-        config_path = (
-            Path(config_dir)
-            if config_dir is not None
-            else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
-        )
-        if (config_path / WIRING_V2_FILE).exists():
-            return WIRING_V2_FILE
-        return WIRING_FILE
-
-    @staticmethod
-    def _resolve_backend_kind(
-        *,
-        chip_id: str,
-        config_dir: Path | str | None,
-        system_file: str = SYSTEM_FILE,
-        chip_file: str = CHIP_FILE,
-    ) -> BackendKind:
-        """Resolve backend family from system config then chip config with quel1 fallback."""
-        config_path = (
-            Path(config_dir)
-            if config_dir is not None
-            else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
-        )
-        system_path = config_path / system_file
-        if system_path.exists():
-            with system_path.open(encoding="utf-8") as file:
-                system_dict = yaml.safe_load(file) or {}
-            if not isinstance(system_dict, Mapping):
-                raise TypeError(f"`{system_file}` must be a mapping at top level.")
-            configured_chip_id = system_dict.get("chip_id")
-            if configured_chip_id is not None and str(configured_chip_id) != chip_id:
-                raise ValueError(
-                    f"`{system_file}` chip_id mismatch: expected `{chip_id}`, got `{configured_chip_id}`."
-                )
-            value = system_dict.get("backend")
-            if value is not None:
-                if isinstance(value, str):
-                    normalized = value.strip().lower()
-                    if normalized in ("quel1", "quel3"):
-                        return cast(BackendKind, normalized)
-                raise ValueError(
-                    f"Unsupported backend for chip `{chip_id}` in `{system_file}`: {value!r}"
-                )
-
-        chip_path = config_path / chip_file
-        if not chip_path.exists():
-            logger.debug(
-                "chip config `%s` is missing; defaulting backend kind to quel1",
-                chip_path,
-            )
-            return "quel1"
-        with chip_path.open(encoding="utf-8") as file:
-            chip_dict = yaml.safe_load(file) or {}
-        if not isinstance(chip_dict, Mapping):
-            raise TypeError(f"`{chip_file}` must be a mapping at top level.")
-        chip_info = chip_dict.get(chip_id)
-        if chip_info is None:
-            logger.debug(
-                "chip `%s` is missing in `%s`; defaulting backend kind to quel1",
-                chip_id,
-                chip_file,
-            )
-            return "quel1"
-        if not isinstance(chip_info, Mapping):
-            raise TypeError(f"`{chip_file}` entry for `{chip_id}` must be a mapping.")
-        value = chip_info.get("backend")
-        if value is None:
-            return "quel1"
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in ("quel1", "quel3"):
-                return cast(BackendKind, normalized)
-        raise ValueError(
-            f"Unsupported backend for chip `{chip_id}` in `{chip_file}`: {value!r}"
-        )
-
     def load(
         self,
         *,
@@ -381,12 +290,15 @@ class SystemManager:
         """
         resolved_backend_kind = backend_kind
         if resolved_backend_kind is None:
-            resolved_backend_kind = self._resolve_backend_kind(
-                chip_id=chip_id,
-                config_dir=config_dir,
+            resolved_backend_kind = cast(
+                BackendKind,
+                ConfigurationConfigLoader.resolve_backend_kind(
+                    chip_id=chip_id,
+                    config_dir=config_dir,
+                ),
             )
         self.set_backend_kind(resolved_backend_kind)
-        wiring_file = self._resolve_wiring_file(
+        wiring_file = ConfigurationConfigLoader.resolve_wiring_file(
             chip_id=chip_id,
             config_dir=config_dir,
             backend_kind=self._backend_kind,

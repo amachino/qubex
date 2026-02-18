@@ -142,3 +142,18 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
 
     assert "Q17" in result.data
     assert "raw-target" not in result.data
+
+
+def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quelware env vars, constructor still uses builtin default values."""
+    monkeypatch.setenv("QUBEX_QUELWARE_ENDPOINT", "env-host")
+    monkeypatch.setenv("QUBEX_QUELWARE_PORT", "12345")
+    monkeypatch.setenv("QUBEX_QUELWARE_TRIGGER_WAIT", "999")
+
+    controller = Quel3BackendController()
+
+    assert controller._quelware_endpoint == "localhost"  # noqa: SLF001
+    assert controller._quelware_port == 50051  # noqa: SLF001
+    assert controller._trigger_wait == 1_000_000  # noqa: SLF001

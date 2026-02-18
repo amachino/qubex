@@ -65,11 +65,11 @@ When `SystemManager.load(..., backend_kind=...)` omits `backend_kind`, Qubex res
 
 - `backend` and `chip_id` are used by loader/runtime selection.
 - `quel1.clock_master` is used by `ConfigLoader` and overrides legacy `chip.yaml` `clock_master`.
-- QuEL-3 endpoint/port/trigger runtime values are currently configured by environment variables:
-  - `QUBEX_QUELWARE_ENDPOINT`
-  - `QUBEX_QUELWARE_PORT`
-  - `QUBEX_QUELWARE_TRIGGER_WAIT`
-  (A `quel3:` section may exist in YAML, but runtime consumption is staged work.)
+- QuEL-3 endpoint/port/trigger runtime values currently use controller defaults:
+  - endpoint: `localhost`
+  - port: `50051`
+  - trigger wait: `1000000`
+  (`quel3:` section in YAML remains reserved for future runtime binding.)
 
 ```yaml
 # box.yaml

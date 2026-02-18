@@ -16,10 +16,10 @@ Related policy:
   - `backend_kind="quel1" | "quel3"`
 - QuEL-3 measurement execution path exists in:
   - `src/qubex/backend/quel3/quel3_backend_controller.py`
-- Current runtime defaults are environment-based:
-  - `QUBEX_QUELWARE_ENDPOINT` (default: `localhost`)
-  - `QUBEX_QUELWARE_PORT` (default: `50051`)
-  - `QUBEX_QUELWARE_TRIGGER_WAIT` (default: `1000000`)
+- Current runtime defaults are controller built-ins:
+  - endpoint: `localhost`
+  - port: `50051`
+  - trigger wait: `1000000`
 - Target-to-instrument resolution is performed by runtime-side logic.
 
 ## Decision log
@@ -35,9 +35,9 @@ Status legend:
 - Question: Where should QuEL-3 runtime configuration be defined primarily?
 - Current behavior:
   - Backend family is selected by config file (`system.yaml` / `chip.yaml` fallback).
-  - QuEL-3 runtime endpoint/port/trigger values are environment-driven.
+  - QuEL-3 runtime endpoint/port/trigger values are controller defaults.
 - Target:
-  - Config-file first (`system.yaml`) with environment overrides.
+  - Config-file first (`system.yaml`) with optional explicit runtime override.
 
 ### D2. Config scope split
 

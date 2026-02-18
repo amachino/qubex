@@ -527,3 +527,103 @@ def test_wiring_v2_rejects_unknown_port_specifier(tmp_path: Path) -> None:
             params_dir=params_dir,
             wiring_file="wiring.v2.yaml",
         )
+
+
+def test_resolve_backend_kind_prefers_system_yaml_over_chip_yaml(
+    tmp_path: Path,
+) -> None:
+    """Given backend in system.yaml and chip.yaml, backend resolves from system.yaml."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "backend": "quel1"}},
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": "quel3"},
+    )
+
+    backend_kind = ConfigLoader.resolve_backend_kind(
+        chip_id=chip_id,
+        config_dir=config_dir,
+    )
+
+    assert backend_kind == "quel3"
+
+
+def test_resolve_backend_kind_defaults_to_quel1_when_not_configured(
+    tmp_path: Path,
+) -> None:
+    """Given no backend config, backend resolves to quel1."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml", {chip_id: {"name": "Test Chip", "n_qubits": 4}}
+    )
+
+    backend_kind = ConfigLoader.resolve_backend_kind(
+        chip_id=chip_id,
+        config_dir=config_dir,
+    )
+
+    assert backend_kind == "quel1"
+
+
+def test_resolve_backend_kind_raises_for_unknown_backend_value(
+    tmp_path: Path,
+) -> None:
+    """Given unknown backend in system.yaml, backend resolution raises ValueError."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml", {chip_id: {"name": "Test Chip", "n_qubits": 4}}
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": "unknown"},
+    )
+
+    with pytest.raises(ValueError, match="Unsupported backend"):
+        ConfigLoader.resolve_backend_kind(
+            chip_id=chip_id,
+            config_dir=config_dir,
+        )
+
+
+def test_resolve_wiring_file_prefers_v2_for_quel3_when_available(
+    tmp_path: Path,
+) -> None:
+    """Given quel3 backend and wiring.v2.yaml, wiring file resolves to v2."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    _write_yaml(config_dir / "wiring.v2.yaml", {"schema_version": 2})
+
+    wiring_file = ConfigLoader.resolve_wiring_file(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        backend_kind="quel3",
+    )
+
+    assert wiring_file == "wiring.v2.yaml"
+
+
+def test_resolve_wiring_file_falls_back_to_legacy_for_quel3(
+    tmp_path: Path,
+) -> None:
+    """Given quel3 backend without wiring.v2.yaml, wiring file resolves to legacy."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+
+    wiring_file = ConfigLoader.resolve_wiring_file(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        backend_kind="quel3",
+    )
+
+    assert wiring_file == "wiring.yaml"

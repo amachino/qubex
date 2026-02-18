@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import os
 import sys
 import threading
 from collections import defaultdict
@@ -55,34 +54,23 @@ class Quel3BackendController(Quel1BackendController):
         alias_map : dict[str, str] | None, optional
             Optional target-label to instrument-alias mapping.
         quelware_endpoint : str | None, optional
-            Quelware API endpoint. Falls back to environment variable
-            `QUBEX_QUELWARE_ENDPOINT` then `"localhost"`.
+            Quelware API endpoint. Defaults to `"localhost"`.
         quelware_port : int | None, optional
-            Quelware API port. Falls back to environment variable
-            `QUBEX_QUELWARE_PORT` then `50051`.
+            Quelware API port. Defaults to `50051`.
         trigger_wait : int | None, optional
-            Trigger wait count passed to quelware session trigger. Falls back
-            to environment variable `QUBEX_QUELWARE_TRIGGER_WAIT` then
-            `1_000_000`.
+            Trigger wait count passed to quelware session trigger.
+            Defaults to `1_000_000`.
         """
         super().__init__(config_path=config_path)
         if sampling_period_ns is not None:
             self.DEFAULT_SAMPLING_PERIOD = float(sampling_period_ns)
         self._alias_map = dict(alias_map or {})
         self._quelware_endpoint = (
-            quelware_endpoint
-            if quelware_endpoint is not None
-            else os.getenv("QUBEX_QUELWARE_ENDPOINT", "localhost")
+            quelware_endpoint if quelware_endpoint is not None else "localhost"
         )
-        self._quelware_port = (
-            int(quelware_port)
-            if quelware_port is not None
-            else int(os.getenv("QUBEX_QUELWARE_PORT", "50051"))
-        )
+        self._quelware_port = int(quelware_port) if quelware_port is not None else 50051
         self._trigger_wait = (
-            int(trigger_wait)
-            if trigger_wait is not None
-            else int(os.getenv("QUBEX_QUELWARE_TRIGGER_WAIT", "1000000"))
+            int(trigger_wait) if trigger_wait is not None else 1_000_000
         )
 
     def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
