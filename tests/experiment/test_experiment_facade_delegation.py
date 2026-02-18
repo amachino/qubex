@@ -44,6 +44,9 @@ class _ExperimentContextStub:
     def disconnect(self) -> None:
         self.calls.append(("disconnect", {}))
 
+    def register_custom_target(self, **kwargs: Any) -> None:
+        self.calls.append(("register_custom_target", kwargs))
+
 
 class _BenchmarkingServicePropertyStub:
     def __init__(self) -> None:
@@ -231,3 +234,35 @@ def test_disconnect_delegates_to_context() -> None:
     exp.disconnect()
 
     assert context_stub.calls == [("disconnect", {})]
+
+
+def test_register_custom_target_delegates_to_context() -> None:
+    """Given custom-target args, when called, then it delegates to experiment context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.register_custom_target(
+        label="CUSTOM",
+        frequency=5.1,
+        box_id="B0",
+        port_number=2,
+        channel_number=0,
+        qubit_label="Q00",
+    )
+
+    assert context_stub.calls == [
+        (
+            "register_custom_target",
+            {
+                "label": "CUSTOM",
+                "frequency": 5.1,
+                "box_id": "B0",
+                "port_number": 2,
+                "channel_number": 0,
+                "qubit_label": "Q00",
+                "target_type": None,
+                "update_lsi": None,
+            },
+        )
+    ]

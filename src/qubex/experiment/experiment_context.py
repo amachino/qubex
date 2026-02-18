@@ -26,6 +26,7 @@ from qubex.backend import (
     ControlSystem,
     ExperimentSystem,
     MixingUtil,
+    Mux,
     QuantumSystem,
     Qubit,
     Resonator,
@@ -33,6 +34,7 @@ from qubex.backend import (
     Target,
     TargetType,
 )
+from qubex.backend.control_system import GenPort
 from qubex.backend.quel1 import DeviceController, Quel1BackendController
 from qubex.measurement import (
     MeasurementClient,
@@ -974,7 +976,56 @@ class ExperimentContext:
 
         self.backend_controller.initialize_awg_and_capunits(box_ids)
 
-    @deprecated("This method is tentative. It may be removed in the future.")
+    def _resolve_custom_target_qubit_label(
+        self,
+        *,
+        label: str,
+        qubit_label: str | None,
+    ) -> str:
+        """Resolve qubit label for custom-target registration."""
+        target_registry = self.experiment_system.target_registry
+
+        if qubit_label is not None:
+            try:
+                return target_registry.resolve_qubit_label(qubit_label)
+            except ValueError:
+                pass
+            try:
+                return self.experiment_system.get_qubit(qubit_label).label
+            except Exception:
+                raise ValueError(
+                    f"Unknown qubit label `{qubit_label}` for custom target registration."
+                ) from None
+
+        try:
+            return target_registry.resolve_qubit_label(label)
+        except ValueError:
+            raise ValueError(
+                "Qubit label could not be resolved from "
+                f"`{label}`. Pass `qubit_label` explicitly."
+            ) from None
+
+    def _resolve_custom_target_object(
+        self,
+        *,
+        qubit_label: str,
+        target_type: TargetType,
+    ) -> Qubit | Resonator | Mux:
+        """Resolve physical object bound to custom target type."""
+        qubit = self.experiment_system.get_qubit(qubit_label)
+        if target_type in (
+            TargetType.CTRL_GE,
+            TargetType.CTRL_EF,
+            TargetType.CTRL_CR,
+            TargetType.UNKNOWN,
+        ):
+            return qubit
+        if target_type == TargetType.READ:
+            return self.experiment_system.get_resonator(qubit.resonator)
+        if target_type == TargetType.PUMP:
+            return self.experiment_system.get_mux_by_qubit(qubit_label)
+        raise ValueError(f"Unsupported target type `{target_type}`.")
+
     def register_custom_target(
         self,
         *,
@@ -983,6 +1034,7 @@ class ExperimentContext:
         box_id: str,
         port_number: int,
         channel_number: int,
+        qubit_label: str | None = None,
         target_type: TargetType | None = None,
         update_lsi: bool | None = None,
     ) -> None:
@@ -991,35 +1043,48 @@ class ExperimentContext:
             target_type = TargetType.CTRL_GE
         if update_lsi is None:
             update_lsi = False
-        try:
-            qubit_label = Target.qubit_label(label)
-        except ValueError:
-            raise ValueError(f"Invalid target label: {label}") from None
+        if not np.isfinite(frequency):
+            raise ValueError("Target frequency must be finite.")
 
+        resolved_qubit_label = self._resolve_custom_target_qubit_label(
+            label=label,
+            qubit_label=qubit_label,
+        )
         port = self.control_system.get_port(box_id, port_number)
+        if not isinstance(port, GenPort):
+            raise TypeError(
+                f"Custom target registration port `{port.id}` must be a GenPort."
+            )
+        if channel_number < 0 or channel_number >= len(port.channels):
+            raise IndexError(
+                f"Channel number `{channel_number}` is out of range for port `{port.id}`."
+            )
         channel = port.channels[channel_number]
-        qubit = self.qubits[qubit_label]
+        target_object = self._resolve_custom_target_object(
+            qubit_label=resolved_qubit_label,
+            target_type=target_type,
+        )
         target = Target.new_target(
             label=label,
             frequency=frequency,
-            object=qubit,
-            channel=channel,  # type: ignore
+            object=target_object,
+            channel=channel,
             type=target_type,
         )
-        self.experiment_system.add_target(target)
         self.backend_controller.define_target(
             target_name=target.label,
             channel_name=target.channel.id,
             target_frequency=target.frequency,
         )
+        self.experiment_system.add_target(target)
         if update_lsi:
             fnco, _ = MixingUtil.calc_fnco(
                 f=frequency * 1e9,
-                ssb="L",
+                ssb=port.sideband,
                 lo=port.lo_freq,
                 cnco=port.cnco_freq,
             )
-            port.channels[channel_number].fnco_freq = fnco
+            channel.fnco_freq = fnco
             self.system_manager.push(box_ids=[box_id])
 
     @contextmanager

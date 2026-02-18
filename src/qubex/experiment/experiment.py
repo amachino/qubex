@@ -760,7 +760,6 @@ class Experiment:
             qubits=qubits,
         )
 
-    @deprecated("This method is tentative. It may be removed in the future.")
     def register_custom_target(
         self,
         *,
@@ -769,6 +768,7 @@ class Experiment:
         box_id: str,
         port_number: int,
         channel_number: int,
+        qubit_label: str | None = None,
         target_type: TargetType | None = None,
         update_lsi: bool | None = None,
     ) -> None:
@@ -779,6 +779,7 @@ class Experiment:
             box_id=box_id,
             port_number=port_number,
             channel_number=channel_number,
+            qubit_label=qubit_label,
             target_type=target_type,
             update_lsi=update_lsi,
         )

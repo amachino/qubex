@@ -159,6 +159,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-18: Documented draft split of `chip.yaml`/`system.yaml` responsibilities (`topology.type` in `chip.yaml`, backend-specific runtime sections in `system.yaml`) in developer notes.
 - 2026-02-18: `SystemManager.load(chip_id=...)` backend resolution now supports `system.yaml` (`backend`) with precedence `explicit argument > system.yaml > chip.yaml > quel1 default`.
 - 2026-02-18: `ConfigLoader` now reads optional `system.yaml`; `ControlSystem.clock_master_address` prefers `system.yaml` `quel1.clock_master` and falls back to legacy `chip.yaml` `clock_master`.
+- 2026-02-18: `ExperimentContext.register_custom_target()` now resolves qubits via `TargetRegistry` (or explicit `qubit_label`) and validates port/channel/target-type mapping before registration.
 
 ## Commit plan
 
