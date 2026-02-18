@@ -18,6 +18,17 @@ from .experiment_record import ExperimentRecord
 from .rabi_param import RabiParam
 
 
+def _build_normalized_error_y(param: RabiParam) -> dict[str, Any] | None:
+    """Return a Plotly error-bar config for normalized plots when valid."""
+    value = param.noise / param.amplitude
+    if not np.isfinite(value) or value < 0:
+        return None
+    return {
+        "type": "constant",
+        "value": float(value),
+    }
+
+
 @dataclass
 class TargetData:
     """
@@ -199,15 +210,13 @@ class RabiData(TargetData):
             )
         elif normalize:
             values = self.normalized
+            error_y = _build_normalized_error_y(self.rabi_param)
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
                     x=self.time_range,
                     y=values,
-                    error_y=dict(
-                        type="constant",
-                        value=self.rabi_param.noise / self.rabi_param.amplitude,
-                    ),
+                    error_y=error_y,
                 )
             )
             fig.update_layout(
@@ -387,18 +396,19 @@ class SweepData(TargetData):
         elif normalize:
             param = self.rabi_param
             if param is None:
-                print("rabi_param must be provided for normalization.")
+                print(
+                    f"Skipping normalized plot for {self.target}: rabi_param is missing. "
+                    "Run `obtain_rabi_params(...)` on your Experiment instance to calibrate."
+                )
                 return
             values = self.normalized
+            error_y = _build_normalized_error_y(param)
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
                     x=self.sweep_range,
                     y=values,
-                    error_y=dict(
-                        type="constant",
-                        value=param.noise / param.amplitude,
-                    ),
+                    error_y=error_y,
                 )
             )
             fig.update_layout(

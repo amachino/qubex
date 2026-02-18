@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal
 
+import numpy as np
 from numpy.typing import NDArray
 from rich.console import Console
 from rich.prompt import Confirm
@@ -780,7 +781,20 @@ class ExperimentContext:
             r2_threshold = 0.5
         not_stored = []
         for label, rabi_param in rabi_params.items():
-            if rabi_param.r2 < r2_threshold:
+            if not np.isfinite(rabi_param.r2):
+                logger.info(
+                    "Skipping Rabi parameter storage for %s: non-finite r2 (%s).",
+                    label,
+                    rabi_param.r2,
+                )
+                not_stored.append(label)
+            elif rabi_param.r2 < r2_threshold:
+                logger.info(
+                    "Skipping Rabi parameter storage for %s: r2 %.6f is below threshold %.6f.",
+                    label,
+                    rabi_param.r2,
+                    r2_threshold,
+                )
                 not_stored.append(label)
             else:
                 self.calib_note.update_rabi_param(
