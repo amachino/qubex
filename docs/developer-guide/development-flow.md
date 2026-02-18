@@ -32,3 +32,10 @@ Development commands in this repository assume a `uv`-managed environment.
 - Keep pull requests small and focused.
 - Split unrelated refactors from behavior changes.
 - Update user/developer documentation when behavior or APIs change.
+
+## Naming conventions for module symbols
+
+- Use `__all__` to define the module's intended public API.
+- Use leading underscore names (for example, `_INTERNAL_CONSTANT`) for non-public module symbols.
+- Do not rely on `__all__` alone for internal symbols; keep internal intent explicit with leading underscore naming.
+- Use `UPPER_SNAKE_CASE` for constants and include unit suffixes where useful (for example, `_NS`, `_SAMPLES`, `_GHZ`).
