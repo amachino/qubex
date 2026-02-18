@@ -189,12 +189,16 @@ class Quel3BackendController(Quel1BackendController):
                     length_ns=float(window.length_ns),
                 )
 
-        async with create_quelware_client(self._quelware_endpoint, self._quelware_port) as client:
+        async with create_quelware_client(
+            self._quelware_endpoint, self._quelware_port
+        ) as client:
             mapper = InstrumentMapper()
             for resource_id in get_all_instrument_ids_from_resource_infos(
                 await client.list_resource_infos()
             ):
-                mapper.add_instrument_info(await client.get_instrument_info(resource_id))
+                mapper.add_instrument_info(
+                    await client.get_instrument_info(resource_id)
+                )
             alias_to_id = mapper.build_alias_to_id_map()
             missing_aliases = [alias for alias in aliases if alias not in alias_to_id]
             if missing_aliases:
@@ -230,7 +234,11 @@ class Quel3BackendController(Quel1BackendController):
                     await driver.apply(directive)
                     await driver.setup()
 
-                shot_count = payload.repeats if payload.mode == "avg" and payload.repeats > 1 else 1
+                shot_count = (
+                    payload.repeats
+                    if payload.mode == "avg" and payload.repeats > 1
+                    else 1
+                )
                 shot_samples = self._initialize_shot_samples(payload)
                 for _ in range(shot_count):
                     await session.trigger(wait=self._trigger_wait)
@@ -306,9 +314,7 @@ class Quel3BackendController(Quel1BackendController):
                     continue
                 if payload.mode == "avg":
                     values = np.stack(samples, axis=0)
-                    measurement_data[output_target].append(
-                        np.mean(values, axis=0)
-                    )
+                    measurement_data[output_target].append(np.mean(values, axis=0))
                 else:
                     measurement_data[output_target].append(samples[0])
 
@@ -351,6 +357,7 @@ class Quel3BackendController(Quel1BackendController):
     @staticmethod
     def _load_quelware_api() -> tuple[Any, Any, Any, Any, Any]:
         """Import quelware helpers lazily and return required symbols."""
+
         def _import_api() -> tuple[Any, Any, Any, Any, Any]:
             resource_module = importlib.import_module("quelware_core.entities.resource")
             client_module = importlib.import_module("quelware_client.client")

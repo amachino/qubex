@@ -92,7 +92,9 @@ class Quel3MeasurementBackendAdapter:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
         if constraint_profile is None:
-            sampling_period = getattr(backend_controller, "DEFAULT_SAMPLING_PERIOD", None)
+            sampling_period = getattr(
+                backend_controller, "DEFAULT_SAMPLING_PERIOD", None
+            )
             if not isinstance(sampling_period, (float, int)):
                 raise ValueError(
                     "Quel3MeasurementBackendAdapter requires a relaxed constraint profile or backend DEFAULT_SAMPLING_PERIOD."
@@ -127,9 +129,7 @@ class Quel3MeasurementBackendAdapter:
                         f"Capture start time must be non-negative: {channel}."
                     )
                 if capture.duration <= 0:
-                    raise ValueError(
-                        f"Capture duration must be positive: {channel}."
-                    )
+                    raise ValueError(f"Capture duration must be positive: {channel}.")
                 if capture.start_time + capture.duration > pulse_schedule.duration:
                     raise ValueError(
                         f"Capture exceeds pulse schedule duration: {channel}."
@@ -153,7 +153,9 @@ class Quel3MeasurementBackendAdapter:
             None,
         )
         for target, waveform in sampled_sequences.items():
-            captures = sorted(channel_captures.get(target, []), key=lambda c: c.start_time)
+            captures = sorted(
+                channel_captures.get(target, []), key=lambda c: c.start_time
+            )
             capture_windows = tuple(
                 Quel3CaptureWindow(
                     name=f"capture_{index}",

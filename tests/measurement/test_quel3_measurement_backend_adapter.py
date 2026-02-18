@@ -35,7 +35,9 @@ class _FakePulseSchedule:
 
     def get_sampled_sequences(self, *, copy: bool = False) -> dict[str, np.ndarray]:
         if copy:
-            return {label: waveform.copy() for label, waveform in self.waveforms.items()}
+            return {
+                label: waveform.copy() for label, waveform in self.waveforms.items()
+            }
         return self.waveforms
 
 

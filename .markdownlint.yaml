@@ -7,3 +7,4 @@ MD040: false  # Fenced code blocks should have a language specified
 MD041: false  # First line in file should be a top level heading
 MD046: false  # Code block style
 MD047: false  # Files should end with a single newline character
+MD060: false  # Table column style

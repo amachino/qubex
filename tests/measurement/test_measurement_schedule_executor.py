@@ -366,7 +366,9 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
         raise AssertionError("Quel1BackendExecutor fallback should not be used.")
 
     def _unexpected_adapter(**kwargs: object) -> object:
-        raise AssertionError("Quel1MeasurementBackendAdapter fallback should not be used.")
+        raise AssertionError(
+            "Quel1MeasurementBackendAdapter fallback should not be used."
+        )
 
     def _unexpected_result_factory(**kwargs: object) -> object:
         raise AssertionError("MeasurementResultFactory fallback should not be used.")

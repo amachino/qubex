@@ -9,4 +9,3 @@ from .quel3 import Quel3BackendController
 
 BackendKind = Literal["quel1", "quel3"]
 BackendController: TypeAlias = Quel1BackendController | Quel3BackendController
-

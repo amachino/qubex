@@ -513,7 +513,9 @@ def test_load_passes_backend_kind_to_selector(
 
     monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
-    monkeypatch.setattr(manager, "_sync_experiment_system_to_backend_controller", _fake_sync)
+    monkeypatch.setattr(
+        manager, "_sync_experiment_system_to_backend_controller", _fake_sync
+    )
 
     manager.load(
         chip_id="TEST",
