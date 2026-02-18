@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import cast
 
 import numpy as np
@@ -28,6 +29,7 @@ def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPaylo
     return Quel3ExecutionPayload(
         timelines={"RQ00": timeline},
         instrument_aliases={"RQ00": "alias-rq00"},
+        output_target_labels={"RQ00": "Q00"},
         interval_ns=100.0,
         repeats=repeats,
         mode=mode,
@@ -109,3 +111,34 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         np.array([2.0 + 2.0j, 4.0 + 4.0j], dtype=np.complex128),
     )
     assert result.sampling_period_ns == 0.4
+
+
+def test_build_measurement_result_uses_output_target_labels() -> None:
+    """Given explicit output map, when building result, then mapped label is used."""
+    payload = _make_payload(mode="single", repeats=1)
+    timeline = payload.timelines["RQ00"]
+    payload = replace(
+        payload,
+        timelines={"raw-target": timeline},
+        instrument_aliases={"raw-target": "alias-rq00"},
+        output_target_labels={"raw-target": "Q17"},
+    )
+    shot_samples = {
+        "raw-target": {
+            "capture_0": [
+                np.array([7.0 + 0.0j], dtype=np.complex128),
+            ]
+        }
+    }
+
+    result = cast(
+        MeasurementResult,
+        Quel3BackendController._build_measurement_result(  # noqa: SLF001
+            payload=payload,
+            shot_samples=shot_samples,
+            sampling_period_ns=0.4,
+        ),
+    )
+
+    assert "Q17" in result.data
+    assert "raw-target" not in result.data

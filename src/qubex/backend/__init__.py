@@ -15,6 +15,7 @@ from .lattice_graph import LatticeGraph
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 from .system_manager import SystemManager
 from .target import Target, TargetType
+from .target_registry import TargetRegistry
 
 __all__ = [
     "DEFAULT_CONFIG_DIR",
@@ -41,6 +42,7 @@ __all__ = [
     "Resonator",
     "SystemManager",
     "Target",
+    "TargetRegistry",
     "TargetType",
     "WiringInfo",
 ]

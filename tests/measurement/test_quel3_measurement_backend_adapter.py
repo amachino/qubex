@@ -151,6 +151,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert payload.repeats == 16
     assert payload.mode == "avg"
     assert payload.instrument_aliases == {target: target}
+    assert payload.output_target_labels == {target: "Q00"}
     assert target in payload.timelines
     timeline = payload.timelines[target]
     assert timeline.sampling_period_ns == 0.4
@@ -207,3 +208,51 @@ def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
     payload = request.payload
     assert isinstance(payload, Quel3ExecutionPayload)
     assert payload.instrument_aliases == {target: "alias-RQ00"}
+    assert payload.output_target_labels == {target: "Q00"}
+
+
+def test_quel3_adapter_uses_registry_for_output_target_labels() -> None:
+    """Given target registry, when building payload, then output labels use registry mapping."""
+    target = "raw-readout-target"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            waveforms={target: np.array([0.0 + 0.0j], dtype=np.complex128)},
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.4,
+                ),
+            ]
+        ),
+    )
+
+    class _TargetRegistry:
+        @staticmethod
+        def measurement_output_label(label: str) -> str:
+            return "Q17" if label == target else label
+
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        experiment_system=cast(
+            Any,
+            type(
+                "_ES",
+                (),
+                {
+                    "get_awg_frequency": staticmethod(lambda _: 100_000_000.0),
+                    "target_registry": _TargetRegistry(),
+                },
+            )(),
+        ),
+        constraint_profile=MeasurementConstraintProfile.relaxed(0.4),
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.output_target_labels == {target: "Q17"}

@@ -69,6 +69,7 @@ class Quel3ExecutionPayload:
 
     timelines: dict[str, Quel3TargetTimeline]
     instrument_aliases: dict[str, str]
+    output_target_labels: dict[str, str]
     interval_ns: float
     repeats: int
     mode: str
@@ -147,11 +148,13 @@ class Quel3MeasurementBackendAdapter:
         channel_captures = schedule.capture_schedule.channels
         timelines: dict[str, Quel3TargetTimeline] = {}
         instrument_aliases: dict[str, str] = {}
+        output_target_labels: dict[str, str] = {}
         alias_resolver = getattr(
             self._backend_controller,
             "resolve_instrument_alias",
             None,
         )
+        target_registry = getattr(self._experiment_system, "target_registry", None)
         for target, waveform in sampled_sequences.items():
             captures = sorted(
                 channel_captures.get(target, []), key=lambda c: c.start_time
@@ -182,10 +185,22 @@ class Quel3MeasurementBackendAdapter:
                 instrument_aliases[target] = str(alias_resolver(target))
             else:
                 instrument_aliases[target] = target
+            if target_registry is not None and hasattr(
+                target_registry, "measurement_output_label"
+            ):
+                output_target_labels[target] = str(
+                    target_registry.measurement_output_label(target)
+                )
+            else:
+                try:
+                    output_target_labels[target] = Target.qubit_label(target)
+                except ValueError:
+                    output_target_labels[target] = target
         interval_ns = math.ceil(float(pulse_schedule.duration + config.interval))
         payload = Quel3ExecutionPayload(
             timelines=timelines,
             instrument_aliases=instrument_aliases,
+            output_target_labels=output_target_labels,
             interval_ns=interval_ns,
             repeats=config.shots,
             mode=config.mode,
@@ -421,7 +436,13 @@ class Quel1MeasurementBackendAdapter:
                 "word_length_samples is required for backend execution request."
             )
         for target in readout_targets:
-            mux = self._experiment_system.get_mux_by_qubit(Target.qubit_label(target))
+            if hasattr(self._experiment_system, "target_registry"):
+                qubit_label = (
+                    self._experiment_system.target_registry.resolve_qubit_label(target)
+                )
+            else:
+                qubit_label = Target.qubit_label(target)
+            mux = self._experiment_system.get_mux_by_qubit(qubit_label)
             capture_delay_word = capture_delays.get(mux.index, 0)
             capture_delay_sample[target] = capture_delay_word * word_length
 

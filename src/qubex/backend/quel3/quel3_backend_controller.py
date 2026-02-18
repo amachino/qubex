@@ -303,8 +303,11 @@ class Quel3BackendController(Quel1BackendController):
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError("Expected Quel3ExecutionPayload.")
         measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
+        output_target_labels = getattr(payload, "output_target_labels", {})
         for target, timeline in payload.timelines.items():
-            output_target = cls._measurement_target_label(target)
+            output_target = output_target_labels.get(
+                target, cls._measurement_target_label(target)
+            )
             for window in timeline.capture_windows:
                 samples = shot_samples.get(target, {}).get(window.name, [])
                 if len(samples) == 0:

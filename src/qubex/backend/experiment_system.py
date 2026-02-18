@@ -43,6 +43,7 @@ from .quel1.quel1_backend_constants import (
     NCO_STEP,
 )
 from .target import CapTarget, Target
+from .target_registry import TargetRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -268,12 +269,21 @@ class ExperimentSystem:
         """Return all generator and capture targets."""
         return self.targets + self.read_in_targets
 
+    @property
+    def target_registry(self) -> TargetRegistry:
+        """Return registry used for target-label resolution."""
+        return self._target_registry
+
     def add_target(self, target: Target | CapTarget) -> None:
         """Add a target to the system mapping."""
         if isinstance(target, Target):
             self._gen_target_dict[target.label] = target
         elif isinstance(target, CapTarget):
             self._cap_target_dict[target.label] = target
+        self._target_registry = TargetRegistry(
+            gen_targets=self._gen_target_dict,
+            cap_targets=self._cap_target_dict,
+        )
 
     def get_mux(self, label: int | str) -> Mux:
         """Return a mux by label or index."""
@@ -346,23 +356,19 @@ class ExperimentSystem:
 
     def get_ge_target(self, label: str) -> Target:
         """Return a ge target by label."""
-        label = Target.ge_label(label)
-        return self.get_target(label)
+        return self.get_target(self.target_registry.resolve_ge_label(label))
 
     def get_ef_target(self, label: str) -> Target:
         """Return an ef target by label."""
-        label = Target.ef_label(label)
-        return self.get_target(label)
+        return self.get_target(self.target_registry.resolve_ef_label(label))
 
     def get_cr_target(self, label: str) -> Target:
         """Return a cr target by label."""
-        label = Target.cr_label(label)
-        return self.get_target(label)
+        return self.get_target(self.target_registry.resolve_cr_label(label))
 
     def get_read_out_target(self, label: str) -> Target:
         """Return a readout target by label."""
-        label = Target.read_label(label)
-        return self.get_target(label)
+        return self.get_target(self.target_registry.resolve_read_label(label))
 
     def get_read_in_target(self, label: str) -> CapTarget:
         """Return a read-in target by label."""
@@ -566,6 +572,10 @@ class ExperimentSystem:
 
         self._gen_target_dict = dict(sorted(self._gen_target_dict.items()))
         self._cap_target_dict = dict(sorted(self._cap_target_dict.items()))
+        self._target_registry = TargetRegistry(
+            gen_targets=self._gen_target_dict,
+            cap_targets=self._cap_target_dict,
+        )
 
     def _configure_control_port(
         self,
