@@ -193,6 +193,32 @@ def test_measure_initializes_optional_flags_with_measure_defaults() -> None:
     assert kwargs["enable_dsp_classification"] is False
 
 
+def test_measure_noise_disables_dsp_sum_by_default() -> None:
+    """Given noise measurement inputs, when measure_noise is called, then DSP summation is disabled by default."""
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called: dict[str, Any] = {}
+    expected = object()
+
+    def fake_measure(self: MeasurementClient, **kwargs: object) -> Any:
+        called["kwargs"] = kwargs
+        return expected
+
+    measurement.measure = MethodType(fake_measure, measurement)
+
+    result = measurement.measure_noise(["Q00"], duration=1024.0)
+
+    assert result is expected
+    kwargs = called["kwargs"]
+    assert kwargs["enable_dsp_sum"] is False
+    assert kwargs["readout_duration"] == 1024.0
+    assert kwargs["readout_amplitudes"] == {"Q00": 0}
+
+
 def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
     """Given None optional flags, when execute is called, then it applies execute defaults."""
     measurement = MeasurementClient(

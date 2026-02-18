@@ -129,7 +129,11 @@ class MeasurementService:
         else:
             targets = list(targets)
 
-        result = self.ctx.measurement.measure_noise(targets, duration=duration)
+        result = self.ctx.measurement.measure_noise(
+            targets,
+            duration=duration,
+            enable_dsp_sum=False,
+        )
         for data in result.data.values():
             if plot:
                 data.plot()

@@ -22,6 +22,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
     reset_calls: list[set[str]] = []
     execute_calls: list[dict[str, object]] = []
     measure_calls: list[dict[str, object]] = []
+    measure_noise_calls: list[dict[str, object]] = []
 
     class _TargetRegistry:
         @staticmethod
@@ -47,6 +48,20 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
         ),
     )
 
+    def _measure_noise(
+        targets: Any,
+        duration: float,
+        **kwargs: object,
+    ) -> SimpleNamespace:
+        measure_noise_calls.append(
+            {
+                "targets": list(targets),
+                "duration": duration,
+                **kwargs,
+            }
+        )
+        return SimpleNamespace(data={})
+
     ctx = SimpleNamespace(
         experiment_system=experiment_system,
         resolve_qubit_label=lambda label: experiment_system.resolve_qubit_label(label),
@@ -57,6 +72,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
         measurement=SimpleNamespace(
             execute=lambda **kwargs: execute_calls.append(kwargs) or _DummyResult(),
             measure=lambda **kwargs: measure_calls.append(kwargs) or _DummyResult(),
+            measure_noise=_measure_noise,
         ),
         reset_awg_and_capunits=lambda *, qubits: reset_calls.append(set(qubits)),
         modified_frequencies=_modified_frequencies,
@@ -76,6 +92,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
         "reset_calls": reset_calls,
         "execute_calls": execute_calls,
         "measure_calls": measure_calls,
+        "measure_noise_calls": measure_noise_calls,
     }
     return cast(MeasurementService, service), captured
 
@@ -156,6 +173,21 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
         )
 
     assert captured["enable_dsp_sum"] is False
+
+
+def test_check_noise_forces_dsp_sum_disabled() -> None:
+    """Given waveform-noise inspection, when check_noise is called, then DSP summation is disabled."""
+    service, captured = _make_service()
+
+    service.check_noise(targets=["custom-target"], duration=512, plot=False)
+
+    assert captured["measure_noise_calls"] == [
+        {
+            "targets": ["custom-target"],
+            "duration": 512,
+            "enable_dsp_sum": False,
+        }
+    ]
 
 
 def test_measure_state_resolves_ef_labels_via_target_registry() -> None:

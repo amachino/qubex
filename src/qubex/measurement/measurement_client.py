@@ -612,6 +612,7 @@ class MeasurementClient:
         targets: Collection[str],
         *,
         duration: float,
+        enable_dsp_sum: bool = False,
     ) -> MeasureResult:
         """
         Measure the readout noise.
@@ -622,6 +623,9 @@ class MeasurementClient:
             The list of target names.
         duration : float, optional
             The duration in ns.
+        enable_dsp_sum : bool, optional
+            Whether to enable DSP summation. Defaults to `False` so raw
+            waveform samples are available for noise inspection.
 
         Returns
         -------
@@ -638,6 +642,7 @@ class MeasurementClient:
             shots=1,
             readout_duration=duration,
             readout_amplitudes=dict.fromkeys(targets, 0),
+            enable_dsp_sum=enable_dsp_sum,
         )
 
     def measure(
