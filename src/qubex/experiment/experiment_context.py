@@ -676,10 +676,13 @@ class ExperimentContext:
             low_to_high = True
         if high_to_low is None:
             high_to_low = False
+        target_registry = self.experiment_system.target_registry
         cr_pairs = []
         for label in self.cr_targets:
             try:
-                pair = Target.cr_qubit_pair(label)
+                pair = target_registry.resolve_cr_pair(label)
+                if pair[1] == "CR":
+                    continue
                 control_qubit = self.quantum_system.get_qubit(pair[0])
                 target_qubit = self.quantum_system.get_qubit(pair[1])
                 if target_qubit.label not in self.available_targets:
@@ -711,8 +714,9 @@ class ExperimentContext:
             low_to_high = True
         if high_to_low is None:
             high_to_low = False
+        target_registry = self.experiment_system.target_registry
         return [
-            Target.cr_label(*pair)
+            target_registry.resolve_cr_label(*pair)
             for pair in self.get_cr_pairs(low_to_high, high_to_low)
         ]
 
@@ -734,10 +738,12 @@ class ExperimentContext:
         """Get the qubit edge labels."""
         return [f"{pair[0]}-{pair[1]}" for pair in self.get_edge_pairs()]
 
-    @staticmethod
-    def cr_pair(cr_label: str) -> tuple[str, str]:
+    def cr_pair(self, cr_label: str) -> tuple[str, str]:
         """Return the control/target qubit pair for a CR label."""
-        return Target.cr_qubit_pair(cr_label)
+        try:
+            return self.experiment_system.target_registry.resolve_cr_pair(cr_label)
+        except ValueError:
+            return Target.cr_qubit_pair(cr_label)
 
     def get_rabi_param(
         self,

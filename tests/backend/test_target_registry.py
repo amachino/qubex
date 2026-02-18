@@ -122,6 +122,8 @@ def test_target_registry_resolves_cr_labels() -> None:
     assert registry.resolve_cr_label("Q00") == "Q00-CR"
     assert registry.resolve_cr_label("Q00", "Q01") == "Q00-Q01"
     assert registry.resolve_cr_label("Q00-CR") == "Q00-CR"
+    assert registry.resolve_cr_pair("Q00-CR") == ("Q00", "CR")
+    assert registry.resolve_cr_pair("Q00-Q01") == ("Q00", "Q01")
 
 
 def test_target_registry_measurement_output_label_prefers_qubit() -> None:

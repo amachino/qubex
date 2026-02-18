@@ -151,7 +151,9 @@ def _make_cap_port(*, box_id: str = "B0", port_number: int = 2) -> CapPort:
 
 
 def _make_context(
-    *, port: GenPort | CapPort | None = None
+    *,
+    port: GenPort | CapPort | None = None,
+    include_cr_pair: bool = False,
 ) -> tuple[
     _TestExperimentContext,
     _ExperimentSystemStub,
@@ -179,7 +181,25 @@ def _make_context(
     control_port = port or _make_gen_port()
     registry_port = _make_gen_port()
     base_target = Target.new_ge_target(qubit=qubit, channel=registry_port.channels[0])
-    target_registry = TargetRegistry(gen_targets={base_target.label: base_target})
+    gen_targets: dict[str, Target] = {base_target.label: base_target}
+    if include_cr_pair:
+        target_qubit = Qubit(
+            index=1,
+            label="Q01",
+            chip_id="chip",
+            resonator="RQ01",
+            _bare_frequency=5.1,
+            _anharmonicity=-0.3,
+            _control_frequency_ge=5.1,
+            _control_frequency_ef=4.8,
+        )
+        cr_target = Target.new_cr_target(
+            control_qubit=qubit,
+            target_qubit=target_qubit,
+            channel=registry_port.channels[0],
+        )
+        gen_targets[cr_target.label] = cr_target
+    target_registry = TargetRegistry(gen_targets=gen_targets)
     experiment_system = _ExperimentSystemStub(
         control_system=_ControlSystemStub(control_port),
         target_registry=target_registry,
@@ -274,3 +294,17 @@ def test_register_custom_target_rejects_non_generator_port() -> None:
             channel_number=0,
             qubit_label="Q00",
         )
+
+
+def test_cr_pair_prefers_target_registry_mapping() -> None:
+    """Given registered CR label, when resolving pair, then target registry mapping is returned."""
+    context, _, _, _ = _make_context(include_cr_pair=True)
+
+    assert context.cr_pair("Q00-Q01") == ("Q00", "Q01")
+
+
+def test_cr_pair_falls_back_to_legacy_parser() -> None:
+    """Given unregistered CR label, when resolving pair, then legacy parser is used as fallback."""
+    context, _, _, _ = _make_context()
+
+    assert context.cr_pair("Q00-Q01") == ("Q00", "Q01")

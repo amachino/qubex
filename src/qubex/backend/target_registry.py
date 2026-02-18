@@ -70,6 +70,7 @@ class TargetRegistry:
         self._ef_label_by_qubit: dict[str, str] = {}
         self._cr_default_label_by_control: dict[str, str] = {}
         self._cr_pair_label_by_pair: dict[tuple[str, str], str] = {}
+        self._cr_pair_by_label: dict[str, tuple[str, str]] = {}
 
         for label, target in self._gen_target_dict.items():
             qubit_label = target.qubit
@@ -86,6 +87,7 @@ class TargetRegistry:
                 pair = self._extract_cr_pair_from_label(label)
                 if pair is not None:
                     control_qubit, target_qubit = pair
+                    self._cr_pair_by_label[label] = pair
                     if target_qubit == "CR":
                         self._cr_default_label_by_control.setdefault(
                             control_qubit, label
@@ -191,6 +193,13 @@ class TargetRegistry:
             raise ValueError(
                 f"CR target is not registered for pair `{control_qubit}-{target_qubit}`."
             )
+        return resolved
+
+    def resolve_cr_pair(self, label: str) -> tuple[str, str]:
+        """Resolve control/target qubit labels from a registered CR target label."""
+        resolved = self._cr_pair_by_label.get(label)
+        if resolved is None:
+            raise ValueError(f"CR target `{label}` is not registered.")
         return resolved
 
     def measurement_output_label(self, target_label: str) -> str:

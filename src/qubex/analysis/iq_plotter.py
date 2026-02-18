@@ -147,6 +147,7 @@ class IQPlotter:
         self._widget.show(config=get_config())
 
     def to_figure(self) -> go.Figure:
+        """Return a detached Plotly figure copied from the current widget state."""
         return go.Figure(self._widget)
 
 
