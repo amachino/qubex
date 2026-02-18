@@ -8,6 +8,7 @@ Define a stable configuration contract for QuEL-3 that fits the current
 Related policy:
 
 - `quel3-wiring-binding-policy.md`
+- `system-configuration-schema-draft.md`
 
 ## Current implementation snapshot
 
@@ -30,12 +31,10 @@ Status legend:
 
 ### D1. Configuration source of truth
 
-- Status: `PENDING`
+- Status: `DECIDED`
 - Question: Where should QuEL-3 runtime configuration be defined primarily?
-- Candidate options:
-  1. Environment variables first, optional config file
-  2. Config file first, environment variables override
-  3. Config file only (strict)
+- Decision:
+  - Config file first (`system.yaml`), environment variables are optional overrides.
 
 ### D2. Config scope split
 
@@ -43,8 +42,17 @@ Status legend:
 - Question: How should we split static vs runtime settings?
 - Decision:
   - static:
+    - chip metadata and topology (`chip.yaml`)
     - physical wiring (`wiring.v2.yaml`: `control/readout` with `qubit_id/mux_id -> port_id`)
-  - runtime: endpoint, port, trigger wait, timeout
+  - runtime:
+    - backend selection and backend-specific runtime settings (`system.yaml`)
+    - endpoint, port, trigger wait, timeout
+
+### D2.1 System/chip cardinality
+
+- Status: `DECIDED`
+- Decision:
+  - one `system.yaml` maps to one `chip_id`.
 
 ### D3. Alias and resource mapping policy
 
@@ -69,7 +77,7 @@ Status legend:
 - Status: `PENDING`
 - Question: How should trigger wait and timing policy be configured?
 - Candidate options:
-  1. Global fixed default + optional override per session
+  1. `system.yaml` default + optional per-session override
   2. Per-target configurable
   3. Auto-tuned by observed hardware response
 

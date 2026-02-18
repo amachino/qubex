@@ -5,6 +5,10 @@
 # <chip_id>:
 #   name: <chip_name>
 #   n_qubits: <count>
+#   topology:
+#     type: <topology_type>
+#     mux_size: <count_per_mux>
+#   backend: <quel1|quel3>  # optional
 #
 # Fields
 # ------
@@ -14,8 +18,20 @@
 #     Descriptive chip name.
 # count : int
 #     Number of qubits on the chip.
+# topology : dict, optional
+#     Chip topology metadata.
+# topology_type : str
+#     Topology type (for example `square_lattice`).
+# count_per_mux : int
+#     Number of qubits multiplexed per mux.
+# backend : str, optional
+#     Backend family selected for this chip. Defaults to `quel1` when omitted.
 
 
 64Q:
   name: "2023-1st-64Q-No14-run3 chip (1,0)"
   n_qubits: 64
+  topology:
+    type: square_lattice
+    mux_size: 4
+  backend: quel1

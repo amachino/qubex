@@ -1,0 +1,20 @@
+# Draft example system configuration for runtime/backend settings.
+#
+# Notes
+# -----
+# - One system.yaml maps to one chip_id.
+# - backend selects the active backend section.
+
+schema_version: 1
+chip_id: 64Q
+backend: quel3
+
+quel1:
+  clock_master: 10.0.0.10
+
+quel3:
+  endpoint: 10.0.0.20
+  port: 50051
+  trigger_wait: 1000000
+  session_ttl_ms: 4000
+  tentative_ttl_ms: 1000

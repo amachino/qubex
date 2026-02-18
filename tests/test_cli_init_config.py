@@ -35,6 +35,7 @@ def test_init_config_creates_expected_files(tmp_path: Path, chip_id: str) -> Non
 
     chip_payload = yaml.safe_load((config_dir / "chip.yaml").read_text())
     assert chip_id in chip_payload
+    assert chip_payload[chip_id]["backend"] == "quel1"
 
 
 def test_init_config_refuses_to_overwrite_without_force(tmp_path: Path) -> None:

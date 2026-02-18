@@ -6,6 +6,7 @@ Manage development notes and operational documents.
 - [QuEL-3 Adapter Interface Draft](quel3-adapter-interface-draft.md)
 - [QuEL-3 Configuration Design Draft](quel3-configuration-design.md)
 - [QuEL-3 Wiring And Binding Policy](quel3-wiring-binding-policy.md)
+- [System Configuration Schema Draft](system-configuration-schema-draft.md)
 - [Configuration Module Migration Plan](configuration-module-migration.md)
 - [Improvement Backlog](improvement-backlog.md)
 - [Hardware Validation Template](hardware-validation-template.md)

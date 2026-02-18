@@ -19,7 +19,7 @@ By default, `<base>` is `/home/shared/qubex-config`. You can override paths usin
 
 ## Config files
 
-- **chip.yaml**: Chip metadata (name, qubit count).
+- **chip.yaml**: Chip metadata (name, qubit count, optional backend family).
 - **box.yaml**: Control hardware inventory and addresses.
 - **wiring.yaml**: Mux-level wiring and port mapping.
 - **skew.yaml**: Timing skew calibration used by the backend controller.
@@ -31,7 +31,12 @@ By default, `<base>` is `/home/shared/qubex-config`. You can override paths usin
 64Q:
   name: "Example Chip"
   n_qubits: 64
+  backend: quel1  # optional: quel1 | quel3
 ```
+
+If `backend` is omitted, `quel1` is used by default.
+`SystemManager.load(chip_id=...)` and `Experiment(chip_id=...)` resolve backend family from this field.
+You can still override it explicitly via `backend_kind=...` at load time.
 
 ```yaml
 # box.yaml
@@ -139,14 +144,14 @@ The repository includes ready-to-read examples under `docs/examples/configuratio
 ### Config examples (`docs/examples/configuration/config`)
 
 - `chip.yaml`
-  Defines chip metadata such as chip name and `n_qubits`.
+  Defines chip metadata such as chip name, `n_qubits`, and optional `backend`.
 - `box.yaml`
   Defines available control boxes (type, IP address, adapter).
 - `wiring.yaml`
   Defines mux-level port assignment (`ctrl`, `read_out`, `read_in`, optional `pump`).
 - `wiring.v2.yaml`
   Defines QuEL-3 style physical wiring with zero-based `qubit_id`/`mux_id` mapped to `port_id`.
-  When loading with `backend_kind="quel3"`, Qubex prefers `wiring.v2.yaml` if present and falls back to `wiring.yaml`.
+  When backend kind resolves to `quel3` (via `chip.yaml` or explicit argument), Qubex prefers `wiring.v2.yaml` if present and falls back to `wiring.yaml`.
 
 ### Parameter examples (`docs/examples/configuration/params`)
 

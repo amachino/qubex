@@ -30,6 +30,7 @@ def _build_template_payloads(chip_id: str, n_qubits: int) -> dict[Path, dict]:
             chip_id: {
                 "name": "...",
                 "n_qubits": n_qubits,
+                "backend": "quel1",
             }
         },
         Path("config/box.yaml"): {
