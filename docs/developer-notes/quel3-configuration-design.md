@@ -46,7 +46,7 @@ Status legend:
     - physical wiring (`wiring.v2.yaml`: `control/readout` with `qubit_id/mux_id -> port_id`)
   - runtime:
     - backend selection and backend-specific runtime settings (`system.yaml`)
-    - endpoint, port, trigger wait, timeout
+    - endpoint, port, wait, ttl_ms, tentative_ttl_ms
 
 ### D2.1 System/chip cardinality
 
@@ -77,7 +77,7 @@ Status legend:
 - Status: `PENDING`
 - Question: How should trigger wait and timing policy be configured?
 - Candidate options:
-  1. `system.yaml` default + optional per-session override
+  1. `system.yaml` default (`wait`) + optional per-session override
   2. Per-target configurable
   3. Auto-tuned by observed hardware response
 
@@ -111,7 +111,7 @@ Status legend:
 
 ## Proposed minimum beta contract
 
-- Single source policy for endpoint/port/trigger-wait is documented.
+- Single source policy for endpoint/port/wait and session TTL is documented.
 - Alias mapping policy is deterministic and testable.
 - Session resource selection policy is deterministic.
 - Missing alias/resource behavior is fail-fast.

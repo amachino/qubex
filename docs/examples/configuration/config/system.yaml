@@ -15,6 +15,6 @@ quel1:
 quel3:
   endpoint: 10.0.0.20
   port: 50051
-  trigger_wait: 1000000
-  session_ttl_ms: 4000
+  wait: 1000000
+  ttl_ms: 4000
   tentative_ttl_ms: 1000
