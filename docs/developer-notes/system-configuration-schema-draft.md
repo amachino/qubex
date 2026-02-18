@@ -1,4 +1,4 @@
-# System Configuration Schema Draft
+# System Configuration Schema
 
 ## Purpose
 
@@ -6,9 +6,9 @@ Define a clean split between chip metadata and runtime/backend settings.
 
 ## Scope and status
 
-- Status: draft (partially implemented in runtime/backend selection and clock-master resolution).
+- Status: baseline for v1.5.0 (implemented for backend selection and QuEL-1 clock-master resolution).
 - Target relation: one `system.yaml` describes one `chip_id`.
-- This document defines desired schema, not current loader behavior.
+- QuEL-3 runtime section fields are currently staged work; runtime endpoint/port/trigger values are still environment-driven.
 
 ## Design decisions
 
@@ -59,23 +59,18 @@ backend: quel3
 quel1:
   clock_master: 10.0.0.10
 
-quel3:
-  endpoint: 10.0.0.20
-  port: 50051
-  wait: 1000000
-  ttl_ms: 4000
-  tentative_ttl_ms: 1000
+quel3: {}
 ```
 
-## Validation rules (draft)
+## Validation rules
 
 - `chip_id` must exist in `chip.yaml`.
 - `backend` must be `quel1` or `quel3`.
-- Selected backend section must exist.
+- Selected backend section is optional for v1.5.0.
 - Unselected backend sections are ignored.
 - `topology.type` is required when `topology` is provided.
 
 ## Migration note
 
-- During transition, `chip.yaml` `backend` may be accepted as a compatibility fallback.
-- After `system.yaml` adoption, runtime/backend selection should move to `system.yaml`.
+- During transition, `chip.yaml` `backend` is still accepted as a compatibility fallback.
+- For v1.5.0, QuEL-3 runtime endpoint/port/trigger values remain environment-driven.

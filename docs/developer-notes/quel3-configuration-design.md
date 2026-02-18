@@ -1,4 +1,4 @@
-# QuEL-3 Configuration Design Draft
+# QuEL-3 Configuration Design
 
 ## Purpose
 
@@ -31,10 +31,13 @@ Status legend:
 
 ### D1. Configuration source of truth
 
-- Status: `DECIDED`
+- Status: `IN_PROGRESS`
 - Question: Where should QuEL-3 runtime configuration be defined primarily?
-- Decision:
-  - Config file first (`system.yaml`), environment variables are optional overrides.
+- Current behavior:
+  - Backend family is selected by config file (`system.yaml` / `chip.yaml` fallback).
+  - QuEL-3 runtime endpoint/port/trigger values are environment-driven.
+- Target:
+  - Config-file first (`system.yaml`) with environment overrides.
 
 ### D2. Config scope split
 

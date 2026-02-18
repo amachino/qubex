@@ -1,4 +1,4 @@
-# Draft example system configuration for runtime/backend settings.
+# Example system configuration for backend selection and runtime settings.
 #
 # Notes
 # -----
@@ -12,9 +12,8 @@ backend: quel3
 quel1:
   clock_master: 10.0.0.10
 
-quel3:
-  endpoint: 10.0.0.20
-  port: 50051
-  wait: 1000000
-  ttl_ms: 4000
-  tentative_ttl_ms: 1000
+# Optional section reserved for QuEL-3 runtime fields.
+# Current runtime endpoint/port/trigger settings are configured via environment
+# variables (`QUBEX_QUELWARE_ENDPOINT`, `QUBEX_QUELWARE_PORT`,
+# `QUBEX_QUELWARE_TRIGGER_WAIT`).
+quel3: {}

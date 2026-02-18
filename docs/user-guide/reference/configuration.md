@@ -8,7 +8,7 @@ Qubex uses YAML files to describe chip topology, wiring, and control parameters.
 <base>/<chip_id>/
   config/
     chip.yaml
-    system.yaml  # optional (draft)
+    system.yaml  # backend selection / runtime config
     box.yaml
     wiring.yaml
     skew.yaml
@@ -21,7 +21,7 @@ By default, `<base>` is `/home/shared/qubex-config`. You can override paths usin
 ## Config files
 
 - **chip.yaml**: Chip metadata (name, qubit count, topology).
-- **system.yaml**: Runtime/backend settings (optional, draft schema).
+- **system.yaml**: Backend selection and runtime settings.
 - **box.yaml**: Control hardware inventory and addresses.
 - **wiring.yaml**: Mux-level wiring and port mapping.
 - **skew.yaml**: Timing skew calibration used by the backend controller.
@@ -38,7 +38,38 @@ By default, `<base>` is `/home/shared/qubex-config`. You can override paths usin
     mux_size: 4
 ```
 
-Backend/runtime settings are managed in `system.yaml` (draft in developer notes).
+Backend/runtime settings are managed in `system.yaml`.
+
+```yaml
+# system.yaml
+schema_version: 1
+chip_id: 64Q
+backend: quel3
+
+quel1:
+  clock_master: 10.0.0.10
+```
+
+### Backend selection precedence
+
+When `SystemManager.load(..., backend_kind=...)` omits `backend_kind`, Qubex resolves backend family in this order:
+
+1. explicit `backend_kind` argument
+2. `system.yaml` top-level `backend`
+3. `chip.yaml` chip entry `backend` (legacy fallback)
+4. default `quel1`
+
+`backend` must be either `quel1` or `quel3`.
+
+### Current `system.yaml` runtime behavior (v1.5.0 pre-release)
+
+- `backend` and `chip_id` are used by loader/runtime selection.
+- `quel1.clock_master` is used by `ConfigLoader` and overrides legacy `chip.yaml` `clock_master`.
+- QuEL-3 endpoint/port/trigger runtime values are currently configured by environment variables:
+  - `QUBEX_QUELWARE_ENDPOINT`
+  - `QUBEX_QUELWARE_PORT`
+  - `QUBEX_QUELWARE_TRIGGER_WAIT`
+  (A `quel3:` section may exist in YAML, but runtime consumption is staged work.)
 
 ```yaml
 # box.yaml
@@ -148,7 +179,7 @@ The repository includes ready-to-read examples under `docs/examples/configuratio
 - `chip.yaml`
   Defines chip metadata such as chip name, `n_qubits`, and topology.
 - `system.yaml`
-  Defines runtime/backend settings (draft schema) such as active backend and backend-specific runtime options.
+  Defines backend selection and runtime settings.
 - `box.yaml`
   Defines available control boxes (type, IP address, adapter).
 - `wiring.yaml`
