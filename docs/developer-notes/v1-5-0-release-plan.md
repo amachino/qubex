@@ -33,6 +33,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | P1 | Publish beta release notes and migration notes | 2026-02-29 | Major features for beta fixed | TODO |
 | P1 | GA hardening: bug fixes from beta feedback | 2026-03-20 | Beta feedback | TODO |
 | P1 | GA release notes and documentation finalization | 2026-03-25 | GA scope frozen | TODO |
+| P1 | Finalize MkDocs user-guide and developer-guide for v1.5.0 (sufficient for experiment users and developers) | 2026-03-25 | GA scope frozen and config/runtime behavior stabilized | TODO |
 | P2 | Developer ergonomics improvements (logs/errors/examples) for new flows | 2026-03-25 | Main features implemented | TODO |
 
 ## Beta exit criteria (must pass)
@@ -56,6 +57,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - Synchronized protocol and sweep measurement are documented and tested
 - Migration/upgrade notes finalized
 - Release notes finalized
+- MkDocs `user-guide` and `developer-guide` are updated to final v1.5.0 behavior and provide sufficient end-to-end understanding for experiment users and developers
 
 ## Compatibility contract draft (`Experiment` / `MeasurementClient`)
 
