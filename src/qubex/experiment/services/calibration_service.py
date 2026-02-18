@@ -37,6 +37,7 @@ from qubex.experiment.experiment_constants import (
     PI_RAMPTIME,
 )
 from qubex.experiment.experiment_context import ExperimentContext
+from qubex.experiment.experiment_util import ExperimentUtil
 from qubex.experiment.models.experiment_result import AmplCalibData, ExperimentResult
 from qubex.experiment.models.result import Result
 from qubex.typing import TargetMap
@@ -73,6 +74,12 @@ class CalibrationService:
     def measurement_service(self) -> MeasurementService:
         """Return the measurement service."""
         return self._measurement_service
+
+    def _measurement_sampling_period_ns(self) -> float:
+        """Return measurement sampling period in ns with backend fallback."""
+        measurement = getattr(self.ctx, "measurement", None)
+        sampling_period = getattr(measurement, "sampling_period", None)
+        return ExperimentUtil.resolve_sampling_period(sampling_period)
 
     def correct_rabi_params(
         self,
@@ -317,6 +324,7 @@ class CalibrationService:
         rabi_params = self.pulse.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
+        sampling_period_ns = self._measurement_sampling_period_ns()
 
         def calibrate(target: str) -> AmplCalibData:
             if pulse_type == "hpi":
@@ -325,7 +333,7 @@ class CalibrationService:
                     amplitude=1,
                     tau=ramptime if ramptime is not None else HPI_RAMPTIME,
                 )
-                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                area = pulse.real.sum() * sampling_period_ns
                 rabi_rate = 0.25 / area
             elif pulse_type == "pi":
                 pulse = FlatTop(
@@ -333,7 +341,7 @@ class CalibrationService:
                     amplitude=1,
                     tau=ramptime if ramptime is not None else PI_RAMPTIME,
                 )
-                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                area = pulse.real.sum() * sampling_period_ns
                 rabi_rate = 0.5 / area
             else:
                 raise ValueError("Invalid pulse type.")
@@ -538,6 +546,7 @@ class CalibrationService:
         rabi_params = self.pulse.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
+        sampling_period_ns = self._measurement_sampling_period_ns()
 
         ef_labels = [
             self.ctx.resolve_ef_label(label)
@@ -555,7 +564,7 @@ class CalibrationService:
                     amplitude=1,
                     tau=ramptime if ramptime is not None else HPI_RAMPTIME,
                 )
-                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                area = pulse.real.sum() * sampling_period_ns
                 rabi_rate = 0.25 / area
             elif pulse_type == "pi":
                 pulse = FlatTop(
@@ -563,7 +572,7 @@ class CalibrationService:
                     amplitude=1,
                     tau=ramptime if ramptime is not None else PI_RAMPTIME,
                 )
-                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                area = pulse.real.sum() * sampling_period_ns
                 rabi_rate = 0.5 / area
             else:
                 raise ValueError("Invalid pulse type.")
@@ -777,6 +786,7 @@ class CalibrationService:
 
         rabi_params = self.pulse.rabi_params
         self.pulse.validate_rabi_params(rabi_params)
+        sampling_period_ns = self._measurement_sampling_period_ns()
 
         def calibrate(target: str) -> FitResult:
             # hpi
@@ -792,7 +802,7 @@ class CalibrationService:
                     amplitude=1,
                     beta=beta,
                 )
-                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                area = pulse.real.sum() * sampling_period_ns
                 rabi_rate = 0.25 / area
 
                 if hpi_param is not None and use_stored_amplitude:
@@ -812,7 +822,7 @@ class CalibrationService:
                     amplitude=1,
                     beta=beta,
                 )
-                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                area = pulse.real.sum() * sampling_period_ns
                 rabi_rate = 0.5 / area
 
                 if pi_param is not None and use_stored_amplitude:

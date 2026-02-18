@@ -11,8 +11,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from qubex.backend import SystemManager
-
-from .experiment_constants import SAMPLING_PERIOD
+from qubex.backend.quel1 import SAMPLING_PERIOD as DEFAULT_BACKEND_SAMPLING_PERIOD
 
 
 class ExperimentUtil:
@@ -33,6 +32,35 @@ class ExperimentUtil:
             sys.stderr = original_stderr
 
     @staticmethod
+    def resolve_sampling_period(
+        sampling_period: float | None = None,
+    ) -> float:
+        """
+        Resolve sampling period from explicit value or backend controller.
+
+        Parameters
+        ----------
+        sampling_period : float | None, optional
+            Explicit sampling period in ns.
+
+        Returns
+        -------
+        float
+            Resolved sampling period in ns.
+        """
+        if isinstance(sampling_period, (int, float)):
+            return float(sampling_period)
+        backend_controller = getattr(SystemManager.shared(), "backend_controller", None)
+        backend_sampling_period = getattr(
+            backend_controller,
+            "DEFAULT_SAMPLING_PERIOD",
+            None,
+        )
+        if isinstance(backend_sampling_period, (int, float)):
+            return float(backend_sampling_period)
+        return float(DEFAULT_BACKEND_SAMPLING_PERIOD)
+
+    @staticmethod
     def discretize_time_range(
         time_range: ArrayLike,
         sampling_period: float | None = None,
@@ -45,18 +73,20 @@ class ExperimentUtil:
         time_range : ArrayLike
             Time range to discretize in ns.
         sampling_period : float, optional
-            Sampling period in ns. Defaults to SAMPLING_PERIOD.
+            Sampling period in ns. Defaults to backend-defined sampling period.
 
         Returns
         -------
         NDArray[np.float64]
             Discretized time range.
         """
-        if sampling_period is None:
-            sampling_period = SAMPLING_PERIOD
+        resolved_sampling_period = ExperimentUtil.resolve_sampling_period(
+            sampling_period
+        )
         discretized_range = np.array(time_range)
         discretized_range = (
-            np.round(discretized_range / sampling_period) * sampling_period
+            np.round(discretized_range / resolved_sampling_period)
+            * resolved_sampling_period
         )
         return discretized_range
 

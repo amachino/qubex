@@ -1,0 +1,62 @@
+# v1.5.0 Beta Release Notes Template
+
+## Release summary
+
+- Version: `v1.5.0-betaX`
+- Date: `YYYY-MM-DD`
+- Target audience: experiment users and backend developers
+
+## Highlights
+
+- QuEL-3 controller path added via `quelware-client` integration.
+- `MeasurementClient` compatibility contract preserved for core flows.
+- Sampling-period handling shifted from fixed `2 ns` assumptions toward backend-derived `dt`.
+
+## Compatibility contract (beta scope)
+
+- Primary contract surface: `MeasurementClient`
+- Delegation smoke scope: `Experiment` core lifecycle and measurement calls
+- Required compatibility mode: `mock_mode=True`
+
+## Migration notes
+
+- Configuration:
+  - Backend selection precedence: explicit argument > `system.yaml` > `chip.yaml` > `quel1` default.
+  - QuEL-3 prefers `wiring.v2.yaml` when present.
+- Measurement:
+  - Backend kind may change adapter/executor path under `MeasurementClient`.
+  - Result timing metadata should be consumed from `sampling_period_ns`.
+
+## Known limitations (beta)
+
+- QuEL-3 orchestration scope is single-session, single backend-family per experiment session.
+- Async task primitives and sweep API unification are still in progress.
+- Some contrib/visualization paths may still rely on legacy sampling-period assumptions.
+
+## Validation status
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| `uv run ruff check` | TBD |  |
+| `uv run ruff format` | TBD |  |
+| `uv run pyright` | TBD |  |
+| `uv run pytest` | TBD |  |
+| Hardware validation (QuEL-1) | TBD |  |
+| Hardware validation (QuEL-3) | TBD |  |
+| Synchronized scenario (`SP-BETA-001`) | TBD |  |
+
+## Breaking changes
+
+- `None` or list explicitly.
+
+## Upgrade guidance
+
+1. Confirm backend selection and wiring file policy in environment config.
+2. Run compatibility tests and at least one measurement smoke run before full migration.
+3. Validate downstream tools consume `sampling_period_ns` metadata.
+
+## Rollback plan
+
+1. Revert to latest v1.4.x tag in deployment environment.
+2. Re-apply known-good configuration set for previous backend path.
+3. Restore previous experiment notebooks/scripts and rerun smoke checks.

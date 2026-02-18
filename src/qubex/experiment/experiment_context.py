@@ -45,6 +45,7 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
 )
+from qubex.pulse import set_sampling_period
 from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
 
@@ -199,6 +200,7 @@ class ExperimentContext:
             load_configs=False,
             connect_devices=False,
         )
+        self._sync_pulse_sampling_period()
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
         self._system_note: Final = ExperimentNote(file_path=SYSTEM_NOTE_PATH)
         self._calib_note: Final = CalibrationNote(
@@ -216,6 +218,12 @@ class ExperimentContext:
                 self._measurement.classifiers[qubit] = StateClassifier.load(  # type: ignore
                     classifier_path
                 )
+
+    def _sync_pulse_sampling_period(self) -> float:
+        """Synchronize pulse-library sampling period with backend measurement dt."""
+        sampling_period = float(self._measurement.sampling_period)
+        set_sampling_period(sampling_period)
+        return sampling_period
 
     def _load_config(
         self,
@@ -927,6 +935,7 @@ class ExperimentContext:
         """
         try:
             self._measurement.connect(sync_clocks=sync_clocks, parallel=parallel)
+            self._sync_pulse_sampling_period()
             logger.info("Successfully connected.")
         except Exception:
             logger.exception("Failed to connect to the devices.")
@@ -974,11 +983,13 @@ class ExperimentContext:
         self.system_manager.push(
             box_ids=box_ids or self.box_ids,
         )
+        self._sync_pulse_sampling_period()
 
     def reload(self) -> None:
         """Reload measurement configuration from the backend."""
         try:
             self._measurement.reload(configuration_mode=self.configuration_mode)
+            self._sync_pulse_sampling_period()
             logger.info("Successfully reloaded.")
         except Exception:
             logger.exception("Failed to reload the devices.")

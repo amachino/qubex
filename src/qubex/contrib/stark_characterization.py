@@ -149,7 +149,11 @@ def stark_t1_experiment(
 
     if time_range is None:
         time_range = np.logspace(np.log10(100), np.log10(200 * 1000), 51)
-    sweep_range = exp.ctx.util.discretize_time_range(np.asarray(time_range))
+    sampling_period = exp.ctx.measurement.sampling_period
+    sweep_range = exp.ctx.util.discretize_time_range(
+        np.asarray(time_range),
+        sampling_period=sampling_period,
+    )
 
     data: dict[str, T1Data] = {}
     for target in target_list:
@@ -299,9 +303,12 @@ def stark_ramsey_experiment(
     )
 
     if time_range is None:
-        sweep_range = np.arange(0, 401, 4)
-    else:
-        sweep_range = exp.ctx.util.discretize_time_range(time_range)
+        time_range = np.arange(0, 401, 4)
+    sampling_period = exp.ctx.measurement.sampling_period
+    sweep_range = exp.ctx.util.discretize_time_range(
+        np.asarray(time_range),
+        sampling_period=sampling_period,
+    )
 
     exp.pulse.validate_rabi_params(target_list)
 

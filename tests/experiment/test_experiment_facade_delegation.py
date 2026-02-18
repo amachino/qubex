@@ -31,6 +31,15 @@ class _BenchmarkingServiceStub:
         self.calls.append(("benchmark_2q", kwargs))
 
 
+class _MeasurementServiceStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def measure_idle_states(self, **kwargs: Any) -> str:
+        self.calls.append(("measure_idle_states", kwargs))
+        return "measure_idle_states_result"
+
+
 class _ExperimentContextStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -43,6 +52,19 @@ class _ExperimentContextStub:
 
     def disconnect(self) -> None:
         self.calls.append(("disconnect", {}))
+
+    def connect(
+        self,
+        *,
+        sync_clocks: bool | None = None,
+        parallel: bool | None = None,
+    ) -> None:
+        self.calls.append(
+            ("connect", {"sync_clocks": sync_clocks, "parallel": parallel})
+        )
+
+    def reload(self) -> None:
+        self.calls.append(("reload", {}))
 
     def register_custom_target(self, **kwargs: Any) -> None:
         self.calls.append(("register_custom_target", kwargs))
@@ -207,6 +229,22 @@ def test_print_boxes_delegates_to_context() -> None:
     assert context_stub.calls == [("print_boxes", {})]
 
 
+def test_run_executes_task_with_experiment_instance() -> None:
+    """Given experiment task, when run is called, then task executes with the experiment instance."""
+    exp = object.__new__(Experiment)
+    called: dict[str, object] = {}
+
+    class _Task:
+        def execute(self, exp: Experiment) -> str:
+            called["experiment"] = exp
+            return "task_result"
+
+    result = exp.run(_Task())
+
+    assert result == "task_result"
+    assert called["experiment"] is exp
+
+
 def test_clifford_generator_property_delegates_to_benchmarking_service() -> None:
     """Given benchmarking service, when clifford_generator is accessed, then it returns delegated value."""
     exp = object.__new__(Experiment)
@@ -234,6 +272,62 @@ def test_disconnect_delegates_to_context() -> None:
     exp.disconnect()
 
     assert context_stub.calls == [("disconnect", {})]
+
+
+def test_connect_delegates_to_context() -> None:
+    """Given connect args, when called, then it delegates to experiment context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.connect(sync_clocks=False, parallel=True)
+
+    assert context_stub.calls == [("connect", {"sync_clocks": False, "parallel": True})]
+
+
+def test_reload_delegates_to_context() -> None:
+    """Given reload call, when called, then it delegates to experiment context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.reload()
+
+    assert context_stub.calls == [("reload", {})]
+
+
+def test_measure_idle_states_delegates_to_measurement_service() -> None:
+    """Given measure_idle_states args, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+
+    result = exp.measure_idle_states(
+        targets=["Q00", "Q01"],
+        shots=512,
+        interval=200.0,
+        readout_amplitudes={"Q00": 0.01, "Q01": 0.02},
+        add_pump_pulses=False,
+        plot=True,
+    )
+
+    assert result == "measure_idle_states_result"
+    assert measurement_stub.calls == [
+        (
+            "measure_idle_states",
+            {
+                "targets": ["Q00", "Q01"],
+                "shots": 512,
+                "interval": 200.0,
+                "readout_amplitudes": {"Q00": 0.01, "Q01": 0.02},
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "add_pump_pulses": False,
+                "plot": True,
+            },
+        )
+    ]
 
 
 def test_register_custom_target_delegates_to_context() -> None:

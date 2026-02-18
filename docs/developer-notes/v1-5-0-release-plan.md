@@ -5,6 +5,11 @@
 - Beta release window: by February 2026
 - GA release window: by March 2026
 
+## Dependency status
+
+- `quelware-client` is not yet complete for final QuEL-3 execution-path decisions.
+- QuEL-3-specific implementation lock items remain `PROPOSED` and are resumed after dependency completion.
+
 ## Scope
 
 - Add support for QuEL-3 controller using new `quelware-client`
@@ -23,18 +28,45 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 
 | Priority | Task | Due | Dependency | Status |
 | --- | --- | --- | --- | --- |
-| P0 | Define QuEL-3 integration design (adapter boundary, lifecycle, error model) | 2026-02-21 | None | TODO |
-| P0 | Implement QuEL-3 adapter with `quelware-client` | 2026-02-28 | Reference source available at `packages/quelware-client` (not yet tracked in this repo) | IN_PROGRESS (adapter skeleton and payload conversion added) |
+| P0 | Define QuEL-3 integration design (adapter boundary, lifecycle, error model) | TBD (after `quelware-client` completion) | `quelware-client` completion | PROPOSED / ON_HOLD |
+| P0 | Implement QuEL-3 adapter with `quelware-client` | TBD (after `quelware-client` completion) | `quelware-client` completion | ON_HOLD (skeleton exists; implementation intentionally paused) |
 | P0 | Prepare compatibility contract tests at `MeasurementClient` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
-| P0 | Implement synchronized measurement protocol execution path | 2026-02-29 | Task primitives baseline | TODO |
+| P0 | Implement synchronized measurement protocol execution path | TBD (after `quelware-client` completion) | `quelware-client` completion + task primitives baseline | PROPOSED / ON_HOLD |
 | P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | IN_PROGRESS (measurement result time-axis path migrated) |
 | P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
 | P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-08 | Async primitives | TODO |
-| P1 | Publish beta release notes and migration notes | 2026-02-29 | Major features for beta fixed | TODO |
+| P1 | Publish beta release notes and migration notes | 2026-02-28 | Major features for beta fixed | TODO |
 | P1 | GA hardening: bug fixes from beta feedback | 2026-03-20 | Beta feedback | TODO |
 | P1 | GA release notes and documentation finalization | 2026-03-25 | GA scope frozen | TODO |
 | P1 | Finalize MkDocs user-guide and developer-guide for v1.5.0 (sufficient for experiment users and developers) | 2026-03-25 | GA scope frozen and config/runtime behavior stabilized | TODO |
 | P2 | Developer ergonomics improvements (logs/errors/examples) for new flows | 2026-03-25 | Main features implemented | TODO |
+
+Calendar note:
+
+- `2026-02-29` does not exist; end-of-February deadlines are normalized to `2026-02-28`.
+
+## Execution order (as of 2026-02-18, dependency-adjusted)
+
+1. Wave A (current): non-QuEL-3 freeze and test scope lock
+   - Lock compatibility and delegation contract scope.
+   - Define synchronized scenario and beta release-note template.
+   - Keep QuEL-3 decisions as `PROPOSED` until dependency completion.
+2. Wave B (next): non-QuEL-3 beta-blocking implementation
+   - Close remaining fixed `2 ns` assumptions in runtime and experiment paths.
+   - Implement task-based async measurement primitives.
+   - Add sweep measurement API and execution flow in measurement layer.
+3. Wave C (after Wave B): beta gate for non-QuEL-3 scope
+   - Run required checks: `uv run ruff check`, `uv run ruff format`, `uv run pyright`, `uv run pytest`.
+   - Run hardware gate scenarios for QuEL-1.
+   - Publish beta release notes + known limitations + migration notes.
+4. Wave Q (triggered when `quelware-client` is ready): QuEL-3 track resume
+   - Re-open and finalize DF-01 to DF-04.
+   - Implement synchronized execution path and QuEL-3 runtime integration.
+   - Run QuEL-3 hardware gates.
+5. Wave D (2026-03-01 to 2026-03-25): GA hardening and release
+   - Triage beta feedback and close critical/high issues.
+   - Finalize sweep/async docs and compatibility notes.
+   - Finalize GA release notes and MkDocs guides.
 
 ## Beta exit criteria (must pass)
 
@@ -98,14 +130,14 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - [x] `mock_mode=True` is mandatory for v1.5.0 beta compatibility
 - [x] Canonical sampling period source of truth: backend/controller `dt`
 
-## Immediate next actions (this week)
+## Current sprint checklist (2026-02-18 to 2026-02-21)
 
-- [ ] Finalize QuEL-3 integration interface based on current `quelware-client` source
-- [x] Review `packages/quelware-client` API surface and lock adapter mapping points
-- [x] Identify and list current fixed `2 ns` assumptions in `src/` and map each to backend-derived timing
-- [x] Scaffold adapter and contract test skeletons now
-- [ ] Define minimal synchronized protocol scenario for beta sign-off
-- [ ] Draft beta release notes template and known limitation section
+- [ ] Finalize QuEL-3 integration interface based on current `quelware-client` source (`quel3-adapter-interface-draft.md`) after dependency completion.
+- [ ] Freeze decisions in `quel3-adapter-interface-draft.md` (alias mapping, capture key policy, trigger model, result shape) after dependency completion.
+- [x] Define minimal synchronized protocol scenario for beta sign-off (`v1-5-0-synchronized-protocol-scenario.md`).
+- [x] Lock `MeasurementClient` and `Experiment` delegation smoke test scope for beta (`v1-5-0-contract-test-scope.md`).
+- [x] Draft beta release notes template and known limitation section (`v1-5-0-beta-release-notes-template.md`).
+- [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
 
 ## Sampling-period audit (2026-02-17)
 
@@ -161,6 +193,16 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 - 2026-02-18: `ConfigLoader` now reads optional `system.yaml`; `ControlSystem.clock_master_address` prefers `system.yaml` `quel1.clock_master` and falls back to legacy `chip.yaml` `clock_master`.
 - 2026-02-18: `ExperimentContext.register_custom_target()` now resolves qubits via `TargetRegistry` (or explicit `qubit_label`) and validates port/channel/target-type mapping before registration.
 - 2026-02-18: Updated configuration docs/examples to align with current runtime behavior (`system.yaml` backend selection + `quel1.clock_master` support, QuEL-3 runtime endpoint/port/trigger using controller defaults in v1.5.0 pre-release).
+- 2026-02-18: Reordered this release plan into execution waves (A to D), normalized invalid February end dates to `2026-02-28`, and added a current sprint checklist.
+- 2026-02-18: Added QuEL-3 beta decision-freeze candidates (`DF-01` to `DF-04`) in `quel3-adapter-interface-draft.md`.
+- 2026-02-18: Added `v1-5-0-synchronized-protocol-scenario.md` with `SP-BETA-001` as minimum synchronized-path beta gate scenario.
+- 2026-02-18: Added `v1-5-0-beta-release-notes-template.md` and linked it from current sprint checklist.
+- 2026-02-18: Added `v1-5-0-contract-test-scope.md` and fixed beta contract-test surface/gap list.
+- 2026-02-18: Added facade delegation tests for `Experiment.run`, `connect`, `reload`, and `measure_idle_states` in `tests/experiment/test_experiment_facade_delegation.py`.
+- 2026-02-18: Returned QuEL-3 decision items (`DF-01` to `DF-04`) to `PROPOSED` and deferred finalization until `quelware-client` completion.
+- 2026-02-18: Switched execution order to prioritize non-QuEL-3 tasks while QuEL-3 dependency remains incomplete.
+- 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
+- 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`MeasurementClient.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 
 ## Commit plan
 

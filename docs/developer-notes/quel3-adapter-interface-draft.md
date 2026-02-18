@@ -73,9 +73,21 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Keep `avg_sample_stride` explicit. Default remains `4` for 4-way multiplexed readout demodulation semantics unless backend contract provides another value.
 - Remove QuEL-1 specific extra-capture assumptions from QuEL-3 result path.
 
-## Open questions before implementation
+## v1.5.0 beta decision candidates (as of 2026-02-18, `PROPOSED`)
 
-1. Final policy for target-to-alias mapping (current scaffold: `resolve_instrument_alias` hook, fallback to target label).
-2. Whether one capture window name should encode target + capture index or use separate lookup table.
-3. How to handle multi-unit trigger orchestration policy when multiple resources are involved.
-4. Whether QuEL-3 returns already-demodulated/integrated payloads or raw sampled windows for each mode.
+Dependency note:
+
+- Final decision lock is deferred until `quelware-client` is completed.
+- QuEL-3 execution-path implementation is intentionally on hold until that dependency is ready.
+
+| ID | Topic | Proposed decision for beta | Why now | Status |
+| --- | --- | --- | --- | --- |
+| DF-01 | Target-to-alias mapping | Require explicit instrument alias resolution for execution. Do not rely on target-label fallback in production path. | QuEL-3 execution is not valid without instrument mapping. | PROPOSED (blocked by `quelware-client`) |
+| DF-02 | Capture-window key policy | Standardize key as `{target}:{capture_index}` where `capture_index` is deterministic order by start time. | If `window_name` is mechanically index-based, it adds no extra information over `capture_index`. | PROPOSED |
+| DF-03 | Trigger orchestration | Decision deferred until `quelware-client` orchestrator behavior is finalized. | Current dependency is incomplete; fixing policy now would be speculative. | PROPOSED (deferred) |
+| DF-04 | Result mode contract | Decision deferred until `quelware-client` result contracts are finalized. | Mode-level guarantees depend on unfinished upstream behavior. | PROPOSED (deferred) |
+
+## Follow-up questions (post-beta candidate)
+
+1. Re-open DF-03 when `quelware-client` is ready and define synchronized orchestration policy.
+2. Re-open DF-04 when `quelware-client` mode/result contracts are ready.

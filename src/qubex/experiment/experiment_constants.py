@@ -29,6 +29,7 @@ DRAG_HPI_DURATION = 16
 DRAG_PI_DURATION = 24
 DRAG_COEFF = 0.5
 
+# Legacy compatibility alias. New code should prefer context/measurement-derived dt.
 SAMPLING_PERIOD = BACKEND_SAMPLING_PERIOD
 
 DEFAULT_SHOTS = MEASUREMENT_DEFAULT_SHOTS

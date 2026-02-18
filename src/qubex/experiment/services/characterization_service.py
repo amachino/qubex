@@ -1063,7 +1063,11 @@ class CharacterizationService:
                 np.log10(200 * 1000),
                 51,
             )
-        time_range = self.ctx.util.discretize_time_range(np.asarray(time_range))
+        sampling_period = self.ctx.measurement.sampling_period
+        time_range = self.ctx.util.discretize_time_range(
+            np.asarray(time_range),
+            sampling_period=sampling_period,
+        )
         if time_range is None:
             raise ValueError("time_range could not be discretized.")
 
@@ -1347,8 +1351,11 @@ class CharacterizationService:
 
         if time_range is None:
             time_range = np.arange(0, 10001, 100)
-        else:
-            time_range = self.ctx.util.discretize_time_range(time_range)
+        sampling_period = self.ctx.measurement.sampling_period
+        time_range = self.ctx.util.discretize_time_range(
+            np.asarray(time_range),
+            sampling_period=sampling_period,
+        )
         if time_range is None:
             raise ValueError("time_range could not be discretized.")
 

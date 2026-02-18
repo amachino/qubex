@@ -34,7 +34,6 @@ from qubex.experiment.models import Result
 from qubex.pulse import (
     CPMG,
     Blank,
-    Pulse,
     PulseSchedule,
     VirtualZ,
 )
@@ -77,6 +76,7 @@ def create_entangle_sequence(
         decouple_all_zz = False
     if initialization_pulse is None:
         initialization_pulse = "Y90"
+    sampling_period = exp.ctx.measurement.sampling_period
 
     steps: list[tuple[str, str]] = []
     qubits: list[str] = []
@@ -213,7 +213,7 @@ def create_entangle_sequence(
                         duration_unit = cpmg_duration_unit
                     if dd_duration > duration_unit:
                         tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
-                        tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
+                        tau = (tau // sampling_period) * sampling_period
                         ps.add(qubit, CPMG(tau=tau, pi=pi, n=n_pi, alternating=False))
 
     if decouple_all_zz:
@@ -233,9 +233,7 @@ def create_entangle_sequence(
                                 duration_unit = cpmg_duration_unit
                             if dd_duration > duration_unit:
                                 tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
-                                tau = (
-                                    tau // Pulse.SAMPLING_PERIOD
-                                ) * Pulse.SAMPLING_PERIOD
+                                tau = (tau // sampling_period) * sampling_period
                                 ps_dd.add(target, CPMG(tau=tau, pi=pi, n=n_pi))
                                 continue
                     ps_dd.add(target, element)

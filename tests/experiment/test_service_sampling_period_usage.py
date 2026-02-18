@@ -99,3 +99,79 @@ def test_t2_experiment_discretization_uses_measurement_sampling_period() -> None
 
     assert isinstance(result, ExperimentResult)
     assert captured["sampling_period"] == 2 * 0.4 * 3
+
+
+def test_t1_experiment_discretization_uses_measurement_sampling_period() -> None:
+    """Given measurement dt, when running T1 experiment, then discretization uses backend-derived dt."""
+    captured: dict[str, float] = {}
+
+    def _discretize_time_range(
+        time_range: np.ndarray,
+        *,
+        sampling_period: float,
+    ) -> np.ndarray:
+        captured["sampling_period"] = sampling_period
+        return np.array([], dtype=int)
+
+    service = cast(Any, object.__new__(CharacterizationService))
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        qubit_labels=["Q00"],
+        measurement=SimpleNamespace(sampling_period=0.4),
+        util=SimpleNamespace(
+            discretize_time_range=_discretize_time_range,
+            create_qubit_subgroups=lambda targets: [],
+        ),
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace()
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        validate_rabi_params=lambda _targets: None
+    )
+
+    result = service.t1_experiment(
+        targets=["Q00"],
+        time_range=np.array([100.0, 200.0]),
+        plot=False,
+        save_image=False,
+    )
+
+    assert isinstance(result, ExperimentResult)
+    assert captured["sampling_period"] == 0.4
+
+
+def test_ramsey_experiment_discretization_uses_measurement_sampling_period() -> None:
+    """Given measurement dt, when running Ramsey experiment, then discretization uses backend-derived dt."""
+    captured: dict[str, float] = {}
+
+    def _discretize_time_range(
+        time_range: np.ndarray,
+        *,
+        sampling_period: float,
+    ) -> np.ndarray:
+        captured["sampling_period"] = sampling_period
+        return np.array([], dtype=int)
+
+    service = cast(Any, object.__new__(CharacterizationService))
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        qubit_labels=["Q00"],
+        measurement=SimpleNamespace(sampling_period=0.4),
+        util=SimpleNamespace(
+            discretize_time_range=_discretize_time_range,
+            create_qubit_subgroups=lambda targets: [],
+        ),
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace()
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        validate_rabi_params=lambda _targets: None
+    )
+
+    result = service.ramsey_experiment(
+        targets=["Q00"],
+        time_range=np.array([100.0, 200.0]),
+        plot=False,
+        save_image=False,
+    )
+
+    assert isinstance(result, ExperimentResult)
+    assert captured["sampling_period"] == 0.4
