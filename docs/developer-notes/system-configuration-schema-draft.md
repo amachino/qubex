@@ -6,7 +6,7 @@ Define a clean split between chip metadata and runtime/backend settings.
 
 ## Scope and status
 
-- Status: draft for upcoming implementation work.
+- Status: draft (partially implemented in runtime/backend selection and clock-master resolution).
 - Target relation: one `system.yaml` describes one `chip_id`.
 - This document defines desired schema, not current loader behavior.
 

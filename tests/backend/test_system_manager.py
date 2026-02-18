@@ -654,6 +654,59 @@ def test_load_resolves_backend_kind_from_chip_config(
     assert captured["wiring_file"] == "wiring.v2.yaml"
 
 
+def test_load_resolves_backend_kind_from_system_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given system backend in system.yaml, load uses it when backend_kind argument is omitted."""
+    manager = SystemManager.shared()
+    captured: dict[str, object] = {}
+    selected: list[str] = []
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "chip.yaml").write_text(
+        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: quel1\n',
+        encoding="utf-8",
+    )
+    (config_dir / "system.yaml").write_text(
+        "schema_version: 1\nchip_id: TEST\nbackend: quel3\n",
+        encoding="utf-8",
+    )
+    (config_dir / "wiring.v2.yaml").write_text(
+        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
+        encoding="utf-8",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def load(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        mock_mode=True,
+    )
+
+    assert selected == ["quel3"]
+    assert captured["wiring_file"] == "wiring.v2.yaml"
+
+
 def test_load_explicit_backend_kind_overrides_chip_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -702,6 +755,54 @@ def test_load_explicit_backend_kind_overrides_chip_config(
 
     assert selected == ["quel1"]
     assert captured["wiring_file"] == "wiring.yaml"
+
+
+def test_load_explicit_backend_kind_overrides_system_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given explicit backend_kind, load prefers the argument over system.yaml backend."""
+    manager = SystemManager.shared()
+    selected: list[str] = []
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "chip.yaml").write_text(
+        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: quel3\n',
+        encoding="utf-8",
+    )
+    (config_dir / "system.yaml").write_text(
+        "schema_version: 1\nchip_id: TEST\nbackend: quel3\n",
+        encoding="utf-8",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel1",
+        mock_mode=True,
+    )
+
+    assert selected == ["quel1"]
 
 
 def test_load_defaults_to_quel1_when_chip_backend_kind_is_missing(
@@ -758,6 +859,33 @@ def test_load_raises_for_unknown_backend_kind_in_chip_config(
     params_dir.mkdir()
     (config_dir / "chip.yaml").write_text(
         'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: unknown\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported backend"):
+        manager.load(
+            chip_id="TEST",
+            config_dir=config_dir,
+            params_dir=params_dir,
+            mock_mode=True,
+        )
+
+
+def test_load_raises_for_unknown_backend_kind_in_system_config(
+    tmp_path: Path,
+) -> None:
+    """Given unknown backend in system.yaml, load raises ValueError."""
+    manager = SystemManager.shared()
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "chip.yaml").write_text(
+        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n',
+        encoding="utf-8",
+    )
+    (config_dir / "system.yaml").write_text(
+        "schema_version: 1\nchip_id: TEST\nbackend: unknown\n",
         encoding="utf-8",
     )
 

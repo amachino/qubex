@@ -367,6 +367,29 @@ def test_control_system_box_options_loaded_from_box_yaml(tmp_path: Path) -> None
     assert box.options == ("se8_mxfe1_awg1331", "refclk_corrected_mxfe1")
 
 
+def test_control_system_clock_master_prefers_system_yaml(tmp_path: Path) -> None:
+    """Given system.yaml quel1 clock master, control system uses it over chip.yaml value."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": "quel1",
+            "quel1": {"clock_master": "10.0.0.9"},
+        },
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert system.control_system.clock_master_address == "10.0.0.9"
+
+
 def test_config_loader_autoload_false_requires_explicit_load(tmp_path: Path) -> None:
     """Given autoload disabled, when accessing system before load, then RuntimeError is raised."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)

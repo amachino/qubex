@@ -20,6 +20,7 @@ from qubex.constants import (
     CHIP_FILE,
     DEFAULT_CONFIG_DIR,
     DEFAULT_RAWDATA_DIR,
+    SYSTEM_FILE,
     WIRING_FILE,
     WIRING_V2_FILE,
 )
@@ -285,14 +286,36 @@ class SystemManager:
         *,
         chip_id: str,
         config_dir: Path | str | None,
+        system_file: str = SYSTEM_FILE,
         chip_file: str = CHIP_FILE,
     ) -> BackendKind:
-        """Resolve backend family from chip configuration with quel1 fallback."""
+        """Resolve backend family from system config then chip config with quel1 fallback."""
         config_path = (
             Path(config_dir)
             if config_dir is not None
             else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
         )
+        system_path = config_path / system_file
+        if system_path.exists():
+            with system_path.open(encoding="utf-8") as file:
+                system_dict = yaml.safe_load(file) or {}
+            if not isinstance(system_dict, Mapping):
+                raise TypeError(f"`{system_file}` must be a mapping at top level.")
+            configured_chip_id = system_dict.get("chip_id")
+            if configured_chip_id is not None and str(configured_chip_id) != chip_id:
+                raise ValueError(
+                    f"`{system_file}` chip_id mismatch: expected `{chip_id}`, got `{configured_chip_id}`."
+                )
+            value = system_dict.get("backend")
+            if value is not None:
+                if isinstance(value, str):
+                    normalized = value.strip().lower()
+                    if normalized in ("quel1", "quel3"):
+                        return cast(BackendKind, normalized)
+                raise ValueError(
+                    f"Unsupported backend for chip `{chip_id}` in `{system_file}`: {value!r}"
+                )
+
         chip_path = config_path / chip_file
         if not chip_path.exists():
             logger.debug(

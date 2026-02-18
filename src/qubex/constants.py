@@ -6,6 +6,7 @@ DEFAULT_CONFIG_DIR: Final = "/home/shared/qubex-config"
 DEFAULT_RAWDATA_DIR: Final = ".rawdata"
 
 CHIP_FILE: Final = "chip.yaml"
+SYSTEM_FILE: Final = "system.yaml"
 BOX_FILE: Final = "box.yaml"
 WIRING_FILE: Final = "wiring.yaml"
 WIRING_V2_FILE: Final = "wiring.v2.yaml"

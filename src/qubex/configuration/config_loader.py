@@ -22,6 +22,7 @@ from qubex.constants import (
     DEFAULT_CONFIG_DIR,
     PARAMS_FILE,
     PROPS_FILE,
+    SYSTEM_FILE,
     WIRING_FILE,
 )
 from qubex.typing import ConfigurationMode
@@ -102,7 +103,7 @@ class ConfigLoader:
         Directory containing parameter files (`params.yaml` and per-section
         files under `params/`). Defaults to
         `DEFAULT_CONFIG_DIR/<chip_id>/params`.
-    chip_file, box_file, wiring_file, props_file, params_file : str, optional
+    chip_file, system_file, box_file, wiring_file, props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     targets_to_exclude : list[str] | None, optional
         Qubit/resonator labels to exclude when assembling the ExperimentSystem.
@@ -135,6 +136,7 @@ class ConfigLoader:
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         chip_file: str = CHIP_FILE,
+        system_file: str = SYSTEM_FILE,
         box_file: str = BOX_FILE,
         wiring_file: str = WIRING_FILE,
         props_file: str = PROPS_FILE,
@@ -156,6 +158,8 @@ class ConfigLoader:
             Path to parameters directory.
         chip_file : str, optional
             Chip YAML filename.
+        system_file : str, optional
+            System YAML filename.
         box_file : str, optional
             Box YAML filename.
         wiring_file : str, optional
@@ -181,6 +185,7 @@ class ConfigLoader:
         self._config_dir = config_dir
         self._params_dir = params_dir
         self._chip_file = chip_file
+        self._system_file = system_file
         self._box_file = box_file
         self._wiring_file = wiring_file
         self._props_file = props_file
@@ -191,6 +196,7 @@ class ConfigLoader:
         self._is_loading = False
 
         self._chip_dict: dict = {}
+        self._system_dict: dict = {}
         self._box_dict: dict = {}
         self._wiring_dict: dict = {}
         self._props_dict: dict = {}
@@ -237,6 +243,7 @@ class ConfigLoader:
         self._is_loading = True
         try:
             self._chip_dict = self._load_config_file(self._chip_file)
+            self._system_dict = self._load_optional_config_file(self._system_file)
             self._box_dict = self._load_config_file(self._box_file)
             self._wiring_dict = self._load_config_file(self._wiring_file)
             self._props_dict = self._load_legacy_params_file(self._props_file)  # legacy
@@ -325,6 +332,62 @@ class ConfigLoader:
             logger.exception(f"Error loading configuration file: {path}")
             raise
         return result
+
+    def _load_optional_config_file(self, file_name: str) -> dict:
+        """
+        Load an optional configuration YAML file as a mapping.
+
+        Parameters
+        ----------
+        file_name : str
+            YAML file name under the config directory.
+
+        Returns
+        -------
+        dict
+            Parsed mapping. Returns an empty mapping when the file is missing.
+        """
+        path = Path(self._config_dir) / file_name
+        try:
+            with open(path) as file:
+                result = yaml.safe_load(file)
+        except FileNotFoundError:
+            logger.debug("Optional config file not found; treating as empty: %s", path)
+            return {}
+        except yaml.YAMLError:
+            logger.exception(f"Error loading configuration file: {path}")
+            raise
+        if result is None:
+            return {}
+        if not isinstance(result, dict):
+            raise TypeError(f"`{file_name}` must be a mapping at top level.")
+        return result
+
+    def _resolve_clock_master_address(self) -> str | None:
+        """
+        Resolve clock-master address from system or chip configuration.
+
+        Returns
+        -------
+        str | None
+            Resolved clock-master address. Returns `None` when unresolved.
+        """
+        chip_info = self._chip_dict.get(self._chip_id)
+        chip_clock_master = None
+        if isinstance(chip_info, dict):
+            raw_clock_master = chip_info.get("clock_master")
+            if raw_clock_master is not None:
+                chip_clock_master = str(raw_clock_master)
+
+        backend = self._system_dict.get("backend")
+        if isinstance(backend, str) and backend.strip().lower() == "quel1":
+            quel1_section = self._system_dict.get("quel1")
+            if isinstance(quel1_section, dict):
+                raw_clock_master = quel1_section.get("clock_master")
+                if raw_clock_master is not None:
+                    return str(raw_clock_master)
+
+        return chip_clock_master
 
     def _load_legacy_params_file(self, file_name: str) -> dict:
         path = Path(self._params_dir) / file_name
@@ -604,7 +667,7 @@ class ConfigLoader:
         ]
         return ControlSystem(
             boxes=boxes,
-            clock_master_address=self._chip_dict[chip_id].get("clock_master"),
+            clock_master_address=self._resolve_clock_master_address(),
         )
 
     def _load_wiring_info(self) -> WiringInfo | None:
