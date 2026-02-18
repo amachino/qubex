@@ -12,7 +12,7 @@ import numpy.typing as npt
 from qubex.backend import (
     BackendExecutionRequest,
     ExperimentSystem,
-    Target,
+    TargetRegistry,
 )
 from qubex.backend.quel1 import (
     Quel1BackendController,
@@ -155,6 +155,29 @@ class Quel3MeasurementBackendAdapter:
             None,
         )
         target_registry = getattr(self._experiment_system, "target_registry", None)
+        fallback_registry = TargetRegistry()
+
+        def _resolve_qubit_label(target: str) -> str:
+            resolve_qubit_label = getattr(
+                self._experiment_system,
+                "resolve_qubit_label",
+                None,
+            )
+            if callable(resolve_qubit_label):
+                return str(resolve_qubit_label(target))
+
+            if target_registry is not None and hasattr(
+                target_registry,
+                "resolve_qubit_label",
+            ):
+                resolver = target_registry.resolve_qubit_label
+                try:
+                    return str(resolver(target, allow_legacy=True))
+                except TypeError:
+                    return str(resolver(target))
+
+            return fallback_registry.resolve_qubit_label(target, allow_legacy=True)
+
         for target, waveform in sampled_sequences.items():
             captures = sorted(
                 channel_captures.get(target, []), key=lambda c: c.start_time
@@ -193,17 +216,7 @@ class Quel3MeasurementBackendAdapter:
                 )
             else:
                 try:
-                    resolve_qubit_label = getattr(
-                        self._experiment_system,
-                        "resolve_qubit_label",
-                        None,
-                    )
-                    if callable(resolve_qubit_label):
-                        output_target_labels[target] = str(
-                            resolve_qubit_label(target)
-                        )
-                    else:
-                        output_target_labels[target] = Target.qubit_label(target)
+                    output_target_labels[target] = _resolve_qubit_label(target)
                 except ValueError:
                     output_target_labels[target] = target
         interval_ns = math.ceil(float(pulse_schedule.duration + config.interval))
@@ -456,6 +469,8 @@ class Quel1MeasurementBackendAdapter:
                 "word_length_samples is required for backend execution request."
             )
         for target in readout_targets:
+            target_registry = getattr(self._experiment_system, "target_registry", None)
+            fallback_registry = TargetRegistry()
             resolve_qubit_label = getattr(
                 self._experiment_system,
                 "resolve_qubit_label",
@@ -463,8 +478,20 @@ class Quel1MeasurementBackendAdapter:
             )
             if callable(resolve_qubit_label):
                 qubit_label = str(resolve_qubit_label(target))
+            elif target_registry is not None and hasattr(
+                target_registry,
+                "resolve_qubit_label",
+            ):
+                resolver = target_registry.resolve_qubit_label
+                try:
+                    qubit_label = str(resolver(target, allow_legacy=True))
+                except TypeError:
+                    qubit_label = str(resolver(target))
             else:
-                qubit_label = Target.qubit_label(target)
+                qubit_label = fallback_registry.resolve_qubit_label(
+                    target,
+                    allow_legacy=True,
+                )
             mux = self._experiment_system.get_mux_by_qubit(qubit_label)
             capture_delay_word = capture_delays.get(mux.index, 0)
             capture_delay_sample[target] = capture_delay_word * word_length

@@ -30,7 +30,7 @@ from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
 )
-from qubex.backend import Target
+from qubex.backend import TargetRegistry
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
@@ -100,8 +100,12 @@ class MeasurementService:
     @staticmethod
     def ordered_qubit_labels(labels: Sequence[str]) -> list[str]:
         """Return qubit labels in first appearance order from target labels."""
+        fallback_registry = TargetRegistry()
         return MeasurementService.unique_in_order(
-            [Target.qubit_label(label) for label in labels]
+            [
+                fallback_registry.resolve_qubit_label(label, allow_legacy=True)
+                for label in labels
+            ]
         )
 
     def check_noise(

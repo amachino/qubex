@@ -350,10 +350,10 @@ class Quel3BackendController(Quel1BackendController):
     @staticmethod
     def _measurement_target_label(target: str) -> str:
         """Return canonical measurement target label used by legacy APIs."""
-        from qubex.backend.target import Target
+        from qubex.backend.target_registry import TargetRegistry
 
         try:
-            return Target.qubit_label(target)
+            return TargetRegistry().resolve_qubit_label(target, allow_legacy=True)
         except Exception:
             return target
 

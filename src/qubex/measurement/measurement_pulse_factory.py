@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from qxpulse import Blank, FlatTop, PulseArray, RampType
 
-from qubex.backend import ControlParams, Mux, Target, TargetRegistry
+from qubex.backend import ControlParams, Mux, TargetRegistry
 
 from .measurement_defaults import (
     DEFAULT_READOUT_DRAG_COEFF,
@@ -40,16 +40,15 @@ class MeasurementPulseFactory:
         """
         self._control_params = control_params
         self._mux_dict = mux_dict
-        self._target_registry = target_registry
+        self._target_registry = target_registry or TargetRegistry()
 
     def _resolve_qubit_label(self, target: str) -> str:
-        """Resolve qubit label using target registry with legacy fallback."""
-        if self._target_registry is not None:
-            try:
-                return self._target_registry.resolve_qubit_label(target)
-            except ValueError:
-                pass
-        return Target.qubit_label(target)
+        """Resolve qubit label using target registry (legacy fallback enabled)."""
+        resolver = self._target_registry.resolve_qubit_label
+        try:
+            return str(resolver(target, allow_legacy=True))
+        except TypeError:
+            return str(resolver(target))
 
     def readout_pulse(
         self,

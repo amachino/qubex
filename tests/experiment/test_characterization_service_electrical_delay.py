@@ -49,6 +49,16 @@ class _FakeContext:
             get_readout_box_for_qubit=lambda _qubit: read_box,
         )
 
+    @staticmethod
+    def resolve_read_label(_target: str) -> str:
+        """Resolve readout label used by characterization service."""
+        return "R00"
+
+    @staticmethod
+    def resolve_qubit_label(_target: str) -> str:
+        """Resolve qubit label used by characterization service."""
+        return "Q00"
+
     def reset_awg_and_capunits(self, box_ids=None, qubits=None) -> None:
         """Record reset calls."""
         _ = qubits
@@ -77,14 +87,6 @@ def test_measure_electrical_delay_skips_redundant_reset_when_backend_settings_ch
     service.__dict__["_calibration_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
 
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.Target.read_label",
-        lambda _target: "R00",
-    )
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.Target.qubit_label",
-        lambda _target: "Q00",
-    )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.MixingUtil.calc_lo_cnco",
         lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
@@ -142,14 +144,6 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
         def update_layout(self, **_kwargs) -> None:
             return
 
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.Target.read_label",
-        lambda _target: "R00",
-    )
-    monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.Target.qubit_label",
-        lambda _target: "Q00",
-    )
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.ExperimentUtil.split_frequency_range",
         lambda **_kwargs: [

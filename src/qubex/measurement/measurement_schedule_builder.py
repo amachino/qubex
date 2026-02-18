@@ -44,7 +44,7 @@ class MeasurementScheduleBuilder:
         self._pulse_factory = pulse_factory
         self._targets = targets
         self._mux_dict = mux_dict
-        self._target_registry = target_registry
+        self._target_registry = target_registry or TargetRegistry()
         if constraint_profile is None:
             if sampling_period is None:
                 constraint_profile = MeasurementConstraintProfile.strict_quel1()
@@ -55,22 +55,20 @@ class MeasurementScheduleBuilder:
         self._constraint_profile = constraint_profile
 
     def _resolve_qubit_label(self, target_label: str) -> str:
-        """Resolve qubit label using target registry with legacy fallback."""
-        if self._target_registry is not None:
-            try:
-                return self._target_registry.resolve_qubit_label(target_label)
-            except ValueError:
-                pass
-        return Target.qubit_label(target_label)
+        """Resolve qubit label using target registry (legacy fallback enabled)."""
+        resolver = self._target_registry.resolve_qubit_label
+        try:
+            return str(resolver(target_label, allow_legacy=True))
+        except TypeError:
+            return str(resolver(target_label))
 
     def _resolve_read_label(self, target_label: str) -> str:
-        """Resolve readout label using target registry with legacy fallback."""
-        if self._target_registry is not None:
-            try:
-                return self._target_registry.resolve_read_label(target_label)
-            except ValueError:
-                pass
-        return Target.read_label(target_label)
+        """Resolve readout label using target registry (legacy fallback enabled)."""
+        resolver = self._target_registry.resolve_read_label
+        try:
+            return str(resolver(target_label, allow_legacy=True))
+        except TypeError:
+            return str(resolver(target_label))
 
     @property
     def sampling_period(self) -> float:
