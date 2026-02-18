@@ -3,6 +3,7 @@
 Manage development notes and operational documents.
 
 - [v1.5.0 Release Plan](v1-5-0-release-plan.md)
+- [v1.5.0 Shared Pulse Factory Design](v1-5-0-shared-pulse-factory-design.md)
 - [v1.5.0 Synchronized Protocol Scenario](v1-5-0-synchronized-protocol-scenario.md)
 - [v1.5.0 Beta Release Notes Template](v1-5-0-beta-release-notes-template.md)
 - [v1.5.0 Contract Test Scope](v1-5-0-contract-test-scope.md)

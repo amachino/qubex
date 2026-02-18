@@ -137,6 +137,7 @@ Calendar note:
 - [x] Define minimal synchronized protocol scenario for beta sign-off (`v1-5-0-synchronized-protocol-scenario.md`).
 - [x] Lock `MeasurementClient` and `Experiment` delegation smoke test scope for beta (`v1-5-0-contract-test-scope.md`).
 - [x] Draft beta release notes template and known limitation section (`v1-5-0-beta-release-notes-template.md`).
+- [x] Document shared pulse factory design for backend-derived sampling-period ownership across `Experiment` and `MeasurementClient` (`v1-5-0-shared-pulse-factory-design.md`).
 - [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
 
 ## Sampling-period audit (2026-02-17)
@@ -203,6 +204,7 @@ Calendar note:
 - 2026-02-18: Switched execution order to prioritize non-QuEL-3 tasks while QuEL-3 dependency remains incomplete.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`MeasurementClient.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
+- 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `MeasurementClient`); implementation is explicitly deferred to 2026-02-19 or later.
 
 ## Commit plan
 
