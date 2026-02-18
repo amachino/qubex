@@ -1238,7 +1238,8 @@ class Experiment:
         targets : Collection[str] | str, optional
             Target labels to check the waveforms.
         method : Literal["measure", "execute"], optional
-            Method to check the waveforms. Defaults to "measure".
+            Deprecated selector for waveform-check execution path.
+            Passing this argument emits `DeprecationWarning`.
         shots : int, optional
             Number of shots.
         interval : int, optional

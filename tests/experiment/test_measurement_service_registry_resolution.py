@@ -7,6 +7,7 @@ from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 from qxpulse import Blank, PulseSchedule
 
 from qubex.experiment.services.measurement_service import MeasurementService
@@ -115,18 +116,46 @@ def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
         **kwargs: object,
     ) -> _DummyResult:
         captured["readout_amplitudes"] = kwargs["readout_amplitudes"]
+        captured["enable_dsp_sum"] = kwargs["enable_dsp_sum"]
         return _DummyResult()
 
     service.__dict__["measure"] = MethodType(_measure, service)
 
-    service.check_waveform(
-        targets=["custom-target"],
-        method="measure",
-        readout_amplitude=0.5,
-        plot=False,
-    )
+    with pytest.warns(DeprecationWarning, match="method=\\.\\.\\."):
+        service.check_waveform(
+            targets=["custom-target"],
+            method="measure",
+            readout_amplitude=0.5,
+            plot=False,
+        )
 
     assert captured["readout_amplitudes"] == {"RQ17": 0.5}
+    assert captured["enable_dsp_sum"] is False
+
+
+def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
+    """Given execute method, check_waveform explicitly disables backend DSP sum."""
+    service, _ = _make_service()
+    captured: dict[str, object] = {}
+
+    def _execute(
+        self: MeasurementService,
+        sequence: object,
+        **kwargs: object,
+    ) -> _DummyResult:
+        captured["enable_dsp_sum"] = kwargs["enable_dsp_sum"]
+        return _DummyResult()
+
+    service.__dict__["execute"] = MethodType(_execute, service)
+
+    with pytest.warns(DeprecationWarning, match="method=\\.\\.\\."):
+        service.check_waveform(
+            targets=["custom-target"],
+            method="execute",
+            plot=False,
+        )
+
+    assert captured["enable_dsp_sum"] is False
 
 
 def test_measure_state_resolves_ef_labels_via_target_registry() -> None:

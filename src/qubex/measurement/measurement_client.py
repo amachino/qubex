@@ -654,10 +654,10 @@ class MeasurementClient:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
-        enable_dsp_sum: bool = False,
-        enable_dsp_classification: bool = False,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
+        enable_dsp_sum: bool = True,
+        enable_dsp_classification: bool | None = None,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
@@ -692,8 +692,15 @@ class MeasurementClient:
             The readout drag coefficient.
         readout_ramp_type : RampType, optional
             The readout ramp type.
-        add_pump_pulses : bool, optional
-            Whether to add pump pulses, by default False.
+        add_pump_pulses : bool | None, optional
+            Whether to add pump pulses. If `None`, defaults to `False`.
+        enable_dsp_demodulation : bool | None, optional
+            Whether to enable DSP demodulation. If `None`, defaults to `True`.
+        enable_dsp_sum : bool, optional
+            Whether to enable DSP summation. Defaults to `True`.
+        enable_dsp_classification : bool | None, optional
+            Whether to enable DSP classification. If `None`, defaults to
+            `False`.
 
         Returns
         -------
@@ -707,6 +714,13 @@ class MeasurementClient:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if enable_dsp_demodulation is None:
+            enable_dsp_demodulation = True
+        if enable_dsp_classification is None:
+            enable_dsp_classification = False
+
         result = self.execute(
             schedule=waveforms,
             mode=mode,
@@ -750,10 +764,10 @@ class MeasurementClient:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
-        enable_dsp_sum: bool = False,
-        enable_dsp_classification: bool = False,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
+        enable_dsp_sum: bool = True,
+        enable_dsp_classification: bool | None = None,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
@@ -793,7 +807,7 @@ class MeasurementClient:
         add_pump_pulses : bool, optional
             Whether to add pump pulses, by default False.
         enable_dsp_sum : bool, optional
-            Whether to enable DSP summation, by default False.
+            Whether to enable DSP summation, by default True.
         enable_dsp_classification : bool, optional
             Whether to enable DSP classification, by default False.
         plot : bool, optional
@@ -804,6 +818,13 @@ class MeasurementClient:
         MultipleMeasureResult
             The measurement results.
         """
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if enable_dsp_demodulation is None:
+            enable_dsp_demodulation = True
+        if enable_dsp_classification is None:
+            enable_dsp_classification = False
+
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
 

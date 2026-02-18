@@ -160,6 +160,110 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
+def test_measure_initializes_optional_flags_with_measure_defaults() -> None:
+    """Given None optional flags, when measure is called, then it applies measure defaults."""
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    multiple = _make_multiple_result()
+    called: dict[str, Any] = {}
+
+    def fake_execute(
+        self: MeasurementClient, **kwargs: object
+    ) -> MultipleMeasureResult:
+        called["kwargs"] = kwargs
+        return multiple
+
+    measurement.execute = MethodType(fake_execute, measurement)
+
+    measurement.measure(
+        waveforms={"Q00": np.array([0.0 + 0.0j])},
+        add_pump_pulses=None,
+        enable_dsp_demodulation=None,
+        enable_dsp_classification=None,
+    )
+
+    kwargs = called["kwargs"]
+    assert kwargs["add_pump_pulses"] is False
+    assert kwargs["enable_dsp_demodulation"] is True
+    assert kwargs["enable_dsp_sum"] is True
+    assert kwargs["enable_dsp_classification"] is False
+
+
+def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
+    """Given None optional flags, when execute is called, then it applies execute defaults."""
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    pulse_schedule = PulseSchedule(["Q00"])
+    built_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["RQ00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    multiple = _make_multiple_result()
+    called: dict[str, Any] = {}
+
+    def fake_build(
+        self: MeasurementClient,
+        *,
+        pulse_schedule: PulseSchedule,
+        **kwargs: object,
+    ) -> MeasurementSchedule:
+        called["build_kwargs"] = kwargs
+        return built_schedule
+
+    def fake_execute_measurement_schedule(
+        self: MeasurementClient,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        called["config"] = config
+        return MeasurementResultConverter.from_multiple(multiple)
+
+    measurement.build_measurement_schedule = MethodType(fake_build, measurement)
+    measurement.execute_measurement_schedule = MethodType(
+        fake_execute_measurement_schedule, measurement
+    )
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    measurement.__dict__["_backend_manager"] = type(
+        "_BM",
+        (),
+        {
+            "backend_controller": type("_BC", (), {"box_config": {"shots": 1}})(),
+            "experiment_system": experiment_system,
+        },
+    )()
+    measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
+
+    measurement.execute(
+        schedule=pulse_schedule,
+        add_pump_pulses=None,
+        enable_dsp_demodulation=None,
+        enable_dsp_classification=None,
+        save_result=False,
+    )
+
+    assert called["build_kwargs"]["add_pump_pulses"] is False
+    config = called["config"]
+    assert config.dsp.enable_dsp_demodulation is True
+    assert config.dsp.enable_dsp_sum is True
+    assert config.dsp.enable_dsp_classification is False
+
+
 def test_execute_measurement_schedule_delegates_to_executor(
     monkeypatch,
 ) -> None:

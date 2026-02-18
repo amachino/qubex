@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from collections import defaultdict
 from collections.abc import Collection, Sequence
 from itertools import product
@@ -1029,6 +1030,9 @@ class MeasurementService:
         ----------
         targets : Collection[str] | str, optional
             Target labels to check the waveforms.
+        method : Literal["measure", "execute"] | None, optional
+            Deprecated selector for waveform-check execution path.
+            Passing this argument emits `DeprecationWarning`.
         shots : int, optional
             Number of shots.
         interval : int, optional
@@ -1055,8 +1059,13 @@ class MeasurementService:
         --------
         >>> result = ex.check_waveform(["Q00", "Q01"])
         """
-        if method is None:
-            method = "measure"
+        if method is not None:
+            warnings.warn(
+                "`check_waveform(..., method=...)` is deprecated and will be removed in a future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        resolved_method = "measure" if method is None else method
         if add_pump_pulses is None:
             add_pump_pulses = False
         if plot is None:
@@ -1081,7 +1090,7 @@ class MeasurementService:
             for target in targets:
                 ps.add(target, Blank(0))
 
-        if method == "measure":
+        if resolved_method == "measure":
             result = self.measure(
                 ps,
                 shots=shots,
@@ -1091,6 +1100,7 @@ class MeasurementService:
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
                 add_pump_pulses=add_pump_pulses,
+                enable_dsp_sum=False,
             )
         else:
             result = self.execute(
@@ -1103,6 +1113,7 @@ class MeasurementService:
                 readout_post_margin=readout_post_margin,
                 add_pump_pulses=add_pump_pulses,
                 add_last_measurement=True,
+                enable_dsp_sum=False,
             )
         if plot:
             result.plot()
