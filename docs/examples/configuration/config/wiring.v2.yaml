@@ -1,0 +1,30 @@
+# Example physical wiring configuration for QuEL-3 style backends.
+#
+# Notes
+# -----
+# - Physical IDs are integer-based and zero-based.
+# - This file captures physical correspondence only.
+
+schema_version: 2
+
+chip_id: 64Q
+
+control:
+  0: unit-a:p2tx
+  1: unit-a:p3tx
+  2: unit-a:p5tx
+  3: unit-a:p6tx
+  4: unit-b:p2tx
+  5: unit-b:p3tx
+  6: unit-b:p5tx
+  7: unit-b:p6tx
+
+readout:
+  0:
+    out: unit-a:p0p1trx
+    in: unit-a:p0p1trx
+    pump: unit-a:p4tx
+  1:
+    out: unit-b:p0p1trx
+    in: unit-b:p0p1trx
+    pump: unit-b:p4tx

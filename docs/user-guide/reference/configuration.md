@@ -134,6 +134,8 @@ The repository includes ready-to-read examples under `docs/examples/configuratio
   Defines available control boxes (type, IP address, adapter).
 - `wiring.yaml`
   Defines mux-level port assignment (`ctrl`, `read_out`, `read_in`, optional `pump`).
+- `wiring.v2.yaml`
+  Defines QuEL-3 style physical wiring with zero-based `qubit_id`/`mux_id` mapped to `port_id`.
 
 ### Parameter examples (`docs/examples/configuration/params`)
 
