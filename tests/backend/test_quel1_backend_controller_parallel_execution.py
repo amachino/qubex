@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from qubex.backend.quel1.execution import SequencerExecutionEngine
 from qubex.backend.quel1.quel1_backend_controller import (
     Quel1BackendController,
@@ -56,6 +58,7 @@ def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -
 def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> None:
     """Given parallel init, when initializing boxes, then each box is processed once."""
     controller = Quel1BackendController()
+    controller.__dict__["_quel1system"] = object()
     called: list[str] = []
 
     def _fake_initialize(box_name: str) -> None:
@@ -74,6 +77,7 @@ def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> Non
 def test_initialize_awg_and_capunits_parallel_deduplicates_boxes(monkeypatch) -> None:
     """Given duplicate boxes, each box is initialized only once."""
     controller = Quel1BackendController()
+    controller.__dict__["_quel1system"] = object()
     called: list[str] = []
 
     def _fake_initialize(box_name: str) -> None:
@@ -87,6 +91,14 @@ def test_initialize_awg_and_capunits_parallel_deduplicates_boxes(monkeypatch) ->
 
     assert set(called) == {"A", "B"}
     assert len(called) == 2
+
+
+def test_initialize_awg_and_capunits_raises_when_not_connected() -> None:
+    """Given disconnected controller, initialize_awg_and_capunits raises before box access."""
+    controller = Quel1BackendController()
+
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        controller.initialize_awg_and_capunits(["A"], parallel=False)
 
 
 def test_linkup_boxes_parallel_collects_successes(monkeypatch) -> None:

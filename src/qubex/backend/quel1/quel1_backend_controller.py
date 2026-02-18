@@ -796,6 +796,8 @@ class Quel1BackendController:
             Whether to initialize boxes in parallel. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
+        if not self.is_connected:
+            raise ValueError("Boxes not connected. Call connect() method first.")
         if isinstance(box_names, str):
             box_names = [box_names]
         # Avoid concurrent initialization of the same box when multiple qubits
@@ -816,7 +818,11 @@ class Quel1BackendController:
     def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
         """Initialize AWG and capture units for one box."""
         self._check_box_availability(box_name)
-        box = adapt_quel1_box(self.get_box(box_name))
+        if self._boxpool is None or box_name not in self._boxpool._boxes:
+            raise ValueError(
+                f"Box {box_name} is not connected. Call connect() method first."
+            )
+        box = adapt_quel1_box(self._boxpool._boxes[box_name][0])
         box.initialize_all_awgunits()
         box.initialize_all_capunits()
 
