@@ -75,6 +75,26 @@ class CalibrationService:
         """Return the measurement service."""
         return self._measurement_service
 
+    def _resolve_ge_label(self, label: str) -> str:
+        """Resolve GE label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_ge_label(label)
+            except ValueError:
+                pass
+        return Target.ge_label(label)
+
+    def _resolve_ef_label(self, label: str) -> str:
+        """Resolve EF label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_ef_label(label)
+            except ValueError:
+                pass
+        return Target.ef_label(label)
+
     def correct_rabi_params(
         self,
         targets: Collection[str] | str | None = None,
@@ -541,14 +561,14 @@ class CalibrationService:
             raise ValueError("Rabi parameters are not stored.")
 
         ef_labels = [
-            Target.ef_label(label)
+            self._resolve_ef_label(label)
             for label in targets
             if label in self.pulse.ef_rabi_params
         ]
 
         def calibrate(target: str) -> AmplCalibData:
-            ge_label = Target.ge_label(target)
-            ef_label = Target.ef_label(target)
+            ge_label = self._resolve_ge_label(target)
+            ef_label = self._resolve_ef_label(target)
 
             if pulse_type == "hpi":
                 pulse = FlatTop(
@@ -2656,7 +2676,7 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        pairs = [Target.cr_qubit_pair(target) for target in targets]
+        pairs = [self.ctx.cr_pair(target) for target in targets]
 
         data = {
             "obtain_cr_params": {},

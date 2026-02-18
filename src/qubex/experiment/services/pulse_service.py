@@ -95,10 +95,40 @@ class PulseService:
     def ef_rabi_params(self) -> dict[str, RabiParam]:
         """Return Rabi parameters for ef targets."""
         return {
-            Target.ge_label(target): param
+            self._resolve_ge_label(target): param
             for target, param in self.rabi_params.items()
             if self.ctx.targets[target].is_ef
         }
+
+    def _resolve_qubit_label(self, target: str) -> str:
+        """Resolve qubit label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_qubit_label(target)
+            except ValueError:
+                pass
+        return Target.qubit_label(target)
+
+    def _resolve_ge_label(self, target: str) -> str:
+        """Resolve GE label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_ge_label(target)
+            except ValueError:
+                pass
+        return Target.ge_label(target)
+
+    def _resolve_ef_label(self, target: str) -> str:
+        """Resolve EF label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_ef_label(target)
+            except ValueError:
+                pass
+        return Target.ef_label(target)
 
     def validate_rabi_params(
         self,
@@ -148,7 +178,7 @@ class PulseService:
         float
             Control amplitude.
         """
-        qubit = Target.qubit_label(target)
+        qubit = self._resolve_qubit_label(target)
         if rabi_amplitude_ratio is None:
             rabi_param = self.rabi_params.get(target)
             if self.ctx.targets[target].type == TargetType.CTRL_EF:
@@ -207,7 +237,7 @@ class PulseService:
 
         if len(current_amplitudes) == 0:
             for target in current_rabi_params:
-                qubit = Target.qubit_label(target)
+                qubit = self._resolve_qubit_label(target)
                 current_amplitudes[target] = self.ctx.params.get_control_amplitude(
                     qubit
                 )
@@ -770,7 +800,7 @@ class PulseService:
         """Return calibrated cross-resonance pulse schedules."""
         result = {}
         for cr_label in self.ctx.cr_targets:
-            control_qubit, target_qubit = Target.cr_qubit_pair(cr_label)
+            control_qubit, target_qubit = self.ctx.cr_pair(cr_label)
             cr_param = self.ctx.calib_note.get_cr_param(cr_label)
             if cr_param is not None and None not in cr_param.values():
                 cancel_amplitude = cr_param["cancel_amplitude"]

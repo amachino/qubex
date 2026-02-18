@@ -97,6 +97,46 @@ class CharacterizationService:
         """Return the calibration service."""
         return self._calibration_service
 
+    def _resolve_qubit_label(self, label: str) -> str:
+        """Resolve qubit label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_qubit_label(label)
+            except ValueError:
+                pass
+        return Target.qubit_label(label)
+
+    def _resolve_read_label(self, label: str) -> str:
+        """Resolve readout label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_read_label(label)
+            except ValueError:
+                pass
+        return Target.read_label(label)
+
+    def _resolve_ge_label(self, label: str) -> str:
+        """Resolve GE label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_ge_label(label)
+            except ValueError:
+                pass
+        return Target.ge_label(label)
+
+    def _resolve_ef_label(self, label: str) -> str:
+        """Resolve EF label via target registry with legacy fallback."""
+        target_registry = getattr(self.ctx.experiment_system, "target_registry", None)
+        if target_registry is not None:
+            try:
+                return target_registry.resolve_ef_label(label)
+            except ValueError:
+                pass
+        return Target.ef_label(label)
+
     def measure_readout_snr(
         self,
         targets: Collection[str] | str | None = None,
@@ -829,7 +869,9 @@ class CharacterizationService:
             targets = list(targets)
 
         targets = [
-            target for target in targets if Target.ef_label(target) in self.ctx.targets
+            target
+            for target in targets
+            if self._resolve_ef_label(target) in self.ctx.targets
         ]
         if len(targets) == 0:
             print("No ef targets found for the given targets.")
@@ -863,11 +905,11 @@ class CharacterizationService:
             print("\nResults\n-------")
             print("ef frequency (GHz):")
             for target, fit in fit_data.items():
-                label = Target.ge_label(target)
+                label = self._resolve_ge_label(target)
                 print(f"    {label}: {fit:.6f}")
             print("anharmonicity (GHz):")
             for target, fit in fit_data.items():
-                label = Target.ge_label(target)
+                label = self._resolve_ge_label(target)
                 ge_freq = self.ctx.targets[label].frequency
                 print(f"    {label}: {fit - ge_freq:.6f}")
 
@@ -918,7 +960,7 @@ class CharacterizationService:
                 if readout_amplitudes is not None:
                     # modify the readout amplitudes if necessary
                     for target, amplitude in readout_amplitudes.items():
-                        label = Target.qubit_label(target)
+                        label = self._resolve_qubit_label(target)
                         self.ctx.params.readout_amplitude[label] = amplitude
 
                 rabi_result = self.measurement_service.rabi_experiment(
@@ -1753,8 +1795,8 @@ class CharacterizationService:
             interval = 0
         if plot is None:
             plot = True
-        read_label = Target.read_label(target)
-        qubit_label = Target.qubit_label(target)
+        read_label = self._resolve_read_label(target)
+        qubit_label = self._resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
         ssb = self.ctx.targets[read_label].sideband
@@ -1902,8 +1944,8 @@ class CharacterizationService:
             plot = True
         if confirm is None:
             confirm = True
-        read_label = Target.read_label(target)
-        qubit_label = Target.qubit_label(target)
+        read_label = self._resolve_read_label(target)
+        qubit_label = self._resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
         ssb = self.ctx.targets[read_label].sideband
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
@@ -2038,8 +2080,8 @@ class CharacterizationService:
         if target is None:
             target = self.ctx.qubit_labels[0]
 
-        read_label = Target.read_label(target)
-        qubit_label = Target.qubit_label(target)
+        read_label = self._resolve_read_label(target)
+        qubit_label = self._resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
 
@@ -2400,7 +2442,7 @@ class CharacterizationService:
             power_range = np.arange(-60, 5, 5)
 
         power_range = np.array(power_range)
-        qubit_label = Target.qubit_label(target)
+        qubit_label = self._resolve_qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
         read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
 
@@ -2515,8 +2557,8 @@ class CharacterizationService:
             plot = True
         if save_image is None:
             save_image = True
-        qubit_label = Target.qubit_label(target)
-        read_label = Target.read_label(target)
+        qubit_label = self._resolve_qubit_label(target)
+        read_label = self._resolve_read_label(target)
 
         if center_frequency is None:
             center_frequency = self.ctx.targets[read_label].frequency
@@ -2646,8 +2688,8 @@ class CharacterizationService:
         if save_image is None:
             save_image = False
         # control and readout pulses
-        qubit = Target.qubit_label(target)
-        resonator = Target.read_label(target)
+        qubit = self._resolve_qubit_label(target)
+        resonator = self._resolve_read_label(target)
         ctrl_box = self.ctx.experiment_system.get_control_box_for_qubit(qubit)
 
         if control_amplitude is None:
@@ -2921,7 +2963,7 @@ class CharacterizationService:
         if save_image is None:
             save_image = True
         frequency_range = np.asarray(frequency_range)
-        qubit_label = Target.qubit_label(target)
+        qubit_label = self._resolve_qubit_label(target)
         if control_amplitude is None:
             control_amplitude = self.ctx.params.control_amplitude[qubit_label]
         if readout_amplitude is None:
@@ -3014,7 +3056,7 @@ class CharacterizationService:
             plot = True
         if save_image is None:
             save_image = True
-        qubit_label = Target.qubit_label(target)
+        qubit_label = self._resolve_qubit_label(target)
         qubit_frequency = self.ctx.qubits[qubit_label].frequency
 
         if frequency_range is None:
@@ -3729,8 +3771,8 @@ class CharacterizationService:
         else:
             resonator_detuning_range = np.asarray(resonator_detuning_range)
 
-        qubit_label = Target.qubit_label(target)
-        read_label = Target.read_label(target)
+        qubit_label = self._resolve_qubit_label(target)
+        read_label = self._resolve_read_label(target)
         f_qubit = self.ctx.targets[qubit_label].frequency
         f_resonator = self.ctx.targets[read_label].frequency
         qubit_frequency_range = qubit_detuning_range + f_qubit
@@ -3865,7 +3907,7 @@ class CharacterizationService:
             save_image = True
         if resonator_drive_amplitude is None:
             resonator_drive_amplitude = self.ctx.params.get_readout_amplitude(
-                Target.qubit_label(target)
+                self._resolve_qubit_label(target)
             )
 
         if qubit_pi_pulse is None:

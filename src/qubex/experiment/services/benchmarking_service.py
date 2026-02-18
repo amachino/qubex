@@ -12,7 +12,6 @@ from numpy.typing import ArrayLike
 from qxpulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 
 from qubex.analysis import fitting, visualization as viz
-from qubex.backend import Target
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.experiment.experiment_constants import (
@@ -193,7 +192,7 @@ class BenchmarkingService:
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
 
-        control_qubit, target_qubit = Target.cr_qubit_pair(target)
+        control_qubit, target_qubit = self.ctx.cr_pair(target)
         cr_label = target
 
         xi90 = x90.get(control_qubit) if x90 is not None else None
@@ -586,7 +585,7 @@ class BenchmarkingService:
                     )
 
                     for target in target_group:
-                        control_qubit, target_qubit = Target.cr_qubit_pair(target)
+                        control_qubit, target_qubit = self.ctx.cr_pair(target)
                         if mitigate_readout:
                             prob = result.get_mitigated_probabilities(
                                 [control_qubit, target_qubit]
