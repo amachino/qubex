@@ -84,6 +84,18 @@ DEFAULT_RESONATOR_SPECTROSCOPY_POWER_START_DB = -60
 DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STOP_DB = 5
 DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STEP_DB = 5
 
+DEFAULT_QUBIT_FREQUENCY_SCAN_SUBRANGE_WIDTH_GHZ = 0.3
+DEFAULT_QUBIT_FREQUENCY_SCAN_INTERVAL = 1024.0
+DEFAULT_QUBIT_FREQUENCY_SCAN_PEAK_DISTANCE = 10
+DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION = 1024
+DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA = 128
+DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION = 1024
+DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME = 128
+
+DEFAULT_QUBIT_SPECTROSCOPY_POWER_START_DB = -60
+DEFAULT_QUBIT_SPECTROSCOPY_POWER_STOP_DB = 0
+DEFAULT_QUBIT_SPECTROSCOPY_POWER_STEP_DB = 5
+
 
 class CharacterizationService:
     """Service for device characterization routines."""
@@ -2249,7 +2261,6 @@ class CharacterizationService:
         *,
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike | None = None,
-        phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -2551,7 +2562,7 @@ class CharacterizationService:
             frequency_range = np.array(frequency_range)
 
         if subrange_width is None:
-            subrange_width = 0.3
+            subrange_width = DEFAULT_QUBIT_FREQUENCY_SCAN_SUBRANGE_WIDTH_GHZ
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
             subrange_width=subrange_width,
@@ -2560,7 +2571,7 @@ class CharacterizationService:
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
-            interval = 1024
+            interval = DEFAULT_QUBIT_FREQUENCY_SCAN_INTERVAL
 
         bounds = [
             subranges[0][0],
@@ -2602,9 +2613,9 @@ class CharacterizationService:
                             ps.add(
                                 qubit,
                                 Gaussian(
-                                    duration=1024,
+                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION,
                                     amplitude=control_amplitude,
-                                    sigma=128,
+                                    sigma=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA,
                                 ),
                             )
                             if not simultaneous_drive:
@@ -2612,9 +2623,9 @@ class CharacterizationService:
                             ps.add(
                                 resonator,
                                 FlatTop(
-                                    duration=1024,
+                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION,
                                     amplitude=readout_amplitude,
-                                    tau=128,
+                                    tau=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME,
                                 ),
                             )
                         result = self.measurement_service.execute(
@@ -2642,7 +2653,7 @@ class CharacterizationService:
         peaks, _ = find_peaks(
             np.abs(phases),
             height=peak_height or 3 * phases_std,
-            distance=peak_distance or 10,
+            distance=peak_distance or DEFAULT_QUBIT_FREQUENCY_SCAN_PEAK_DISTANCE,
         )
         peak_freqs = frequency_range[peaks]
 
@@ -3016,7 +3027,11 @@ class CharacterizationService:
         if save_image is None:
             save_image = True
         if power_range is None:
-            power_range = np.arange(-60, 0, 5)
+            power_range = np.arange(
+                DEFAULT_QUBIT_SPECTROSCOPY_POWER_START_DB,
+                DEFAULT_QUBIT_SPECTROSCOPY_POWER_STOP_DB,
+                DEFAULT_QUBIT_SPECTROSCOPY_POWER_STEP_DB,
+            )
 
         power_range = np.array(power_range)
         result2d = []
