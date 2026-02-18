@@ -239,19 +239,23 @@ class MeasurementClient:
     @property
     def pulse_factory(self) -> MeasurementPulseFactory:
         """Create a pulse factory from current system state."""
+        target_registry = getattr(self.experiment_system, "target_registry", None)
         return MeasurementPulseFactory(
             control_params=self.control_params,
             mux_dict=self.mux_dict,
+            target_registry=target_registry,
         )
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
         """Create a measurement schedule builder from current system state."""
+        target_registry = getattr(self.experiment_system, "target_registry", None)
         return MeasurementScheduleBuilder(
             control_params=self.control_params,
             pulse_factory=self.pulse_factory,
             targets=self.targets,
             mux_dict=self.mux_dict,
+            target_registry=target_registry,
             constraint_profile=self.constraint_profile,
         )
 
@@ -565,7 +569,17 @@ class MeasurementClient:
         """
         if isinstance(targets, str):
             targets = [targets]
-        qubits = [Target.qubit_label(target) for target in targets]
+        target_registry = getattr(self.experiment_system, "target_registry", None)
+        qubits = []
+        for target in targets:
+            if target_registry is not None:
+                try:
+                    qubit = target_registry.resolve_qubit_label(target)
+                except ValueError:
+                    qubit = Target.qubit_label(target)
+            else:
+                qubit = Target.qubit_label(target)
+            qubits.append(qubit)
         muxes = {
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
         }

@@ -68,6 +68,67 @@ def test_schedule_builder_keeps_readout_target_order(monkeypatch) -> None:
     assert captured["readout_targets"] == ["RQ01", "RQ00"]
 
 
+def test_schedule_builder_uses_registry_for_readout_label_order(
+    monkeypatch,
+) -> None:
+    """Given custom labels, when registry is present, then readout order follows registry mapping."""
+    target_map = {
+        "custom-1": "RQ01",
+        "custom-0": "RQ00",
+    }
+
+    class _TargetRegistry:
+        @staticmethod
+        def resolve_read_label(label: str) -> str:
+            return target_map[label]
+
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParams,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1, "RQ01": 0.1}),
+        ),
+        pulse_factory=cast(
+            MeasurementPulseFactory,
+            SimpleNamespace(
+                readout_pulse=lambda **_: FlatTop(duration=16, amplitude=0.1, tau=4)
+            ),
+        ),
+        targets=cast(
+            dict[str, Target],
+            {
+                "custom-1": SimpleNamespace(is_pump=False, is_read=False),
+                "custom-0": SimpleNamespace(is_pump=False, is_read=False),
+            },
+        ),
+        mux_dict={},
+        target_registry=cast(Any, _TargetRegistry()),
+    )
+
+    captured: dict[str, Any] = {}
+
+    def _capture(
+        self: MeasurementScheduleBuilder,
+        *,
+        schedule: PulseSchedule,
+        readout_targets: list[str],
+    ) -> CaptureSchedule:
+        captured["readout_targets"] = readout_targets
+        return CaptureSchedule(captures=[])
+
+    monkeypatch.setattr(
+        builder,
+        "_build_capture_schedule",
+        MethodType(_capture, builder),
+    )
+
+    with PulseSchedule(["custom-1", "custom-0", "custom-1"]) as schedule:
+        pass
+
+    builder.build(schedule=schedule, add_last_measurement=True)
+
+    assert captured["readout_targets"] == ["RQ01", "RQ00"]
+
+
 def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
     """Given gen and cap targets, when building request, then target merge order is deterministic."""
 

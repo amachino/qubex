@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from qxpulse import Blank, FlatTop, PulseArray, RampType
 
-from qubex.backend import ControlParams, Mux, Target
+from qubex.backend import ControlParams, Mux, Target, TargetRegistry
 
 from .measurement_defaults import (
     DEFAULT_READOUT_DRAG_COEFF,
@@ -26,6 +26,7 @@ class MeasurementPulseFactory:
         *,
         control_params: ControlParams,
         mux_dict: Mapping[str, Mux],
+        target_registry: TargetRegistry | None = None,
     ) -> None:
         """
         Initialize a measurement pulse factory.
@@ -39,6 +40,16 @@ class MeasurementPulseFactory:
         """
         self._control_params = control_params
         self._mux_dict = mux_dict
+        self._target_registry = target_registry
+
+    def _resolve_qubit_label(self, target: str) -> str:
+        """Resolve qubit label using target registry with legacy fallback."""
+        if self._target_registry is not None:
+            try:
+                return self._target_registry.resolve_qubit_label(target)
+            except ValueError:
+                pass
+        return Target.qubit_label(target)
 
     def readout_pulse(
         self,
@@ -79,7 +90,7 @@ class MeasurementPulseFactory:
         PulseArray
             Readout pulse array with margins.
         """
-        qubit = Target.qubit_label(target)
+        qubit = self._resolve_qubit_label(target)
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:

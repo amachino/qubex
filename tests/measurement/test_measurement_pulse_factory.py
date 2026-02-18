@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from qxpulse import Blank, FlatTop
@@ -63,3 +63,29 @@ def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
     assert pulse.duration == DEFAULT_READOUT_DURATION
     assert pulse.amplitude == pytest.approx(0.3)
     assert pulse.tau == DEFAULT_READOUT_RAMPTIME
+
+
+def test_readout_pulse_uses_target_registry_when_label_is_custom() -> None:
+    """Given custom target label, when registry is provided, then amplitude lookup uses resolved qubit."""
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(
+            get_readout_amplitude=lambda qubit: 0.4 if qubit == "Q17" else 0.0
+        ),
+    )
+
+    class _TargetRegistry:
+        @staticmethod
+        def resolve_qubit_label(target: str) -> str:
+            return "Q17" if target == "raw-readout-target" else "Q00"
+
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+        target_registry=cast(Any, _TargetRegistry()),
+    )
+
+    pulse = factory.readout_pulse(target="raw-readout-target")
+
+    assert isinstance(pulse.waveforms[1], FlatTop)
+    assert pulse.waveforms[1].amplitude == pytest.approx(0.4)

@@ -11,6 +11,7 @@ from qubex.backend import (
     ControlParams,
     Mux,
     Target,
+    TargetRegistry,
 )
 
 from .measurement_constraint_profile import MeasurementConstraintProfile
@@ -35,6 +36,7 @@ class MeasurementScheduleBuilder:
         pulse_factory: MeasurementPulseFactory,
         targets: Mapping[str, Target],
         mux_dict: Mapping[str, Mux],
+        target_registry: TargetRegistry | None = None,
         sampling_period: float | None = None,
         constraint_profile: MeasurementConstraintProfile | None = None,
     ) -> None:
@@ -42,6 +44,7 @@ class MeasurementScheduleBuilder:
         self._pulse_factory = pulse_factory
         self._targets = targets
         self._mux_dict = mux_dict
+        self._target_registry = target_registry
         if constraint_profile is None:
             if sampling_period is None:
                 constraint_profile = MeasurementConstraintProfile.strict_quel1()
@@ -50,6 +53,24 @@ class MeasurementScheduleBuilder:
                     sampling_period_ns=sampling_period
                 )
         self._constraint_profile = constraint_profile
+
+    def _resolve_qubit_label(self, target_label: str) -> str:
+        """Resolve qubit label using target registry with legacy fallback."""
+        if self._target_registry is not None:
+            try:
+                return self._target_registry.resolve_qubit_label(target_label)
+            except ValueError:
+                pass
+        return Target.qubit_label(target_label)
+
+    def _resolve_read_label(self, target_label: str) -> str:
+        """Resolve readout label using target registry with legacy fallback."""
+        if self._target_registry is not None:
+            try:
+                return self._target_registry.resolve_read_label(target_label)
+            except ValueError:
+                pass
+        return Target.read_label(target_label)
 
     @property
     def sampling_period(self) -> float:
@@ -98,7 +119,7 @@ class MeasurementScheduleBuilder:
             readout_targets = list(
                 dict.fromkeys(
                     [
-                        Target.read_label(label)
+                        self._resolve_read_label(label)
                         for label in schedule.labels
                         if not self._targets[label].is_pump
                     ]
@@ -150,7 +171,7 @@ class MeasurementScheduleBuilder:
         if add_pump_pulses:
             muxes = []
             for target in readout_targets:
-                qubit_label = Target.qubit_label(target)
+                qubit_label = self._resolve_qubit_label(target)
                 mux = self._mux_dict[qubit_label]
                 if mux not in muxes:
                     muxes.append(mux)
