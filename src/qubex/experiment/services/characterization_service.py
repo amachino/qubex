@@ -61,6 +61,30 @@ from .pulse_service import PulseService
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_ELECTRICAL_DELAY_INTERVAL = 0.0
+DEFAULT_ELECTRICAL_DELAY_STEP_GHZ = 0.0001
+DEFAULT_ELECTRICAL_DELAY_SAMPLES = 50
+DEFAULT_ELECTRICAL_DELAY_READOUT_AMPLITUDE = 1.0
+
+DEFAULT_RESONATOR_SPECTROSCOPY_SUBRANGE_WIDTH_GHZ = 0.3
+DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_DURATION = 8192
+DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMPTIME = 128
+DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMP_TYPE: RampType = "Bump"
+DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL = 0.0
+DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_HEIGHT = 0.5
+DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE = 10
+DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_PROMINENCE = 0.05
+DEFAULT_RESONATOR_SPECTROSCOPY_MAX_PEAKS = 4
+DEFAULT_RESONATOR_SPECTROSCOPY_GAUSSIAN_SIGMA = 2.0
+DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_WINDOW_FRACTION = 0.05
+DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_MIN_WINDOW_LENGTH = 7
+DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_POLYORDER = 3
+
+DEFAULT_RESONATOR_SPECTROSCOPY_POWER_START_DB = -60
+DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STOP_DB = 5
+DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STEP_DB = 5
+
+
 class CharacterizationService:
     """Service for device characterization routines."""
 
@@ -1723,154 +1747,6 @@ class CharacterizationService:
             }
         )
 
-    @deprecated("Use `measure_electrical_delay` instead.")
-    def measure_phase_shift(
-        self,
-        target: str,
-        *,
-        frequency_range: ArrayLike | None = None,
-        amplitude: float | None = None,
-        subrange_width: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
-        plot: bool | None = None,
-    ) -> float:
-        """
-        Measure phase shift across a frequency sweep.
-
-        Parameters
-        ----------
-        target
-            Target qubit label.
-        frequency_range
-            Frequency sweep range in GHz.
-        amplitude
-            Readout amplitude for the sweep.
-        """
-        if subrange_width is None:
-            subrange_width = 0.3
-        if shots is None:
-            shots = 128
-        if interval is None:
-            interval = 0
-        if plot is None:
-            plot = True
-        read_label = self.ctx.resolve_read_label(target)
-        qubit_label = self.ctx.resolve_qubit_label(target)
-        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
-        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
-        ssb = self.ctx.targets[read_label].sideband
-
-        if amplitude is None:
-            amplitude = 1.0
-
-        if frequency_range is None:
-            f_start, f_stop, _ = read_box.traits.default_readout_frequency_range
-            center = (f_start + f_stop) / 2
-            frequency_range = np.arange(center - 0.025, center + 0.025, 0.001)
-        else:
-            frequency_range = np.array(frequency_range)
-        # split frequency range to avoid the frequency sweep range limit
-        subranges = ExperimentUtil.split_frequency_range(
-            frequency_range=frequency_range,
-            subrange_width=subrange_width,
-        )
-
-        # result buffer
-        phases: list[float] = []
-        # measure phase shift
-        idx = 0
-
-        # phase offset to avoid the phase jump after changing the LO/NCO frequency
-        phase_offset = 0.0
-
-        cnco_center = read_box.traits.readout_cnco_center
-
-        for subrange in subranges:
-            # change LO/NCO frequency to the center of the subrange
-            f_center = (subrange[0] + subrange[-1]) / 2
-            lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                f_center * 1e9,
-                ssb=ssb,
-                cnco_center=cnco_center,
-            )
-            with self.ctx.system_manager.modified_backend_settings(
-                label=read_label,
-                lo_freq=lo,
-                cnco_freq=cnco,
-                fnco_freq=0,
-            ):
-                logger.debug(f"LO: {lo}, CNCO: {cnco}")
-                for sub_idx, freq in enumerate(subrange):
-                    if idx > 0 and sub_idx == 0:
-                        # measure the phase at the previous frequency with the new LO/NCO settings
-                        with self.ctx.modified_frequencies(
-                            {read_label: frequency_range[idx - 1]}
-                        ):
-                            new_result = self._measurement_service.measure(
-                                {qubit_label: np.zeros(0)},
-                                mode="avg",
-                                readout_amplitudes={qubit_label: amplitude},
-                                shots=shots,
-                                interval=interval,
-                                plot=False,
-                            )
-                            new_signal = new_result.data[target].kerneled
-                            new_phase = np.angle(new_signal)
-                            phase_offset = new_phase - phases[-1]
-
-                    with self.ctx.modified_frequencies({read_label: freq}):
-                        result = self._measurement_service.measure(
-                            {qubit_label: np.zeros(0)},
-                            mode="avg",
-                            readout_amplitudes={qubit_label: amplitude},
-                            shots=shots,
-                            interval=interval,
-                            plot=False,
-                        )
-                        signal = result.data[target].kerneled
-                        phase = np.angle(signal)
-                        phase = float(phase - phase_offset)
-                        phases.append(phase)
-
-                        idx += 1
-
-        # fit the phase shift
-        unwrapped = np.unwrap(phases)
-        diff = np.diff(unwrapped)
-        shift_steps = np.where(diff < 0, 2 * np.pi, 0)
-        cum_shift = np.cumsum(np.insert(shift_steps, 0, 0))
-        unwrapped += cum_shift
-
-        x, y = frequency_range, unwrapped
-        coefficients = np.polyfit(x, y, 1)
-        y_fit = np.polyval(coefficients, x)
-
-        if plot:
-            fig = go.Figure()
-            fig.add_scatter(name="data", mode="markers", x=x, y=y)
-            fig.add_scatter(name="fit", mode="lines", x=x, y=y_fit)
-            fig.add_annotation(
-                xref="paper",
-                yref="paper",
-                x=0.95,
-                y=0.95,
-                text=f"Phase shift: {coefficients[0] * 1e-3:.3f} rad/MHz",
-                showarrow=False,
-                bgcolor="rgba(255, 255, 255, 0.8)",
-            )
-            fig.update_layout(
-                title=f"Phase shift : {mux.label}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Unwrapped phase (rad)",
-                showlegend=True,
-            )
-            fig.show()
-
-        # return the phase shift
-        phase_shift = coefficients[0]
-        return phase_shift
-
     def measure_electrical_delay(
         self,
         target: str,
@@ -1899,7 +1775,7 @@ class CharacterizationService:
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
-            interval = 0
+            interval = DEFAULT_ELECTRICAL_DELAY_INTERVAL
         if plot is None:
             plot = True
         if confirm is None:
@@ -1912,11 +1788,11 @@ class CharacterizationService:
         f_nco = self.ctx.targets[read_label].fine_frequency
 
         if df is None:
-            df = 0.0001  # 100 kHz step
+            df = DEFAULT_ELECTRICAL_DELAY_STEP_GHZ
         if n_samples is None:
-            n_samples = 50
+            n_samples = DEFAULT_ELECTRICAL_DELAY_SAMPLES
         if readout_amplitude is None:
-            readout_amplitude = 1.0
+            readout_amplitude = DEFAULT_ELECTRICAL_DELAY_READOUT_AMPLITUDE
         if f_start is None:
             f_start = f_nco
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
@@ -2067,16 +1943,15 @@ class CharacterizationService:
             tau = electrical_delay
 
         if subrange_width is None:
-            subrange_width = 0.3  # GHz
-
+            subrange_width = DEFAULT_RESONATOR_SPECTROSCOPY_SUBRANGE_WIDTH_GHZ
         if readout_duration is None:
-            readout_duration = 8192
+            readout_duration = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_DURATION
         if readout_ramptime is None:
-            readout_ramptime = 128
+            readout_ramptime = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMPTIME
         if readout_ramp_type is None:
-            readout_ramp_type = "Bump"
+            readout_ramp_type = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMP_TYPE
         if interval is None:
-            interval = 0
+            interval = DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
@@ -2158,14 +2033,17 @@ class CharacterizationService:
             from scipy.ndimage import gaussian_filter1d  # lazy import
             from scipy.signal import find_peaks  # lazy import
 
-            phases_unwrap_for_peak = gaussian_filter1d(phases_unwrap, sigma=2.0)
+            phases_unwrap_for_peak = gaussian_filter1d(
+                phases_unwrap,
+                sigma=DEFAULT_RESONATOR_SPECTROSCOPY_GAUSSIAN_SIGMA,
+            )
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
             peaks, props = find_peaks(
                 np.abs(phases_diff_for_peak),
-                distance=peak_distance or 10,
-                prominence=0.05,
+                distance=peak_distance or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE,
+                prominence=DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_PROMINENCE,
             )
-            num_resonators = 4
+            num_resonators = DEFAULT_RESONATOR_SPECTROSCOPY_MAX_PEAKS
             sorted_peaks = sorted(
                 zip(props["prominences"], peaks, strict=True),
                 reverse=True,
@@ -2176,20 +2054,23 @@ class CharacterizationService:
             from scipy.signal import find_peaks, savgol_filter  # lazy import
 
             # window_length: around 5% of the data length
-            window_frac = 0.05
+            window_frac = DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_WINDOW_FRACTION
             window_length = int(len(phases) * window_frac)
-            window_length = max(7, window_length // 2 * 2 + 1)  # minimum 7, odd number
-            polyorder = 3
+            window_length = max(
+                DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_MIN_WINDOW_LENGTH,
+                window_length // 2 * 2 + 1,
+            )
+            polyorder = DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_POLYORDER
             phases_unwrap_for_peak = savgol_filter(
                 phases_unwrap, window_length=window_length, polyorder=polyorder
             )
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
             peaks, props = find_peaks(
                 np.abs(phases_diff_for_peak),
-                distance=peak_distance or 10,
-                prominence=0.05,
+                distance=peak_distance or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE,
+                prominence=DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_PROMINENCE,
             )
-            num_resonators = 4
+            num_resonators = DEFAULT_RESONATOR_SPECTROSCOPY_MAX_PEAKS
             sorted_peaks = sorted(
                 zip(props["prominences"], peaks, strict=True),
                 reverse=True,
@@ -2201,8 +2082,8 @@ class CharacterizationService:
 
             peaks, _ = find_peaks(
                 np.abs(phases_diff),
-                height=peak_height or 0.5,
-                distance=peak_distance or 10,
+                height=peak_height or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_HEIGHT,
+                distance=peak_distance or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE,
             )
         peak_freqs = frequency_range[peaks]
 
@@ -2390,7 +2271,7 @@ class CharacterizationService:
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
-            interval = 0
+            interval = DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL
         if plot is None:
             plot = True
         if save_image is None:
@@ -2399,7 +2280,11 @@ class CharacterizationService:
             target = self.ctx.qubit_labels[0]
 
         if power_range is None:
-            power_range = np.arange(-60, 5, 5)
+            power_range = np.arange(
+                DEFAULT_RESONATOR_SPECTROSCOPY_POWER_START_DB,
+                DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STOP_DB,
+                DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STEP_DB,
+            )
 
         power_range = np.array(power_range)
         qubit_label = self.ctx.resolve_qubit_label(target)
