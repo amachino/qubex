@@ -22,7 +22,6 @@ from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
 )
-from qubex.backend import Target
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.experiment.library.graph import (
@@ -1471,7 +1470,7 @@ def _measure_1d_cluster_state(
         seq.plot()
 
     if reset_awg_and_capunits:
-        qubits = {Target.qubit_label(target) for target in seq.labels}
+        qubits = {exp.ctx.resolve_qubit_label(target) for target in seq.labels}
         exp.ctx.reset_awg_and_capunits(qubits=qubits)
 
     edge_sbits_result: dict[tuple[str, str], dict[str, dict]] = {
@@ -2511,7 +2510,7 @@ def _measure_graph_state(
         seq.plot()
 
     if reset_awg_and_capunits:
-        qubits = {Target.qubit_label(target) for target in seq.labels}
+        qubits = {exp.ctx.resolve_qubit_label(target) for target in seq.labels}
         exp.ctx.reset_awg_and_capunits(qubits=qubits)
 
     edge_and_spectators: dict[tuple[str, str], list[str]] = {}

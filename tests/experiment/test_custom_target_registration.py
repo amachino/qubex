@@ -89,6 +89,9 @@ class _ExperimentSystemStub:
             raise KeyError(label)
         return self._mux
 
+    def resolve_cr_pair(self, label: str) -> tuple[str, str]:
+        return self.target_registry.resolve_cr_pair(label, allow_legacy=True)
+
 
 class _TestExperimentContext(ExperimentContext):
     def __init__(

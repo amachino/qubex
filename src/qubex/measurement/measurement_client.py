@@ -569,16 +569,9 @@ class MeasurementClient:
         """
         if isinstance(targets, str):
             targets = [targets]
-        target_registry = getattr(self.experiment_system, "target_registry", None)
         qubits = []
         for target in targets:
-            if target_registry is not None:
-                try:
-                    qubit = target_registry.resolve_qubit_label(target)
-                except ValueError:
-                    qubit = Target.qubit_label(target)
-            else:
-                qubit = Target.qubit_label(target)
+            qubit = self.experiment_system.resolve_qubit_label(target)
             qubits.append(qubit)
         muxes = {
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits

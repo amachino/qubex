@@ -10,7 +10,6 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from qubex.analysis import fitting, visualization as viz
-from qubex.backend import Target
 from qubex.clifford import Clifford
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
@@ -155,7 +154,7 @@ def purity_sequence_2q(
     if not target_object.is_cr:
         raise ValueError(f"`{target}` is not a 2Q target.")
 
-    control_qubit, target_qubit = Target.cr_qubit_pair(target)
+    control_qubit, target_qubit = exp.cr_pair(target)
     cr_label = target
 
     xi90 = x90.get(control_qubit) if x90 is not None else None
@@ -609,7 +608,7 @@ def pb_experiment_2q(
                 )
 
                 for target in target_group:
-                    control_qubit, target_qubit = Target.cr_qubit_pair(target)
+                    control_qubit, target_qubit = exp.cr_pair(target)
                     if mitigate_readout:
                         prob = result.get_mitigated_probabilities(
                             [control_qubit, target_qubit]

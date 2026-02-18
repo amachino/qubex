@@ -367,6 +367,10 @@ class ExperimentSystem:
         """Resolve CR label via target registry."""
         return self.target_registry.resolve_cr_label(label)
 
+    def resolve_cr_pair(self, label: str) -> tuple[str, str]:
+        """Resolve CR pair via target registry."""
+        return self.target_registry.resolve_cr_pair(label, allow_legacy=True)
+
     def ordered_qubit_labels(self, labels: Sequence[str]) -> list[str]:
         """Return qubit labels in first appearance order."""
         return list(dict.fromkeys(self.resolve_qubit_label(label) for label in labels))

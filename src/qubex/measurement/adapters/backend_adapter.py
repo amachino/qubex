@@ -193,7 +193,17 @@ class Quel3MeasurementBackendAdapter:
                 )
             else:
                 try:
-                    output_target_labels[target] = Target.qubit_label(target)
+                    resolve_qubit_label = getattr(
+                        self._experiment_system,
+                        "resolve_qubit_label",
+                        None,
+                    )
+                    if callable(resolve_qubit_label):
+                        output_target_labels[target] = str(
+                            resolve_qubit_label(target)
+                        )
+                    else:
+                        output_target_labels[target] = Target.qubit_label(target)
                 except ValueError:
                     output_target_labels[target] = target
         interval_ns = math.ceil(float(pulse_schedule.duration + config.interval))
@@ -381,9 +391,7 @@ class Quel1MeasurementBackendAdapter:
         base_duration = schedule.pulse_schedule.duration
         if profile.enforce_block_alignment and block_duration is not None:
             interval = int(
-                math.ceil(
-                    (base_duration + config.interval) / block_duration
-                )
+                math.ceil((base_duration + config.interval) / block_duration)
                 * block_duration
             )
             # Compatibility guard:
@@ -448,10 +456,13 @@ class Quel1MeasurementBackendAdapter:
                 "word_length_samples is required for backend execution request."
             )
         for target in readout_targets:
-            if hasattr(self._experiment_system, "target_registry"):
-                qubit_label = (
-                    self._experiment_system.target_registry.resolve_qubit_label(target)
-                )
+            resolve_qubit_label = getattr(
+                self._experiment_system,
+                "resolve_qubit_label",
+                None,
+            )
+            if callable(resolve_qubit_label):
+                qubit_label = str(resolve_qubit_label(target))
             else:
                 qubit_label = Target.qubit_label(target)
             mux = self._experiment_system.get_mux_by_qubit(qubit_label)

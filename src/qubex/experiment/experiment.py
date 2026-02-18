@@ -638,10 +638,9 @@ class Experiment:
         """Get the qubit edge labels."""
         return self.ctx.get_edge_labels()
 
-    @staticmethod
-    def cr_pair(cr_label: str) -> tuple[str, str]:
+    def cr_pair(self, cr_label: str) -> tuple[str, str]:
         """Return the control/target qubit pair for a CR label."""
-        return Target.cr_qubit_pair(cr_label)
+        return self.ctx.cr_pair(cr_label)
 
     def get_rabi_param(
         self,

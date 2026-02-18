@@ -740,10 +740,7 @@ class ExperimentContext:
 
     def cr_pair(self, cr_label: str) -> tuple[str, str]:
         """Return the control/target qubit pair for a CR label."""
-        try:
-            return self.experiment_system.target_registry.resolve_cr_pair(cr_label)
-        except ValueError:
-            return Target.cr_qubit_pair(cr_label)
+        return self.experiment_system.resolve_cr_pair(cr_label)
 
     def resolve_qubit_label(self, label: str) -> str:
         """Resolve qubit label through the experiment system."""

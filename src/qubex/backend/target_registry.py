@@ -226,10 +226,17 @@ class TargetRegistry:
             )
         return resolved
 
-    def resolve_cr_pair(self, label: str) -> tuple[str, str]:
-        """Resolve control/target qubit labels from a registered CR target label."""
+    def resolve_cr_pair(
+        self,
+        label: str,
+        *,
+        allow_legacy: bool = False,
+    ) -> tuple[str, str]:
+        """Resolve CR pair from registry; optionally allow legacy parsing."""
         resolved = self._cr_pair_by_label.get(label)
         if resolved is None:
+            if allow_legacy:
+                return Target.cr_qubit_pair(label)
             raise ValueError(f"CR target `{label}` is not registered.")
         return resolved
 

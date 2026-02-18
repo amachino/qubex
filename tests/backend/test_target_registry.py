@@ -126,6 +126,20 @@ def test_target_registry_resolves_cr_labels() -> None:
     assert registry.resolve_cr_pair("Q00-Q01") == ("Q00", "Q01")
 
 
+def test_target_registry_legacy_resolution_is_opt_in() -> None:
+    """Given parser-compatible labels, when legacy flag is enabled, then fallback resolution works."""
+    registry = _build_registry()
+
+    with pytest.raises(ValueError, match="Qubit label could not be resolved"):
+        registry.resolve_qubit_label("Q00_read")
+
+    assert registry.resolve_qubit_label("Q00_read", allow_legacy=True) == "Q00"
+    assert registry.resolve_ge_label("Q00_read", allow_legacy=True) == "Q00"
+    assert registry.resolve_ef_label("Q00_read", allow_legacy=True) == "Q00-ef"
+    assert registry.resolve_read_label("Q00_read", allow_legacy=True) == "RQ00"
+    assert registry.resolve_cr_pair("Q00-Q01", allow_legacy=True) == ("Q00", "Q01")
+
+
 def test_target_registry_measurement_output_label_prefers_qubit() -> None:
     """Given target labels, when mapping measurement output, then qubit labels are preferred."""
     registry = _build_registry()
