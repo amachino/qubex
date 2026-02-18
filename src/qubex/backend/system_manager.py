@@ -1025,7 +1025,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         self.backend_controller.update_box_config_cache(
             {port.box_id: box_cache[port.box_id]}
         )
-        self.backend_controller.initialize_awg_and_capunits(port.box_id)
+        initialized_box_ids = [port.box_id]
 
         if target.is_read:
             cap_channel = self.experiment_system.get_cap_target(label).channel
@@ -1049,7 +1049,10 @@ This operation will overwrite the existing backend settings. Do you want to cont
             self.backend_controller.update_box_config_cache(
                 {cap_port.box_id: box_cache[cap_port.box_id]}
             )
-            self.backend_controller.initialize_awg_and_capunits(cap_port.box_id)
+            if cap_port.box_id not in initialized_box_ids:
+                initialized_box_ids.append(cap_port.box_id)
+
+        self.backend_controller.initialize_awg_and_capunits(initialized_box_ids)
 
         self.experiment_system.update_port_params(
             label,

@@ -103,6 +103,12 @@ class MeasurementScheduleBuilder:
 
         if readout_amplitudes is None:
             readout_amplitudes = self._control_params.readout_amplitude
+        else:
+            # Accept both qubit labels (e.g. Q00) and readout labels (e.g. RQ00).
+            readout_amplitudes = {
+                self._resolve_read_label(label): amplitude
+                for label, amplitude in readout_amplitudes.items()
+            }
 
         if add_last_measurement:
             sequence_duration = schedule.duration

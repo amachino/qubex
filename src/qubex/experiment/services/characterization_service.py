@@ -1919,8 +1919,9 @@ class CharacterizationService:
             f_start = f_nco
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
 
-        def _execute():
-            self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
+        def _execute(*, reset_awg_and_capunits: bool = True):
+            if reset_awg_and_capunits:
+                self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
             phases = []
             for freq in frequency_range:
                 with self.ctx.modified_frequencies({read_label: freq}):
@@ -1961,7 +1962,7 @@ class CharacterizationService:
                 fnco_freq=0,
             ):
                 logger.debug(f"LO: {lo}, CNCO: {cnco}")
-                phases = _execute()
+                phases = _execute(reset_awg_and_capunits=False)
         else:
             # if the frequency is close to the NCO frequency, we can use the current settings
             phases = _execute()
@@ -2095,8 +2096,6 @@ class CharacterizationService:
         cnco_center = read_box.traits.readout_cnco_center
 
         for subrange in subranges:
-            self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
-
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,

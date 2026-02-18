@@ -129,6 +129,55 @@ def test_schedule_builder_uses_registry_for_readout_label_order(
     assert captured["readout_targets"] == ["RQ01", "RQ00"]
 
 
+def test_schedule_builder_accepts_qubit_keyed_readout_amplitudes(monkeypatch) -> None:
+    """Given qubit-keyed amplitudes, when adding readout, then mapped readout targets receive them."""
+    captured: dict[str, Any] = {}
+
+    def _readout_pulse(**kwargs: Any) -> FlatTop:
+        captured["target"] = kwargs["target"]
+        captured["amplitude"] = kwargs["amplitude"]
+        return FlatTop(duration=16, amplitude=0.1, tau=4)
+
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParams,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
+        ),
+        pulse_factory=cast(
+            MeasurementPulseFactory,
+            SimpleNamespace(readout_pulse=_readout_pulse),
+        ),
+        targets=cast(
+            dict[str, Target],
+            {
+                "Q00": SimpleNamespace(is_pump=False, is_read=False),
+            },
+        ),
+        mux_dict={},
+    )
+
+    monkeypatch.setattr(
+        builder,
+        "_build_capture_schedule",
+        MethodType(
+            lambda self, *, schedule, readout_targets: CaptureSchedule(captures=[]),
+            builder,
+        ),
+    )
+
+    with PulseSchedule(["Q00"]) as schedule:
+        pass
+
+    builder.build(
+        schedule=schedule,
+        add_last_measurement=True,
+        readout_amplitudes={"Q00": 0.37},
+    )
+
+    assert captured["target"] == "RQ00"
+    assert captured["amplitude"] == 0.37
+
+
 def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
     """Given gen and cap targets, when building request, then target merge order is deterministic."""
 

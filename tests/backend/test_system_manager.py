@@ -449,6 +449,127 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
     assert called == ["A", "B"]
 
 
+def test_modified_backend_settings_initializes_shared_read_box_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given shared read/cap box, modified backend settings initializes AWG/CAP once."""
+    manager = SystemManager.shared()
+
+    @dataclass
+    class _FakePort:
+        box_id: str
+        number: int
+        lo_freq: int | None
+        cnco_freq: int
+
+    @dataclass
+    class _FakeChannel:
+        port: _FakePort
+        number: int
+        fnco_freq: int
+
+    class _FakeBackendController:
+        def __init__(self) -> None:
+            self._cache = {
+                "BOX0": {
+                    "ports": {
+                        1: {
+                            "lo_freq": 10,
+                            "cnco_freq": 20,
+                            "channels": {0: {"fnco_freq": 30}},
+                            "runits": {0: {"fnco_freq": 30}},
+                        }
+                    }
+                }
+            }
+            self.initialize_calls: list[str | list[str]] = []
+
+        def get_box_config_cache(self) -> dict[str, dict]:
+            return deepcopy(self._cache)
+
+        def config_port(
+            self,
+            *,
+            box_name: str,
+            port: int,
+            lo_freq: int | None,
+            cnco_freq: int,
+        ) -> None:
+            self._cache[box_name]["ports"][port]["lo_freq"] = lo_freq
+            self._cache[box_name]["ports"][port]["cnco_freq"] = cnco_freq
+
+        def config_channel(
+            self,
+            *,
+            box_name: str,
+            port: int,
+            channel: int,
+            fnco_freq: int,
+        ) -> None:
+            self._cache[box_name]["ports"][port]["channels"][channel]["fnco_freq"] = (
+                fnco_freq
+            )
+
+        def config_runit(
+            self,
+            *,
+            box_name: str,
+            port: int,
+            runit: int,
+            fnco_freq: int,
+        ) -> None:
+            self._cache[box_name]["ports"][port]["runits"][runit]["fnco_freq"] = (
+                fnco_freq
+            )
+
+        def update_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+            for box_id, config in box_configs.items():
+                self._cache[box_id] = deepcopy(config)
+
+        def initialize_awg_and_capunits(self, box_names: str | list[str]) -> None:
+            self.initialize_calls.append(box_names)
+
+        def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+            self._cache = deepcopy(box_configs)
+
+    class _FakeExperimentSystem:
+        def __init__(self) -> None:
+            shared_port = _FakePort(box_id="BOX0", number=1, lo_freq=10, cnco_freq=20)
+            self._target = SimpleNamespace(
+                channel=_FakeChannel(port=shared_port, number=0, fnco_freq=30),
+                is_read=True,
+            )
+            self._cap_target = SimpleNamespace(
+                channel=_FakeChannel(port=shared_port, number=0, fnco_freq=30)
+            )
+
+        def get_target(self, _label: str) -> object:
+            return self._target
+
+        def get_cap_target(self, _label: str) -> object:
+            return self._cap_target
+
+        def update_port_params(self, *_args, **_kwargs) -> None:
+            return
+
+    backend_controller = _FakeBackendController()
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    monkeypatch.setattr(manager, "_experiment_system", _FakeExperimentSystem())
+
+    with manager.modified_backend_settings(
+        "RQ00",
+        lo_freq=100,
+        cnco_freq=200,
+        fnco_freq=300,
+    ):
+        pass
+
+    assert len(backend_controller.initialize_calls) == 1
+    call = backend_controller.initialize_calls[0]
+    initialized = [call] if isinstance(call, str) else list(call)
+    assert initialized == ["BOX0"]
+
+
 def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
