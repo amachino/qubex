@@ -378,16 +378,28 @@ class Quel1MeasurementBackendAdapter:
         profile = self.constraint_profile
         block_duration = profile.block_duration_ns
         measure_mode = MeasureMode(config.mode)
+        base_duration = schedule.pulse_schedule.duration
         if profile.enforce_block_alignment and block_duration is not None:
             interval = int(
                 math.ceil(
-                    (schedule.pulse_schedule.duration + config.interval)
-                    / block_duration
+                    (base_duration + config.interval) / block_duration
                 )
                 * block_duration
             )
+            # Compatibility guard:
+            # legacy measurement flow added one extra block margin on the
+            # waveform-path for interval<=0, which avoided negative trailing
+            # chunk blanks after converter-side packing/alignment adjustments.
+            # Remove this workaround once qubecalib compatibility is no longer
+            # required in the QuEL-1 measurement path.
+            if config.interval <= 0:
+                minimum_interval = int(
+                    math.ceil((base_duration + block_duration) / block_duration)
+                    * block_duration
+                )
+                interval = max(interval, minimum_interval)
         else:
-            interval = math.ceil(schedule.pulse_schedule.duration + config.interval)
+            interval = math.ceil(base_duration + config.interval)
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
         )
