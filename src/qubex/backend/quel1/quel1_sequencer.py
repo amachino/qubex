@@ -13,7 +13,7 @@ from .quel1_driver_loader import load_quel1_driver
 driver = load_quel1_driver()
 
 if TYPE_CHECKING:
-    from .quel1_qubealib_protocols import (
+    from .quel1_qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
         PortConfigAcquirerProtocol,
         SequencerProtocol as Sequencer,

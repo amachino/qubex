@@ -28,7 +28,7 @@ from .quel1_driver_loader import load_quel1_driver
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from .quel1_qubealib_protocols import (
+    from .quel1_qubecalib_protocols import (
         AwgSettingProtocol as AwgSetting,
         BoxPoolProtocol as BoxPool,
         BoxSettingProtocol as BoxSetting,
