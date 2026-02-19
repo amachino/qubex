@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from numpy.typing import NDArray
 from tqdm import tqdm
 
+import qubex.visualization as viz
 from qubex.experiment import Experiment
 from qubex.experiment.models import Result
 from qubex.pulse import CrossResonance, PulseSchedule, Waveform
@@ -176,7 +177,7 @@ def rzx_gate_property(
         std = np.std(result_array)
         result_rzx_angle.append([angle, mean, std])
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=np.array(result_rzx_angle).T[0] * rad_to_deg,

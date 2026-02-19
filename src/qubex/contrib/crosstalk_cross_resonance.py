@@ -8,9 +8,9 @@ from typing import no_type_check
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike
-from plotly.subplots import make_subplots
 
-from qubex.analysis import fitting, visualization as viz
+import qubex.visualization as viz
+from qubex.analysis import fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
@@ -415,16 +415,19 @@ def cr_crosstalk_hamiltonian_tomography(
 
     cr_rabi_rate = exp.pulse.calc_rabi_rate(control_qubit, cr_amplitude)
 
-    fig_c = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1)
-    fig_c_0 = viz.plot_bloch_vectors(
+    fig_c = viz.make_subplots_figure(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.1,
+    )
+    fig_c_0 = viz.make_bloch_vectors_figure(
         result_0["effective_drive_range"],
         result_0["control_states"],
-        return_figure=True,
     )
-    fig_c_1 = viz.plot_bloch_vectors(
+    fig_c_1 = viz.make_bloch_vectors_figure(
         result_1["effective_drive_range"],
         result_1["control_states"],
-        return_figure=True,
     )
     for data in fig_c_0.data:
         data: go.Scatter
@@ -472,7 +475,12 @@ def cr_crosstalk_hamiltonian_tomography(
         margin=dict(t=90),
     )
 
-    fig_t = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1)
+    fig_t = viz.make_subplots_figure(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.1,
+    )
     fig_t_0 = result_0["fit_result"]["fig"]
     fig_t_1 = result_1["fit_result"]["fig"]
     for data in fig_t_0.data:
@@ -521,7 +529,7 @@ def cr_crosstalk_hamiltonian_tomography(
         margin=dict(t=90),
     )
 
-    fig_t_3d = make_subplots(
+    fig_t_3d = viz.make_subplots_figure(
         rows=1,
         cols=2,
         subplot_titles=["Control : |0〉", "Control : |1〉"],
@@ -564,7 +572,12 @@ def cr_crosstalk_hamiltonian_tomography(
         fig_s_0: go.Figure = spectators_fit_results_0[label]["fig"]
         fig_s_1: go.Figure = spectators_fit_results_1[label]["fig"]
 
-        fig_s = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1)
+        fig_s = viz.make_subplots_figure(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.1,
+        )
         for data in fig_s_0.data:
             data: go.Scatter
             fig_s.add_trace(
@@ -616,7 +629,7 @@ def cr_crosstalk_hamiltonian_tomography(
         fig_s_3d_0 = spectators_fit_results_0[label]["fig3d"]
         fig_s_3d_1 = spectators_fit_results_1[label]["fig3d"]
 
-        fig_s_3d = make_subplots(
+        fig_s_3d = viz.make_subplots_figure(
             rows=1,
             cols=2,
             subplot_titles=["Control |0〉", "Control |1〉"],

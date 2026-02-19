@@ -8,7 +8,7 @@ from typing import Any, cast
 import numpy as np
 from qxpulse import PulseSchedule, Rect
 
-from qubex.analysis import visualization as viz
+import qubex.visualization as viz
 from qubex.experiment.models.experiment_result import ExperimentResult
 from qubex.experiment.services.characterization_service import CharacterizationService
 from qubex.experiment.services.measurement_service import MeasurementService

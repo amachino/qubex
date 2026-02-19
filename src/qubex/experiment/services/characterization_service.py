@@ -11,7 +11,6 @@ from typing import Literal
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
-from plotly.subplots import make_subplots
 from qxpulse import (
     CPMG,
     Blank,
@@ -26,7 +25,8 @@ from rich.prompt import Confirm
 from tqdm import tqdm
 from typing_extensions import deprecated
 
-from qubex.analysis import fitting, visualization as viz
+import qubex.visualization as viz
+from qubex.analysis import fitting
 from qubex.backend import MixingUtil
 from qubex.backend.experiment_system import (
     CNCO_CENTER_CTRL,
@@ -263,7 +263,7 @@ class CharacterizationService:
 
         if plot:
             for target in targets:
-                fig = make_subplots(rows=3, cols=1, shared_xaxes=True)
+                fig = viz.make_subplots_figure(rows=3, cols=1, shared_xaxes=True)
                 fig.add_trace(
                     go.Scatter(
                         x=amplitude_range,
@@ -379,7 +379,7 @@ class CharacterizationService:
 
         if plot:
             for target in targets:
-                fig = make_subplots(rows=3, cols=1, shared_xaxes=True)
+                fig = viz.make_subplots_figure(rows=3, cols=1, shared_xaxes=True)
                 fig.add_trace(
                     go.Scatter(
                         x=time_range,
@@ -552,7 +552,7 @@ class CharacterizationService:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
                 chevron_data[target] = np.array(chevron_data_buffer[target]).T
 
-                fig = go.Figure()
+                fig = viz.make_figure()
                 fig.add_trace(
                     go.Heatmap(
                         x=detuning_range + frequencies[target],
@@ -1872,7 +1872,7 @@ class CharacterizationService:
         tau = coefficients[0] / (2 * np.pi)
 
         if plot:
-            fig = go.Figure()
+            fig = viz.make_figure()
             fig.add_scatter(name="data", mode="markers", x=x, y=y)
             fig.add_scatter(name="fit", mode="lines", x=x, y=y_fit)
             fig.add_annotation(
@@ -2106,7 +2106,7 @@ class CharacterizationService:
             )
         peak_freqs = frequency_range[peaks]
 
-        fig1 = make_subplots(
+        fig1 = viz.make_subplots_figure(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -2154,7 +2154,7 @@ class CharacterizationService:
             margin=dict(t=80),
             showlegend=False,
         )
-        fig2 = make_subplots(
+        fig2 = viz.make_subplots_figure(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -2342,7 +2342,7 @@ class CharacterizationService:
             abs_phases_diff = np.append(abs_phases_diff, abs_phases_diff[-1])
             result.append(abs_phases_diff)
 
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_trace(
             go.Heatmap(
                 x=frequency_range,
@@ -2664,7 +2664,7 @@ class CharacterizationService:
         )
         peak_freqs = frequency_range[peaks]
 
-        fig = make_subplots(
+        fig = viz.make_subplots_figure(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -3058,7 +3058,7 @@ class CharacterizationService:
             phases = result1d["phases"]
             result2d.append(phases)
 
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_trace(
             go.Heatmap(
                 x=result1d["frequency_range"],
@@ -3188,7 +3188,7 @@ class CharacterizationService:
         f_1 = result_1["f_r"]
         dispersive_shift = (f_1 - f_0) / 2
 
-        fig1 = go.Figure()
+        fig1 = viz.make_figure()
         fig1.add_scatter(
             x=frequency_range,
             y=phases_0,
@@ -3232,7 +3232,7 @@ class CharacterizationService:
 
         distance = np.abs(signals_1 - signals_0)
         optimal_frequency = frequency_range[np.argmax(distance)]
-        fig2 = go.Figure()
+        fig2 = viz.make_figure()
         fig2.add_scatter(
             x=frequency_range,
             y=distance,
@@ -3361,7 +3361,7 @@ class CharacterizationService:
 
         distance = np.abs(signals_1 - signals_0)
         optimal_frequency = frequency_range[np.argmax(distance)]
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_scatter(
             x=frequency_range,
             y=distance,
@@ -3470,7 +3470,7 @@ class CharacterizationService:
 
         distance = np.abs(signals_1 - signals_0)
         optimal_amplitude = amplitude_range[np.argmax(distance)]
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_scatter(
             x=amplitude_range,
             y=distance,
@@ -3681,7 +3681,7 @@ class CharacterizationService:
         if qubit_initial_state == "1":
             data *= -1
 
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_heatmap(
             z=data.T,
             x=resonator_frequency_range,
@@ -3854,7 +3854,7 @@ class CharacterizationService:
         n_mean = 4 * power / kappa
         n_crit = np.abs(delta / (4 * chi))
 
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_scatter(
             x=x_fit,
             y=y_fit_0,

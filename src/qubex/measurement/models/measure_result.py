@@ -17,7 +17,7 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from qubex.analysis import visualization as viz
+import qubex.visualization as viz
 from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.measurement.classifiers import StateClassifier
 
@@ -253,22 +253,51 @@ class MeasureData:
             Whether to save the figure image.
         """
         if self.mode == MeasureMode.SINGLE:
-            return viz.scatter_iq_data(
-                data={self.target: np.asarray(self.kerneled)},
-                title=title or f"Readout IQ data : {self.target}",
-                return_figure=return_figure,
+            data = {self.target: np.asarray(self.kerneled)}
+            plot_title = title or f"Readout IQ data : {self.target}"
+            if return_figure:
+                fig = viz.make_iq_scatter_figure(
+                    data=data,
+                    title=plot_title,
+                )
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name="plot_state_distribution",
+                    )
+                return fig
+            viz.scatter_iq_data(
+                data=data,
+                title=plot_title,
                 save_image=save_image,
             )
+            return None
         elif self.mode == MeasureMode.AVG:
-            return viz.plot_waveform(
+            plot_title = title or f"Readout waveform : {self.target}"
+            sampling_period = self.sampling_period_ns * self.avg_sample_stride
+            if return_figure:
+                fig = viz.make_waveform_figure(
+                    data=self.raw,
+                    sampling_period=sampling_period,
+                    title=plot_title,
+                    xlabel="Capture time (ns)",
+                    ylabel="Signal (arb. units)",
+                )
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name="plot_waveform",
+                    )
+                return fig
+            viz.plot_waveform(
                 data=self.raw,
-                sampling_period=self.sampling_period_ns * self.avg_sample_stride,
-                title=title or f"Readout waveform : {self.target}",
+                sampling_period=sampling_period,
+                title=plot_title,
                 xlabel="Capture time (ns)",
                 ylabel="Signal (arb. units)",
-                return_figure=return_figure,
                 save_image=save_image,
             )
+            return None
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -290,15 +319,30 @@ class MeasureData:
         save_image : bool, optional
             Whether to save the figure image.
         """
-        return viz.plot_fft(
+        plot_title = title or f"Fourier transform : {self.target}"
+        if return_figure:
+            fig = viz.make_fft_figure(
+                x=self.times * 1e-3,
+                y=self.raw,
+                title=plot_title,
+                xlabel="Frequency (MHz)",
+                ylabel="Signal (arb. units)",
+            )
+            if save_image:
+                viz.save_figure_image(
+                    fig,
+                    name="plot_fft",
+                )
+            return fig
+        viz.plot_fft(
             x=self.times * 1e-3,
             y=self.raw,
-            title=title or f"Fourier transform : {self.target}",
+            title=plot_title,
             xlabel="Frequency (MHz)",
             ylabel="Signal (arb. units)",
-            return_figure=return_figure,
             save_image=save_image,
         )
+        return None
 
 
 @dataclass(frozen=True)
@@ -625,21 +669,31 @@ class MeasureResult:
             data = {
                 qubit: np.asarray(data.kerneled) for qubit, data in self.data.items()
             }
-            return viz.scatter_iq_data(
+            if return_figure:
+                fig = viz.make_iq_scatter_figure(data=data)
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name="plot_state_distribution",
+                    )
+                return fig
+            viz.scatter_iq_data(
                 data=data,
-                return_figure=return_figure,
                 save_image=save_image,
             )
+            return None
         elif self.mode == MeasureMode.AVG:
-            figures = []
+            figures: list[Any] = []
             for data in self.data.values():
-                fig = data.plot(
+                figure = data.plot(
                     return_figure=return_figure,
                     save_image=save_image,
                 )
-                figures.append(fig)
+                if return_figure:
+                    figures.append(figure)
             if return_figure:
                 return figures
+            return None
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -658,15 +712,17 @@ class MeasureResult:
         save_image : bool, optional
             Whether to save the figure image(s).
         """
-        figures = []
+        figures: list[Any] = []
         for data in self.data.values():
-            fig = data.plot_fft(
+            figure = data.plot_fft(
                 return_figure=return_figure,
                 save_image=save_image,
             )
-            figures.append(fig)
+            if return_figure:
+                figures.append(figure)
         if return_figure:
             return figures
+        return None
 
     def save(
         self,

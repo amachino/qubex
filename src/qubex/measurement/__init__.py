@@ -1,6 +1,8 @@
 """Measurement API exports."""
 
-from qubex.analysis.visalization.schedule_visualizer import (
+from qubex.visualization.schedule_visualizer import (
+    make_measurement_schedule_figure,
+    make_sequencer_timeline_figure,
     plot_measurement_schedule,
     plot_sequencer_timeline,
 )
@@ -59,6 +61,8 @@ __all__ = [
     "StateClassifierGMM",
     "StateClassifierKMeans",
     "SweepMeasurementBuilder",
+    "make_measurement_schedule_figure",
+    "make_sequencer_timeline_figure",
     "plot_measurement_schedule",
     "plot_sequencer_timeline",
 ]

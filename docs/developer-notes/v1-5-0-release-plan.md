@@ -159,7 +159,7 @@ Calendar note:
 
 ### P2: visualization defaults
 
-- `src/qubex/analysis/visualization.py`: `plot_waveform(..., sampling_period=2.0)` default
+- `src/qubex/visualization/plotting.py`: `plot_waveform(..., sampling_period=2.0)` default
 
 ### Mapping rule to apply
 

@@ -156,7 +156,7 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
         lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
     )
     monkeypatch.setattr(
-        "qubex.experiment.services.characterization_service.make_subplots",
+        "qubex.experiment.services.characterization_service.viz.make_subplots_figure",
         lambda **_kwargs: _FakeFigure(),
     )
     monkeypatch.setattr(

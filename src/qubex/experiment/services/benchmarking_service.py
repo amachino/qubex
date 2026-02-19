@@ -11,7 +11,8 @@ import numpy as np
 from numpy.typing import ArrayLike
 from qxpulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 
-from qubex.analysis import fitting, visualization as viz
+import qubex.visualization as viz
+from qubex.analysis import fitting
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.experiment.experiment_constants import (

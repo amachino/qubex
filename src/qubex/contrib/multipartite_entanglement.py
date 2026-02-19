@@ -13,10 +13,9 @@ import networkx as nx
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
-from plotly.subplots import make_subplots
 from tqdm import tqdm
 
-from qubex.analysis import visualization as viz
+import qubex.visualization as viz
 from qubex.analysis.state_tomography import (
     create_density_matrix,
     mle_fit_density_matrix,
@@ -404,7 +403,7 @@ def measure_ghz_state(
     prob_arr_raw = np.array(list(prob_dict_raw.values()))
     prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Bar(
             x=labels,
@@ -959,7 +958,7 @@ def fourier_analysis(
     I = np.abs(F[1 : N // 2]) / N
     C = 2 * np.sqrt(I)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
 
     fig.add_trace(
         go.Bar(
@@ -1153,13 +1152,12 @@ def parity_oscillation(
                 parity_mit += prob * (1 if label.count("1") % 2 == 0 else -1)
             parities_mit.append(parity_mit)
 
-    fig = go.Figure(
-        layout=go.Layout(
-            title=f"Parity oscillation : {n_qubits}-qubit GHZ state",
-            xaxis_title="Z rotation : φ (rad)",
-            yaxis_title="Parity",
-            yaxis_range=(-1.1, 1.1),
-        )
+    fig = viz.make_figure()
+    fig.update_layout(
+        title=f"Parity oscillation : {n_qubits}-qubit GHZ state",
+        xaxis_title="Z rotation : φ (rad)",
+        yaxis_title="Parity",
+        yaxis_range=(-1.1, 1.1),
     )
 
     fig.add_scatter(
@@ -1620,7 +1618,7 @@ def _measure_1d_cluster_state(
             if plot:
                 print(f"{edge[0]}-{edge[1]} ({sbits}) : Negativity = {negativity}")
 
-            fig = make_subplots(
+            fig = viz.make_subplots_figure(
                 rows=1,
                 cols=2,
                 subplot_titles=("Abs", "Phase"),
@@ -1845,26 +1843,25 @@ def measure_1d_cluster_state(
 
         x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
         y = list(negativities.values())
-        fig = go.Figure(
-            layout=go.Layout(
-                title=f"Negativities of {len(qubits)}-qubit 1D cluster state",
-                xaxis=dict(
-                    title="Edges",
-                    tickangle=45,
-                    tickmode="array",
-                    tickvals=list(range(len(x))),
-                    ticktext=x,
-                ),
-                yaxis=dict(
-                    title="Negativity",
-                    range=[0, 0.55],
-                    tickvals=[0, 0.1, 0.2, 0.3, 0.4, 0.5],
-                    ticktext=["0", "0.1", "0.2", "0.3", "0.4", "0.5"],
-                ),
-                width=800,
-                height=400,
-                margin=dict(l=70, r=70, t=90, b=100),
-            )
+        fig = viz.make_figure()
+        fig.update_layout(
+            title=f"Negativities of {len(qubits)}-qubit 1D cluster state",
+            xaxis=dict(
+                title="Edges",
+                tickangle=45,
+                tickmode="array",
+                tickvals=list(range(len(x))),
+                ticktext=x,
+            ),
+            yaxis=dict(
+                title="Negativity",
+                range=[0, 0.55],
+                tickvals=[0, 0.1, 0.2, 0.3, 0.4, 0.5],
+                ticktext=["0", "0.1", "0.2", "0.3", "0.4", "0.5"],
+            ),
+            width=800,
+            height=400,
+            margin=dict(l=70, r=70, t=90, b=100),
         )
         fig.add_bar(x=x, y=y)
         fig.show(
@@ -2760,7 +2757,7 @@ def _measure_graph_state(
             if plot:
                 print(f"{edge[0]}-{edge[1]} ({sbits}) : Negativity = {negativity}")
 
-            fig = make_subplots(
+            fig = viz.make_subplots_figure(
                 rows=1,
                 cols=2,
                 subplot_titles=("Abs", "Phase"),
@@ -3106,28 +3103,27 @@ def measure_graph_state(
             ),
         )
 
-        fig = go.Figure(
-            layout=go.Layout(
-                title=f"Negativities of {len(graph.nodes())}-qubit graph state",
-                xaxis=dict(
-                    title="Edges",
-                    title_standoff=25,
-                    tickangle=90,
-                    tickmode="array",
-                    tickvals=list(range(len(x))),
-                    ticktext=x,
-                    tickfont=dict(size=10),
-                ),
-                yaxis=dict(
-                    title="Negativity",
-                    range=[min_y, max_y],
-                    tickvals=[0, 0.1, 0.2, 0.3, 0.4, 0.5],
-                    ticktext=["0", "0.1", "0.2", "0.3", "0.4", "0.5"],
-                ),
-                width=800,
-                height=400,
-                margin=dict(l=70, r=70, t=90, b=100),
-            )
+        fig = viz.make_figure()
+        fig.update_layout(
+            title=f"Negativities of {len(graph.nodes())}-qubit graph state",
+            xaxis=dict(
+                title="Edges",
+                title_standoff=25,
+                tickangle=90,
+                tickmode="array",
+                tickvals=list(range(len(x))),
+                ticktext=x,
+                tickfont=dict(size=10),
+            ),
+            yaxis=dict(
+                title="Negativity",
+                range=[min_y, max_y],
+                tickvals=[0, 0.1, 0.2, 0.3, 0.4, 0.5],
+                ticktext=["0", "0.1", "0.2", "0.3", "0.4", "0.5"],
+            ),
+            width=800,
+            height=400,
+            margin=dict(l=70, r=70, t=90, b=100),
         )
         fig.add_scatter(
             x=x,
@@ -3260,27 +3256,26 @@ def measure_bell_state_fidelities(
         n_pairs = len(sorted_fidelities)
         x = list(sorted_fidelities)
         y = list(sorted_fidelities.values())
-        fig = go.Figure(
-            layout=go.Layout(
-                title="Fidelities",
-                xaxis=dict(
-                    title="Edges",
-                    tickangle=45,
-                    tickmode="array",
-                    tickvals=list(range(len(x))),
-                    ticktext=x,
-                    tickfont=dict(size=10),
-                ),
-                yaxis=dict(
-                    title="Fidelity",
-                    range=[0, 1],
-                    tickvals=[0, 0.2, 0.4, 0.6, 0.8, 1],
-                    ticktext=["0", "0.2", "0.4", "0.6", "0.8", "1"],
-                ),
-                width=n_pairs * 15 + 150,
-                height=400,
-                margin=dict(l=70, r=70, t=90, b=100),
-            )
+        fig = viz.make_figure()
+        fig.update_layout(
+            title="Fidelities",
+            xaxis=dict(
+                title="Edges",
+                tickangle=45,
+                tickmode="array",
+                tickvals=list(range(len(x))),
+                ticktext=x,
+                tickfont=dict(size=10),
+            ),
+            yaxis=dict(
+                title="Fidelity",
+                range=[0, 1],
+                tickvals=[0, 0.2, 0.4, 0.6, 0.8, 1],
+                ticktext=["0", "0.2", "0.4", "0.6", "0.8", "1"],
+            ),
+            width=n_pairs * 15 + 150,
+            height=400,
+            margin=dict(l=70, r=70, t=90, b=100),
         )
         fig.add_bar(x=x, y=y)
         fig.show(
@@ -3389,7 +3384,7 @@ def measure_bell_states(
         edge: (i // n_cols + 1, i % n_cols + 1) for i, edge in enumerate(all_edges)
     }
 
-    fig = make_subplots(
+    fig = viz.make_subplots_figure(
         rows=n_rows,
         cols=n_cols,
         subplot_titles=[f"{edge[0]}-{edge[1]}" for edge in all_edges],

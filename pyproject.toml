@@ -97,7 +97,7 @@ filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
 include = ["src", "packages", "tests"]
-# exclude = ["packages/quelware-client"]
+exclude = ["packages/quelware-client"]
 typeCheckingMode = "basic"
 
 [tool.ruff]

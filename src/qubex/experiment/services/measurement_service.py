@@ -26,7 +26,8 @@ from qxpulse import (
 from rich.console import Console
 from tqdm import tqdm
 
-from qubex.analysis import IQPlotter, fitting, visualization as viz
+import qubex.visualization as viz
+from qubex.analysis import IQPlotter, fitting
 from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
@@ -2367,7 +2368,7 @@ class MeasurementService:
         }
 
         for target in result_pops:
-            fig = go.Figure()
+            fig = viz.make_figure()
             for state, probs in enumerate(result_pops[target]):
                 fig.add_scatter(
                     name=f"|{state}⟩",
@@ -2504,7 +2505,7 @@ class MeasurementService:
         prob_arr_raw = np.array(list(prob_dict_raw.values()))
         prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
-        fig = go.Figure()
+        fig = viz.make_figure()
         if plot_raw:
             fig.add_trace(
                 go.Bar(

@@ -12,8 +12,8 @@ import networkx as nx
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 
-from qubex.analysis.visualization import save_figure_image
 from qubex.constants import MUX_SIZE, PREFIX_MUX, PREFIX_QUBIT, PREFIX_RESONATOR
+from qubex.visualization import save_figure_image
 
 # TODO: Remove hardcoded constants
 

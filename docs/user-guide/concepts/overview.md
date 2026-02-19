@@ -23,7 +23,8 @@ Qubex organizes experiment workflows into three layers:
 ## Related subpackages
 
 - **`qubex.pulse`**: Pulse definitions and helpers.
-- **`qubex.analysis`**: Fitting and visualization utilities.
+- **`qubex.analysis`**: Fitting and analysis utilities.
+- **`qubex.visualization`**: Plotting and timeline visualization utilities.
 - **`qubex.clifford`**: Clifford generation utilities for benchmarking.
 - **`qubex.simulator`**: Simulation interfaces backed by `qxsimulator`.
 - **`qubex.diagnostics`**: Chip inspection and diagnostic helpers.

@@ -10,16 +10,18 @@ import plotly.graph_objects as go
 import pytest
 from qxpulse import Blank, Gaussian, PulseSchedule
 
-from qubex.analysis.visalization.schedule_visualizer import (
+from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
+from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.visualization.schedule_visualizer import (
+    make_measurement_schedule_figure,
+    make_sequencer_timeline_figure,
     plot_measurement_schedule,
     plot_sequencer_timeline,
 )
-from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
-from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 
-def test_plot_measurement_schedule_adds_capture_overlay() -> None:
-    """Given capture windows, when plotting schedule, then capture overlays are present."""
+def test_make_measurement_schedule_figure_adds_capture_overlay() -> None:
+    """Given capture windows, when making schedule figure, then capture overlays are present."""
     with PulseSchedule(["Q00", "Q01", "RQ00"]) as pulse_schedule:
         pulse_schedule.add("Q00", Blank(duration=4.0, sampling_period=0.4))
         pulse_schedule.add(
@@ -68,7 +70,7 @@ def test_plot_measurement_schedule_adds_capture_overlay() -> None:
         ),
     )
 
-    figure = plot_measurement_schedule(schedule)
+    figure = make_measurement_schedule_figure(schedule)
 
     assert isinstance(figure, go.Figure)
     figure_dict = figure.to_dict()
@@ -106,8 +108,8 @@ class _CaptureWindow:
     length_ns: float
 
 
-def test_plot_sequencer_timeline_renders_event_and_capture_lanes() -> None:
-    """Given sequencer data, when plotting timeline, then both event and capture traces are rendered."""
+def test_make_sequencer_timeline_figure_renders_event_and_capture_lanes() -> None:
+    """Given sequencer data, when making timeline figure, then both event and capture traces are rendered."""
     sequencer = SimpleNamespace(
         _waveform_library={
             "wf0": _Waveform(
@@ -136,7 +138,7 @@ def test_plot_sequencer_timeline_renders_event_and_capture_lanes() -> None:
         },
     )
 
-    figure = plot_sequencer_timeline(sequencer)
+    figure = make_sequencer_timeline_figure(sequencer)
 
     assert isinstance(figure, go.Figure)
     figure_dict = figure.to_dict()
@@ -152,8 +154,8 @@ def test_plot_sequencer_timeline_renders_event_and_capture_lanes() -> None:
     }
 
 
-def test_plot_sequencer_timeline_raises_on_empty_timeline() -> None:
-    """Given empty sequencer data, when plotting timeline, then ValueError is raised."""
+def test_make_sequencer_timeline_figure_raises_on_empty_timeline() -> None:
+    """Given empty sequencer data, when making timeline figure, then ValueError is raised."""
     sequencer = SimpleNamespace(
         _waveform_library={},
         _alias_to_events={},
@@ -161,4 +163,45 @@ def test_plot_sequencer_timeline_raises_on_empty_timeline() -> None:
     )
 
     with pytest.raises(ValueError, match="timeline is empty"):
-        plot_sequencer_timeline(sequencer)
+        make_sequencer_timeline_figure(sequencer)
+
+
+def test_plot_measurement_schedule_returns_none(monkeypatch) -> None:
+    """Given schedule plot API, when plotting, then None is returned."""
+    with PulseSchedule(["Q00"]) as pulse_schedule:
+        pulse_schedule.add("Q00", Blank(duration=4.0, sampling_period=0.4))
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+
+    monkeypatch.setattr(go.Figure, "show", lambda self, *args, **kwargs: None)
+    result = plot_measurement_schedule(schedule)
+    assert result is None
+
+
+def test_plot_sequencer_timeline_returns_none(monkeypatch) -> None:
+    """Given timeline plot API, when plotting, then None is returned."""
+    sequencer = SimpleNamespace(
+        _waveform_library={
+            "wf0": _Waveform(
+                sampling_period_ns=0.4,
+                iq_array=np.array([0.5 + 0.0j, 0.2 + 0.1j], dtype=np.complex128),
+            )
+        },
+        _alias_to_events={
+            "ctrl-00": [
+                _Event(
+                    waveform_name="wf0",
+                    start_offset_ns=4.0,
+                    gain=0.8,
+                    phase_offset_deg=30.0,
+                )
+            ]
+        },
+        _alias_to_capwin={"readout-00": []},
+    )
+
+    monkeypatch.setattr(go.Figure, "show", lambda self, *args, **kwargs: None)
+    result = plot_sequencer_timeline(sequencer)
+    assert result is None

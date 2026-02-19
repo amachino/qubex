@@ -1,6 +1,6 @@
 """Analysis helpers for qubex experiments."""
 
-from . import fitting, util, visualization
+from . import fitting, util
 from .fitting import FitResult, FitStatus
 from .iq_plotter import IQPlotter
 
@@ -10,5 +10,4 @@ __all__ = [
     "IQPlotter",
     "fitting",
     "util",
-    "visualization",
 ]

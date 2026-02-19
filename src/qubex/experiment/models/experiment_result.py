@@ -11,7 +11,9 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
-from qubex.analysis import FitResult, fitting, util, visualization as viz
+import qubex.visualization as viz
+from qubex.analysis import FitResult, fitting, util
+from qubex.style import get_config
 from qubex.typing import TargetMap
 
 from .experiment_record import ExperimentRecord
@@ -185,15 +187,12 @@ class RabiData(TargetData):
         return_figure
             Whether to return the figure.
         """
-        fig = go.Figure()
+        fig = viz.make_figure(width=width, height=height)
 
         fig.update_layout(
             title=title or f"Rabi oscillation : {self.target}",
             xaxis_title=xlabel or "Drive duration (ns)",
             yaxis_title=ylabel or "Signal (arb. units)",
-            width=width,
-            height=height,
-            template="qubex",
         )
 
         if use_zvalue:
@@ -242,7 +241,7 @@ class RabiData(TargetData):
             )
 
         fig.show(
-            config=viz.get_config(
+            config=get_config(
                 filename=f"rabi_data_{self.target}",
                 width=width,
                 height=height,
@@ -368,7 +367,7 @@ class SweepData(TargetData):
         return_figure
             Whether to return the figure.
         """
-        fig = go.Figure()
+        fig = viz.make_figure(width=width, height=height)
 
         fig.update_layout(
             title=title or f"{self.title} : {self.target}",
@@ -376,9 +375,6 @@ class SweepData(TargetData):
             xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
             yaxis_title=ylabel or self.ylabel,
             yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
-            width=width,
-            height=height,
-            template="qubex",
         )
 
         if use_zvalue:
@@ -434,7 +430,7 @@ class SweepData(TargetData):
             )
 
         fig.show(
-            config=viz.get_config(
+            config=get_config(
                 filename=f"sweep_data_{self.target}",
                 width=width,
                 height=height,
@@ -842,7 +838,7 @@ class AmplRabiData(TargetData):
 
     def plot(self) -> None:
         """Plot Rabi rate versus drive amplitude."""
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_trace(
             go.Scatter(
                 x=self.sweep_range,
@@ -893,7 +889,7 @@ class FreqRabiData(TargetData):
 
     def plot(self) -> None:
         """Plot Rabi rate versus drive frequency."""
-        fig = go.Figure()
+        fig = viz.make_figure()
         fig.add_trace(
             go.Scatter(
                 x=self.frequency_range,

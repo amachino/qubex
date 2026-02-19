@@ -6,9 +6,22 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from qubex.style import COLORS
+
+from .figure_factory import (
+    DEFAULT_TEMPLATE,
+    MEASUREMENT_SCHEDULE_BASE_HEIGHT,
+    MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
+    MEASUREMENT_SCHEDULE_ROW_HEIGHT,
+    SEQUENCER_TIMELINE_BASE_HEIGHT,
+    SEQUENCER_TIMELINE_DEFAULT_WIDTH,
+    SEQUENCER_TIMELINE_LANE_HEIGHT,
+    SEQUENCER_TIMELINE_MIN_HEIGHT,
+    make_figure,
+    make_subplots_figure,
+    show_figure,
+)
 
 if TYPE_CHECKING:
     from qubex.measurement.models.measurement_schedule import MeasurementSchedule
@@ -32,41 +45,18 @@ def _primary_y_axis_reference(index: int) -> str:
     return "y" if axis_number == 1 else f"y{axis_number}"
 
 
-def plot_measurement_schedule(
+def make_measurement_schedule_figure(
     schedule: MeasurementSchedule,
     *,
     show_physical_pulse: bool = False,
     title: str = "Measurement Schedule",
-    width: int = 900,
+    width: int = MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
     n_samples: int | None = None,
     divide_by_two_pi: bool = False,
     line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+    template: str = DEFAULT_TEMPLATE,
 ) -> go.Figure:
-    """
-    Build a measurement-schedule figure with pulse and capture overlays.
-
-    Parameters
-    ----------
-    schedule : MeasurementSchedule
-        Measurement schedule containing pulse and capture definitions.
-    show_physical_pulse : bool, optional
-        If `True`, apply frame shifts before plotting I/Q.
-    title : str, optional
-        Figure title.
-    width : int, optional
-        Figure width in pixels.
-    n_samples : int | None, optional
-        Optional downsampling size for plotting.
-    divide_by_two_pi : bool, optional
-        If `True`, divide plotted I/Q amplitudes by `2π * 1e-3`.
-    line_shape : {"hv", "vh", "hvh", "vhv", "spline", "linear"}, optional
-        Plotly line interpolation mode.
-
-    Returns
-    -------
-    go.Figure
-        Plotly figure object.
-    """
+    """Build a measurement-schedule figure with pulse and capture overlays."""
     pulse_schedule = schedule.pulse_schedule
     sequences = pulse_schedule.get_sequences(copy=False)
     n_channels = len(sequences)
@@ -74,11 +64,13 @@ def plot_measurement_schedule(
     if n_channels == 0:
         raise ValueError("MeasurementSchedule must include at least one pulse channel.")
 
-    figure = make_subplots(
+    figure = make_subplots_figure(
         rows=n_channels,
         cols=1,
         shared_xaxes=True,
         specs=[[{"secondary_y": True}] for _ in range(n_channels)],
+        template=template,
+        width=width,
     )
 
     capture_legend_added = False
@@ -92,10 +84,7 @@ def plot_measurement_schedule(
             times = np.append(
                 sequence.times, sequence.times[-1] + sequence.SAMPLING_PERIOD
             )
-            if show_physical_pulse:
-                values = sequence.get_values(apply_frame_shifts=True)
-            else:
-                values = sequence.get_values(apply_frame_shifts=False)
+            values = sequence.get_values(apply_frame_shifts=show_physical_pulse)
             real = np.append(np.real(values), np.real(values)[-1])
             imag = np.append(np.imag(values), np.imag(values)[-1])
             phase = -np.append(sequence.frame_shifts, sequence.final_frame_shift)
@@ -237,37 +226,50 @@ def plot_measurement_schedule(
 
     figure.update_layout(
         title=title,
-        width=width,
-        height=90 * n_channels + 170,
+        height=MEASUREMENT_SCHEDULE_ROW_HEIGHT * n_channels
+        + MEASUREMENT_SCHEDULE_BASE_HEIGHT,
     )
     figure.update_xaxes(row=n_channels, col=1, title_text="Time (ns)")
     return figure
 
 
-def plot_sequencer_timeline(
+def plot_measurement_schedule(
+    schedule: MeasurementSchedule,
+    *,
+    show_physical_pulse: bool = False,
+    title: str = "Measurement Schedule",
+    width: int = MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
+    n_samples: int | None = None,
+    divide_by_two_pi: bool = False,
+    line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+    template: str = DEFAULT_TEMPLATE,
+) -> None:
+    """Plot a measurement schedule and show the figure."""
+    figure = make_measurement_schedule_figure(
+        schedule,
+        show_physical_pulse=show_physical_pulse,
+        title=title,
+        width=width,
+        n_samples=n_samples,
+        divide_by_two_pi=divide_by_two_pi,
+        line_shape=line_shape,
+        template=template,
+    )
+    show_figure(
+        figure,
+        filename="measurement_schedule",
+        width=width,
+    )
+
+
+def make_sequencer_timeline_figure(
     sequencer: Any,
     *,
     title: str = "Sequencer Timeline",
-    width: int = 900,
+    width: int = SEQUENCER_TIMELINE_DEFAULT_WIDTH,
+    template: str = DEFAULT_TEMPLATE,
 ) -> go.Figure:
-    """
-    Build a sequencer timeline figure with event and capture lanes.
-
-    Parameters
-    ----------
-    sequencer : Any
-        Sequencer-like object exposing `_waveform_library`,
-        `_alias_to_events`, and `_alias_to_capwin`.
-    title : str, optional
-        Figure title.
-    width : int, optional
-        Figure width in pixels.
-
-    Returns
-    -------
-    go.Figure
-        Plotly figure object.
-    """
+    """Build a sequencer timeline figure with event and capture lanes."""
     state = vars(sequencer)
     waveform_library = state["_waveform_library"]
     alias_to_events = state["_alias_to_events"]
@@ -281,7 +283,7 @@ def plot_sequencer_timeline(
     if len(lanes) == 0:
         raise ValueError("Sequencer timeline is empty.")
 
-    figure = go.Figure()
+    figure = make_figure(template=template, width=width)
     pulse_legend_added = False
     capture_legend_added = False
 
@@ -349,10 +351,34 @@ def plot_sequencer_timeline(
     figure.update_layout(
         title=title,
         barmode="overlay",
-        width=width,
-        height=max(320, 120 + 42 * len(lanes)),
+        height=max(
+            SEQUENCER_TIMELINE_MIN_HEIGHT,
+            SEQUENCER_TIMELINE_BASE_HEIGHT
+            + SEQUENCER_TIMELINE_LANE_HEIGHT * len(lanes),
+        ),
         xaxis_title="Time (ns)",
         yaxis_title="Lane",
     )
     figure.update_yaxes(categoryorder="array", categoryarray=lanes[::-1])
     return figure
+
+
+def plot_sequencer_timeline(
+    sequencer: Any,
+    *,
+    title: str = "Sequencer Timeline",
+    width: int = SEQUENCER_TIMELINE_DEFAULT_WIDTH,
+    template: str = DEFAULT_TEMPLATE,
+) -> None:
+    """Plot a sequencer timeline and show the figure."""
+    figure = make_sequencer_timeline_figure(
+        sequencer,
+        title=title,
+        width=width,
+        template=template,
+    )
+    show_figure(
+        figure,
+        filename="sequencer_timeline",
+        width=width,
+    )

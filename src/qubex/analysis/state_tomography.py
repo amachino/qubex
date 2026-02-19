@@ -13,7 +13,7 @@ import plotly.graph_objs as go
 from numpy.typing import NDArray
 from plotly.subplots import make_subplots
 
-from .visualization import save_figure_image
+from qubex.visualization import save_figure_image
 
 logger = logging.getLogger(__name__)
 

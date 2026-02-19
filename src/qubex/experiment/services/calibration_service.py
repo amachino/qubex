@@ -9,7 +9,6 @@ from typing import Literal, no_type_check
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
-from plotly.subplots import make_subplots
 from qxpulse import (
     CrossResonance,
     Drag,
@@ -21,7 +20,8 @@ from qxpulse import (
     Waveform,
 )
 
-from qubex.analysis import FitResult, fitting, util, visualization as viz
+import qubex.visualization as viz
+from qubex.analysis import FitResult, fitting, util
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_CR_RAMPTIME,
@@ -1612,21 +1612,19 @@ class CalibrationService:
         # ZX90 gate
         cr_rabi_rate = self.pulse.calc_rabi_rate(control_qubit, cr_amplitude)
 
-        fig_c = make_subplots(
+        fig_c = viz.make_subplots_figure(
             rows=2,
             cols=1,
             shared_xaxes=True,
             vertical_spacing=0.1,
         )
-        fig_c_0 = viz.plot_bloch_vectors(
+        fig_c_0 = viz.make_bloch_vectors_figure(
             result_0["effective_drive_range"],
             result_0["control_states"],
-            return_figure=True,
         )
-        fig_c_1 = viz.plot_bloch_vectors(
+        fig_c_1 = viz.make_bloch_vectors_figure(
             result_1["effective_drive_range"],
             result_1["control_states"],
-            return_figure=True,
         )
         for data in fig_c_0.data:  # type: ignore
             data: go.Scatter
@@ -1688,7 +1686,7 @@ class CalibrationService:
             margin=dict(t=90),
         )
 
-        fig_t = make_subplots(
+        fig_t = viz.make_subplots_figure(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -1757,7 +1755,7 @@ class CalibrationService:
             margin=dict(t=90),
         )
 
-        fig_t_3d = make_subplots(
+        fig_t_3d = viz.make_subplots_figure(
             rows=1,
             cols=2,
             subplot_titles=[
@@ -2147,7 +2145,7 @@ class CalibrationService:
             key: np.array(value) for key, value in coeffs_history.items()
         }
 
-        fig = go.Figure()
+        fig = viz.make_figure()
         for key, value in hamiltonian_coeffs.items():
             fig.add_trace(
                 go.Scatter(
@@ -3170,21 +3168,19 @@ class CalibrationService:
         # ZX90 gate
         cr_rabi_rate = self.pulse.calc_rabi_rate(control_qubit, cr_amplitude)
 
-        fig_c = make_subplots(
+        fig_c = viz.make_subplots_figure(
             rows=2,
             cols=1,
             shared_xaxes=True,
             vertical_spacing=0.1,
         )
-        fig_c_0 = viz.plot_bloch_vectors(
+        fig_c_0 = viz.make_bloch_vectors_figure(
             result_0["effective_drive_range"],
             result_0["control_states"],
-            return_figure=True,
         )
-        fig_c_1 = viz.plot_bloch_vectors(
+        fig_c_1 = viz.make_bloch_vectors_figure(
             result_1["effective_drive_range"],
             result_1["control_states"],
-            return_figure=True,
         )
         for data in fig_c_0.data:
             data: go.Scatter
@@ -3247,7 +3243,7 @@ class CalibrationService:
             margin=dict(t=90),
         )
 
-        fig_t = make_subplots(
+        fig_t = viz.make_subplots_figure(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -3316,7 +3312,7 @@ class CalibrationService:
             margin=dict(t=90),
         )
 
-        fig_t_3d = make_subplots(
+        fig_t_3d = viz.make_subplots_figure(
             rows=1,
             cols=2,
             subplot_titles=[
@@ -3376,7 +3372,7 @@ class CalibrationService:
             fig_s_0: go.Figure = spectators_fit_results_0[label]["fig"]
             fig_s_1: go.Figure = spectators_fit_results_1[label]["fig"]
 
-            fig_s = make_subplots(
+            fig_s = viz.make_subplots_figure(
                 rows=2,
                 cols=1,
                 shared_xaxes=True,
@@ -3449,7 +3445,7 @@ class CalibrationService:
             fig_s_3d_0 = spectators_fit_results_0[label]["fig3d"]
             fig_s_3d_1 = spectators_fit_results_1[label]["fig3d"]
 
-            fig_s_3d = make_subplots(
+            fig_s_3d = viz.make_subplots_figure(
                 rows=1,
                 cols=2,
                 subplot_titles=[

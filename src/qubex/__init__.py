@@ -5,19 +5,15 @@ from __future__ import annotations
 import qxpulse as pulse
 from qxpulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
 
-from . import core
-from .analysis import fitting as fit, visualization as viz
+from . import core, visualization as viz
+from .analysis import fitting as fit
 from .core import Frequency, FrequencyArray, Time, TimeArray, units
 from .experiment import Experiment
 from .logging import set_log_level
 from .measurement import MeasurementClient
-from .style import apply_template
 
 # Set default log level to INFO
 set_log_level("INFO")
-
-# Set default plotly template
-apply_template("qubex")
 
 
 __all__ = [
