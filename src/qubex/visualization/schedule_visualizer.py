@@ -6,23 +6,21 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
+from qxvisualizer.figure_factory import DEFAULT_TEMPLATE, make_figure, show_figure
 
-from .figure_factory import (
-    DEFAULT_TEMPLATE,
-    MEASUREMENT_SCHEDULE_BASE_HEIGHT,
-    MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
-    MEASUREMENT_SCHEDULE_ROW_HEIGHT,
-    SEQUENCER_TIMELINE_BASE_HEIGHT,
-    SEQUENCER_TIMELINE_DEFAULT_WIDTH,
-    SEQUENCER_TIMELINE_LANE_HEIGHT,
-    SEQUENCER_TIMELINE_MIN_HEIGHT,
-    make_figure,
-    show_figure,
-)
 from .style import COLORS
 
 if TYPE_CHECKING:
     from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+
+MEASUREMENT_SCHEDULE_DEFAULT_WIDTH = 900
+MEASUREMENT_SCHEDULE_ROW_HEIGHT = 90
+MEASUREMENT_SCHEDULE_BASE_HEIGHT = 170
+
+SEQUENCER_TIMELINE_DEFAULT_WIDTH = 900
+SEQUENCER_TIMELINE_MIN_HEIGHT = 320
+SEQUENCER_TIMELINE_BASE_HEIGHT = 120
+SEQUENCER_TIMELINE_LANE_HEIGHT = 42
 
 _CAPTURE_FILL_COLOR = "#D9D9D9"
 

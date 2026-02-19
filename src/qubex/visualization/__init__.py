@@ -1,6 +1,6 @@
 """Visualization helpers for analysis and measurement workflows."""
 
-from .figure_factory import (
+from qxvisualizer.figure_factory import (
     DEFAULT_HEIGHT,
     DEFAULT_TEMPLATE,
     DEFAULT_WIDTH,
@@ -9,17 +9,11 @@ from .figure_factory import (
     FIGURE_SIZE_TALL,
     IQ_AXIS_MARGIN_LEFT,
     IQ_AXIS_MARGIN_RIGHT,
-    MEASUREMENT_SCHEDULE_BASE_HEIGHT,
-    MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
-    MEASUREMENT_SCHEDULE_ROW_HEIGHT,
-    SEQUENCER_TIMELINE_BASE_HEIGHT,
-    SEQUENCER_TIMELINE_DEFAULT_WIDTH,
-    SEQUENCER_TIMELINE_LANE_HEIGHT,
-    SEQUENCER_TIMELINE_MIN_HEIGHT,
     FigureSize,
     make_figure,
     show_figure,
 )
+
 from .plotting import (
     make_bloch_vectors_figure,
     make_cdf_figure,
@@ -36,6 +30,13 @@ from .plotting import (
     scatter_iq_data,
 )
 from .schedule_visualizer import (
+    MEASUREMENT_SCHEDULE_BASE_HEIGHT,
+    MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
+    MEASUREMENT_SCHEDULE_ROW_HEIGHT,
+    SEQUENCER_TIMELINE_BASE_HEIGHT,
+    SEQUENCER_TIMELINE_DEFAULT_WIDTH,
+    SEQUENCER_TIMELINE_LANE_HEIGHT,
+    SEQUENCER_TIMELINE_MIN_HEIGHT,
     make_measurement_schedule_figure,
     make_sequencer_timeline_figure,
     plot_measurement_schedule,

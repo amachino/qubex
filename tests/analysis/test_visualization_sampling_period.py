@@ -38,3 +38,19 @@ def test_make_plot_figure_uses_standard_size() -> None:
     figure = viz.make_plot_figure(y=np.array([0.0, 1.0, 2.0]))
     assert figure.layout.width == viz.FIGURE_SIZE_STANDARD.width
     assert figure.layout.height == viz.FIGURE_SIZE_STANDARD.height
+
+
+def test_qxvisualizer_exports_waveform_helper_with_default_sampling_period() -> None:
+    """Given qxvisualizer API, when making waveform figure, then default 2.0 ns is used."""
+    import qxvisualizer as qviz
+
+    figure = qviz.make_waveform_figure(np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]))
+    trace = cast(go.Scatter, figure.data[0])
+    assert np.allclose(np.asarray(trace.x), np.array([0.0, 2.0, 4.0]))
+
+
+def test_qubex_visualization_reuses_qxvisualizer_plotting_helpers() -> None:
+    """Given plotting helper exports, when comparing modules, then qubex reuses qxvisualizer implementation."""
+    import qxvisualizer as qviz
+
+    assert viz.make_plot_figure is qviz.make_plot_figure

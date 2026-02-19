@@ -3380,11 +3380,15 @@ name = "qxvisualizer"
 version = "0.1.0"
 source = { editable = "packages/qxvisualizer" }
 dependencies = [
+    { name = "numpy" },
     { name = "plotly" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "plotly", specifier = ">=5.23" }]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "plotly", specifier = ">=5.23" },
+]
 
 [[package]]
 name = "referencing"

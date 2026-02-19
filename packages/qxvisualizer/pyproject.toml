@@ -11,6 +11,7 @@ description = "Qubex shared visualization tools"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
+    "numpy >= 1.22",
     "plotly >= 5.23",
 ]
 

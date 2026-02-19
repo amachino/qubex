@@ -1,6 +1,6 @@
 # qxvisualizer
 
-`qxvisualizer` is the shared visualization layer extracted from the Qubex project. It provides common Plotly style, figure factory helpers, and visualization constants that higher-level packages like `qxpulse`, `qxsimulator`, and `qubex` build on.
+`qxvisualizer` is the shared visualization layer extracted from the Qubex project. It provides common Plotly style, figure factory helpers, and generic plotting helpers that higher-level packages like `qxpulse`, `qxsimulator`, and `qubex` build on.
 
 ## Relationship to qubex
 
