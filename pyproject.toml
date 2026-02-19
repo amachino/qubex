@@ -39,6 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 backend = [
     "qxdriver-quel @ git+https://github.com/amachino/qxdriver-quel.git@qubex-quelware-v0.10",
+    # "quelware-client @ git+https://github.com/quel-inc/quelware-client.git@main#subdirectory=quelware-client",
 ]
 
 [project.scripts]
@@ -72,6 +73,7 @@ qubex = ["py.typed", "clifford/**/*.json"]
 cache-dir = ".cache/uv"
 
 [tool.uv.sources]
+quelware_client = { workspace = true }
 qxdriver_quel = { workspace = true }
 qxcore = { workspace = true }
 qxpulse = { workspace = true }
@@ -80,6 +82,7 @@ qxsimulator = { workspace = true }
 
 [tool.uv.workspace]
 members = [
+    # "packages/quelware-client/quelware-client",
     "packages/qxcore",
     "packages/qxdriver-quel",
     "packages/qxpulse",
@@ -94,7 +97,7 @@ filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
 include = ["src", "packages", "tests"]
-exclude = ["packages/quelware-client"]
+# exclude = ["packages/quelware-client"]
 typeCheckingMode = "basic"
 
 [tool.ruff]
