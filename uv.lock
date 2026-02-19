@@ -22,6 +22,7 @@ members = [
     "qxpulse",
     "qxschema",
     "qxsimulator",
+    "qxvisualizer",
 ]
 
 [[package]]
@@ -3072,6 +3073,7 @@ dependencies = [
     { name = "qxpulse" },
     { name = "qxschema" },
     { name = "qxsimulator" },
+    { name = "qxvisualizer" },
     { name = "rich" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -3126,6 +3128,7 @@ requires-dist = [
     { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "qxschema", editable = "packages/qxschema" },
     { name = "qxsimulator", editable = "packages/qxsimulator" },
+    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
     { name = "rich", specifier = ">=13.0" },
     { name = "scikit-learn", specifier = ">=1.0" },
     { name = "scipy", specifier = ">=1.0" },
@@ -3281,6 +3284,7 @@ source = { editable = "packages/qxpulse" }
 dependencies = [
     { name = "numpy" },
     { name = "plotly" },
+    { name = "qxvisualizer" },
     { name = "scipy" },
     { name = "typing-extensions" },
 ]
@@ -3289,6 +3293,7 @@ dependencies = [
 requires-dist = [
     { name = "numpy", specifier = ">=1.22" },
     { name = "plotly", specifier = ">=5.23" },
+    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
     { name = "scipy", specifier = ">=1.0" },
     { name = "typing-extensions", specifier = ">=4.5" },
 ]
@@ -3326,6 +3331,7 @@ dependencies = [
     { name = "qctrl-visualizer" },
     { name = "qutip" },
     { name = "qxpulse" },
+    { name = "qxvisualizer" },
     { name = "scipy" },
 ]
 
@@ -3340,8 +3346,20 @@ requires-dist = [
     { name = "qctrl-visualizer", specifier = ">=8.0" },
     { name = "qutip", specifier = ">=5.0" },
     { name = "qxpulse", editable = "packages/qxpulse" },
+    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
     { name = "scipy", specifier = ">=1.0" },
 ]
+
+[[package]]
+name = "qxvisualizer"
+version = "0.1.0"
+source = { editable = "packages/qxvisualizer" }
+dependencies = [
+    { name = "plotly" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "plotly", specifier = ">=5.23" }]
 
 [[package]]
 name = "referencing"

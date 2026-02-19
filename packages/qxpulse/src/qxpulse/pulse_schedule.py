@@ -21,8 +21,9 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
+from qxvisualizer.figure_factory import show_figure
+from qxvisualizer.style import COLORS
 
-from qxpulse.style import COLORS, get_config
 from qxpulse.typing import IQArray
 
 from .blank import Blank
@@ -536,7 +537,7 @@ class PulseSchedule:
                     col=1,
                     bgcolor="rgba(255, 255, 255, 0.8)",
                 )
-        fig.show(config=get_config(filename="pulse_schedule"))
+        show_figure(fig, filename="pulse_schedule")
 
     def is_valid(self) -> bool:
         """Return True if the pulse schedule is valid."""

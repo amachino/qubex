@@ -10,8 +10,7 @@ from typing import Literal, cast
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-
-from qxpulse.style import get_config
+from qxvisualizer.figure_factory import show_figure
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +304,7 @@ class Waveform(ABC):
             yaxis_title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
             template="qubex",
         )
-        fig.show(config=get_config(filename="waveform_xy"))
+        show_figure(fig, filename="waveform_xy")
 
     def plot_polar(
         self,
@@ -369,7 +368,7 @@ class Waveform(ABC):
         fig.update_yaxes(title_text=ylabel_1, row=1, col=1)
         fig.update_yaxes(title_text=ylabel_2, row=2, col=1)
         fig.update_layout(width=600, template="qubex")
-        fig.show(config=get_config(filename="waveform_polar"))
+        show_figure(fig, filename="waveform_polar")
 
     def plot_spectrum(
         self,
@@ -435,4 +434,4 @@ class Waveform(ABC):
             xaxis_range=xlim if xlim is not None else None,
             template="qubex",
         )
-        fig.show(config=get_config(filename="waveform_spectrum"))
+        show_figure(fig, filename="waveform_spectrum")

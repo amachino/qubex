@@ -11,8 +11,8 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
-
-from qxpulse.style import COLORS, get_config
+from qxvisualizer.figure_factory import show_figure
+from qxvisualizer.style import COLORS
 
 from .blank import Blank
 from .phase_shift import PhaseShift, VirtualZ
@@ -432,4 +432,4 @@ class PulseArray(Waveform):
             template="qubex",
         )
 
-        fig.show(config=get_config(filename="pulse_array"))
+        show_figure(fig, filename="pulse_array")

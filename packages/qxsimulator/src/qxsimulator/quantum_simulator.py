@@ -16,7 +16,7 @@ import qctrlvisualizer as qv
 import qutip as qt
 import qutip.typing as qtt
 from qxpulse import PulseSchedule, Waveform
-from qxpulse.style import get_config
+from qxvisualizer.figure_factory import show_figure
 from scipy.interpolate import interp1d
 
 from qxsimulator.visualization import plot_bloch_vectors
@@ -174,7 +174,7 @@ class Control:
             yaxis_title="Amplitude (MHz)",
             template="qubex",
         )
-        fig.show(config=get_config(filename="control_signal"))
+        show_figure(fig, filename="control_signal")
 
 
 @dataclass
@@ -739,7 +739,7 @@ class SimulationResult:
             yaxis_title="Population",
             template="qubex",
         )
-        fig.show(config=get_config(filename="population_dynamics"))
+        show_figure(fig, filename="population_dynamics")
 
 
 class QuantumSimulator:

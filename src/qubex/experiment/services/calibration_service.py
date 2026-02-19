@@ -8,6 +8,7 @@ from typing import Literal, no_type_check
 
 import numpy as np
 import plotly.graph_objects as go
+import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
 from qxpulse import (
     CrossResonance,
@@ -1448,11 +1449,11 @@ class CalibrationService:
                 xlabel="Drive time (ns)",
                 ylabel=f"Control qubit : {control_qubit}",
             )
-            viz.display_bloch_sphere(control_states)
+            qcv.display_bloch_sphere_from_bloch_vectors(control_states)
 
             fit_result["fig"].show()
             fit_result["fig3d"].show()
-            viz.display_bloch_sphere(target_states)
+            qcv.display_bloch_sphere_from_bloch_vectors(target_states)
 
         return Result(
             data={
@@ -2994,16 +2995,18 @@ class CalibrationService:
                 xlabel="Drive time (ns)",
                 ylabel=f"Control qubit : {control_qubit}",
             )
-            viz.display_bloch_sphere(control_states)
+            qcv.display_bloch_sphere_from_bloch_vectors(control_states)
 
             fit_result["fig"].show()
             fit_result["fig3d"].show()
-            viz.display_bloch_sphere(target_states)
+            qcv.display_bloch_sphere_from_bloch_vectors(target_states)
 
             for spectator, fit_spectator in spectators_fit_result.items():
                 fit_spectator["fig"].show()
                 fit_spectator["fig3d"].show()
-                viz.display_bloch_sphere(spectators_states[spectator])
+                qcv.display_bloch_sphere_from_bloch_vectors(
+                    spectators_states[spectator]
+                )
 
         return Result(
             data={

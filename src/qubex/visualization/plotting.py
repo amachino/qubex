@@ -11,7 +11,6 @@ from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objs as go
-import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
 
 from qubex.typing import IQArray
@@ -31,11 +30,6 @@ from .style import COLORS, get_colors
 logger = logging.getLogger(__name__)
 
 DEFAULT_IMAGES_DIR = "./images"
-
-
-def display_bloch_sphere(bloch_vectors: NDArray[np.float64]) -> None:
-    """Display Bloch sphere visualization for the given vectors."""
-    qcv.display_bloch_sphere_from_bloch_vectors(bloch_vectors)
 
 
 def save_figure_image(

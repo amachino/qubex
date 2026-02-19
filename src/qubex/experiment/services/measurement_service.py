@@ -12,6 +12,7 @@ from typing import Literal
 
 import numpy as np
 import plotly.graph_objects as go
+import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
 from qxpulse import (
     Blank,
@@ -2095,7 +2096,7 @@ class MeasurementService:
         if plot:
             for target, states in result.items():
                 print(f"State evolution : {target}")
-                viz.display_bloch_sphere(states)
+                qcv.display_bloch_sphere_from_bloch_vectors(states)
 
         return Result(data=result)
 

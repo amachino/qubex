@@ -6,14 +6,14 @@ from typing import Literal
 
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-from qxpulse.style import (
-    COLORS,
-    HEIGHT as DEFAULT_HEIGHT,
-    WIDTH as DEFAULT_WIDTH,
-    get_config,
+from qxvisualizer.figure_factory import (
+    DEFAULT_HEIGHT,
+    DEFAULT_TEMPLATE,
+    DEFAULT_WIDTH,
+    make_figure,
+    show_figure,
 )
-
-DEFAULT_TEMPLATE = "qubex"
+from qxvisualizer.style import COLORS
 
 
 def make_bloch_vectors_figure(
@@ -29,7 +29,11 @@ def make_bloch_vectors_figure(
     template: str = DEFAULT_TEMPLATE,
 ) -> go.Figure:
     """Create a Bloch-vector timeline figure."""
-    fig = go.Figure()
+    fig = make_figure(
+        template=template,
+        width=width,
+        height=height,
+    )
     fig.add_trace(
         go.Scatter(
             x=times,
@@ -62,22 +66,8 @@ def make_bloch_vectors_figure(
         xaxis_title=xlabel,
         yaxis_title=ylabel,
         yaxis=dict(range=[-1.1, 1.1]),
-        width=width,
-        height=height,
-        template=template,
     )
     return fig
-
-
-def show_figure(
-    figure: go.Figure,
-    *,
-    filename: str,
-    width: int | None = None,
-    height: int | None = None,
-) -> None:
-    """Show a Plotly figure with qxsimulator export settings."""
-    figure.show(config=get_config(filename=filename, width=width, height=height))
 
 
 def plot_bloch_vectors(
@@ -107,6 +97,4 @@ def plot_bloch_vectors(
     show_figure(
         figure,
         filename="bloch_vectors",
-        width=width,
-        height=height,
     )

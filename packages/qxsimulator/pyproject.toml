@@ -11,15 +11,16 @@ description = "Qubex quantum system simulation utilities"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
+    "ipython >= 7.0",
     "jax >= 0.4",
     "networkx >= 2.7",
     "numpy >= 1.22",
     "optax >= 0.2",
-    "ipython >= 7.0",
     "plotly >= 5.23",
     "qctrl-visualizer >= 8.0",
-    "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
     "qutip >= 5.0",
+    "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
+    "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer",
     "scipy >= 1.0",
 ]
 

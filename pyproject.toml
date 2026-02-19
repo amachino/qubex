@@ -28,6 +28,7 @@ dependencies = [
     "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
     "qxschema @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxschema",
     "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator",
+    "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer",
     "rich >= 13.0",
     "scikit-learn >= 1.0",
     "scipy >= 1.0",
@@ -79,6 +80,7 @@ qxcore = { workspace = true }
 qxpulse = { workspace = true }
 qxschema = { workspace = true }
 qxsimulator = { workspace = true }
+qxvisualizer = { workspace = true }
 
 [tool.uv.workspace]
 members = [
@@ -88,6 +90,7 @@ members = [
     "packages/qxpulse",
     "packages/qxschema",
     "packages/qxsimulator",
+    "packages/qxvisualizer",
 ]
 
 [tool.pytest.ini_options]

@@ -1,8 +1,8 @@
-"""Visualization style exports backed by qxpulse style definitions."""
+"""Visualization style exports backed by qxvisualizer style definitions."""
 
 from __future__ import annotations
 
-from qxpulse.style import (
+from qxvisualizer.style import (
     AXIS_TICKFONT_SIZE,
     AXIS_TITLEFONT_SIZE,
     COLORS,
