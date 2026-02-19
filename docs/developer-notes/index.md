@@ -15,5 +15,6 @@ Manage development notes and operational documents.
 - [QuEL-3 Wiring And Binding Policy](quel3-wiring-binding-policy.md)
 - [System Configuration Schema](system-configuration-schema-draft.md)
 - [Configuration Module Migration Plan](configuration-module-migration.md)
+- [Analysis Package Layering Plan](analysis-package-layering-plan.md)
 - [Improvement Backlog](improvement-backlog.md)
 - [Hardware Validation Template](hardware-validation-template.md)
