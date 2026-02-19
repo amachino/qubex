@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import qxpulse.blank as blank_module
 from qxpulse import Blank, Pulse
 
 import qubex as qx
@@ -27,6 +28,28 @@ def test_init():
     assert pulse.length == 5
     assert pulse.duration == 5 * dt
     assert (pulse.values == [0, 0, 0, 0, 0]).all()
+
+
+def test_values_are_sampled_lazily(monkeypatch):
+    """Blank should delay sampling until values are requested."""
+    calls = {"count": 0}
+    original_zeros = blank_module.np.zeros
+
+    def counting_zeros(*args, **kwargs):
+        calls["count"] += 1
+        return original_zeros(*args, **kwargs)
+
+    monkeypatch.setattr(blank_module.np, "zeros", counting_zeros)
+
+    pulse = Blank(duration=5 * dt)
+    assert pulse.length == 5
+    assert calls["count"] == 0
+
+    _ = pulse.values
+    assert calls["count"] == 1
+
+    _ = pulse.values
+    assert calls["count"] == 1
 
 
 def test_invalid_duration():

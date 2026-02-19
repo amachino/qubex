@@ -6,6 +6,7 @@ from typing import Final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import override
 
 from qxpulse.pulse import Pulse
 
@@ -43,23 +44,29 @@ class Sintegral(Pulse):
         beta: float | None = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
 
         self.amplitude: Final = amplitude
         self.power: Final = power
         self.beta: Final = beta
+        self._finalize_initialization()
 
-        if duration == 0:
-            values = np.array([], dtype=np.complex128)
-        else:
-            values = self.func(
-                t=self._sampling_points(duration),
-                duration=duration,
-                amplitude=amplitude,
-                beta=beta,
-                power=power,
-            )
-        self._values = np.array(values, dtype=np.complex128)
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the sine-integral pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return Sintegral.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            beta=self.beta,
+            power=self.power,
+        )
 
     @staticmethod
     def func(
@@ -253,22 +260,29 @@ class MultiDerivativeSintegral(Pulse):
         power: int = 2,
         **kwargs,
     ):
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
+
         self.amplitude: Final = amplitude
         self.power: Final = power
         self.betas: Final = betas
+        self._finalize_initialization()
 
-        if duration == 0:
-            values = np.array([], dtype=np.complex128)
-        else:
-            values = self.func(
-                t=self._sampling_points(duration),
-                duration=duration,
-                amplitude=amplitude,
-                power=power,
-                betas=betas,
-            )
-
-        super().__init__(values, **kwargs)
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the multi-derivative sine-integral pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return MultiDerivativeSintegral.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            power=self.power,
+            betas=self.betas,
+        )
 
     @staticmethod
     def func(

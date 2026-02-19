@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+from typing_extensions import override
 
 from .pulse import Pulse
 
@@ -26,10 +27,13 @@ class Blank(Pulse):
         duration: float,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
+        self._finalize_initialization()
 
-        N = self._number_of_samples(duration)
-        real = np.zeros(N, dtype=np.float64)
-        imag = 0
-        values = real + 1j * imag
-        self._values = np.array(values, dtype=np.complex128)
+    @override
+    def _sample_values(self) -> np.ndarray:
+        """Return sampled values for the blank pulse."""
+        return np.zeros(self.length, dtype=np.complex128)

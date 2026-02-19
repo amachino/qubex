@@ -6,6 +6,7 @@ from typing import Final, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import override
 
 from qxpulse.pulse import Pulse
 
@@ -67,7 +68,10 @@ class Squad(Pulse):
         beta_sum: float = 5.0,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
 
         self.amplitude: Final = amplitude
         self.delta: Final = delta
@@ -76,23 +80,25 @@ class Squad(Pulse):
         self.window: Final = window
         self.beta_mode: Final = beta_mode
         self.beta_sum: Final = beta_sum
+        self._finalize_initialization()
 
-        if duration == 0:
-            values = np.array([], dtype=np.complex128)
-        else:
-            t = self._sampling_points(duration)
-            values = self.func(
-                t=t,
-                duration=duration,
-                amplitude=amplitude,
-                delta=delta,
-                tau=tau,
-                factor=factor,
-                window=window,
-                beta_mode=beta_mode,
-                beta_sum=beta_sum,
-            )
-        self._values = np.array(values, dtype=np.complex128)
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the SQUAD pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return Squad.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            delta=self.delta,
+            tau=self.tau,
+            factor=self.factor,
+            window=self.window,
+            beta_mode=self.beta_mode,
+            beta_sum=self.beta_sum,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

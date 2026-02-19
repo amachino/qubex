@@ -6,6 +6,7 @@ from typing import Final, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import override
 
 from qxpulse.pulse import Pulse
 
@@ -59,7 +60,10 @@ class FlatTop(Pulse):
         correction_factor: float | None = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
 
         self.amplitude: Final = amplitude
         self.tau: Final = tau
@@ -68,23 +72,29 @@ class FlatTop(Pulse):
         self.type: Final = type
         self.correction_type: Final = correction_type
         self.correction_factor: Final = correction_factor
+        self._shape_kwargs: Final = dict(kwargs)
+        if duration < 2 * tau:
+            raise ValueError("duration must be greater than `2 * tau`.")
+        self._finalize_initialization()
 
-        if duration == 0:
-            values = np.array([], dtype=np.complex128)
-        else:
-            values = self.func(
-                t=self._sampling_points(duration),
-                duration=duration,
-                amplitude=amplitude,
-                tau=tau,
-                beta=beta,
-                delta=delta,
-                type=type,
-                correction_type=correction_type,
-                correction_factor=correction_factor,
-                **kwargs,
-            )
-        self._values = np.array(values, dtype=np.complex128)
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the flat-top pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return FlatTop.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            tau=self.tau,
+            beta=self.beta,
+            delta=self.delta,
+            type=self.type,
+            correction_type=self.correction_type,
+            correction_factor=self.correction_factor,
+            **self._shape_kwargs,
+        )
 
     @staticmethod
     def func(
@@ -292,24 +302,33 @@ class MultiDerivativeFlatTop(Pulse):
         power: int = 2,
         **kwargs,
     ):
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
+
         self.amplitude: Final = amplitude
         self.tau: Final = tau
         self.betas: Final = betas
         self.power: Final = power
+        if duration < 2 * tau:
+            raise ValueError("duration must be greater than `2 * tau`.")
+        self._finalize_initialization()
 
-        if duration == 0:
-            values = np.array([], dtype=np.complex128)
-        else:
-            values = self.func(
-                t=self._sampling_points(duration),
-                duration=duration,
-                amplitude=amplitude,
-                tau=tau,
-                betas=betas,
-                power=power,
-            )
-
-        super().__init__(values, **kwargs)
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the multi-derivative flat-top pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return MultiDerivativeFlatTop.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            tau=self.tau,
+            betas=self.betas,
+            power=self.power,
+        )
 
     @staticmethod
     def func(

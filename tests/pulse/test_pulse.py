@@ -14,6 +14,98 @@ def test_inheritance():
     assert issubclass(Pulse, Waveform)
 
 
+def test_pulse_lazily_materializes_values():
+    """Pulse should materialize sampled values lazily on first access only."""
+
+    class _ConstantPulse(Pulse):
+        def __init__(self, *, duration: float):
+            self.sample_call_count = 0
+            super().__init__(duration=duration)
+
+        def _sample_values(self):
+            self.sample_call_count += 1
+            return np.ones(self.length, dtype=np.complex128)
+
+    pulse = _ConstantPulse(duration=3 * dt)
+    assert pulse.length == 3
+    assert pulse.sample_call_count == 0
+
+    assert pulse.values == pytest.approx([1, 1, 1])
+    assert pulse.sample_call_count == 1
+
+    assert pulse.values == pytest.approx([1, 1, 1])
+    assert pulse.sample_call_count == 1
+
+
+def test_pulse_materializes_values_on_init_when_lazy_is_false():
+    """Pulse should materialize sampled values at init when lazy is False."""
+
+    class _ConstantPulse(Pulse):
+        def __init__(self, *, duration: float, lazy: bool):
+            self.sample_call_count = 0
+            super().__init__(duration=duration, lazy=lazy)
+            self._finalize_initialization()
+
+        def _sample_values(self):
+            self.sample_call_count += 1
+            return np.ones(self.length, dtype=np.complex128)
+
+    pulse = _ConstantPulse(duration=3 * dt, lazy=False)
+    assert pulse.length == 3
+    assert pulse.sample_call_count == 1
+
+    assert pulse.values == pytest.approx([1, 1, 1])
+    assert pulse.sample_call_count == 1
+
+
+def test_pulse_with_values_ignores_lazy_flag():
+    """Pulse should not call sampler when explicit values are provided."""
+
+    class _ConstantPulse(Pulse):
+        def __init__(self, *, values, lazy: bool):
+            self.sample_call_count = 0
+            super().__init__(values=values, lazy=lazy)
+
+        def _sample_values(self):
+            self.sample_call_count += 1
+            return np.ones(self.length, dtype=np.complex128)
+
+    pulse = _ConstantPulse(values=[1, 2, 3], lazy=False)
+    assert pulse.length == 3
+    assert pulse.sample_call_count == 0
+    assert pulse.values == pytest.approx([1, 2, 3])
+
+
+def test_pulse_samples_on_values_access_when_values_is_none(monkeypatch):
+    """Pulse should sample on values access when values is None."""
+    calls = {"count": 0}
+    original_sample_values = Pulse._sample_values  # noqa: SLF001
+
+    def counting_sample_values(self):
+        calls["count"] += 1
+        return original_sample_values(self)
+
+    monkeypatch.setattr(Pulse, "_sample_values", counting_sample_values)
+
+    pulse = Pulse(duration=3 * dt, lazy=False)
+    assert pulse.length == 3
+    assert calls["count"] == 0
+
+    _ = pulse.values
+    assert calls["count"] == 1
+
+
+def test_pulse_subclass_without_sampler_override_uses_zero_sampler():
+    """Pulse subclass should use the default zero sampler when not overridden."""
+
+    class _NoSamplerPulse(Pulse):
+        def __init__(self, *, duration: float):
+            super().__init__(duration=duration)
+
+    pulse = _NoSamplerPulse(duration=3 * dt)
+    assert pulse.values == pytest.approx([0, 0, 0])
+
+
 def test_empty_init():
     """Pulse should be initialized with no parameters."""
     pulse = Pulse()

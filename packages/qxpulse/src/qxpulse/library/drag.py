@@ -6,6 +6,7 @@ from typing import Final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import override
 
 from qxpulse.pulse import Pulse
 
@@ -49,23 +50,29 @@ class Drag(Pulse):
         type: RampType | None = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
 
         self.amplitude: Final = amplitude
         self.beta: Final = beta
         self.type: Final = type
+        self._finalize_initialization()
 
-        if duration == 0:
-            values = np.array([], dtype=np.complex128)
-        else:
-            values = self.func(
-                t=self._sampling_points(duration),
-                duration=duration,
-                amplitude=amplitude,
-                beta=beta,
-                type=type,
-            )
-        self._values = np.array(values, dtype=np.complex128)
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the DRAG pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return Drag.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            beta=self.beta,
+            type=self.type,
+        )
 
     @staticmethod
     def func(

@@ -6,6 +6,7 @@ from typing import Final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import override
 
 from qxpulse.pulse import Pulse
 
@@ -46,25 +47,35 @@ class Gaussian(Pulse):
         beta: float | None = None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
 
         self.amplitude: Final = amplitude
         self.sigma: Final = sigma
         self.zero_bounds: Final = zero_bounds
         self.beta: Final = beta
 
-        if duration == 0:
-            values = np.array([], dtype=np.complex128)
-        else:
-            values = self.func(
-                t=self._sampling_points(duration),
-                duration=duration,
-                amplitude=amplitude,
-                sigma=sigma,
-                zero_bounds=zero_bounds,
-                beta=beta,
-            )
-        self._values = np.array(values, dtype=np.complex128)
+        if self.length > 0 and sigma is not None and sigma <= 0:
+            raise ValueError("Sigma must be greater than zero.")
+
+        self._finalize_initialization()
+
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the Gaussian pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return Gaussian.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            sigma=self.sigma,
+            zero_bounds=self.zero_bounds,
+            beta=self.beta,
+        )
 
     @staticmethod
     def func(
