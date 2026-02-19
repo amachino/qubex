@@ -217,6 +217,3 @@ __marimo__/
 
 # Project-specific temporary workspace (ephemeral artifacts, not for commit)
 tmp/
-
-# Local checkout (do not track as submodule/content in this repo)
-packages/quelware-client/
