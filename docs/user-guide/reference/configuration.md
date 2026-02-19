@@ -69,6 +69,7 @@ When `SystemManager.load(..., backend_kind=...)` omits `backend_kind`, Qubex res
   - endpoint: `localhost`
   - port: `50051`
   - trigger wait: `1000000`
+- QuEL-3 schedule default sampling period is `0.4 ns` (2.5 GS/s).
   (`quel3:` section in YAML remains reserved for future runtime binding.)
 
 ```yaml

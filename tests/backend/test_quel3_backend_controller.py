@@ -154,6 +154,7 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
 
     controller = Quel3BackendController()
 
+    assert pytest.approx(0.4) == controller.DEFAULT_SAMPLING_PERIOD
     assert controller._quelware_endpoint == "localhost"  # noqa: SLF001
     assert controller._quelware_port == 50051  # noqa: SLF001
     assert controller._trigger_wait == 1_000_000  # noqa: SLF001

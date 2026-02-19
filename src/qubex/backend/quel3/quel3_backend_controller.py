@@ -13,7 +13,9 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
-from qubex.backend.quel1 import SAMPLING_PERIOD, Quel1BackendController
+from qubex.backend.quel1 import Quel1BackendController
+
+QUEL3_DEFAULT_SAMPLING_PERIOD_NS = 0.4
 
 
 class Quel3BackendController(Quel1BackendController):
@@ -30,7 +32,7 @@ class Quel3BackendController(Quel1BackendController):
     MEASUREMENT_BACKEND_KIND: Literal["quel3"] = "quel3"
     MEASUREMENT_CONSTRAINT_MODE: Literal["relaxed"] = "relaxed"
     MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = 4
-    DEFAULT_SAMPLING_PERIOD: float = float(SAMPLING_PERIOD)
+    DEFAULT_SAMPLING_PERIOD: float = QUEL3_DEFAULT_SAMPLING_PERIOD_NS
 
     def __init__(
         self,
