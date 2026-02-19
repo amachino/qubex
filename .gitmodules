@@ -2,3 +2,6 @@
 	path = packages/qxdriver-quel
 	url = https://github.com/amachino/qxdriver-quel.git
 	branch = qubex-quelware-v0.10
+[submodule "packages/quelware-client"]
+	path = packages/quelware-client
+	url = https://github.com/quel-inc/quelware-client.git
