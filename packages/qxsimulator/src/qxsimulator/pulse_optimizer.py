@@ -17,6 +17,7 @@ from IPython.display import display
 from jax import Array
 from jax.scipy.linalg import expm
 from numpy.typing import NDArray
+from qxpulse.style import get_config
 
 from .quantum_system import QuantumSystem
 
@@ -68,8 +69,9 @@ class OptimizationResult:
                 title=f"Waveform : {target}",
                 xaxis_title="Time (ns)",
                 yaxis_title="Amplitude (MHz)",
+                template="qubex",
             )
-            fig.show()
+            fig.show(config=get_config(filename=f"waveform_{target}"))
 
     def plot_history(self) -> None:
         """Plot optimization loss history."""
@@ -87,8 +89,9 @@ class OptimizationResult:
             yaxis=dict(
                 type="log",
             ),
+            template="qubex",
         )
-        fig.show()
+        fig.show(config=get_config(filename="optimization_history"))
 
 
 class PulseOptimizer:

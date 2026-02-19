@@ -6,12 +6,17 @@ from typing import Literal
 
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-from qxpulse.style import COLORS
+from qxpulse.style import (
+    COLORS,
+    HEIGHT as DEFAULT_HEIGHT,
+    WIDTH as DEFAULT_WIDTH,
+    get_config,
+)
 
-DEFAULT_TEMPLATE = "plotly"
+DEFAULT_TEMPLATE = "qubex"
 
 
-def plot_bloch_vectors(
+def make_bloch_vectors_figure(
     times: NDArray,
     bloch_vectors: NDArray,
     *,
@@ -19,12 +24,11 @@ def plot_bloch_vectors(
     title: str = "State evolution",
     xlabel: str = "Time (ns)",
     ylabel: str = "Expectation value",
-    width: int = 600,
-    height: int = 300,
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
     template: str = DEFAULT_TEMPLATE,
-    return_figure: bool = False,
-) -> go.Figure | None:
-    """Plot Bloch vector trajectories over time."""
+) -> go.Figure:
+    """Create a Bloch-vector timeline figure."""
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -62,9 +66,47 @@ def plot_bloch_vectors(
         height=height,
         template=template,
     )
+    return fig
 
-    if return_figure:
-        return fig
 
-    fig.show()
-    return None
+def show_figure(
+    figure: go.Figure,
+    *,
+    filename: str,
+    width: int | None = None,
+    height: int | None = None,
+) -> None:
+    """Show a Plotly figure with qxsimulator export settings."""
+    figure.show(config=get_config(filename=filename, width=width, height=height))
+
+
+def plot_bloch_vectors(
+    times: NDArray,
+    bloch_vectors: NDArray,
+    *,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
+    title: str = "State evolution",
+    xlabel: str = "Time (ns)",
+    ylabel: str = "Expectation value",
+    width: int = DEFAULT_WIDTH,
+    height: int = DEFAULT_HEIGHT,
+    template: str = DEFAULT_TEMPLATE,
+) -> None:
+    """Plot Bloch vector trajectories over time."""
+    figure = make_bloch_vectors_figure(
+        times=times,
+        bloch_vectors=bloch_vectors,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        width=width,
+        height=height,
+        template=template,
+    )
+    show_figure(
+        figure,
+        filename="bloch_vectors",
+        width=width,
+        height=height,
+    )
