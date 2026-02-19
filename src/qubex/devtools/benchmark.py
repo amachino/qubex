@@ -12,6 +12,8 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from numpy.typing import NDArray
 
+import qubex.visualization as viz
+
 
 def benchmark(
     func: Callable[[Any], Any],
@@ -76,8 +78,9 @@ def benchmark(
     times = np.asarray(times)
     times_stdev = np.asarray(times_stdev)
 
-    fig = go.Figure(
-        data=go.Scatter(
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
             x=params,
             y=times,
             error_y=dict(
@@ -86,7 +89,7 @@ def benchmark(
                 visible=True,
             ),
             mode="lines+markers",
-        ),
+        )
     )
     fig.update_layout(
         title=title,

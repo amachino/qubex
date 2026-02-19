@@ -11,8 +11,8 @@ import qubex.visualization as viz
 from qubex.experiment import Experiment
 from qubex.experiment.models import Result
 from qubex.pulse import CrossResonance, PulseSchedule, Waveform
-from qubex.style import COLORS
 from qubex.typing import TargetMap
+from qubex.visualization import COLORS
 
 
 def rzx(

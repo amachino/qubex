@@ -1,7 +1,5 @@
 """Visualization helpers for analysis and measurement workflows."""
 
-from qubex.style import COLORS, get_colors, get_config
-
 from .figure_factory import (
     DEFAULT_HEIGHT,
     DEFAULT_TEMPLATE,
@@ -45,6 +43,7 @@ from .schedule_visualizer import (
     plot_measurement_schedule,
     plot_sequencer_timeline,
 )
+from .style import COLORS, get_colors, get_config
 
 __all__ = [
     "COLORS",

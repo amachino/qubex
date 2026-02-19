@@ -36,7 +36,7 @@ from qubex.pulse import (
     PulseSchedule,
     VirtualZ,
 )
-from qubex.style import COLORS
+from qubex.visualization import COLORS
 
 
 def create_entangle_sequence(

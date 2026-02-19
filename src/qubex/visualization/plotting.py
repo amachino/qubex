@@ -14,7 +14,6 @@ import plotly.graph_objs as go
 import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
 
-from qubex.style import COLORS, get_colors
 from qubex.typing import IQArray
 
 from .figure_factory import (
@@ -27,6 +26,7 @@ from .figure_factory import (
     make_figure,
     show_figure,
 )
+from .style import COLORS, get_colors
 
 logger = logging.getLogger(__name__)
 

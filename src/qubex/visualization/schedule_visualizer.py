@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import plotly.graph_objects as go
 
-from qubex.style import COLORS
-
 from .figure_factory import (
     DEFAULT_TEMPLATE,
     MEASUREMENT_SCHEDULE_BASE_HEIGHT,
@@ -22,6 +20,7 @@ from .figure_factory import (
     make_subplots_figure,
     show_figure,
 )
+from .style import COLORS
 
 if TYPE_CHECKING:
     from qubex.measurement.models.measurement_schedule import MeasurementSchedule

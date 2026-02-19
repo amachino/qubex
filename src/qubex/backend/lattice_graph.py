@@ -12,6 +12,7 @@ import networkx as nx
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 
+import qubex.visualization as viz
 from qubex.constants import MUX_SIZE, PREFIX_MUX, PREFIX_QUBIT, PREFIX_RESONATOR
 from qubex.visualization import save_figure_image
 
@@ -836,10 +837,9 @@ class LatticeGraph:
             )
             data += qubit_node_overlay_trace
 
-        fig = go.Figure(
-            data=data,
-            layout=layout,
-        )
+        fig = viz.make_figure()
+        fig.add_traces(data)
+        fig.update_layout(layout)
         fig.show(
             config={
                 "toImageButtonOptions": {
@@ -1079,7 +1079,8 @@ class LatticeGraph:
         text_matrix = self.create_data_matrix(texts) if texts else None
         hovertext_matrix = self.create_data_matrix(hovertexts) if hovertexts else None
 
-        fig = go.Figure(
+        fig = viz.make_figure()
+        fig.add_trace(
             go.Heatmap(
                 z=value_matrix,
                 text=text_matrix,

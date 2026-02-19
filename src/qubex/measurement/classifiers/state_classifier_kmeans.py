@@ -11,7 +11,8 @@ from numpy.typing import NDArray
 from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix
 
-from qubex.style import get_colors, get_config
+import qubex.visualization as viz
+from qubex.visualization import get_colors, get_config
 
 from .state_classifier import StateClassifier
 
@@ -321,7 +322,7 @@ class StateClassifierKMeans(StateClassifier):
         axis_range = [-max_val * 1.1, max_val * 1.1]
         dtick = max_val / 2
 
-        fig = go.Figure()
+        fig = viz.make_figure()
         for idx, label in enumerate(unique_labels):
             color = colors[idx % len(colors)]
             mask = labels == label

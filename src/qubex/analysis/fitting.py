@@ -11,7 +11,8 @@ from typing import Any, Literal
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
-from plotly.subplots import make_subplots
+
+from qubex import visualization as viz
 
 COLORS = [
     "#0C5DA5",
@@ -399,7 +400,7 @@ def fit_linear(
     else:
         y_fine = func_linear_with_intercept(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -523,7 +524,7 @@ def fit_polynomial(
         logger.warning(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
         root = np.nan
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -699,7 +700,7 @@ def fit_cosine(
         func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
     )
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -875,7 +876,7 @@ def fit_delayed_cosine(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_delayed_cos(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -1035,7 +1036,7 @@ def fit_exp_decay(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine * 1e-3,
@@ -1187,7 +1188,7 @@ def fit_lorentzian(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_lorentzian(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -1356,7 +1357,7 @@ def fit_sqrt_lorentzian(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_sqrt_lorentzian(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -1573,7 +1574,7 @@ def fit_rabi(
         func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
     )
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -1713,7 +1714,7 @@ def fit_detuned_rabi(
         (rabi_frequencies - func(control_frequencies, *popt)) ** 2
     ) / np.sum((rabi_frequencies - np.mean(rabi_frequencies)) ** 2)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -1880,7 +1881,7 @@ def fit_ramsey(
     x_fine = np.linspace(np.min(times), np.max(times), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine * 1e-3,
@@ -2038,7 +2039,7 @@ def fit_rb(
 
     r2 = 1 - np.sum((y - func_rb(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -2185,7 +2186,7 @@ def plot_irb(
     y_rb_fine = func_rb(x_fine, A_rb, p_rb, C_rb)
     y_irb_fine = func_rb(x_fine, A_irb, p_irb, C_irb)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -2341,7 +2342,7 @@ def fit_ampl_calib_data(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = cos_func(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -2475,7 +2476,7 @@ def fit_reflection_coefficient(
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonator_reflection(x_fine, *fitted_params)
 
-    fig = make_subplots(
+    fig = viz.make_subplots_figure(
         rows=2,
         cols=2,
         column_widths=[0.5, 0.5],
@@ -2729,7 +2730,7 @@ def fit_reflection_coefficient_double(
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_double_resonator_reflection(x_fine, *fitted_params)
 
-    fig = make_subplots(
+    fig = viz.make_subplots_figure(
         rows=2,
         cols=2,
         column_widths=[0.5, 0.5],
@@ -3074,7 +3075,7 @@ def fit_rotation(
     times_fine = np.linspace(np.min(times), np.max(times), 1000)
     fit = rotate(times_fine, *fitted_params)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=times,
@@ -3144,7 +3145,7 @@ def fit_rotation(
         yaxis=dict(range=[-1.1, 1.1]),
     )
 
-    fig3d = go.Figure()
+    fig3d = viz.make_figure()
     # data
     fig3d.add_trace(
         go.Scatter3d(

@@ -51,8 +51,8 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
-from qubex.style import COLORS
 from qubex.typing import TargetMap
+from qubex.visualization import COLORS
 
 from .calibration_service import CalibrationService
 from .measurement_service import MeasurementService

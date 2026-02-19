@@ -11,9 +11,8 @@ from typing import Any
 import numpy as np
 import plotly.graph_objs as go
 from numpy.typing import NDArray
-from plotly.subplots import make_subplots
 
-from qubex.visualization import save_figure_image
+import qubex.visualization as viz
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +140,7 @@ def plot_ghz_state_tomography(
     n_qubits = len(qubits)
     dim = 2**n_qubits
 
-    fig = make_subplots(
+    fig = viz.make_subplots_figure(
         rows=1,
         cols=2,
         subplot_titles=("Re", "Im"),
@@ -215,7 +214,7 @@ def plot_ghz_state_tomography(
     if save_image:
         if file_name is None:
             file_name = f"ghz_state_tomography_{'-'.join(qubits)}"
-        save_figure_image(fig, file_name, width=width, height=height)
+        viz.save_figure_image(fig, file_name, width=width, height=height)
 
     return {
         "density_matrix": rho,

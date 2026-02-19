@@ -13,8 +13,8 @@ from numpy.typing import NDArray
 
 import qubex.visualization as viz
 from qubex.analysis import FitResult, fitting, util
-from qubex.style import get_config
 from qubex.typing import TargetMap
+from qubex.visualization import get_config
 
 from .experiment_record import ExperimentRecord
 from .rabi_param import RabiParam

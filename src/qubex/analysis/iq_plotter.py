@@ -7,8 +7,8 @@ import plotly.graph_objs as go
 from IPython.display import display
 from ipywidgets import Output
 
-from qubex.style import get_colors, get_config
 from qubex.typing import IQArray, TargetMap
+from qubex.visualization import get_colors, get_config
 
 
 class IQPlotter:
@@ -25,6 +25,7 @@ class IQPlotter:
         self._output = Output()
         self._widget = go.FigureWidget()
         self._widget.update_layout(
+            template="qubex",
             title="I/Q plane",
             xaxis_title="In-phase (arb. units)",
             yaxis_title="Quadrature (arb. units)",
@@ -148,7 +149,9 @@ class IQPlotter:
 
     def to_figure(self) -> go.Figure:
         """Return a detached Plotly figure copied from the current widget state."""
-        return go.Figure(self._widget)
+        fig = go.Figure(self._widget)
+        fig.update_layout(template="qubex")
+        return fig
 
 
 class IQPlotterPolar:
@@ -159,6 +162,7 @@ class IQPlotterPolar:
         self._num_scatters: int | None = None
         self._widget = go.FigureWidget()
         self._widget.update_layout(
+            template="qubex",
             title="I/Q plane",
             width=500,
             height=400,

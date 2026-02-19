@@ -8,7 +8,7 @@ from typing import Any
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from qubex.style import (
+from .style import (
     HEIGHT as STYLE_DEFAULT_HEIGHT,
     WIDTH as STYLE_DEFAULT_WIDTH,
     get_config,
