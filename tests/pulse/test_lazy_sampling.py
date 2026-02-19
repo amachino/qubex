@@ -7,7 +7,6 @@ from qxpulse.library.flat_top import MultiDerivativeFlatTop
 from qxpulse.library.multi_derivative import MultiDerivative
 from qxpulse.library.sintegral import MultiDerivativeSintegral
 from qxpulse.library.squad import Squad
-from qxpulse.library.vert_ramp import VertRamp
 
 import qubex as qx
 
@@ -25,13 +24,6 @@ PULSE_CASES = [
     (Rect, {"amplitude": 1.0}),
     (Sintegral, {"amplitude": 1.0}),
     (Squad, {"amplitude": 1.0, "delta": 1.0, "tau": 2 * dt}),
-    pytest.param(
-        VertRamp,
-        {"amplitude": 1.0},
-        marks=pytest.mark.filterwarnings(
-            "ignore:The 'VertRamp' class is deprecated and will be removed in a future release."
-        ),
-    ),
 ]
 
 

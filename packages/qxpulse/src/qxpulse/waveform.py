@@ -11,7 +11,6 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 from plotly.subplots import make_subplots
-from typing_extensions import deprecated
 
 logger = logging.getLogger(__name__)
 
@@ -381,43 +380,6 @@ class Waveform(ABC):
                     "scale": 3,
                 },
             }
-        )
-
-    @deprecated(
-        "plot_fft is deprecated and will be removed in a future version. "
-        "Use plot_spectrum instead. Note that `frequency_sign` is opposite to that of `plot_spectrum`.",
-    )
-    def plot_fft(
-        self,
-        *,
-        title: str | None = None,
-        xlabel: str = "Frequency (MHz)",
-        ylabel: str = "Amplitude (arb. units)",
-        zero_padding_factor: int = 100,
-    ) -> None:
-        """
-        Plot the FFT of the waveform.
-
-        Parameters
-        ----------
-        title : str, optional
-            Title of the plot.
-        xlabel : str, optional
-            Label of the x-axis.
-        ylabel : str, optional
-            Label of the y-axis.
-
-        Note
-        ----
-        This method is deprecated. Use `plot_spectrum` instead.
-        Note that `frequency_sign` is opposite to that of `plot_spectrum`.
-        """
-        self.plot_spectrum(
-            title=title,
-            xlabel=xlabel,
-            ylabel=ylabel,
-            zero_padding_factor=zero_padding_factor,
-            frequency_sign="positive",
         )
 
     def plot_spectrum(

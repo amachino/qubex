@@ -11,7 +11,6 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
-from typing_extensions import deprecated
 
 from qxpulse.style import COLORS
 
@@ -291,11 +290,6 @@ class PulseArray(Waveform):
         new_array = copy.deepcopy(self)
         new_array._elements.append(obj)
         return new_array
-
-    @deprecated("The `reversed` method is deprecated, use `inverted` instead.")
-    def reversed(self) -> PulseArray:
-        """Return a copy of the pulse array with the time inverted."""
-        return self.inverted()
 
     def inverted(self) -> PulseArray:
         """Return a copy of the pulse array with the time inverted."""

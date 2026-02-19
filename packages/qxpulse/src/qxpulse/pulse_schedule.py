@@ -22,7 +22,6 @@ import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from typing_extensions import deprecated
 
 from qxpulse.style import COLORS
 from qxpulse.typing import IQArray
@@ -366,13 +365,6 @@ class PulseSchedule:
             new_sched._channels[label].frequency = channel.frequency
             new_sched._channels[label].target = channel.target
         return new_sched
-
-    @deprecated(
-        "The `reversed` method is deprecated, use `inverted` instead.",
-    )
-    def reversed(self) -> PulseSchedule:
-        """Return an inverted pulse schedule."""
-        return self.inverted()
 
     def inverted(self) -> PulseSchedule:
         """Return an inverted pulse schedule."""

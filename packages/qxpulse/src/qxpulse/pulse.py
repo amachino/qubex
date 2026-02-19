@@ -8,7 +8,7 @@ from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import Self, deprecated
+from typing_extensions import Self
 
 from .waveform import Waveform
 
@@ -210,13 +210,6 @@ class Pulse(Waveform):
         new_pulse = self.copy(reset_cached_duration=True)
         new_pulse._set_sampled_values(np.tile(self._materialize_values(), n))
         return new_pulse
-
-    @deprecated(
-        "The `reversed` method is deprecated, use `inverted` instead.",
-    )
-    def reversed(self) -> Self:
-        """Return a copy of the pulse with the time inverted."""
-        return self.inverted()
 
     def inverted(self) -> Self:
         """Return a copy of the pulse with the time inverted."""

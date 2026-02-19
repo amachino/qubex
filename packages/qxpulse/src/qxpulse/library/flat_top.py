@@ -176,9 +176,6 @@ class FlatTop(Pulse):
             )
 
         if beta is not None:
-            # print(
-            #     "Warning: beta parameter is deprecated. Use correction_type and correction_factor instead."
-            # )
             if correction_type is None and correction_factor is None:
                 dI = np.gradient(I, t)
                 Q = beta * dI
