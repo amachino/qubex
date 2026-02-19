@@ -11,6 +11,8 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
+from qxpulse.style import get_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -301,15 +303,9 @@ class Waveform(ABC):
             title=title,
             xaxis_title=xlabel,
             yaxis_title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
+            template="qubex",
         )
-        fig.show(
-            config={
-                "toImageButtonOptions": {
-                    "format": "png",
-                    "scale": 3,
-                },
-            }
-        )
+        fig.show(config=get_config(filename="waveform_xy"))
 
     def plot_polar(
         self,
@@ -372,15 +368,8 @@ class Waveform(ABC):
         fig.update_xaxes(title_text=xlabel, row=2, col=1)
         fig.update_yaxes(title_text=ylabel_1, row=1, col=1)
         fig.update_yaxes(title_text=ylabel_2, row=2, col=1)
-        fig.update_layout(width=600)
-        fig.show(
-            config={
-                "toImageButtonOptions": {
-                    "format": "png",
-                    "scale": 3,
-                },
-            }
-        )
+        fig.update_layout(width=600, template="qubex")
+        fig.show(config=get_config(filename="waveform_polar"))
 
     def plot_spectrum(
         self,
@@ -444,12 +433,6 @@ class Waveform(ABC):
             xaxis_title=xlabel,
             yaxis_title=ylabel,
             xaxis_range=xlim if xlim is not None else None,
+            template="qubex",
         )
-        fig.show(
-            config={
-                "toImageButtonOptions": {
-                    "format": "png",
-                    "scale": 3,
-                },
-            }
-        )
+        fig.show(config=get_config(filename="waveform_spectrum"))

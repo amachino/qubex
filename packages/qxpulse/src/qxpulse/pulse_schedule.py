@@ -22,7 +22,7 @@ import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
 
-from qxpulse.style import COLORS
+from qxpulse.style import COLORS, get_config
 from qxpulse.typing import IQArray
 
 from .blank import Blank
@@ -492,6 +492,7 @@ class PulseSchedule:
             title=title,
             height=80 * n_channels + 140,
             width=width,
+            template="qubex",
         )
         fig.update_xaxes(
             row=n_channels,
@@ -535,14 +536,7 @@ class PulseSchedule:
                     col=1,
                     bgcolor="rgba(255, 255, 255, 0.8)",
                 )
-        fig.show(
-            config={
-                "toImageButtonOptions": {
-                    "format": "png",
-                    "scale": 3,
-                },
-            }
-        )
+        fig.show(config=get_config(filename="pulse_schedule"))
 
     def is_valid(self) -> bool:
         """Return True if the pulse schedule is valid."""

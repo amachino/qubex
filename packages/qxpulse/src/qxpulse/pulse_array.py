@@ -12,7 +12,7 @@ import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
 
-from qxpulse.style import COLORS
+from qxpulse.style import COLORS, get_config
 
 from .blank import Blank
 from .phase_shift import PhaseShift, VirtualZ
@@ -429,13 +429,7 @@ class PulseArray(Waveform):
                 y=0,
                 bgcolor="rgba(255, 255, 255, 0.8)",
             ),
+            template="qubex",
         )
 
-        fig.show(
-            config={
-                "toImageButtonOptions": {
-                    "format": "png",
-                    "scale": 3,
-                },
-            }
-        )
+        fig.show(config=get_config(filename="pulse_array"))
