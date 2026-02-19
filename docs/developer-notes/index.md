@@ -16,5 +16,6 @@ Manage development notes and operational documents.
 - [System Configuration Schema](system-configuration-schema-draft.md)
 - [Configuration Module Migration Plan](configuration-module-migration.md)
 - [Analysis Package Layering Plan](analysis-package-layering-plan.md)
+- [Shared Packages Generalization Plan](shared-packages-generalization-plan.md)
 - [Improvement Backlog](improvement-backlog.md)
 - [Hardware Validation Template](hardware-validation-template.md)

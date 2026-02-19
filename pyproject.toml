@@ -25,6 +25,7 @@ dependencies = [
     "pyyaml >= 6.0",
     "qctrl-visualizer >= 8.0",
     "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
+    "qxfitting @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxfitting",
     "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
     "qxschema @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxschema",
     "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator",
@@ -77,6 +78,7 @@ cache-dir = ".cache/uv"
 quelware_client = { workspace = true }
 qxdriver_quel = { workspace = true }
 qxcore = { workspace = true }
+qxfitting = { workspace = true }
 qxpulse = { workspace = true }
 qxschema = { workspace = true }
 qxsimulator = { workspace = true }
@@ -87,6 +89,7 @@ members = [
     # "packages/quelware-client/quelware-client",
     "packages/qxcore",
     "packages/qxdriver-quel",
+    "packages/qxfitting",
     "packages/qxpulse",
     "packages/qxschema",
     "packages/qxsimulator",

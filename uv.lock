@@ -19,6 +19,7 @@ members = [
     "qubex",
     "qxcore",
     "qxdriver-quel",
+    "qxfitting",
     "qxpulse",
     "qxschema",
     "qxsimulator",
@@ -3070,6 +3071,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "qctrl-visualizer" },
     { name = "qxcore" },
+    { name = "qxfitting" },
     { name = "qxpulse" },
     { name = "qxschema" },
     { name = "qxsimulator" },
@@ -3125,6 +3127,7 @@ requires-dist = [
     { name = "qctrl-visualizer", specifier = ">=8.0" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxdriver-quel", marker = "extra == 'backend'", editable = "packages/qxdriver-quel" },
+    { name = "qxfitting", editable = "packages/qxfitting" },
     { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "qxschema", editable = "packages/qxschema" },
     { name = "qxsimulator", editable = "packages/qxsimulator" },
@@ -3275,6 +3278,28 @@ dev = [
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
+]
+
+[[package]]
+name = "qxfitting"
+version = "0.1.0"
+source = { editable = "packages/qxfitting" }
+dependencies = [
+    { name = "numpy" },
+    { name = "plotly" },
+    { name = "qxvisualizer" },
+    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "plotly", specifier = ">=5.23" },
+    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
+    { name = "scikit-learn", specifier = ">=1.0" },
+    { name = "scipy", specifier = ">=1.0" },
 ]
 
 [[package]]
