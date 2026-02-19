@@ -14,7 +14,10 @@ from qubex.backend.quel1.quel1_backend_executor import Quel1BackendExecutor
 
 def _make_payload() -> Quel1ExecutionPayload:
     return Quel1ExecutionPayload(
-        sequencer=object(),
+        gen_sampled_sequence={"Q00": object()},
+        cap_sampled_sequence={"RQ00": object()},
+        resource_map={"Q00": [{}]},
+        interval=128,
         repeats=10,
         integral_mode="integral",
         dsp_demodulation=True,
@@ -28,8 +31,13 @@ def _make_payload() -> Quel1ExecutionPayload:
 def test_execute_uses_parallel_mode_by_default() -> None:
     """Given default mode, execute delegates to execute_sequencer_parallel."""
     called: dict[str, Any] = {}
+    sequencer = object()
 
     class _Controller:
+        def create_quel1_sequencer(self, **kwargs: object) -> object:  # type: ignore[no-untyped-def]
+            called["create"] = kwargs
+            return sequencer
+
         def execute_sequencer(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
             called["serial"] = kwargs
             return "serial"
@@ -45,6 +53,7 @@ def test_execute_uses_parallel_mode_by_default() -> None:
     result = executor.execute(request=BackendExecutionRequest(payload=_make_payload()))
 
     assert result == "parallel"
+    assert called["parallel"]["sequencer"] is sequencer
     assert "parallel" in called
     assert called["parallel"]["clock_health_checks"] is False
     assert "serial" not in called
@@ -53,8 +62,13 @@ def test_execute_uses_parallel_mode_by_default() -> None:
 def test_execute_uses_serial_mode_when_configured() -> None:
     """Given serial mode, execute delegates to execute_sequencer."""
     called: dict[str, Any] = {}
+    sequencer = object()
 
     class _Controller:
+        def create_quel1_sequencer(self, **kwargs: object) -> object:  # type: ignore[no-untyped-def]
+            called["create"] = kwargs
+            return sequencer
+
         def execute_sequencer(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
             called["serial"] = kwargs
             return "serial"
@@ -71,6 +85,7 @@ def test_execute_uses_serial_mode_when_configured() -> None:
     result = executor.execute(request=BackendExecutionRequest(payload=_make_payload()))
 
     assert result == "serial"
+    assert called["serial"]["sequencer"] is sequencer
     assert "serial" in called
     assert "parallel" not in called
 
@@ -79,6 +94,10 @@ def test_init_raises_for_unknown_execution_mode() -> None:
     """Given unsupported mode, initializer raises ValueError."""
 
     class _Controller:
+        def create_quel1_sequencer(self, **kwargs: object) -> object:  # type: ignore[no-untyped-def]
+            _ = kwargs
+            return object()
+
         def execute_sequencer(self, **kwargs: object) -> str:  # type: ignore[no-untyped-def]
             return "serial"
 

@@ -15,6 +15,9 @@ import numpy as np
 
 from qubex.backend.quel1 import Quel1BackendController
 
+from .quel3_execution_payload import Quel3ExecutionPayload
+from .quel3_sequencer_compiler import Quel3SequencerCompiler
+
 QUEL3_DEFAULT_SAMPLING_PERIOD_NS = 0.4
 
 
@@ -74,6 +77,7 @@ class Quel3BackendController(Quel1BackendController):
         self._trigger_wait = (
             int(trigger_wait) if trigger_wait is not None else 1_000_000
         )
+        self._sequencer_compiler = Quel3SequencerCompiler()
 
     def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
         """Replace full target-to-alias mapping for quelware execution."""
@@ -96,8 +100,6 @@ class Quel3BackendController(Quel1BackendController):
         payload : object
             Backend execution payload produced by the measurement adapter.
         """
-        from qubex.measurement.adapters.backend_adapter import Quel3ExecutionPayload
-
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError(
                 "Quel3BackendController.execute_measurement expects Quel3ExecutionPayload."
@@ -132,8 +134,6 @@ class Quel3BackendController(Quel1BackendController):
         payload: object,
     ) -> object:
         """Execute one fixed-timeline measurement flow via quelware."""
-        from qubex.measurement.adapters.backend_adapter import Quel3ExecutionPayload
-
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError(
                 "Quel3BackendController.execute_measurement expects Quel3ExecutionPayload."
@@ -155,29 +155,11 @@ class Quel3BackendController(Quel1BackendController):
         if len(aliases) == 0:
             raise ValueError("Quel3ExecutionPayload must include instrument aliases.")
 
-        sequencer = Sequencer(default_sampling_period_ns=self.DEFAULT_SAMPLING_PERIOD)
-        for target, timeline in payload.timelines.items():
-            alias = payload.instrument_aliases[target]
-            waveform_name = self._waveform_name(target)
-            sequencer.register_waveform(
-                waveform_name,
-                np.asarray(timeline.waveform, dtype=np.complex128),
-                sampling_period_ns=float(timeline.sampling_period_ns),
-            )
-            sequencer.add_event(
-                alias,
-                waveform_name,
-                start_offset_ns=0.0,
-                gain=1.0,
-                phase_offset_deg=0.0,
-            )
-            for window in timeline.capture_windows:
-                sequencer.add_capture_window(
-                    alias,
-                    self._capture_window_key(target, window.name),
-                    start_offset_ns=float(window.start_offset_ns),
-                    length_ns=float(window.length_ns),
-                )
+        sequencer = self._sequencer_compiler.compile(
+            payload=payload,
+            sequencer_factory=Sequencer,
+            default_sampling_period_ns=self.DEFAULT_SAMPLING_PERIOD,
+        )
 
         async with create_quelware_client(
             self._quelware_endpoint, self._quelware_port
@@ -240,7 +222,9 @@ class Quel3BackendController(Quel1BackendController):
                         alias = payload.instrument_aliases[target]
                         result = alias_results[alias]
                         for window in timeline.capture_windows:
-                            window_key = self._capture_window_key(target, window.name)
+                            window_key = self._sequencer_compiler.capture_window_key(
+                                target, window.name
+                            )
                             iq_datas = result.iq_datas.get(window_key, [])
                             if len(iq_datas) == 0:
                                 continue
@@ -255,22 +239,10 @@ class Quel3BackendController(Quel1BackendController):
         )
 
     @staticmethod
-    def _waveform_name(target: str) -> str:
-        """Return deterministic waveform name for one target."""
-        return f"wf_{target}"
-
-    @staticmethod
-    def _capture_window_key(target: str, window_name: str) -> str:
-        """Return deterministic capture-window key for one target/window pair."""
-        return f"{target}:{window_name}"
-
-    @staticmethod
     def _initialize_shot_samples(
         payload: object,
     ) -> dict[str, dict[str, list[np.ndarray]]]:
         """Initialize nested shot-sample container by target/capture window."""
-        from qubex.measurement.adapters.backend_adapter import Quel3ExecutionPayload
-
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError("Expected Quel3ExecutionPayload.")
         return {
@@ -287,7 +259,6 @@ class Quel3BackendController(Quel1BackendController):
         sampling_period_ns: float | None,
     ) -> object:
         """Build canonical measurement result from per-shot capture samples."""
-        from qubex.measurement.adapters.backend_adapter import Quel3ExecutionPayload
         from qubex.measurement.models.measurement_result import MeasurementResult
 
         if not isinstance(payload, Quel3ExecutionPayload):

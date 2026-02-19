@@ -10,13 +10,20 @@ from qubex.measurement.adapters import (
     Quel3BackendExecutor,
     Quel3ExecutionPayload,
     Quel3TargetTimeline,
+    Quel3WaveformEvent,
 )
 
 
 def _make_payload() -> Quel3ExecutionPayload:
     timeline = Quel3TargetTimeline(
         sampling_period_ns=0.4,
-        waveform=np.array([0.0 + 0.0j], dtype=np.complex128),
+        events=(
+            Quel3WaveformEvent(
+                start_offset_ns=0.0,
+                waveform=np.array([0.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.4,
+            ),
+        ),
         capture_windows=(),
         length_ns=0.4,
         modulation_frequency_hz=100_000_000.0,

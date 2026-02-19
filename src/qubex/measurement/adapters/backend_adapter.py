@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 import numpy as np
-import numpy.typing as npt
+from qxpulse import Blank
 
 from qubex.backend import (
     BackendExecutionRequest,
@@ -17,6 +16,12 @@ from qubex.backend import (
 from qubex.backend.quel1 import (
     Quel1BackendController,
     Quel1ExecutionPayload,
+)
+from qubex.backend.quel3 import (
+    Quel3CaptureWindow,
+    Quel3ExecutionPayload,
+    Quel3TargetTimeline,
+    Quel3WaveformEvent,
 )
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
@@ -41,43 +46,6 @@ class MeasurementBackendAdapter(Protocol):
     ) -> BackendExecutionRequest:
         """Build backend execution request from measurement schedule/config."""
         ...
-
-
-@dataclass(frozen=True)
-class Quel3CaptureWindow:
-    """Capture window definition for Quel3 fixed-timeline execution."""
-
-    name: str
-    start_offset_ns: float
-    length_ns: float
-
-
-@dataclass(frozen=True)
-class Quel3TargetTimeline:
-    """Timeline definition for one target in Quel3 execution."""
-
-    sampling_period_ns: float
-    waveform: npt.NDArray[np.complex128]
-    capture_windows: tuple[Quel3CaptureWindow, ...]
-    length_ns: float
-    modulation_frequency_hz: float | None = None
-
-
-@dataclass(frozen=True)
-class Quel3ExecutionPayload:
-    """Execution payload that can be translated to quelware fixed-timeline calls."""
-
-    timelines: dict[str, Quel3TargetTimeline]
-    instrument_aliases: dict[str, str]
-    output_target_labels: dict[str, str]
-    interval_ns: float
-    repeats: int
-    mode: str
-    dsp_demodulation: bool
-    enable_sum: bool
-    enable_classification: bool
-    line_param0: tuple[float, float, float]
-    line_param1: tuple[float, float, float]
 
 
 class Quel3MeasurementBackendAdapter:
@@ -144,7 +112,6 @@ class Quel3MeasurementBackendAdapter:
     ) -> BackendExecutionRequest:
         """Build backend execution request as Quel3 fixed-timeline payload."""
         pulse_schedule = schedule.pulse_schedule
-        sampled_sequences = pulse_schedule.get_sampled_sequences(copy=False)
         channel_captures = schedule.capture_schedule.channels
         timelines: dict[str, Quel3TargetTimeline] = {}
         instrument_aliases: dict[str, str] = {}
@@ -178,7 +145,9 @@ class Quel3MeasurementBackendAdapter:
 
             return fallback_registry.resolve_qubit_label(target, allow_legacy=True)
 
-        for target, waveform in sampled_sequences.items():
+        for target in pulse_schedule.labels:
+            sequence = pulse_schedule.get_sequence(target, copy=False)
+            events = self._create_quel3_events(sequence=sequence)
             captures = sorted(
                 channel_captures.get(target, []), key=lambda c: c.start_time
             )
@@ -199,7 +168,7 @@ class Quel3MeasurementBackendAdapter:
                 modulation_frequency_hz = None
             timelines[target] = Quel3TargetTimeline(
                 sampling_period_ns=self.sampling_period,
-                waveform=np.asarray(waveform, dtype=np.complex128),
+                events=events,
                 capture_windows=capture_windows,
                 length_ns=float(pulse_schedule.duration),
                 modulation_frequency_hz=modulation_frequency_hz,
@@ -234,6 +203,30 @@ class Quel3MeasurementBackendAdapter:
             line_param1=config.dsp.line_param1,
         )
         return BackendExecutionRequest(payload=payload)
+
+    @staticmethod
+    def _create_quel3_events(*, sequence: Any) -> tuple[Quel3WaveformEvent, ...]:
+        """Create sparse waveform events from one flattened pulse sequence."""
+        events: list[Quel3WaveformEvent] = []
+        current_offset_ns = 0.0
+        for waveform in sequence.get_flattened_waveforms(apply_frame_shifts=True):
+            duration_ns = float(waveform.duration)
+            if isinstance(waveform, Blank):
+                current_offset_ns += duration_ns
+                continue
+            sampled = np.asarray(waveform.values, dtype=np.complex128)
+            if sampled.size == 0 or not np.any(np.abs(sampled) > 0):
+                current_offset_ns += duration_ns
+                continue
+            events.append(
+                Quel3WaveformEvent(
+                    start_offset_ns=current_offset_ns,
+                    waveform=sampled,
+                    sampling_period_ns=float(waveform.sampling_period),
+                )
+            )
+            current_offset_ns += duration_ns
+        return tuple(events)
 
 
 class Quel1MeasurementBackendAdapter:
@@ -429,14 +422,11 @@ class Quel1MeasurementBackendAdapter:
         )
         resource_map = self._backend_controller.get_resource_map(targets)
 
-        sequencer = self._backend_controller.create_quel1_sequencer(
+        payload = Quel1ExecutionPayload(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map=resource_map,
             interval=interval,
-        )
-        payload = Quel1ExecutionPayload(
-            sequencer=sequencer,
             repeats=config.shots,
             integral_mode=measure_mode.integral_mode,
             dsp_demodulation=config.dsp.enable_dsp_demodulation,

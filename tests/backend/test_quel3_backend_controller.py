@@ -13,6 +13,7 @@ from qubex.measurement.adapters import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3TargetTimeline,
+    Quel3WaveformEvent,
 )
 from qubex.measurement.models.measurement_result import MeasurementResult
 
@@ -20,7 +21,13 @@ from qubex.measurement.models.measurement_result import MeasurementResult
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
     timeline = Quel3TargetTimeline(
         sampling_period_ns=0.4,
-        waveform=np.array([0.0 + 0.0j, 1.0 + 0.0j], dtype=np.complex128),
+        events=(
+            Quel3WaveformEvent(
+                start_offset_ns=0.0,
+                waveform=np.array([0.0 + 0.0j, 1.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.4,
+            ),
+        ),
         capture_windows=(
             Quel3CaptureWindow(name="capture_0", start_offset_ns=0.4, length_ns=0.4),
         ),

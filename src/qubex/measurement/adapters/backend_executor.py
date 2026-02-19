@@ -8,8 +8,7 @@ from qubex.backend import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-
-from .backend_adapter import Quel3ExecutionPayload
+from qubex.backend.quel3 import Quel3ExecutionPayload
 
 
 class Quel3BackendExecutor:

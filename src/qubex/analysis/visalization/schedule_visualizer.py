@@ -1,0 +1,358 @@
+"""Schedule and sequencer visualization helpers."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal
+
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from qubex.style import COLORS
+
+if TYPE_CHECKING:
+    from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+
+_CAPTURE_FILL_COLOR = "#D9D9D9"
+
+
+def _x_axis_reference(index: int) -> str:
+    """Return Plotly x-axis reference string for one subplot row."""
+    return "x" if index == 1 else f"x{index}"
+
+
+def _primary_y_axis_reference(index: int) -> str:
+    """
+    Return primary Plotly y-axis reference for one row with secondary y-axes.
+
+    With `secondary_y=True`, subplot rows use y-axis numbering:
+    row1 -> y, row2 -> y3, row3 -> y5, ...
+    """
+    axis_number = 1 + 2 * (index - 1)
+    return "y" if axis_number == 1 else f"y{axis_number}"
+
+
+def plot_measurement_schedule(
+    schedule: MeasurementSchedule,
+    *,
+    show_physical_pulse: bool = False,
+    title: str = "Measurement Schedule",
+    width: int = 900,
+    n_samples: int | None = None,
+    divide_by_two_pi: bool = False,
+    line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+) -> go.Figure:
+    """
+    Build a measurement-schedule figure with pulse and capture overlays.
+
+    Parameters
+    ----------
+    schedule : MeasurementSchedule
+        Measurement schedule containing pulse and capture definitions.
+    show_physical_pulse : bool, optional
+        If `True`, apply frame shifts before plotting I/Q.
+    title : str, optional
+        Figure title.
+    width : int, optional
+        Figure width in pixels.
+    n_samples : int | None, optional
+        Optional downsampling size for plotting.
+    divide_by_two_pi : bool, optional
+        If `True`, divide plotted I/Q amplitudes by `2π * 1e-3`.
+    line_shape : {"hv", "vh", "hvh", "vhv", "spline", "linear"}, optional
+        Plotly line interpolation mode.
+
+    Returns
+    -------
+    go.Figure
+        Plotly figure object.
+    """
+    pulse_schedule = schedule.pulse_schedule
+    sequences = pulse_schedule.get_sequences(copy=False)
+    n_channels = len(sequences)
+
+    if n_channels == 0:
+        raise ValueError("MeasurementSchedule must include at least one pulse channel.")
+
+    figure = make_subplots(
+        rows=n_channels,
+        cols=1,
+        shared_xaxes=True,
+        specs=[[{"secondary_y": True}] for _ in range(n_channels)],
+    )
+
+    capture_legend_added = False
+    for row_index, (label, sequence) in enumerate(sequences.items(), start=1):
+        if sequence.length == 0:
+            times = np.array([0.0], dtype=np.float64)
+            real = np.array([0.0], dtype=np.float64)
+            imag = np.array([0.0], dtype=np.float64)
+            phase = np.array([0.0], dtype=np.float64)
+        else:
+            times = np.append(
+                sequence.times, sequence.times[-1] + sequence.SAMPLING_PERIOD
+            )
+            if show_physical_pulse:
+                values = sequence.get_values(apply_frame_shifts=True)
+            else:
+                values = sequence.get_values(apply_frame_shifts=False)
+            real = np.append(np.real(values), np.real(values)[-1])
+            imag = np.append(np.imag(values), np.imag(values)[-1])
+            phase = -np.append(sequence.frame_shifts, sequence.final_frame_shift)
+            phase = (phase + np.pi) % (2 * np.pi) - np.pi
+
+        if n_samples is not None and len(times) > n_samples:
+            indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
+            times = times[indices]
+            real = real[indices]
+            imag = imag[indices]
+            phase = phase[indices]
+
+        if divide_by_two_pi:
+            real = real / (2 * np.pi * 1e-3)
+            imag = imag / (2 * np.pi * 1e-3)
+
+        figure.add_trace(
+            go.Scatter(
+                x=times,
+                y=real,
+                mode="lines",
+                line_shape=line_shape,
+                line={"color": COLORS[0]},
+                name="I" if show_physical_pulse else "X",
+                showlegend=(row_index == 1),
+            ),
+            row=row_index,
+            col=1,
+            secondary_y=False,
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=times,
+                y=imag,
+                mode="lines",
+                line_shape=line_shape,
+                line={"color": COLORS[1]},
+                name="Q" if show_physical_pulse else "Y",
+                showlegend=(row_index == 1),
+            ),
+            row=row_index,
+            col=1,
+            secondary_y=False,
+        )
+
+        if not show_physical_pulse:
+            figure.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=phase,
+                    mode="lines",
+                    line_shape=line_shape,
+                    line={"color": COLORS[2], "dash": "dot"},
+                    name="φ",
+                    showlegend=(row_index == 1),
+                ),
+                row=row_index,
+                col=1,
+                secondary_y=True,
+            )
+
+        captures = sorted(
+            schedule.capture_schedule.channels.get(label, []),
+            key=lambda capture: capture.start_time,
+        )
+        for capture_index, capture in enumerate(captures):
+            x_ref = _x_axis_reference(row_index)
+            y_ref = f"{_primary_y_axis_reference(row_index)} domain"
+            capture_start = float(capture.start_time)
+            capture_end = float(capture.start_time + capture.duration)
+            figure.add_shape(
+                type="rect",
+                xref=x_ref,
+                yref=y_ref,
+                x0=capture_start,
+                x1=capture_end,
+                y0=0.0,
+                y1=1.0,
+                fillcolor=_CAPTURE_FILL_COLOR,
+                opacity=0.28,
+                line_width=0,
+                layer="below",
+            )
+            figure.add_annotation(
+                x=(capture_start + capture_end) / 2,
+                y=0.03,
+                xref=x_ref,
+                yref=y_ref,
+                text=f"capture_{capture_index}",
+                showarrow=False,
+                xanchor="center",
+                yanchor="bottom",
+                font={"size": 10, "color": "#404040"},
+            )
+            if not capture_legend_added:
+                figure.add_trace(
+                    go.Scatter(
+                        x=[None],
+                        y=[None],
+                        mode="markers",
+                        marker={
+                            "size": 10,
+                            "color": _CAPTURE_FILL_COLOR,
+                            "symbol": "square",
+                        },
+                        name="Capture",
+                        showlegend=True,
+                    ),
+                    row=row_index,
+                    col=1,
+                    secondary_y=False,
+                )
+                capture_legend_added = True
+
+        y_max = (
+            float(np.max(np.abs(np.concatenate([real, imag]))))
+            if len(real) > 0
+            else 1.0
+        )
+        if y_max == 0:
+            y_max = 1.0
+
+        figure.update_yaxes(
+            row=row_index,
+            col=1,
+            title_text=label,
+            range=[-1.2 * y_max, 1.2 * y_max],
+            secondary_y=False,
+        )
+        if not show_physical_pulse:
+            figure.update_yaxes(
+                row=row_index,
+                col=1,
+                range=[-np.pi * 1.2, np.pi * 1.2],
+                tickvals=[-np.pi, 0, np.pi],
+                ticktext=["-π", "0", "π"],
+                secondary_y=True,
+            )
+
+    figure.update_layout(
+        title=title,
+        width=width,
+        height=90 * n_channels + 170,
+    )
+    figure.update_xaxes(row=n_channels, col=1, title_text="Time (ns)")
+    return figure
+
+
+def plot_sequencer_timeline(
+    sequencer: Any,
+    *,
+    title: str = "Sequencer Timeline",
+    width: int = 900,
+) -> go.Figure:
+    """
+    Build a sequencer timeline figure with event and capture lanes.
+
+    Parameters
+    ----------
+    sequencer : Any
+        Sequencer-like object exposing `_waveform_library`,
+        `_alias_to_events`, and `_alias_to_capwin`.
+    title : str, optional
+        Figure title.
+    width : int, optional
+        Figure width in pixels.
+
+    Returns
+    -------
+    go.Figure
+        Plotly figure object.
+    """
+    state = vars(sequencer)
+    waveform_library = state["_waveform_library"]
+    alias_to_events = state["_alias_to_events"]
+    alias_to_capwin = state["_alias_to_capwin"]
+
+    lanes = [f"pulse:{alias}" for alias in alias_to_events]
+    for alias in alias_to_capwin:
+        lane = f"capture:{alias}"
+        if lane not in lanes:
+            lanes.append(lane)
+    if len(lanes) == 0:
+        raise ValueError("Sequencer timeline is empty.")
+
+    figure = go.Figure()
+    pulse_legend_added = False
+    capture_legend_added = False
+
+    for alias, events in alias_to_events.items():
+        lane = f"pulse:{alias}"
+        for event in events:
+            waveform = waveform_library[event.waveform_name]
+            duration_ns = len(waveform.iq_array) * float(waveform.sampling_period_ns)
+            start_ns = float(event.start_offset_ns)
+            figure.add_trace(
+                go.Bar(
+                    x=[duration_ns],
+                    y=[lane],
+                    base=[start_ns],
+                    orientation="h",
+                    marker={
+                        "color": COLORS[0],
+                        "line": {"color": "rgba(0,0,0,0.2)", "width": 1},
+                    },
+                    opacity=0.9,
+                    name="Waveform Event",
+                    showlegend=not pulse_legend_added,
+                    hovertemplate=(
+                        f"lane={lane}<br>"
+                        f"waveform={event.waveform_name}<br>"
+                        f"start={start_ns:.3f} ns<br>"
+                        f"duration={duration_ns:.3f} ns<br>"
+                        f"gain={float(event.gain):.4g}<br>"
+                        f"phase={float(event.phase_offset_deg):.2f} deg"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+            pulse_legend_added = True
+
+    for alias, windows in alias_to_capwin.items():
+        lane = f"capture:{alias}"
+        for window in windows:
+            duration_ns = float(window.length_ns)
+            start_ns = float(window.start_offset_ns)
+            figure.add_trace(
+                go.Bar(
+                    x=[duration_ns],
+                    y=[lane],
+                    base=[start_ns],
+                    orientation="h",
+                    marker={
+                        "color": _CAPTURE_FILL_COLOR,
+                        "line": {"color": "rgba(0,0,0,0.2)", "width": 1},
+                    },
+                    opacity=0.75,
+                    name="Capture Window",
+                    showlegend=not capture_legend_added,
+                    hovertemplate=(
+                        f"lane={lane}<br>"
+                        f"window={window.name}<br>"
+                        f"start={start_ns:.3f} ns<br>"
+                        f"duration={duration_ns:.3f} ns"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+            capture_legend_added = True
+
+    figure.update_layout(
+        title=title,
+        barmode="overlay",
+        width=width,
+        height=max(320, 120 + 42 * len(lanes)),
+        xaxis_title="Time (ns)",
+        yaxis_title="Lane",
+    )
+    figure.update_yaxes(categoryorder="array", categoryarray=lanes[::-1])
+    return figure

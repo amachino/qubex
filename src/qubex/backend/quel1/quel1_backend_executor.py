@@ -20,9 +20,12 @@ from .quel1_backend_controller import Quel1BackendController
 
 @dataclass(frozen=True)
 class Quel1ExecutionPayload:
-    """QuEL-1 specific execution payload for backend request."""
+    """QuEL-1 execution payload carrying sequencer compilation inputs."""
 
-    sequencer: Any
+    gen_sampled_sequence: dict[str, Any]
+    cap_sampled_sequence: dict[str, Any]
+    resource_map: dict[str, list[dict[str, Any]]]
+    interval: int
     repeats: int
     integral_mode: str
     dsp_demodulation: bool
@@ -74,13 +77,26 @@ class Quel1BackendExecutor:
             raise TypeError(
                 "Quel1BackendExecutor expects `Quel1ExecutionPayload` payload."
             )
-        execute_impl = (
-            self._backend_controller.execute_sequencer
-            if self._execution_mode == "serial"
-            else self._backend_controller.execute_sequencer_parallel
+        sequencer = self._backend_controller.create_quel1_sequencer(
+            gen_sampled_sequence=payload.gen_sampled_sequence,
+            cap_sampled_sequence=payload.cap_sampled_sequence,
+            resource_map=payload.resource_map,
+            interval=payload.interval,
         )
-        execute_kwargs = dict(
-            sequencer=payload.sequencer,
+        if self._execution_mode == "parallel":
+            return self._backend_controller.execute_sequencer_parallel(
+                sequencer=sequencer,
+                repeats=payload.repeats,
+                integral_mode=payload.integral_mode,
+                dsp_demodulation=payload.dsp_demodulation,
+                enable_sum=payload.enable_sum,
+                enable_classification=payload.enable_classification,
+                line_param0=payload.line_param0,
+                line_param1=payload.line_param1,
+                clock_health_checks=self._clock_health_checks,
+            )
+        return self._backend_controller.execute_sequencer(
+            sequencer=sequencer,
             repeats=payload.repeats,
             integral_mode=payload.integral_mode,
             dsp_demodulation=payload.dsp_demodulation,
@@ -89,6 +105,3 @@ class Quel1BackendExecutor:
             line_param0=payload.line_param0,
             line_param1=payload.line_param1,
         )
-        if self._execution_mode == "parallel":
-            execute_kwargs["clock_health_checks"] = self._clock_health_checks
-        return execute_impl(**execute_kwargs)

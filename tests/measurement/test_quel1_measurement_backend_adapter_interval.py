@@ -18,23 +18,11 @@ from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 class _BackendControllerStub:
     def __init__(self) -> None:
-        self.interval_ns: int | None = None
+        self.targets: list[str] = []
 
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict[str, str]]]:
-        _ = targets
+        self.targets = targets
         return {"Q00": [{}]}  # shape is irrelevant for this unit test
-
-    def create_quel1_sequencer(
-        self,
-        *,
-        gen_sampled_sequence: dict[str, object],
-        cap_sampled_sequence: dict[str, object],
-        resource_map: dict[str, list[dict[str, str]]],
-        interval: int,
-    ) -> object:
-        _ = (gen_sampled_sequence, cap_sampled_sequence, resource_map)
-        self.interval_ns = interval
-        return object()
 
 
 def _make_config(interval: float) -> MeasurementConfig:
@@ -89,12 +77,14 @@ def test_build_execution_request_adds_one_block_margin_when_interval_nonpositive
         capture_schedule=CaptureSchedule(captures=[]),
     )
 
-    adapter.build_execution_request(
+    request = adapter.build_execution_request(
         schedule=schedule, config=_make_config(interval=0.0)
     )
 
+    payload = request.payload
+    assert hasattr(payload, "interval")
     # block duration for strict QuEL-1 profile is 128 ns; one extra block is added.
-    assert backend.interval_ns == 256
+    assert payload.interval == 256
 
 
 def test_build_execution_request_preserves_positive_interval_without_extra_margin(
@@ -133,10 +123,12 @@ def test_build_execution_request_preserves_positive_interval_without_extra_margi
         capture_schedule=CaptureSchedule(captures=[]),
     )
 
-    adapter.build_execution_request(
+    request = adapter.build_execution_request(
         schedule=schedule,
         config=_make_config(interval=256.0),
     )
 
+    payload = request.payload
+    assert hasattr(payload, "interval")
     # ceil((128 + 256) / 128) * 128 = 384
-    assert backend.interval_ns == 384
+    assert payload.interval == 384

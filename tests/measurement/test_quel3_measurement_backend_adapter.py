@@ -25,20 +25,46 @@ from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 
 
 @dataclass
+class _FakeWaveform:
+    values: np.ndarray
+    sampling_period: float = 0.4
+
+    @property
+    def duration(self) -> float:
+        return len(self.values) * self.sampling_period
+
+
+@dataclass
+class _FakeSequence:
+    waveforms: list[_FakeWaveform]
+
+    def get_flattened_waveforms(
+        self, apply_frame_shifts: bool = True
+    ) -> list[_FakeWaveform]:
+        del apply_frame_shifts
+        return self.waveforms
+
+
+@dataclass
 class _FakePulseSchedule:
     duration: float
-    waveforms: dict[str, np.ndarray]
+    sequences: dict[str, _FakeSequence]
     valid: bool = True
+
+    @property
+    def labels(self) -> list[str]:
+        return list(self.sequences.keys())
 
     def is_valid(self) -> bool:
         return self.valid
 
+    def get_sequence(self, label: str, *, copy: bool = False) -> _FakeSequence:
+        del copy
+        return self.sequences[label]
+
     def get_sampled_sequences(self, *, copy: bool = False) -> dict[str, np.ndarray]:
-        if copy:
-            return {
-                label: waveform.copy() for label, waveform in self.waveforms.items()
-            }
-        return self.waveforms
+        del copy
+        raise AssertionError("Quel3 adapter must not call get_sampled_sequences().")
 
 
 def _make_config() -> MeasurementConfig:
@@ -63,7 +89,11 @@ def test_quel3_adapter_accepts_relaxed_schedule() -> None:
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=12.4,
-            waveforms={target: np.array([0.1 + 0.0j] * 31)},
+            sequences={
+                target: _FakeSequence(
+                    waveforms=[_FakeWaveform(np.array([0.1 + 0.0j] * 31))]
+                )
+            },
         ),
         capture_schedule=CaptureSchedule(
             captures=[
@@ -90,7 +120,11 @@ def test_quel3_adapter_rejects_capture_outside_pulse_duration() -> None:
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=10.0,
-            waveforms={target: np.array([0.1 + 0.0j] * 25)},
+            sequences={
+                target: _FakeSequence(
+                    waveforms=[_FakeWaveform(np.array([0.1 + 0.0j] * 25))]
+                )
+            },
         ),
         capture_schedule=CaptureSchedule(
             captures=[
@@ -118,7 +152,11 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=1.2,
-            waveforms={target: waveform},
+            sequences={
+                target: _FakeSequence(
+                    waveforms=[_FakeWaveform(waveform, sampling_period=0.4)]
+                )
+            },
         ),
         capture_schedule=CaptureSchedule(
             captures=[
@@ -155,7 +193,10 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert target in payload.timelines
     timeline = payload.timelines[target]
     assert timeline.sampling_period_ns == 0.4
-    assert np.array_equal(timeline.waveform, waveform)
+    assert len(timeline.events) == 1
+    assert timeline.events[0].start_offset_ns == pytest.approx(0.0)
+    assert timeline.events[0].sampling_period_ns == pytest.approx(0.4)
+    assert np.array_equal(timeline.events[0].waveform, waveform)
     assert timeline.length_ns == pytest.approx(1.2)
     assert timeline.modulation_frequency_hz == pytest.approx(100_000_000.0)
     assert len(timeline.capture_windows) == 1
@@ -170,7 +211,16 @@ def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=1.2,
-            waveforms={target: np.array([0.0 + 0.0j], dtype=np.complex128)},
+            sequences={
+                target: _FakeSequence(
+                    waveforms=[
+                        _FakeWaveform(
+                            np.array([0.0 + 0.0j], dtype=np.complex128),
+                            sampling_period=0.4,
+                        )
+                    ]
+                )
+            },
         ),
         capture_schedule=CaptureSchedule(
             captures=[
@@ -217,7 +267,16 @@ def test_quel3_adapter_uses_registry_for_output_target_labels() -> None:
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=1.2,
-            waveforms={target: np.array([0.0 + 0.0j], dtype=np.complex128)},
+            sequences={
+                target: _FakeSequence(
+                    waveforms=[
+                        _FakeWaveform(
+                            np.array([0.0 + 0.0j], dtype=np.complex128),
+                            sampling_period=0.4,
+                        )
+                    ]
+                )
+            },
         ),
         capture_schedule=CaptureSchedule(
             captures=[

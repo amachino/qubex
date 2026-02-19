@@ -32,7 +32,8 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 
 - Added `Quel3MeasurementBackendAdapter` in `src/qubex/measurement/adapters/backend_adapter.py`.
 - Added `Quel3BackendExecutor` in `src/qubex/measurement/adapters/backend_executor.py` (delegates to `execute_measurement(payload=...)` hook).
-- Added `Quel3ExecutionPayload`/timeline dataclasses for schedule-to-payload conversion.
+- Added `Quel3ExecutionPayload`/timeline dataclasses in `src/qubex/backend/quel3/quel3_execution_payload.py`.
+- Adapter builds backend payload models; backend controller/executor consume them.
 - Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_instrument_alias(target)` hook when available (fallback: target label itself).
 - Added `Quel3BackendController` scaffold in `src/qubex/backend/quel3/quel3_backend_controller.py`.
 - `Quel3BackendController.execute_measurement(...)` now includes an initial quelware invocation path and returns canonical `MeasurementResult` directly.

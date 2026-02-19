@@ -22,6 +22,8 @@ def test_quel1_qubecalib_protocols_export_expected_contracts() -> None:
 
 def test_sequencer_protocol_exports_parallel_execution_contracts() -> None:
     """Given sequencer protocol, methods used by parallel execution are defined."""
-    assert hasattr(quel1_qubecalib_protocols.SequencerProtocol, "set_measurement_option")
+    assert hasattr(
+        quel1_qubecalib_protocols.SequencerProtocol, "set_measurement_option"
+    )
     assert hasattr(quel1_qubecalib_protocols.SequencerProtocol, "generate_e7_settings")
     assert hasattr(quel1_qubecalib_protocols.SequencerProtocol, "parse_capture_result")
