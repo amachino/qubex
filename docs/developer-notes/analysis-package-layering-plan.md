@@ -1,82 +1,78 @@
-# Analysis Package Layering Plan
+# Analysis package layering plan
 
 ## Status
 
-- State: `PROPOSED`
-- Documented on: 2026-02-19
+- State: `ACTIVE`
+- Last updated: 2026-02-20
 
-## Decision Summary
+## Decision summary
 
-- First split fitting logic into a dedicated package: `qxfitting`.
-- Keep `qubex.analysis.fitting` as a compatibility wrapper during migration.
-- If additional analysis domains grow later, introduce `qxanalysis` as a higher-level package.
+- Keep `qubex.analysis.fitting` as the legacy implementation and freeze it as the compatibility baseline.
+- Keep `qxfitting` as a placeholder package, then add new fitting APIs there incrementally.
+- Migrate domain call sites from `qubex.analysis.fitting` to `qxfitting` step by step.
+- Remove `qubex.analysis.fitting` only after migration is complete and verified.
 
-## Background
+## Why this policy
 
-- `qubex.analysis` currently mixes pure analysis logic, plotting, and notebook/UI-oriented paths.
-- Visualization responsibilities are being centralized into `qxvisualizer`.
-- Fitting workflows need internal refactoring (especially initial-value estimation strategy), and package boundaries should support that work.
+- Dynamic re-export from `qubex` to `qxfitting` couples release timing and increases accidental break risk.
+- The legacy `qubex` implementation is already widely used in domain services and notebooks.
+- A staged migration keeps user-facing behavior stable while allowing `qxfitting` API redesign.
 
-## Naming Decision
+## Responsibility boundaries
 
-- Adopt `qxfitting` now.
-- Do not introduce `qxanalysis` yet because the scope is currently too broad for one package.
-- Keep `qxanalysis` as a future umbrella option once multiple stable analysis domains exist.
+### `qubex.analysis.fitting` (legacy baseline)
 
-## Responsibility Boundaries
+- Owns current fitting behavior and output semantics.
+- Accepts bug fixes only.
+- Does not accept new fitting APIs.
 
-### `qxfitting` (new)
+### `qxfitting` (new API track)
 
-- Fitting models and solvers.
-- Initial-value estimation and multi-start strategies.
-- Fit result containers and diagnostics.
-- Plot helpers for fitting results, implemented using `qxvisualizer`.
+- Starts from a minimal placeholder surface.
+- Adds new fitting APIs with explicit, domain-neutral names.
+- Must not depend on `qubex`.
 
-### `qubex.analysis.fitting` (compat layer)
+### Domain packages (`qubex` services/contrib)
 
-- Re-export `qxfitting` public APIs.
-- Preserve existing import paths for users during transition.
-- Carry deprecation notices only when migration timing is finalized.
+- Continue using `qubex.analysis.fitting` until each flow has a tested `qxfitting` replacement.
+- Migrate call sites one feature area at a time.
 
-### `qxanalysis` (future)
+## Migration stages
 
-- Optional higher-level package that can aggregate multiple analysis domains:
-  - fitting
-  - tomography
-  - spectral/statistical analysis
-  - other stable analysis modules
+### Stage 1: Freeze baseline (done)
 
-## Dependency Direction
+- Keep full legacy implementation in `qubex.analysis.fitting`.
+- Keep `qxfitting` importable but minimal.
+- Keep compatibility tests green.
 
-- `qxvisualizer` is the visualization base package.
-- `qxfitting` may depend on `qxvisualizer`.
-- `qubex` depends on `qxfitting` and `qxvisualizer`.
-- Avoid reverse dependencies (`qxvisualizer` must not depend on `qxfitting`).
+### Stage 2: Introduce `qxfitting` v-next APIs
 
-## Migration Plan
+- Add new fit functions in `qxfitting` without changing legacy names by default.
+- Define stable return contracts for new APIs.
+- Add focused unit tests under `packages/qxfitting` as APIs are introduced.
 
-### Phase 1
+### Stage 3: Domain-by-domain migration
 
-- Create `qxfitting` package skeleton.
-- Move fitting core and plotting modules from `qubex.analysis.fitting`.
-- Keep behavior compatible with current public APIs.
+- Migrate one domain workflow at a time (for example: RB, Rabi, Ramsey).
+- Keep each migration PR small and include behavior checks.
+- Do not mix broad refactors with API migrations in one PR.
 
-### Phase 2
+### Stage 4: Deprecation and removal
 
-- Convert `qubex.analysis.fitting` into compatibility re-exports.
-- Add focused migration tests to ensure old import paths still work.
+- After all production call sites migrate, announce deprecation window.
+- Remove `qubex.analysis.fitting` only after the deprecation window and contract checks pass.
 
-### Phase 3
+## Guardrails
 
-- Refactor fitting internals (initial-value estimation, multi-start, diagnostics) inside `qxfitting`.
-- Keep output/plot semantics compatible unless explicitly versioned.
+- No new dynamic delegation (`__getattr__`) between `qubex` and `qxfitting`.
+- New fitting development must target `qxfitting`, not `qubex.analysis.fitting`.
+- Compatibility-sensitive changes must include:
+  - affected API list
+  - migration impact
+  - test updates
 
-### Phase 4 (future)
+## Exit criteria
 
-- Re-evaluate whether `qxanalysis` should be introduced as an umbrella package.
-
-## Non-goals
-
-- Creating `qxanalysis` immediately.
-- Performing a one-shot breaking rename of user-facing import paths.
-- Migrating all non-fitting analysis modules in the same step.
+- Domain call sites no longer depend on `qubex.analysis.fitting`.
+- `qxfitting` provides the required stable API set.
+- Legacy module removal is completed with release notes and migration guidance.

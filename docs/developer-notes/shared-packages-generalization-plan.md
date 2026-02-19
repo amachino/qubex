@@ -2,8 +2,8 @@
 
 ## Status
 
-- State: `PROPOSED`
-- Documented on: 2026-02-19
+- State: `ACTIVE`
+- Last updated: 2026-02-20
 
 ## Objective
 
@@ -36,24 +36,25 @@
   - Plotly-only builders and plotting wrappers
   - style/template/config and shared figure helpers
 - `qxfitting`:
-  - fit models, initial-guess logic, solver orchestration, diagnostics
-  - fit-oriented plot builders/wrappers implemented via `qxvisualizer`
+  - starts as a placeholder package for new fitting APIs
+  - new APIs are added incrementally with domain-neutral naming
 - Domain packages:
   - translate domain objects to generic arrays/inputs
   - choose domain wording for titles/annotations
 
 ### Compatibility
 
-- Keep `qubex.analysis.fitting` as compatibility wrapper during migration.
+- Keep `qubex.analysis.fitting` as the legacy compatibility baseline during migration.
+- Do not add dynamic re-export/delegation between `qubex` and `qxfitting`.
 - Shared package refactors must not force domain API changes in the same step.
 
 ## Work Plan
 
 ### Phase 1: Baseline and compatibility lock (done / ongoing)
 
-- [x] Create `qxfitting` package and migrate current fitting implementation.
-- [x] Keep `qubex.analysis.fitting` as wrapper to `qxfitting`.
-- [x] Add wrapper compatibility tests.
+- [x] Keep full legacy fitting implementation in `qubex.analysis.fitting`.
+- [x] Keep `qxfitting` importable as placeholder.
+- [x] Add compatibility tests for the baseline and placeholder state.
 
 ### Phase 2: `qxvisualizer` generalization
 
@@ -69,6 +70,7 @@
 
 ### Phase 3: `qxfitting` generalization
 
+- [ ] Add new fit APIs in `qxfitting` without changing legacy `qubex` APIs.
 - [ ] Split internals into:
   - `core` (pure fitting logic)
   - `plotting` (figure builders using `qxvisualizer`)
@@ -105,7 +107,8 @@ Run these checks during each migration PR.
 
 ### Compatibility
 
-- Verify `qubex.analysis.fitting` wrapper tests pass.
+- Verify `qubex.analysis.fitting` baseline tests pass.
+- Verify `qxfitting` placeholder/new API contract tests pass.
 - Verify representative domain services still call fitting APIs unchanged.
 
 ## Exit Criteria
@@ -113,4 +116,4 @@ Run these checks during each migration PR.
 - `qxvisualizer` public API is domain-neutral and Plotly-focused.
 - `qxfitting` public API is fit-centric and domain-neutral.
 - Domain naming remains in domain packages only.
-- `qubex.analysis.fitting` remains functional as compatibility layer until planned deprecation.
+- `qubex.analysis.fitting` remains functional as legacy compatibility baseline until planned deprecation.

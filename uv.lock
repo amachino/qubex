@@ -3284,23 +3284,6 @@ dev = [
 name = "qxfitting"
 version = "0.1.0"
 source = { editable = "packages/qxfitting" }
-dependencies = [
-    { name = "numpy" },
-    { name = "plotly" },
-    { name = "qxvisualizer" },
-    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "scipy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.22" },
-    { name = "plotly", specifier = ">=5.23" },
-    { name = "qxvisualizer", editable = "packages/qxvisualizer" },
-    { name = "scikit-learn", specifier = ">=1.0" },
-    { name = "scipy", specifier = ">=1.0" },
-]
 
 [[package]]
 name = "qxpulse"

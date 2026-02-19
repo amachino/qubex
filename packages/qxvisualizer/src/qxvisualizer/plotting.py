@@ -71,31 +71,6 @@ def save_figure_image(
     logger.info("Image saved to %s", file_path)
 
 
-def _render_figure(
-    fig: go.Figure,
-    *,
-    filename: str,
-    width: int,
-    height: int,
-    save_image: bool,
-    image_name: str,
-) -> None:
-    """Save and show a figure using shared Plotly behavior."""
-    if save_image:
-        save_figure_image(
-            fig,
-            name=image_name,
-            width=width,
-            height=height,
-        )
-    show_figure(
-        fig,
-        filename=filename,
-        width=width,
-        height=height,
-    )
-
-
 def make_plot_figure(
     *,
     y: ArrayLike,
@@ -216,6 +191,169 @@ def plot(
     )
 
 
+def make_waveform_figure(
+    data: NDArray,
+    *,
+    sampling_period: float = 2.0,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines",
+    title: str = "Waveform",
+    xlabel: str = "Time (ns)",
+    ylabel: str = "Signal (arb. units)",
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
+    template: str = DEFAULT_TEMPLATE,
+) -> go.Figure:
+    """Build an I/Q waveform figure."""
+    time_axis = np.arange(len(data)) * sampling_period
+    fig = make_figure(
+        template=template,
+        width=width,
+        height=height,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time_axis,
+            y=np.real(data),
+            mode=mode,
+            name="I",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time_axis,
+            y=np.imag(data),
+            mode=mode,
+            name="Q",
+        )
+    )
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+    )
+    return fig
+
+
+def plot_waveform(
+    data: NDArray,
+    *,
+    sampling_period: float = 2.0,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines",
+    title: str = "Waveform",
+    xlabel: str = "Time (ns)",
+    ylabel: str = "Signal (arb. units)",
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
+    template: str = DEFAULT_TEMPLATE,
+    save_image: bool = False,
+) -> None:
+    """Plot waveform I/Q components and show the figure."""
+    fig = make_waveform_figure(
+        data,
+        sampling_period=sampling_period,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        width=width,
+        height=height,
+        template=template,
+    )
+    _render_figure(
+        fig,
+        filename="plot_waveform",
+        width=width,
+        height=height,
+        save_image=save_image,
+        image_name="plot_waveform",
+    )
+
+
+def make_fft_figure(
+    x: NDArray,
+    y: NDArray,
+    *,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines",
+    title: str = "FFT result",
+    xlabel: str = "Frequency",
+    ylabel: str = "Amplitude",
+    xlim: tuple[float, float] | list[float] | None = None,
+    ylim: tuple[float, float] | list[float] | None = None,
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
+    template: str = DEFAULT_TEMPLATE,
+    **kwargs: Any,
+) -> go.Figure:
+    """Build an FFT magnitude figure."""
+    n_points = len(x)
+    dt = x[1] - x[0]
+    frequencies = np.fft.fftfreq(n_points, dt)[: n_points // 2]
+    amplitudes = np.fft.fft(y)[: n_points // 2]
+
+    fig = make_figure(
+        template=template,
+        width=width,
+        height=height,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=frequencies,
+            y=np.abs(amplitudes) / n_points,
+            mode=mode,
+            **kwargs,
+        )
+    )
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_range=xlim,
+        yaxis_range=ylim,
+    )
+    return fig
+
+
+def plot_fft(
+    x: NDArray,
+    y: NDArray,
+    *,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines",
+    title: str = "FFT result",
+    xlabel: str = "Frequency",
+    ylabel: str = "Amplitude",
+    xlim: tuple[float, float] | list[float] | None = None,
+    ylim: tuple[float, float] | list[float] | None = None,
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
+    template: str = DEFAULT_TEMPLATE,
+    save_image: bool = False,
+    **kwargs: Any,
+) -> None:
+    """Plot FFT magnitude and show the figure."""
+    fig = make_fft_figure(
+        x,
+        y,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        xlim=xlim,
+        ylim=ylim,
+        width=width,
+        height=height,
+        template=template,
+        **kwargs,
+    )
+    _render_figure(
+        fig,
+        filename="plot_fft",
+        width=width,
+        height=height,
+        save_image=save_image,
+        image_name="plot_fft",
+    )
+
+
 def make_cdf_figure(
     data: ArrayLike | Mapping,
     *,
@@ -325,91 +463,6 @@ def plot_cdf(
     )
 
 
-def make_fft_figure(
-    x: NDArray,
-    y: NDArray,
-    *,
-    mode: Literal["lines", "markers", "lines+markers"] = "lines",
-    title: str = "FFT result",
-    xlabel: str = "Frequency",
-    ylabel: str = "Amplitude",
-    xlim: tuple[float, float] | list[float] | None = None,
-    ylim: tuple[float, float] | list[float] | None = None,
-    width: int = FIGURE_SIZE_STANDARD.width,
-    height: int = FIGURE_SIZE_STANDARD.height,
-    template: str = DEFAULT_TEMPLATE,
-    **kwargs: Any,
-) -> go.Figure:
-    """Build an FFT magnitude figure."""
-    n_points = len(x)
-    dt = x[1] - x[0]
-    frequencies = np.fft.fftfreq(n_points, dt)[: n_points // 2]
-    amplitudes = np.fft.fft(y)[: n_points // 2]
-
-    fig = make_figure(
-        template=template,
-        width=width,
-        height=height,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=frequencies,
-            y=np.abs(amplitudes) / n_points,
-            mode=mode,
-            **kwargs,
-        )
-    )
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-        xaxis_range=xlim,
-        yaxis_range=ylim,
-    )
-    return fig
-
-
-def plot_fft(
-    x: NDArray,
-    y: NDArray,
-    *,
-    mode: Literal["lines", "markers", "lines+markers"] = "lines",
-    title: str = "FFT result",
-    xlabel: str = "Frequency",
-    ylabel: str = "Amplitude",
-    xlim: tuple[float, float] | list[float] | None = None,
-    ylim: tuple[float, float] | list[float] | None = None,
-    width: int = FIGURE_SIZE_STANDARD.width,
-    height: int = FIGURE_SIZE_STANDARD.height,
-    template: str = DEFAULT_TEMPLATE,
-    save_image: bool = False,
-    **kwargs: Any,
-) -> None:
-    """Plot FFT magnitude and show the figure."""
-    fig = make_fft_figure(
-        x,
-        y,
-        mode=mode,
-        title=title,
-        xlabel=xlabel,
-        ylabel=ylabel,
-        xlim=xlim,
-        ylim=ylim,
-        width=width,
-        height=height,
-        template=template,
-        **kwargs,
-    )
-    _render_figure(
-        fig,
-        filename="plot_fft",
-        width=width,
-        height=height,
-        save_image=save_image,
-        image_name="plot_fft",
-    )
-
-
 def make_bloch_vectors_figure(
     times: NDArray,
     bloch_vectors: NDArray,
@@ -496,84 +549,6 @@ def plot_bloch_vectors(
         height=height,
         save_image=save_image,
         image_name="plot_bloch_vectors",
-    )
-
-
-def make_waveform_figure(
-    data: NDArray,
-    *,
-    sampling_period: float = 2.0,
-    mode: Literal["lines", "markers", "lines+markers"] = "lines",
-    title: str = "Waveform",
-    xlabel: str = "Time (ns)",
-    ylabel: str = "Signal (arb. units)",
-    width: int = FIGURE_SIZE_STANDARD.width,
-    height: int = FIGURE_SIZE_STANDARD.height,
-    template: str = DEFAULT_TEMPLATE,
-) -> go.Figure:
-    """Build an I/Q waveform figure."""
-    time_axis = np.arange(len(data)) * sampling_period
-    fig = make_figure(
-        template=template,
-        width=width,
-        height=height,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=time_axis,
-            y=np.real(data),
-            mode=mode,
-            name="I",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=time_axis,
-            y=np.imag(data),
-            mode=mode,
-            name="Q",
-        )
-    )
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-    )
-    return fig
-
-
-def plot_waveform(
-    data: NDArray,
-    *,
-    sampling_period: float = 2.0,
-    mode: Literal["lines", "markers", "lines+markers"] = "lines",
-    title: str = "Waveform",
-    xlabel: str = "Time (ns)",
-    ylabel: str = "Signal (arb. units)",
-    width: int = FIGURE_SIZE_STANDARD.width,
-    height: int = FIGURE_SIZE_STANDARD.height,
-    template: str = DEFAULT_TEMPLATE,
-    save_image: bool = False,
-) -> None:
-    """Plot waveform I/Q components and show the figure."""
-    fig = make_waveform_figure(
-        data,
-        sampling_period=sampling_period,
-        mode=mode,
-        title=title,
-        xlabel=xlabel,
-        ylabel=ylabel,
-        width=width,
-        height=height,
-        template=template,
-    )
-    _render_figure(
-        fig,
-        filename="plot_waveform",
-        width=width,
-        height=height,
-        save_image=save_image,
-        image_name="plot_waveform",
     )
 
 
@@ -682,4 +657,29 @@ def scatter_iq_data(
         height=height,
         save_image=save_image,
         image_name="plot_state_distribution",
+    )
+
+
+def _render_figure(
+    fig: go.Figure,
+    *,
+    filename: str,
+    width: int,
+    height: int,
+    save_image: bool,
+    image_name: str,
+) -> None:
+    """Save and show a figure using shared Plotly behavior."""
+    if save_image:
+        save_figure_image(
+            fig,
+            name=image_name,
+            width=width,
+            height=height,
+        )
+    show_figure(
+        fig,
+        filename=filename,
+        width=width,
+        height=height,
     )

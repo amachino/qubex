@@ -1,6 +1,13 @@
 # qxfitting
 
-`qxfitting` is the fitting and curve-analysis layer extracted from the Qubex project. It provides fit models, result containers, and plotting helpers that higher-level packages like `qubex` build on.
+`qxfitting` is currently a placeholder package reserved for future fitting and curve-analysis APIs.
+
+## Migration policy
+
+- Legacy fitting APIs remain in `qubex.analysis.fitting` during transition.
+- New fitting APIs are added to `qxfitting` incrementally.
+- Domain code in `qubex` will migrate to `qxfitting` step by step.
+- After migration completes, `qubex.analysis.fitting` will be deprecated and removed.
 
 ## Relationship to qubex
 

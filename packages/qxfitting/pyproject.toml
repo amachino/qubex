@@ -11,11 +11,6 @@ description = "Qubex fitting and curve-analysis utilities"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
-    "numpy >= 1.22",
-    "plotly >= 5.23",
-    "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer",
-    "scikit-learn >= 1.0",
-    "scipy >= 1.0",
 ]
 
 [tool.setuptools.package-data]
