@@ -248,7 +248,7 @@ class RabiData(TargetData):
             )
         )
         if images_dir is not None:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"rabi_data_{self.target}",
                 images_dir=images_dir,
@@ -437,7 +437,7 @@ class SweepData(TargetData):
             )
         )
         if images_dir is not None:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"sweep_data_{self.target}",
                 images_dir=images_dir,

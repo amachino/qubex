@@ -429,7 +429,7 @@ def pb_experiment_1q(
             )
 
             if save_image:
-                viz.save_figure_image(
+                viz.save_figure(
                     fit_result["fig"],
                     name=f"pb_experiment_1q_{target}",
                 )
@@ -655,7 +655,7 @@ def pb_experiment_2q(
             )
 
             if save_image:
-                viz.save_figure_image(
+                viz.save_figure(
                     fit_result["fig"],
                     name=f"pb_experiment_2q_{target}",
                 )
@@ -849,7 +849,7 @@ def ipb_experiment(
             ylabel="Normalized signal",
         )
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"interleaved_purity_benchmarking_{target}",
             )

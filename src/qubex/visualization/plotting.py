@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from qxvisualizer.figure import save_figure
 from qxvisualizer.plotting import (
     DEFAULT_IMAGES_DIR,
     make_bloch_vectors_figure,
@@ -15,7 +16,6 @@ from qxvisualizer.plotting import (
     plot_cdf,
     plot_fft,
     plot_waveform,
-    save_figure_image,
     scatter_iq_data,
 )
 
@@ -32,6 +32,6 @@ __all__ = [
     "plot_cdf",
     "plot_fft",
     "plot_waveform",
-    "save_figure_image",
+    "save_figure",
     "scatter_iq_data",
 ]

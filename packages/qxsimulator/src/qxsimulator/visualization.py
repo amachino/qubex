@@ -6,7 +6,7 @@ from typing import Literal
 
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-from qxvisualizer.figure_factory import (
+from qxvisualizer.figure import (
     DEFAULT_HEIGHT,
     DEFAULT_TEMPLATE,
     DEFAULT_WIDTH,

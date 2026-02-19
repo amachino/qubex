@@ -10,7 +10,7 @@ from typing import Literal, cast
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-from qxvisualizer.figure_factory import show_figure
+from qxvisualizer.figure import show_figure
 
 logger = logging.getLogger(__name__)
 

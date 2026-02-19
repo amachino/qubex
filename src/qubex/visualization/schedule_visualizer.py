@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
-from qxvisualizer.figure_factory import DEFAULT_TEMPLATE, make_figure, show_figure
+from qxvisualizer.figure import DEFAULT_TEMPLATE, make_figure, show_figure
 
 from .style import COLORS
 

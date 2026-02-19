@@ -215,7 +215,7 @@ def plot_ghz_state_tomography(
     if save_image:
         if file_name is None:
             file_name = f"ghz_state_tomography_{'-'.join(qubits)}"
-        viz.save_figure_image(fig, file_name, width=width, height=height)
+        viz.save_figure(fig, file_name, width=width, height=height)
 
     return {
         "density_matrix": rho,

@@ -1,6 +1,6 @@
 """Shared visualization helpers for Qubex packages."""
 
-from .figure_factory import (
+from .figure import (
     DEFAULT_HEIGHT,
     DEFAULT_TEMPLATE,
     DEFAULT_WIDTH,
@@ -11,6 +11,7 @@ from .figure_factory import (
     IQ_AXIS_MARGIN_RIGHT,
     FigureSize,
     make_figure,
+    save_figure,
     show_figure,
 )
 from .plotting import (
@@ -26,7 +27,6 @@ from .plotting import (
     plot_cdf,
     plot_fft,
     plot_waveform,
-    save_figure_image,
     scatter_iq_data,
 )
 from .style import (
@@ -89,7 +89,7 @@ __all__ = [
     "plot_cdf",
     "plot_fft",
     "plot_waveform",
-    "save_figure_image",
+    "save_figure",
     "scatter_iq_data",
     "show_figure",
 ]

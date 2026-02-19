@@ -16,7 +16,7 @@ import qctrlvisualizer as qv
 import qutip as qt
 import qutip.typing as qtt
 from qxpulse import PulseSchedule, Waveform
-from qxvisualizer.figure_factory import show_figure
+from qxvisualizer.figure import show_figure
 from scipy.interpolate import interp1d
 
 from qxsimulator.visualization import plot_bloch_vectors

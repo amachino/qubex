@@ -14,7 +14,7 @@ from plotly.colors import sample_colorscale
 
 import qubex.visualization as viz
 from qubex.constants import MUX_SIZE, PREFIX_MUX, PREFIX_QUBIT, PREFIX_RESONATOR
-from qubex.visualization import save_figure_image
+from qubex.visualization import save_figure
 
 # TODO: Remove hardcoded constants
 
@@ -850,7 +850,7 @@ class LatticeGraph:
         )
 
         if save_image:
-            save_figure_image(
+            save_figure(
                 fig,
                 name=image_name,
                 images_dir=images_dir,
@@ -1128,7 +1128,7 @@ class LatticeGraph:
         fig.show()
 
         if save_image:
-            save_figure_image(
+            save_figure(
                 fig,
                 name=image_name,
                 images_dir=images_dir,

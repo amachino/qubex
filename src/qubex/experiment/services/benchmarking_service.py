@@ -419,7 +419,7 @@ class BenchmarkingService:
                 )
 
                 if save_image:
-                    viz.save_figure_image(
+                    viz.save_figure(
                         fit_result["fig"],
                         name=f"rb_experiment_1q_{target}",
                     )
@@ -634,7 +634,7 @@ class BenchmarkingService:
                 )
 
                 if save_image:
-                    viz.save_figure_image(
+                    viz.save_figure(
                         fit_result["fig"],
                         name=f"rb_experiment_1q_{target}",
                     )
@@ -822,7 +822,7 @@ class BenchmarkingService:
                 ylabel="Normalized signal",
             )
             if save_image:
-                viz.save_figure_image(
+                viz.save_figure(
                     fig,
                     name=f"interleaved_randomized_benchmarking_{target}",
                 )

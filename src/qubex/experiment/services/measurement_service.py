@@ -2553,7 +2553,7 @@ class MeasurementService:
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 f"bell_state_measurement_{control_qubit}-{target_qubit}",
             )

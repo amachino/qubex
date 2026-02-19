@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import datetime
-import logging
-import os
 from collections.abc import Collection, Mapping
-from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
 import numpy as np
 import plotly.graph_objs as go
 from numpy.typing import ArrayLike, NDArray
 
-from .figure_factory import (
+from .figure import (
     DEFAULT_TEMPLATE,
     FIGURE_SIZE_IQ,
     FIGURE_SIZE_STANDARD,
@@ -21,54 +17,13 @@ from .figure_factory import (
     IQ_AXIS_MARGIN_LEFT,
     IQ_AXIS_MARGIN_RIGHT,
     make_figure,
+    save_figure,
     show_figure,
 )
 from .style import COLORS, get_colors
 
-logger = logging.getLogger(__name__)
-
 DEFAULT_IMAGES_DIR = "./images"
 IQArray: TypeAlias = ArrayLike
-
-
-def save_figure_image(
-    fig: go.Figure,
-    name: str = "image",
-    *,
-    images_dir: Path | str = DEFAULT_IMAGES_DIR,
-    format: Literal["png", "svg", "jpeg", "webp"] = "png",
-    width: int | None = None,
-    height: int | None = None,
-    scale: int = 3,
-) -> None:
-    """Save a figure to an image file in the images directory."""
-    if not os.path.exists(images_dir):
-        os.makedirs(images_dir)
-
-    if width is None:
-        width = FIGURE_SIZE_STANDARD.width
-    if height is None:
-        height = FIGURE_SIZE_STANDARD.height
-
-    counter = 1
-    current_date = datetime.datetime.now().strftime("%Y%m%d")
-    file_path = os.path.join(images_dir, f"{current_date}_{name}_{counter}.{format}")
-
-    while os.path.exists(file_path):
-        counter += 1
-        file_path = os.path.join(
-            images_dir,
-            f"{current_date}_{name}_{counter}.{format}",
-        )
-
-    fig.write_image(
-        file_path,
-        format=format,
-        width=width,
-        height=height,
-        scale=scale,
-    )
-    logger.info("Image saved to %s", file_path)
 
 
 def make_plot_figure(
@@ -181,13 +136,18 @@ def plot(
         template=template,
         **kwargs,
     )
-    _render_figure(
+    if save_image:
+        save_figure(
+            fig,
+            name="plot",
+            width=width,
+            height=height,
+        )
+    show_figure(
         fig,
         filename="plot",
         width=width,
         height=height,
-        save_image=save_image,
-        image_name="plot",
     )
 
 
@@ -259,13 +219,18 @@ def plot_waveform(
         height=height,
         template=template,
     )
-    _render_figure(
+    if save_image:
+        save_figure(
+            fig,
+            name="plot_waveform",
+            width=width,
+            height=height,
+        )
+    show_figure(
         fig,
         filename="plot_waveform",
         width=width,
         height=height,
-        save_image=save_image,
-        image_name="plot_waveform",
     )
 
 
@@ -344,13 +309,18 @@ def plot_fft(
         template=template,
         **kwargs,
     )
-    _render_figure(
+    if save_image:
+        save_figure(
+            fig,
+            name="plot_fft",
+            width=width,
+            height=height,
+        )
+    show_figure(
         fig,
         filename="plot_fft",
         width=width,
         height=height,
-        save_image=save_image,
-        image_name="plot_fft",
     )
 
 
@@ -453,13 +423,18 @@ def plot_cdf(
         height=height,
         template=template,
     )
-    _render_figure(
+    if save_image:
+        save_figure(
+            fig,
+            name="plot_cdf",
+            width=width,
+            height=height,
+        )
+    show_figure(
         fig,
         filename="plot_cdf",
         width=width,
         height=height,
-        save_image=save_image,
-        image_name="plot_cdf",
     )
 
 
@@ -542,13 +517,18 @@ def plot_bloch_vectors(
         height=height,
         template=template,
     )
-    _render_figure(
+    if save_image:
+        save_figure(
+            fig,
+            name="plot_bloch_vectors",
+            width=width,
+            height=height,
+        )
+    show_figure(
         fig,
         filename="plot_bloch_vectors",
         width=width,
         height=height,
-        save_image=save_image,
-        image_name="plot_bloch_vectors",
     )
 
 
@@ -650,36 +630,16 @@ def scatter_iq_data(
         text=text,
         template=template,
     )
-    _render_figure(
-        fig,
-        filename="plot_state_distribution",
-        width=width,
-        height=height,
-        save_image=save_image,
-        image_name="plot_state_distribution",
-    )
-
-
-def _render_figure(
-    fig: go.Figure,
-    *,
-    filename: str,
-    width: int,
-    height: int,
-    save_image: bool,
-    image_name: str,
-) -> None:
-    """Save and show a figure using shared Plotly behavior."""
     if save_image:
-        save_figure_image(
+        save_figure(
             fig,
-            name=image_name,
+            name="plot_state_distribution",
             width=width,
             height=height,
         )
     show_figure(
         fig,
-        filename=filename,
+        filename="plot_state_distribution",
         width=width,
         height=height,
     )

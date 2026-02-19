@@ -11,7 +11,7 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
-from qxvisualizer.figure_factory import show_figure
+from qxvisualizer.figure import show_figure
 from qxvisualizer.style import COLORS
 
 from .blank import Blank

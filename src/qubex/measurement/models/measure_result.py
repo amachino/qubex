@@ -261,7 +261,7 @@ class MeasureData:
                     title=plot_title,
                 )
                 if save_image:
-                    viz.save_figure_image(
+                    viz.save_figure(
                         fig,
                         name="plot_state_distribution",
                     )
@@ -284,7 +284,7 @@ class MeasureData:
                     ylabel="Signal (arb. units)",
                 )
                 if save_image:
-                    viz.save_figure_image(
+                    viz.save_figure(
                         fig,
                         name="plot_waveform",
                     )
@@ -329,7 +329,7 @@ class MeasureData:
                 ylabel="Signal (arb. units)",
             )
             if save_image:
-                viz.save_figure_image(
+                viz.save_figure(
                     fig,
                     name="plot_fft",
                 )
@@ -672,7 +672,7 @@ class MeasureResult:
             if return_figure:
                 fig = viz.make_iq_scatter_figure(data=data)
                 if save_image:
-                    viz.save_figure_image(
+                    viz.save_figure(
                         fig,
                         name="plot_state_distribution",
                     )

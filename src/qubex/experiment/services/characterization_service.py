@@ -306,7 +306,7 @@ class CharacterizationService:
                     height=400,
                 )
                 fig.show()
-                viz.save_figure_image(
+                viz.save_figure(
                     fig,
                     f"readout_snr_{target}",
                     width=600,
@@ -423,7 +423,7 @@ class CharacterizationService:
                     height=400,
                 )
                 fig.show()
-                viz.save_figure_image(
+                viz.save_figure(
                     fig,
                     f"readout_snr_{target}",
                     width=600,
@@ -593,7 +593,7 @@ class CharacterizationService:
                 resonant_frequencies[target] = fit_result["f_resonance"]
 
                 if save_image:
-                    viz.save_figure_image(
+                    viz.save_figure(
                         fig,
                         name=f"chevron_pattern_{target}",
                         width=600,
@@ -601,7 +601,7 @@ class CharacterizationService:
                     )
                     fig_fit = fit_result["fig"]
                     if fig_fit is not None:
-                        viz.save_figure_image(
+                        viz.save_figure(
                             fig_fit,
                             name=f"chevron_pattern_fit_{target}",
                             width=600,
@@ -1003,7 +1003,7 @@ class CharacterizationService:
             if save_image:
                 fig = fit_result["fig"]
                 if fig is not None:
-                    viz.save_figure_image(
+                    viz.save_figure(
                         fig,
                         name=f"readout_frequency_{target}",
                         width=600,
@@ -1136,7 +1136,7 @@ class CharacterizationService:
                     fig = fit_result["fig"]
 
                     if save_image:
-                        viz.save_figure_image(
+                        viz.save_figure(
                             fig,
                             name=f"t1_{target}",
                         )
@@ -1299,7 +1299,7 @@ class CharacterizationService:
                     fig = fit_result["fig"]
 
                     if save_image:
-                        viz.save_figure_image(
+                        viz.save_figure(
                             fig,
                             name=f"t2_echo_{target}",
                         )
@@ -1468,7 +1468,7 @@ class CharacterizationService:
                         fig = fit_result["fig"]
 
                         if save_image:
-                            viz.save_figure_image(
+                            viz.save_figure(
                                 fig,
                                 name=f"ramsey_{target}",
                             )
@@ -2240,13 +2240,13 @@ class CharacterizationService:
                 print(f"  {peak:.4f}")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig1,
                 name=f"resonator_frequency_scan_{mux.label}_phase",
                 width=600,
                 height=450,
             )
-            viz.save_figure_image(
+            viz.save_figure(
                 fig2,
                 name=f"resonator_frequency_scan_{mux.label}_phase_diff",
                 width=600,
@@ -2373,7 +2373,7 @@ class CharacterizationService:
             fig.show()
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"resonator_spectroscopy_{mux.label}",
             )
@@ -2504,7 +2504,7 @@ class CharacterizationService:
         fig = fit_result["fig"]
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"reflection_coefficient_{target}",
                 width=800,
@@ -2768,7 +2768,7 @@ class CharacterizationService:
                 print(f"  anharmonicity: {anharmonicity:.4f} GHz")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"qubit_frequency_scan_{qubit}",
                 width=600,
@@ -2881,7 +2881,7 @@ class CharacterizationService:
             print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"control_amplitude_estimation_{target}",
                 width=600,
@@ -2993,7 +2993,7 @@ class CharacterizationService:
             fig.show()
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"measure_qubit_resonance{target}",
                 width=600,
@@ -3099,7 +3099,7 @@ class CharacterizationService:
             fig.show()
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"qubit_spectroscopy_{target}",
                 width=600,
@@ -3276,7 +3276,7 @@ class CharacterizationService:
             print(f"f_opt: {optimal_frequency:.4f} GHz")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig1,
                 name=f"dispersive_shift_{target}",
                 width=600,
@@ -3401,7 +3401,7 @@ class CharacterizationService:
             print(f"f_opt: {optimal_frequency:.4f} GHz")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"optimal_readout_frequency_{target}",
                 width=600,
@@ -3516,7 +3516,7 @@ class CharacterizationService:
             print(f"amp_opt: {optimal_amplitude:.4f}")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"optimal_readout_amplitude_{target}",
                 width=600,
@@ -3716,7 +3716,7 @@ class CharacterizationService:
             fig.show()
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"ckp_measurement_{target}_{qubit_initial_state}",
                 width=600,
@@ -3938,7 +3938,7 @@ class CharacterizationService:
             print(f"n_c   : {n_crit:.3f}")
 
         if save_image:
-            viz.save_figure_image(
+            viz.save_figure(
                 fig,
                 name=f"ckp_experiment_{target}",
                 width=600,

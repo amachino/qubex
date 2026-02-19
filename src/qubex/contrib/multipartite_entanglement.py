@@ -443,7 +443,7 @@ def measure_ghz_state(
         ):
             print(f"{label} : {p:.2%} -> {mp:.2%}")
     if save_image:
-        viz.save_figure_image(
+        viz.save_figure(
             fig,
             f"ghz_state_measurement_{'-'.join(qubits)}",
         )
@@ -885,12 +885,12 @@ def mqc_experiment(
         )
         if fig is None:
             raise RuntimeError("Expected figure from plot() when return_figure=True.")
-        viz.save_figure_image(
+        viz.save_figure(
             fig,
             name=f"mqc_n{n_qubits}_{qubit}",
             format="png",
         )
-        viz.save_figure_image(
+        viz.save_figure(
             fig,
             name=f"mqc_n{n_qubits}_{qubit}",
             format="svg",
@@ -985,13 +985,13 @@ def fourier_analysis(
 
     file_name = f"fourier_analysis_{qubit}" if qubit else "fourier_analysis"
 
-    viz.save_figure_image(
+    viz.save_figure(
         fig,
         name=file_name,
         format="png",
     )
 
-    viz.save_figure_image(
+    viz.save_figure(
         fig,
         name=file_name,
         format="svg",
@@ -1184,12 +1184,12 @@ def parity_oscillation(
         }
     )
 
-    viz.save_figure_image(
+    viz.save_figure(
         fig,
         name=f"parity_oscillation_n{n_qubits}",
         format="png",
     )
-    viz.save_figure_image(
+    viz.save_figure(
         fig,
         name=f"parity_oscillation_n{n_qubits}",
         format="svg",

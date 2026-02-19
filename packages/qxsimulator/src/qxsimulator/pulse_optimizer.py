@@ -17,7 +17,7 @@ from IPython.display import display
 from jax import Array
 from jax.scipy.linalg import expm
 from numpy.typing import NDArray
-from qxvisualizer.figure_factory import show_figure
+from qxvisualizer.figure import show_figure
 
 from .quantum_system import QuantumSystem
 
