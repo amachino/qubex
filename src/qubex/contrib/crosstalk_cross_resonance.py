@@ -415,7 +415,8 @@ def cr_crosstalk_hamiltonian_tomography(
 
     cr_rabi_rate = exp.pulse.calc_rabi_rate(control_qubit, cr_amplitude)
 
-    fig_c = viz.make_subplots_figure(
+    fig_c = viz.make_figure()
+    fig_c.set_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
@@ -475,7 +476,8 @@ def cr_crosstalk_hamiltonian_tomography(
         margin=dict(t=90),
     )
 
-    fig_t = viz.make_subplots_figure(
+    fig_t = viz.make_figure()
+    fig_t.set_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
@@ -529,7 +531,8 @@ def cr_crosstalk_hamiltonian_tomography(
         margin=dict(t=90),
     )
 
-    fig_t_3d = viz.make_subplots_figure(
+    fig_t_3d = viz.make_figure()
+    fig_t_3d.set_subplots(
         rows=1,
         cols=2,
         subplot_titles=["Control : |0〉", "Control : |1〉"],
@@ -572,7 +575,8 @@ def cr_crosstalk_hamiltonian_tomography(
         fig_s_0: go.Figure = spectators_fit_results_0[label]["fig"]
         fig_s_1: go.Figure = spectators_fit_results_1[label]["fig"]
 
-        fig_s = viz.make_subplots_figure(
+        fig_s = viz.make_figure()
+        fig_s.set_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -629,7 +633,8 @@ def cr_crosstalk_hamiltonian_tomography(
         fig_s_3d_0 = spectators_fit_results_0[label]["fig3d"]
         fig_s_3d_1 = spectators_fit_results_1[label]["fig3d"]
 
-        fig_s_3d = viz.make_subplots_figure(
+        fig_s_3d = viz.make_figure()
+        fig_s_3d.set_subplots(
             rows=1,
             cols=2,
             subplot_titles=["Control |0〉", "Control |1〉"],

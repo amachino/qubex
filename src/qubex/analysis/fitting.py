@@ -2476,7 +2476,8 @@ def fit_reflection_coefficient(
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonator_reflection(x_fine, *fitted_params)
 
-    fig = viz.make_subplots_figure(
+    fig = viz.make_figure()
+    fig.set_subplots(
         rows=2,
         cols=2,
         column_widths=[0.5, 0.5],
@@ -2730,7 +2731,8 @@ def fit_reflection_coefficient_double(
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_double_resonator_reflection(x_fine, *fitted_params)
 
-    fig = viz.make_subplots_figure(
+    fig = viz.make_figure()
+    fig.set_subplots(
         rows=2,
         cols=2,
         column_widths=[0.5, 0.5],

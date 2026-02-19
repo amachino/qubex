@@ -140,7 +140,8 @@ def plot_ghz_state_tomography(
     n_qubits = len(qubits)
     dim = 2**n_qubits
 
-    fig = viz.make_subplots_figure(
+    fig = viz.make_figure()
+    fig.set_subplots(
         rows=1,
         cols=2,
         subplot_titles=("Re", "Im"),

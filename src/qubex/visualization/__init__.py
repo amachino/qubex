@@ -18,7 +18,6 @@ from .figure_factory import (
     SEQUENCER_TIMELINE_MIN_HEIGHT,
     FigureSize,
     make_figure,
-    make_subplots_figure,
     show_figure,
 )
 from .plotting import (
@@ -74,7 +73,6 @@ __all__ = [
     "make_measurement_schedule_figure",
     "make_plot_figure",
     "make_sequencer_timeline_figure",
-    "make_subplots_figure",
     "make_waveform_figure",
     "plot",
     "plot_bloch_vectors",

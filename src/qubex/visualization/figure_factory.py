@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from .style import (
     HEIGHT as STYLE_DEFAULT_HEIGHT,
@@ -62,24 +61,6 @@ def make_figure(
 ) -> go.Figure:
     """Create a styled Plotly figure."""
     figure = go.Figure()
-    _apply_figure_style(
-        figure,
-        template=template,
-        width=width,
-        height=height,
-    )
-    return figure
-
-
-def make_subplots_figure(
-    *,
-    template: str = DEFAULT_TEMPLATE,
-    width: int | None = None,
-    height: int | None = None,
-    **kwargs: Any,
-) -> go.Figure:
-    """Create a styled Plotly subplots figure."""
-    figure = make_subplots(**kwargs)
     _apply_figure_style(
         figure,
         template=template,

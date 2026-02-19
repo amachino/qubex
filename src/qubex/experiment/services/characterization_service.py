@@ -263,7 +263,8 @@ class CharacterizationService:
 
         if plot:
             for target in targets:
-                fig = viz.make_subplots_figure(rows=3, cols=1, shared_xaxes=True)
+                fig = viz.make_figure()
+                fig.set_subplots(rows=3, cols=1, shared_xaxes=True)
                 fig.add_trace(
                     go.Scatter(
                         x=amplitude_range,
@@ -379,7 +380,8 @@ class CharacterizationService:
 
         if plot:
             for target in targets:
-                fig = viz.make_subplots_figure(rows=3, cols=1, shared_xaxes=True)
+                fig = viz.make_figure()
+                fig.set_subplots(rows=3, cols=1, shared_xaxes=True)
                 fig.add_trace(
                     go.Scatter(
                         x=time_range,
@@ -2106,7 +2108,8 @@ class CharacterizationService:
             )
         peak_freqs = frequency_range[peaks]
 
-        fig1 = viz.make_subplots_figure(
+        fig1 = viz.make_figure()
+        fig1.set_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -2154,7 +2157,8 @@ class CharacterizationService:
             margin=dict(t=80),
             showlegend=False,
         )
-        fig2 = viz.make_subplots_figure(
+        fig2 = viz.make_figure()
+        fig2.set_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,
@@ -2664,7 +2668,8 @@ class CharacterizationService:
         )
         peak_freqs = frequency_range[peaks]
 
-        fig = viz.make_subplots_figure(
+        fig = viz.make_figure()
+        fig.set_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,

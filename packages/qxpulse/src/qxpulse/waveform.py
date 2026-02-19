@@ -10,7 +10,6 @@ from typing import Literal, cast
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-from plotly.subplots import make_subplots
 
 logger = logging.getLogger(__name__)
 
@@ -341,7 +340,8 @@ class Waveform(ABC):
         ampl = np.append(self.abs, self.abs[-1])
         phase = np.append(self.angle, self.angle[-1])
 
-        fig = make_subplots(
+        fig = go.Figure()
+        fig.set_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,

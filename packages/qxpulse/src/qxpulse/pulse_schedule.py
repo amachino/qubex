@@ -21,14 +21,14 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from qxpulse.style import COLORS
 from qxpulse.typing import IQArray
 
 from .blank import Blank
+from .phase_shift import PhaseShift
 from .pulse import Pulse
-from .pulse_array import PhaseShift, PulseArray
+from .pulse_array import PulseArray
 from .waveform import Waveform
 
 logger = logging.getLogger(__name__)
@@ -410,7 +410,8 @@ class PulseSchedule:
 
         sequences = self.get_sequences()
 
-        fig = make_subplots(
+        fig = go.Figure()
+        fig.set_subplots(
             rows=n_channels,
             cols=1,
             shared_xaxes=True,

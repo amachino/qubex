@@ -1618,7 +1618,8 @@ def _measure_1d_cluster_state(
             if plot:
                 print(f"{edge[0]}-{edge[1]} ({sbits}) : Negativity = {negativity}")
 
-            fig = viz.make_subplots_figure(
+            fig = viz.make_figure()
+            fig.set_subplots(
                 rows=1,
                 cols=2,
                 subplot_titles=("Abs", "Phase"),
@@ -2757,7 +2758,8 @@ def _measure_graph_state(
             if plot:
                 print(f"{edge[0]}-{edge[1]} ({sbits}) : Negativity = {negativity}")
 
-            fig = viz.make_subplots_figure(
+            fig = viz.make_figure()
+            fig.set_subplots(
                 rows=1,
                 cols=2,
                 subplot_titles=("Abs", "Phase"),
@@ -3384,7 +3386,8 @@ def measure_bell_states(
         edge: (i // n_cols + 1, i % n_cols + 1) for i, edge in enumerate(all_edges)
     }
 
-    fig = viz.make_subplots_figure(
+    fig = viz.make_figure()
+    fig.set_subplots(
         rows=n_rows,
         cols=n_cols,
         subplot_titles=[f"{edge[0]}-{edge[1]}" for edge in all_edges],

@@ -17,7 +17,6 @@ from .figure_factory import (
     SEQUENCER_TIMELINE_LANE_HEIGHT,
     SEQUENCER_TIMELINE_MIN_HEIGHT,
     make_figure,
-    make_subplots_figure,
     show_figure,
 )
 from .style import COLORS
@@ -63,13 +62,12 @@ def make_measurement_schedule_figure(
     if n_channels == 0:
         raise ValueError("MeasurementSchedule must include at least one pulse channel.")
 
-    figure = make_subplots_figure(
+    figure = make_figure(template=template, width=width)
+    figure.set_subplots(
         rows=n_channels,
         cols=1,
         shared_xaxes=True,
         specs=[[{"secondary_y": True}] for _ in range(n_channels)],
-        template=template,
-        width=width,
     )
 
     capture_legend_added = False
