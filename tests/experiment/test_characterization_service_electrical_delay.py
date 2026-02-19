@@ -64,16 +64,6 @@ class _FakeContext:
         _ = qubits
         self.reset_calls.append(box_ids)
 
-    @staticmethod
-    def resolve_read_label(_target: str) -> str:
-        """Resolve read-label for tests."""
-        return "R00"
-
-    @staticmethod
-    def resolve_qubit_label(_target: str) -> str:
-        """Resolve qubit-label for tests."""
-        return "Q00"
-
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float]):
         """Apply a temporary frequency for measurement stubs."""
