@@ -37,6 +37,7 @@ This section links to the rendered Jupyter notebooks shipped with the documentat
 ## Pulse
 
 - [Pulse tutorial](pulse/tutorial.ipynb)
+- [Shape hash and waveform reuse](pulse/shape_hash_and_waveform_reuse.ipynb)
 
 ## Analysis
 
