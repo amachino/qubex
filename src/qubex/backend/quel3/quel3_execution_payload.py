@@ -21,7 +21,16 @@ class Quel3CaptureWindow:
 class Quel3WaveformEvent:
     """Waveform event definition for one target in QuEL-3 execution."""
 
+    waveform_name: str
     start_offset_ns: float
+    gain: float = 1.0
+    phase_offset_deg: float = 0.0
+
+
+@dataclass(frozen=True)
+class Quel3WaveformDefinition:
+    """Registered waveform definition for one name in QuEL-3 execution."""
+
     waveform: npt.NDArray[np.complex128]
     sampling_period_ns: float | None = None
 
@@ -41,6 +50,7 @@ class Quel3TargetTimeline:
 class Quel3ExecutionPayload:
     """Execution payload for translating measurement requests to fixed timeline."""
 
+    waveform_library: dict[str, Quel3WaveformDefinition]
     timelines: dict[str, Quel3TargetTimeline]
     instrument_aliases: dict[str, str]
     output_target_labels: dict[str, str]

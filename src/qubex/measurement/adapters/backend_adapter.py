@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import numpy as np
@@ -21,6 +24,7 @@ from qubex.backend.quel3 import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3TargetTimeline,
+    Quel3WaveformDefinition,
     Quel3WaveformEvent,
 )
 from qubex.measurement.measurement_constraint_profile import (
@@ -46,6 +50,14 @@ class MeasurementBackendAdapter(Protocol):
     ) -> BackendExecutionRequest:
         """Build backend execution request from measurement schedule/config."""
         ...
+
+
+@dataclass(frozen=True)
+class _WaveformSegment:
+    """One contiguous non-blank waveform segment."""
+
+    start_index: int
+    values: np.ndarray
 
 
 class Quel3MeasurementBackendAdapter:
@@ -113,6 +125,9 @@ class Quel3MeasurementBackendAdapter:
         """Build backend execution request as Quel3 fixed-timeline payload."""
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
+        waveform_library: dict[str, Quel3WaveformDefinition] = {}
+        waveform_name_by_shape_key: dict[str, str] = {}
+        waveform_index = 0
         timelines: dict[str, Quel3TargetTimeline] = {}
         instrument_aliases: dict[str, str] = {}
         output_target_labels: dict[str, str] = {}
@@ -147,7 +162,12 @@ class Quel3MeasurementBackendAdapter:
 
         for target in pulse_schedule.labels:
             sequence = pulse_schedule.get_sequence(target, copy=False)
-            events = self._create_quel3_events(sequence=sequence)
+            events, waveform_index = self._create_quel3_events(
+                sequence=sequence,
+                waveform_name_by_shape_key=waveform_name_by_shape_key,
+                waveform_library=waveform_library,
+                waveform_index=waveform_index,
+            )
             captures = sorted(
                 channel_captures.get(target, []), key=lambda c: c.start_time
             )
@@ -190,6 +210,7 @@ class Quel3MeasurementBackendAdapter:
                     output_target_labels[target] = target
         interval_ns = math.ceil(float(pulse_schedule.duration + config.interval))
         payload = Quel3ExecutionPayload(
+            waveform_library=waveform_library,
             timelines=timelines,
             instrument_aliases=instrument_aliases,
             output_target_labels=output_target_labels,
@@ -204,9 +225,16 @@ class Quel3MeasurementBackendAdapter:
         )
         return BackendExecutionRequest(payload=payload)
 
-    @staticmethod
-    def _create_quel3_events(*, sequence: Any) -> tuple[Quel3WaveformEvent, ...]:
-        """Create sparse waveform events from one flattened pulse sequence."""
+    @classmethod
+    def _create_quel3_events(
+        cls,
+        *,
+        sequence: Any,
+        waveform_name_by_shape_key: dict[str, str],
+        waveform_library: dict[str, Quel3WaveformDefinition],
+        waveform_index: int,
+    ) -> tuple[tuple[Quel3WaveformEvent, ...], int]:
+        """Create sparse waveform events and shared waveform library entries."""
         events: list[Quel3WaveformEvent] = []
         current_offset_ns = 0.0
         for waveform in sequence.get_flattened_waveforms(apply_frame_shifts=True):
@@ -215,18 +243,112 @@ class Quel3MeasurementBackendAdapter:
                 current_offset_ns += duration_ns
                 continue
             sampled = np.asarray(waveform.values, dtype=np.complex128)
-            if sampled.size == 0 or not np.any(np.abs(sampled) > 0):
-                current_offset_ns += duration_ns
-                continue
-            events.append(
-                Quel3WaveformEvent(
-                    start_offset_ns=current_offset_ns,
-                    waveform=sampled,
-                    sampling_period_ns=float(waveform.sampling_period),
+            sampling_period_ns = float(waveform.sampling_period)
+            for segment in cls._iter_non_blank_segments(sampled):
+                shape, gain, phase_offset_deg = cls._factor_shape(segment.values)
+                shape_key = cls._shape_key(
+                    shape=shape,
+                    sampling_period_ns=sampling_period_ns,
                 )
-            )
+                waveform_name = waveform_name_by_shape_key.get(shape_key)
+                if waveform_name is None:
+                    waveform_name = f"wf_shared_{waveform_index:04d}"
+                    waveform_index += 1
+                    waveform_library[waveform_name] = Quel3WaveformDefinition(
+                        waveform=shape,
+                        sampling_period_ns=sampling_period_ns,
+                    )
+                    waveform_name_by_shape_key[shape_key] = waveform_name
+
+                events.append(
+                    Quel3WaveformEvent(
+                        waveform_name=waveform_name,
+                        start_offset_ns=(
+                            current_offset_ns
+                            + float(segment.start_index) * sampling_period_ns
+                        ),
+                        gain=gain,
+                        phase_offset_deg=phase_offset_deg,
+                    )
+                )
             current_offset_ns += duration_ns
-        return tuple(events)
+        return tuple(events), waveform_index
+
+    @classmethod
+    def _iter_non_blank_segments(
+        cls,
+        waveform: np.ndarray,
+    ) -> Iterator[_WaveformSegment]:
+        """Yield contiguous non-blank waveform segments."""
+        non_blank_indices = np.flatnonzero(np.abs(waveform) > cls._amplitude_epsilon())
+        if non_blank_indices.size == 0:
+            return
+
+        start = int(non_blank_indices[0])
+        previous = start
+        for index in non_blank_indices[1:]:
+            index_int = int(index)
+            if index_int == previous + 1:
+                previous = index_int
+                continue
+            yield _WaveformSegment(
+                start_index=start,
+                values=waveform[start : previous + 1],
+            )
+            start = index_int
+            previous = index_int
+
+        yield _WaveformSegment(
+            start_index=start,
+            values=waveform[start : previous + 1],
+        )
+
+    @classmethod
+    def _factor_shape(
+        cls,
+        values: np.ndarray,
+    ) -> tuple[np.ndarray, float, float]:
+        """Factor one segment into normalized shape and complex scalar."""
+        amplitudes = np.abs(values)
+        peak_index = int(np.argmax(amplitudes))
+        peak_value = values[peak_index]
+        gain = float(amplitudes[peak_index])
+        if gain <= cls._amplitude_epsilon():
+            raise ValueError("Non-blank segment peak amplitude must be positive.")
+        shape = np.asarray(values / peak_value, dtype=np.complex128)
+        phase_offset_deg = float(np.rad2deg(np.angle(peak_value)))
+        return shape, gain, phase_offset_deg
+
+    @classmethod
+    def _shape_key(
+        cls,
+        *,
+        shape: np.ndarray,
+        sampling_period_ns: float,
+    ) -> str:
+        """Create deterministic deduplication key for one normalized shape."""
+        quantized_real = np.rint(shape.real / cls._shape_quantization()).astype(
+            np.int64
+        )
+        quantized_imag = np.rint(shape.imag / cls._shape_quantization()).astype(
+            np.int64
+        )
+        hasher = hashlib.blake2b(digest_size=16)
+        hasher.update(np.asarray(shape.size, dtype=np.int64).tobytes())
+        hasher.update(np.asarray(sampling_period_ns, dtype=np.float64).tobytes())
+        hasher.update(quantized_real.tobytes())
+        hasher.update(quantized_imag.tobytes())
+        return hasher.hexdigest()
+
+    @staticmethod
+    def _amplitude_epsilon() -> float:
+        """Return amplitude threshold for blank detection."""
+        return 1e-12
+
+    @staticmethod
+    def _shape_quantization() -> float:
+        """Return quantization step used for shape deduplication."""
+        return 1e-9
 
 
 class Quel1MeasurementBackendAdapter:

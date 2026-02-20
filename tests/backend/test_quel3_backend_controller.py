@@ -13,19 +13,20 @@ from qubex.measurement.adapters import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3TargetTimeline,
+    Quel3WaveformDefinition,
     Quel3WaveformEvent,
 )
 from qubex.measurement.models.measurement_result import MeasurementResult
 
 
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
+    waveform_name = "wf0"
     timeline = Quel3TargetTimeline(
         sampling_period_ns=0.4,
         events=(
             Quel3WaveformEvent(
+                waveform_name=waveform_name,
                 start_offset_ns=0.0,
-                waveform=np.array([0.0 + 0.0j, 1.0 + 0.0j], dtype=np.complex128),
-                sampling_period_ns=0.4,
             ),
         ),
         capture_windows=(
@@ -34,6 +35,12 @@ def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPaylo
         length_ns=0.8,
     )
     return Quel3ExecutionPayload(
+        waveform_library={
+            waveform_name: Quel3WaveformDefinition(
+                waveform=np.array([0.0 + 0.0j, 1.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.4,
+            )
+        },
         timelines={"RQ00": timeline},
         instrument_aliases={"RQ00": "alias-rq00"},
         output_target_labels={"RQ00": "Q00"},
