@@ -18,6 +18,11 @@ Publish the following four interfaces in `qxschema` as external shared protocol 
 This document defines the architecture and migration policy to achieve that goal
 without forcing immediate one-to-one model equality with internal `qubex` models.
 
+`qxschema` concrete field proposal is intentionally deferred until the
+qubex-internal baseline is frozen:
+
+- [qubex Measurement Model Baseline (Pre-qxschema)](qubex-measurement-model-baseline.md)
+
 ## Decision Summary
 
 1. `qxschema` is the external contract source of truth.
