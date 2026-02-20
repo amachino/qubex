@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import math
-from collections.abc import Iterator
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 import numpy as np
-from qxpulse import Blank
+from qxpulse import Blank, Pulse
 
 from qubex.backend import (
     BackendExecutionRequest,
@@ -50,14 +48,6 @@ class MeasurementBackendAdapter(Protocol):
     ) -> BackendExecutionRequest:
         """Build backend execution request from measurement schedule/config."""
         ...
-
-
-@dataclass(frozen=True)
-class _WaveformSegment:
-    """One contiguous non-blank waveform segment."""
-
-    start_index: int
-    values: np.ndarray
 
 
 class Quel3MeasurementBackendAdapter:
@@ -242,73 +232,73 @@ class Quel3MeasurementBackendAdapter:
             if isinstance(waveform, Blank):
                 current_offset_ns += duration_ns
                 continue
+
+            if isinstance(waveform, Pulse):
+                sampling_period_ns = float(waveform.sampling_period)
+                scale = float(waveform.scale)
+                shape = np.asarray(waveform.shape_values, dtype=np.complex128)
+                if (
+                    abs(scale) > cls._amplitude_epsilon()
+                    and shape.size > 0
+                    and np.max(np.abs(shape)) > cls._amplitude_epsilon()
+                ):
+                    shape_hash = waveform.shape_hash
+                    waveform_name = waveform_name_by_shape_key.get(shape_hash)
+                    if waveform_name is None:
+                        waveform_name = f"wf_shared_{waveform_index:04d}"
+                        waveform_index += 1
+                        waveform_library[waveform_name] = Quel3WaveformDefinition(
+                            waveform=shape,
+                            sampling_period_ns=sampling_period_ns,
+                        )
+                        waveform_name_by_shape_key[shape_hash] = waveform_name
+                    events.append(
+                        Quel3WaveformEvent(
+                            waveform_name=waveform_name,
+                            start_offset_ns=current_offset_ns,
+                            gain=scale,
+                            phase_offset_deg=float(np.rad2deg(float(waveform.phase))),
+                        )
+                    )
+                current_offset_ns += duration_ns
+                continue
+
             sampled = np.asarray(waveform.values, dtype=np.complex128)
+            if sampled.size == 0 or np.max(np.abs(sampled)) <= cls._amplitude_epsilon():
+                current_offset_ns += duration_ns
+                continue
             sampling_period_ns = float(waveform.sampling_period)
-            for segment in cls._iter_non_blank_segments(sampled):
-                shape, gain, phase_offset_deg = cls._factor_shape(segment.values)
-                shape_key = cls._shape_key(
-                    shape=shape,
+            shape, gain, phase_offset_deg = cls._factor_shape(sampled)
+            shape_key = cls._shape_key(
+                shape=shape,
+                sampling_period_ns=sampling_period_ns,
+            )
+            waveform_name = waveform_name_by_shape_key.get(shape_key)
+            if waveform_name is None:
+                waveform_name = f"wf_shared_{waveform_index:04d}"
+                waveform_index += 1
+                waveform_library[waveform_name] = Quel3WaveformDefinition(
+                    waveform=shape,
                     sampling_period_ns=sampling_period_ns,
                 )
-                waveform_name = waveform_name_by_shape_key.get(shape_key)
-                if waveform_name is None:
-                    waveform_name = f"wf_shared_{waveform_index:04d}"
-                    waveform_index += 1
-                    waveform_library[waveform_name] = Quel3WaveformDefinition(
-                        waveform=shape,
-                        sampling_period_ns=sampling_period_ns,
-                    )
-                    waveform_name_by_shape_key[shape_key] = waveform_name
-
-                events.append(
-                    Quel3WaveformEvent(
-                        waveform_name=waveform_name,
-                        start_offset_ns=(
-                            current_offset_ns
-                            + float(segment.start_index) * sampling_period_ns
-                        ),
-                        gain=gain,
-                        phase_offset_deg=phase_offset_deg,
-                    )
+                waveform_name_by_shape_key[shape_key] = waveform_name
+            events.append(
+                Quel3WaveformEvent(
+                    waveform_name=waveform_name,
+                    start_offset_ns=current_offset_ns,
+                    gain=gain,
+                    phase_offset_deg=phase_offset_deg,
                 )
+            )
             current_offset_ns += duration_ns
         return tuple(events), waveform_index
-
-    @classmethod
-    def _iter_non_blank_segments(
-        cls,
-        waveform: np.ndarray,
-    ) -> Iterator[_WaveformSegment]:
-        """Yield contiguous non-blank waveform segments."""
-        non_blank_indices = np.flatnonzero(np.abs(waveform) > cls._amplitude_epsilon())
-        if non_blank_indices.size == 0:
-            return
-
-        start = int(non_blank_indices[0])
-        previous = start
-        for index in non_blank_indices[1:]:
-            index_int = int(index)
-            if index_int == previous + 1:
-                previous = index_int
-                continue
-            yield _WaveformSegment(
-                start_index=start,
-                values=waveform[start : previous + 1],
-            )
-            start = index_int
-            previous = index_int
-
-        yield _WaveformSegment(
-            start_index=start,
-            values=waveform[start : previous + 1],
-        )
 
     @classmethod
     def _factor_shape(
         cls,
         values: np.ndarray,
     ) -> tuple[np.ndarray, float, float]:
-        """Factor one segment into normalized shape and complex scalar."""
+        """Factor one waveform into normalized shape and complex scalar."""
         amplitudes = np.abs(values)
         peak_index = int(np.argmax(amplitudes))
         peak_value = values[peak_index]

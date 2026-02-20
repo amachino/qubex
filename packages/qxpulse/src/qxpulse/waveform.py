@@ -28,7 +28,8 @@ class Waveform(ABC):
     scale : float, optional
         Scaling factor of the waveform.
     detuning : float, optional
-        Detuning of the waveform in GHz.
+        Deprecated. Detuning of the waveform in GHz. Kept for backward
+        compatibility.
     phase : float, optional
         Phase of the waveform in rad.
     sampling_period : float, optional
@@ -71,7 +72,7 @@ class Waveform(ABC):
 
     @property
     def detuning(self) -> float:
-        """Returns the detuning of the waveform in GHz."""
+        """Return deprecated detuning of the waveform in GHz."""
         return self._detuning
 
     @property
@@ -145,7 +146,7 @@ class Waveform(ABC):
 
     @abstractmethod
     def detuned(self, detuning: float) -> Waveform:
-        """Return a copy of the waveform detuned by the given frequency."""
+        """Return a copy with deprecated detuning adjustment."""
 
     @abstractmethod
     def shifted(self, phase: float) -> Waveform:

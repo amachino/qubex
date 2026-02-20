@@ -3,6 +3,7 @@
 # ruff: noqa: SLF001
 from __future__ import annotations
 
+import hashlib
 from copy import deepcopy
 from typing import Literal
 
@@ -30,7 +31,7 @@ class Pulse(Waveform):
     scale : float, optional
         Multiplicative amplitude scale. Defaults to `1.0`.
     detuning : float, optional
-        Frequency detuning in GHz. Defaults to `0.0`.
+        Deprecated. Frequency detuning in GHz. Defaults to `0.0`.
     phase : float, optional
         Phase offset in radians. Defaults to `0.0`.
     sampling_period : float, optional
@@ -145,6 +146,27 @@ class Pulse(Waveform):
             * np.exp(-1j * (2 * np.pi * self._detuning * self.times - self._phase))
         )
 
+    @property
+    def shape_values(self) -> npt.NDArray[np.complex128]:
+        """Return pulse values with `scale=1` and `phase=0`."""
+        values = self._materialize_values()
+        return values * np.exp(-1j * (2 * np.pi * self._detuning * self.times))
+
+    @property
+    def shape_hash(self) -> str:
+        """Return deterministic hash for `shape_values` and sampling period."""
+        values = np.asarray(self.shape_values, dtype=np.complex128)
+        real = np.asarray(values.real, dtype=np.float64)
+        imag = np.asarray(values.imag, dtype=np.float64)
+        hasher = hashlib.blake2b(digest_size=16)
+        hasher.update(np.asarray(values.size, dtype=np.int64).tobytes())
+        hasher.update(
+            np.asarray(float(self.sampling_period), dtype=np.float64).tobytes()
+        )
+        hasher.update(real.tobytes())
+        hasher.update(imag.tobytes())
+        return hasher.hexdigest()
+
     def copy(self, reset_cached_duration: bool = False) -> Self:
         """Return a copy of the pulse."""
         pulse = deepcopy(self)
@@ -188,7 +210,7 @@ class Pulse(Waveform):
         return new_pulse
 
     def detuned(self, detuning: float) -> Self:
-        """Return a copy of the pulse detuned by the given frequency."""
+        """Return a copy of the pulse detuned by the given frequency (deprecated)."""
         if detuning == 0:
             return self
         new_pulse = self.copy()

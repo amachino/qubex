@@ -234,3 +234,56 @@ def test_inverted():
     assert inverted != pulse
     assert inverted.values == pytest.approx([-3, -2, -1])
     assert inverted.inverted().values == pytest.approx(pulse.values)
+
+
+def test_shape_values_preserves_internal_zeros():
+    """Shape values should keep zero regions inside one pulse waveform."""
+    pulse = Pulse(
+        [0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j],
+        scale=2.0,
+        sampling_period=0.4,
+    )
+
+    assert pulse.shape_values == pytest.approx(
+        np.array([0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j], dtype=np.complex128)
+    )
+
+
+def test_shape_values_removes_scale_and_phase():
+    """Shape values should remove scale and phase from pulse values."""
+    pulse = Pulse([1.0 + 0.0j], scale=2.0, phase=np.pi / 2)
+
+    assert pulse.shape_values == pytest.approx(
+        np.array([1.0 + 0.0j], dtype=np.complex128)
+    )
+
+
+def test_shape_values_of_all_zero_pulse():
+    """Shape values should stay all-zero for all-zero pulses."""
+    pulse = Pulse([0.0 + 0.0j, 0.0 + 0.0j])
+
+    assert pulse.shape_values == pytest.approx(
+        np.array([0.0 + 0.0j, 0.0 + 0.0j], dtype=np.complex128)
+    )
+
+
+def test_shape_hash_ignores_scale_and_phase():
+    """Shape hash should be identical for pulses differing only in scale and phase."""
+    values = [0.1 + 0.2j, 0.3 - 0.4j]
+    pulse_a = Pulse(values, scale=0.5, phase=0.1)
+    pulse_b = Pulse(values, scale=1.7, phase=-0.9)
+
+    shape_hash_a = pulse_a.shape_hash
+    shape_hash_b = pulse_b.shape_hash
+    assert shape_hash_a == shape_hash_b
+
+
+def test_shape_hash_depends_on_detuning():
+    """Shape hash should differ when detuning changes."""
+    values = [0.1 + 0.2j, 0.3 - 0.4j]
+    pulse_a = Pulse(values, detuning=0.0)
+    pulse_b = Pulse(values, detuning=0.02)
+
+    shape_hash_a = pulse_a.shape_hash
+    shape_hash_b = pulse_b.shape_hash
+    assert shape_hash_a != shape_hash_b

@@ -195,7 +195,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert timeline.sampling_period_ns == 0.4
     assert len(timeline.events) == 1
     event = timeline.events[0]
-    assert event.start_offset_ns == pytest.approx(0.4)
+    assert event.start_offset_ns == pytest.approx(0.0)
     assert event.gain == pytest.approx(0.5)
     assert event.phase_offset_deg == pytest.approx(0.0)
     assert event.waveform_name in payload.waveform_library
@@ -203,7 +203,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert waveform_def.sampling_period_ns == pytest.approx(0.4)
     assert np.array_equal(
         waveform_def.waveform,
-        np.array([1.0 + 0.0j], dtype=np.complex128),
+        np.array([0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j], dtype=np.complex128),
     )
     assert timeline.length_ns == pytest.approx(1.2)
     assert timeline.modulation_frequency_hz == pytest.approx(100_000_000.0)
@@ -211,6 +211,57 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert timeline.capture_windows[0].name == "capture_0"
     assert timeline.capture_windows[0].start_offset_ns == pytest.approx(0.4)
     assert timeline.capture_windows[0].length_ns == pytest.approx(0.4)
+
+
+def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
+    """Given zeros inside one pulse, when building payload, then adapter keeps one event."""
+    target = "RQ00"
+    waveform = np.array(
+        [0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j, 0.5 + 0.0j, 0.0 + 0.0j],
+        dtype=np.complex128,
+    )
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=2.0,
+            sequences={
+                target: _FakeSequence(
+                    waveforms=[_FakeWaveform(waveform, sampling_period=0.4)]
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        experiment_system=cast(
+            Any,
+            type(
+                "_ES",
+                (),
+                {"get_awg_frequency": staticmethod(lambda _: 100_000_000.0)},
+            )(),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    timeline = payload.timelines[target]
+    assert len(timeline.events) == 1
+    event = timeline.events[0]
+    assert event.start_offset_ns == pytest.approx(0.0)
+    assert event.gain == pytest.approx(1.0)
+    assert event.phase_offset_deg == pytest.approx(0.0)
+    waveform_def = payload.waveform_library[event.waveform_name]
+    assert np.array_equal(
+        waveform_def.waveform,
+        np.array(
+            [0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j, 0.5 + 0.0j, 0.0 + 0.0j],
+            dtype=np.complex128,
+        ),
+    )
 
 
 def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
