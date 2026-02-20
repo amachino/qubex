@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from qubex.backend import BackendExecutionRequest
-from qubex.measurement.adapters import (
+from qubex.backend.quel3 import (
     Quel3BackendExecutor,
     Quel3ExecutionPayload,
     Quel3TargetTimeline,

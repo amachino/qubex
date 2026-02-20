@@ -1,24 +1,25 @@
-"""Backend executor helpers for measurement adapters."""
+"""QuEL-3 backend executor implementation."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from qubex.backend import (
+from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel3 import Quel3ExecutionPayload
+
+from .quel3_execution_payload import Quel3ExecutionPayload
 
 
 class Quel3BackendExecutor:
-    """Quel3 backend executor delegating to backend-controller hook."""
+    """QuEL-3 backend executor delegating to backend-controller hook."""
 
     def __init__(self, *, backend_controller: Any) -> None:
         self._backend_controller = backend_controller
 
     def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
-        """Execute Quel3 payload using backend-controller integration hook."""
+        """Execute QuEL-3 payload using backend-controller integration hook."""
         payload = request.payload
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError(

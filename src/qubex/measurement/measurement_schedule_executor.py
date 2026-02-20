@@ -14,11 +14,11 @@ from qubex.backend.quel1 import (
     ExecutionMode,
     Quel1BackendExecutor,
 )
+from qubex.backend.quel3 import Quel3BackendExecutor
 
 from .adapters import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
-    Quel3BackendExecutor,
     Quel3MeasurementBackendAdapter,
 )
 from .measurement_constraint_profile import MeasurementConstraintProfile

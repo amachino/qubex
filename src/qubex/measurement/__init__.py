@@ -10,7 +10,6 @@ from qubex.visualization.schedule_visualizer import (
 from .adapters import (
     MeasurementBackendAdapter,
     Quel1MeasurementBackendAdapter,
-    Quel3BackendExecutor,
     Quel3ExecutionPayload,
     Quel3MeasurementBackendAdapter,
 )
@@ -54,7 +53,6 @@ __all__ = [
     "MeasurementScheduleExecutor",
     "MultipleMeasureResult",
     "Quel1MeasurementBackendAdapter",
-    "Quel3BackendExecutor",
     "Quel3ExecutionPayload",
     "Quel3MeasurementBackendAdapter",
     "StateClassifier",

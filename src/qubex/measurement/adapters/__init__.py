@@ -14,12 +14,10 @@ from .backend_adapter import (
     Quel1MeasurementBackendAdapter,
     Quel3MeasurementBackendAdapter,
 )
-from .backend_executor import Quel3BackendExecutor
 
 __all__ = [
     "MeasurementBackendAdapter",
     "Quel1MeasurementBackendAdapter",
-    "Quel3BackendExecutor",
     "Quel3CaptureWindow",
     "Quel3ExecutionPayload",
     "Quel3MeasurementBackendAdapter",
