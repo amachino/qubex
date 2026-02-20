@@ -142,7 +142,7 @@ def test_validate_measurement_schedule_accepts_relaxed_profile() -> None:
     adapter = Quel1MeasurementBackendAdapter(
         backend_controller=object(),  # type: ignore[arg-type]
         experiment_system=object(),  # type: ignore[arg-type]
-        constraint_profile=MeasurementConstraintProfile.relaxed(2.0),
+        constraint_profile=MeasurementConstraintProfile.quel3(2.0),
     )
 
     adapter.validate_schedule(schedule)

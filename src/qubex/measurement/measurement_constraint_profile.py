@@ -28,11 +28,11 @@ class MeasurementConstraintProfile:
     enforce_capture_spacing: bool
 
     @classmethod
-    def strict_quel1(
+    def quel1(
         cls,
         sampling_period_ns: float = SAMPLING_PERIOD,
     ) -> MeasurementConstraintProfile:
-        """Create QuEL-1 strict constraints with the given sampling period."""
+        """Create QuEL-1 constraints with the given sampling period."""
         return cls(
             sampling_period_ns=float(sampling_period_ns),
             word_length_samples=WORD_LENGTH,
@@ -46,11 +46,11 @@ class MeasurementConstraintProfile:
         )
 
     @classmethod
-    def relaxed(
+    def quel3(
         cls,
         sampling_period_ns: float,
     ) -> MeasurementConstraintProfile:
-        """Create relaxed constraints that only require sample-grid timing."""
+        """Create QuEL-3 constraints that only require sample-grid timing."""
         return cls(
             sampling_period_ns=float(sampling_period_ns),
             word_length_samples=None,

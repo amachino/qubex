@@ -36,7 +36,7 @@ def _make_builder(
 
 def test_builder_adds_workaround_capture_for_strict_profile() -> None:
     """Given strict profile, when building schedule, then workaround capture is inserted."""
-    builder = _make_builder(profile=MeasurementConstraintProfile.strict_quel1())
+    builder = _make_builder(profile=MeasurementConstraintProfile.quel1())
 
     with PulseSchedule(["RQ00"]) as schedule:
         schedule.add("RQ00", Rect(duration=20, amplitude=0.1))
@@ -48,7 +48,7 @@ def test_builder_adds_workaround_capture_for_strict_profile() -> None:
 
 def test_builder_skips_workaround_capture_for_relaxed_profile() -> None:
     """Given relaxed profile, when building schedule, then workaround capture is not inserted."""
-    builder = _make_builder(profile=MeasurementConstraintProfile.relaxed(2.0))
+    builder = _make_builder(profile=MeasurementConstraintProfile.quel3(2.0))
 
     with PulseSchedule(["RQ00"]) as schedule:
         schedule.add("RQ00", Rect(duration=20, amplitude=0.1))

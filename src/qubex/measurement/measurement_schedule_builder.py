@@ -19,7 +19,7 @@ from .measurement_pulse_factory import MeasurementPulseFactory
 from .models.capture_schedule import Capture, CaptureSchedule
 from .models.measurement_schedule import MeasurementSchedule
 
-_STRICT_PROFILE = MeasurementConstraintProfile.strict_quel1()
+_STRICT_PROFILE = MeasurementConstraintProfile.quel1()
 WORD_DURATION = _STRICT_PROFILE.word_duration_ns or 0.0
 BLOCK_DURATION = _STRICT_PROFILE.block_duration_ns or 0.0
 EXTRA_SUM_SECTION_LENGTH = _STRICT_PROFILE.extra_sum_section_length_samples
@@ -47,9 +47,9 @@ class MeasurementScheduleBuilder:
         self._target_registry = target_registry or TargetRegistry()
         if constraint_profile is None:
             if sampling_period is None:
-                constraint_profile = MeasurementConstraintProfile.strict_quel1()
+                constraint_profile = MeasurementConstraintProfile.quel1()
             else:
-                constraint_profile = MeasurementConstraintProfile.strict_quel1(
+                constraint_profile = MeasurementConstraintProfile.quel1(
                     sampling_period_ns=sampling_period
                 )
         self._constraint_profile = constraint_profile

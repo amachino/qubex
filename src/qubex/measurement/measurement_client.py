@@ -294,22 +294,22 @@ class MeasurementClient:
                 self.backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None
             )
             mode = getattr(
-                self.backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "strict"
+                self.backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "quel1"
             )
             sampling_period = getattr(
                 self.backend_controller, "DEFAULT_SAMPLING_PERIOD", None
             )
         except Exception:
-            return MeasurementConstraintProfile.strict_quel1(SAMPLING_PERIOD)
+            return MeasurementConstraintProfile.quel1(SAMPLING_PERIOD)
         if isinstance(profile, MeasurementConstraintProfile):
             return profile
-        if mode == "relaxed":
+        if mode == "quel3":
             if isinstance(sampling_period, (int, float)):
-                return MeasurementConstraintProfile.relaxed(float(sampling_period))
-            return MeasurementConstraintProfile.relaxed(SAMPLING_PERIOD)
+                return MeasurementConstraintProfile.quel3(float(sampling_period))
+            return MeasurementConstraintProfile.quel3(SAMPLING_PERIOD)
         if isinstance(sampling_period, (int, float)):
-            return MeasurementConstraintProfile.strict_quel1(float(sampling_period))
-        return MeasurementConstraintProfile.strict_quel1(SAMPLING_PERIOD)
+            return MeasurementConstraintProfile.quel1(float(sampling_period))
+        return MeasurementConstraintProfile.quel1(SAMPLING_PERIOD)
 
     @property
     def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:

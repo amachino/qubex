@@ -189,10 +189,10 @@ class MeasurementScheduleExecutor:
             return profile
 
         sampling_period = cls._resolve_sampling_period_ns(backend_controller)
-        mode = getattr(backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "strict")
-        if mode == "relaxed":
-            return MeasurementConstraintProfile.relaxed(sampling_period)
-        return MeasurementConstraintProfile.strict_quel1(sampling_period)
+        mode = getattr(backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "quel1")
+        if mode == "quel3":
+            return MeasurementConstraintProfile.quel3(sampling_period)
+        return MeasurementConstraintProfile.quel1(sampling_period)
 
     @staticmethod
     def _resolve_backend_kind(backend_controller: BackendController) -> str:

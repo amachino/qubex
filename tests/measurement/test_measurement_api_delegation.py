@@ -429,7 +429,7 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
     class _BackendController:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         DEFAULT_SAMPLING_PERIOD: ClassVar[float] = 0.4
-        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "relaxed"
+        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
 
         def create_measurement_backend_executor(
             self,

@@ -68,11 +68,11 @@ def test_schedule_builder_is_initialized_with_resolved_sampling_period() -> None
     assert measurement.schedule_builder.sampling_period == 8.0
 
 
-def test_constraint_profile_uses_relaxed_mode_hint() -> None:
-    """Given relaxed mode hint, when resolving profile, then relaxed constraints are returned."""
+def test_constraint_profile_uses_quel3_mode_hint() -> None:
+    """Given quel3 mode hint, when resolving profile, then quel3 constraints are returned."""
     measurement = _make_measurement_client_with_backend(
         default_sampling_period=0.4,
-        constraint_mode="relaxed",
+        constraint_mode="quel3",
     )
 
     profile = measurement.constraint_profile

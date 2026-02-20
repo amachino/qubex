@@ -76,7 +76,7 @@ class Quel1BackendController:
 
     # Measurement capability hints consumed by measurement-layer selector logic.
     MEASUREMENT_BACKEND_KIND: Literal["quel1"] = "quel1"
-    MEASUREMENT_CONSTRAINT_MODE: Literal["strict"] = "strict"
+    MEASUREMENT_CONSTRAINT_MODE: Literal["quel1"] = "quel1"
     MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = WORD_LENGTH
 
     def __init__(

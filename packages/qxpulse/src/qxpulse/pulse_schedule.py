@@ -722,7 +722,7 @@ class PulseSchedule:
         labels: list[str] | None = None,
     ) -> dict[str, list[range]]:
         """
-        Return the pulse ranges.
+        Return the pulse ranges in samples.
 
         Parameters
         ----------
@@ -732,7 +732,7 @@ class PulseSchedule:
         Returns
         -------
         dict[str, list[range]]
-            The pulse ranges.
+            Pulse index ranges for each channel in sample units.
         """
         labels = labels or self.labels
         ranges: dict[str, list[range]] = {label: [] for label in labels}
@@ -752,7 +752,7 @@ class PulseSchedule:
         labels: list[str] | None = None,
     ) -> dict[str, list[range]]:
         """
-        Return the blank ranges.
+        Return the blank ranges in samples.
 
         Parameters
         ----------
@@ -762,7 +762,7 @@ class PulseSchedule:
         Returns
         -------
         dict[str, list[range]]
-            The blank ranges.
+            Blank index ranges for each channel in sample units.
         """
         labels = labels or self.labels
         ranges: dict[str, list[range]] = {label: [] for label in labels}

@@ -178,7 +178,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
                 {"get_awg_frequency": staticmethod(lambda _: 100_000_000.0)},
             )(),
         ),
-        constraint_profile=MeasurementConstraintProfile.relaxed(0.4),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())
@@ -250,7 +250,7 @@ def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
                 {"get_awg_frequency": staticmethod(lambda _: 100_000_000.0)},
             )(),
         ),
-        constraint_profile=MeasurementConstraintProfile.relaxed(0.4),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())
@@ -307,7 +307,7 @@ def test_quel3_adapter_uses_registry_for_output_target_labels() -> None:
                 },
             )(),
         ),
-        constraint_profile=MeasurementConstraintProfile.relaxed(0.4),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())

@@ -22,7 +22,15 @@ SEQUENCER_TIMELINE_MIN_HEIGHT = 320
 SEQUENCER_TIMELINE_BASE_HEIGHT = 120
 SEQUENCER_TIMELINE_LANE_HEIGHT = 42
 
-_CAPTURE_FILL_COLOR = "#D9D9D9"
+_MEASUREMENT_BLANK_FILL_COLOR = "#EEF3F8"
+_MEASUREMENT_CAPTURE_FILL_COLOR = "#F6C58F"
+_MEASUREMENT_CAPTURE_LINE_COLOR = "#D48A3D"
+_MEASUREMENT_CAPTURE_LABEL_COLOR = "#8C4F1F"
+_MEASUREMENT_CAPTURE_BAND_Y0 = 0.0
+_MEASUREMENT_CAPTURE_BAND_Y1 = 0.2
+_MEASUREMENT_CAPTURE_LABEL_Y = 0.1
+_SEQUENCER_WAVEFORM_FILL_COLOR = "#6A88A8"
+_SEQUENCER_WAVEFORM_LINE_COLOR = "#48657F"
 
 
 def _x_axis_reference(index: int) -> str:
@@ -55,6 +63,7 @@ def make_measurement_schedule_figure(
     """Build a measurement-schedule figure with pulse and capture overlays."""
     pulse_schedule = schedule.pulse_schedule
     sequences = pulse_schedule.get_sequences(copy=False)
+    blank_ranges = pulse_schedule.get_blank_ranges()
     n_channels = len(sequences)
 
     if n_channels == 0:
@@ -68,6 +77,7 @@ def make_measurement_schedule_figure(
         specs=[[{"secondary_y": True}] for _ in range(n_channels)],
     )
 
+    blank_legend_added = False
     capture_legend_added = False
     for row_index, (label, sequence) in enumerate(sequences.items(), start=1):
         if sequence.length == 0:
@@ -141,6 +151,45 @@ def make_measurement_schedule_figure(
                 secondary_y=True,
             )
 
+        channel_blank_ranges = blank_ranges.get(label, [])
+        for blank_range in channel_blank_ranges:
+            x_ref = _x_axis_reference(row_index)
+            y_ref = f"{_primary_y_axis_reference(row_index)} domain"
+            blank_start = float(blank_range.start * sequence.SAMPLING_PERIOD)
+            blank_end = float(blank_range.stop * sequence.SAMPLING_PERIOD)
+            figure.add_shape(
+                type="rect",
+                xref=x_ref,
+                yref=y_ref,
+                x0=blank_start,
+                x1=blank_end,
+                y0=0.0,
+                y1=1.0,
+                fillcolor=_MEASUREMENT_BLANK_FILL_COLOR,
+                opacity=0.4,
+                line_width=0,
+                layer="below",
+            )
+        if channel_blank_ranges and not blank_legend_added:
+            figure.add_trace(
+                go.Scatter(
+                    x=[None],
+                    y=[None],
+                    mode="markers",
+                    marker={
+                        "size": 10,
+                        "color": _MEASUREMENT_BLANK_FILL_COLOR,
+                        "symbol": "square",
+                    },
+                    name="Blank",
+                    showlegend=True,
+                ),
+                row=row_index,
+                col=1,
+                secondary_y=False,
+            )
+            blank_legend_added = True
+
         captures = sorted(
             schedule.capture_schedule.channels.get(label, []),
             key=lambda capture: capture.start_time,
@@ -156,23 +205,27 @@ def make_measurement_schedule_figure(
                 yref=y_ref,
                 x0=capture_start,
                 x1=capture_end,
-                y0=0.0,
-                y1=1.0,
-                fillcolor=_CAPTURE_FILL_COLOR,
-                opacity=0.28,
-                line_width=0,
+                y0=_MEASUREMENT_CAPTURE_BAND_Y0,
+                y1=_MEASUREMENT_CAPTURE_BAND_Y1,
+                fillcolor=_MEASUREMENT_CAPTURE_FILL_COLOR,
+                opacity=0.55,
+                line={"color": _MEASUREMENT_CAPTURE_LINE_COLOR, "width": 1},
                 layer="below",
             )
             figure.add_annotation(
                 x=(capture_start + capture_end) / 2,
-                y=0.03,
+                y=_MEASUREMENT_CAPTURE_LABEL_Y,
                 xref=x_ref,
                 yref=y_ref,
-                text=f"capture_{capture_index}",
+                text=f"<b>capture_{capture_index}</b>",
                 showarrow=False,
                 xanchor="center",
-                yanchor="bottom",
-                font={"size": 10, "color": "#404040"},
+                yanchor="middle",
+                font={
+                    "size": 10,
+                    "color": _MEASUREMENT_CAPTURE_LABEL_COLOR,
+                    "family": "Avenir Next, Avenir, Helvetica Neue, Arial, sans-serif",
+                },
             )
             if not capture_legend_added:
                 figure.add_trace(
@@ -182,7 +235,11 @@ def make_measurement_schedule_figure(
                         mode="markers",
                         marker={
                             "size": 10,
-                            "color": _CAPTURE_FILL_COLOR,
+                            "color": _MEASUREMENT_CAPTURE_FILL_COLOR,
+                            "line": {
+                                "color": _MEASUREMENT_CAPTURE_LINE_COLOR,
+                                "width": 1,
+                            },
                             "symbol": "square",
                         },
                         name="Capture",
@@ -270,20 +327,21 @@ def make_sequencer_timeline_figure(
     alias_to_events = state["_alias_to_events"]
     alias_to_capwin = state["_alias_to_capwin"]
 
-    lanes = [f"pulse:{alias}" for alias in alias_to_events]
+    lanes = [f"w:{alias}" for alias in alias_to_events]
     for alias in alias_to_capwin:
-        lane = f"capture:{alias}"
+        lane = f"c:{alias}"
         if lane not in lanes:
             lanes.append(lane)
     if len(lanes) == 0:
         raise ValueError("Sequencer timeline is empty.")
+    left_margin = max(120, 20 + max((len(lane) for lane in lanes), default=0) * 7)
 
     figure = make_figure(template=template, width=width)
     pulse_legend_added = False
     capture_legend_added = False
 
     for alias, events in alias_to_events.items():
-        lane = f"pulse:{alias}"
+        lane = f"w:{alias}"
         for event in events:
             waveform = waveform_library[event.waveform_name]
             duration_ns = len(waveform.iq_array) * float(waveform.sampling_period_ns)
@@ -295,8 +353,11 @@ def make_sequencer_timeline_figure(
                     base=[start_ns],
                     orientation="h",
                     marker={
-                        "color": COLORS[0],
-                        "line": {"color": "rgba(0,0,0,0.2)", "width": 1},
+                        "color": _SEQUENCER_WAVEFORM_FILL_COLOR,
+                        "line": {
+                            "color": _SEQUENCER_WAVEFORM_LINE_COLOR,
+                            "width": 1,
+                        },
                     },
                     opacity=0.9,
                     name="Waveform Event",
@@ -315,7 +376,7 @@ def make_sequencer_timeline_figure(
             pulse_legend_added = True
 
     for alias, windows in alias_to_capwin.items():
-        lane = f"capture:{alias}"
+        lane = f"c:{alias}"
         for window in windows:
             duration_ns = float(window.length_ns)
             start_ns = float(window.start_offset_ns)
@@ -326,8 +387,11 @@ def make_sequencer_timeline_figure(
                     base=[start_ns],
                     orientation="h",
                     marker={
-                        "color": _CAPTURE_FILL_COLOR,
-                        "line": {"color": "rgba(0,0,0,0.2)", "width": 1},
+                        "color": _MEASUREMENT_CAPTURE_FILL_COLOR,
+                        "line": {
+                            "color": _MEASUREMENT_CAPTURE_LINE_COLOR,
+                            "width": 1,
+                        },
                     },
                     opacity=0.75,
                     name="Capture Window",
@@ -353,8 +417,13 @@ def make_sequencer_timeline_figure(
         ),
         xaxis_title="Time (ns)",
         yaxis_title="Lane",
+        margin={"l": left_margin},
     )
-    figure.update_yaxes(categoryorder="array", categoryarray=lanes[::-1])
+    figure.update_yaxes(
+        categoryorder="array",
+        categoryarray=lanes[::-1],
+        automargin=True,
+    )
     return figure
 
 

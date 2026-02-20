@@ -33,7 +33,7 @@ class Quel3BackendController(Quel1BackendController):
     """
 
     MEASUREMENT_BACKEND_KIND: Literal["quel3"] = "quel3"
-    MEASUREMENT_CONSTRAINT_MODE: Literal["relaxed"] = "relaxed"
+    MEASUREMENT_CONSTRAINT_MODE: Literal["quel3"] = "quel3"
     MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = 4
     DEFAULT_SAMPLING_PERIOD: float = QUEL3_DEFAULT_SAMPLING_PERIOD_NS
 

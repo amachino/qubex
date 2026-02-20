@@ -68,7 +68,7 @@ class Quel3MeasurementBackendAdapter:
                 raise ValueError(
                     "Quel3MeasurementBackendAdapter requires a relaxed constraint profile or backend DEFAULT_SAMPLING_PERIOD."
                 )
-            constraint_profile = MeasurementConstraintProfile.relaxed(
+            constraint_profile = MeasurementConstraintProfile.quel3(
                 sampling_period_ns=float(sampling_period)
             )
         self._constraint_profile = constraint_profile
@@ -242,7 +242,7 @@ class Quel1MeasurementBackendAdapter:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
         if constraint_profile is None:
-            constraint_profile = MeasurementConstraintProfile.strict_quel1()
+            constraint_profile = MeasurementConstraintProfile.quel1()
         self._constraint_profile = constraint_profile
 
     @property

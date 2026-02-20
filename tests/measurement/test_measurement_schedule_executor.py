@@ -143,7 +143,7 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
 
     class _Adapter:
         sampling_period = 0.4
-        constraint_profile = MeasurementConstraintProfile.relaxed(0.4)
+        constraint_profile = MeasurementConstraintProfile.quel3(0.4)
 
         def validate_schedule(
             self,
@@ -284,8 +284,8 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
     assert profile.enforce_block_alignment is True
 
 
-def test_create_default_uses_relaxed_constraint_mode(monkeypatch) -> None:
-    """Given relaxed mode hint, when creating default executor, then adapter receives relaxed profile."""
+def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
+    """Given quel3 mode hint, when creating default executor, then adapter receives quel3 profile."""
     called: dict[str, object] = {}
 
     class _BackendExecutor:
@@ -320,7 +320,7 @@ def test_create_default_uses_relaxed_constraint_mode(monkeypatch) -> None:
         (),
         {
             "DEFAULT_SAMPLING_PERIOD": 0.4,
-            "MEASUREMENT_CONSTRAINT_MODE": "relaxed",
+            "MEASUREMENT_CONSTRAINT_MODE": "quel3",
         },
     )()
     experiment_system = object()
@@ -488,7 +488,7 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
         (),
         {
             "DEFAULT_SAMPLING_PERIOD": 0.4,
-            "MEASUREMENT_CONSTRAINT_MODE": "relaxed",
+            "MEASUREMENT_CONSTRAINT_MODE": "quel3",
             "MEASUREMENT_BACKEND_KIND": "quel3",
         },
     )()
@@ -549,7 +549,7 @@ def test_create_default_uses_builtin_quel3_executor_when_backend_hook_exists(
     class _Controller:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         DEFAULT_SAMPLING_PERIOD: ClassVar[float] = 0.4
-        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "relaxed"
+        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
         MEASUREMENT_BACKEND_KIND: ClassVar[str] = "quel3"
 
         def execute_measurement(self, *, payload: object) -> object:
@@ -614,7 +614,7 @@ def test_create_default_requires_custom_executor_for_quel3_backend_kind(
         {
             "box_config": {},
             "DEFAULT_SAMPLING_PERIOD": 0.4,
-            "MEASUREMENT_CONSTRAINT_MODE": "relaxed",
+            "MEASUREMENT_CONSTRAINT_MODE": "quel3",
             "MEASUREMENT_BACKEND_KIND": "quel3",
         },
     )()

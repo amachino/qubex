@@ -74,16 +74,25 @@ def test_make_measurement_schedule_figure_adds_capture_overlay() -> None:
 
     assert isinstance(figure, go.Figure)
     figure_dict = figure.to_dict()
-    shapes = figure_dict.get("layout", {}).get("shapes", [])
-    assert len(shapes) >= 1
-    assert {shape.get("yref") for shape in shapes if isinstance(shape, dict)} == {
-        "y5 domain"
-    }
+    shapes = [
+        shape
+        for shape in figure_dict.get("layout", {}).get("shapes", [])
+        if isinstance(shape, dict)
+    ]
+    capture_shapes = [
+        shape
+        for shape in shapes
+        if shape.get("yref") == "y5 domain"
+        and shape.get("x0") == 4.0
+        and shape.get("x1") == 12.0
+    ]
+    assert len(capture_shapes) == 1
     trace_names = {
         str(trace.get("name"))
         for trace in figure_dict.get("data", [])
         if isinstance(trace, dict)
     }
+    assert "Blank" in trace_names
     assert "Capture" in trace_names
 
 
@@ -143,6 +152,11 @@ def test_make_sequencer_timeline_figure_renders_event_and_capture_lanes() -> Non
     assert isinstance(figure, go.Figure)
     figure_dict = figure.to_dict()
     assert len(figure_dict.get("data", [])) == 2
+    layout = figure_dict.get("layout", {})
+    margin = layout.get("margin", {})
+    yaxis = layout.get("yaxis", {})
+    assert margin.get("l", 0) >= 120
+    assert yaxis.get("automargin") is True
     trace_names = {
         str(trace.get("name"))
         for trace in figure_dict.get("data", [])
