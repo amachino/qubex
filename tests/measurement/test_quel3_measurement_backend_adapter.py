@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from qxpulse import Pulse, PulseArray
 
 from qubex.measurement.adapters import (
     Quel3ExecutionPayload,
@@ -25,30 +26,9 @@ from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 
 
 @dataclass
-class _FakeWaveform:
-    values: np.ndarray
-    sampling_period: float = 0.4
-
-    @property
-    def duration(self) -> float:
-        return len(self.values) * self.sampling_period
-
-
-@dataclass
-class _FakeSequence:
-    waveforms: list[_FakeWaveform]
-
-    def get_flattened_waveforms(
-        self, apply_frame_shifts: bool = True
-    ) -> list[_FakeWaveform]:
-        del apply_frame_shifts
-        return self.waveforms
-
-
-@dataclass
 class _FakePulseSchedule:
     duration: float
-    sequences: dict[str, _FakeSequence]
+    sequences: dict[str, PulseArray]
     valid: bool = True
 
     @property
@@ -58,7 +38,7 @@ class _FakePulseSchedule:
     def is_valid(self) -> bool:
         return self.valid
 
-    def get_sequence(self, label: str, *, copy: bool = False) -> _FakeSequence:
+    def get_sequence(self, label: str, *, copy: bool = False) -> PulseArray:
         del copy
         return self.sequences[label]
 
@@ -83,17 +63,32 @@ def _make_config() -> MeasurementConfig:
     )
 
 
+def _pulse_array(
+    *,
+    values: np.ndarray,
+    sampling_period: float = 0.4,
+    scale: float | None = None,
+    phase: float | None = None,
+) -> PulseArray:
+    return PulseArray(
+        [
+            Pulse(
+                values=values,
+                sampling_period=sampling_period,
+                scale=scale,
+                phase=phase,
+            )
+        ]
+    )
+
+
 def test_quel3_adapter_accepts_relaxed_schedule() -> None:
     """Given relaxed schedule, when validating, then no error is raised."""
     target = "RQ00"
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=12.4,
-            sequences={
-                target: _FakeSequence(
-                    waveforms=[_FakeWaveform(np.array([0.1 + 0.0j] * 31))]
-                )
-            },
+            sequences={target: _pulse_array(values=np.array([0.1 + 0.0j] * 31))},
         ),
         capture_schedule=CaptureSchedule(
             captures=[
@@ -120,11 +115,7 @@ def test_quel3_adapter_rejects_capture_outside_pulse_duration() -> None:
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=10.0,
-            sequences={
-                target: _FakeSequence(
-                    waveforms=[_FakeWaveform(np.array([0.1 + 0.0j] * 25))]
-                )
-            },
+            sequences={target: _pulse_array(values=np.array([0.1 + 0.0j] * 25))},
         ),
         capture_schedule=CaptureSchedule(
             captures=[
@@ -148,14 +139,12 @@ def test_quel3_adapter_rejects_capture_outside_pulse_duration() -> None:
 def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     """Given schedule and config, when building request, then payload contains per-target timeline and captures."""
     target = "RQ00"
-    waveform = np.array([0.0 + 0.0j, 0.5 + 0.0j, 0.0 + 0.0j], dtype=np.complex128)
+    shape = np.array([0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j], dtype=np.complex128)
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=1.2,
             sequences={
-                target: _FakeSequence(
-                    waveforms=[_FakeWaveform(waveform, sampling_period=0.4)]
-                )
+                target: _pulse_array(values=shape, sampling_period=0.4, scale=0.5)
             },
         ),
         capture_schedule=CaptureSchedule(
@@ -203,7 +192,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert waveform_def.sampling_period_ns == pytest.approx(0.4)
     assert np.array_equal(
         waveform_def.waveform,
-        np.array([0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j], dtype=np.complex128),
+        shape,
     )
     assert timeline.length_ns == pytest.approx(1.2)
     assert timeline.modulation_frequency_hz == pytest.approx(100_000_000.0)
@@ -223,11 +212,7 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=2.0,
-            sequences={
-                target: _FakeSequence(
-                    waveforms=[_FakeWaveform(waveform, sampling_period=0.4)]
-                )
-            },
+            sequences={target: _pulse_array(values=waveform, sampling_period=0.4)},
         ),
         capture_schedule=CaptureSchedule(captures=[]),
     )
@@ -271,13 +256,9 @@ def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
         pulse_schedule=_FakePulseSchedule(
             duration=1.2,
             sequences={
-                target: _FakeSequence(
-                    waveforms=[
-                        _FakeWaveform(
-                            np.array([0.0 + 0.0j], dtype=np.complex128),
-                            sampling_period=0.4,
-                        )
-                    ]
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
                 )
             },
         ),
@@ -327,13 +308,9 @@ def test_quel3_adapter_uses_registry_for_output_target_labels() -> None:
         pulse_schedule=_FakePulseSchedule(
             duration=1.2,
             sequences={
-                target: _FakeSequence(
-                    waveforms=[
-                        _FakeWaveform(
-                            np.array([0.0 + 0.0j], dtype=np.complex128),
-                            sampling_period=0.4,
-                        )
-                    ]
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
                 )
             },
         ),
@@ -376,21 +353,21 @@ def test_quel3_adapter_uses_registry_for_output_target_labels() -> None:
     assert payload.output_target_labels == {target: "Q17"}
 
 
-def test_quel3_adapter_factors_shared_shape_into_gain_and_phase() -> None:
-    """Given scale/phase variants, when building payload, then events reuse one waveform with gain/phase factors."""
+def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
+    """Given scale/phase variants, when building payload, then events reuse one waveform and keep scale/phase."""
     target_a = "RQ00"
     target_b = "RQ01"
     base = np.array([1.0 + 0.5j, 0.5 + 0.25j], dtype=np.complex128)
-    scalar = 0.6 * np.exp(1j * np.deg2rad(30.0))
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=0.8,
             sequences={
-                target_a: _FakeSequence(
-                    waveforms=[_FakeWaveform(base, sampling_period=0.4)]
-                ),
-                target_b: _FakeSequence(
-                    waveforms=[_FakeWaveform(base * scalar, sampling_period=0.4)]
+                target_a: _pulse_array(values=base, sampling_period=0.4),
+                target_b: _pulse_array(
+                    values=base,
+                    sampling_period=0.4,
+                    scale=0.6,
+                    phase=np.deg2rad(30.0),
                 ),
             },
         ),
@@ -417,11 +394,7 @@ def test_quel3_adapter_factors_shared_shape_into_gain_and_phase() -> None:
     event_a = payload.timelines[target_a].events[0]
     event_b = payload.timelines[target_b].events[0]
     assert event_a.waveform_name == event_b.waveform_name
-    assert event_a.gain == pytest.approx(np.max(np.abs(base)))
-    assert event_a.phase_offset_deg == pytest.approx(
-        np.rad2deg(np.angle(base[np.argmax(np.abs(base))]))
-    )
-    assert event_b.gain == pytest.approx(np.max(np.abs(base * scalar)))
-    assert event_b.phase_offset_deg == pytest.approx(
-        np.rad2deg(np.angle((base * scalar)[np.argmax(np.abs(base * scalar))]))
-    )
+    assert event_a.gain == pytest.approx(1.0)
+    assert event_a.phase_offset_deg == pytest.approx(0.0)
+    assert event_b.gain == pytest.approx(0.6)
+    assert event_b.phase_offset_deg == pytest.approx(30.0)
