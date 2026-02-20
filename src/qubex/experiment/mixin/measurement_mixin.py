@@ -623,13 +623,16 @@ class MeasurementMixin(
         sequence: TargetMap[Waveform],
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         initial_states: dict[str, str] | None = None,
         repetitions: int = 20,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool = True,
     ) -> ExperimentResult[SweepData]:
+        if stark_ramptime is None:
+            stark_ramptime = 50
+
         def repeated_sequence(N: int) -> PulseSchedule:
             if isinstance(sequence, dict):
                 with PulseSchedule() as ps:

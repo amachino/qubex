@@ -2236,7 +2236,7 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         ramptime: float | None = None,
@@ -2252,6 +2252,9 @@ class CalibrationMixin(
         rabi_params = self.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
+
+        if stark_ramptime is None:
+            stark_ramptime = 50
 
         def calibrate(target: str) -> AmplCalibData:
             st = self.stark_target(target=target)
@@ -2322,7 +2325,7 @@ class CalibrationMixin(
             ).data[target]
 
             fit_result = fitting.fit_ampl_calib_data(
-                target=target,
+                target=ins,
                 amplitude_range=ampl_range,
                 data=sweep_data.normalized,
                 plot=plot,
@@ -2335,9 +2338,9 @@ class CalibrationMixin(
                 if update_params:
                     if pulse_type == "hpi":
                         self.calib_note.update_hpi_param(
-                            target,
+                            ins,
                             {
-                                "target": target,
+                                "target": ins,
                                 "duration": pulse.duration,
                                 "amplitude": fit_result["amplitude"],
                                 "tau": pulse.tau,
@@ -2345,9 +2348,9 @@ class CalibrationMixin(
                         )
                     elif pulse_type == "pi":
                         self.calib_note.update_pi_param(
-                            target,
+                            ins,
                             {
-                                "target": target,
+                                "target": ins,
                                 "duration": pulse.duration,
                                 "amplitude": fit_result["amplitude"],
                                 "tau": pulse.tau,
@@ -2355,7 +2358,7 @@ class CalibrationMixin(
                         )
             else:
                 print(f"Error: R² value is too low ({r2:.3f})")
-                print(f"Calibration data not stored for {target}.")
+                print(f"Calibration data not stored for {ins}.")
 
             return AmplCalibData.new(
                 sweep_data=sweep_data,
@@ -2381,7 +2384,7 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         duration: float | None = None,
         ramptime: float | None = None,
         amplitude_range: ArrayLike | None = None,
@@ -2413,7 +2416,7 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         duration: float | None = None,
         ramptime: float | None = None,
         amplitude_range: ArrayLike | None = None,
@@ -2445,7 +2448,7 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         n_points: int = 20,
@@ -2461,6 +2464,9 @@ class CalibrationMixin(
     ) -> Result:
         rabi_params = self.rabi_params
         self.validate_rabi_params(rabi_params)
+
+        if stark_ramptime is None:
+            stark_ramptime = 50
 
         def calibrate(target: str) -> FitResult:
             st = self.stark_target(target=target)
@@ -2561,9 +2567,9 @@ class CalibrationMixin(
             if r2 > r2_threshold:
                 if pulse_type == "hpi":
                     self.calib_note.update_drag_hpi_param(
-                        target,
+                        ins,
                         {
-                            "target": target,
+                            "target": ins,
                             "duration": pulse.duration,
                             "amplitude": fit_result["amplitude"],
                             "beta": beta,
@@ -2571,9 +2577,9 @@ class CalibrationMixin(
                     )
                 elif pulse_type == "pi":
                     self.calib_note.update_drag_pi_param(
-                        target,
+                        ins,
                         {
-                            "target": target,
+                            "target": ins,
                             "duration": pulse.duration,
                             "amplitude": fit_result["amplitude"],
                             "beta": beta,
@@ -2595,7 +2601,7 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
@@ -2608,6 +2614,9 @@ class CalibrationMixin(
         rabi_params = self.rabi_params
         self.validate_rabi_params(rabi_params)
 
+        if stark_ramptime is None:
+            stark_ramptime = 50
+
         def calibrate(target: str) -> float:
             st = self.stark_target(target=target)
             ins = self.insitu_target(target=target)
@@ -2617,9 +2626,9 @@ class CalibrationMixin(
             )
 
             if pulse_type == "hpi":
-                param = self.calib_note.get_drag_hpi_param(target)
+                param = self.calib_note.get_drag_hpi_param(ins)
             elif pulse_type == "pi":
-                param = self.calib_note.get_drag_pi_param(target)
+                param = self.calib_note.get_drag_pi_param(ins)
             if param is None:
                 raise ValueError("DRAG parameters are not stored.")
 
@@ -2638,7 +2647,7 @@ class CalibrationMixin(
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
-                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        y90m = self.get_hpi_pulse(ins).shifted(-np.pi / 2)
                         ps.add(
                             ins,
                             PulseArray(
@@ -2656,7 +2665,7 @@ class CalibrationMixin(
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
-                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        y90m = self.get_hpi_pulse(ins).shifted(-np.pi / 2)
                         ps.add(
                             ins,
                             PulseArray(
@@ -2738,7 +2747,7 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
@@ -2820,7 +2829,7 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int,
+        stark_ramptime: int | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
