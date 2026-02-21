@@ -844,10 +844,6 @@ class Measurement:
                 post_margin=readout_post_margin,
             )
             padded_waveform[readout_slice] = readout_pulse.values
-            # use diff_frequency instead of awg_frequency since the envelope will be adjusted by conjugation later
-            omega = 2 * np.pi * self.get_diff_frequency(readout_target)
-            offset = capture_start[qubit] * SAMPLING_PERIOD
-            padded_waveform *= np.exp(1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
 
         # zero padding (pump)
@@ -870,7 +866,20 @@ class Measurement:
         # create dict of GenSampledSequence and CapSampledSequence
         gen_sequences: dict[str, pls.GenSampledSequence] = {}
         cap_sequences: dict[str, pls.CapSampledSequence] = {}
+
+        def _phase_compensation(
+            omega: float,
+            waveform: npt.NDArray[np.complex128],
+        ) -> npt.NDArray[np.complex128]:
+            T = len(waveform) * SAMPLING_PERIOD
+            return waveform * np.exp(1j * omega * T)
+
         for target, waveform in user_waveforms.items():
+            waveform = _phase_compensation(
+                omega=2 * np.pi * self.get_diff_frequency(target),
+                waveform=waveform,
+            )
+
             # add GenSampledSequence (control)
             if self.experiment_system.get_target(target).sideband != "L":
                 waveform = np.conj(waveform)
@@ -892,6 +901,10 @@ class Measurement:
                 ],
             )
         for target, waveform in pump_waveforms.items():
+            waveform = _phase_compensation(
+                omega=2 * np.pi * self.get_diff_frequency(target),
+                waveform=waveform,
+            )
             # add GenSampledSequence (pump)
             if self.experiment_system.get_target(target).sideband != "L":
                 waveform = np.conj(waveform)
@@ -913,6 +926,10 @@ class Measurement:
                 ],
             )
         for target, waveform in readout_waveforms.items():
+            waveform = _phase_compensation(
+                omega=2 * np.pi * self.get_diff_frequency(target),
+                waveform=waveform,
+            )
             qubit = Target.qubit_label(target)
             # add GenSampledSequence (readout)
             if self.experiment_system.get_target(target).sideband != "L":
