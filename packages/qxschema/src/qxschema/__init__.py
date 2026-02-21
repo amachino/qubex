@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from .data_acquisition_config import DataAcquisitionConfig
+from .frequency_config import FrequencyConfig
 from .sweep_measurement_config import (
-    DataAcquisitionConfig,
-    FrequencyConfig,
     ParameterSweepConfig,
     ParameterSweepContent,
     ParametricSequenceConfig,
