@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
 from qxpulse import (
+    Arbitrary,
     Blank,
     FlatTop,
     PhaseShift,
@@ -314,7 +315,7 @@ class MeasurementService:
                         if isinstance(waveform, Waveform):
                             ps.add(target, waveform)
                         else:
-                            ps.add(target, Pulse(waveform))
+                            ps.add(target, Arbitrary(waveform))
                 waveforms = ps.get_sampled_sequences()
             else:
                 for target, waveform in sequence.items():
@@ -1930,7 +1931,9 @@ class MeasurementService:
         else:
             sequence = {
                 target: (
-                    Pulse(waveform) if not isinstance(waveform, Waveform) else waveform
+                    Arbitrary(waveform)
+                    if not isinstance(waveform, Waveform)
+                    else waveform
                 )
                 for target, waveform in sequence.items()
             }
@@ -2104,7 +2107,7 @@ class MeasurementService:
         """Return a partial waveform up to the given index."""
         # If the index is 0, return an empty Pulse as the initial state.
         if index == 0:
-            return Pulse([])
+            return Arbitrary([])
 
         elif isinstance(waveform, Pulse):
             # If the index is greater than the waveform length, return the waveform itself.
@@ -2112,7 +2115,7 @@ class MeasurementService:
                 return waveform
             # If the index is less than the waveform length, return a partial waveform.
             else:
-                return Pulse(waveform.values[0 : index - 1])
+                return Arbitrary(waveform.values[0 : index - 1])
 
         # If the waveform is a PulseArray, we need to extract the partial sequence.
         elif isinstance(waveform, PulseArray):
@@ -2131,7 +2134,7 @@ class MeasurementService:
                         break
                     # If the endpoint of obj is greater than the index, add the partial Pulse and break.
                     elif obj.length > index - offset:
-                        pulse = Pulse(obj.values[0 : index - offset])
+                        pulse = Arbitrary(obj.values[0 : index - offset])
                         pulse_array.add(pulse)
                         break
                     # If the endpoint of obj is less than or equal to the index, add the whole Pulse.
@@ -2193,7 +2196,7 @@ class MeasurementService:
                 if isinstance(waveform, Waveform):
                     pulse = waveform
                 elif isinstance(waveform, Sequence):
-                    pulse = Pulse(waveform)
+                    pulse = Arbitrary(waveform)
                 else:
                     raise TypeError("Invalid waveform.")
                 pulses[target] = pulse

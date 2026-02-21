@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import warnings
 from copy import deepcopy
 from typing import Literal
 
@@ -20,6 +21,8 @@ class Pulse(Waveform):
 
     `Pulse` stores complex I/Q samples and applies waveform modifiers
     (`scale`, `detuning`, and `phase`) when `values` is accessed.
+    Direct instantiation is deprecated; use `Arbitrary` for explicit
+    arbitrary I/Q waveforms.
 
     Parameters
     ----------
@@ -54,6 +57,20 @@ class Pulse(Waveform):
         lazy: bool = True,
         **kwargs,
     ):
+        if self.__class__ is Pulse:
+            warnings.warn(
+                "Direct `Pulse` instantiation is deprecated and will be removed in a future release. "
+                "Use `Arbitrary` for explicit I/Q waveforms.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        elif self.__class__._sample_values is Pulse._sample_values:
+            warnings.warn(
+                f"`{self.__class__.__name__}` does not override `_sample_values`. "
+                "Overriding `_sample_values` will be required when `Pulse` becomes abstract.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         super().__init__(
             scale=scale,
             detuning=detuning,
@@ -106,7 +123,15 @@ class Pulse(Waveform):
         self._length = len(array)
 
     def _sample_values(self) -> npt.ArrayLike:
-        """Return sampled complex values for this pulse."""
+        """
+        Return sampled complex values for this pulse.
+
+        Notes
+        -----
+        This default implementation is kept for compatibility during the
+        `Pulse` to ABC migration. Subclasses should override this method.
+        """
+        # TODO: Make this method abstract when `Pulse` is converted to an ABC.
         return np.zeros(self._length, dtype=np.complex128)
 
     def _materialize_values(self) -> npt.NDArray[np.complex128]:
@@ -238,3 +263,16 @@ class Pulse(Waveform):
         new_pulse = self.copy()
         new_pulse._set_sampled_values(np.flip(-1 * self._materialize_values()))
         return new_pulse
+
+
+class Arbitrary(Pulse):
+    """
+    Pulse alias class for explicit arbitrary I/Q waveforms.
+
+    `Arbitrary` is behaviorally equivalent to `Pulse` and should be preferred
+    over direct `Pulse` instantiation.
+    """
+
+    def _sample_values(self) -> npt.ArrayLike:
+        """Return sampled complex values for explicit arbitrary waveforms."""
+        return np.zeros(self._length, dtype=np.complex128)

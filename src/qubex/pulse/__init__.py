@@ -5,6 +5,7 @@ from __future__ import annotations
 from qxpulse import (
     CPMG,
     XY4,
+    Arbitrary,
     Blank,
     Bump,
     CrossResonance,
@@ -30,6 +31,7 @@ from qxpulse import (
 __all__ = [
     "CPMG",
     "XY4",
+    "Arbitrary",
     "Blank",
     "Bump",
     "CrossResonance",

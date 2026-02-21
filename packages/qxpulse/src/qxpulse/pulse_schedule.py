@@ -28,7 +28,7 @@ from qxpulse.typing import IQArray
 
 from .blank import Blank
 from .phase_shift import PhaseShift
-from .pulse import Pulse
+from .pulse import Arbitrary
 from .pulse_array import PulseArray
 from .waveform import Waveform
 
@@ -147,7 +147,7 @@ class PulseSchedule:
 
         with cls() as sched:
             for label, values in waveforms.items():
-                sched.add(label, Pulse(values))
+                sched.add(label, Arbitrary(values))
         return sched
 
     @property

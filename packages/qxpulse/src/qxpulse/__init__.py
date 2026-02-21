@@ -16,7 +16,7 @@ from .library import (
     Sintegral,
 )
 from .phase_shift import PhaseShift, VirtualZ
-from .pulse import Pulse
+from .pulse import Arbitrary, Pulse
 from .pulse_array import PulseArray
 from .pulse_schedule import PulseChannel, PulseSchedule
 from .waveform import Waveform
@@ -24,6 +24,7 @@ from .waveform import Waveform
 __all__ = [
     "CPMG",
     "XY4",
+    "Arbitrary",
     "Blank",
     "Bump",
     "CrossResonance",

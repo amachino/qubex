@@ -8,9 +8,9 @@ from typing import Any
 
 import numpy as np
 from qxpulse import (
+    Arbitrary,
     CrossResonance,
     Drag,
-    Pulse,
     Waveform,
 )
 
@@ -144,7 +144,7 @@ class OptimizationService:
         )
 
         def objective_func(params: np.ndarray) -> float:
-            pulse = Pulse(params[:N] + 1j * params[N:])
+            pulse = Arbitrary(params[:N] + 1j * params[N:])
             result = self.measurement_service.state_tomography(
                 {qubit: pulse.repeated(2)},
                 x90={qubit: pulse},
@@ -156,7 +156,7 @@ class OptimizationService:
         x = es.result.xbest
         if x is None:
             raise RuntimeError("Optimization failed to find best parameters.")
-        opt_pulse = Pulse(x[:N] + 1j * x[N:])
+        opt_pulse = Arbitrary(x[:N] + 1j * x[N:])
         return opt_pulse
 
     def optimize_drag_x90(
@@ -302,7 +302,7 @@ class OptimizationService:
         )
 
         def objective_func(params: np.ndarray) -> float:
-            pulse = Pulse(params[:N] + 1j * params[N:])
+            pulse = Arbitrary(params[:N] + 1j * params[N:])
             result = self.measurement_service.state_tomography(
                 {qubit: pulse}, x90={qubit: x90}
             )
@@ -313,7 +313,7 @@ class OptimizationService:
         x = es.result.xbest
         if x is None:
             raise RuntimeError("Optimization failed to find best parameters.")
-        opt_pulse = Pulse(x[:N] + 1j * x[N:])
+        opt_pulse = Arbitrary(x[:N] + 1j * x[N:])
         return opt_pulse
 
     def optimize_zx90(

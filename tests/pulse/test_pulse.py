@@ -1,8 +1,22 @@
 """Tests for the Pulse base class."""
 
+import warnings
+
 import numpy as np
 import pytest
-from qxpulse import Pulse, Waveform
+from qxpulse import (
+    Arbitrary,
+    Blank,
+    Bump,
+    Drag,
+    FlatTop,
+    Gaussian,
+    Pulse,
+    RaisedCosine,
+    Rect,
+    Sintegral,
+    Waveform,
+)
 
 import qubex as qx
 
@@ -12,6 +26,48 @@ dt = qx.pulse.get_sampling_period()
 def test_inheritance():
     """Pulse should inherit from Waveform."""
     assert issubclass(Pulse, Waveform)
+
+
+def test_arbitrary_inheritance():
+    """Arbitrary should inherit from Pulse."""
+    assert issubclass(Arbitrary, Pulse)
+
+
+def test_direct_pulse_instantiation_is_deprecated():
+    """Pulse should emit a deprecation warning on direct instantiation."""
+    with pytest.warns(DeprecationWarning, match="Arbitrary"):
+        pulse = Pulse([0.1])
+
+    assert pulse.values == pytest.approx([0.1])
+
+
+def test_arbitrary_instantiation_is_not_deprecated():
+    """Arbitrary should instantiate without a deprecation warning."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        pulse = Arbitrary([0.1, 0.2j])
+
+    assert isinstance(pulse, Pulse)
+    assert pulse.values == pytest.approx([0.1, 0.2j])
+
+
+@pytest.mark.parametrize(
+    "pulse_cls",
+    [
+        Arbitrary,
+        Blank,
+        Bump,
+        Drag,
+        FlatTop,
+        Gaussian,
+        RaisedCosine,
+        Rect,
+        Sintegral,
+    ],
+)
+def test_builtin_pulse_subclasses_define_sample_values(pulse_cls):
+    """Built-in Pulse subclasses should define _sample_values explicitly."""
+    assert "_sample_values" in pulse_cls.__dict__
 
 
 def test_pulse_lazily_materializes_values():
@@ -95,14 +151,16 @@ def test_pulse_samples_on_values_access_when_values_is_none(monkeypatch):
     assert calls["count"] == 1
 
 
-def test_pulse_subclass_without_sampler_override_uses_zero_sampler():
-    """Pulse subclass should use the default zero sampler when not overridden."""
+def test_pulse_subclass_without_sampler_override_is_deprecated():
+    """Pulse subclass without _sample_values override should be deprecated."""
 
     class _NoSamplerPulse(Pulse):
         def __init__(self, *, duration: float):
             super().__init__(duration=duration)
 
-    pulse = _NoSamplerPulse(duration=3 * dt)
+    with pytest.warns(DeprecationWarning, match="_sample_values"):
+        pulse = _NoSamplerPulse(duration=3 * dt)
+
     assert pulse.values == pytest.approx([0, 0, 0])
 
 

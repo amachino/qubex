@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 import qxpulse as pulse
-from qxpulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
+from qxpulse import (
+    Blank,
+    Pulse,
+    PulseArray,
+    PulseChannel,
+    PulseSchedule,
+    VirtualZ,
+)
 
 from . import core, visualization as viz
 from .analysis import fitting as fit
