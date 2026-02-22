@@ -64,6 +64,7 @@ class Quel3BackendController(BackendController):
         quelware_port : int | None, optional
             Quelware API port. Defaults to 50051.
         """
+        # Kept for API compatibility with QuEL-1 constructor signature.
         del config_path
         sampling_period = (
             sampling_period_ns
