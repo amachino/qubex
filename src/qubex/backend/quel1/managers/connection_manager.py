@@ -15,7 +15,6 @@ from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_EXECUTION_MODE
 from qubex.backend.quel1.quel1_runtime_context import (
-    NOT_CONNECTED_ERROR_MESSAGE,
     Quel1RuntimeContext,
 )
 
@@ -83,34 +82,22 @@ class Quel1ConnectionManager:
     @property
     def boxpool(self) -> BoxPool:
         """Return connected boxpool."""
-        try:
-            return self._runtime_context.boxpool
-        except ValueError as exc:
-            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
+        return self._runtime_context.boxpool
 
     @property
     def quel1system(self) -> Quel1System:
         """Return connected Quel1System."""
-        try:
-            return self._runtime_context.quel1system
-        except ValueError as exc:
-            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
+        return self._runtime_context.quel1system
 
     @property
     def cap_resource_map(self) -> dict[str, dict]:
         """Return capture resource map."""
-        try:
-            return self._runtime_context.cap_resource_map
-        except ValueError as exc:
-            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
+        return self._runtime_context.cap_resource_map
 
     @property
     def gen_resource_map(self) -> dict[str, dict]:
         """Return generator resource map."""
-        try:
-            return self._runtime_context.gen_resource_map
-        except ValueError as exc:
-            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
+        return self._runtime_context.gen_resource_map
 
     def get_box_config_cache(self) -> dict[str, dict]:
         """Return connected box-config cache, or empty when not connected."""
@@ -155,14 +142,28 @@ class Quel1ConnectionManager:
         self._runtime_context.clear_connected_state()
 
     def clear_cache(self) -> None:
-        """Clear cached box configuration data."""
+        """Best-effort clear for cached box configuration data."""
         if not self.is_connected:
             return
-        boxpool = self.boxpool
-        boxpool._box_config_cache.clear()
-        quel1system = self.quel1system
-        quel1system.config_cache.clear()
-        quel1system.config_fetched_at = None
+        try:
+            boxpool = self.boxpool
+        except ValueError:
+            boxpool = None
+        if boxpool is not None:
+            box_config_cache = getattr(boxpool, "_box_config_cache", None)
+            if isinstance(box_config_cache, dict):
+                box_config_cache.clear()
+
+        try:
+            quel1system = self.quel1system
+        except ValueError:
+            quel1system = None
+        if quel1system is not None:
+            config_cache = getattr(quel1system, "config_cache", None)
+            if isinstance(config_cache, dict):
+                config_cache.clear()
+            if hasattr(quel1system, "config_fetched_at"):
+                quel1system.config_fetched_at = None
 
     def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
         """Replace the box-config cache with the provided snapshot."""
@@ -600,7 +601,10 @@ class Quel1ConnectionManager:
             for box in boxes.values():
                 self._append_resource_if_new(resources, seen, box)
 
-        boxpool = self.boxpool
+        try:
+            boxpool = self.boxpool
+        except ValueError:
+            return resources
         self._append_resource_if_new(
             resources,
             seen,
@@ -682,5 +686,4 @@ class Quel1ConnectionManager:
 
     def _require_connected(self) -> None:
         """Raise a consistent error when runtime is not connected."""
-        if not self.is_connected:
-            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE)
+        self._runtime_context.require_connected()

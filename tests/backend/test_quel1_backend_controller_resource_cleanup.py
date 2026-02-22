@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
+
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
 
@@ -86,10 +88,14 @@ def test_disconnect_closes_clockmaster_and_boxes_and_clears_state() -> None:
     assert pool_master.terminate_calls == 1
     assert shared_box.close_calls == 1
     assert pool_only_box.terminate_calls == 1
-    assert controller._connection_manager.quel1system is None
-    assert controller._connection_manager.boxpool is None
-    assert controller._connection_manager.cap_resource_map is None
-    assert controller._connection_manager.gen_resource_map is None
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = controller._connection_manager.quel1system
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = controller._connection_manager.boxpool
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = controller._connection_manager.cap_resource_map
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = controller._connection_manager.gen_resource_map
     assert controller.is_connected is False
 
 
@@ -106,5 +112,6 @@ def test_disconnect_continues_when_resource_disconnect_fails(caplog) -> None:
 
     assert failing_master.close_calls == 1
     assert box.close_calls == 1
-    assert controller._connection_manager.quel1system is None
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = controller._connection_manager.quel1system
     assert "Failed to disconnect backend resource" in caplog.text

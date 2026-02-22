@@ -61,6 +61,10 @@ class Quel1RuntimeContextReader(Protocol):
         """Return whether runtime resources are connected."""
         ...
 
+    def require_connected(self) -> None:
+        """Raise a consistent error when runtime resources are disconnected."""
+        ...
+
     @property
     def boxpool(self) -> BoxPool:
         """Return connected boxpool."""
@@ -159,6 +163,11 @@ class Quel1RuntimeContext:
     def is_connected(self) -> bool:
         """Return whether runtime resources are connected."""
         return self._quel1system is not None
+
+    def require_connected(self) -> None:
+        """Raise a consistent error when runtime resources are disconnected."""
+        if not self.is_connected:
+            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE)
 
     @property
     def boxpool(self) -> BoxPool:
