@@ -1,6 +1,12 @@
 # ruff: noqa: SLF001
 
-"""QuEL-1 backend controller using qube-calib."""
+"""
+QuEL-1 backend controller implementing measurement-facing backend contracts.
+
+This module provides the QuEL-1 concrete `BackendController` implementation.
+It exposes the required shared controller contract plus QuEL-1-specific
+capabilities, while delegating concrete operations to QuEL-1 managers.
+"""
 
 from __future__ import annotations
 
@@ -83,7 +89,14 @@ class Quel1BackendRawResult:
 
 
 class Quel1BackendController(BackendController):
-    """Control and query device state through qube-calib."""
+    """
+    QuEL-1 backend controller backed by qubecalib and manager delegation.
+
+    The controller is the measurement-layer entrypoint for QuEL-1 sessions and
+    execution. It implements shared `BackendController` requirements and
+    delegates connection, clock, configuration, and execution details to
+    backend-local manager components.
+    """
 
     # Measurement capability hints consumed by measurement-layer selector logic.
     MEASUREMENT_BACKEND_KIND: Literal["quel1"] = "quel1"

@@ -1,4 +1,4 @@
-"""Shared backend controller contracts and backend-family selection."""
+"""Measurement-facing backend controller contracts and capability protocols."""
 
 from __future__ import annotations
 
@@ -19,11 +19,15 @@ BackendKind = Literal["quel1", "quel3"]
 @runtime_checkable
 class BackendController(Protocol):
     """
-    Measurement-facing backend controller contract.
+    Shared backend controller contract for measurement execution and sessions.
 
-    Required methods are the cross-layer execution/session operations used by
-    measurement services. Backend-specific operations are exposed via optional
-    capability protocols defined below.
+    This protocol defines the minimum API that both QuEL-1 and QuEL-3
+    controllers must provide to the measurement layer:
+    `hash`, `is_connected`, `sampling_period`, `execute`, `connect`,
+    and `disconnect`.
+
+    Backend-specific features are not part of this contract and are provided
+    through optional capability protocols defined in this module.
     """
 
     @property

@@ -1,4 +1,9 @@
-"""QuEL-3 backend controller implemented through quelware-client."""
+"""
+QuEL-3 backend controller implementing the shared measurement-facing contract.
+
+This module defines the QuEL-3 concrete `BackendController` implementation
+built on quelware-client managers and runtime context.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +26,14 @@ QUEL3_SAMPLING_PERIOD_NS = 0.4
 
 
 class Quel3BackendController(BackendController):
-    """Control and execute QuEL-3 measurements through quelware-client."""
+    """
+    QuEL-3 backend controller for session lifecycle and execution dispatch.
+
+    The controller provides the required shared `BackendController` API for the
+    measurement layer and routes concrete operations to QuEL-3 manager classes.
+    Backend-specific capabilities are intentionally kept outside the shared
+    contract.
+    """
 
     MEASUREMENT_BACKEND_KIND: Literal["quel3"] = "quel3"
     MEASUREMENT_CONSTRAINT_MODE: Literal["quel3"] = "quel3"
