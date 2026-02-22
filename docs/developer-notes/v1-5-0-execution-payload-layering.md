@@ -68,8 +68,8 @@ Execution payloads are backend contracts and should be defined in backend module
 - `interval`
 - execution options (`repeats`, `integral_mode`, DSP/classifier settings)
 
-`Quel1BackendExecutor` now compiles a sequencer via
-`backend_controller.create_quel1_sequencer(...)` right before execution.
+`Quel1BackendExecutor` now requests sequencer compilation through
+`Quel1ExecutionManager.create_quel1_sequencer(...)` right before execution.
 
 This keeps adapter responsibility at "build execution plan" and backend responsibility at
 "compile and execute".

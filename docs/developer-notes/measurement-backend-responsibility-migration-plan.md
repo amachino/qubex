@@ -149,12 +149,15 @@ Migrate the current implementation to the target architecture defined in `measur
   - Add `src/qubex/backend/quel1/managers/connection_manager.py`.
   - Add `src/qubex/backend/quel1/managers/clock_manager.py`.
   - Add `src/qubex/backend/quel1/managers/execution_manager.py`.
+  - Add `src/qubex/backend/quel1/managers/skew_manager.py`.
   - Add `src/qubex/backend/quel1/quel1_runtime_context.py` and make
     `Quel1ConnectionManager` the runtime-state writer.
   - Make `Quel1ClockManager` and `Quel1ExecutionManager` read runtime state
     through `Quel1RuntimeContext` read-only interface.
   - Add `src/qubex/backend/quel1/managers/configuration_manager.py` and
     delegate `dump_*`, `config_*`, and configuration-definition operations.
+  - Delegate skew calibration helper operations
+    (`load_skew_yaml`, `run_skew_measurement`) to `Quel1SkewManager`.
   - Move qubecalib-compatibility modules into
     `src/qubex/backend/quel1/compat/` and use concise module names
     (`box_adapter.py`, `driver_loader.py`, `qubecalib_protocols.py`,

@@ -98,6 +98,7 @@ classDiagram
   class Quel1ExecutionManager
   class Quel1ConnectionManager
   class Quel1ClockManager
+  class Quel1SkewManager
   class Quel1SystemSynchronizer
   class Quel3ExecutionManager
   class Quel3ConnectionManager
@@ -140,6 +141,7 @@ classDiagram
   Quel1BackendController *-- Quel1ConnectionManager : delegates
   Quel1BackendController *-- Quel1ClockManager : delegates
   Quel1BackendController *-- Quel1ExecutionManager : delegates
+  Quel1BackendController *-- Quel1SkewManager : delegates
   Quel3BackendController *-- Quel3ConnectionManager : delegates
   Quel3BackendController *-- Quel3ClockManager : delegates
   Quel3BackendController *-- Quel3ExecutionManager : delegates
@@ -225,6 +227,9 @@ classDiagram
 
 - `Quel1ClockManager`
   - Multi-device clock/synchronization operations (QuEL-1 only).
+
+- `Quel1SkewManager`
+  - QuEL-1 skew calibration helpers (`load_skew_yaml`, `run_skew_measurement`).
 
 - `Quel1ConfigurationManager`
   - Backend-side configuration and definition operations.
@@ -346,6 +351,7 @@ src/qubex/
         execution_manager.py
         connection_manager.py
         clock_manager.py
+        skew_manager.py
       compat/
         box_adapter.py
         driver_loader.py
@@ -383,7 +389,9 @@ src/qubex/
 - Internal execution component: `MeasurementScheduleRunner`
 - Backend operation contract: `BackendController`
 - Concrete backend controllers: `Quel1BackendController`, `Quel3BackendController`
-- Backend feature managers: `Quel{1,3}ExecutionManager`, `Quel{1,3}ConnectionManager`, `Quel1ClockManager`
+- Backend feature managers:
+  `Quel{1,3}ExecutionManager`, `Quel{1,3}ConnectionManager`,
+  `Quel1ClockManager`, `Quel1SkewManager`
 
 ## Acceptance Criteria (v1.5.0)
 
