@@ -1,6 +1,8 @@
 """Tests for PulseSchedule behavior."""
 
 # ruff: noqa: SLF001
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from qxpulse import Pulse, PulseSchedule
@@ -194,12 +196,44 @@ def test_get_sampled_sequences():
     with PulseSchedule() as ps:
         ps.add("Q00", Pulse([1, 0, 1j]))
         ps.add("Q01", Pulse([1j, 0, 1]))
-    seq_start = ps.get_sampled_sequences(duration=5 * dt, align="start")
-    assert seq_start["Q00"] == pytest.approx([1, 0, 1j, 0, 0])
-    assert seq_start["Q01"] == pytest.approx([1j, 0, 1, 0, 0])
-    seq_end = ps.get_sampled_sequences(duration=10, align="end")
-    assert seq_end["Q00"] == pytest.approx([0, 0, 1, 0, 1j])
-    assert seq_end["Q01"] == pytest.approx([0, 0, 1j, 0, 1])
+    sampled = ps.get_sampled_sequences()
+    assert sampled["Q00"] == pytest.approx([1, 0, 1j])
+    assert sampled["Q01"] == pytest.approx([1j, 0, 1])
+
+
+def test_sequence_accessors_reject_removed_duration_options():
+    """Sequence accessor methods should reject removed duration options."""
+    with PulseSchedule() as ps:
+        ps.add("Q00", Pulse([1, 0, 1j]))
+        ps.add("Q01", Pulse([1j, 0, 1]))
+
+    sequence = cast(Any, ps).get_sequence
+    sequences = cast(Any, ps).get_sequences
+    sampled_sequence = cast(Any, ps).get_sampled_sequence
+    sampled_sequences = cast(Any, ps).get_sampled_sequences
+
+    with pytest.raises(TypeError):
+        _ = sequence("Q00", duration=5 * dt)
+    with pytest.raises(TypeError):
+        _ = sequences(duration=5 * dt)
+    with pytest.raises(TypeError):
+        _ = sampled_sequence("Q00", duration=5 * dt)
+    with pytest.raises(TypeError):
+        _ = sampled_sequences(duration=5 * dt)
+
+
+def test_sampled_sequence_accessors_reject_removed_copy_options():
+    """Sampled sequence accessors should reject removed copy options."""
+    with PulseSchedule() as ps:
+        ps.add("Q00", Pulse([1, 0, 1j]))
+        ps.add("Q01", Pulse([1j, 0, 1]))
+
+    sampled_sequence = cast(Any, ps).get_sampled_sequence
+    sampled_sequences = cast(Any, ps).get_sampled_sequences
+    with pytest.raises(TypeError):
+        _ = sampled_sequence("Q00", copy=False)
+    with pytest.raises(TypeError):
+        _ = sampled_sequences(copy=False)
 
 
 def test_get_pulse_ranges():

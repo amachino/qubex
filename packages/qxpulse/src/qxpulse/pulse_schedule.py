@@ -546,8 +546,6 @@ class PulseSchedule:
     def get_sequence(
         self,
         label: str,
-        duration: float | None = None,
-        align: Literal["start", "end"] = "start",
         copy: bool = True,
     ) -> PulseArray:
         """
@@ -557,10 +555,6 @@ class PulseSchedule:
         ----------
         label : str
             The channel label.
-        duration : float, optional
-            The duration of the sequences.
-        align : {"start", "end"}, optional
-            The alignment of the sequences.
         copy : bool, optional
             If True, returns a copy of the sequence.
 
@@ -570,23 +564,13 @@ class PulseSchedule:
             The pulse sequence for the channel.
         """
         sequence = self._channels[label].sequence
-        if duration is not None:
-            pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
-            if copy:
-                return sequence.padded(duration, pad_side)
-            else:
-                sequence.pad(duration, pad_side)
-                return sequence
+        if copy:
+            return sequence.copy()
         else:
-            if copy:
-                return sequence.copy()
-            else:
-                return sequence
+            return sequence
 
     def get_sequences(
         self,
-        duration: float | None = None,
-        align: Literal["start", "end"] = "start",
         copy: bool = True,
     ) -> dict[str, PulseArray]:
         """
@@ -594,10 +578,6 @@ class PulseSchedule:
 
         Parameters
         ----------
-        duration : float, optional
-            The duration of the sequences.
-        align : {"start", "end"}, optional
-            The alignment of the sequences.
         copy : bool, optional
             If True, returns a copy of the sequences.
 
@@ -609,8 +589,6 @@ class PulseSchedule:
         return {
             label: self.get_sequence(
                 label=label,
-                duration=duration,
-                align=align,
                 copy=copy,
             )
             for label in self.labels
@@ -619,9 +597,6 @@ class PulseSchedule:
     def get_sampled_sequence(
         self,
         label: str,
-        duration: float | None = None,
-        align: Literal["start", "end"] = "start",
-        copy: bool = True,
     ) -> npt.NDArray[np.complex128]:
         """
         Return the sampled pulse sequence for a specific channel.
@@ -630,58 +605,26 @@ class PulseSchedule:
         ----------
         label : str
             The channel label.
-        duration : float, optional
-            The duration of the sequences.
-        align : {"start", "end"}, optional
-            The alignment of the sequences.
-        copy : bool, optional
-            If True, returns a copy of the sequence.
 
         Returns
         -------
         npt.NDArray[np.complex128]
             The sampled pulse sequence for the channel.
         """
-        sequence = self.get_sequence(
-            label=label,
-            duration=duration,
-            align=align,
-            copy=copy,
-        )
-        return sequence.values
+        return self._channels[label].sequence.values
 
     def get_sampled_sequences(
         self,
-        duration: float | None = None,
-        align: Literal["start", "end"] = "start",
-        copy: bool = True,
     ) -> dict[str, npt.NDArray[np.complex128]]:
         """
         Return the sampled pulse sequences.
-
-        Parameters
-        ----------
-        duration : float, optional
-            The duration of the sequences.
-        align : {"start", "end"}, optional
-            The alignment of the sequences.
-        copy : bool, optional
-            If True, returns a copy of the sequences.
 
         Returns
         -------
         dict[str, npt.NDArray[np.complex128]]
             The sampled pulse sequences
         """
-        return {
-            label: self.get_sampled_sequence(
-                label=label,
-                duration=duration,
-                align=align,
-                copy=copy,
-            )
-            for label in self.labels
-        }
+        return {label: self._channels[label].sequence.values for label in self.labels}
 
     def get_final_frame_shift(
         self,
