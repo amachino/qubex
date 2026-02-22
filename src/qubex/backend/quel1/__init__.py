@@ -20,7 +20,8 @@ from .quel1_backend_controller import (
     Quel1BackendController,
     Quel1BackendRawResult,
 )
-from .quel1_backend_executor import Quel1BackendExecutor, Quel1ExecutionPayload
+from .quel1_backend_executor import Quel1BackendExecutor
+from .quel1_execution_payload import Quel1ExecutionPayload
 
 __all__ = [
     "BLOCK_DURATION",
