@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
@@ -31,71 +31,9 @@ from .quel1 import Quel1BackendController
 from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
 from .quel3 import Quel3BackendController
 from .quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
+from .system_synchronizer_types import SystemSynchronizer
 
 logger = logging.getLogger(__name__)
-
-
-class _SystemSynchronizerProtocol(Protocol):
-    """Backend-specific synchronizer interface consumed by `SystemManager`."""
-
-    def sync_experiment_system_to_backend_controller(
-        self,
-        experiment_system: ExperimentSystem,
-    ) -> None:
-        """Rebuild backend-local topology from experiment-system state."""
-        ...
-
-    def sync_experiment_system_to_hardware(
-        self,
-        *,
-        boxes: Sequence[Box],
-        parallel: bool | None = None,
-    ) -> None:
-        """Apply experiment-system settings to hardware boxes."""
-        ...
-
-    def supports_box_settings_cache_sync(self) -> bool:
-        """Return whether backend supports dump/cache synchronization APIs."""
-        ...
-
-    def supports_backend_settings_mutation(self) -> bool:
-        """Return whether backend supports temporary backend-setting overrides."""
-        ...
-
-    def get_box_config_cache_snapshot(self) -> dict[str, dict]:
-        """Return a snapshot of backend box-config cache when supported."""
-        ...
-
-    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
-        """Replace backend box-config cache when supported."""
-        ...
-
-    def fetch_backend_settings_from_hardware(
-        self,
-        *,
-        experiment_system: ExperimentSystem,
-        box_ids: Sequence[str],
-        parallel: bool | None = None,
-    ) -> dict[str, dict]:
-        """Fetch raw backend settings from hardware for selected boxes."""
-        ...
-
-    def sync_backend_settings_to_device_controller(
-        self,
-        *,
-        backend_settings: dict[str, dict],
-    ) -> None:
-        """Apply backend-settings snapshots to backend-controller cache."""
-        ...
-
-    def sync_backend_settings_to_experiment_system(
-        self,
-        *,
-        experiment_system: ExperimentSystem,
-        backend_settings: dict[str, dict],
-    ) -> None:
-        """Apply backend-settings snapshots to in-memory experiment system."""
-        ...
 
 
 class BackendSettings(dict[str, dict]):
@@ -256,7 +194,7 @@ class SystemManager:
         self,
         backend_controller: SystemBackendController,
         backend_kind: BackendKind | None = None,
-    ) -> Quel1SystemSynchronizer | Quel3SystemSynchronizer | None:
+    ) -> SystemSynchronizer | None:
         """Create backend-specific system synchronizer when supported."""
         resolved_backend_kind = backend_kind or self._backend_kind
         if resolved_backend_kind == "quel1":
@@ -275,32 +213,20 @@ class SystemManager:
 
     def _resolve_system_sync_manager(
         self,
-    ) -> _SystemSynchronizerProtocol | None:
+    ) -> SystemSynchronizer | None:
         """Return active system synchronizer, refreshing built-in synchronizers when needed."""
         system_sync_manager = self._system_sync_manager
-        backend_controller = self._backend_controller
-        if isinstance(system_sync_manager, Quel1SystemSynchronizer):
-            if (
-                not isinstance(backend_controller, Quel1BackendController)
-                or system_sync_manager.backend_controller is not backend_controller
-            ):
-                system_sync_manager = self._create_system_sync_manager(
-                    backend_controller,
-                    self._backend_kind,
-                )
-                self._system_sync_manager = system_sync_manager
-            return system_sync_manager
-        if isinstance(system_sync_manager, Quel3SystemSynchronizer):
-            if (
-                not isinstance(backend_controller, Quel3BackendController)
-                or system_sync_manager.backend_controller is not backend_controller
-            ):
-                system_sync_manager = self._create_system_sync_manager(
-                    backend_controller,
-                    self._backend_kind,
-                )
-                self._system_sync_manager = system_sync_manager
-            return system_sync_manager
+        if system_sync_manager is None:
+            return None
+        bound_controller = getattr(system_sync_manager, "backend_controller", None)
+        if bound_controller is None:
+            return cast(SystemSynchronizer, system_sync_manager)
+        if bound_controller is not self._backend_controller:
+            system_sync_manager = self._create_system_sync_manager(
+                self._backend_controller,
+                self._backend_kind,
+            )
+            self._system_sync_manager = system_sync_manager
         return system_sync_manager
 
     @property
