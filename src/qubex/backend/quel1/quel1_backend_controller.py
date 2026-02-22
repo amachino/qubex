@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from collections.abc import Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -38,16 +37,13 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .quel1_qubecalib_protocols import (
-        AwgSettingProtocol as AwgSetting,
         BoxPoolProtocol as BoxPool,
         BoxSettingProtocol as BoxSetting,
         QubeCalibProtocol as QubeCalib,
         Quel1BoxCommonProtocol as Quel1Box,
         Quel1ConfigOptionProtocol as Quel1ConfigOption,
         Quel1SystemProtocol as Quel1System,
-        RunitSettingProtocol as RunitSetting,
         SequencerProtocol as Sequencer,
-        TriggerSettingProtocol as TriggerSetting,
     )
 
 # TODO: use appropriate noise threshold
@@ -1750,169 +1746,6 @@ class Quel1BackendController(BackendController):
                 awg_id_factory=self._driver.AwgId,
                 make_backend_raw_result=self._make_backend_raw_result,
             ),
-        )
-
-    def _execute_sequencer(
-        self,
-        sequencer: Sequencer,
-        *,
-        repeats: int | None = None,
-        interval_samples: int | None = None,
-        integral_mode: str = "integral",
-        dsp_demodulation: bool = True,
-        capture_delay_words: int | None = None,
-        wait_words: int = 0,
-    ) -> Quel1BackendRawResult:
-        """WIP: Direct execution of a sequencer using qube-calib low-level API."""
-        # TODO: support skew adjustment
-
-        if repeats is None:
-            repeats = 1024
-        if interval_samples is None:
-            if sequencer.interval is None:
-                raise ValueError("Interval is not set.")
-            else:
-                if sequencer.interval % self._driver.DEFAULT_SAMPLING_PERIOD != 0:
-                    raise ValueError(
-                        f"Interval {sequencer.interval} is not a multiple of {self._driver.DEFAULT_SAMPLING_PERIOD}"
-                    )
-                interval_samples = int(
-                    sequencer.interval / self._driver.DEFAULT_SAMPLING_PERIOD
-                )
-
-        if capture_delay_words is None:
-            capture_delay_words = 7 * 16
-
-        settings: list[RunitSetting | AwgSetting | TriggerSetting] = []
-
-        # capture settings
-        cap_sequences_map = defaultdict(dict[str, Any])
-        for cap_label, cap_sequence in sequencer.cap_sampled_sequence.items():
-            cap_resource = self.cap_resource_map[cap_label]
-            cap_id = (
-                cap_resource["box"].box_name,
-                cap_resource["port"].port,
-                cap_resource["channel_number"],
-            )
-            cap_sequences_map[cap_id][cap_label] = cap_sequence
-
-        for cap_id, cap_sequences in cap_sequences_map.items():
-            if len(cap_sequences) > 1:
-                raise ValueError(
-                    f"Duplicate capture ID found: {cap_id}\n{cap_sequences}"
-                )
-            cap_sequence = next(iter(cap_sequences.values()))
-            cap_param = self._driver.CaptureParamTools.create(
-                sequence=cap_sequence,
-                capture_delay_words=capture_delay_words,
-                repeats=repeats,
-                interval_samples=interval_samples,
-            )
-            if integral_mode == "integral":
-                self._driver.CaptureParamTools.enable_integration(
-                    capprm=cap_param,
-                )
-            if dsp_demodulation:
-                self._driver.CaptureParamTools.enable_demodulation(
-                    capprm=cap_param,
-                    f_GHz=cap_sequence.modulation_frequency or 0,
-                )
-            settings.append(
-                self._driver.RunitSetting(
-                    runit=self._driver.RunitId(
-                        box=cap_id[0],
-                        port=cap_id[1],
-                        runit=cap_id[2],
-                    ),
-                    cprm=cap_param,
-                )
-            )
-
-        # awg settings
-        gen_sequences_map = defaultdict(dict[str, Any])
-        for gen_label, gen_sequence in sequencer.gen_sampled_sequence.items():
-            gen_resource = self.gen_resource_map[gen_label]
-            gen_id = (
-                gen_resource["box"].box_name,
-                gen_resource["port"].port,
-                gen_resource["channel_number"],
-            )
-            gen_sequences_map[gen_id][gen_label] = gen_sequence
-
-        for gen_id, gen_sequences in gen_sequences_map.items():
-            if len(gen_sequences) > 1:
-                raise ValueError(
-                    f"Duplicate generation ID found: {gen_id}\n{gen_sequences}"
-                )
-            gen_sequence = next(iter(gen_sequences.values()))
-            wave_sequence = self._driver.WaveSequenceTools.create(
-                sequence=gen_sequence,
-                wait_words=wait_words,
-                repeats=repeats,
-                interval_samples=interval_samples,
-            )
-            settings.append(
-                self._driver.AwgSetting(
-                    awg=self._driver.AwgId(
-                        box=gen_id[0],
-                        port=gen_id[1],
-                        channel=gen_id[2],
-                    ),
-                    wseq=wave_sequence,
-                )
-            )
-
-        # trigger settings
-        cap_channel_set = {
-            (
-                cap_resource["box"].box_name,
-                cap_resource["port"].port,
-            )
-            for cap_resource in self.cap_resource_map.values()
-        }
-        gen_channel_set = {
-            (
-                gen_resource["box"].box_name,
-                gen_resource["port"].port,
-                gen_resource["channel_number"],
-            )
-            for gen_resource in self.gen_resource_map.values()
-        }
-        for cap_channel in cap_channel_set:
-            box_name, cap_port = cap_channel
-            gen_channel = next(
-                (channel for channel in gen_channel_set if channel[0] == box_name),
-                None,
-            )
-            if gen_channel is None:
-                raise ValueError("No trigger target found.")
-            trigger_setting = self._driver.TriggerSetting(
-                triggerd_port=cap_port,
-                trigger_awg=self._driver.AwgId(
-                    box=gen_channel[0],
-                    port=gen_channel[1],
-                    channel=gen_channel[2],
-                ),
-            )
-            settings.append(trigger_setting)
-
-        # set and execute
-        self.clear_command_queue()
-        qubecalib = cast(Any, self.qubecalib)
-        for setting in settings:
-            qubecalib.add_sequence(setting)
-        status, data, config = cast(
-            tuple[dict, dict, dict],
-            qubecalib.step_execute(
-                repeats=repeats,
-                integral_mode=integral_mode,
-                dsp_demodulation=dsp_demodulation,
-            ),
-        )
-        return Quel1BackendRawResult(
-            status=status,
-            data=data,
-            config=config,
         )
 
 
