@@ -95,8 +95,7 @@ def _override_driver_classes(
     controller: Quel1BackendController, **overrides: Any
 ) -> None:
     """Replace selected driver classes in one controller instance."""
-    driver = replace(cast(Any, controller)._driver, **overrides)
-    cast(Any, controller)._driver = driver
+    driver = replace(cast(Any, controller.driver), **overrides)
     cast(Any, controller)._runtime_context._driver = driver
 
 

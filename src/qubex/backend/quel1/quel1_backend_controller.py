@@ -87,7 +87,6 @@ class Quel1BackendController(BackendController):
         self._runtime_context = Quel1RuntimeContext.create(
             config_path=config_path,
         )
-        self._driver: Any = self._runtime_context.driver
         self._connection_manager = Quel1ConnectionManager(
             runtime_context=self._runtime_context,
         )
@@ -103,6 +102,11 @@ class Quel1BackendController(BackendController):
         self._system_sync_manager = Quel1SystemSyncManager(
             runtime_context=self._runtime_context,
         )
+
+    @property
+    def driver(self) -> Any:
+        """Return loaded QuEL-1 driver class bundle."""
+        return self._runtime_context.driver
 
     @property
     def sampling_period(self) -> float:
@@ -1008,7 +1012,7 @@ class Quel1BackendController(BackendController):
         tuple[Any, Any]
             A tuple of (skew object, plotly figure).
         """
-        skew = self._driver.Skew.from_yaml(
+        skew = self.driver.Skew.from_yaml(
             str(skew_yaml_path),
             box_yaml=str(box_yaml_path),
             clockmaster_ip=clockmaster_ip,
@@ -1110,7 +1114,7 @@ class Quel1BackendController(BackendController):
         Any
             GenSampledSequence object.
         """
-        return self._driver.GenSampledSequence(
+        return self.driver.GenSampledSequence(
             target_name=target_name,
             prev_blank=0,
             post_blank=None,
@@ -1118,7 +1122,7 @@ class Quel1BackendController(BackendController):
             original_post_blank=None,
             modulation_frequency=modulation_frequency,
             sub_sequences=[
-                self._driver.GenSampledSubSequence(
+                self.driver.GenSampledSubSequence(
                     real=real,
                     imag=imag,
                     repeats=1,
@@ -1155,7 +1159,7 @@ class Quel1BackendController(BackendController):
         Any
             CapSampledSequence object.
         """
-        cap_sub_sequence = self._driver.CapSampledSubSequence(
+        cap_sub_sequence = self.driver.CapSampledSubSequence(
             capture_slots=[],
             repeats=None,
             prev_blank=capture_delay,
@@ -1165,14 +1169,14 @@ class Quel1BackendController(BackendController):
         )
         for duration, post_blank in capture_slots:
             cap_sub_sequence.capture_slots.append(
-                self._driver.CaptureSlots(
+                self.driver.CaptureSlots(
                     duration=duration,
                     post_blank=post_blank,
                     original_duration=None,  # type: ignore[arg-type]
                     original_post_blank=None,  # type: ignore[arg-type]
                 )
             )
-        return self._driver.CapSampledSequence(
+        return self.driver.CapSampledSequence(
             target_name=target_name,
             repeats=None,
             prev_blank=0,
@@ -1292,11 +1296,11 @@ class Quel1BackendController(BackendController):
             line_param0=line_param0,
             line_param1=line_param1,
             clock_health_checks=clock_health_checks,
-            action_builder=self._driver.Action.build,
-            runit_setting_factory=self._driver.RunitSetting,
-            runit_id_factory=self._driver.RunitId,
-            awg_setting_factory=self._driver.AwgSetting,
-            awg_id_factory=self._driver.AwgId,
+            action_builder=self.driver.Action.build,
+            runit_setting_factory=self.driver.RunitSetting,
+            runit_id_factory=self.driver.RunitId,
+            awg_setting_factory=self.driver.AwgSetting,
+            awg_id_factory=self.driver.AwgId,
             make_backend_raw_result=self._make_backend_raw_result,
         )
         if not isinstance(result, Quel1BackendRawResult):
