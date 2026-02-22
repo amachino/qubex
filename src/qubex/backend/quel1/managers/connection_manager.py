@@ -398,10 +398,19 @@ class Quel1ConnectionManager:
         reconnect: bool,
     ) -> Quel1Box:
         """Return existing pooled box or create one from system configuration."""
+        self._runtime_context.validate_box_availability(box_name)
         return self._get_existing_or_create_box(
             box_name=box_name,
             reconnect=reconnect,
         )
+
+    def link_status(self, *, box_name: str) -> dict[int, bool]:
+        """Return link status for one box."""
+        box = self.get_existing_or_create_box(
+            box_name=box_name,
+            reconnect=False,
+        )
+        return box.link_status()
 
     def _resolve_box_names(self, box_names: str | list[str] | None) -> list[str]:
         """Resolve target box names from method input."""

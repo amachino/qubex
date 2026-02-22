@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from qubex.backend.backend_executor import (
@@ -16,14 +15,12 @@ from qubex.backend.quel1.compat.parallel_action_builder import (
 )
 from qubex.backend.quel1.compat.qubecalib_protocols import SequencerProtocol
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
-    ActionBuilder,
-    AwgIdFactory,
-    AwgSettingFactory,
-    RunitIdFactory,
-    RunitSettingFactory,
     SequencerExecutionEngine,
 )
-from qubex.backend.quel1.quel1_backend_raw_result import Quel1BackendRawResult
+from qubex.backend.quel1.quel1_backend_raw_result import (
+    Quel1BackendRawResult,
+    make_backend_raw_result,
+)
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
@@ -76,7 +73,6 @@ class Quel1ExecutionManager:
         enable_classification: bool,
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
-        make_backend_raw_result: Callable[..., Quel1BackendRawResult],
     ) -> Quel1BackendRawResult:
         """
         Execute a sequencer through serial qubecalib path.
@@ -101,8 +97,6 @@ class Quel1ExecutionManager:
             Classifier line parameter 0.
         line_param1 : tuple[float, float, float] | None
             Classifier line parameter 1.
-        make_backend_raw_result : Callable[..., Quel1BackendRawResult]
-            Result-container factory.
 
         Returns
         -------
@@ -140,12 +134,6 @@ class Quel1ExecutionManager:
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
         clock_health_checks: bool,
-        action_builder: ActionBuilder,
-        runit_setting_factory: RunitSettingFactory,
-        runit_id_factory: RunitIdFactory,
-        awg_setting_factory: AwgSettingFactory,
-        awg_id_factory: AwgIdFactory,
-        make_backend_raw_result: Callable[..., Quel1BackendRawResult],
     ) -> Quel1BackendRawResult:
         """
         Execute a sequencer through parallelized multi-box action path.
@@ -172,18 +160,6 @@ class Quel1ExecutionManager:
             Classifier line parameter 1.
         clock_health_checks : bool
             Whether to enable clock health diagnostics.
-        action_builder : ActionBuilder
-            Action builder callable.
-        runit_setting_factory : RunitSettingFactory
-            Runit-setting factory.
-        runit_id_factory : RunitIdFactory
-            Runit-id factory.
-        awg_setting_factory : AwgSettingFactory
-            AWG-setting factory.
-        awg_id_factory : AwgIdFactory
-            AWG-id factory.
-        make_backend_raw_result : Callable[..., Quel1BackendRawResult]
-            Result-container factory.
 
         Returns
         -------
@@ -206,11 +182,11 @@ class Quel1ExecutionManager:
                 sequencer=sequencer,
                 boxpool=self._require_boxpool(),
                 system=self._require_quel1system(),
-                action_builder=action_builder,
-                runit_setting_factory=runit_setting_factory,
-                runit_id_factory=runit_id_factory,
-                awg_setting_factory=awg_setting_factory,
-                awg_id_factory=awg_id_factory,
+                action_builder=self._runtime_context.driver.Action.build,
+                runit_setting_factory=self._runtime_context.driver.RunitSetting,
+                runit_id_factory=self._runtime_context.driver.RunitId,
+                awg_setting_factory=self._runtime_context.driver.AwgSetting,
+                awg_id_factory=self._runtime_context.driver.AwgId,
                 logger=logger,
                 clock_health_checks=(
                     None

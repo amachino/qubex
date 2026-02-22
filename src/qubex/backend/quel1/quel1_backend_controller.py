@@ -27,10 +27,7 @@ from .managers import (
     Quel1ExecutionManager,
 )
 from .quel1_backend_constants import ExecutionMode
-from .quel1_backend_raw_result import (
-    Quel1BackendRawResult,
-    make_backend_raw_result,
-)
+from .quel1_backend_raw_result import Quel1BackendRawResult
 from .quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
@@ -60,6 +57,7 @@ class Quel1BackendController(BackendController):
         self,
         config_path: str | Path | None = None,
     ):
+        """Initialize QuEL-1 controller and manager delegates."""
         self._runtime_context = Quel1RuntimeContext.create(
             config_path=config_path,
         )
@@ -76,6 +74,7 @@ class Quel1BackendController(BackendController):
             runtime_context=self._runtime_context,
         )
 
+    # Core Properties
     @property
     def driver(self) -> QuelDriverClassesProtocol:
         """Return loaded QuEL-1 driver class bundle."""
@@ -98,102 +97,35 @@ class Quel1BackendController(BackendController):
 
     @property
     def hash(self) -> int:
-        """
-        Get the hash of the system configuration.
-
-        Returns
-        -------
-        int
-            Hash of the system configuration.
-        """
+        """Return stable hash of the current system configuration."""
         return hash(self.qubecalib.system_config_database.asjson())
 
     @property
-    def system_config(self) -> dict[str, Any]:
-        """Get the system configuration."""
-        config = self.qubecalib.system_config_database.asdict()
-        return config
-
-    @property
-    def box_settings(self) -> dict[str, Any]:
-        """Get the box settings."""
-        return self.system_config["box_settings"]
-
-    @property
-    def port_settings(self) -> dict[str, Any]:
-        """Get the port settings."""
-        return self.system_config["port_settings"]
-
-    @property
-    def target_settings(self) -> dict[str, Any]:
-        """Get the target settings."""
-        return self.system_config["target_settings"]
-
-    @property
-    def available_boxes(self) -> list[str]:
-        """
-        Get the list of available boxes.
-
-        Returns
-        -------
-        list[str]
-            List of available boxes.
-        """
-        return list(self.box_settings.keys())
-
-    @property
     def box_config(self) -> dict[str, Any]:
-        """Get the box configuration."""
+        """Return connected box configuration cache."""
         return self._connection_manager.get_box_config_cache()
 
     @property
     def boxpool(self) -> BoxPool:
-        """
-        Get the boxpool.
-
-        Returns
-        -------
-        BoxPool
-            The boxpool.
-        """
+        """Return connected box pool."""
         return self._connection_manager.boxpool
 
     @property
     def quel1system(self) -> Quel1System:
-        """
-        Get the Quel1 system.
-
-        Returns
-        -------
-        Quel1System
-            The Quel1 system.
-        """
+        """Return connected Quel1 system."""
         return self._connection_manager.quel1system
 
     @property
     def cap_resource_map(self) -> dict[str, dict]:
-        """
-        Get the cap resource map.
-
-        Returns
-        -------
-        dict[str, dict]
-            The cap resource map.
-        """
+        """Return capture resource map for connected boxes."""
         return self._connection_manager.cap_resource_map
 
     @property
     def gen_resource_map(self) -> dict[str, dict]:
-        """
-        Get the gen resource map.
-
-        Returns
-        -------
-        dict[str, dict]
-            The gen resource map.
-        """
+        """Return generator resource map for connected boxes."""
         return self._connection_manager.gen_resource_map
 
+    # Connection Lifecycle
     def connect(
         self,
         box_names: str | list[str] | None = None,
@@ -219,25 +151,7 @@ class Quel1BackendController(BackendController):
         self._connection_manager.disconnect()
 
     def get_box(self, box_name: str) -> Quel1Box:
-        """
-        Get the box object.
-
-        Parameters
-        ----------
-        box_name : str
-            Name of the box.
-
-        Returns
-        -------
-        Quel1Box
-            The box object.
-
-        Raises
-        ------
-        ValueError
-            If the box is not in the available boxes.
-        """
-        self._runtime_context.validate_box_availability(box_name)
+        """Return connected box instance, creating it on demand when needed."""
         return self._connection_manager.get_existing_or_create_box(
             box_name=box_name,
             reconnect=True,
@@ -266,30 +180,8 @@ class Quel1BackendController(BackendController):
         )
 
     def link_status(self, box_name: str) -> dict[int, bool]:
-        """
-        Get the link status of a box.
-
-        Parameters
-        ----------
-        box_name : str
-            Name of the box.
-
-        Returns
-        -------
-        dict[int, bool]
-            Dictionary of link status.
-
-        Raises
-        ------
-        ValueError
-            If the box is not in the available boxes.
-        """
-        self._runtime_context.validate_box_availability(box_name)
-        box = self._connection_manager.get_existing_or_create_box(
-            box_name=box_name,
-            reconnect=False,
-        )
-        return box.link_status()
+        """Return JESD link status map for one box."""
+        return self._connection_manager.link_status(box_name=box_name)
 
     def linkup(
         self,
@@ -346,12 +238,11 @@ class Quel1BackendController(BackendController):
         dict[str, Quel1Box]
             Dictionary of linked up boxes.
         """
-        linked_boxes = self._connection_manager.linkup_boxes(
+        return self._connection_manager.linkup_boxes(
             box_list=box_list,
             noise_threshold=noise_threshold,
             parallel=parallel,
         )
-        return linked_boxes
 
     def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
         """
@@ -393,6 +284,7 @@ class Quel1BackendController(BackendController):
             parallel=parallel,
         )
 
+    # Clock Operations
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
         """
         Read the clocks of the boxes.
@@ -463,6 +355,7 @@ class Quel1BackendController(BackendController):
         """
         return self._clock_manager.reset_clockmaster(ipaddr=ipaddr)
 
+    # Configuration Operations
     def define_clockmaster(self, *, ipaddr: str, reset: bool = True) -> None:
         """
         Define the clock master in qube-calib.
@@ -817,6 +710,7 @@ class Quel1BackendController(BackendController):
         """Build a resource map for the requested targets."""
         return self._configuration_manager.get_resource_map(targets=targets)
 
+    # QuEL-1 Optional Capabilities
     def load_skew_yaml(self, file_path: str | Path) -> None:
         """
         Load skew calibration YAML into the system database.
@@ -871,6 +765,7 @@ class Quel1BackendController(BackendController):
         fig = skew.plot()
         return skew, fig
 
+    # Execution Entry Points
     def execute(
         self,
         *,
@@ -904,28 +799,8 @@ class Quel1BackendController(BackendController):
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
     ) -> Quel1BackendRawResult:
-        """
-        Execute a single sequence and return the measurement result.
-
-        Parameters
-        ----------
-        sequencer : Sequencer
-            The sequencer to execute.
-        repeats : int
-            Number of repeats of the sequence.
-        integral_mode : {"integral", "single"}, optional
-            Integral mode.
-        dsp_demodulation : bool, optional
-            Enable DSP demodulation.
-        software_demodulation : bool, optional
-            Enable software demodulation.
-
-        Returns
-        -------
-        RawResult
-            Measurement result.
-        """
-        result = self._execution_manager.execute_sequencer(
+        """Execute one sequencer via serial path."""
+        return self._execution_manager.execute_sequencer(
             sequencer=sequencer,
             repeats=repeats,
             integral_mode=integral_mode,
@@ -935,13 +810,7 @@ class Quel1BackendController(BackendController):
             enable_classification=enable_classification,
             line_param0=line_param0,
             line_param1=line_param1,
-            make_backend_raw_result=make_backend_raw_result,
         )
-        if not isinstance(result, Quel1BackendRawResult):
-            raise TypeError(
-                "Unexpected execution result type from QuEL-1 execution manager."
-            )
-        return result
 
     def execute_sequencer_parallel(
         self,
@@ -957,39 +826,8 @@ class Quel1BackendController(BackendController):
         line_param1: tuple[float, float, float] | None = None,
         clock_health_checks: bool = False,
     ) -> Quel1BackendRawResult:
-        """
-        Execute a single sequence with parallelized multi-box action build.
-
-        Parameters
-        ----------
-        sequencer : Sequencer
-            The sequencer to execute.
-        repeats : int
-            Number of repeats of the sequence.
-        integral_mode : {"integral", "single"}, optional
-            Integral mode.
-        dsp_demodulation : bool, optional
-            Enable DSP demodulation.
-        software_demodulation : bool, optional
-            Enable software demodulation.
-        enable_sum : bool, optional
-            Enable DSP summation.
-        enable_classification : bool, optional
-            Enable DSP classification.
-        line_param0 : tuple[float, float, float] | None, optional
-            Classifier line parameter 0.
-        line_param1 : tuple[float, float, float] | None, optional
-            Classifier line parameter 1.
-        clock_health_checks : bool, optional
-            Whether to enable additional clock-health diagnostics and
-            inter-box timediff estimation.
-
-        Returns
-        -------
-        Quel1BackendRawResult
-            Measurement result with qubecalib-compatible parsed payload.
-        """
-        result = self._execution_manager.execute_sequencer_parallel(
+        """Execute one sequencer via parallel action path."""
+        return self._execution_manager.execute_sequencer_parallel(
             sequencer=sequencer,
             repeats=repeats,
             integral_mode=integral_mode,
@@ -1000,18 +838,7 @@ class Quel1BackendController(BackendController):
             line_param0=line_param0,
             line_param1=line_param1,
             clock_health_checks=clock_health_checks,
-            action_builder=self.driver.Action.build,
-            runit_setting_factory=self.driver.RunitSetting,
-            runit_id_factory=self.driver.RunitId,
-            awg_setting_factory=self.driver.AwgSetting,
-            awg_id_factory=self.driver.AwgId,
-            make_backend_raw_result=make_backend_raw_result,
         )
-        if not isinstance(result, Quel1BackendRawResult):
-            raise TypeError(
-                "Unexpected execution result type from QuEL-1 execution manager."
-            )
-        return result
 
 
 # TODO: Remove this alias in future versions.
