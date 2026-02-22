@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
-
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
@@ -12,22 +10,13 @@ from qubex.backend.backend_executor import (
 from .quel3_execution_payload import Quel3ExecutionPayload
 
 
-@runtime_checkable
-class _BackendExecuteHook(Protocol):
-    """Protocol for backend controllers exposing execute(request=...)."""
-
-    def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
-        """Execute one backend request."""
-        ...
-
-
 class Quel3BackendExecutor:
     """QuEL-3 backend executor delegating to backend-controller execute API."""
 
     def __init__(
         self,
         *,
-        backend_controller: _BackendExecuteHook | object,
+        backend_controller: object,
     ) -> None:
         self._backend_controller = backend_controller
 
@@ -38,8 +27,9 @@ class Quel3BackendExecutor:
             raise TypeError(
                 "Quel3BackendExecutor expects `Quel3ExecutionPayload` payload."
             )
-        if not isinstance(self._backend_controller, _BackendExecuteHook):
+        execute = getattr(self._backend_controller, "execute", None)
+        if not callable(execute):
             raise TypeError(
                 "Quel3 backend execution requires backend_controller.execute(request=...)."
             )
-        return self._backend_controller.execute(request=request)
+        return execute(request=request)
