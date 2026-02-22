@@ -20,8 +20,8 @@ class BackendController(Protocol):
     Measurement-facing backend controller contract.
 
     Required methods are the cross-layer execution/session operations used by
-    measurement services. Link/clock operations remain capability-gated
-    extensions.
+    measurement services. Backend-specific operations are exposed via optional
+    capability protocols defined below.
     """
 
     @property
@@ -32,11 +32,6 @@ class BackendController(Protocol):
     @property
     def is_connected(self) -> bool:
         """Return whether backend resources are connected."""
-        ...
-
-    @property
-    def box_config(self) -> dict[str, Any]:
-        """Return connected box configuration cache."""
         ...
 
     def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
@@ -56,14 +51,38 @@ class BackendController(Protocol):
         """Disconnect backend resources."""
         ...
 
+
+@runtime_checkable
+class BackendBoxConfigProvider(Protocol):
+    """Capability protocol for reading connected box configuration cache."""
+
+    @property
+    def box_config(self) -> dict[str, Any]:
+        """Return connected box configuration cache."""
+        ...
+
+
+@runtime_checkable
+class BackendSkewYamlLoader(Protocol):
+    """Capability protocol for loading skew calibration settings."""
+
     def load_skew_yaml(self, file_path: str | Path) -> None:
         """Load skew calibration settings."""
         ...
 
-    # Optional capabilities (backend dependent)
+
+@runtime_checkable
+class BackendLinkStatusReader(Protocol):
+    """Capability protocol for reading link status per box."""
+
     def link_status(self, box_name: str) -> dict[int, bool]:
         """Return link status for one box."""
         ...
+
+
+@runtime_checkable
+class BackendClockStatusReader(Protocol):
+    """Capability protocol for reading and checking clocks."""
 
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
         """Read clock-related values for selected boxes."""
@@ -72,6 +91,11 @@ class BackendController(Protocol):
     def check_clocks(self, box_list: list[str]) -> bool:
         """Return whether clocks are synchronized."""
         ...
+
+
+@runtime_checkable
+class BackendLinkupOperator(Protocol):
+    """Capability protocol for linkup operations."""
 
     def linkup_boxes(
         self,
@@ -83,6 +107,11 @@ class BackendController(Protocol):
         """Link up selected boxes."""
         ...
 
+
+@runtime_checkable
+class BackendRelinkupOperator(Protocol):
+    """Capability protocol for relinkup operations."""
+
     def relinkup_boxes(
         self,
         box_list: list[str],
@@ -93,15 +122,23 @@ class BackendController(Protocol):
         """Relink selected boxes."""
         ...
 
+
+@runtime_checkable
+class BackendClockSynchronizer(Protocol):
+    """Capability protocol for clock synchronization operations."""
+
     def sync_clocks(self, box_list: list[str]) -> bool:
         """Synchronize clocks for selected boxes."""
         ...
+
+
+@runtime_checkable
+class BackendClockResynchronizer(Protocol):
+    """Capability protocol for clock re-synchronization operation."""
 
     def resync_clocks(self, box_list: list[str]) -> bool:
         """Force re-synchronization of clocks for selected boxes."""
         ...
 
 
-SystemBackendController: TypeAlias = (
-    "Quel1BackendController | Quel3BackendController"
-)
+SystemBackendController: TypeAlias = "Quel1BackendController | Quel3BackendController"

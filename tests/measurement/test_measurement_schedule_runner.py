@@ -177,6 +177,50 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
     assert called["clock_health_checks"] is True
 
 
+def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
+    """Given backend without box config capability, when execute runs, then result factory receives an empty config."""
+    called: dict[str, object] = {}
+    request = BackendExecutionRequest(payload=object())
+    backend_result = Quel1BackendRawResult(status={}, data={}, config={})
+    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            _ = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            _ = schedule
+            _ = config
+            return request
+
+    class _BackendController:
+        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
+            _ = request
+            return backend_result
+
+    class _ResultFactory:
+        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
+            called["result_kwargs"] = kwargs
+            return expected
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        measurement_result_factory=cast(Any, _ResultFactory()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+
+    result = runner.execute(schedule=_make_schedule(), config=_make_config())
+
+    result_kwargs = cast(dict[str, object], called["result_kwargs"])
+    assert result_kwargs["device_config"] == {}
+    assert result is expected
+
+
 def test_execute_returns_backend_measurement_result_directly() -> None:
     """Given backend returns canonical result, when executing, then result factory is not called."""
     expected = MeasurementResult(

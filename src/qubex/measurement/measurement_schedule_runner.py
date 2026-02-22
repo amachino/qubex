@@ -9,6 +9,7 @@ from qubex.backend import (
     BackendController,
     ExperimentSystem,
 )
+from qubex.backend.controller_types import BackendBoxConfigProvider
 from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     ExecutionMode,
@@ -189,6 +190,15 @@ class MeasurementScheduleRunner:
             return int(constraint_profile.word_length_samples)
         return 4
 
+    @staticmethod
+    def _resolve_device_config(
+        backend_controller: BackendController,
+    ) -> dict[str, Any]:
+        """Resolve backend device config if supported by the controller."""
+        if isinstance(backend_controller, BackendBoxConfigProvider):
+            return backend_controller.box_config
+        return {}
+
     def execute(
         self,
         *,
@@ -228,7 +238,7 @@ class MeasurementScheduleRunner:
         result = self._measurement_result_factory.create(
             backend_result=backend_result,
             measurement_config=config,
-            device_config=self._backend_controller.box_config,
+            device_config=self._resolve_device_config(self._backend_controller),
             sampling_period_ns=getattr(
                 self._measurement_backend_adapter,
                 "sampling_period",

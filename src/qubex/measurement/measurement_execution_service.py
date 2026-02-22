@@ -17,6 +17,7 @@ from qubex.backend import (
     SystemManager,
     Target,
 )
+from qubex.backend.controller_types import BackendBoxConfigProvider
 from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     ExecutionMode,
@@ -201,6 +202,15 @@ class MeasurementExecutionService:
             target.label: self.experiment_system.get_awg_frequency(target.label)
             for target in self.experiment_system.targets
         }
+
+    @staticmethod
+    def _resolve_device_config(
+        backend_controller: BackendController,
+    ) -> dict:
+        """Resolve backend device config if the backend exposes it."""
+        if isinstance(backend_controller, BackendBoxConfigProvider):
+            return backend_controller.box_config
+        return {}
 
     def get_awg_frequency(self, target: str) -> float:
         """
@@ -505,7 +515,7 @@ class MeasurementExecutionService:
 
         return MeasurementResultConverter.to_multiple_measure_result(
             result,
-            config=self.backend_controller.box_config,
+            config=self._resolve_device_config(self.backend_controller),
             classifiers=self.classifiers,
         )
 
