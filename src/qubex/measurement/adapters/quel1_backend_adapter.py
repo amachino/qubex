@@ -292,7 +292,7 @@ class Quel1MeasurementBackendAdapter:
             capture_delay_word = capture_delays.get(mux.index, 0)
             capture_delay_sample[target] = capture_delay_word * word_length
 
-        sampled_sequences = pulse_schedule.get_sampled_sequences(copy=False)
+        sampled_sequences = pulse_schedule.get_sampled_sequences()
         for target, ranges in readout_ranges.items():
             if not ranges:
                 continue

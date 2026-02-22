@@ -42,8 +42,7 @@ class _FakePulseSchedule:
         del copy
         return self.sequences[label]
 
-    def get_sampled_sequences(self, *, copy: bool = False) -> dict[str, np.ndarray]:
-        del copy
+    def get_sampled_sequences(self) -> dict[str, np.ndarray]:
         raise AssertionError("Quel3 adapter must not call get_sampled_sequences().")
 
 

@@ -581,7 +581,7 @@ class MeasurementService:
                 sequences = [
                     sequence(param)
                     .repeated(repetitions)  # type: ignore
-                    .get_sampled_sequences(copy=False)
+                    .get_sampled_sequences()
                     for param in sweep_range
                 ]
                 ordered_qubits = self.ctx.ordered_qubit_labels(initial_sequence.labels)
