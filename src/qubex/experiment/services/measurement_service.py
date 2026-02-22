@@ -179,7 +179,7 @@ class MeasurementService:
         if enable_dsp_classification is None:
             enable_dsp_classification = False
         if reset_awg_and_capunits is None:
-            reset_awg_and_capunits = True
+            reset_awg_and_capunits = False
         if plot is None:
             plot = False
 
@@ -260,7 +260,7 @@ class MeasurementService:
         if enable_dsp_classification is None:
             enable_dsp_classification = False
         if reset_awg_and_capunits is None:
-            reset_awg_and_capunits = True
+            reset_awg_and_capunits = False
         if plot is None:
             plot = False
 

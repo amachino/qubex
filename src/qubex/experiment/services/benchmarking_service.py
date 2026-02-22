@@ -272,6 +272,7 @@ class BenchmarkingService:
         xaxis_type: Literal["linear", "log"] | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        reset_awg_and_capunits: bool | None = None,
     ) -> Result:
         """Run single-qubit randomized benchmarking."""
         if isinstance(targets, str):
@@ -285,6 +286,8 @@ class BenchmarkingService:
             plot = True
         if save_image is None:
             save_image = True
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
 
         if n_cliffords_range is not None:
             n_cliffords_range = np.array(n_cliffords_range, dtype=int)
@@ -375,6 +378,7 @@ class BenchmarkingService:
                         mode="avg",
                         shots=shots,
                         interval=interval,
+                        reset_awg_and_capunits=reset_awg_and_capunits,
                         plot=False,
                     )
                     for target, data in result.data.items():
@@ -452,6 +456,7 @@ class BenchmarkingService:
         xaxis_type: Literal["linear", "log"] | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        reset_awg_and_capunits: bool | None = None,
     ) -> Result:
         """Run two-qubit randomized benchmarking."""
         if in_parallel is None:
@@ -462,6 +467,8 @@ class BenchmarkingService:
             plot = True
         if save_image is None:
             save_image = True
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
 
         if self.ctx.state_centers is None:
             raise ValueError("State classifiers are not built.")
@@ -582,6 +589,7 @@ class BenchmarkingService:
                         mode="single",
                         shots=shots,
                         interval=interval,
+                        reset_awg_and_capunits=reset_awg_and_capunits,
                         plot=False,
                     )
 
@@ -686,6 +694,18 @@ class BenchmarkingService:
             if clifford is None:
                 raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
             interleaved_clifford = clifford
+        else:
+            clifford = interleaved_clifford
+
+        reset_qubits: set[str] = set()
+        for target in targets:
+            target_object = self.ctx.experiment_system.get_target(target)
+            if target_object.is_cr:
+                control_qubit, target_qubit = self.ctx.cr_pair(target)
+                reset_qubits.update([control_qubit, target_qubit])
+            else:
+                reset_qubits.add(self.ctx.resolve_qubit_label(target))
+        self.ctx.reset_awg_and_capunits(qubits=reset_qubits)
 
         is_2q = self.ctx.experiment_system.get_target(targets[0]).is_cr
 
@@ -704,6 +724,7 @@ class BenchmarkingService:
                 interval=interval,
                 plot=False,
                 save_image=False,
+                reset_awg_and_capunits=False,
             )
             irb_result = self.rb_experiment_2q(
                 targets=targets,
@@ -720,6 +741,7 @@ class BenchmarkingService:
                 interval=interval,
                 plot=False,
                 save_image=False,
+                reset_awg_and_capunits=False,
             )
         else:
             dimension = 2
@@ -735,6 +757,7 @@ class BenchmarkingService:
                 interval=interval,
                 plot=False,
                 save_image=False,
+                reset_awg_and_capunits=False,
             )
             irb_result = self.rb_experiment_1q(
                 targets=targets,
@@ -750,6 +773,7 @@ class BenchmarkingService:
                 interval=interval,
                 plot=False,
                 save_image=False,
+                reset_awg_and_capunits=False,
             )
 
         results = {}
