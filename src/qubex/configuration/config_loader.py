@@ -7,7 +7,7 @@ import math
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
 from typing_extensions import deprecated
@@ -220,7 +220,7 @@ class ConfigLoader:
         *,
         chip_id: str,
         config_dir: Path | str | None,
-        backend_kind: str,
+        backend_kind: Literal["quel1", "quel3"],
     ) -> str:
         """
         Resolve wiring file name from backend kind and config directory.
@@ -231,7 +231,7 @@ class ConfigLoader:
             Chip identifier.
         config_dir : Path | str | None
             Configuration directory. If `None`, default config path is used.
-        backend_kind : str
+        backend_kind : Literal["quel1", "quel3"]
             Backend family (`"quel1"` or `"quel3"`).
 
         Returns
