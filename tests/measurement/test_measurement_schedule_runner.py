@@ -122,8 +122,8 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
     assert result is expected
 
 
-def test_execute_forwards_execution_options_in_request() -> None:
-    """Given execution options, when execute is called, then request includes execution-mode options."""
+def test_execute_forwards_execution_options_to_backend_controller() -> None:
+    """Given execution options, when execute is called, then backend controller receives options."""
     called: dict[str, object] = {}
     base_request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendRawResult(status={}, data={}, config={})
@@ -146,8 +146,16 @@ def test_execute_forwards_execution_options_in_request() -> None:
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
 
-        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
+        def execute(
+            self,
+            *,
+            request: BackendExecutionRequest,
+            execution_mode: str | None = None,
+            clock_health_checks: bool | None = None,
+        ) -> Quel1BackendRawResult:
             called["request"] = request
+            called["execution_mode"] = execution_mode
+            called["clock_health_checks"] = clock_health_checks
             return backend_result
 
     class _ResultFactory:
@@ -164,10 +172,9 @@ def test_execute_forwards_execution_options_in_request() -> None:
     )
     _ = runner.execute(schedule=_make_schedule(), config=_make_config())
 
-    request = cast(BackendExecutionRequest, called["request"])
-    assert request.payload is base_request.payload
-    assert request.execution_mode == "serial"
-    assert request.clock_health_checks is True
+    assert called["request"] is base_request
+    assert called["execution_mode"] == "serial"
+    assert called["clock_health_checks"] is True
 
 
 def test_execute_returns_backend_measurement_result_directly() -> None:
@@ -377,8 +384,16 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
             called["result_factory_experiment_system"] = experiment_system
             return _ResultFactory()
 
-        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
+        def execute(
+            self,
+            *,
+            request: BackendExecutionRequest,
+            execution_mode: str | None = None,
+            clock_health_checks: bool | None = None,
+        ) -> Quel1BackendRawResult:
             called["execute_request"] = request
+            called["execution_mode"] = execution_mode
+            called["clock_health_checks"] = clock_health_checks
             return Quel1BackendRawResult(status={}, data={}, config={})
 
     backend_controller = _Controller()
@@ -395,9 +410,9 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
     assert called["experiment_system"] is experiment_system
     assert called["result_factory_experiment_system"] is experiment_system
     assert isinstance(called["constraint_profile"], MeasurementConstraintProfile)
-    execute_request = cast(BackendExecutionRequest, called["execute_request"])
-    assert execute_request.execution_mode == "parallel"
-    assert execute_request.clock_health_checks is True
+    assert isinstance(called["execute_request"], BackendExecutionRequest)
+    assert called["execution_mode"] == "parallel"
+    assert called["clock_health_checks"] is True
     assert result.device_config == {"kind": "quel3"}
 
 

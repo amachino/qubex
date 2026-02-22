@@ -18,7 +18,7 @@ from qubex.backend.backend_executor import (
     BackendExecutionResult,
     BackendExecutor,
 )
-from qubex.backend.quel1 import Quel1BackendController
+from qubex.backend.quel1 import ExecutionMode, Quel1BackendController
 
 from .quel3_execution_payload import Quel3ExecutionPayload
 from .quel3_sequencer_compiler import Quel3SequencerCompiler
@@ -100,6 +100,8 @@ class Quel3BackendController(Quel1BackendController):
         self,
         *,
         request: BackendExecutionRequest,
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request using QuEL-3 execution defaults."""
         from .quel3_backend_executor import Quel3BackendExecutor
@@ -109,8 +111,8 @@ class Quel3BackendController(Quel1BackendController):
             executor = cast(
                 BackendExecutor,
                 factory(
-                    execution_mode=request.execution_mode,
-                    clock_health_checks=request.clock_health_checks,
+                    execution_mode=execution_mode,
+                    clock_health_checks=clock_health_checks,
                 ),
             )
             return executor.execute(request=request)

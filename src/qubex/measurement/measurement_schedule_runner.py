@@ -7,10 +7,8 @@ from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
-    BackendExecutionRequest,
     ExperimentSystem,
 )
-from qubex.backend.backend_executor import ExecutionModeOption
 from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     ExecutionMode,
@@ -217,13 +215,14 @@ class MeasurementScheduleRunner:
             schedule=schedule,
             config=config,
         )
-        if self._execution_mode is not None or self._clock_health_checks is not None:
-            request = BackendExecutionRequest(
-                payload=request.payload,
-                execution_mode=cast(ExecutionModeOption | None, self._execution_mode),
+        if self._execution_mode is None and self._clock_health_checks is None:
+            backend_result = self._backend_controller.execute(request=request)
+        else:
+            backend_result = cast(Any, self._backend_controller).execute(
+                request=request,
+                execution_mode=self._execution_mode,
                 clock_health_checks=self._clock_health_checks,
             )
-        backend_result = self._backend_controller.execute(request=request)
         if isinstance(backend_result, MeasurementResult):
             return backend_result
         result = self._measurement_result_factory.create(

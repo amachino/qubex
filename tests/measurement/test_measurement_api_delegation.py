@@ -491,10 +491,12 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
             self,
             *,
             request: BackendExecutionRequest,
+            execution_mode: str | None = None,
+            clock_health_checks: bool | None = None,
         ) -> Quel1BackendRawResult:
             executor = self.create_measurement_backend_executor(
-                execution_mode=request.execution_mode,
-                clock_health_checks=request.clock_health_checks,
+                execution_mode=execution_mode,
+                clock_health_checks=clock_health_checks,
             )
             return executor.execute(request=request)
 

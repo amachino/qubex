@@ -77,19 +77,13 @@ class Quel1BackendExecutor:
             raise TypeError(
                 "Quel1BackendExecutor expects `Quel1ExecutionPayload` payload."
             )
-        execution_mode = self._execution_mode
-        if request.execution_mode is not None:
-            execution_mode = request.execution_mode
-        clock_health_checks = self._clock_health_checks
-        if request.clock_health_checks is not None:
-            clock_health_checks = request.clock_health_checks
         sequencer = self._backend_controller.create_quel1_sequencer(
             gen_sampled_sequence=payload.gen_sampled_sequence,
             cap_sampled_sequence=payload.cap_sampled_sequence,
             resource_map=payload.resource_map,
             interval=payload.interval,
         )
-        if execution_mode == "parallel":
+        if self._execution_mode == "parallel":
             return self._backend_controller.execute_sequencer_parallel(
                 sequencer=sequencer,
                 repeats=payload.repeats,
@@ -99,7 +93,7 @@ class Quel1BackendExecutor:
                 enable_classification=payload.enable_classification,
                 line_param0=payload.line_param0,
                 line_param1=payload.line_param1,
-                clock_health_checks=clock_health_checks,
+                clock_health_checks=self._clock_health_checks,
             )
         return self._backend_controller.execute_sequencer(
             sequencer=sequencer,

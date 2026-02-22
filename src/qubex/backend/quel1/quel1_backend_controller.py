@@ -26,6 +26,7 @@ from .execution.parallel_action_builder import ClockHealthCheckOptions
 from .quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
     WORD_LENGTH,
+    ExecutionMode,
 )
 from .quel1_box_adapter import adapt_quel1_box
 from .quel1_driver_loader import load_quel1_driver
@@ -766,6 +767,8 @@ class Quel1BackendController:
         self,
         *,
         request: BackendExecutionRequest,
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request using QuEL-1 execution defaults."""
         from .quel1_backend_executor import Quel1BackendExecutor
@@ -775,15 +778,15 @@ class Quel1BackendController:
             executor = cast(
                 BackendExecutor,
                 factory(
-                    execution_mode=request.execution_mode,
-                    clock_health_checks=request.clock_health_checks,
+                    execution_mode=execution_mode,
+                    clock_health_checks=clock_health_checks,
                 ),
             )
             return executor.execute(request=request)
         return Quel1BackendExecutor(
             backend_controller=self,
-            execution_mode=request.execution_mode,
-            clock_health_checks=request.clock_health_checks,
+            execution_mode=execution_mode,
+            clock_health_checks=clock_health_checks,
         ).execute(request=request)
 
     def get_box(self, box_name: str) -> Quel1Box:
