@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
@@ -14,6 +14,7 @@ from qubex.backend.quel1.compat.parallel_action_builder import (
     ClockHealthCheckOptions,
 )
 from qubex.backend.quel1.compat.qubecalib_protocols import SequencerProtocol
+from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
     SequencerExecutionEngine,
 )
@@ -28,7 +29,10 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from qubex.backend.quel1.compat.qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
+        CapSampledSequenceProtocol,
+        GenSampledSequenceProtocol,
         Quel1SystemProtocol as Quel1System,
+        SequencerProtocol as Sequencer,
     )
 
 
@@ -60,6 +64,26 @@ class Quel1ExecutionManager:
             Backend-specific execution result.
         """
         return executor.execute(request=request)
+
+    def create_quel1_sequencer(
+        self,
+        *,
+        gen_sampled_sequence: dict[str, GenSampledSequenceProtocol],
+        cap_sampled_sequence: dict[str, CapSampledSequenceProtocol],
+        resource_map: dict[str, list[dict[str, Any]]],
+        interval: int,
+    ) -> Sequencer:
+        """Create QuEL-1 sequencer instance from prepared execution payload."""
+        return Quel1Sequencer(
+            gen_sampled_sequence=gen_sampled_sequence,
+            cap_sampled_sequence=cap_sampled_sequence,
+            resource_map=resource_map,  # type: ignore[arg-type]
+            interval=interval,
+            sysdb=self._runtime_context.qubecalib.sysdb,
+            # Keep passing connected system for constructor compatibility across
+            # old/new driver packages.
+            driver=self._runtime_context.quel1system,
+        )
 
     def execute_sequencer(
         self,

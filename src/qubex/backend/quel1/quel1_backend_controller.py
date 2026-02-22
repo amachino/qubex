@@ -778,6 +778,7 @@ class Quel1BackendController(BackendController):
 
         executor = Quel1BackendExecutor(
             backend_controller=self,
+            execution_manager=self._execution_manager,
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
         )

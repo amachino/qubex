@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 
+from .managers import Quel1ExecutionManager
 from .quel1_backend_constants import (
     DEFAULT_CLOCK_HEALTH_CHECKS,
     DEFAULT_EXECUTION_MODE,
@@ -17,13 +15,6 @@ from .quel1_backend_constants import (
 )
 from .quel1_backend_controller import Quel1BackendController
 from .quel1_execution_payload import Quel1ExecutionPayload
-
-if TYPE_CHECKING:
-    from .compat.qubecalib_protocols import (
-        CapSampledSequenceProtocol,
-        GenSampledSequenceProtocol,
-        SequencerProtocol as Sequencer,
-    )
 
 
 class Quel1BackendExecutor:
@@ -33,6 +24,7 @@ class Quel1BackendExecutor:
         self,
         *,
         backend_controller: Quel1BackendController,
+        execution_manager: Quel1ExecutionManager,
         execution_mode: ExecutionMode | None = None,
         clock_health_checks: bool | None = None,
     ) -> None:
@@ -43,6 +35,8 @@ class Quel1BackendExecutor:
         ----------
         backend_controller : Quel1BackendController
             Backend controller used to execute sequencers.
+        execution_manager : Quel1ExecutionManager
+            Execution manager used to build and execute sequencers.
         execution_mode : ExecutionMode | None, optional
             Execution path selector. `"serial"` uses qubecalib's direct action
             flow, while `"parallel"` uses the qubex-side parallelized flow.
@@ -58,6 +52,7 @@ class Quel1BackendExecutor:
         if execution_mode not in {"serial", "parallel"}:
             raise ValueError(f"Unsupported execution mode: {execution_mode}")
         self._backend_controller = backend_controller
+        self._execution_manager = execution_manager
         self._execution_mode = execution_mode
         self._clock_health_checks = clock_health_checks
 
@@ -68,7 +63,7 @@ class Quel1BackendExecutor:
             raise TypeError(
                 "Quel1BackendExecutor expects `Quel1ExecutionPayload` payload."
             )
-        sequencer = self._create_quel1_sequencer(
+        sequencer = self._execution_manager.create_quel1_sequencer(
             gen_sampled_sequence=payload.gen_sampled_sequence,
             cap_sampled_sequence=payload.cap_sampled_sequence,
             resource_map=payload.resource_map,
@@ -95,24 +90,4 @@ class Quel1BackendExecutor:
             enable_classification=payload.enable_classification,
             line_param0=payload.line_param0,
             line_param1=payload.line_param1,
-        )
-
-    def _create_quel1_sequencer(
-        self,
-        *,
-        gen_sampled_sequence: dict[str, GenSampledSequenceProtocol],
-        cap_sampled_sequence: dict[str, CapSampledSequenceProtocol],
-        resource_map: dict[str, list[dict]],
-        interval: int,
-    ) -> Sequencer:
-        """Create QuEL-1 sequencer instance from prepared execution payload."""
-        return Quel1Sequencer(
-            gen_sampled_sequence=gen_sampled_sequence,
-            cap_sampled_sequence=cap_sampled_sequence,
-            resource_map=resource_map,  # type: ignore[arg-type]
-            interval=interval,
-            sysdb=self._backend_controller.qubecalib.sysdb,
-            # Keep passing connected system for constructor compatibility across
-            # old/new driver packages.
-            driver=self._backend_controller.quel1system,
         )
