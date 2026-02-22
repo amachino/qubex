@@ -28,10 +28,8 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from qubex.backend.quel1.compat.qubecalib_protocols import (
-        BoxPoolProtocol as BoxPool,
         CapSampledSequenceProtocol,
         GenSampledSequenceProtocol,
-        Quel1SystemProtocol as Quel1System,
         SequencerProtocol as Sequencer,
     )
 
@@ -138,7 +136,7 @@ class Quel1ExecutionManager:
             line_param0=line_param0,
             line_param1=line_param1,
         )
-        status, data, config = sequencer.execute(self._require_boxpool())
+        status, data, config = sequencer.execute(self._runtime_context.boxpool)
         return make_backend_raw_result(
             status=status,
             data=data,
@@ -204,8 +202,8 @@ class Quel1ExecutionManager:
         parsed_status, parsed_data, parsed_config = (
             SequencerExecutionEngine.execute_parallel(
                 sequencer=sequencer,
-                boxpool=self._require_boxpool(),
-                system=self._require_quel1system(),
+                boxpool=self._runtime_context.boxpool,
+                system=self._runtime_context.quel1system,
                 action_builder=self._runtime_context.driver.Action.build,
                 runit_setting_factory=self._runtime_context.driver.RunitSetting,
                 runit_id_factory=self._runtime_context.driver.RunitId,
@@ -229,11 +227,3 @@ class Quel1ExecutionManager:
             data=parsed_data,
             config=parsed_config,
         )
-
-    def _require_boxpool(self) -> BoxPool:
-        """Return connected boxpool or raise when runtime is disconnected."""
-        return self._runtime_context.boxpool
-
-    def _require_quel1system(self) -> Quel1System:
-        """Return connected Quel1System or raise when runtime is disconnected."""
-        return self._runtime_context.quel1system
