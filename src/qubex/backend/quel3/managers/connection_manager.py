@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from types import TracebackType
 from typing import Protocol
 
-from qubex.backend.quel3.managers.quelware_support import (
+from qubex.backend.quel3.managers.quelware_runtime import (
     import_module_with_workspace_fallback,
     run_coroutine,
 )

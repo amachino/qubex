@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 import numpy as np
 import numpy.typing as npt
 
-from qubex.backend.quel3.managers.quelware_support import (
+from qubex.backend.quel3.managers.quelware_runtime import (
     import_module_with_workspace_fallback,
     run_coroutine,
 )
