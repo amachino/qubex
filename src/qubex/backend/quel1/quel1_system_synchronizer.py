@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard, cast
 
 from qubex.backend.control_system import PortType
@@ -170,7 +170,7 @@ class Quel1SystemSynchronizer:
         box_ids: Sequence[str],
         parallel: bool | None = None,
     ) -> dict[str, dict]:
-        """Fetch raw backend settings from hardware for selected boxes."""
+        """Fetch backend settings from hardware and skip failed box dumps."""
         if not self.supports_box_settings_cache_sync():
             return {}
         if parallel is None:
@@ -188,11 +188,13 @@ class Quel1SystemSynchronizer:
         if not parallel:
             result: dict[str, dict] = {}
             for box in boxes:
-                result[box.id] = cast(dict[str, Any], dump_box(box.id))
+                box_config = cast(dict[str, Any], dump_box(box.id))
+                if self._is_valid_dumped_box_config(box.id, box_config):
+                    result[box.id] = box_config
             return result
 
-        return cast(
-            dict[str, dict],
+        raw_result = cast(
+            dict[str, dict[str, Any]],
             run_parallel_map(
                 boxes,
                 _dump_box,
@@ -201,6 +203,11 @@ class Quel1SystemSynchronizer:
                 on_error=self._fallback_dump_box_result,
             ),
         )
+        return {
+            box_id: box_config
+            for box_id, box_config in raw_result.items()
+            if self._is_valid_dumped_box_config(box_id, box_config)
+        }
 
     def sync_backend_settings_to_device_controller(
         self,
@@ -380,9 +387,24 @@ class Quel1SystemSynchronizer:
 
     @staticmethod
     def _fallback_dump_box_result(box: Box, exc: BaseException) -> dict[str, Any]:
-        """Log a box dump failure and return an empty fallback config."""
+        """Log one dump failure and return an empty fallback payload."""
         logger.exception("Failed to dump box %s", box.id, exc_info=exc)
         return {}
+
+    @staticmethod
+    def _is_valid_dumped_box_config(box_id: str, box_config: Mapping[str, Any]) -> bool:
+        """Return whether dumped box config is valid enough for sync application."""
+        if not box_config:
+            logger.warning("Skip empty backend settings for box %s.", box_id)
+            return False
+        ports = box_config.get("ports")
+        if not isinstance(ports, Mapping):
+            logger.warning(
+                "Skip malformed backend settings for box %s: missing `ports` mapping.",
+                box_id,
+            )
+            return False
+        return True
 
     def _supports_methods(self, method_names: Sequence[str]) -> bool:
         """Return whether all named methods are available on backend controller."""
