@@ -1,6 +1,6 @@
 """QuEL-1 specific backend components."""
 
-from .compat.sequencer import Quel1Sequencer, SequencerMod
+from .compat.sequencer import Quel1Sequencer
 from .quel1_backend_constants import (
     BLOCK_DURATION,
     BLOCK_LENGTH,
@@ -40,5 +40,4 @@ __all__ = [
     "Quel1BackendRawResult",
     "Quel1ExecutionPayload",
     "Quel1Sequencer",
-    "SequencerMod",  # TODO: Remove this alias in future versions.
 ]

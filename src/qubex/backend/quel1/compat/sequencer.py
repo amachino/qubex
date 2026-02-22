@@ -175,7 +175,3 @@ class Quel1Sequencer(Sequencer):
         0
         """
         return 0
-
-
-# TODO: Remove this alias in future versions.
-SequencerMod = Quel1Sequencer
