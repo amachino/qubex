@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast, runtime_checkable
 
 from .compat.driver_loader import load_quel1_driver
 
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         BoxPoolProtocol as BoxPool,
         QubeCalibProtocol as QubeCalib,
         Quel1SystemProtocol as Quel1System,
+        QuelDriverClassesProtocol,
     )
 
 _TConnectedResource = TypeVar("_TConnectedResource")
@@ -27,7 +28,7 @@ class Quel1RuntimeContextReader(Protocol):
     """Read-only interface for QuEL-1 runtime state shared by managers."""
 
     @property
-    def driver(self) -> Any:
+    def driver(self) -> QuelDriverClassesProtocol:
         """Return loaded QuEL-1 driver class bundle."""
         ...
 
@@ -89,7 +90,7 @@ class Quel1RuntimeContext:
     def __init__(
         self,
         *,
-        driver: Any,
+        driver: QuelDriverClassesProtocol,
         qubecalib: QubeCalib | None,
         sampling_period: float,
     ) -> None:
@@ -105,7 +106,7 @@ class Quel1RuntimeContext:
     @classmethod
     def create(cls, *, config_path: str | Path | None = None) -> Quel1RuntimeContext:
         """Create runtime context from driver-loader and optional config file."""
-        driver = load_quel1_driver()
+        driver = cast("QuelDriverClassesProtocol", load_quel1_driver())
         qubecalib: QubeCalib | None
         try:
             if config_path is None:
@@ -125,7 +126,7 @@ class Quel1RuntimeContext:
         )
 
     @property
-    def driver(self) -> Any:
+    def driver(self) -> QuelDriverClassesProtocol:
         """Return loaded QuEL-1 driver class bundle."""
         return self._driver
 

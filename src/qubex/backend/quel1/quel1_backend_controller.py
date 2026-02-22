@@ -14,7 +14,7 @@ import logging
 from collections.abc import Collection
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
         QubeCalibProtocol as QubeCalib,
         Quel1BoxCommonProtocol as Quel1Box,
         Quel1SystemProtocol as Quel1System,
+        QuelDriverClassesProtocol,
         SequencerProtocol as Sequencer,
     )
 
@@ -85,7 +86,7 @@ class Quel1BackendController(BackendController):
         )
 
     @property
-    def driver(self) -> Any:
+    def driver(self) -> QuelDriverClassesProtocol:
         """Return loaded QuEL-1 driver class bundle."""
         return self._runtime_context.driver
 
@@ -969,7 +970,8 @@ class Quel1BackendController(BackendController):
         tuple[Any, Any]
             A tuple of (skew object, plotly figure).
         """
-        skew = self.driver.Skew.from_yaml(
+        driver = cast(Any, self.driver)
+        skew = driver.Skew.from_yaml(
             str(skew_yaml_path),
             box_yaml=str(box_yaml_path),
             clockmaster_ip=clockmaster_ip,
@@ -1071,7 +1073,8 @@ class Quel1BackendController(BackendController):
         Any
             GenSampledSequence object.
         """
-        return self.driver.GenSampledSequence(
+        driver = cast(Any, self.driver)
+        return driver.GenSampledSequence(
             target_name=target_name,
             prev_blank=0,
             post_blank=None,
@@ -1079,7 +1082,7 @@ class Quel1BackendController(BackendController):
             original_post_blank=None,
             modulation_frequency=modulation_frequency,
             sub_sequences=[
-                self.driver.GenSampledSubSequence(
+                driver.GenSampledSubSequence(
                     real=real,
                     imag=imag,
                     repeats=1,
@@ -1116,7 +1119,8 @@ class Quel1BackendController(BackendController):
         Any
             CapSampledSequence object.
         """
-        cap_sub_sequence = self.driver.CapSampledSubSequence(
+        driver = cast(Any, self.driver)
+        cap_sub_sequence = driver.CapSampledSubSequence(
             capture_slots=[],
             repeats=None,
             prev_blank=capture_delay,
@@ -1126,14 +1130,14 @@ class Quel1BackendController(BackendController):
         )
         for duration, post_blank in capture_slots:
             cap_sub_sequence.capture_slots.append(
-                self.driver.CaptureSlots(
+                driver.CaptureSlots(
                     duration=duration,
                     post_blank=post_blank,
                     original_duration=None,  # type: ignore[arg-type]
                     original_post_blank=None,  # type: ignore[arg-type]
                 )
             )
-        return self.driver.CapSampledSequence(
+        return driver.CapSampledSequence(
             target_name=target_name,
             repeats=None,
             prev_blank=0,
