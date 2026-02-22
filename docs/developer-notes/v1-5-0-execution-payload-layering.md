@@ -4,6 +4,7 @@
 
 - State: `IMPLEMENTED`
 - Documented on: 2026-02-19
+- Updated on: 2026-02-22
 
 ## Problem
 
@@ -54,8 +55,9 @@ Execution payloads are backend contracts and should be defined in backend module
 ### 3) Keep measurement layer focused on schedule-to-payload conversion
 
 - `Quel3MeasurementBackendAdapter` stays in `qubex.measurement.adapters`.
-- `Quel3BackendExecutor` is owned by `qubex.backend.quel3` and imported by
-  `MeasurementScheduleRunner` from backend layer.
+- `MeasurementScheduleRunner` calls only `BackendController.execute(request=...)`.
+- Backend controllers own executor selection (`create_measurement_backend_executor(...)`
+  hook or backend default executor), keeping executor classes backend-internal.
 
 ### 4) Align QuEL-1 payload shape with backend-plan pattern
 

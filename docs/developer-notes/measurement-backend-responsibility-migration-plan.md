@@ -21,11 +21,10 @@ Migrate the current implementation to the target architecture defined in `measur
   - Step 4
   - Step 5
   - Step 6
+  - Step 7A
 - In progress
-  - Step 7A (remove `Quel3BackendController` inheritance from
-    `Quel1BackendController` while preserving behavior via delegation)
-- Remaining
   - Step 7B
+- Remaining
   - Step 8
   - Step 9
   - Step 10
@@ -109,14 +108,18 @@ Migrate the current implementation to the target architecture defined in `measur
   - `uv run pytest tests/measurement/test_measurement_schedule_runner.py`
   - Confirm no remaining `MeasurementScheduleExecutor` references in source/tests/docs.
 
-### Step 4: Convert `BackendController` contract to Protocol and define required/optional capabilities
+### Step 4: Convert `BackendController` contract to Protocol and define minimal required methods plus capability protocols
 
 - Purpose
   - Make measurement-facing backend contract explicit at type level.
 - Main changes
   - Replace union alias in `src/qubex/backend/controller_types.py` with a Protocol-based contract.
-  - Required methods: `execute(...)`, `connect(...)`, `disconnect()`.
-  - Optional capability-gated methods: `check_link_status(...)`, `check_clock_status(...)`, `linkup(...)`, `relinkup(...)`.
+  - Required contract: `hash`, `is_connected`, `execute(...)`, `connect(...)`, `disconnect()`.
+  - Move backend-dependent operations to separate capability protocols
+    (`BackendSkewYamlLoader`, `BackendLinkStatusReader`,
+    `BackendClockStatusReader`, `BackendLinkupOperator`,
+    `BackendRelinkupOperator`, `BackendClockSynchronizer`,
+    `BackendClockResynchronizer`, `BackendBoxConfigProvider`).
   - Align type annotations in `SystemManager` and measurement services with the new contract.
 - Behavior-preserving guardrails
   - Keep runtime method resolution unchanged; introduce type strengthening first.
@@ -147,12 +150,17 @@ Migrate the current implementation to the target architecture defined in `measur
   - Add `src/qubex/backend/quel1/managers/connection_manager.py`.
   - Add `src/qubex/backend/quel1/managers/clock_manager.py`.
   - Add `src/qubex/backend/quel1/managers/execution_manager.py`.
-  - Add `src/qubex/backend/quel1/managers/runtime_context.py` and make
+  - Add `src/qubex/backend/quel1/quel1_runtime_context.py` and make
     `Quel1ConnectionManager` the runtime-state writer.
   - Make `Quel1ClockManager` and `Quel1ExecutionManager` read runtime state
     through `Quel1RuntimeContext` read-only interface.
   - Add `src/qubex/backend/quel1/managers/configuration_manager.py` and
     delegate `dump_*`, `config_*`, and configuration-definition operations.
+  - Move qubecalib-compatibility modules into
+    `src/qubex/backend/quel1/compat/` and use concise module names
+    (`box_adapter.py`, `driver_loader.py`, `qubecalib_protocols.py`,
+    `sequencer.py`, `capture_result_parser.py`,
+    `parallel_action_builder.py`, `sequencer_execution_engine.py`).
   - Make `Quel1ConnectionManager` the owner of connection runtime state
     (`boxpool`, `quel1system`, `cap_resource_map`, `gen_resource_map`) and
     remove tuple-based connected-state returns from `connect(...)`.

@@ -54,13 +54,44 @@ classDiagram
   class MeasurementScheduleRunner
   class BackendController {
     <<interface>>
+    +hash
+    +is_connected
     +execute(...)
     +connect(...)
     +disconnect()
-    +check_link_status(...) [optional]
-    +check_clock_status(...) [optional]
-    +linkup(...) [optional]
-    +relinkup(...) [optional]
+  }
+  class BackendSkewYamlLoader {
+    <<interface>>
+    +load_skew_yaml(...)
+  }
+  class BackendLinkStatusReader {
+    <<interface>>
+    +link_status(...)
+  }
+  class BackendClockStatusReader {
+    <<interface>>
+    +read_clocks(...)
+    +check_clocks(...)
+  }
+  class BackendLinkupOperator {
+    <<interface>>
+    +linkup_boxes(...)
+  }
+  class BackendRelinkupOperator {
+    <<interface>>
+    +relinkup_boxes(...)
+  }
+  class BackendClockSynchronizer {
+    <<interface>>
+    +sync_clocks(...)
+  }
+  class BackendClockResynchronizer {
+    <<interface>>
+    +resync_clocks(...)
+  }
+  class BackendBoxConfigProvider {
+    <<interface>>
+    +box_config
   }
   class Quel1BackendController
   class Quel3BackendController
@@ -79,13 +110,21 @@ classDiagram
 
   MeasurementContext --> SystemManager : reads ExperimentSystem context
   MeasurementSessionService --> BackendController : connect/disconnect (required)
-  MeasurementSessionService ..> BackendController : check_*/linkup/relinkup (optional)
+  MeasurementSessionService ..> BackendSkewYamlLoader : optional skew load
+  MeasurementSessionService ..> BackendLinkStatusReader : optional link status
+  MeasurementSessionService ..> BackendClockStatusReader : optional clock status
+  MeasurementSessionService ..> BackendLinkupOperator : optional linkup
+  MeasurementSessionService ..> BackendRelinkupOperator : optional relinkup
+  MeasurementSessionService ..> BackendClockSynchronizer : optional sync
+  MeasurementSessionService ..> BackendClockResynchronizer : optional resync
   MeasurementSessionService --> SystemManager : syncs and coordinates session state
   MeasurementAmplificationService --> MeasurementContext : resolves target/mux/control params
   MeasurementClassificationService --> MeasurementExecutionService : shared classifier mapping
   MeasurementExecutionService --> MeasurementSessionService : resolves active session/controller
+  MeasurementExecutionService ..> BackendBoxConfigProvider : optional result config
   MeasurementExecutionService *-- MeasurementScheduleRunner : uses
   MeasurementScheduleRunner --> BackendController : execute(request)
+  MeasurementScheduleRunner ..> BackendBoxConfigProvider : optional device config
   SystemManager --> BackendController : resolves active controller
 
   BackendController <|.. Quel1BackendController
@@ -126,6 +165,8 @@ classDiagram
   - Owns required session operations: `load`, `connect`, `reload`, `disconnect`.
   - Owns capability-gated operations when supported by backend:
     `check_link_status`, `check_clock_status`, `linkup`, and `relinkup`.
+  - Resolves backend optional operations through capability protocols
+    (unsupported capabilities are handled by no-op or explicit errors).
   - Calls `BackendController` directly for session/connectivity operations.
   - Uses `SystemManager` for synchronization between backend runtime state and
     `ExperimentSystem`, and for active-controller/session coordination.
@@ -181,14 +222,21 @@ classDiagram
 Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provide these methods/properties.
 
 - Required now
+  - `hash`
+  - `is_connected`
   - `execute(...)`
   - `connect(...)`
   - `disconnect()`
-- Optional capabilities (if supported by backend)
-  - `check_link_status(...)`
-  - `check_clock_status(...)`
-  - `linkup(...)`
-  - `relinkup(...)`
+- Optional capabilities (backend dependent, provided via separate protocols)
+  - `BackendSkewYamlLoader.load_skew_yaml(...)`
+  - `BackendLinkStatusReader.link_status(...)`
+  - `BackendClockStatusReader.read_clocks(...)`
+  - `BackendClockStatusReader.check_clocks(...)`
+  - `BackendLinkupOperator.linkup_boxes(...)`
+  - `BackendRelinkupOperator.relinkup_boxes(...)`
+  - `BackendClockSynchronizer.sync_clocks(...)`
+  - `BackendClockResynchronizer.resync_clocks(...)`
+  - `BackendBoxConfigProvider.box_config`
 - Expansion policy
   - Start from the minimum shared contract for QuEL-1 and QuEL-3.
   - `load` and `reload` are session-level operations owned by
@@ -196,7 +244,7 @@ Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provi
   - Add additional required methods only after confirming they are truly common
     across both backends.
   - Keep backend-specific operations outside the shared required-method list until the common contract is stable.
-  - `check_*`, `linkup`, and `relinkup` remain capability-gated extension APIs.
+  - Capability APIs remain separate from `BackendController` and are resolved only when needed.
 
 ## Execution Contract
 
@@ -213,7 +261,7 @@ Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provi
 | --- | --- |
 | `load`, `connect`, `reload` | `MeasurementSessionService` |
 | `disconnect` | `MeasurementSessionService` |
-| `check_link_status`, `check_clock_status`, `linkup`, `relinkup` | `MeasurementSessionService` (optional capability) |
+| `check_link_status`, `check_clock_status`, `linkup`, `relinkup` | `MeasurementSessionService` (capability-gated via backend capability protocols) |
 | `execute_measurement_schedule`, `execute`, `measure`, `measure_noise` | `MeasurementExecutionService` |
 | `create_measurement_config`, `build_measurement_schedule` | `MeasurementExecutionService` |
 | `sampling_period`, `constraint_profile` | `MeasurementExecutionService` |
@@ -236,8 +284,9 @@ sequenceDiagram
   MSS->>SM: resolve active session/controller
   MSS->>BC: connect / disconnect (required)
   opt Backend supports optional capability APIs
-    MSS->>BC: check_link_status / check_clock_status
-    MSS->>BC: linkup / relinkup
+    MSS->>BC: load_skew_yaml / link_status / read_clocks
+    MSS->>BC: check_clocks / linkup_boxes / relinkup_boxes
+    MSS->>BC: sync_clocks / resync_clocks
   end
   MSS->>SM: synchronize backend and ExperimentSystem state
   MSS-->>MC: session lifecycle result
@@ -274,10 +323,19 @@ src/qubex/
     system_manager.py
     quel1/
       quel1_backend_controller.py
+      quel1_runtime_context.py
       managers/
         execution_manager.py
         connection_manager.py
         clock_manager.py
+      compat/
+        box_adapter.py
+        driver_loader.py
+        qubecalib_protocols.py
+        sequencer.py
+        capture_result_parser.py
+        parallel_action_builder.py
+        sequencer_execution_engine.py
     quel3/
       quel3_backend_controller.py
       managers/
