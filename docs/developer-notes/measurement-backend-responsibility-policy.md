@@ -1,181 +1,305 @@
-# Measurement backend responsibility and execution-path policy
+# Measurement Backend Architecture Policy (v1.5.0, Initial Draft)
 
 ## Status
 
-- State: `PROPOSED`
-- Documented on: 2026-02-22
+- State: `DRAFT-INITIAL`
+- Created: 2026-02-22
+- Updated: 2026-02-22
 
 ## Purpose
 
-Define a unified responsibility model for QuEL-1 and QuEL-3 measurement execution paths before v1.5.0 release freeze.
+Define a shared architecture for QuEL-1 and QuEL-3 measurement execution paths in v1.5.0, with clear class responsibilities, dependency direction, and package layout.
 
 ## Scope
 
 - In scope:
-  - Measurement execution path from `MeasurementClient` to backend execution result.
-  - Responsibility boundaries between measurement layer and backend layer.
-  - Naming and placement policy for classes in QuEL-1 and QuEL-3 paths.
+  - Measurement execution flow from `Measurement` to canonical `MeasurementResult`.
+  - Responsibility boundaries across `measurement` and `backend` layers.
+  - Naming and directory structure for controller/manager-centered design.
 - Out of scope:
-  - Behavioral changes in user-facing measurement APIs.
-  - Hardware protocol changes in qubecalib or quelware-client.
+  - User-facing API behavior changes.
+  - Hardware protocol details inside qubecalib or quelware integrations.
 
-## Terms
+## Ownership And Dependencies
 
-- `Control Plane`:
-  - The layer that handles device/session control operations such as load, connect, synchronize, configure, and state pull/push.
-  - It should not own measurement result decoding policy.
-- `Measurement Pipeline`:
-  - The layer that handles one measurement execution flow:
-    1. validate schedule,
-    2. compile backend request,
-    3. run request,
-    4. decode canonical `MeasurementResult`.
-- `API`:
-  - Entry points for application users (for example `MeasurementClient`).
-- `SPI` (`Service Provider Interface`):
-  - Internal extension contracts implemented by backend-specific providers (for example `MeasurementPipeline` and `BackendControlPlane` interfaces).
+- `MeasurementConfig`, `MeasurementSchedule`, and `MeasurementResult` are owned by the `measurement` package.
+- Allowed dependency directions:
+  - `measurement -> backend`
+  - `experiment -> measurement`
+- `MeasurementExecutionService` owns measurement execution orchestration in the measurement layer.
+- `MeasurementScheduleRunner` is an internal execution component used by
+  `MeasurementExecutionService` for request construction and result conversion.
+- `MeasurementSessionService` may call `BackendController` directly for
+  session/connectivity operations.
+- `MeasurementSessionService` uses `SystemManager` for state synchronization and
+  active-controller/session coordination.
+- Measurement-to-backend execution boundary call is `BackendController.execute(...)`.
+- Measurement layer does not depend on backend-internal execution component classes.
 
-## Current issues
+## Architecture Overview
 
-- QuEL-3 measurement flow is partially hosted in controller implementation, while QuEL-1 flow uses adapter + executor + result factory split.
-- QuEL-3 controller currently inherits from QuEL-1 controller, which couples control-plane concerns and backend-specific execution concerns.
-- Result conversion path is asymmetric:
-  - QuEL-1 uses factory conversion from raw backend result.
-  - QuEL-3 can return canonical result directly from controller.
+```mermaid
+classDiagram
+  direction TB
 
-## Design principles
+  class Measurement
+  class MeasurementSessionService
+  class MeasurementContext
+  class MeasurementExecutionService
+  class SystemManager
+  class MeasurementScheduleRunner
+  class BackendController {
+    <<interface>>
+    +execute(...)
+    +connect(...)
+    +disconnect()
+    +check_link_status(...) [optional]
+    +check_clock_status(...) [optional]
+    +linkup(...) [optional]
+    +relinkup(...) [optional]
+  }
+  class Quel1BackendController
+  class Quel3BackendController
+  class Quel1ExecutionManager
+  class Quel1ConnectionManager
+  class Quel1ClockManager
+  class Quel3ExecutionManager
+  class Quel3ConnectionManager
+  class Quel3ClockManager
 
-- Keep one common execution model for QuEL-1 and QuEL-3.
-- Isolate backend-specific behavior behind SPI contracts.
-- Separate control-plane concerns from execution/data-path concerns.
-- Keep `MeasurementClient` API stable and backend-agnostic.
-- Keep ownership direction explicit:
-  - `measurement -> backend SPI contracts`
-  - `backend implementations -> backend-specific modules`
+  Measurement *-- MeasurementContext : delegates
+  Measurement *-- MeasurementSessionService : delegates
+  Measurement *-- MeasurementExecutionService : delegates
 
-## Target architecture
+  MeasurementContext --> SystemManager : reads ExperimentSystem context
+  MeasurementSessionService --> BackendController : connect/disconnect (required)
+  MeasurementSessionService ..> BackendController : check_*/linkup/relinkup (optional)
+  MeasurementSessionService --> SystemManager : syncs and coordinates session state
+  MeasurementExecutionService --> MeasurementSessionService : resolves active session/controller
+  MeasurementExecutionService *-- MeasurementScheduleRunner : uses
+  MeasurementScheduleRunner --> BackendController : execute(request)
+  SystemManager --> BackendController : resolves active controller
 
-### Layer model
+  BackendController <|.. Quel1BackendController
+  BackendController <|.. Quel3BackendController
 
-1. API layer:
-   - `MeasurementClient` (public entry point).
-2. Use-case orchestration layer:
-   - `MeasurementExecutionService` (backend-agnostic execution coordinator).
-3. SPI contracts:
-   - `MeasurementPipeline` (validate/compile/run/decode).
-   - `BackendControlPlane` (load/connect/sync/configure lifecycle).
-4. Backend implementations:
-   - `quel1` implementation set.
-   - `quel3` implementation set.
+  Quel1BackendController *-- Quel1ConnectionManager : delegates
+  Quel1BackendController *-- Quel1ClockManager : delegates
+  Quel1BackendController *-- Quel1ExecutionManager : delegates
+  Quel3BackendController *-- Quel3ConnectionManager : delegates
+  Quel3BackendController *-- Quel3ClockManager : delegates
+  Quel3BackendController *-- Quel3ExecutionManager : delegates
+```
 
-### Unified execution sequence
+## Class Responsibilities
 
-1. Build schedule and config in measurement layer.
-2. Resolve active backend session from `SystemManager`.
-3. Execute through selected `MeasurementPipeline`.
-4. Return canonical `MeasurementResult`.
-5. Convert to legacy result model only at API compatibility boundary when required.
+### Measurement Layer
 
-## Responsibility boundaries
+- `Measurement`
+  - Public API facade.
+  - Owns input/output contract and compatibility surface.
+  - Delegates non-API logic to `MeasurementContext`,
+    `MeasurementSessionService`, and `MeasurementExecutionService`.
 
-### `BackendControlPlane` responsibilities
+- `MeasurementContext`
+  - Context provider for measurement features.
+  - Provides `ExperimentSystem`-derived information through `SystemManager`.
+  - Owns read/query helpers for targets, frequencies, and related context access.
+  - Owns classifier update and confusion-matrix related logic.
+  - Does not resolve active backend/controller session state.
 
-- Backend family selection and controller/session lifecycle.
-- Hardware configuration sync (`load`, `connect`, `pull`, `push`).
-- Box/port/channel/target control-plane operations.
+- `MeasurementSessionService`
+  - Session lifecycle and connectivity service on measurement side.
+  - Owns required session operations: `load`, `connect`, `reload`, `disconnect`.
+  - Owns capability-gated operations when supported by backend:
+    `check_link_status`, `check_clock_status`, `linkup`, and `relinkup`.
+  - Calls `BackendController` directly for session/connectivity operations.
+  - Uses `SystemManager` for synchronization between backend runtime state and
+    `ExperimentSystem`, and for active-controller/session coordination.
 
-### `MeasurementPipeline` responsibilities
+- `MeasurementExecutionService`
+  - Measurement execution service on measurement side.
+  - Owns `create_measurement_config` and `build_measurement_schedule`.
+  - Owns runtime-side capability resolution such as
+    `sampling_period` and `constraint_profile`.
+  - Resolves active backend/controller session state via
+    `MeasurementSessionService`.
+  - Executes measurement requests through `BackendController.execute(...)`.
 
-- Schedule validation according to backend constraint profile.
-- Backend request compilation from canonical schedule/config.
-- Backend execution invocation for prepared request.
-- Canonical result decoding.
+- `MeasurementScheduleRunner`
+  - Internal execution component used by `MeasurementExecutionService`.
+  - Builds backend execution request and converts backend output to canonical result.
+  - Does not own measurement-layer use-case orchestration.
 
-### Explicit non-responsibilities
+### Backend Layer
 
-- `ControlPlane` must not perform measurement result decoding logic.
-- `MeasurementPipeline` must not own full-system control synchronization logic.
+- `SystemManager`
+  - Cross-system state management and synchronization.
+  - Owns backend-kind/session selection and active-controller state.
+  - Owns pull/push state synchronization policy.
+  - Is not the owner of backend operation implementations.
 
-## Class organization policy
+- `BackendController`
+  - Required operation contract for backend controllers.
+  - Single entrypoint for device operations from measurement layer.
+  - Exposes required operation API to upper layers.
 
-### Common contracts and orchestration
+- `Quel1BackendController`, `Quel3BackendController`
+  - Concrete backend-controller classes implementing `BackendController` contract.
+  - Delegate operation implementations to backend-local managers.
 
-- `src/qubex/backend/spi/control_plane.py`
-  - `BackendControlPlane` protocol.
-- `src/qubex/backend/spi/measurement_pipeline.py`
-  - `MeasurementPipeline` protocol.
-- `src/qubex/backend/session.py`
-  - `BackendSession` object carrying:
-    - `backend_kind`,
-    - `control_plane`,
-    - `measurement_pipeline`,
-    - `constraint_profile`.
-- `src/qubex/measurement/execution_service.py`
-  - `MeasurementExecutionService`.
+- `Quel{1,3}ConnectionManager`
+  - Connection and link-maintenance operations.
 
-### QuEL-1 implementation policy
+- `Quel{1,3}ClockManager`
+  - Multi-device clock/synchronization operations.
 
-- `src/qubex/backend/quel1/control_plane.py`
-  - QuEL-1 control-plane implementation.
-- `src/qubex/backend/quel1/measurement/pipeline.py`
-  - QuEL-1 measurement pipeline.
-- `src/qubex/backend/quel1/measurement/compiler.py`
-  - Request compilation for QuEL-1.
-- `src/qubex/backend/quel1/measurement/runner.py`
-  - Request runner for QuEL-1.
-- `src/qubex/backend/quel1/measurement/decoder.py`
-  - Raw-result to canonical-result decoder for QuEL-1.
+- `Quel{1,3}ExecutionManager`
+  - Backend execution primitives and backend-local execution routines.
 
-### QuEL-3 implementation policy
+## BackendController Required Methods
 
-- `src/qubex/backend/quel3/control_plane.py`
-  - QuEL-3 control-plane implementation.
-- `src/qubex/backend/quel3/measurement/pipeline.py`
-  - QuEL-3 measurement pipeline.
-- `src/qubex/backend/quel3/measurement/compiler.py`
-  - Request compilation for QuEL-3 fixed timeline.
-- `src/qubex/backend/quel3/measurement/runner.py`
-  - Request runner for QuEL-3 quelware execution.
-- `src/qubex/backend/quel3/measurement/decoder.py`
-  - QuEL-3 result decoding to canonical result.
+`BackendController` is the measurement-facing backend contract.
+Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provide these methods/properties.
 
-## Naming policy
+- Required now
+  - `execute(...)`
+  - `connect(...)`
+  - `disconnect()`
+- Optional capabilities (if supported by backend)
+  - `check_link_status(...)`
+  - `check_clock_status(...)`
+  - `linkup(...)`
+  - `relinkup(...)`
+- Expansion policy
+  - Start from the minimum shared contract for QuEL-1 and QuEL-3.
+  - `load` and `reload` are session-level operations owned by
+    `MeasurementSessionService`/`SystemManager`, not backend-controller methods.
+  - Add additional required methods only after confirming they are truly common
+    across both backends.
+  - Keep backend-specific operations outside the shared required-method list until the common contract is stable.
+  - `check_*`, `linkup`, and `relinkup` remain capability-gated extension APIs.
 
-- Prefer `*ControlPlane` for lifecycle/config synchronization implementations.
-- Prefer `*Pipeline` for measurement execution orchestrators.
-- Prefer `*Compiler`, `*Runner`, `*Decoder` for single-purpose execution components.
-- Keep backend-family prefixes explicit (`Quel1*`, `Quel3*`).
-- Avoid using one backend family class as a parent class for another backend family.
+## Execution Contract
 
-## Migration plan
+- `MeasurementExecutionService` is the measurement-layer execution owner and orchestrator.
+- `MeasurementScheduleRunner` is a non-owning internal execution component used by
+  `MeasurementExecutionService` for request construction and result conversion.
+- `MeasurementExecutionService` resolves active backend/controller state through `MeasurementSessionService`.
+- The cross-layer boundary call from measurement to backend is `BackendController.execute(...)`.
+- Backend-internal execution decomposition is not part of the measurement-layer contract.
 
-### Phase 0: Introduce contracts and wrappers (no behavior change)
+## Measurement API Delegation Map
 
-- Add SPI protocols and `MeasurementExecutionService`.
-- Keep existing classes as wrappers/adapters to the new contracts.
+| `Measurement` API | Delegate |
+| --- | --- |
+| `load`, `connect`, `reload` | `MeasurementSessionService` |
+| `disconnect` | `MeasurementSessionService` |
+| `check_link_status`, `check_clock_status`, `linkup`, `relinkup` | `MeasurementSessionService` (optional capability) |
+| `execute_measurement_schedule`, `execute`, `measure`, `measure_noise` | `MeasurementExecutionService` |
+| `create_measurement_config`, `build_measurement_schedule` | `MeasurementExecutionService` |
+| `sampling_period`, `constraint_profile` | `MeasurementExecutionService` |
+| `chip_id`, `targets`, `control_params` | `MeasurementContext` |
+| `nco_frequencies`, `awg_frequencies`, `get_awg_frequency`, `get_diff_frequency` | `MeasurementContext` |
+| `experiment_system` and other ExperimentSystem-derived context queries | `MeasurementContext` |
+| classifier APIs and confusion-matrix APIs | `MeasurementContext` |
 
-### Phase 1: Split QuEL-3 execution concerns from current controller
+## Session Lifecycle Sequence
 
-- Extract QuEL-3 measurement execution and result decoding into pipeline components.
-- Keep QuEL-3 control-plane class focused on lifecycle/config operations.
+```mermaid
+sequenceDiagram
+  participant MC as Measurement
+  participant MSS as MeasurementSessionService
+  participant SM as SystemManager
+  participant BC as BackendController
 
-### Phase 2: Align QuEL-1 and QuEL-3 structure
+  MC->>MSS: load / connect / reload / disconnect
+  MSS->>SM: resolve active session/controller
+  MSS->>BC: connect / disconnect (required)
+  opt Backend supports optional capability APIs
+    MSS->>BC: check_link_status / check_clock_status
+    MSS->>BC: linkup / relinkup
+  end
+  MSS->>SM: synchronize backend and ExperimentSystem state
+  MSS-->>MC: session lifecycle result
+```
 
-- Align both families to compiler + runner + decoder structure.
-- Remove special-case execution branches from orchestration layer.
+## Execution Path Sequence
 
-### Phase 3: Remove inheritance coupling
+```mermaid
+sequenceDiagram
+  participant MC as Measurement
+  participant MCTX as MeasurementContext
+  participant MSS as MeasurementSessionService
+  participant MES as MeasurementExecutionService
+  participant MSE as MeasurementScheduleRunner
+  participant BC as BackendController
+  participant EXM as ExecutionManager
 
-- Replace `Quel3BackendController(Quel1BackendController)` inheritance with composition or independent implementation.
+  MC->>MES: execute(schedule, config)
+  MES->>MSS: resolve active backend/controller state
+  MES->>MCTX: read ExperimentSystem context
+  MES->>MSE: build request + convert result
+  MSE->>BC: execute(request)
+  BC->>EXM: delegate execution
+  EXM-->>BC: execution output
+  MSE-->>MES: canonical MeasurementResult
+  MES-->>MC: API response
+```
 
-### Phase 4: Deprecate old names
+## Directory Structure (Target)
 
-- Keep backward-compatible aliases during v1.5.x.
-- Remove deprecated aliases in the next planned major/minor cleanup window.
+```text
+src/qubex/
+  backend/
+    system_manager.py
+    quel1/
+      quel1_backend_controller.py
+      managers/
+        execution_manager.py
+        connection_manager.py
+        clock_manager.py
+    quel3/
+      quel3_backend_controller.py
+      managers/
+        execution_manager.py
+        connection_manager.py
+        clock_manager.py
+  measurement/
+    measurement.py
+    measurement_context.py
+    measurement_session_service.py
+    measurement_execution_service.py
+    measurement_schedule_runner.py
+    adapters/
+    models/
+      measurement_config.py
+      measurement_schedule.py
+      measurement_result.py
+```
 
-## Acceptance criteria
+## Naming Baseline
 
-- A single common execution sequence exists for QuEL-1 and QuEL-3.
-- Measurement pipeline contracts are explicit and test-covered.
-- Control-plane and execution responsibilities are separated with no cross-layer inversion.
-- `MeasurementClient` API remains compatible at v1.5.0 contract scope.
+- API facade: `Measurement`
+- Context provider: `MeasurementContext`
+- Session lifecycle service: `MeasurementSessionService`
+- Execution service: `MeasurementExecutionService`
+- Internal execution component: `MeasurementScheduleRunner`
+- Backend operation contract: `BackendController`
+- Concrete backend controllers: `Quel1BackendController`, `Quel3BackendController`
+- Backend feature managers: `Quel{1,3}ExecutionManager`, `Quel{1,3}ConnectionManager`, `Quel{1,3}ClockManager`
+
+## Acceptance Criteria (v1.5.0)
+
+- `Measurement` remains API-focused and delegates non-API logic.
+- `MeasurementContext` provides `ExperimentSystem`-based context through `SystemManager`.
+- `MeasurementSessionService` owns required session operations (`load`, `connect`,
+  `reload`, `disconnect`).
+- `MeasurementSessionService` supports `check_*`/`linkup`/`relinkup` as
+  capability-gated APIs when backend supports them.
+- `MeasurementExecutionService` owns measurement execution and calls `BackendController.execute(...)`.
+- `SystemManager` remains focused on state synchronization.
+- `Quel1BackendController` and `Quel3BackendController` implement required `BackendController` methods.
+- QuEL-1 and QuEL-3 controllers follow the same manager-delegation structure.
+- Backend internal execution details are hidden from measurement layer.
+- Measurement contract types remain owned by the `measurement` package.
