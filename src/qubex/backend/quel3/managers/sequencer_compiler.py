@@ -75,7 +75,7 @@ class Quel3SequencerCompiler:
             Compiled sequencer instance.
         """
         sequencer = sequencer_factory(
-            default_sampling_period_ns=float(default_sampling_period_ns)
+            default_sampling_period_ns=default_sampling_period_ns
         )
 
         for waveform_name, waveform_def in payload.waveform_library.items():
@@ -95,17 +95,17 @@ class Quel3SequencerCompiler:
                 sequencer.add_event(
                     alias,
                     event.waveform_name,
-                    start_offset_ns=float(event.start_offset_ns),
-                    gain=float(event.gain),
-                    phase_offset_deg=float(event.phase_offset_deg),
+                    start_offset_ns=event.start_offset_ns,
+                    gain=event.gain,
+                    phase_offset_deg=event.phase_offset_deg,
                 )
 
             for capture_window in timeline.capture_windows:
                 sequencer.add_capture_window(
                     alias,
                     self.capture_window_key(target, capture_window.name),
-                    start_offset_ns=float(capture_window.start_offset_ns),
-                    length_ns=float(capture_window.length_ns),
+                    start_offset_ns=capture_window.start_offset_ns,
+                    length_ns=capture_window.length_ns,
                 )
 
         return sequencer

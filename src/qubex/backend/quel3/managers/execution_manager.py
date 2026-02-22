@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Callable, Coroutine, Iterable
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol
 
 import numpy as np
 import numpy.typing as npt
@@ -410,7 +410,7 @@ class Quel3ExecutionManager:
                         None,
                     )
                     if isinstance(sampling_period_fs, int):
-                        sampling_period_ns = float(sampling_period_fs) / 1e6
+                        sampling_period_ns = sampling_period_fs / 1e6
 
                 for alias, driver in alias_to_driver.items():
                     directive = sequencer.export_set_fixed_timeline_directive(
@@ -523,9 +523,9 @@ class Quel3ExecutionManager:
                 "line_param1": payload.line_param1,
             },
             sampling_period_ns=(
-                float(sampling_period_ns)
+                sampling_period_ns
                 if sampling_period_ns is not None
-                else float(default_sampling_period)
+                else default_sampling_period
             ),
             avg_sample_stride=avg_sample_stride,
         )
@@ -566,18 +566,25 @@ class Quel3ExecutionManager:
             driver_module = importlib.import_module(
                 "quelware_client.core.instrument_driver"
             )
+            create_quelware_client: _QuelwareClientFactory = (
+                client_module.create_quelware_client
+            )
+            instrument_mapper_factory: _InstrumentMapperFactory = (
+                mapper_module.InstrumentMapper
+            )
+            sequencer_factory: _SequencerFactory = sequencer_module.Sequencer
+            create_instrument_driver_fixed_timeline: _InstrumentDriverFactory = (
+                driver_module.create_instrument_driver_fixed_timeline
+            )
+            get_all_instrument_ids_from_resource_infos: _ResourceIdResolver = (
+                resource_module.get_all_instrument_ids_from_resource_infos
+            )
             return (
-                cast(_QuelwareClientFactory, client_module.create_quelware_client),
-                cast(_InstrumentMapperFactory, mapper_module.InstrumentMapper),
-                cast(_SequencerFactory, sequencer_module.Sequencer),
-                cast(
-                    _InstrumentDriverFactory,
-                    driver_module.create_instrument_driver_fixed_timeline,
-                ),
-                cast(
-                    _ResourceIdResolver,
-                    resource_module.get_all_instrument_ids_from_resource_infos,
-                ),
+                create_quelware_client,
+                instrument_mapper_factory,
+                sequencer_factory,
+                create_instrument_driver_fixed_timeline,
+                get_all_instrument_ids_from_resource_infos,
             )
 
         try:

@@ -95,9 +95,9 @@ class Quel3BackendController(BackendController):
         """
         del config_path
         self._default_sampling_period = (
-            float(sampling_period_ns)
+            sampling_period_ns
             if sampling_period_ns is not None
-            else float(self.DEFAULT_SAMPLING_PERIOD)
+            else self.DEFAULT_SAMPLING_PERIOD
         )
 
         self._runtime_context = Quel3RuntimeContext(
@@ -105,8 +105,8 @@ class Quel3BackendController(BackendController):
             quelware_endpoint=(
                 quelware_endpoint if quelware_endpoint is not None else "localhost"
             ),
-            quelware_port=int(quelware_port) if quelware_port is not None else 50051,
-            trigger_wait=int(trigger_wait) if trigger_wait is not None else 1_000_000,
+            quelware_port=quelware_port if quelware_port is not None else 50051,
+            trigger_wait=trigger_wait if trigger_wait is not None else 1_000_000,
             default_sampling_period=self._default_sampling_period,
             measurement_result_avg_sample_stride=self.MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE,
         )
