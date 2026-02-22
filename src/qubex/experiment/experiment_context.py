@@ -34,12 +34,12 @@ from qubex.backend import (
     Target,
     TargetType,
 )
-from qubex.backend.control_system import GenPort
-from qubex.backend.controller_types import (
+from qubex.backend.backend_controller import (
     BackendClockResynchronizer,
     BackendSkewYamlLoader,
     SystemBackendController,
 )
+from qubex.backend.control_system import GenPort
 from qubex.measurement import (
     MeasurementClient,
     StateClassifier,

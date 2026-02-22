@@ -14,7 +14,7 @@ from qubex.backend import (
     ExperimentSystem,
     SystemManager,
 )
-from qubex.backend.controller_types import (
+from qubex.backend.backend_controller import (
     BackendClockResynchronizer,
     BackendClockStatusReader,
     BackendClockSynchronizer,

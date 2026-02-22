@@ -14,11 +14,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from qubex.backend.backend_controller import BackendController
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.controller_types import BackendController
 
 from .managers import (
     Quel1ClockManager,

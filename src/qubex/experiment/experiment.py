@@ -37,7 +37,7 @@ from qubex.backend import (
     Target,
     TargetType,
 )
-from qubex.backend.controller_types import SystemBackendController
+from qubex.backend.backend_controller import SystemBackendController
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (

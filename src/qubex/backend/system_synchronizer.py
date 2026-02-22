@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from qubex.backend.backend_controller import SystemBackendController
     from qubex.backend.control_system import Box
-    from qubex.backend.controller_types import SystemBackendController
     from qubex.backend.experiment_system import ExperimentSystem
 
 

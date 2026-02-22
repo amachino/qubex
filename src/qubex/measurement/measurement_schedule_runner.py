@@ -9,7 +9,7 @@ from qubex.backend import (
     BackendController,
     ExperimentSystem,
 )
-from qubex.backend.controller_types import BackendBoxConfigProvider
+from qubex.backend.backend_controller import BackendBoxConfigProvider
 from qubex.backend.quel1 import (
     ExecutionMode,
 )

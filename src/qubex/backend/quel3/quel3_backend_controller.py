@@ -11,11 +11,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
+from qubex.backend.backend_controller import BackendController
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.controller_types import BackendController
 
 from .managers.connection_manager import Quel3ConnectionManager
 from .managers.execution_manager import ExecutionMode, Quel3ExecutionManager

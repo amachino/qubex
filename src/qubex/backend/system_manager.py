@@ -21,17 +21,17 @@ from qubex.constants import (
 )
 from qubex.typing import ConfigurationMode
 
-from .control_system import Box
-from .controller_types import (
+from .backend_controller import (
     BackendKind,
     SystemBackendController,
 )
+from .control_system import Box
 from .experiment_system import ExperimentSystem
 from .quel1 import Quel1BackendController
 from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
 from .quel3 import Quel3BackendController
 from .quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
-from .system_synchronizer_types import SystemSynchronizer
+from .system_synchronizer import SystemSynchronizer
 
 logger = logging.getLogger(__name__)
 

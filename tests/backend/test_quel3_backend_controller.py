@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from qubex.backend import BackendExecutionRequest
-from qubex.backend.controller_types import BackendBoxConfigProvider, BackendController
+from qubex.backend.backend_controller import BackendBoxConfigProvider, BackendController
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import (
     Quel3BackendController,
