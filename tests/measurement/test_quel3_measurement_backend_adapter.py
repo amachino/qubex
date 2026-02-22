@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from qxpulse import Pulse, PulseArray
 
 from qubex.measurement.adapters import (
     Quel3ExecutionPayload,
@@ -23,6 +22,7 @@ from qubex.measurement.models import (
     MeasurementSchedule,
 )
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
+from qubex.pulse import Arbitrary, PulseArray
 
 
 @dataclass
@@ -71,7 +71,7 @@ def _pulse_array(
 ) -> PulseArray:
     return PulseArray(
         [
-            Pulse(
+            Arbitrary(
                 values=values,
                 sampling_period=sampling_period,
                 scale=scale,

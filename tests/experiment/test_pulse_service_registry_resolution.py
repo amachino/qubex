@@ -5,12 +5,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-from qxpulse import Pulse
-
 from qubex.backend import TargetType
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.services import pulse_service as pulse_service_module
 from qubex.experiment.services.pulse_service import PulseService
+from qubex.pulse import Arbitrary
 
 
 def _make_rabi_param(target: str, frequency: float) -> RabiParam:
@@ -89,7 +88,7 @@ def test_cr_pulse_uses_context_cr_pair_resolution(monkeypatch) -> None:
         calibration_valid_days=7,
     )
     service = PulseService(experiment_context=cast(Any, ctx))
-    service.__dict__["x180"] = lambda _target: Pulse([])
+    service.__dict__["x180"] = lambda _target: Arbitrary([])
 
     pulses = service.cr_pulse
 
