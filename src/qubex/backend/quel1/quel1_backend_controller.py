@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
@@ -1630,46 +1630,6 @@ class Quel1BackendController:
             modulation_frequency=modulation_frequency,
             sub_sequences=[cap_sub_sequence],
         )
-
-    def execute(
-        self,
-        *,
-        repeats: int,
-        integral_mode: str = "integral",
-        dsp_demodulation: bool = True,
-        software_demodulation: bool = False,
-    ) -> Iterator[Quel1BackendRawResult]:
-        """
-        Execute the queue and yield measurement results.
-
-        Parameters
-        ----------
-        repeats : int
-            Number of repeats of each sequence.
-        integral_mode : {"integral", "single"}, optional
-            Integral mode.
-        dsp_demodulation : bool, optional
-            Enable DSP demodulation.
-        software_demodulation : bool, optional
-            Enable software demodulation.
-
-        Yields
-        ------
-        RawResult
-            Measurement result.
-        """
-        for status, data, config in self.qubecalib.step_execute(
-            repeats=repeats,
-            integral_mode=integral_mode,
-            dsp_demodulation=dsp_demodulation,
-            software_demodulation=software_demodulation,
-        ):
-            result = Quel1BackendRawResult(
-                status=status,
-                data=data,
-                config=config,
-            )
-            yield result
 
     def execute_sequencer(
         self,
