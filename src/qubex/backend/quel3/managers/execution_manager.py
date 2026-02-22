@@ -501,11 +501,15 @@ class Quel3ExecutionManager:
                     measurement_data[output_target].append(samples[0])
 
         mode = payload.mode
-        if mode not in {"single", "avg"}:
+        if mode == "single":
+            result_mode: Literal["single", "avg"] = "single"
+        elif mode == "avg":
+            result_mode = "avg"
+        else:
             raise ValueError(f"Unsupported measurement mode: {mode}")
 
         return MeasurementResult(
-            mode=cast(Literal["single", "avg"], mode),
+            mode=result_mode,
             data=dict(measurement_data),
             device_config={},
             measurement_config={

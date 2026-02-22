@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -39,6 +39,20 @@ class _FigureLike(Protocol):
 
     def show(self) -> None:
         """Render plot output."""
+        ...
+
+
+@runtime_checkable
+class _MeasurementBackendExecutorFactory(Protocol):
+    """Factory protocol for optional measurement backend executor hook."""
+
+    def create_measurement_backend_executor(
+        self,
+        *,
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
+    ) -> BackendExecutor:
+        """Create a backend-specific measurement executor."""
         ...
 
 
@@ -80,8 +94,11 @@ class Quel3BackendController(BackendController):
             Defaults to 1_000_000.
         """
         del config_path
-        if sampling_period_ns is not None:
-            self.DEFAULT_SAMPLING_PERIOD = float(sampling_period_ns)
+        self._default_sampling_period = (
+            float(sampling_period_ns)
+            if sampling_period_ns is not None
+            else float(self.DEFAULT_SAMPLING_PERIOD)
+        )
 
         self._runtime_context = Quel3RuntimeContext(
             alias_map=dict(alias_map or {}),
@@ -90,7 +107,7 @@ class Quel3BackendController(BackendController):
             ),
             quelware_port=int(quelware_port) if quelware_port is not None else 50051,
             trigger_wait=int(trigger_wait) if trigger_wait is not None else 1_000_000,
-            default_sampling_period=float(self.DEFAULT_SAMPLING_PERIOD),
+            default_sampling_period=self._default_sampling_period,
             measurement_result_avg_sample_stride=self.MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE,
         )
         self._connection_manager = Quel3ConnectionManager(
@@ -173,6 +190,11 @@ class Quel3BackendController(BackendController):
         """Resolve quelware instrument alias for a measurement target."""
         return self._execution_manager.resolve_instrument_alias(target)
 
+    @property
+    def default_sampling_period(self) -> float:
+        """Return instance-scoped default sampling period in ns."""
+        return self._default_sampling_period
+
     def execute(
         self,
         *,
@@ -183,15 +205,13 @@ class Quel3BackendController(BackendController):
         """Execute a backend request using QuEL-3 execution defaults."""
         from .quel3_backend_executor import Quel3BackendExecutor
 
-        factory = getattr(self, "create_measurement_backend_executor", None)
         manager_factory = None
-        if callable(factory):
-            manager_factory = lambda mode, clock: cast(
-                BackendExecutor,
-                factory(
+        if isinstance(self, _MeasurementBackendExecutorFactory):
+            manager_factory = (
+                lambda mode, clock: self.create_measurement_backend_executor(
                     execution_mode=mode,
                     clock_health_checks=clock,
-                ),
+                )
             )
 
         return self._execution_manager.execute(
@@ -228,10 +248,7 @@ class Quel3BackendController(BackendController):
     @staticmethod
     def _load_quelware_api() -> tuple[object, object, object, object, object]:
         """Import quelware helpers lazily and return required symbols."""
-        return cast(
-            tuple[object, object, object, object, object],
-            Quel3ExecutionManager.load_quelware_api(),
-        )
+        return Quel3ExecutionManager.load_quelware_api()
 
     @staticmethod
     def _append_local_quelware_paths() -> None:

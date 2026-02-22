@@ -9,7 +9,7 @@ import threading
 from collections.abc import Coroutine, Mapping
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, cast
+from typing import Protocol
 
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContext
 
@@ -110,10 +110,7 @@ class Quel3ConnectionManager:
 
         def _import_factory() -> _QuelwareClientFactory:
             client_module = importlib.import_module("quelware_client.client")
-            return cast(
-                _QuelwareClientFactory,
-                client_module.create_quelware_client,
-            )
+            return client_module.create_quelware_client
 
         try:
             return _import_factory()
