@@ -7,15 +7,14 @@ from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
-    BackendExecutor,
+    BackendExecutionRequest,
     ExperimentSystem,
 )
+from qubex.backend.backend_executor import ExecutionModeOption
 from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     ExecutionMode,
-    Quel1BackendExecutor,
 )
-from qubex.backend.quel3 import Quel3BackendExecutor
 
 from .adapters import (
     MeasurementBackendAdapter,
@@ -35,15 +34,17 @@ class MeasurementScheduleRunner:
     def __init__(
         self,
         *,
-        backend_executor: BackendExecutor,
         measurement_backend_adapter: MeasurementBackendAdapter,
         measurement_result_factory: MeasurementResultFactory,
         backend_controller: BackendController,
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
     ) -> None:
-        self._backend_executor = backend_executor
         self._measurement_backend_adapter = measurement_backend_adapter
         self._measurement_result_factory = measurement_result_factory
         self._backend_controller = backend_controller
+        self._execution_mode = execution_mode
+        self._clock_health_checks = clock_health_checks
 
     @classmethod
     def create_default(
@@ -71,12 +72,6 @@ class MeasurementScheduleRunner:
         backend_kind = cls._resolve_backend_kind(backend_controller)
         constraint_profile = cls._resolve_constraint_profile(backend_controller)
         return cls(
-            backend_executor=cls._create_backend_executor(
-                backend_controller=backend_controller,
-                execution_mode=execution_mode,
-                clock_health_checks=clock_health_checks,
-                backend_kind=backend_kind,
-            ),
             measurement_backend_adapter=cls._create_backend_adapter(
                 backend_controller=backend_controller,
                 experiment_system=experiment_system,
@@ -88,34 +83,6 @@ class MeasurementScheduleRunner:
                 experiment_system=experiment_system,
             ),
             backend_controller=backend_controller,
-        )
-
-    @staticmethod
-    def _create_backend_executor(
-        *,
-        backend_controller: BackendController,
-        execution_mode: ExecutionMode | None,
-        clock_health_checks: bool | None,
-        backend_kind: str,
-    ) -> BackendExecutor:
-        """Create backend executor with optional backend-specific factory hook."""
-        factory = getattr(
-            backend_controller,
-            "create_measurement_backend_executor",
-            None,
-        )
-        if isinstance(factory, Callable):
-            return factory(
-                execution_mode=execution_mode,
-                clock_health_checks=clock_health_checks,
-            )
-        if backend_kind == "quel3":
-            execute_impl = getattr(backend_controller, "execute_measurement", None)
-            if callable(execute_impl):
-                return Quel3BackendExecutor(backend_controller=backend_controller)
-            return _Quel3BackendExecutorPlaceholder()
-        return Quel1BackendExecutor(
-            backend_controller=cast(Any, backend_controller),
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
         )
@@ -250,9 +217,13 @@ class MeasurementScheduleRunner:
             schedule=schedule,
             config=config,
         )
-        backend_result = self._backend_executor.execute(
-            request=request,
-        )
+        if self._execution_mode is not None or self._clock_health_checks is not None:
+            request = BackendExecutionRequest(
+                payload=request.payload,
+                execution_mode=cast(ExecutionModeOption | None, self._execution_mode),
+                clock_health_checks=self._clock_health_checks,
+            )
+        backend_result = self._backend_controller.execute(request=request)
         if isinstance(backend_result, MeasurementResult):
             return backend_result
         result = self._measurement_result_factory.create(
@@ -270,12 +241,3 @@ class MeasurementScheduleRunner:
             ),
         )
         return result
-
-
-class _Quel3BackendExecutorPlaceholder:
-    """Placeholder executor until quelware execution is wired in backend hooks."""
-
-    def execute(self, *, request: object) -> object:
-        raise RuntimeError(
-            "Quel3 backend execution requires backend_controller.create_measurement_backend_executor(...)."
-        )

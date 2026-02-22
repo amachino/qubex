@@ -16,6 +16,7 @@ import numpy as np
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
+    BackendExecutor,
 )
 from qubex.backend.quel1 import Quel1BackendController
 
@@ -103,6 +104,16 @@ class Quel3BackendController(Quel1BackendController):
         """Execute a backend request using QuEL-3 execution defaults."""
         from .quel3_backend_executor import Quel3BackendExecutor
 
+        factory = getattr(self, "create_measurement_backend_executor", None)
+        if callable(factory):
+            executor = cast(
+                BackendExecutor,
+                factory(
+                    execution_mode=request.execution_mode,
+                    clock_health_checks=request.clock_health_checks,
+                ),
+            )
+            return executor.execute(request=request)
         return Quel3BackendExecutor(backend_controller=self).execute(request=request)
 
     def execute_measurement(self, *, payload: object) -> object:

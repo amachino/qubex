@@ -405,9 +405,6 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
     config = _make_config()
     called: dict[str, object] = {}
 
-    def _unexpected_backend_executor(**kwargs: object) -> object:
-        raise AssertionError("Quel1BackendExecutor fallback should not be used.")
-
     def _unexpected_adapter(**kwargs: object) -> object:
         raise AssertionError(
             "Quel1MeasurementBackendAdapter fallback should not be used."
@@ -416,10 +413,6 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
     def _unexpected_result_factory(**kwargs: object) -> object:
         raise AssertionError("MeasurementResultFactory fallback should not be used.")
 
-    monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
-        _unexpected_backend_executor,
-    )
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _unexpected_adapter,
@@ -493,6 +486,17 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
         ) -> _CustomResultFactory:
             called["result_factory_experiment_system"] = experiment_system
             return _CustomResultFactory()
+
+        def execute(
+            self,
+            *,
+            request: BackendExecutionRequest,
+        ) -> Quel1BackendRawResult:
+            executor = self.create_measurement_backend_executor(
+                execution_mode=request.execution_mode,
+                clock_health_checks=request.clock_health_checks,
+            )
+            return executor.execute(request=request)
 
     experiment_system = object()
     _bind_runtime(

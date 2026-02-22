@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
+    BackendExecutor,
 )
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 
@@ -769,7 +770,21 @@ class Quel1BackendController:
         """Execute a backend request using QuEL-1 execution defaults."""
         from .quel1_backend_executor import Quel1BackendExecutor
 
-        return Quel1BackendExecutor(backend_controller=self).execute(request=request)
+        factory = getattr(self, "create_measurement_backend_executor", None)
+        if callable(factory):
+            executor = cast(
+                BackendExecutor,
+                factory(
+                    execution_mode=request.execution_mode,
+                    clock_health_checks=request.clock_health_checks,
+                ),
+            )
+            return executor.execute(request=request)
+        return Quel1BackendExecutor(
+            backend_controller=self,
+            execution_mode=request.execution_mode,
+            clock_health_checks=request.clock_health_checks,
+        ).execute(request=request)
 
     def get_box(self, box_name: str) -> Quel1Box:
         """
