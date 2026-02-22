@@ -116,46 +116,6 @@ class Quel1BackendController(BackendController):
         return self._connection_manager.is_connected
 
     @property
-    def _boxpool(self) -> BoxPool | None:
-        """Compatibility bridge for pooled-box runtime state."""
-        return self._connection_manager.boxpool
-
-    @_boxpool.setter
-    def _boxpool(self, boxpool: BoxPool | None) -> None:
-        """Compatibility bridge for pooled-box runtime state."""
-        self._connection_manager.set_boxpool(boxpool)
-
-    @property
-    def _quel1system(self) -> Quel1System | None:
-        """Compatibility bridge for Quel1System runtime state."""
-        return self._connection_manager.quel1system
-
-    @_quel1system.setter
-    def _quel1system(self, quel1system: Quel1System | None) -> None:
-        """Compatibility bridge for Quel1System runtime state."""
-        self._connection_manager.set_quel1system(quel1system)
-
-    @property
-    def _cap_resource_map(self) -> dict[str, dict] | None:
-        """Compatibility bridge for capture resource-map runtime state."""
-        return self._connection_manager.cap_resource_map
-
-    @_cap_resource_map.setter
-    def _cap_resource_map(self, resource_map: dict[str, dict] | None) -> None:
-        """Compatibility bridge for capture resource-map runtime state."""
-        self._connection_manager.set_cap_resource_map(resource_map)
-
-    @property
-    def _gen_resource_map(self) -> dict[str, dict] | None:
-        """Compatibility bridge for generator resource-map runtime state."""
-        return self._connection_manager.gen_resource_map
-
-    @_gen_resource_map.setter
-    def _gen_resource_map(self, resource_map: dict[str, dict] | None) -> None:
-        """Compatibility bridge for generator resource-map runtime state."""
-        self._connection_manager.set_gen_resource_map(resource_map)
-
-    @property
     def qubecalib(self) -> QubeCalib:
         """Return the QubeCalib instance or raise if unavailable."""
         if self._qubecalib is None:
@@ -176,10 +136,11 @@ class Quel1BackendController(BackendController):
     @property
     def box_config(self) -> dict[str, Any]:
         """Get the box configuration."""
-        if self._boxpool is None:
+        boxpool = self._connection_manager.boxpool
+        if boxpool is None:
             box_config = {}
         else:
-            box_config = self._boxpool._box_config_cache
+            box_config = boxpool._box_config_cache
         return box_config
 
     @property
@@ -231,9 +192,10 @@ class Quel1BackendController(BackendController):
         BoxPool
             The boxpool.
         """
-        if self._boxpool is None:
+        boxpool = self._connection_manager.boxpool
+        if boxpool is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
-        return self._boxpool
+        return boxpool
 
     @property
     def quel1system(self) -> Quel1System:
@@ -245,9 +207,10 @@ class Quel1BackendController(BackendController):
         Quel1System
             The Quel1 system.
         """
-        if self._quel1system is None:
+        quel1system = self._connection_manager.quel1system
+        if quel1system is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
-        return self._quel1system
+        return quel1system
 
     @property
     def cap_resource_map(self) -> dict[str, dict]:
@@ -259,9 +222,10 @@ class Quel1BackendController(BackendController):
         dict[str, dict]
             The cap resource map.
         """
-        if self._cap_resource_map is None:
+        cap_resource_map = self._connection_manager.cap_resource_map
+        if cap_resource_map is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
-        return self._cap_resource_map
+        return cap_resource_map
 
     @property
     def gen_resource_map(self) -> dict[str, dict]:
@@ -273,9 +237,10 @@ class Quel1BackendController(BackendController):
         dict[str, dict]
             The gen resource map.
         """
-        if self._gen_resource_map is None:
+        gen_resource_map = self._connection_manager.gen_resource_map
+        if gen_resource_map is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
-        return self._gen_resource_map
+        return gen_resource_map
 
     @property
     def hash(self) -> int:
@@ -368,13 +333,14 @@ class Quel1BackendController(BackendController):
         type: Literal["cap", "gen"],
     ) -> dict[str, dict]:
         """Create a capture or generator resource map from configuration."""
-        if self._boxpool is None:
+        boxpool = self._connection_manager.boxpool
+        if boxpool is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
         db = self.qubecalib.system_config_database
         target_settings = db._target_settings
         box_settings = db._box_settings
         port_settings = db._port_settings
-        pooled_boxes = self._boxpool._boxes
+        pooled_boxes = boxpool._boxes
         result = {}
         for target in target_settings:
             channels = db.get_channels_by_target(target)
@@ -397,8 +363,9 @@ class Quel1BackendController(BackendController):
 
     def clear_cache(self) -> None:
         """Clear cached box configuration data."""
-        if self._boxpool is not None:
-            self._boxpool._box_config_cache.clear()
+        boxpool = self._connection_manager.boxpool
+        if boxpool is not None:
+            boxpool._box_config_cache.clear()
         self._clear_quel1system_box_cache()
 
     def get_box_config_cache(self) -> dict[str, Any]:
@@ -407,36 +374,38 @@ class Quel1BackendController(BackendController):
 
     def replace_box_config_cache(self, box_configs: dict[str, Any]) -> None:
         """Replace the box-config cache with the provided snapshot."""
-        if self._boxpool is None:
+        boxpool = self._connection_manager.boxpool
+        if boxpool is None:
             if box_configs:
                 raise ValueError("Boxes not connected. Call connect() method first.")
             return
-        self._boxpool._box_config_cache = deepcopy(box_configs)
+        boxpool._box_config_cache = deepcopy(box_configs)
         self._replace_quel1system_box_cache(box_configs)
 
     def update_box_config_cache(self, box_configs: dict[str, Any]) -> None:
         """Update cached box configurations by box name."""
-        if self._boxpool is None:
+        boxpool = self._connection_manager.boxpool
+        if boxpool is None:
             if box_configs:
                 raise ValueError("Boxes not connected. Call connect() method first.")
             return
         for box_name, box_config in box_configs.items():
-            self._boxpool._box_config_cache[box_name] = deepcopy(box_config)
+            boxpool._box_config_cache[box_name] = deepcopy(box_config)
         self._update_quel1system_box_cache(box_configs)
 
     def _clear_quel1system_box_cache(self) -> None:
         """Clear the Quel1System-side box cache."""
-        if self._quel1system is None:
+        system = self._connection_manager.quel1system
+        if system is None:
             return
-        system = self._quel1system
         system.config_cache.clear()
         system.config_fetched_at = None
 
     def _replace_quel1system_box_cache(self, box_configs: dict[str, Any]) -> None:
         """Replace the Quel1System-side box cache."""
-        if self._quel1system is None:
+        system = self._connection_manager.quel1system
+        if system is None:
             return
-        system = self._quel1system
         system.config_cache.clear()
         for box_name, box_config in box_configs.items():
             system.config_cache[box_name] = deepcopy(box_config)
@@ -444,9 +413,9 @@ class Quel1BackendController(BackendController):
 
     def _update_quel1system_box_cache(self, box_configs: dict[str, Any]) -> None:
         """Update entries in the Quel1System-side box cache."""
-        if self._quel1system is None:
+        system = self._connection_manager.quel1system
+        if system is None:
             return
-        system = self._quel1system
         for box_name, box_config in box_configs.items():
             system.config_cache[box_name] = deepcopy(box_config)
         if system.config_cache:
@@ -568,8 +537,9 @@ class Quel1BackendController(BackendController):
         reconnect: bool,
     ) -> Quel1Box:
         """Return an existing pooled box or create one when absent."""
-        if self._boxpool is not None and box_name in self._boxpool._boxes:
-            return self._boxpool._boxes[box_name][0]
+        boxpool = self._connection_manager.boxpool
+        if boxpool is not None and box_name in boxpool._boxes:
+            return boxpool._boxes[box_name][0]
         return self._create_box(box_name, reconnect=reconnect)
 
     def _create_boxpool(
@@ -689,7 +659,8 @@ class Quel1BackendController(BackendController):
         Quel1System
             Initialized system instance.
         """
-        if self._boxpool is None:
+        boxpool = self._connection_manager.boxpool
+        if boxpool is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
 
         db = self.qubecalib.system_config_database
@@ -697,7 +668,7 @@ class Quel1BackendController(BackendController):
         if clockmaster_setting is None:
             raise ValueError("clock master is not found")
 
-        pooled_boxes = self._boxpool._boxes
+        pooled_boxes = boxpool._boxes
         boxes: list[Any] = [
             self._driver.NamedBox(name=box_name, box=pooled_boxes[box_name][0])
             for box_name in box_names
@@ -760,8 +731,8 @@ class Quel1BackendController(BackendController):
         resources: list[Any] = []
         seen: set[int] = set()
 
-        if self._quel1system is not None:
-            system = self._quel1system
+        system = self._connection_manager.quel1system
+        if system is not None:
             self._append_resource_if_new(
                 resources,
                 seen,
@@ -772,8 +743,8 @@ class Quel1BackendController(BackendController):
                 for box in boxes.values():
                     self._append_resource_if_new(resources, seen, box)
 
-        if self._boxpool is not None:
-            boxpool = self._boxpool
+        boxpool = self._connection_manager.boxpool
+        if boxpool is not None:
             self._append_resource_if_new(
                 resources,
                 seen,
@@ -894,11 +865,12 @@ class Quel1BackendController(BackendController):
     def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
         """Initialize AWG and capture units for one box."""
         self._check_box_availability(box_name)
-        if self._boxpool is None or box_name not in self._boxpool._boxes:
+        boxpool = self._connection_manager.boxpool
+        if boxpool is None or box_name not in boxpool._boxes:
             raise ValueError(
                 f"Box {box_name} is not connected. Call connect() method first."
             )
-        box = adapt_quel1_box(self._boxpool._boxes[box_name][0])
+        box = adapt_quel1_box(boxpool._boxes[box_name][0])
         box.initialize_all_awgunits()
         box.initialize_all_capunits()
 
@@ -1113,9 +1085,10 @@ class Quel1BackendController(BackendController):
 
     def _get_connected_clockmaster(self) -> Any | None:
         """Return clockmaster from connected Quel1System when available."""
-        if self._quel1system is None:
+        quel1system = self._connection_manager.quel1system
+        if quel1system is None:
             return None
-        return self._quel1system._clockmaster
+        return quel1system._clockmaster
 
     def resync_clocks(self, box_list: list[str]) -> bool:
         """

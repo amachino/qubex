@@ -142,7 +142,9 @@ def test_resync_clocks_reuses_connected_quel1system_clockmaster() -> None:
         "10.0.1.2": (True, 123_456_789_000, 123_456_789_999),
     }
     master = _FakeQuBEMasterClient("192.0.2.1")
-    cast(Any, controller)._quel1system = _FakeQuel1System(clockmaster=master)
+    controller._connection_manager.set_quel1system(
+        cast(Any, _FakeQuel1System(clockmaster=master))
+    )
 
     def _raise_if_instantiated(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("QuBEMasterClient must not be instantiated")
@@ -185,7 +187,9 @@ def test_reset_clockmaster_reuses_connected_quel1system_clockmaster() -> None:
     """Given connected system, reset_clockmaster reuses its clockmaster."""
     controller = _make_controller()
     master = _FakeQuBEMasterClient("192.0.2.1")
-    cast(Any, controller)._quel1system = _FakeQuel1System(clockmaster=master)
+    controller._connection_manager.set_quel1system(
+        cast(Any, _FakeQuel1System(clockmaster=master))
+    )
 
     def _raise_if_instantiated(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("QuBEMasterClient must not be instantiated")

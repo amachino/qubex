@@ -125,8 +125,8 @@ def test_connect_uses_boxpool_by_default(monkeypatch) -> None:
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
     assert qubecalib.sysdb.create_quel1system_calls == []
-    assert isinstance(controller._boxpool, _FakeBoxPool)
-    assert controller._quel1system is fake_quel1_system
+    assert isinstance(controller._connection_manager.boxpool, _FakeBoxPool)
+    assert controller._connection_manager.quel1system is fake_quel1_system
 
 
 def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> None:
@@ -151,8 +151,8 @@ def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> No
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
     assert qubecalib.sysdb.create_quel1system_calls == []
-    assert isinstance(controller._boxpool, _FakeBoxPool)
-    assert controller._quel1system is fake_quel1_system
+    assert isinstance(controller._connection_manager.boxpool, _FakeBoxPool)
+    assert controller._connection_manager.quel1system is fake_quel1_system
 
 
 def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
@@ -194,7 +194,7 @@ def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
         SequencerClient=lambda _ipaddr: object(),
     )
     boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A"]))
-    cast(Any, controller)._boxpool = boxpool
+    controller._connection_manager.set_boxpool(cast(Any, boxpool))
     monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
 
     reconnect_count_before = boxpool._boxes["A"][0].reconnect_count
@@ -208,7 +208,7 @@ def test_connect_skips_reconnect_when_already_connected(monkeypatch) -> None:
     """Given existing connection, connect skips creating a new boxpool."""
     controller = _make_controller()
     existing_system = object()
-    cast(Any, controller)._quel1system = existing_system
+    controller._connection_manager.set_quel1system(cast(Any, existing_system))
 
     def _raise_if_called(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("connect path should be skipped when already connected")
@@ -221,4 +221,4 @@ def test_connect_skips_reconnect_when_already_connected(monkeypatch) -> None:
 
     controller.connect(["A"])
 
-    assert controller._quel1system is existing_system
+    assert controller._connection_manager.quel1system is existing_system

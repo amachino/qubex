@@ -73,10 +73,12 @@ def test_disconnect_closes_clockmaster_and_boxes_and_clears_state() -> None:
         clock_master=pool_master,
     )
 
-    cast(Any, controller)._quel1system = system
-    cast(Any, controller)._boxpool = boxpool
-    cast(Any, controller)._cap_resource_map = {"cap": {}}
-    cast(Any, controller)._gen_resource_map = {"gen": {}}
+    controller._connection_manager.set_connected_state(
+        boxpool=cast(Any, boxpool),
+        quel1system=cast(Any, system),
+        cap_resource_map={"cap": {}},
+        gen_resource_map={"gen": {}},
+    )
 
     controller.disconnect()
 
@@ -84,10 +86,10 @@ def test_disconnect_closes_clockmaster_and_boxes_and_clears_state() -> None:
     assert pool_master.terminate_calls == 1
     assert shared_box.close_calls == 1
     assert pool_only_box.terminate_calls == 1
-    assert controller._quel1system is None
-    assert controller._boxpool is None
-    assert controller._cap_resource_map is None
-    assert controller._gen_resource_map is None
+    assert controller._connection_manager.quel1system is None
+    assert controller._connection_manager.boxpool is None
+    assert controller._connection_manager.cap_resource_map is None
+    assert controller._connection_manager.gen_resource_map is None
     assert controller.is_connected is False
 
 
@@ -98,11 +100,11 @@ def test_disconnect_continues_when_resource_disconnect_fails(caplog) -> None:
     box = _Closable()
     system = _FakeQuel1System(clockmaster=failing_master, boxes={"A": box})
 
-    cast(Any, controller)._quel1system = system
+    controller._connection_manager.set_quel1system(cast(Any, system))
 
     controller.disconnect()
 
     assert failing_master.close_calls == 1
     assert box.close_calls == 1
-    assert controller._quel1system is None
+    assert controller._connection_manager.quel1system is None
     assert "Failed to disconnect backend resource" in caplog.text

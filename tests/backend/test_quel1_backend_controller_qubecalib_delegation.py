@@ -135,7 +135,7 @@ def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
     """Given controller sequencer creation, when constructing, then driver is passed for compatibility."""
     controller = _make_controller()
     fake_driver = object()
-    cast(Any, controller)._quel1system = fake_driver
+    controller._connection_manager.set_quel1system(cast(Any, fake_driver))
     created_kwargs: dict[str, Any] = {}
 
     class _FakeSequencer:

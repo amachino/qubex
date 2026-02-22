@@ -19,7 +19,7 @@ class _FakeBoxPool:
 
 def _make_controller() -> Quel1BackendController:
     controller = Quel1BackendController()
-    cast(Any, controller)._boxpool = _FakeBoxPool()
+    controller._connection_manager.set_boxpool(cast(Any, _FakeBoxPool()))
     return controller
 
 
@@ -30,7 +30,7 @@ def test_update_box_config_cache_syncs_to_quel1system_config_cache() -> None:
         config_cache={"stale": {"ports": {99: {}}}},
         config_fetched_at=None,
     )
-    cast(Any, controller)._quel1system = system
+    controller._connection_manager.set_quel1system(cast(Any, system))
 
     controller.update_box_config_cache({"A": {"ports": {1: {"cnco_freq": 1_500}}}})
 
@@ -51,7 +51,7 @@ def test_replace_box_config_cache_syncs_to_quel1system_config_cache() -> None:
         config_cache={"stale": {"ports": {99: {}}}},
         config_fetched_at=None,
     )
-    cast(Any, controller)._quel1system = system
+    controller._connection_manager.set_quel1system(cast(Any, system))
     controller.boxpool._box_config_cache = {"old": {"ports": {0: {}}}}
     replacement = {"B": {"ports": {2: {"fnco_freq": 200}}}}
 
@@ -71,7 +71,7 @@ def test_clear_cache_clears_boxpool_and_quel1system_cache() -> None:
         config_cache={"A": {"ports": {1: {}}}},
         config_fetched_at=datetime.datetime.now(),
     )
-    cast(Any, controller)._quel1system = system
+    controller._connection_manager.set_quel1system(cast(Any, system))
     controller.boxpool._box_config_cache = {"A": {"ports": {1: {}}}}
 
     controller.clear_cache()
@@ -85,7 +85,7 @@ def test_cache_update_keeps_input_immutable() -> None:
     """Given nested config input, when updating cache, then cache stores deep-copied data."""
     controller = _make_controller()
     system = SimpleNamespace(config_cache={}, config_fetched_at=None)
-    cast(Any, controller)._quel1system = system
+    controller._connection_manager.set_quel1system(cast(Any, system))
     incoming = {"A": {"ports": {1: {"cnco_freq": 1_000}}}}
     original = deepcopy(incoming)
 
