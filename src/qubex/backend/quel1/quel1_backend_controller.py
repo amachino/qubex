@@ -39,8 +39,7 @@ from .quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
 
-_RELAXED_NOISE_THRESHOLD = 10000
-_DEFAULT_PARALLEL_MODE = DEFAULT_EXECUTION_MODE == "parallel"
+_ = DEFAULT_EXECUTION_MODE == "parallel"
 
 if TYPE_CHECKING:
     from qubex.backend.control_system import Box
@@ -1343,7 +1342,7 @@ class Quel1BackendController(BackendController):
     ) -> BoxPool:
         """Create a box pool through connection-manager implementation."""
         if parallel is None:
-            parallel = _DEFAULT_PARALLEL_MODE
+            parallel = _
         return self._connection_manager._create_boxpool(
             box_names,
             parallel=parallel,
