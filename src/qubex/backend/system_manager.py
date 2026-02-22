@@ -27,7 +27,7 @@ from .controller_types import (
     SystemBackendController,
 )
 from .experiment_system import ExperimentSystem
-from .parallel_box_executor import run_parallel_each, run_parallel_map
+from .parallel_box_executor import run_parallel_map
 from .quel1 import Quel1BackendController
 from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
 from .quel3 import Quel3BackendController
@@ -597,36 +597,16 @@ This operation will overwrite the existing backend settings. Do you want to cont
             Whether to configure boxes in parallel. If `None`, defaults to
             `True`.
         """
-        if parallel is None:
-            parallel = True
-        if not boxes:
-            return
-        if not parallel:
-            for box in boxes:
-                self._sync_box_to_hardware(box)
-            return
-
-        run_parallel_each(
-            boxes,
-            self._sync_box_to_hardware,
-            on_error=self._log_box_sync_error,
-        )
-
-    @staticmethod
-    def _log_box_sync_error(box: Box, exc: BaseException) -> None:
-        """Log a failure during per-box hardware synchronization."""
-        logger.exception("Failed to configure box %s", box.id, exc_info=exc)
-
-    def _sync_box_to_hardware(self, box: Box) -> None:
-        """Apply one experiment-system box configuration via system synchronizer."""
         system_sync_manager = self._system_sync_manager
         if system_sync_manager is None:
             logger.debug(
-                "Skipping hardware sync for box %s because active backend has no system sync manager.",
-                box.id,
+                "Skipping hardware sync because active backend has no system sync manager.",
             )
             return
-        system_sync_manager.sync_box_to_hardware(box)
+        system_sync_manager.sync_experiment_system_to_hardware(
+            boxes=boxes,
+            parallel=parallel,
+        )
 
     def _fetch_backend_settings_from_hardware(
         self,

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, TypeGuard
 
+from qubex.backend.parallel_box_executor import run_parallel_each
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
 
 logger = logging.getLogger(__name__)
@@ -94,6 +96,27 @@ class Quel1SystemSynchronizer:
             elif self._is_capture_port(port):
                 self._sync_capture_port(box=box, port=port)
 
+    def sync_experiment_system_to_hardware(
+        self,
+        *,
+        boxes: Sequence[Box],
+        parallel: bool | None = None,
+    ) -> None:
+        """Apply experiment-system port/channel parameters to hardware boxes."""
+        if parallel is None:
+            parallel = True
+        if not boxes:
+            return
+        if not parallel:
+            for box in boxes:
+                self.sync_box_to_hardware(box)
+            return
+        run_parallel_each(
+            boxes,
+            self.sync_box_to_hardware,
+            on_error=self._log_box_sync_error,
+        )
+
     def _sync_generator_port(self, *, box: Box, port: GenPort) -> None:
         """Apply one output-like port configuration."""
         try:
@@ -139,6 +162,11 @@ class Quel1SystemSynchronizer:
                 )
         except Exception:
             logger.exception("Failed to configure %s", port.id)
+
+    @staticmethod
+    def _log_box_sync_error(box: Box, exc: BaseException) -> None:
+        """Log a failure during per-box hardware synchronization."""
+        logger.exception("Failed to configure box %s", box.id, exc_info=exc)
 
     @staticmethod
     def _is_generator_port(port: GenPort | CapPort) -> TypeGuard[GenPort]:

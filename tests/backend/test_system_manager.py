@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -403,68 +404,73 @@ def test_is_synced_compares_requested_box_subset(
 def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given parallel mode, when syncing hardware, then each box is submitted once."""
+    """Given parallel mode, when syncing hardware, then SystemManager delegates to synchronizer."""
     manager = SystemManager.shared()
     boxes = [
         FakeBox(id="A", ports=()),
         FakeBox(id="B", ports=()),
     ]
-    called: list[str] = []
+    calls: list[tuple[list[str], bool | None]] = []
 
-    def _fake_sync_box(box: FakeBox) -> None:
-        called.append(box.id)
+    class _SystemSyncManager:
+        def sync_experiment_system_to_hardware(
+            self,
+            *,
+            boxes: Sequence[FakeBox],
+            parallel: bool | None = None,
+        ) -> None:
+            calls.append(([box.id for box in boxes], parallel))
 
-    monkeypatch.setattr(manager, "_sync_box_to_hardware", _fake_sync_box)
+    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
         parallel=True,
     )
 
-    assert set(called) == {"A", "B"}
-    assert len(called) == 2
+    assert calls == [(["A", "B"], True)]
 
 
 def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given sequential mode, when syncing hardware, then boxes are processed in order."""
+    """Given sequential mode, when syncing hardware, then SystemManager delegates to synchronizer."""
     manager = SystemManager.shared()
     boxes = [
         FakeBox(id="A", ports=()),
         FakeBox(id="B", ports=()),
     ]
-    called: list[str] = []
+    calls: list[tuple[list[str], bool | None]] = []
 
-    def _fake_sync_box(box: FakeBox) -> None:
-        called.append(box.id)
+    class _SystemSyncManager:
+        def sync_experiment_system_to_hardware(
+            self,
+            *,
+            boxes: Sequence[FakeBox],
+            parallel: bool | None = None,
+        ) -> None:
+            calls.append(([box.id for box in boxes], parallel))
 
-    monkeypatch.setattr(manager, "_sync_box_to_hardware", _fake_sync_box)
+    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
         parallel=False,
     )
 
-    assert called == ["A", "B"]
+    assert calls == [(["A", "B"], False)]
 
 
-def test_sync_box_to_hardware_delegates_to_system_sync_manager(
+def test_sync_experiment_system_to_hardware_skips_without_system_sync_manager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given system sync manager, when syncing one box, then SystemManager forwards the call."""
+    """Given no system sync manager, when syncing hardware, then SystemManager returns safely."""
     manager = SystemManager.shared()
-    delegated: list[str] = []
-
-    class _SystemSyncManager:
-        def sync_box_to_hardware(self, box: FakeBox) -> None:
-            delegated.append(box.id)
-
-    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
-
-    manager._sync_box_to_hardware(FakeBox(id="A", ports=()))  # noqa: SLF001  # type: ignore[arg-type]
-
-    assert delegated == ["A"]
+    monkeypatch.setattr(manager, "_system_sync_manager", None)
+    manager._sync_experiment_system_to_hardware(  # noqa: SLF001
+        boxes=[FakeBox(id="A", ports=())],  # type: ignore[arg-type]
+        parallel=True,
+    )
 
 
 def test_sync_experiment_system_to_backend_controller_delegates_to_system_sync_manager(
