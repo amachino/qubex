@@ -1,5 +1,6 @@
 """Tests for the Pulse base class."""
 
+import copy as pycopy
 import warnings
 
 import numpy as np
@@ -227,6 +228,68 @@ def test_copy():
     assert isinstance(copy, Pulse)
     assert copy is not pulse
     assert copy.values == pytest.approx(pulse.values)
+
+
+def test_copy_materializes_lazy_pulse_once():
+    """Copy should materialize lazy pulse values once and reuse cached samples."""
+    calls = {"count": 0}
+
+    class _ConstantPulse(Pulse):
+        def __init__(self, *, duration: float):
+            super().__init__(duration=duration)
+
+        def _sample_values(self):
+            calls["count"] += 1
+            return np.ones(self.length, dtype=np.complex128)
+
+    pulse = _ConstantPulse(duration=3 * dt)
+    copied = pulse.copy()
+
+    assert calls["count"] == 1
+    assert copied.values == pytest.approx([1, 1, 1])
+    assert calls["count"] == 1
+
+
+def test_shallow_copy_materializes_lazy_pulse_once():
+    """Shallow copy should materialize lazy pulse values once and reuse cache."""
+    calls = {"count": 0}
+
+    class _ConstantPulse(Pulse):
+        def __init__(self, *, duration: float):
+            super().__init__(duration=duration)
+
+        def _sample_values(self):
+            calls["count"] += 1
+            return np.ones(self.length, dtype=np.complex128)
+
+    pulse = _ConstantPulse(duration=3 * dt)
+    copied = pycopy.copy(pulse)
+
+    assert calls["count"] == 1
+    assert copied.values == pytest.approx([1, 1, 1])
+    assert calls["count"] == 1
+
+
+def test_scalar_transforms_reuse_materialized_samples():
+    """Scalar transforms should reuse sampled values via shallow copy."""
+
+    class _ConstantPulse(Pulse):
+        def __init__(self, *, duration: float):
+            super().__init__(duration=duration)
+
+        def _sample_values(self):
+            return np.ones(self.length, dtype=np.complex128)
+
+    pulse = _ConstantPulse(duration=3 * dt)
+    scaled = pulse.scaled(2.0)
+    detuned = pulse.detuned(0.001)
+    shifted = pulse.shifted(np.pi / 2)
+
+    source_values = pulse.__dict__.get("_values")
+    assert source_values is not None
+    assert scaled.__dict__.get("_values") is source_values
+    assert detuned.__dict__.get("_values") is source_values
+    assert shifted.__dict__.get("_values") is source_values
 
 
 def test_paddded():

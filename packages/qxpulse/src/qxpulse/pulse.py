@@ -3,10 +3,11 @@
 # ruff: noqa: SLF001
 from __future__ import annotations
 
+import copy
 import hashlib
 import warnings
 from copy import deepcopy
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -192,6 +193,24 @@ class Pulse(Waveform):
         hasher.update(imag.tobytes())
         return hasher.hexdigest()
 
+    def __copy__(self) -> Self:
+        """Return a shallow copy with sampled values materialized."""
+        self._materialize_values()
+        cls = self.__class__
+        pulse = cls.__new__(cls)
+        cast(dict, pulse.__dict__).update(cast(dict, self.__dict__))
+        return pulse
+
+    def __deepcopy__(self, memo: dict[int, object]) -> Self:
+        """Return a deep copy with sampled values materialized."""
+        self._materialize_values()
+        cls = self.__class__
+        pulse = cls.__new__(cls)
+        memo[id(self)] = pulse
+        for key, value in self.__dict__.items():
+            cast(dict, pulse.__dict__)[key] = deepcopy(value, memo)
+        return pulse
+
     def copy(self, reset_cached_duration: bool = False) -> Self:
         """Return a copy of the pulse."""
         pulse = deepcopy(self)
@@ -230,7 +249,8 @@ class Pulse(Waveform):
         """Return a copy of the pulse scaled by the given factor."""
         if scale == 1:
             return self
-        new_pulse = self.copy()
+        # Shallow copy is intentional: only scalar modifier fields are updated.
+        new_pulse = copy.copy(self)
         new_pulse._scale *= scale
         return new_pulse
 
@@ -238,7 +258,8 @@ class Pulse(Waveform):
         """Return a copy of the pulse detuned by the given frequency (deprecated)."""
         if detuning == 0:
             return self
-        new_pulse = self.copy()
+        # Shallow copy is intentional: only scalar modifier fields are updated.
+        new_pulse = copy.copy(self)
         new_pulse._detuning += detuning
         return new_pulse
 
@@ -246,7 +267,8 @@ class Pulse(Waveform):
         """Return a copy of the pulse shifted by the given phase."""
         if phase == 0:
             return self
-        new_pulse = self.copy()
+        # Shallow copy is intentional: only scalar modifier fields are updated.
+        new_pulse = copy.copy(self)
         new_pulse._phase += phase
         return new_pulse
 

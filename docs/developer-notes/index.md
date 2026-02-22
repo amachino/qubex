@@ -8,6 +8,7 @@ Manage development notes and operational documents.
 - [v1.5.0 PulseSchedule Per-Channel Sampling-Period Design Draft](v1-5-0-pulse-schedule-channel-sampling-period-design.md)
 - [v1.5.0 QuEL-3 Waveform Registration Plan](v1-5-0-quel3-waveform-registration-plan.md)
 - [Pulse ABC Migration Plan](pulse-abc-migration-plan.md)
+- [Pulse Copy Depth Policy](pulse-copy-depth-policy.md)
 - [v1.5.0 Execution Payload Layering](v1-5-0-execution-payload-layering.md)
 - [v1.5.0 Synchronized Protocol Scenario](v1-5-0-synchronized-protocol-scenario.md)
 - [v1.5.0 Beta Release Notes Template](v1-5-0-beta-release-notes-template.md)
