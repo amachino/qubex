@@ -1852,36 +1852,6 @@ class Quel1BackendController(BackendController):
         if system.config_cache:
             system.config_fetched_at = datetime.now()
 
-    def _safe_linkup_box(
-        self,
-        *,
-        box_name: str,
-        noise_threshold: int | None,
-    ) -> Quel1Box | None:
-        """Link up one box and log failures without raising."""
-        try:
-            linked_box = self.linkup(box_name, noise_threshold=noise_threshold)
-            logger.info(f"{box_name:5} : Linked up")
-        except Exception as exc:
-            logger.exception(f"{box_name:5} : Error during linkup", exc_info=exc)
-            return None
-        else:
-            return linked_box
-
-    @staticmethod
-    def _fallback_linkup_box_result(
-        box_name: str,
-        exc: BaseException,
-    ) -> Quel1Box | None:
-        """Log a linkup error and return no box for the failed item."""
-        logger.exception(f"{box_name:5} : Error during linkup", exc_info=exc)
-        return None
-
-    @staticmethod
-    def _log_relinkup_error(box_name: str, exc: BaseException) -> None:
-        """Log a relinkup error for one box."""
-        logger.exception(f"{box_name:5} : Error during relinkup", exc_info=exc)
-
 
 # TODO: Remove this alias in future versions.
 DeviceController = Quel1BackendController
