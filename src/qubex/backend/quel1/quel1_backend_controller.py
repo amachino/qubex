@@ -125,6 +125,16 @@ class Quel1BackendController(BackendController):
         self._runtime_context = Quel1RuntimeContext()
         self._connection_manager = Quel1ConnectionManager(
             runtime_context=self._runtime_context,
+            available_boxes=lambda: self.available_boxes,
+            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
+            create_boxpool=lambda names, parallel_mode: self._create_boxpool(
+                names,
+                parallel=parallel_mode,
+            ),
+            create_quel1system_from_boxpool=lambda names: (
+                self._create_quel1system_from_boxpool(names)
+            ),
+            create_resource_map=lambda kind: self.create_resource_map(kind),
         )
         self._clock_manager = Quel1ClockManager(
             runtime_context=self._runtime_context,
@@ -292,18 +302,7 @@ class Quel1BackendController(BackendController):
             legacy qubecalib implementation. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
-        self._connection_manager.connect(
-            box_names=box_names,
-            available_boxes=lambda: self.available_boxes,
-            parallel=parallel,
-            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
-            create_boxpool=lambda names, parallel_mode: self._create_boxpool(
-                names,
-                parallel=parallel_mode,
-            ),
-            create_quel1system_from_boxpool=self._create_quel1system_from_boxpool,
-            create_resource_map=self.create_resource_map,
-        )
+        self._connection_manager.connect(box_names=box_names, parallel=parallel)
 
     def disconnect(self) -> None:
         """Disconnect backend resources and reset connection-related state."""

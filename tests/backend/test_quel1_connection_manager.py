@@ -161,9 +161,29 @@ class _FakeQuel1System:
         return cls()
 
 
+def _make_manager(
+    *,
+    available_boxes=lambda: ("A", "B"),
+    create_boxpool=lambda names, parallel: cast(BoxPoolProtocol, _FakeBoxPool()),
+    create_quel1system_from_boxpool=lambda names: cast(
+        Quel1SystemProtocol, _FakeQuel1System()
+    ),
+    create_resource_map=lambda kind: {},
+    default_parallel_mode: bool = True,
+) -> Quel1ConnectionManager:
+    """Create a connection manager with injectable connect collaborators."""
+    return Quel1ConnectionManager(
+        runtime_context=Quel1RuntimeContext(),
+        available_boxes=available_boxes,
+        default_parallel_mode=default_parallel_mode,
+        create_boxpool=create_boxpool,
+        create_quel1system_from_boxpool=create_quel1system_from_boxpool,
+        create_resource_map=create_resource_map,
+    )
+
+
 def test_connect_stores_connected_runtime_state() -> None:
-    """Given connect callbacks, when connect runs, then runtime state is stored in manager."""
-    manager = Quel1ConnectionManager(runtime_context=Quel1RuntimeContext())
+    """Given configured collaborators, when connect runs, then runtime state is stored in manager."""
     boxpool = cast(BoxPoolProtocol, _FakeBoxPool())
     quel1system = cast(Quel1SystemProtocol, _FakeQuel1System())
 
@@ -181,14 +201,16 @@ def test_connect_stores_connected_runtime_state() -> None:
             return {"cap-target": {"kind": "cap"}}
         return {"gen-target": {"kind": "gen"}}
 
-    manager.connect(
-        box_names=["A", "B"],
+    manager = _make_manager(
         available_boxes=lambda: ("A", "B"),
-        parallel=None,
-        default_parallel_mode=True,
         create_boxpool=lambda names, parallel: boxpool,
         create_quel1system_from_boxpool=_create_quel1system_from_boxpool,
         create_resource_map=_create_resource_map,
+    )
+
+    manager.connect(
+        box_names=["A", "B"],
+        parallel=None,
     )
 
     assert manager.is_connected
@@ -200,14 +222,6 @@ def test_connect_stores_connected_runtime_state() -> None:
 
 def test_connect_skips_when_already_connected() -> None:
     """Given connected state, when connect is called again, then no callback is executed."""
-    manager = Quel1ConnectionManager(runtime_context=Quel1RuntimeContext())
-    manager.set_connected_state(
-        boxpool=cast(BoxPoolProtocol, _FakeBoxPool()),
-        quel1system=cast(Quel1SystemProtocol, _FakeQuel1System()),
-        cap_resource_map={},
-        gen_resource_map={},
-    )
-
     called = False
 
     def _unexpected_boxpool(_names: list[str], _parallel: bool) -> BoxPoolProtocol:
@@ -225,14 +239,22 @@ def test_connect_skips_when_already_connected() -> None:
         called = True
         return {}
 
-    manager.connect(
-        box_names=["A"],
+    manager = _make_manager(
         available_boxes=lambda: ("A",),
-        parallel=False,
-        default_parallel_mode=True,
         create_boxpool=_unexpected_boxpool,
         create_quel1system_from_boxpool=_unexpected_quel1system,
         create_resource_map=_unexpected_resource_map,
+    )
+    manager.set_connected_state(
+        boxpool=cast(BoxPoolProtocol, _FakeBoxPool()),
+        quel1system=cast(Quel1SystemProtocol, _FakeQuel1System()),
+        cap_resource_map={},
+        gen_resource_map={},
+    )
+
+    manager.connect(
+        box_names=["A"],
+        parallel=False,
     )
 
     assert called is False
@@ -240,7 +262,7 @@ def test_connect_skips_when_already_connected() -> None:
 
 def test_disconnect_clears_connected_runtime_state() -> None:
     """Given connected state, when disconnect runs, then state and resources are cleared."""
-    manager = Quel1ConnectionManager(runtime_context=Quel1RuntimeContext())
+    manager = _make_manager()
     disconnected: list[object] = []
     resources: list[object] = ["clockmaster", "box-a"]
     manager.set_connected_state(

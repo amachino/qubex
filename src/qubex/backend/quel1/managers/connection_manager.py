@@ -23,8 +23,40 @@ if TYPE_CHECKING:
 class Quel1ConnectionManager:
     """Handle connect/disconnect and box link-maintenance flows for QuEL-1."""
 
-    def __init__(self, *, runtime_context: Quel1RuntimeContext) -> None:
+    def __init__(
+        self,
+        *,
+        runtime_context: Quel1RuntimeContext,
+        available_boxes: Callable[[], Collection[str]],
+        default_parallel_mode: bool,
+        create_boxpool: Callable[[list[str], bool], BoxPool],
+        create_quel1system_from_boxpool: Callable[[list[str]], Quel1System],
+        create_resource_map: Callable[[Literal["cap", "gen"]], dict[str, dict]],
+    ) -> None:
+        """
+        Initialize connection manager with connect-pipeline collaborators.
+
+        Parameters
+        ----------
+        runtime_context : Quel1RuntimeContext
+            Mutable runtime state holder for connection data.
+        available_boxes : Callable[[], Collection[str]]
+            Available box resolver used when `connect()` receives no box names.
+        default_parallel_mode : bool
+            Default parallel mode used when `connect(parallel=None)`.
+        create_boxpool : Callable[[list[str], bool], BoxPool]
+            Factory to create a connected boxpool.
+        create_quel1system_from_boxpool : Callable[[list[str]], Quel1System]
+            Factory to create a `Quel1System` from connected boxes.
+        create_resource_map : Callable[[Literal["cap", "gen"]], dict[str, dict]]
+            Factory for capture/generator resource maps.
+        """
         self._runtime_context = runtime_context
+        self._available_boxes = available_boxes
+        self._default_parallel_mode = default_parallel_mode
+        self._create_boxpool = create_boxpool
+        self._create_quel1system_from_boxpool = create_quel1system_from_boxpool
+        self._create_resource_map = create_resource_map
 
     @property
     def is_connected(self) -> bool:
@@ -104,12 +136,7 @@ class Quel1ConnectionManager:
         self,
         *,
         box_names: str | list[str] | None,
-        available_boxes: Callable[[], Collection[str]],
         parallel: bool | None,
-        default_parallel_mode: bool,
-        create_boxpool: Callable[[list[str], bool], BoxPool],
-        create_quel1system_from_boxpool: Callable[[list[str]], Quel1System],
-        create_resource_map: Callable[[Literal["cap", "gen"]], dict[str, dict]],
     ) -> None:
         """
         Resolve and create connected runtime state for requested boxes.
@@ -118,33 +145,23 @@ class Quel1ConnectionManager:
         ----------
         box_names : str | list[str] | None
             Target boxes. If None, all available boxes are selected.
-        available_boxes : Callable[[], Collection[str]]
-            Available box resolver used when `box_names` is None.
         parallel : bool | None
             Parallel creation/reconnect mode override.
-        default_parallel_mode : bool
-            Default parallel mode used when `parallel` is None.
-        create_boxpool : Callable[[list[str], bool], BoxPool]
-            Factory to create a connected boxpool.
-        create_quel1system_from_boxpool : Callable[[list[str]], Quel1System]
-            Factory to create a Quel1System from connected boxes.
-        create_resource_map : Callable[[str], dict[str, dict]]
-            Factory for resource maps (`"cap"` and `"gen"`).
         """
         if parallel is None:
-            parallel = default_parallel_mode
+            parallel = self._default_parallel_mode
         if self.is_connected:
             logger.info("Already connected. Skipping backend reconnect.")
             return
         resolved_box_names: list[str]
         if box_names is None:
-            resolved_box_names = list(available_boxes())
+            resolved_box_names = list(self._available_boxes())
         elif isinstance(box_names, str):
             resolved_box_names = [box_names]
         else:
             resolved_box_names = list(box_names)
 
-        boxpool = create_boxpool(resolved_box_names, parallel)
+        boxpool = self._create_boxpool(resolved_box_names, parallel)
         self.set_connected_state(
             boxpool=boxpool,
             quel1system=None,
@@ -152,10 +169,10 @@ class Quel1ConnectionManager:
             gen_resource_map=None,
         )
         try:
-            quel1system = create_quel1system_from_boxpool(resolved_box_names)
+            quel1system = self._create_quel1system_from_boxpool(resolved_box_names)
             self.set_quel1system(quel1system)
-            cap_resource_map = create_resource_map("cap")
-            gen_resource_map = create_resource_map("gen")
+            cap_resource_map = self._create_resource_map("cap")
+            gen_resource_map = self._create_resource_map("gen")
         except Exception:
             self.clear_connected_state()
             raise
