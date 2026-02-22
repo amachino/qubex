@@ -27,13 +27,13 @@ from .managers import (
     Quel1ConfigurationManager,
     Quel1ConnectionManager,
     Quel1ExecutionManager,
-    Quel1RuntimeContext,
 )
 from .quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
     WORD_LENGTH,
     ExecutionMode,
 )
+from .quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
 

@@ -17,8 +17,8 @@ from qubex.backend.quel1.compat.parallel_action_builder import (
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
     SequencerExecutionEngine,
 )
-from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContextReader
 from qubex.backend.quel1.quel1_backend_constants import ExecutionMode
+from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
 

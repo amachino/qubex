@@ -7,7 +7,7 @@ from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, Any, Literal
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
-from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContext
+from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
 

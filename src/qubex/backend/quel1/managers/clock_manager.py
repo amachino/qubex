@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContextReader
+from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
 

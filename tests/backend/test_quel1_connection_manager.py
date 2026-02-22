@@ -10,7 +10,7 @@ from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
     Quel1SystemProtocol,
 )
 from qubex.backend.quel1.managers.connection_manager import Quel1ConnectionManager
-from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContext
+from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContext
 
 
 class _FakeClockmaster:
