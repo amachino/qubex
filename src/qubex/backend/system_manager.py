@@ -218,15 +218,28 @@ class SystemManager:
         system_synchronizer = self._system_synchronizer
         if system_synchronizer is None:
             return None
-        bound_controller = getattr(system_synchronizer, "backend_controller", None)
-        if bound_controller is None:
-            return cast(SystemSynchronizer, system_synchronizer)
-        if bound_controller is not self._backend_controller:
-            system_synchronizer = self._create_system_synchronizer(
-                self._backend_controller,
-                self._backend_kind,
-            )
-            self._system_synchronizer = system_synchronizer
+        if isinstance(system_synchronizer, Quel1SystemSynchronizer):
+            if (
+                not isinstance(self._backend_controller, Quel1BackendController)
+                or system_synchronizer.backend_controller is not self._backend_controller
+            ):
+                system_synchronizer = self._create_system_synchronizer(
+                    self._backend_controller,
+                    self._backend_kind,
+                )
+                self._system_synchronizer = system_synchronizer
+            return system_synchronizer
+        if isinstance(system_synchronizer, Quel3SystemSynchronizer):
+            if (
+                not isinstance(self._backend_controller, Quel3BackendController)
+                or system_synchronizer.backend_controller is not self._backend_controller
+            ):
+                system_synchronizer = self._create_system_synchronizer(
+                    self._backend_controller,
+                    self._backend_kind,
+                )
+                self._system_synchronizer = system_synchronizer
+            return system_synchronizer
         return system_synchronizer
 
     @property
