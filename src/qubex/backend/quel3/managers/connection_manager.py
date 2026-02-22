@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
-import importlib
-import sys
-import threading
-from collections.abc import Coroutine, Mapping
-from pathlib import Path
+from collections.abc import Mapping
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Protocol
 
+from qubex.backend.quel3.managers.quelware_support import (
+    import_module_with_workspace_fallback,
+    run_coroutine,
+)
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContext
 
 
 class _QuelwareClient(Protocol):
     """Minimal quelware client protocol for connectivity checks."""
 
-    async def list_resource_infos(self) -> Any:
+    async def list_resource_infos(self) -> object:
         """List available quelware resources."""
         ...
 
@@ -81,7 +80,7 @@ class Quel3ConnectionManager:
         del box_names, parallel
         if self.is_connected:
             return
-        self._run_coroutine(self._probe_quelware_connection())
+        run_coroutine(self._probe_quelware_connection())
         self._runtime_context.set_connected(True)
 
     def disconnect(self) -> None:
@@ -106,52 +105,8 @@ class Quel3ConnectionManager:
     @staticmethod
     def load_quelware_client_factory() -> _QuelwareClientFactory:
         """Import quelware client factory lazily."""
-
-        def _import_factory() -> _QuelwareClientFactory:
-            client_module = importlib.import_module("quelware_client.client")
-            return client_module.create_quelware_client
-
-        try:
-            return _import_factory()
-        except (ModuleNotFoundError, SyntaxError):
-            Quel3ConnectionManager.append_local_quelware_paths()
-            return _import_factory()
-
-    @staticmethod
-    def append_local_quelware_paths() -> None:
-        """Append local quelware source paths when present in the workspace."""
-        root = Path(__file__).resolve().parents[5]
-        candidates = (
-            root / "packages" / "quelware-client" / "quelware-client" / "src",
-            root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
-        )
-        for path in candidates:
-            path_str = str(path)
-            if path.exists() and path_str not in sys.path:
-                sys.path.insert(0, path_str)
-
-    @staticmethod
-    def _run_coroutine(coroutine: Coroutine[Any, Any, None]) -> None:
-        """Run async connectivity workflow in sync controller entrypoint."""
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(coroutine)
-            return
-
-        error_holder: dict[str, BaseException] = {}
-
-        def _runner() -> None:
-            try:
-                asyncio.run(coroutine)
-            except BaseException as exc:
-                error_holder["error"] = exc
-
-        thread = threading.Thread(target=_runner, daemon=True)
-        thread.start()
-        thread.join()
-        if "error" in error_holder:
-            raise error_holder["error"]
+        client_module = import_module_with_workspace_fallback("quelware_client.client")
+        return client_module.create_quelware_client
 
     def set_alias_map(self, alias_map: Mapping[str, str]) -> None:
         """Replace target-to-instrument alias mapping."""

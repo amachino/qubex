@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-import importlib
-import sys
-import threading
 from collections import defaultdict
-from collections.abc import Coroutine, Iterable
-from pathlib import Path
+from collections.abc import Iterable
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Literal, Protocol
 
 import numpy as np
 import numpy.typing as npt
 
+from qubex.backend.quel3.managers.quelware_support import (
+    import_module_with_workspace_fallback,
+    run_coroutine,
+)
 from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
     from qubex.measurement.models.measurement_result import MeasurementResult
 
 ExecutionMode = Literal["serial", "parallel"]
-_T = TypeVar("_T")
 
 
 class _DirectiveProtocol(Protocol):
@@ -284,31 +282,7 @@ class Quel3ExecutionManager:
         payload : Quel3ExecutionPayload
             Backend execution payload produced by measurement adapter.
         """
-        return self._run_coroutine(self._execute_measurement_async(payload))
-
-    @staticmethod
-    def _run_coroutine(coroutine: Coroutine[Any, Any, _T]) -> _T:
-        """Run async quelware workflow in sync measurement entrypoint."""
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coroutine)
-
-        result_holder: dict[str, _T] = {}
-        error_holder: dict[str, BaseException] = {}
-
-        def _runner() -> None:
-            try:
-                result_holder["value"] = asyncio.run(coroutine)
-            except BaseException as exc:
-                error_holder["error"] = exc
-
-        thread = threading.Thread(target=_runner, daemon=True)
-        thread.start()
-        thread.join()
-        if "error" in error_holder:
-            raise error_holder["error"]
-        return result_holder["value"]
+        return run_coroutine(self._execute_measurement_async(payload))
 
     async def _execute_measurement_async(
         self,
@@ -512,61 +486,36 @@ class Quel3ExecutionManager:
         _ResourceIdResolver,
     ]:
         """Import quelware helpers lazily and return required symbols."""
-
-        def _import_api() -> tuple[
-            _QuelwareClientFactory,
-            _InstrumentMapperFactory,
-            _SequencerFactory,
-            _InstrumentDriverFactory,
-            _ResourceIdResolver,
-        ]:
-            resource_module = importlib.import_module("quelware_core.entities.resource")
-            client_module = importlib.import_module("quelware_client.client")
-            mapper_module = importlib.import_module(
-                "quelware_client.client.helpers.instrument_mapper"
-            )
-            sequencer_module = importlib.import_module(
-                "quelware_client.client.helpers.sequencer"
-            )
-            driver_module = importlib.import_module(
-                "quelware_client.core.instrument_driver"
-            )
-            create_quelware_client: _QuelwareClientFactory = (
-                client_module.create_quelware_client
-            )
-            instrument_mapper_factory: _InstrumentMapperFactory = (
-                mapper_module.InstrumentMapper
-            )
-            sequencer_factory: _SequencerFactory = sequencer_module.Sequencer
-            create_instrument_driver_fixed_timeline: _InstrumentDriverFactory = (
-                driver_module.create_instrument_driver_fixed_timeline
-            )
-            get_all_instrument_ids_from_resource_infos: _ResourceIdResolver = (
-                resource_module.get_all_instrument_ids_from_resource_infos
-            )
-            return (
-                create_quelware_client,
-                instrument_mapper_factory,
-                sequencer_factory,
-                create_instrument_driver_fixed_timeline,
-                get_all_instrument_ids_from_resource_infos,
-            )
-
-        try:
-            return _import_api()
-        except (ModuleNotFoundError, SyntaxError):
-            Quel3ExecutionManager.append_local_quelware_paths()
-            return _import_api()
-
-    @staticmethod
-    def append_local_quelware_paths() -> None:
-        """Append local quelware source paths when present in the workspace."""
-        root = Path(__file__).resolve().parents[5]
-        candidates = (
-            root / "packages" / "quelware-client" / "quelware-client" / "src",
-            root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
+        resource_module = import_module_with_workspace_fallback(
+            "quelware_core.entities.resource"
         )
-        for path in candidates:
-            path_str = str(path)
-            if path.exists() and path_str not in sys.path:
-                sys.path.insert(0, path_str)
+        client_module = import_module_with_workspace_fallback("quelware_client.client")
+        mapper_module = import_module_with_workspace_fallback(
+            "quelware_client.client.helpers.instrument_mapper"
+        )
+        sequencer_module = import_module_with_workspace_fallback(
+            "quelware_client.client.helpers.sequencer"
+        )
+        driver_module = import_module_with_workspace_fallback(
+            "quelware_client.core.instrument_driver"
+        )
+        create_quelware_client: _QuelwareClientFactory = (
+            client_module.create_quelware_client
+        )
+        instrument_mapper_factory: _InstrumentMapperFactory = (
+            mapper_module.InstrumentMapper
+        )
+        sequencer_factory: _SequencerFactory = sequencer_module.Sequencer
+        create_instrument_driver_fixed_timeline: _InstrumentDriverFactory = (
+            driver_module.create_instrument_driver_fixed_timeline
+        )
+        get_all_instrument_ids_from_resource_infos: _ResourceIdResolver = (
+            resource_module.get_all_instrument_ids_from_resource_infos
+        )
+        return (
+            create_quelware_client,
+            instrument_mapper_factory,
+            sequencer_factory,
+            create_instrument_driver_fixed_timeline,
+            get_all_instrument_ids_from_resource_infos,
+        )

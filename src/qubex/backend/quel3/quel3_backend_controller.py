@@ -65,7 +65,7 @@ class Quel3BackendController(BackendController):
             Quelware API port. Defaults to 50051.
         """
         del config_path
-        self._sampling_period = (
+        sampling_period = (
             sampling_period_ns
             if sampling_period_ns is not None
             else QUEL3_SAMPLING_PERIOD_NS
@@ -77,7 +77,7 @@ class Quel3BackendController(BackendController):
                 quelware_endpoint if quelware_endpoint is not None else "localhost"
             ),
             quelware_port=quelware_port if quelware_port is not None else 50051,
-            sampling_period=self._sampling_period,
+            sampling_period=sampling_period,
             measurement_result_avg_sample_stride=self.MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE,
         )
         self._connection_manager = Quel3ConnectionManager(
@@ -128,7 +128,7 @@ class Quel3BackendController(BackendController):
     @property
     def sampling_period(self) -> float:
         """Return backend sampling period in ns."""
-        return self._sampling_period
+        return self._runtime_context.sampling_period
 
     def execute(
         self,
