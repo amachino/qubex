@@ -20,7 +20,7 @@ from qubex.backend.control_system import CapPort, GenPort
 from qubex.diagnostics import ChipInspector
 
 if TYPE_CHECKING:
-    from qubex.backend.quel1.quel1_backend_controller import QubeCalib, Quel1Box
+    from qubex.backend.quel1.quel1_backend_controller import Quel1Box
 
 logger = logging.getLogger(__name__)
 
@@ -117,12 +117,6 @@ Do you want to continue?
         "skew": skew,
         "fig": fig,
     }
-
-
-def get_qubecalib() -> QubeCalib:
-    """Get the QubeCalib instance."""
-    get_qubecalib_impl = _require_backend_callable("get_qubecalib")
-    return cast(QubeCalib, get_qubecalib_impl())
 
 
 def get_quel1_box(box_id: str) -> Quel1Box:
