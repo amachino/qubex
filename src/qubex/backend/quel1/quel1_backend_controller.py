@@ -115,12 +115,6 @@ class Quel1BackendController(BackendController):
         return config
 
     @property
-    def system_config_json(self) -> str:
-        """Get the system configuration as JSON."""
-        config = self.qubecalib.system_config_database.asjson()
-        return config
-
-    @property
     def box_settings(self) -> dict[str, Any]:
         """Get the box settings."""
         return self.system_config["box_settings"]
@@ -822,36 +816,6 @@ class Quel1BackendController(BackendController):
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
         """Build a resource map for the requested targets."""
         return self._configuration_manager.get_resource_map(targets=targets)
-
-    def get_cap_resource_map(self, targets: Collection[str]) -> dict[str, dict]:
-        """
-        Get the resource map for the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str]
-            List of target names.
-        """
-        return {
-            target: self.cap_resource_map[target]
-            for target in targets
-            if target in self.cap_resource_map
-        }
-
-    def get_gen_resource_map(self, targets: Collection[str]) -> dict[str, dict]:
-        """
-        Get the resource map for the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str]
-            List of target names.
-        """
-        return {
-            target: self.gen_resource_map[target]
-            for target in targets
-            if target in self.gen_resource_map
-        }
 
     def load_skew_yaml(self, file_path: str | Path) -> None:
         """
