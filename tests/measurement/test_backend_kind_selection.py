@@ -4,24 +4,24 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from qubex.measurement.measurement_backend_manager import MeasurementBackendManager
 from qubex.measurement.measurement_client import MeasurementClient
+from qubex.measurement.measurement_session_service import MeasurementSessionService
 
 
-def test_measurement_backend_manager_load_forwards_backend_kind() -> None:
-    """Given backend kind input, when manager loads configs, then SystemManager receives the same kind."""
+def test_measurement_session_service_load_forwards_backend_kind() -> None:
+    """Given backend kind input, when session service loads configs, then SystemManager receives the same kind."""
     called: dict[str, Any] = {}
 
     class _SystemManager:
         def load(self, **kwargs: object) -> None:
             called.update(kwargs)
 
-    manager = MeasurementBackendManager(
+    session_service = MeasurementSessionService(
         system_manager=cast(Any, _SystemManager()),
-        qubits=["Q00"],
+        context=cast(Any, object()),
     )
-    manager.load_skew_file = lambda: None  # type: ignore[method-assign]
-    manager.load(
+    session_service.load_skew_file = lambda: None  # type: ignore[method-assign]
+    session_service.load(
         chip_id="TEST",
         backend_kind="quel3",
     )
@@ -30,7 +30,7 @@ def test_measurement_backend_manager_load_forwards_backend_kind() -> None:
 
 
 def test_measurement_client_load_forwards_backend_kind() -> None:
-    """Given backend kind input, when MeasurementClient loads, then backend manager receives the same kind."""
+    """Given backend kind input, when MeasurementClient loads, then session service receives the same kind."""
     measurement = MeasurementClient(
         chip_id="TEST",
         qubits=["Q00"],
@@ -39,11 +39,11 @@ def test_measurement_client_load_forwards_backend_kind() -> None:
     )
     called: dict[str, Any] = {}
 
-    class _BackendManager:
+    class _SessionService:
         def load(self, **kwargs: object) -> None:
             called.update(kwargs)
 
-    measurement.__dict__["_backend_manager"] = _BackendManager()
+    measurement.__dict__["_session_service"] = _SessionService()
 
     measurement.load(
         config_dir=None,

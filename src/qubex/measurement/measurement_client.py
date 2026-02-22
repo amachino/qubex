@@ -36,12 +36,13 @@ from qubex.measurement.models.measurement_result import (
 from qubex.typing import ConfigurationMode, IQArray, MeasurementMode, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
-from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_constraint_profile import MeasurementConstraintProfile
+from .measurement_context import MeasurementContext
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .measurement_schedule_executor import MeasurementScheduleExecutor
+from .measurement_session_service import MeasurementSessionService
 from .models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
@@ -56,11 +57,12 @@ class MeasurementClient:
     Client class for end-to-end measurement workflows.
 
     `MeasurementClient` owns the high-level workflow while delegating concrete
-    responsibilities to focused collaborators: configuration/backend lifecycle
-    (`MeasurementBackendManager`), schedule assembly
-    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`) and delegates
-    schedule execution to `MeasurementScheduleExecutor`. It also keeps optional
-    state classifiers used during readout post-processing.
+    responsibilities to focused collaborators: context access
+    (`MeasurementContext`), configuration/backend lifecycle
+    (`MeasurementSessionService`), schedule assembly
+    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`) and schedule
+    execution (`MeasurementScheduleExecutor`). It also keeps optional state
+    classifiers used during readout post-processing.
 
     Notes
     -----
@@ -131,9 +133,13 @@ class MeasurementClient:
         self._clock_health_checks: Final[bool | None] = _clock_health_checks
         self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
-        self._backend_manager = MeasurementBackendManager(
+        self._context = MeasurementContext(
             system_manager=self._system_manager,
             qubits=self._qubits,
+        )
+        self._session_service = MeasurementSessionService(
+            system_manager=self._system_manager,
+            context=self._context,
         )
         if load_configs is None:
             load_configs = self.DEFAULT_LOAD_CONFIGS
@@ -172,7 +178,7 @@ class MeasurementClient:
         backend_kind : BackendKind | None, optional
             Backend family used for this experiment session.
         """
-        self.backend_manager.load(
+        self.session_service.load(
             chip_id=self._chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
@@ -196,7 +202,7 @@ class MeasurementClient:
         parallel : bool | None, optional
             Whether to fetch backend settings in parallel.
         """
-        self.backend_manager.connect(sync_clocks=sync_clocks, parallel=parallel)
+        self.session_service.connect(sync_clocks=sync_clocks, parallel=parallel)
 
     def reload(
         self,
@@ -219,12 +225,12 @@ class MeasurementClient:
     @property
     def box_ids(self) -> list[str]:
         """Get the list of box IDs."""
-        return self.backend_manager.box_ids
+        return self.context.box_ids
 
     @property
     def mux_dict(self) -> dict[str, Mux]:
         """Get a dictionary of Mux objects indexed by qubit labels."""
-        return self.backend_manager.mux_dict
+        return self.context.mux_dict
 
     @property
     def system_manager(self) -> SystemManager:
@@ -232,9 +238,14 @@ class MeasurementClient:
         return self._system_manager
 
     @property
-    def backend_manager(self) -> MeasurementBackendManager:
-        """Return the backend/config manager."""
-        return self._backend_manager
+    def context(self) -> MeasurementContext:
+        """Return measurement context accessor."""
+        return self._context
+
+    @property
+    def session_service(self) -> MeasurementSessionService:
+        """Return session lifecycle service."""
+        return self._session_service
 
     @property
     def pulse_factory(self) -> MeasurementPulseFactory:
@@ -269,17 +280,17 @@ class MeasurementClient:
     @property
     def config_loader(self) -> ConfigLoader:
         """Get the configuration loader."""
-        return self.backend_manager.config_loader
+        return self.context.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
         """Get the experiment system."""
-        return self.backend_manager.experiment_system
+        return self.context.experiment_system
 
     @property
     def backend_controller(self) -> BackendController:
         """Get the backend controller."""
-        return self.backend_manager.backend_controller
+        return self.context.backend_controller
 
     @property
     def sampling_period(self) -> float:
@@ -449,11 +460,11 @@ class MeasurementClient:
         bool
             True if connected, False otherwise.
         """
-        return self.backend_manager.is_connected()
+        return self.session_service.is_connected()
 
     def disconnect(self) -> None:
         """Disconnect backend resources held by the measurement backend."""
-        self.backend_manager.disconnect()
+        self.session_service.disconnect()
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """
@@ -473,7 +484,7 @@ class MeasurementClient:
         --------
         >>> cli.check_link_status(["Q73A", "U10B"])
         """
-        return self.backend_manager.check_link_status(box_list)
+        return self.session_service.check_link_status(box_list)
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """
@@ -493,7 +504,7 @@ class MeasurementClient:
         --------
         >>> cli.check_clock_status(["Q73A", "U10B"])
         """
-        return self.backend_manager.check_clock_status(box_list)
+        return self.session_service.check_clock_status(box_list)
 
     def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """
@@ -508,7 +519,7 @@ class MeasurementClient:
         --------
         >>> cli.linkup(["Q73A", "U10B"])
         """
-        self.backend_manager.linkup(box_list, noise_threshold=noise_threshold)
+        self.session_service.linkup(box_list, noise_threshold=noise_threshold)
 
     def relinkup(self, box_list: list[str]) -> None:
         """
@@ -523,7 +534,7 @@ class MeasurementClient:
         --------
         >>> cli.relinkup(["Q73A", "U10B"])
         """
-        self.backend_manager.relinkup(box_list)
+        self.session_service.relinkup(box_list)
 
     @contextmanager
     def modified_frequencies(
@@ -546,7 +557,7 @@ class MeasurementClient:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
-        with self.backend_manager.modified_frequencies(target_frequencies):
+        with self.session_service.modified_frequencies(target_frequencies):
             yield
 
     @contextmanager

@@ -1,9 +1,9 @@
-"""Device and configuration operations for measurement workflows."""
+"""Session and connectivity services for measurement workflows."""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -12,22 +12,26 @@ from qubex.backend import (
     BackendKind,
     ConfigLoader,
     ExperimentSystem,
-    Mux,
     SystemManager,
 )
 from qubex.typing import ConfigurationMode
 
+from .measurement_context import MeasurementContext
+
 logger = logging.getLogger(__name__)
 
 
-class MeasurementBackendManager:
+class MeasurementSessionService:
     """Handle config loading and hardware connectivity for measurement."""
 
     def __init__(
-        self, *, system_manager: SystemManager, qubits: Collection[str]
+        self,
+        *,
+        system_manager: SystemManager,
+        context: MeasurementContext,
     ) -> None:
         self._system_manager = system_manager
-        self._qubits = list(qubits)
+        self._context = context
 
     @property
     def system_manager(self) -> SystemManager:
@@ -35,33 +39,29 @@ class MeasurementBackendManager:
         return self._system_manager
 
     @property
+    def context(self) -> MeasurementContext:
+        """Return measurement context accessor."""
+        return self._context
+
+    @property
     def config_loader(self) -> ConfigLoader:
-        """Return the configuration loader."""
-        return self._system_manager.config_loader
+        """Return the active configuration loader."""
+        return self._context.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
-        """Return the experiment system."""
-        return self._system_manager.experiment_system
+        """Return the active experiment-system model."""
+        return self._context.experiment_system
 
     @property
     def backend_controller(self) -> BackendController:
-        """Return the backend controller."""
-        return self._system_manager.backend_controller
+        """Return the active backend controller."""
+        return self._context.backend_controller
 
     @property
     def box_ids(self) -> list[str]:
-        """Return box IDs corresponding to configured qubits."""
-        boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
-        return [box.id for box in boxes]
-
-    @property
-    def mux_dict(self) -> dict[str, Mux]:
-        """Return mux map keyed by qubit label."""
-        return {
-            qubit: self.experiment_system.get_mux_by_qubit(qubit)
-            for qubit in self._qubits
-        }
+        """Return active box IDs for the selected qubits."""
+        return self._context.box_ids
 
     def load(
         self,
@@ -112,16 +112,17 @@ class MeasurementBackendManager:
         """
         if sync_clocks is None:
             sync_clocks = True
-        if len(self.box_ids) == 0:
+        box_ids = self.box_ids
+        if len(box_ids) == 0:
             logger.warning("No boxes are selected. Please check the configuration.")
             return
-        self.backend_controller.connect(self.box_ids, parallel=parallel)
-        self.system_manager.pull(self.box_ids, parallel=parallel)
+        self.backend_controller.connect(box_ids, parallel=parallel)
+        self.system_manager.pull(box_ids, parallel=parallel)
         if sync_clocks:
-            self.backend_controller.resync_clocks(self.box_ids)
+            self.backend_controller.resync_clocks(box_ids)
 
     def is_connected(self) -> bool:
-        """Return True if device controller is connected."""
+        """Return True if active backend controller is connected."""
         return self.backend_controller.is_connected
 
     def disconnect(self) -> None:
@@ -167,7 +168,8 @@ class MeasurementBackendManager:
 
     @contextmanager
     def modified_frequencies(
-        self, target_frequencies: dict[str, float]
+        self,
+        target_frequencies: dict[str, float],
     ) -> Iterator[None]:
         """Temporarily apply frequency overrides."""
         if target_frequencies is None:

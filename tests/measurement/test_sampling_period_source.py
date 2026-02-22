@@ -35,8 +35,8 @@ def _make_measurement_client_with_backend(
             "targets": [type("_Target", (), {"label": "Q00"})()],
         },
     )()
-    measurement.__dict__["_backend_manager"] = type(
-        "_BM",
+    measurement.__dict__["_context"] = type(
+        "_CTX",
         (),
         {
             "backend_controller": backend_controller,

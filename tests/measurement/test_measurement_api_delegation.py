@@ -107,8 +107,8 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
             "measurement_defaults": {},
         },
     )()
-    measurement.__dict__["_backend_manager"] = type(
-        "_BM",
+    measurement.__dict__["_context"] = type(
+        "_CTX",
         (),
         {
             "backend_controller": type("_BC", (), {"box_config": {"shots": 1}})(),
@@ -265,8 +265,8 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
             "measurement_defaults": {},
         },
     )()
-    measurement.__dict__["_backend_manager"] = type(
-        "_BM",
+    measurement.__dict__["_context"] = type(
+        "_CTX",
         (),
         {
             "backend_controller": type("_BC", (), {"box_config": {"shots": 1}})(),
@@ -323,8 +323,8 @@ def test_execute_measurement_schedule_delegates_to_executor(
 
     experiment_system = type("_ES", (), {})()
     backend_controller = type("_BC", (), {})()
-    measurement.__dict__["_backend_manager"] = type(
-        "_BM",
+    measurement.__dict__["_context"] = type(
+        "_CTX",
         (),
         {
             "backend_controller": backend_controller,
@@ -460,8 +460,8 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
             return _CustomResultFactory()
 
     experiment_system = object()
-    measurement.__dict__["_backend_manager"] = type(
-        "_BM",
+    measurement.__dict__["_context"] = type(
+        "_CTX",
         (),
         {
             "backend_controller": _BackendController(),
@@ -479,8 +479,8 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
     assert result.device_config == {"kind": "quel3"}
 
 
-def test_disconnect_delegates_to_backend_manager() -> None:
-    """Given connected manager, disconnect delegates to backend manager."""
+def test_disconnect_delegates_to_session_service() -> None:
+    """Given connected session service, disconnect delegates to session service."""
     measurement = MeasurementClient(
         chip_id="TEST",
         qubits=["Q00"],
@@ -489,11 +489,11 @@ def test_disconnect_delegates_to_backend_manager() -> None:
     )
     called = {"disconnect": 0}
 
-    class _BackendManager:
+    class _SessionService:
         def disconnect(self) -> None:
             called["disconnect"] += 1
 
-    measurement.__dict__["_backend_manager"] = _BackendManager()
+    measurement.__dict__["_session_service"] = _SessionService()
 
     measurement.disconnect()
 

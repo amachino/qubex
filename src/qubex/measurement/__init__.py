@@ -15,15 +15,16 @@ from .adapters import (
 )
 from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
 from .measurement import Measurement
-from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_client import MeasurementClient
 from .measurement_config_factory import MeasurementConfigFactory
 from .measurement_constraint_profile import MeasurementConstraintProfile
+from .measurement_context import MeasurementContext
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .measurement_schedule_executor import MeasurementScheduleExecutor
+from .measurement_session_service import MeasurementSessionService
 from .models import (
     MeasureData,
     MeasurementResult,
@@ -40,10 +41,10 @@ __all__ = [
     "MeasureResult",
     "Measurement",
     "MeasurementBackendAdapter",
-    "MeasurementBackendManager",
     "MeasurementClient",
     "MeasurementConfigFactory",
     "MeasurementConstraintProfile",
+    "MeasurementContext",
     "MeasurementPulseFactory",
     "MeasurementResult",
     "MeasurementResultConverter",
@@ -51,6 +52,7 @@ __all__ = [
     "MeasurementSchedule",
     "MeasurementScheduleBuilder",
     "MeasurementScheduleExecutor",
+    "MeasurementSessionService",
     "MultipleMeasureResult",
     "Quel1MeasurementBackendAdapter",
     "Quel3ExecutionPayload",
