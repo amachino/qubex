@@ -118,7 +118,7 @@ class Quel1BackendController(BackendController):
     @property
     def _boxpool(self) -> BoxPool | None:
         """Compatibility bridge for pooled-box runtime state."""
-        return cast(Any, self._connection_manager.boxpool)
+        return self._connection_manager.boxpool
 
     @_boxpool.setter
     def _boxpool(self, boxpool: BoxPool | None) -> None:
@@ -128,7 +128,7 @@ class Quel1BackendController(BackendController):
     @property
     def _quel1system(self) -> Quel1System | None:
         """Compatibility bridge for Quel1System runtime state."""
-        return cast(Any, self._connection_manager.quel1system)
+        return self._connection_manager.quel1system
 
     @_quel1system.setter
     def _quel1system(self, quel1system: Quel1System | None) -> None:

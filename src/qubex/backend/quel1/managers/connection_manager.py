@@ -5,19 +5,27 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from qubex.backend.quel1.quel1_qubecalib_protocols import (
+        BoxPoolProtocol as BoxPool,
+        Quel1BoxCommonProtocol as Quel1Box,
+        Quel1ConfigOptionProtocol as Quel1ConfigOption,
+        Quel1SystemProtocol as Quel1System,
+    )
 
 
 @dataclass
 class Quel1ConnectionState:
     """Mutable runtime state owned by the QuEL-1 connection manager."""
 
-    boxpool: Any | None = None
-    quel1system: Any | None = None
+    boxpool: BoxPool | None = None
+    quel1system: Quel1System | None = None
     cap_resource_map: dict[str, dict] | None = None
     gen_resource_map: dict[str, dict] | None = None
 
@@ -34,12 +42,12 @@ class Quel1ConnectionManager:
         return self._state.quel1system is not None
 
     @property
-    def boxpool(self) -> Any | None:
+    def boxpool(self) -> BoxPool | None:
         """Return connected boxpool when available."""
         return self._state.boxpool
 
     @property
-    def quel1system(self) -> Any | None:
+    def quel1system(self) -> Quel1System | None:
         """Return connected Quel1System when available."""
         return self._state.quel1system
 
@@ -56,8 +64,8 @@ class Quel1ConnectionManager:
     def set_connected_state(
         self,
         *,
-        boxpool: Any | None,
-        quel1system: Any | None,
+        boxpool: BoxPool | None,
+        quel1system: Quel1System | None,
         cap_resource_map: dict[str, dict] | None,
         gen_resource_map: dict[str, dict] | None,
     ) -> None:
@@ -66,9 +74,9 @@ class Quel1ConnectionManager:
 
         Parameters
         ----------
-        boxpool : Any | None
+        boxpool : BoxPool | None
             Connected boxpool.
-        quel1system : Any | None
+        quel1system : Quel1System | None
             Connected Quel1System.
         cap_resource_map : dict[str, dict] | None
             Capture resource map.
@@ -82,11 +90,11 @@ class Quel1ConnectionManager:
             gen_resource_map=gen_resource_map,
         )
 
-    def set_boxpool(self, boxpool: Any | None) -> None:
+    def set_boxpool(self, boxpool: BoxPool | None) -> None:
         """Update only boxpool state."""
         self._state.boxpool = boxpool
 
-    def set_quel1system(self, quel1system: Any | None) -> None:
+    def set_quel1system(self, quel1system: Quel1System | None) -> None:
         """Update only Quel1System state."""
         self._state.quel1system = quel1system
 
@@ -109,8 +117,8 @@ class Quel1ConnectionManager:
         available_boxes: Callable[[], Collection[str]],
         parallel: bool | None,
         default_parallel_mode: bool,
-        create_boxpool: Callable[[list[str], bool], Any],
-        create_quel1system_from_boxpool: Callable[[list[str]], Any],
+        create_boxpool: Callable[[list[str], bool], BoxPool],
+        create_quel1system_from_boxpool: Callable[[list[str]], Quel1System],
         create_resource_map: Callable[[Literal["cap", "gen"]], dict[str, dict]],
     ) -> None:
         """
@@ -126,9 +134,9 @@ class Quel1ConnectionManager:
             Parallel creation/reconnect mode override.
         default_parallel_mode : bool
             Default parallel mode used when `parallel` is None.
-        create_boxpool : Callable[[list[str], bool], Any]
+        create_boxpool : Callable[[list[str], bool], BoxPool]
             Factory to create a connected boxpool.
-        create_quel1system_from_boxpool : Callable[[list[str]], Any]
+        create_quel1system_from_boxpool : Callable[[list[str]], Quel1System]
             Factory to create a Quel1System from connected boxes.
         create_resource_map : Callable[[str], dict[str, dict]]
             Factory for resource maps (`"cap"` and `"gen"`).
@@ -167,17 +175,17 @@ class Quel1ConnectionManager:
     def disconnect(
         self,
         *,
-        collect_held_resources: Callable[[], list[Any]],
-        disconnect_resource_safely: Callable[[Any], None],
+        collect_held_resources: Callable[[], list[object]],
+        disconnect_resource_safely: Callable[[object], None],
     ) -> None:
         """
         Disconnect all currently held resources.
 
         Parameters
         ----------
-        collect_held_resources : Callable[[], list[Any]]
+        collect_held_resources : Callable[[], list[object]]
             Resource enumerator.
-        disconnect_resource_safely : Callable[[Any], None]
+        disconnect_resource_safely : Callable[[object], None]
             Safe resource disconnect function.
         """
         for resource in collect_held_resources():
@@ -238,9 +246,9 @@ class Quel1ConnectionManager:
         noise_threshold: int | None,
         relaxed_noise_threshold: int,
         check_box_availability: Callable[[str], None],
-        get_existing_or_create_box: Callable[[str, bool], Any],
+        get_existing_or_create_box: Callable[[str, bool], Quel1Box],
         **kwargs: Any,
-    ) -> Any:
+    ) -> Quel1Box:
         """
         Linkup one box and return the connected box.
 
@@ -254,14 +262,14 @@ class Quel1ConnectionManager:
             Default threshold when `noise_threshold` is None.
         check_box_availability : Callable[[str], None]
             Box availability validator.
-        get_existing_or_create_box : Callable[[str, bool], Any]
+        get_existing_or_create_box : Callable[[str, bool], Quel1Box]
             Resolver for existing pooled box or lazily created box.
         **kwargs : Any
             Extra reconnect keyword arguments.
 
         Returns
         -------
-        Any
+        Quel1Box
             Linked box object.
         """
         check_box_availability(box_name)
@@ -284,8 +292,8 @@ class Quel1ConnectionManager:
         parallel: bool | None,
         default_parallel_mode: bool,
         max_parallel_workers: int,
-        linkup_box: Callable[[str, int | None], Any],
-    ) -> dict[str, Any]:
+        linkup_box: Callable[[str, int | None], Quel1Box | None],
+    ) -> dict[str, Quel1Box]:
         """
         Linkup all requested boxes.
 
@@ -301,19 +309,19 @@ class Quel1ConnectionManager:
             Default parallel mode used when `parallel` is None.
         max_parallel_workers : int
             Maximum worker count for parallel linkup.
-        linkup_box : Callable[[str, int | None], Any]
+        linkup_box : Callable[[str, int | None], Quel1Box | None]
             Single-box linkup function.
 
         Returns
         -------
-        dict[str, Any]
+        dict[str, Quel1Box]
             Successfully linked boxes keyed by box name.
         """
         unique_box_list = list(dict.fromkeys(box_list))
         if parallel is None:
             parallel = default_parallel_mode
         if not parallel:
-            boxes: dict[str, Any] = {}
+            boxes: dict[str, Quel1Box] = {}
             for box_name in unique_box_list:
                 linked_box = self._safe_linkup_box(
                     box_name=box_name,
@@ -331,7 +339,7 @@ class Quel1ConnectionManager:
             max_workers=max_parallel_workers,
             on_error=self._fallback_linkup_box_result,
         )
-        boxes: dict[str, Any] = {}
+        boxes: dict[str, Quel1Box] = {}
         for box_name, linked_box in results.items():
             if linked_box is None:
                 continue
@@ -346,8 +354,8 @@ class Quel1ConnectionManager:
         noise_threshold: int | None,
         relaxed_noise_threshold: int,
         check_box_availability: Callable[[str], None],
-        get_existing_or_create_box: Callable[[str, bool], Any],
-        resolve_config_options: Callable[[str, str], list[Any] | None],
+        get_existing_or_create_box: Callable[[str, bool], Quel1Box],
+        resolve_config_options: Callable[[str, str], list[Quel1ConfigOption] | None],
     ) -> None:
         """
         Relink one box.
@@ -362,9 +370,9 @@ class Quel1ConnectionManager:
             Default threshold when `noise_threshold` is None.
         check_box_availability : Callable[[str], None]
             Box availability validator.
-        get_existing_or_create_box : Callable[[str, bool], Any]
+        get_existing_or_create_box : Callable[[str, bool], Quel1Box]
             Resolver for existing pooled box or lazily created box.
-        resolve_config_options : Callable[[str, str], list[Any] | None]
+        resolve_config_options : Callable[[str, str], list[Quel1ConfigOption] | None]
             Per-box config option resolver.
         """
         check_box_availability(box_name)
@@ -426,8 +434,8 @@ class Quel1ConnectionManager:
         *,
         box_name: str,
         noise_threshold: int | None,
-        linkup_box: Callable[[str, int | None], Any],
-    ) -> Any | None:
+        linkup_box: Callable[[str, int | None], Quel1Box | None],
+    ) -> Quel1Box | None:
         """Link up one box and log failures without raising."""
         try:
             linked_box = linkup_box(box_name, noise_threshold)
@@ -439,7 +447,9 @@ class Quel1ConnectionManager:
             return linked_box
 
     @staticmethod
-    def _fallback_linkup_box_result(box_name: str, exc: BaseException) -> Any | None:
+    def _fallback_linkup_box_result(
+        box_name: str, exc: BaseException
+    ) -> Quel1Box | None:
         """Log a linkup error and return no box for the failed item."""
         logger.exception(f"{box_name:5} : Error during linkup", exc_info=exc)
         return None
