@@ -23,14 +23,13 @@ from qubex.typing import ConfigurationMode
 
 from .control_system import Box, PortType
 from .controller_types import (
-    BackendBoxHardwareSynchronizer,
-    BackendExperimentSystemSynchronizer,
     BackendKind,
     SystemBackendController,
 )
 from .experiment_system import ExperimentSystem
 from .parallel_box_executor import run_parallel_each, run_parallel_map
 from .quel1 import Quel1BackendController
+from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
 from .quel3 import Quel3BackendController
 
 logger = logging.getLogger(__name__)
@@ -143,6 +142,9 @@ class SystemManager:
         self._experiment_system = None
         self._backend_kind: BackendKind = "quel1"
         self._backend_controller = self._create_backend_controller(self._backend_kind)
+        self._system_sync_manager = self._create_system_sync_manager(
+            self._backend_controller
+        )
         self._backend_settings: BackendSettings = BackendSettings()
         self._cached_state = SystemState(0, 0, 0)
         self._rawdata_dir = None
@@ -180,7 +182,21 @@ class SystemManager:
             return
         self._backend_kind = backend_kind
         self._backend_controller = self._create_backend_controller(backend_kind)
+        self._system_sync_manager = self._create_system_sync_manager(
+            self._backend_controller
+        )
         self._backend_settings = BackendSettings()
+
+    @staticmethod
+    def _create_system_sync_manager(
+        backend_controller: SystemBackendController,
+    ) -> Quel1SystemSynchronizer | None:
+        """Create backend-specific system synchronizer when supported."""
+        if isinstance(backend_controller, Quel1BackendController):
+            return Quel1SystemSynchronizer(
+                backend_controller=backend_controller,
+            )
+        return None
 
     @property
     def rawdata_dir(self) -> Path | None:
@@ -602,15 +618,15 @@ This operation will overwrite the existing backend settings. Do you want to cont
         logger.exception("Failed to configure box %s", box.id, exc_info=exc)
 
     def _sync_box_to_hardware(self, box: Box) -> None:
-        """Apply one experiment-system box configuration through backend delegate."""
-        backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendBoxHardwareSynchronizer):
+        """Apply one experiment-system box configuration via system synchronizer."""
+        system_sync_manager = self._system_sync_manager
+        if system_sync_manager is None:
             logger.debug(
-                "Skipping hardware sync for box %s because active backend has no box sync delegate.",
+                "Skipping hardware sync for box %s because active backend has no system sync manager.",
                 box.id,
             )
             return
-        backend_controller.sync_box_to_hardware(box)
+        system_sync_manager.sync_box_to_hardware(box)
 
     def _fetch_backend_settings_from_hardware(
         self,
@@ -820,15 +836,15 @@ This operation will overwrite the existing backend settings. Do you want to cont
             )
 
     def _sync_experiment_system_to_backend_controller(self) -> None:
-        """Rebuild backend-controller model via backend-specific delegate."""
-        backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendExperimentSystemSynchronizer):
+        """Rebuild backend-local topology via backend-specific sync manager."""
+        system_sync_manager = self._system_sync_manager
+        if system_sync_manager is None:
             logger.info(
-                "Skipping backend-controller topology sync because this backend has no topology sync delegate."
+                "Skipping backend-controller topology sync because this backend has no system sync manager."
             )
             self._update_cached_state()
             return
-        backend_controller.sync_experiment_system_to_backend_controller(
+        system_sync_manager.sync_experiment_system_to_backend_controller(
             self.experiment_system
         )
         self._update_cached_state()

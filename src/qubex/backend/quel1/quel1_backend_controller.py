@@ -27,7 +27,6 @@ from .managers import (
     Quel1ConfigurationManager,
     Quel1ConnectionManager,
     Quel1ExecutionManager,
-    Quel1SystemSyncManager,
 )
 from .quel1_backend_constants import ExecutionMode
 from .quel1_backend_raw_result import (
@@ -39,9 +38,6 @@ from .quel1_runtime_context import Quel1RuntimeContext
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from qubex.backend.control_system import Box
-    from qubex.backend.experiment_system import ExperimentSystem
-
     from .compat.qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
         QubeCalibProtocol as QubeCalib,
@@ -79,9 +75,6 @@ class Quel1BackendController(BackendController):
             runtime_context=self._runtime_context,
         )
         self._configuration_manager = Quel1ConfigurationManager(
-            runtime_context=self._runtime_context,
-        )
-        self._system_sync_manager = Quel1SystemSyncManager(
             runtime_context=self._runtime_context,
         )
 
@@ -233,7 +226,7 @@ class Quel1BackendController(BackendController):
 
     def disconnect(self) -> None:
         """Disconnect backend resources and reset connection-related state."""
-        self._system_sync_manager.clear_cache()
+        self._connection_manager.clear_cache()
         self._connection_manager.disconnect()
 
     def get_box(self, box_name: str) -> Quel1Box:
@@ -480,19 +473,6 @@ class Quel1BackendController(BackendController):
             True if reset succeeds.
         """
         return self._clock_manager.reset_clockmaster(ipaddr=ipaddr)
-
-    def sync_experiment_system_to_backend_controller(
-        self,
-        experiment_system: ExperimentSystem,
-    ) -> None:
-        """Rebuild backend-controller topology from one experiment-system model."""
-        self._system_sync_manager.sync_experiment_system_to_backend_controller(
-            experiment_system
-        )
-
-    def sync_box_to_hardware(self, box: Box) -> None:
-        """Apply one experiment-system box configuration to hardware."""
-        self._system_sync_manager.sync_box_to_hardware(box)
 
     def define_clockmaster(self, *, ipaddr: str, reset: bool = True) -> None:
         """
@@ -830,7 +810,7 @@ class Quel1BackendController(BackendController):
 
     def clear_cache(self) -> None:
         """Clear cached box configuration data."""
-        self._system_sync_manager.clear_cache()
+        self._connection_manager.clear_cache()
 
     def get_box_config_cache(self) -> dict[str, Any]:
         """Return a snapshot of the box-config cache."""
@@ -838,11 +818,11 @@ class Quel1BackendController(BackendController):
 
     def replace_box_config_cache(self, box_configs: dict[str, Any]) -> None:
         """Replace the box-config cache with the provided snapshot."""
-        self._system_sync_manager.replace_box_config_cache(box_configs)
+        self._connection_manager.replace_box_config_cache(box_configs)
 
     def update_box_config_cache(self, box_configs: dict[str, Any]) -> None:
         """Update cached box configurations by box name."""
-        self._system_sync_manager.update_box_config_cache(box_configs)
+        self._connection_manager.update_box_config_cache(box_configs)
 
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
         """Build a resource map for the requested targets."""

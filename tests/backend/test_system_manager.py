@@ -449,48 +449,40 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
     assert called == ["A", "B"]
 
 
-def test_sync_box_to_hardware_delegates_to_backend_controller(
+def test_sync_box_to_hardware_delegates_to_system_sync_manager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given backend delegate, when syncing one box, then SystemManager forwards the call."""
+    """Given system sync manager, when syncing one box, then SystemManager forwards the call."""
     manager = SystemManager.shared()
     delegated: list[str] = []
 
-    class _BackendController:
-        @property
-        def hash(self) -> int:
-            return 0
-
+    class _SystemSyncManager:
         def sync_box_to_hardware(self, box: FakeBox) -> None:
             delegated.append(box.id)
 
-    monkeypatch.setattr(manager, "_backend_controller", _BackendController())
+    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
 
     manager._sync_box_to_hardware(FakeBox(id="A", ports=()))  # noqa: SLF001  # type: ignore[arg-type]
 
     assert delegated == ["A"]
 
 
-def test_sync_experiment_system_to_backend_controller_delegates_to_backend(
+def test_sync_experiment_system_to_backend_controller_delegates_to_system_sync_manager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given backend topology delegate, when loading config, then SystemManager forwards experiment-system sync."""
+    """Given sync manager, when loading config, then SystemManager forwards experiment-system sync."""
     manager = SystemManager.shared()
     delegated: list[object] = []
     experiment_system = SimpleNamespace(hash=11)
 
-    class _BackendController:
-        @property
-        def hash(self) -> int:
-            return 17
-
+    class _SystemSyncManager:
         def sync_experiment_system_to_backend_controller(
             self,
             resolved_experiment_system: object,
         ) -> None:
             delegated.append(resolved_experiment_system)
 
-    monkeypatch.setattr(manager, "_backend_controller", _BackendController())
+    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
     monkeypatch.setattr(manager, "_backend_settings", BackendSettings())
 

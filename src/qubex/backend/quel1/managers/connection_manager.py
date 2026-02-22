@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
@@ -126,6 +128,39 @@ class Quel1ConnectionManager:
     def clear_connected_state(self) -> None:
         """Clear connected runtime state."""
         self._runtime_context.clear_connected_state()
+
+    def clear_cache(self) -> None:
+        """Clear cached box configuration data."""
+        if not self.is_connected:
+            return
+        boxpool = self.boxpool
+        boxpool._box_config_cache.clear()
+        quel1system = self.quel1system
+        quel1system.config_cache.clear()
+        quel1system.config_fetched_at = None
+
+    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Replace the box-config cache with the provided snapshot."""
+        boxpool = self.boxpool
+        boxpool._box_config_cache = deepcopy(box_configs)
+        quel1system = self.quel1system
+        quel1system.config_cache.clear()
+        for box_name, box_config in box_configs.items():
+            quel1system.config_cache[box_name] = deepcopy(box_config)
+        quel1system.config_fetched_at = (
+            datetime.now() if quel1system.config_cache else None
+        )
+
+    def update_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Update cached box configurations by box name."""
+        boxpool = self.boxpool
+        for box_name, box_config in box_configs.items():
+            boxpool._box_config_cache[box_name] = deepcopy(box_config)
+        quel1system = self.quel1system
+        for box_name, box_config in box_configs.items():
+            quel1system.config_cache[box_name] = deepcopy(box_config)
+        if quel1system.config_cache:
+            quel1system.config_fetched_at = datetime.now()
 
     def connect(
         self,
