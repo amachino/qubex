@@ -143,7 +143,7 @@ class SystemManager:
         self._experiment_system = None
         self._backend_kind: BackendKind = "quel1"
         self._backend_controller = self._create_backend_controller(self._backend_kind)
-        self._system_sync_manager = self._create_system_sync_manager(
+        self._system_synchronizer = self._create_system_synchronizer(
             self._backend_controller,
             self._backend_kind,
         )
@@ -184,13 +184,13 @@ class SystemManager:
             return
         self._backend_kind = backend_kind
         self._backend_controller = self._create_backend_controller(backend_kind)
-        self._system_sync_manager = self._create_system_sync_manager(
+        self._system_synchronizer = self._create_system_synchronizer(
             self._backend_controller,
             self._backend_kind,
         )
         self._backend_settings = BackendSettings()
 
-    def _create_system_sync_manager(
+    def _create_system_synchronizer(
         self,
         backend_controller: SystemBackendController,
         backend_kind: BackendKind | None = None,
@@ -211,23 +211,23 @@ class SystemManager:
             return Quel3SystemSynchronizer(backend_controller=backend_controller)
         return None
 
-    def _resolve_system_sync_manager(
+    def _resolve_system_synchronizer(
         self,
     ) -> SystemSynchronizer | None:
         """Return active system synchronizer, refreshing built-in synchronizers when needed."""
-        system_sync_manager = self._system_sync_manager
-        if system_sync_manager is None:
+        system_synchronizer = self._system_synchronizer
+        if system_synchronizer is None:
             return None
-        bound_controller = getattr(system_sync_manager, "backend_controller", None)
+        bound_controller = getattr(system_synchronizer, "backend_controller", None)
         if bound_controller is None:
-            return cast(SystemSynchronizer, system_sync_manager)
+            return cast(SystemSynchronizer, system_synchronizer)
         if bound_controller is not self._backend_controller:
-            system_sync_manager = self._create_system_sync_manager(
+            system_synchronizer = self._create_system_synchronizer(
                 self._backend_controller,
                 self._backend_kind,
             )
-            self._system_sync_manager = system_sync_manager
-        return system_sync_manager
+            self._system_synchronizer = system_synchronizer
+        return system_synchronizer
 
     @property
     def rawdata_dir(self) -> Path | None:
@@ -563,31 +563,31 @@ This operation will overwrite the existing backend settings. Do you want to cont
 
     def _supports_box_settings_cache_sync(self) -> bool:
         """Return whether backend supports dump/cache synchronization APIs."""
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             return False
-        return system_sync_manager.supports_box_settings_cache_sync()
+        return system_synchronizer.supports_box_settings_cache_sync()
 
     def _supports_backend_settings_mutation(self) -> bool:
         """Return whether backend supports temporary backend-setting overrides."""
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             return False
-        return system_sync_manager.supports_backend_settings_mutation()
+        return system_synchronizer.supports_backend_settings_mutation()
 
     def _get_box_config_cache_snapshot(self) -> dict[str, dict]:
         """Return a snapshot of backend box-config cache when supported."""
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             return {}
-        return system_sync_manager.get_box_config_cache_snapshot()
+        return system_synchronizer.get_box_config_cache_snapshot()
 
     def _replace_box_config_cache(self, box_configs: Mapping[str, dict]) -> None:
         """Replace backend box-config cache when supported."""
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             return
-        system_sync_manager.replace_box_config_cache(dict(box_configs))
+        system_synchronizer.replace_box_config_cache(dict(box_configs))
 
     def _sync_experiment_system_to_hardware(
         self,
@@ -606,13 +606,13 @@ This operation will overwrite the existing backend settings. Do you want to cont
             Whether to configure boxes in parallel. If `None`, defaults to
             `True`.
         """
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             logger.debug(
-                "Skipping hardware sync because active backend has no system sync manager.",
+                "Skipping hardware sync because active backend has no system synchronizer.",
             )
             return
-        system_sync_manager.sync_experiment_system_to_hardware(
+        system_synchronizer.sync_experiment_system_to_hardware(
             boxes=boxes,
             parallel=parallel,
         )
@@ -643,10 +643,10 @@ This operation will overwrite the existing backend settings. Do you want to cont
         -----
         This method has no side effects on `SystemManager` state.
         """
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             return BackendSettings()
-        fetched = system_sync_manager.fetch_backend_settings_from_hardware(
+        fetched = system_synchronizer.fetch_backend_settings_from_hardware(
             experiment_system=self.experiment_system,
             box_ids=box_ids,
             parallel=parallel,
@@ -666,12 +666,12 @@ This operation will overwrite the existing backend settings. Do you want to cont
         backend_settings : BackendSettings | None, optional
             Settings to apply. If `None`, uses `self._backend_settings`.
         """
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             return
         if backend_settings is None:
             backend_settings = self._backend_settings
-        system_sync_manager.sync_backend_settings_to_device_controller(
+        system_synchronizer.sync_backend_settings_to_device_controller(
             backend_settings=backend_settings,
         )
 
@@ -692,26 +692,26 @@ This operation will overwrite the existing backend settings. Do you want to cont
         -----
         Only synchronization-target ports are applied.
         """
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             return
         if backend_settings is None:
             backend_settings = self._backend_settings
-        system_sync_manager.sync_backend_settings_to_experiment_system(
+        system_synchronizer.sync_backend_settings_to_experiment_system(
             experiment_system=self.experiment_system,
             backend_settings=backend_settings,
         )
 
     def _sync_experiment_system_to_backend_controller(self) -> None:
-        """Rebuild backend-local topology via backend-specific sync manager."""
-        system_sync_manager = self._resolve_system_sync_manager()
-        if system_sync_manager is None:
+        """Rebuild backend-local topology via backend-specific synchronizer."""
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
             logger.info(
-                "Skipping backend-controller topology sync because this backend has no system sync manager."
+                "Skipping backend-controller topology sync because this backend has no system synchronizer."
             )
             self._update_cached_state()
             return
-        system_sync_manager.sync_experiment_system_to_backend_controller(
+        system_synchronizer.sync_experiment_system_to_backend_controller(
             self.experiment_system
         )
         self._update_cached_state()

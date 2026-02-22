@@ -421,7 +421,7 @@ def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
         ) -> None:
             calls.append(([box.id for box in boxes], parallel))
 
-    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
@@ -451,7 +451,7 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
         ) -> None:
             calls.append(([box.id for box in boxes], parallel))
 
-    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
@@ -461,22 +461,22 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
     assert calls == [(["A", "B"], False)]
 
 
-def test_sync_experiment_system_to_hardware_skips_without_system_sync_manager(
+def test_sync_experiment_system_to_hardware_skips_without_system_synchronizer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given no system sync manager, when syncing hardware, then SystemManager returns safely."""
+    """Given no system synchronizer, when syncing hardware, then SystemManager returns safely."""
     manager = SystemManager.shared()
-    monkeypatch.setattr(manager, "_system_sync_manager", None)
+    monkeypatch.setattr(manager, "_system_synchronizer", None)
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=[FakeBox(id="A", ports=())],  # type: ignore[arg-type]
         parallel=True,
     )
 
 
-def test_sync_experiment_system_to_backend_controller_delegates_to_system_sync_manager(
+def test_sync_experiment_system_to_backend_controller_delegates_to_system_synchronizer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given sync manager, when loading config, then SystemManager forwards experiment-system sync."""
+    """Given synchronizer, when loading config, then SystemManager forwards experiment-system sync."""
     manager = SystemManager.shared()
     delegated: list[object] = []
     experiment_system = SimpleNamespace(hash=11)
@@ -488,7 +488,7 @@ def test_sync_experiment_system_to_backend_controller_delegates_to_system_sync_m
         ) -> None:
             delegated.append(resolved_experiment_system)
 
-    monkeypatch.setattr(manager, "_system_sync_manager", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
     monkeypatch.setattr(manager, "_backend_settings", BackendSettings())
 
