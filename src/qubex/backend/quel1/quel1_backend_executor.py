@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
+from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 
 from .quel1_backend_constants import (
     DEFAULT_CLOCK_HEALTH_CHECKS,
@@ -14,6 +17,13 @@ from .quel1_backend_constants import (
 )
 from .quel1_backend_controller import Quel1BackendController
 from .quel1_execution_payload import Quel1ExecutionPayload
+
+if TYPE_CHECKING:
+    from .compat.qubecalib_protocols import (
+        CapSampledSequenceProtocol,
+        GenSampledSequenceProtocol,
+        SequencerProtocol as Sequencer,
+    )
 
 
 class Quel1BackendExecutor:
@@ -58,7 +68,7 @@ class Quel1BackendExecutor:
             raise TypeError(
                 "Quel1BackendExecutor expects `Quel1ExecutionPayload` payload."
             )
-        sequencer = self._backend_controller.create_quel1_sequencer(
+        sequencer = self._create_quel1_sequencer(
             gen_sampled_sequence=payload.gen_sampled_sequence,
             cap_sampled_sequence=payload.cap_sampled_sequence,
             resource_map=payload.resource_map,
@@ -85,4 +95,24 @@ class Quel1BackendExecutor:
             enable_classification=payload.enable_classification,
             line_param0=payload.line_param0,
             line_param1=payload.line_param1,
+        )
+
+    def _create_quel1_sequencer(
+        self,
+        *,
+        gen_sampled_sequence: dict[str, GenSampledSequenceProtocol],
+        cap_sampled_sequence: dict[str, CapSampledSequenceProtocol],
+        resource_map: dict[str, list[dict]],
+        interval: int,
+    ) -> Sequencer:
+        """Create QuEL-1 sequencer instance from prepared execution payload."""
+        return Quel1Sequencer(
+            gen_sampled_sequence=gen_sampled_sequence,
+            cap_sampled_sequence=cap_sampled_sequence,
+            resource_map=resource_map,  # type: ignore[arg-type]
+            interval=interval,
+            sysdb=self._backend_controller.qubecalib.sysdb,
+            # Keep passing connected system for constructor compatibility across
+            # old/new driver packages.
+            driver=self._backend_controller.quel1system,
         )

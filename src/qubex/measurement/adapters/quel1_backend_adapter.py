@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -22,6 +22,14 @@ from qubex.measurement.measurement_constraint_profile import (
 from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+
+if TYPE_CHECKING:
+    import numpy.typing as npt
+
+    from qubex.backend.quel1.compat.qubecalib_protocols import (
+        CapSampledSequenceProtocol,
+        GenSampledSequenceProtocol,
+    )
 
 
 class Quel1MeasurementBackendAdapter:
@@ -238,7 +246,10 @@ class Quel1MeasurementBackendAdapter:
         self,
         *,
         schedule: MeasurementSchedule,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[
+        dict[str, GenSampledSequenceProtocol],
+        dict[str, CapSampledSequenceProtocol],
+    ]:
         """Create sampled sequences from measurement schedule."""
         pulse_schedule = schedule.pulse_schedule
         capture_schedule = schedule.capture_schedule
@@ -292,22 +303,18 @@ class Quel1MeasurementBackendAdapter:
                 offset = (rng.start + delay) * self.sampling_period
                 seq[rng] *= np.exp(1j * omega * offset)
 
-        gen_sequences: dict[str, Any] = {}
+        gen_sequences: dict[str, GenSampledSequenceProtocol] = {}
         for target, waveform in sampled_sequences.items():
             if self._experiment_system.get_target(target).sideband != "L":
                 waveform = np.conj(waveform)
-            gen_sequences[target] = (
-                self._backend_controller.create_gen_sampled_sequence(
-                    target_name=target,
-                    modulation_frequency=self._experiment_system.get_awg_frequency(
-                        target
-                    ),
-                    real=np.real(waveform),
-                    imag=np.imag(waveform),
-                )
+            gen_sequences[target] = self._create_gen_sampled_sequence(
+                target_name=target,
+                modulation_frequency=self._experiment_system.get_awg_frequency(target),
+                real=np.real(waveform),
+                imag=np.imag(waveform),
             )
 
-        cap_sequences: dict[str, Any] = {}
+        cap_sequences: dict[str, CapSampledSequenceProtocol] = {}
         for target, captures in capture_schedule.channels.items():
             sorted_captures = sorted(captures, key=lambda c: c.start_time)
             if not sorted_captures:
@@ -332,18 +339,80 @@ class Quel1MeasurementBackendAdapter:
                     )
                 capture_slots.append((capture_range_length, post_blank_length))
 
-            cap_sequences[target] = (
-                self._backend_controller.create_cap_sampled_sequence(
-                    target_name=target,
-                    modulation_frequency=self._experiment_system.get_awg_frequency(
-                        target
-                    ),
-                    capture_delay=capture_delay_sample[target],
-                    capture_slots=capture_slots,
-                )
+            cap_sequences[target] = self._create_cap_sampled_sequence(
+                target_name=target,
+                modulation_frequency=self._experiment_system.get_awg_frequency(target),
+                capture_delay=capture_delay_sample[target],
+                capture_slots=capture_slots,
             )
 
         return gen_sequences, cap_sequences
+
+    def _create_gen_sampled_sequence(
+        self,
+        *,
+        target_name: str,
+        real: npt.ArrayLike,
+        imag: npt.ArrayLike,
+        modulation_frequency: float,
+    ) -> GenSampledSequenceProtocol:
+        """Create one generation sampled sequence for QuEL-1 payload."""
+        driver = self._backend_controller.driver
+        return driver.GenSampledSequence(
+            target_name=target_name,
+            prev_blank=0,
+            post_blank=None,
+            original_prev_blank=0,
+            original_post_blank=None,
+            modulation_frequency=modulation_frequency,
+            sub_sequences=[
+                driver.GenSampledSubSequence(
+                    real=real,
+                    imag=imag,
+                    repeats=1,
+                    post_blank=None,
+                    original_post_blank=None,
+                )
+            ],
+        )
+
+    def _create_cap_sampled_sequence(
+        self,
+        *,
+        target_name: str,
+        modulation_frequency: float,
+        capture_delay: int,
+        capture_slots: list[tuple[int, int]],
+    ) -> CapSampledSequenceProtocol:
+        """Create one capture sampled sequence for QuEL-1 payload."""
+        driver = self._backend_controller.driver
+        cap_sub_sequence = driver.CapSampledSubSequence(
+            capture_slots=[],
+            repeats=None,
+            prev_blank=capture_delay,
+            post_blank=None,
+            original_prev_blank=0,
+            original_post_blank=None,
+        )
+        for duration, post_blank in capture_slots:
+            cap_sub_sequence.capture_slots.append(
+                driver.CaptureSlots(
+                    duration=duration,
+                    post_blank=post_blank,
+                    original_duration=None,  # type: ignore[arg-type]
+                    original_post_blank=None,  # type: ignore[arg-type]
+                )
+            )
+        return driver.CapSampledSequence(
+            target_name=target_name,
+            repeats=None,
+            prev_blank=0,
+            post_blank=None,
+            original_prev_blank=0,
+            original_post_blank=None,
+            modulation_frequency=modulation_frequency,
+            sub_sequences=[cap_sub_sequence],
+        )
 
     @staticmethod
     def _is_multiple(

@@ -189,9 +189,6 @@ def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
             self.targets = targets
             return {}
 
-        def create_quel1_sequencer(self, **_: Any) -> object:
-            return object()
-
     backend_controller = _BackendController()
     adapter = cast(
         Any,
