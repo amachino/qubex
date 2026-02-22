@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
@@ -114,7 +115,7 @@ class MeasurementScheduleRunner:
                 return Quel3BackendExecutor(backend_controller=backend_controller)
             return _Quel3BackendExecutorPlaceholder()
         return Quel1BackendExecutor(
-            backend_controller=backend_controller,
+            backend_controller=cast(Any, backend_controller),
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
         )
@@ -145,7 +146,7 @@ class MeasurementScheduleRunner:
                 constraint_profile=constraint_profile,
             )
         return Quel1MeasurementBackendAdapter(
-            backend_controller=backend_controller,
+            backend_controller=cast(Any, backend_controller),
             experiment_system=experiment_system,
             constraint_profile=constraint_profile,
         )

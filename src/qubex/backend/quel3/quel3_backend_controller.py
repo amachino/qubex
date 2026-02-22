@@ -13,6 +13,10 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
+from qubex.backend.backend_executor import (
+    BackendExecutionRequest,
+    BackendExecutionResult,
+)
 from qubex.backend.quel1 import Quel1BackendController
 
 from .quel3_execution_payload import Quel3ExecutionPayload
@@ -90,6 +94,16 @@ class Quel3BackendController(Quel1BackendController):
     def resolve_instrument_alias(self, target: str) -> str:
         """Resolve quelware instrument alias for a measurement target."""
         return self._alias_map.get(target, target)
+
+    def execute(
+        self,
+        *,
+        request: BackendExecutionRequest,
+    ) -> BackendExecutionResult:
+        """Execute a backend request using QuEL-3 execution defaults."""
+        from .quel3_backend_executor import Quel3BackendExecutor
+
+        return Quel3BackendExecutor(backend_controller=self).execute(request=request)
 
     def execute_measurement(self, *, payload: object) -> object:
         """

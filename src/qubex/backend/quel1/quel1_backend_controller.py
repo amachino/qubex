@@ -14,6 +14,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from qubex.backend.backend_executor import (
+    BackendExecutionRequest,
+    BackendExecutionResult,
+)
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 
 from .execution import SequencerExecutionEngine
@@ -756,6 +760,16 @@ class Quel1BackendController:
         self._boxpool = None
         self._cap_resource_map = None
         self._gen_resource_map = None
+
+    def execute(
+        self,
+        *,
+        request: BackendExecutionRequest,
+    ) -> BackendExecutionResult:
+        """Execute a backend request using QuEL-1 execution defaults."""
+        from .quel1_backend_executor import Quel1BackendExecutor
+
+        return Quel1BackendExecutor(backend_controller=self).execute(request=request)
 
     def get_box(self, box_name: str) -> Quel1Box:
         """

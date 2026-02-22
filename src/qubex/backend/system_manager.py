@@ -22,7 +22,10 @@ from qubex.constants import (
 from qubex.typing import ConfigurationMode
 
 from .control_system import Box, CapPort, GenPort, PortType
-from .controller_types import BackendController, BackendKind
+from .controller_types import (
+    BackendKind,
+    SystemBackendController,
+)
 from .experiment_system import ExperimentSystem
 from .parallel_box_executor import run_parallel_each, run_parallel_map
 from .quel1 import Quel1BackendController
@@ -146,7 +149,9 @@ class SystemManager:
         self._initialized = True
 
     @staticmethod
-    def _create_backend_controller(backend_kind: BackendKind) -> BackendController:
+    def _create_backend_controller(
+        backend_kind: BackendKind,
+    ) -> SystemBackendController:
         """Create a backend controller instance for one experiment session."""
         if backend_kind == "quel3":
             return Quel3BackendController()
@@ -199,13 +204,13 @@ class SystemManager:
         return self._experiment_system
 
     @property
-    def backend_controller(self) -> BackendController:
+    def backend_controller(self) -> SystemBackendController:
         """Return the backend controller."""
         return self._backend_controller
 
     @property
     @deprecated("Use `backend_controller` property instead.")
-    def device_controller(self) -> BackendController:
+    def device_controller(self) -> SystemBackendController:
         """Backward-compatible alias of `backend_controller`."""
         return self.backend_controller
 
