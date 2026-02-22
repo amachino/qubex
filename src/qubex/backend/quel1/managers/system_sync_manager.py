@@ -105,12 +105,11 @@ class Quel1SystemSyncManager:
 
     def clear_cache(self) -> None:
         """Clear cached box configuration data."""
-        boxpool = self._runtime_context.boxpool_or_none()
-        if boxpool is not None:
-            boxpool._box_config_cache.clear()
-        quel1system = self._runtime_context.quel1system_or_none()
-        if quel1system is None:
+        if not self._runtime_context.is_connected:
             return
+        boxpool = self._runtime_context.boxpool
+        boxpool._box_config_cache.clear()
+        quel1system = self._runtime_context.quel1system
         quel1system.config_cache.clear()
         quel1system.config_fetched_at = None
 
@@ -119,11 +118,7 @@ class Quel1SystemSyncManager:
         box_configs: dict[str, dict[str, Any]],
     ) -> None:
         """Replace the full box-config cache snapshot."""
-        boxpool = self._runtime_context.boxpool_or_none()
-        if boxpool is None:
-            if box_configs:
-                raise ValueError("Boxes not connected. Call connect() method first.")
-            return
+        boxpool = self._runtime_context.boxpool
         boxpool._box_config_cache = deepcopy(box_configs)
         self._replace_quel1system_box_cache(box_configs)
 
@@ -132,11 +127,7 @@ class Quel1SystemSyncManager:
         box_configs: dict[str, dict[str, Any]],
     ) -> None:
         """Update box-config cache entries keyed by box name."""
-        boxpool = self._runtime_context.boxpool_or_none()
-        if boxpool is None:
-            if box_configs:
-                raise ValueError("Boxes not connected. Call connect() method first.")
-            return
+        boxpool = self._runtime_context.boxpool
         for box_name, box_config in box_configs.items():
             boxpool._box_config_cache[box_name] = deepcopy(box_config)
         self._update_quel1system_box_cache(box_configs)
@@ -192,9 +183,7 @@ class Quel1SystemSyncManager:
         box_configs: dict[str, dict[str, Any]],
     ) -> None:
         """Replace the Quel1System-side box cache."""
-        quel1system = self._runtime_context.quel1system_or_none()
-        if quel1system is None:
-            return
+        quel1system = self._runtime_context.quel1system
         quel1system.config_cache.clear()
         for box_name, box_config in box_configs.items():
             quel1system.config_cache[box_name] = deepcopy(box_config)
@@ -207,9 +196,7 @@ class Quel1SystemSyncManager:
         box_configs: dict[str, dict[str, Any]],
     ) -> None:
         """Update entries in the Quel1System-side box cache."""
-        quel1system = self._runtime_context.quel1system_or_none()
-        if quel1system is None:
-            return
+        quel1system = self._runtime_context.quel1system
         for box_name, box_config in box_configs.items():
             quel1system.config_cache[box_name] = deepcopy(box_config)
         if quel1system.config_cache:

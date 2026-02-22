@@ -158,12 +158,9 @@ class Quel1BackendController(BackendController):
     @property
     def box_config(self) -> dict[str, Any]:
         """Get the box configuration."""
-        boxpool = self._connection_manager.boxpool
-        if boxpool is None:
-            box_config = {}
-        else:
-            box_config = boxpool._box_config_cache
-        return box_config
+        if not self.is_connected:
+            return {}
+        return self._connection_manager.boxpool._box_config_cache
 
     @property
     def boxpool(self) -> BoxPool:
@@ -175,10 +172,7 @@ class Quel1BackendController(BackendController):
         BoxPool
             The boxpool.
         """
-        boxpool = self._connection_manager.boxpool
-        if boxpool is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return boxpool
+        return self._connection_manager.boxpool
 
     @property
     def quel1system(self) -> Quel1System:
@@ -190,10 +184,7 @@ class Quel1BackendController(BackendController):
         Quel1System
             The Quel1 system.
         """
-        quel1system = self._connection_manager.quel1system
-        if quel1system is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return quel1system
+        return self._connection_manager.quel1system
 
     @property
     def cap_resource_map(self) -> dict[str, dict]:
@@ -205,10 +196,7 @@ class Quel1BackendController(BackendController):
         dict[str, dict]
             The cap resource map.
         """
-        cap_resource_map = self._connection_manager.cap_resource_map
-        if cap_resource_map is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return cap_resource_map
+        return self._connection_manager.cap_resource_map
 
     @property
     def gen_resource_map(self) -> dict[str, dict]:
@@ -220,10 +208,7 @@ class Quel1BackendController(BackendController):
         dict[str, dict]
             The gen resource map.
         """
-        gen_resource_map = self._connection_manager.gen_resource_map
-        if gen_resource_map is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return gen_resource_map
+        return self._connection_manager.gen_resource_map
 
     def connect(
         self,
@@ -918,8 +903,6 @@ class Quel1BackendController(BackendController):
     ) -> dict[str, dict]:
         """Create a capture or generator resource map from configuration."""
         boxpool = self._connection_manager.boxpool
-        if boxpool is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
         db = self.qubecalib.system_config_database
         target_settings = db._target_settings
         box_settings = db._box_settings

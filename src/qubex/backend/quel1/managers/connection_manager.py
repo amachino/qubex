@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING, Literal
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_EXECUTION_MODE
-from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContext
+from qubex.backend.quel1.quel1_runtime_context import (
+    NOT_CONNECTED_ERROR_MESSAGE,
+    Quel1RuntimeContext,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,24 +60,36 @@ class Quel1ConnectionManager:
         return self._runtime_context.is_connected
 
     @property
-    def boxpool(self) -> BoxPool | None:
-        """Return connected boxpool when available."""
-        return self._runtime_context.boxpool_or_none()
+    def boxpool(self) -> BoxPool:
+        """Return connected boxpool."""
+        try:
+            return self._runtime_context.boxpool
+        except ValueError as exc:
+            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
 
     @property
-    def quel1system(self) -> Quel1System | None:
-        """Return connected Quel1System when available."""
-        return self._runtime_context.quel1system_or_none()
+    def quel1system(self) -> Quel1System:
+        """Return connected Quel1System."""
+        try:
+            return self._runtime_context.quel1system
+        except ValueError as exc:
+            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
 
     @property
-    def cap_resource_map(self) -> dict[str, dict] | None:
-        """Return capture resource map when available."""
-        return self._runtime_context.cap_resource_map_or_none()
+    def cap_resource_map(self) -> dict[str, dict]:
+        """Return capture resource map."""
+        try:
+            return self._runtime_context.cap_resource_map
+        except ValueError as exc:
+            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
 
     @property
-    def gen_resource_map(self) -> dict[str, dict] | None:
-        """Return generator resource map when available."""
-        return self._runtime_context.gen_resource_map_or_none()
+    def gen_resource_map(self) -> dict[str, dict]:
+        """Return generator resource map."""
+        try:
+            return self._runtime_context.gen_resource_map
+        except ValueError as exc:
+            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
 
     def set_connected_state(
         self,
@@ -146,6 +161,8 @@ class Quel1ConnectionManager:
 
     def disconnect(self) -> None:
         """Disconnect all currently held resources."""
+        if not self.is_connected:
+            return
         for resource in self._collect_held_resources():
             self._disconnect_resource_safely(resource)
         self.clear_connected_state()
@@ -157,8 +174,7 @@ class Quel1ConnectionManager:
         parallel: bool | None,
     ) -> None:
         """Initialize AWG and capture units for selected boxes."""
-        if not self.is_connected:
-            raise ValueError("Boxes not connected. Call connect() method first.")
+        self._require_connected()
         if isinstance(box_names, str):
             box_name_list = [box_names]
         else:
@@ -398,9 +414,6 @@ class Quel1ConnectionManager:
     def _create_quel1system_from_boxpool(self, box_names: list[str]) -> Quel1System:
         """Build a Quel1System from already-connected boxpool entries."""
         boxpool = self.boxpool
-        if boxpool is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-
         qubecalib = self._runtime_context.qubecalib
         db = qubecalib.system_config_database
         clockmaster_setting = db._clockmaster_setting
@@ -423,9 +436,6 @@ class Quel1ConnectionManager:
     ) -> dict[str, dict]:
         """Create capture or generator resource map from configuration."""
         boxpool = self.boxpool
-        if boxpool is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-
         db = self._runtime_context.qubecalib.system_config_database
         target_settings = db._target_settings
         box_settings = db._box_settings
@@ -460,7 +470,7 @@ class Quel1ConnectionManager:
         """Initialize AWG and capture units for one box."""
         self._runtime_context.validate_box_availability(box_name)
         boxpool = self.boxpool
-        if boxpool is None or box_name not in boxpool._boxes:
+        if box_name not in boxpool._boxes:
             raise ValueError(
                 f"Box {box_name} is not connected. Call connect() method first."
             )
@@ -476,7 +486,7 @@ class Quel1ConnectionManager:
     ) -> Quel1Box:
         """Return existing pooled box or create one from system configuration."""
         boxpool = self.boxpool
-        if boxpool is not None and box_name in boxpool._boxes:
+        if box_name in boxpool._boxes:
             return boxpool._boxes[box_name][0]
         return self.create_box(box_name=box_name, reconnect=reconnect)
 
@@ -510,27 +520,27 @@ class Quel1ConnectionManager:
         """Collect clockmaster and box objects currently held by runtime state."""
         resources: list[object] = []
         seen: set[int] = set()
+        if not self.is_connected:
+            return resources
         system = self.quel1system
-        if system is not None:
-            self._append_resource_if_new(
-                resources, seen, getattr(system, "_clockmaster", None)
-            )
-            boxes = getattr(system, "boxes", None)
-            if isinstance(boxes, Mapping):
-                for box in boxes.values():
-                    self._append_resource_if_new(resources, seen, box)
+        self._append_resource_if_new(
+            resources, seen, getattr(system, "_clockmaster", None)
+        )
+        boxes = getattr(system, "boxes", None)
+        if isinstance(boxes, Mapping):
+            for box in boxes.values():
+                self._append_resource_if_new(resources, seen, box)
 
         boxpool = self.boxpool
-        if boxpool is not None:
-            self._append_resource_if_new(
-                resources,
-                seen,
-                getattr(boxpool, "_clock_master", None),
-            )
-            pooled_boxes = getattr(boxpool, "_boxes", {})
-            if isinstance(pooled_boxes, Mapping):
-                for box, *_ in pooled_boxes.values():
-                    self._append_resource_if_new(resources, seen, box)
+        self._append_resource_if_new(
+            resources,
+            seen,
+            getattr(boxpool, "_clock_master", None),
+        )
+        pooled_boxes = getattr(boxpool, "_boxes", {})
+        if isinstance(pooled_boxes, Mapping):
+            for box, *_ in pooled_boxes.values():
+                self._append_resource_if_new(resources, seen, box)
         return resources
 
     def _append_resource_if_new(
@@ -600,3 +610,8 @@ class Quel1ConnectionManager:
     def _log_relinkup_error(box_name: str, exc: BaseException) -> None:
         """Log a relinkup error for one box."""
         logger.exception(f"{box_name:5} : Error during relinkup", exc_info=exc)
+
+    def _require_connected(self) -> None:
+        """Raise a consistent error when runtime is not connected."""
+        if not self.is_connected:
+            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE)

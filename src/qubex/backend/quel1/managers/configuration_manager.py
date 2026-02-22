@@ -253,8 +253,11 @@ class Quel1ConfigurationManager:
     ) -> Quel1Box:
         """Resolve a box from runtime context or create it lazily."""
         self._runtime_context.validate_box_availability(box_name)
-        boxpool = self._runtime_context.boxpool_or_none()
-        if boxpool is not None and box_name in boxpool._boxes:
+        if not self._runtime_context.is_connected:
+            db = self._runtime_context.qubecalib.system_config_database
+            return db.create_box(box_name, reconnect=reconnect)
+        boxpool = self._runtime_context.boxpool
+        if box_name in boxpool._boxes:
             return boxpool._boxes[box_name][0]
         db = self._runtime_context.qubecalib.system_config_database
         return db.create_box(box_name, reconnect=reconnect)

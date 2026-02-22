@@ -7,6 +7,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import pytest
+
 from qubex.backend.quel1.compat.qubecalib_protocols import (
     BoxPoolProtocol,
     Quel1SystemProtocol,
@@ -161,7 +163,11 @@ def test_disconnect_clears_connected_runtime_state() -> None:
 
     assert disconnected == resources
     assert manager.is_connected is False
-    assert manager.boxpool is None
-    assert manager.quel1system is None
-    assert manager.cap_resource_map is None
-    assert manager.gen_resource_map is None
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = manager.boxpool
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = manager.quel1system
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = manager.cap_resource_map
+    with pytest.raises(ValueError, match="Boxes not connected"):
+        _ = manager.gen_resource_map

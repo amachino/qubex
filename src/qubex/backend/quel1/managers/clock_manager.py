@@ -73,9 +73,9 @@ class Quel1ClockManager:
 
     def _get_connected_clockmaster(self) -> QuBEMasterClientProtocol | None:
         """Return clockmaster from connected runtime system when available."""
-        quel1system = self._runtime_context.quel1system_or_none()
-        if quel1system is None:
+        if not self._runtime_context.is_connected:
             return None
+        quel1system = self._runtime_context.quel1system
         return quel1system._clockmaster
 
     def _resolve_box_sss_ip(self, box_name: str) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 from .compat.driver_loader import load_quel1_driver
 
@@ -15,6 +15,11 @@ if TYPE_CHECKING:
         QubeCalibProtocol as QubeCalib,
         Quel1SystemProtocol as Quel1System,
     )
+
+_TConnectedResource = TypeVar("_TConnectedResource")
+
+
+NOT_CONNECTED_ERROR_MESSAGE = "Boxes not connected. Call connect() method first."
 
 
 @runtime_checkable
@@ -73,22 +78,6 @@ class Quel1RuntimeContextReader(Protocol):
     @property
     def gen_resource_map(self) -> dict[str, dict]:
         """Return generator resource map."""
-        ...
-
-    def boxpool_or_none(self) -> BoxPool | None:
-        """Return connected boxpool when available."""
-        ...
-
-    def quel1system_or_none(self) -> Quel1System | None:
-        """Return connected Quel1System when available."""
-        ...
-
-    def cap_resource_map_or_none(self) -> dict[str, dict] | None:
-        """Return capture resource map when available."""
-        ...
-
-    def gen_resource_map_or_none(self) -> dict[str, dict] | None:
-        """Return generator resource map when available."""
         ...
 
 
@@ -173,50 +162,22 @@ class Quel1RuntimeContext:
     @property
     def boxpool(self) -> BoxPool:
         """Return connected boxpool."""
-        boxpool = self._boxpool
-        if boxpool is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return boxpool
+        return self._require_connected_resource(self._boxpool)
 
     @property
     def quel1system(self) -> Quel1System:
         """Return connected Quel1System."""
-        quel1system = self._quel1system
-        if quel1system is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return quel1system
+        return self._require_connected_resource(self._quel1system)
 
     @property
     def cap_resource_map(self) -> dict[str, dict]:
         """Return capture resource map."""
-        cap_resource_map = self._cap_resource_map
-        if cap_resource_map is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return cap_resource_map
+        return self._require_connected_resource(self._cap_resource_map)
 
     @property
     def gen_resource_map(self) -> dict[str, dict]:
         """Return generator resource map."""
-        gen_resource_map = self._gen_resource_map
-        if gen_resource_map is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return gen_resource_map
-
-    def boxpool_or_none(self) -> BoxPool | None:
-        """Return connected boxpool when available."""
-        return self._boxpool
-
-    def quel1system_or_none(self) -> Quel1System | None:
-        """Return connected Quel1System when available."""
-        return self._quel1system
-
-    def cap_resource_map_or_none(self) -> dict[str, dict] | None:
-        """Return capture resource map when available."""
-        return self._cap_resource_map
-
-    def gen_resource_map_or_none(self) -> dict[str, dict] | None:
-        """Return generator resource map when available."""
-        return self._gen_resource_map
+        return self._require_connected_resource(self._gen_resource_map)
 
     def set_connected_state(
         self,
@@ -276,6 +237,15 @@ class Quel1RuntimeContext:
             cap_resource_map=None,
             gen_resource_map=None,
         )
+
+    @staticmethod
+    def _require_connected_resource(
+        resource: _TConnectedResource | None,
+    ) -> _TConnectedResource:
+        """Return connected resource or raise a consistent error."""
+        if resource is None:
+            raise ValueError(NOT_CONNECTED_ERROR_MESSAGE)
+        return resource
 
     def validate_box_availability(self, box_name: str) -> None:
         """Validate that the target box exists in current system configuration."""
