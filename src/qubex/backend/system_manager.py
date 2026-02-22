@@ -350,12 +350,18 @@ class SystemManager:
             Whether to fetch per-box settings in parallel. If `None`, defaults
             to `True`.
         """
+        if not self._supports_box_settings_cache_sync():
+            logger.info(
+                "Skipping pull because this backend does not expose box-settings cache APIs."
+            )
+            self._update_cached_state()
+            return
         fetched_backend_settings = self._fetch_backend_settings_from_hardware(
             box_ids=box_ids,
             parallel=parallel,
         )
         previous_backend_settings = BackendSettings(self.backend_settings)
-        previous_box_cache = self.backend_controller.get_box_config_cache()
+        previous_box_cache = self._get_box_config_cache_snapshot()
         merged_backend_settings = self._merge_backend_settings(
             base_settings=previous_backend_settings,
             patch_settings=fetched_backend_settings,
@@ -370,7 +376,7 @@ class SystemManager:
             )
         except Exception:
             self._set_backend_settings(previous_backend_settings)
-            self.backend_controller.replace_box_config_cache(previous_box_cache)
+            self._replace_box_config_cache(previous_box_cache)
             raise
         self._update_cached_state()
 
@@ -398,6 +404,11 @@ class SystemManager:
             Whether to configure selected boxes in parallel. If `None`,
             defaults to `True`.
         """
+        if not self._supports_box_settings_cache_sync():
+            logger.info(
+                "Skipping push because this backend does not expose box-settings cache APIs."
+            )
+            return
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         boxes_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
 
@@ -429,7 +440,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             parallel=parallel,
         )
         previous_backend_settings = BackendSettings(self.backend_settings)
-        previous_box_cache = self.backend_controller.get_box_config_cache()
+        previous_box_cache = self._get_box_config_cache_snapshot()
         merged_backend_settings = self._merge_backend_settings(
             base_settings=previous_backend_settings,
             patch_settings=fetched_backend_settings,
@@ -441,7 +452,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             )
         except Exception:
             self._set_backend_settings(previous_backend_settings)
-            self.backend_controller.replace_box_config_cache(previous_box_cache)
+            self._replace_box_config_cache(previous_box_cache)
             raise
         self._update_cached_state()
 
@@ -501,6 +512,56 @@ This operation will overwrite the existing backend settings. Do you want to cont
     def _set_backend_settings(self, backend_settings: Mapping[str, dict]) -> None:
         """Replace cached backend settings with normalized `BackendSettings`."""
         self._backend_settings = BackendSettings(backend_settings)
+
+    @staticmethod
+    def _supports_methods(controller: object, method_names: Sequence[str]) -> bool:
+        """Return whether all named methods are available on one controller."""
+        return all(
+            callable(getattr(controller, method_name, None))
+            for method_name in method_names
+        )
+
+    def _supports_box_settings_cache_sync(self) -> bool:
+        """Return whether backend supports dump/cache synchronization APIs."""
+        return self._supports_methods(
+            self.backend_controller,
+            (
+                "dump_box",
+                "get_box_config_cache",
+                "replace_box_config_cache",
+                "update_box_config_cache",
+            ),
+        )
+
+    def _supports_backend_settings_mutation(self) -> bool:
+        """Return whether backend supports temporary backend-setting overrides."""
+        return self._supports_methods(
+            self.backend_controller,
+            (
+                "get_box_config_cache",
+                "replace_box_config_cache",
+                "update_box_config_cache",
+                "config_port",
+                "config_channel",
+                "config_runit",
+                "initialize_awg_and_capunits",
+            ),
+        )
+
+    def _get_box_config_cache_snapshot(self) -> dict[str, dict]:
+        """Return a snapshot of backend box-config cache when supported."""
+        get_cache = getattr(self.backend_controller, "get_box_config_cache", None)
+        if not callable(get_cache):
+            return {}
+        return cast(dict[str, dict], get_cache())
+
+    def _replace_box_config_cache(self, box_configs: Mapping[str, dict]) -> None:
+        """Replace backend box-config cache when supported."""
+        replace_cache = getattr(
+            self.backend_controller, "replace_box_config_cache", None
+        )
+        if callable(replace_cache):
+            replace_cache(dict(box_configs))
 
     def _sync_experiment_system_to_hardware(
         self,
@@ -610,6 +671,8 @@ This operation will overwrite the existing backend settings. Do you want to cont
         -----
         This method has no side effects on `SystemManager` state.
         """
+        if not self._supports_box_settings_cache_sync():
+            return BackendSettings()
         if parallel is None:
             parallel = True
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
@@ -655,9 +718,13 @@ This operation will overwrite the existing backend settings. Do you want to cont
         backend_settings : BackendSettings | None, optional
             Settings to apply. If `None`, uses `self._backend_settings`.
         """
+        if not self._supports_box_settings_cache_sync():
+            return
         if backend_settings is None:
             backend_settings = self._backend_settings
-        self.backend_controller.update_box_config_cache(backend_settings)
+        update_cache = getattr(self.backend_controller, "update_box_config_cache", None)
+        if callable(update_cache):
+            update_cache(backend_settings)
 
     def _sync_backend_settings_to_experiment_system(
         self,
@@ -784,6 +851,25 @@ This operation will overwrite the existing backend settings. Do you want to cont
 
     def _sync_experiment_system_to_backend_controller(self) -> None:
         """Rebuild backend-controller model objects from experiment-system state."""
+        if not self._supports_methods(
+            self.backend_controller,
+            (
+                "define_clockmaster",
+                "set_box_options",
+                "define_box",
+                "define_port",
+                "define_channel",
+                "add_channel_target_relation",
+                "define_target",
+                "clear_command_queue",
+                "clear_cache",
+            ),
+        ):
+            logger.info(
+                "Skipping backend-controller topology sync because this backend does not expose definition APIs."
+            )
+            self._update_cached_state()
+            return
         experiment_system = self.experiment_system
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
@@ -873,12 +959,17 @@ This operation will overwrite the existing backend settings. Do you want to cont
             if target.label in target_frequencies
         }
         self.experiment_system.modify_target_frequencies(target_frequencies)
-        self.backend_controller.modify_target_frequencies(target_frequencies)
+        modify_target_frequencies = getattr(
+            self.backend_controller, "modify_target_frequencies", None
+        )
+        if callable(modify_target_frequencies):
+            modify_target_frequencies(target_frequencies)
         try:
             yield
         finally:
             self.experiment_system.modify_target_frequencies(original_frequencies)
-            self.backend_controller.modify_target_frequencies(original_frequencies)
+            if callable(modify_target_frequencies):
+                modify_target_frequencies(original_frequencies)
 
     @contextmanager
     def modified_backend_settings(
@@ -913,10 +1004,14 @@ This operation will overwrite the existing backend settings. Do you want to cont
         ... ):
         ...     ...
         """
+        if not self._supports_backend_settings_mutation():
+            raise NotImplementedError(
+                "Active backend does not support backend-settings cache operations."
+            )
         target = self.experiment_system.get_target(label)
         channel = target.channel
         port = channel.port
-        box_cache = self.backend_controller.get_box_config_cache()
+        box_cache = self._get_box_config_cache_snapshot()
 
         original_lo_freq = port.lo_freq
         original_cnco_freq = port.cnco_freq
@@ -939,9 +1034,9 @@ This operation will overwrite the existing backend settings. Do you want to cont
         port_cache["lo_freq"] = lo_freq
         port_cache["cnco_freq"] = cnco_freq
         port_cache["channels"][channel.number]["fnco_freq"] = fnco_freq
-        self.backend_controller.update_box_config_cache(
-            {port.box_id: box_cache[port.box_id]}
-        )
+        update_cache = getattr(self.backend_controller, "update_box_config_cache", None)
+        if callable(update_cache):
+            update_cache({port.box_id: box_cache[port.box_id]})
         initialized_box_ids = [port.box_id]
 
         if target.is_read:
@@ -963,9 +1058,8 @@ This operation will overwrite the existing backend settings. Do you want to cont
             cap_port_cache["lo_freq"] = lo_freq
             cap_port_cache["cnco_freq"] = cnco_freq
             cap_port_cache["runits"][cap_channel.number]["fnco_freq"] = fnco_freq
-            self.backend_controller.update_box_config_cache(
-                {cap_port.box_id: box_cache[cap_port.box_id]}
-            )
+            if callable(update_cache):
+                update_cache({cap_port.box_id: box_cache[cap_port.box_id]})
             if cap_port.box_id not in initialized_box_ids:
                 initialized_box_ids.append(cap_port.box_id)
 
@@ -1014,7 +1108,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 )
 
             # restore the original box config
-            self.backend_controller.replace_box_config_cache(original_box_cache)
+            self._replace_box_config_cache(original_box_cache)
 
     @deprecated("This method will be removed in future versions.")
     @contextmanager

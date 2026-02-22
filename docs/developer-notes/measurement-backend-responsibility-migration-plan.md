@@ -22,7 +22,6 @@ Migrate the current implementation to the target architecture defined in `measur
   - Step 5
   - Step 6
   - Step 7A
-- In progress
   - Step 7B
 - Remaining
   - Step 8
@@ -179,16 +178,26 @@ Migrate the current implementation to the target architecture defined in `measur
   - Keep QuEL-1 and QuEL-3 controller architecture consistent.
 - Main changes
   - Remove `Quel3BackendController` class inheritance from
-    `Quel1BackendController` and switch to explicit delegation/composition
-    while preserving the same control-plane behavior.
+    `Quel1BackendController` and switch to explicit manager delegation.
+  - Remove the QuEL-1 `control_plane` concept from QuEL-3 path.
+  - Implement QuEL-3 connection/execution natively through
+    `quelware-client`.
   - Add `src/qubex/backend/quel3/managers/connection_manager.py`.
   - Add `src/qubex/backend/quel3/managers/clock_manager.py`.
   - Add `src/qubex/backend/quel3/managers/execution_manager.py`.
+  - Add `src/qubex/backend/quel3/managers/configuration_manager.py`.
+  - Add `src/qubex/backend/quel3/managers/sequencer_compiler.py`.
+  - Add `src/qubex/backend/quel3/quel3_runtime_context.py`.
   - Update `Quel3BackendController` to delegate to managers and implement shared `execute(...)` contract.
+  - Remove standalone `src/qubex/backend/quel3/quel3_sequencer_compiler.py` and absorb compiler into manager package.
 - Behavior-preserving guardrails
-  - Keep `execute_measurement(...)` compatibility path temporarily, then route main path through `execute(...)`.
+  - Keep `execute_measurement(...)` path and route measurement boundary through `execute(...)`.
+  - Keep QuEL-1-only helper APIs on QuEL-3 as explicit no-op or unsupported stubs where required for shared utility typing.
+  - Keep QuEL-3 without `box_config` capability.
 - Verification
   - `uv run pytest tests/backend/test_quel3_backend_controller.py`
+  - `uv run pytest tests/backend/test_quel3_sequencer_compiler.py`
+  - `uv run pytest tests/measurement/test_quel3_backend_executor.py`
   - `uv run pytest tests/measurement/test_quel3_measurement_backend_adapter.py`
 
 ### Step 8: Lock `MeasurementSessionService` and `SystemManager` collaboration boundary per policy

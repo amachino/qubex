@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from qubex.backend.quel3.quel3_sequencer_compiler import Quel3SequencerCompiler
+from qubex.backend.quel3.managers.sequencer_compiler import Quel3SequencerCompiler
 from qubex.measurement.adapters import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,

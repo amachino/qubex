@@ -1,5 +1,6 @@
 """QuEL-3 specific backend components."""
 
+from .managers.sequencer_compiler import Quel3SequencerCompiler
 from .quel3_backend_controller import Quel3BackendController
 from .quel3_backend_executor import Quel3BackendExecutor
 from .quel3_execution_payload import (
@@ -9,7 +10,6 @@ from .quel3_execution_payload import (
     Quel3WaveformDefinition,
     Quel3WaveformEvent,
 )
-from .quel3_sequencer_compiler import Quel3SequencerCompiler
 
 __all__ = [
     "Quel3BackendController",

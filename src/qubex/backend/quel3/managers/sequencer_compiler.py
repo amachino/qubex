@@ -7,7 +7,7 @@ from typing import Protocol, TypeVar
 
 import numpy.typing as npt
 
-from .quel3_execution_payload import Quel3ExecutionPayload
+from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 
 
 class _SequencerProtocol(Protocol):

@@ -1,15 +1,10 @@
-"""Quel3 backend controller scaffold."""
+"""QuEL-3 backend controller implemented through quelware-client."""
 
 from __future__ import annotations
 
-import asyncio
-import importlib
-import sys
-import threading
-from collections import defaultdict
-from collections.abc import Coroutine, Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import numpy as np
 
@@ -19,24 +14,36 @@ from qubex.backend.backend_executor import (
     BackendExecutor,
 )
 from qubex.backend.controller_types import BackendController
-from qubex.backend.quel1 import ExecutionMode, Quel1BackendController
 
-from .quel3_execution_payload import Quel3ExecutionPayload
-from .quel3_sequencer_compiler import Quel3SequencerCompiler
+from .managers.clock_manager import Quel3ClockManager
+from .managers.configuration_manager import Quel3ConfigurationManager
+from .managers.connection_manager import Quel3ConnectionManager
+from .managers.execution_manager import ExecutionMode, Quel3ExecutionManager
+from .quel3_runtime_context import Quel3RuntimeContext
 
 QUEL3_DEFAULT_SAMPLING_PERIOD_NS = 0.4
 
+if TYPE_CHECKING:
+    from qubex.backend.quel1.compat.qubecalib_protocols import (
+        QubeCalibProtocol as QubeCalib,
+        Quel1BoxCommonProtocol as Quel1Box,
+    )
+
+
+class _FigureLike(Protocol):
+    """Minimal plotting object protocol used by skew-measurement API."""
+
+    def update_layout(self, *, title: str, width: int) -> None:
+        """Update plot layout metadata."""
+        ...
+
+    def show(self) -> None:
+        """Render plot output."""
+        ...
+
 
 class Quel3BackendController(BackendController):
-    """
-    Quel3 controller scaffold with measurement-layer capability hints.
-
-    Notes
-    -----
-    This class composes a QuEL-1 control-plane controller for shared
-    configuration/connectivity operations while exposing QuEL-3-specific
-    measurement execution behavior.
-    """
+    """Control and execute QuEL-3 measurements through quelware-client."""
 
     MEASUREMENT_BACKEND_KIND: Literal["quel3"] = "quel3"
     MEASUREMENT_CONSTRAINT_MODE: Literal["quel3"] = "quel3"
@@ -48,57 +55,62 @@ class Quel3BackendController(BackendController):
         config_path: str | Path | None = None,
         *,
         sampling_period_ns: float | None = None,
-        alias_map: dict[str, str] | None = None,
+        alias_map: Mapping[str, str] | None = None,
         quelware_endpoint: str | None = None,
         quelware_port: int | None = None,
         trigger_wait: int | None = None,
     ) -> None:
         """
-        Initialize a Quel3 controller scaffold.
+        Initialize a QuEL-3 backend controller.
 
         Parameters
         ----------
         config_path : str | Path | None, optional
-            Optional config path passed to the shared base controller.
+            Reserved for API compatibility.
         sampling_period_ns : float | None, optional
             Session sampling period used by measurement-layer adapters.
-        alias_map : dict[str, str] | None, optional
+        alias_map : Mapping[str, str] | None, optional
             Optional target-label to instrument-alias mapping.
         quelware_endpoint : str | None, optional
-            Quelware API endpoint. Defaults to `"localhost"`.
+            Quelware API endpoint. Defaults to "localhost".
         quelware_port : int | None, optional
-            Quelware API port. Defaults to `50051`.
+            Quelware API port. Defaults to 50051.
         trigger_wait : int | None, optional
             Trigger wait count passed to quelware session trigger.
-            Defaults to `1_000_000`.
+            Defaults to 1_000_000.
         """
-        self._control_plane = Quel1BackendController(config_path=config_path)
+        del config_path
         if sampling_period_ns is not None:
             self.DEFAULT_SAMPLING_PERIOD = float(sampling_period_ns)
-        self._alias_map = dict(alias_map or {})
-        self._quelware_endpoint = (
-            quelware_endpoint if quelware_endpoint is not None else "localhost"
+
+        self._runtime_context = Quel3RuntimeContext(
+            alias_map=dict(alias_map or {}),
+            quelware_endpoint=(
+                quelware_endpoint if quelware_endpoint is not None else "localhost"
+            ),
+            quelware_port=int(quelware_port) if quelware_port is not None else 50051,
+            trigger_wait=int(trigger_wait) if trigger_wait is not None else 1_000_000,
+            default_sampling_period=float(self.DEFAULT_SAMPLING_PERIOD),
+            measurement_result_avg_sample_stride=self.MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE,
         )
-        self._quelware_port = int(quelware_port) if quelware_port is not None else 50051
-        self._trigger_wait = (
-            int(trigger_wait) if trigger_wait is not None else 1_000_000
+        self._connection_manager = Quel3ConnectionManager(
+            runtime_context=self._runtime_context
         )
-        self._sequencer_compiler = Quel3SequencerCompiler()
+        self._clock_manager = Quel3ClockManager(runtime_context=self._runtime_context)
+        self._execution_manager = Quel3ExecutionManager(
+            runtime_context=self._runtime_context
+        )
+        self._configuration_manager = Quel3ConfigurationManager()
 
     @property
     def hash(self) -> int:
-        """Return stable hash from the delegated control-plane state."""
-        return self._control_plane.hash
+        """Return stable hash from runtime and backend configuration state."""
+        return hash((self._connection_manager.hash, self._configuration_manager.hash))
 
     @property
     def is_connected(self) -> bool:
         """Return whether backend resources are connected."""
-        return self._control_plane.is_connected
-
-    @property
-    def box_config(self) -> dict[str, Any]:
-        """Return connected box configuration cache."""
-        return self._control_plane.box_config
+        return self._connection_manager.is_connected
 
     def connect(
         self,
@@ -107,80 +119,59 @@ class Quel3BackendController(BackendController):
         parallel: bool | None = None,
     ) -> None:
         """Connect backend resources for selected boxes."""
-        self._control_plane.connect(box_names=box_names, parallel=parallel)
-
-    def disconnect(self) -> None:
-        """Disconnect backend resources."""
-        self._control_plane.disconnect()
-
-    def load_skew_yaml(self, file_path: str | Path) -> None:
-        """Load skew calibration settings."""
-        self._control_plane.load_skew_yaml(file_path)
-
-    def link_status(self, box_name: str) -> dict[int, bool]:
-        """Return link status for one box."""
-        return self._control_plane.link_status(box_name)
-
-    def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
-        """Read clock-related values for selected boxes."""
-        return self._control_plane.read_clocks(box_list)
-
-    def check_clocks(self, box_list: list[str]) -> bool:
-        """Return whether clocks are synchronized."""
-        return self._control_plane.check_clocks(box_list)
-
-    def linkup_boxes(
-        self,
-        box_list: list[str],
-        noise_threshold: int | None = None,
-        *,
-        parallel: bool | None = None,
-    ) -> dict[str, Any]:
-        """Link up selected boxes."""
-        return self._control_plane.linkup_boxes(
-            box_list=box_list,
-            noise_threshold=noise_threshold,
+        self._connection_manager.connect(
+            box_names=box_names,
             parallel=parallel,
         )
 
+    def disconnect(self) -> None:
+        """Disconnect backend resources."""
+        self._connection_manager.disconnect()
+
+    @staticmethod
+    def load_skew_yaml(file_path: str | Path) -> None:
+        """Accept skew-file load API as a no-op for QuEL-3."""
+        del file_path
+
+    @staticmethod
+    def sync_clocks(box_list: list[str]) -> bool:
+        """Keep clock-sync API as a no-op for QuEL-3."""
+        del box_list
+        return True
+
+    @staticmethod
+    def resync_clocks(box_list: list[str]) -> bool:
+        """Keep clock-resync API as a no-op for QuEL-3."""
+        del box_list
+        return True
+
+    @staticmethod
     def relinkup_boxes(
-        self,
         box_list: list[str],
         noise_threshold: int | None = None,
         *,
         parallel: bool | None = None,
     ) -> None:
-        """Relink selected boxes."""
-        self._control_plane.relinkup_boxes(
-            box_list=box_list,
-            noise_threshold=noise_threshold,
-            parallel=parallel,
-        )
+        """Keep relinkup API as a no-op for QuEL-3."""
+        del box_list, noise_threshold, parallel
 
-    def sync_clocks(self, box_list: list[str]) -> bool:
-        """Synchronize clocks for selected boxes."""
-        return self._control_plane.sync_clocks(box_list)
-
-    def resync_clocks(self, box_list: list[str]) -> bool:
-        """Force re-synchronization of clocks for selected boxes."""
-        return self._control_plane.resync_clocks(box_list)
+    @staticmethod
+    def reset_clockmaster(ipaddr: str) -> bool:
+        """Keep clockmaster-reset API as a no-op for QuEL-3."""
+        del ipaddr
+        return True
 
     def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
         """Replace full target-to-alias mapping for quelware execution."""
-        self._alias_map = dict(alias_map)
-
-    def __getattr__(self, name: str) -> Any:
-        """Delegate unsupported operations to the shared QuEL-1 control plane."""
-        control_plane = object.__getattribute__(self, "_control_plane")
-        return getattr(control_plane, name)
+        self._connection_manager.set_alias_map(alias_map)
 
     def update_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
         """Update target-to-alias mapping for quelware execution."""
-        self._alias_map.update(alias_map)
+        self._connection_manager.update_alias_map(alias_map)
 
     def resolve_instrument_alias(self, target: str) -> str:
         """Resolve quelware instrument alias for a measurement target."""
-        return self._alias_map.get(target, target)
+        return self._execution_manager.resolve_instrument_alias(target)
 
     def execute(
         self,
@@ -193,175 +184,29 @@ class Quel3BackendController(BackendController):
         from .quel3_backend_executor import Quel3BackendExecutor
 
         factory = getattr(self, "create_measurement_backend_executor", None)
+        manager_factory = None
         if callable(factory):
-            executor = cast(
+            manager_factory = lambda mode, clock: cast(
                 BackendExecutor,
                 factory(
-                    execution_mode=execution_mode,
-                    clock_health_checks=clock_health_checks,
+                    execution_mode=mode,
+                    clock_health_checks=clock,
                 ),
             )
-            return executor.execute(request=request)
-        return Quel3BackendExecutor(backend_controller=self).execute(request=request)
+
+        return self._execution_manager.execute(
+            request=request,
+            execution_mode=execution_mode,
+            clock_health_checks=clock_health_checks,
+            create_default_executor=lambda mode, clock: Quel3BackendExecutor(
+                backend_controller=self,
+            ),
+            create_measurement_backend_executor=manager_factory,
+        )
 
     def execute_measurement(self, *, payload: object) -> object:
-        """
-        Execute a Quel3 measurement payload.
-
-        Parameters
-        ----------
-        payload : object
-            Backend execution payload produced by the measurement adapter.
-        """
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError(
-                "Quel3BackendController.execute_measurement expects Quel3ExecutionPayload."
-            )
-        return self._run_coroutine(self._execute_measurement_async(payload))
-
-    def _run_coroutine(self, coroutine: Coroutine[Any, Any, object]) -> object:
-        """Run async quelware workflow in sync measurement entrypoint."""
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coroutine)
-
-        result_holder: dict[str, object] = {}
-        error_holder: dict[str, BaseException] = {}
-
-        def _runner() -> None:
-            try:
-                result_holder["value"] = asyncio.run(coroutine)
-            except BaseException as exc:
-                error_holder["error"] = exc
-
-        thread = threading.Thread(target=_runner, daemon=True)
-        thread.start()
-        thread.join()
-        if "error" in error_holder:
-            raise error_holder["error"]
-        return result_holder["value"]
-
-    async def _execute_measurement_async(
-        self,
-        payload: object,
-    ) -> object:
-        """Execute one fixed-timeline measurement flow via quelware."""
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError(
-                "Quel3BackendController.execute_measurement expects Quel3ExecutionPayload."
-            )
-        try:
-            (
-                create_quelware_client,
-                InstrumentMapper,
-                Sequencer,
-                create_instrument_driver_fixed_timeline,
-                get_all_instrument_ids_from_resource_infos,
-            ) = self._load_quelware_api()
-        except (ModuleNotFoundError, SyntaxError) as exc:
-            raise RuntimeError(
-                "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
-            ) from exc
-
-        aliases = sorted(set(payload.instrument_aliases.values()))
-        if len(aliases) == 0:
-            raise ValueError("Quel3ExecutionPayload must include instrument aliases.")
-
-        sequencer = self._sequencer_compiler.compile(
-            payload=payload,
-            sequencer_factory=Sequencer,
-            default_sampling_period_ns=self.DEFAULT_SAMPLING_PERIOD,
-        )
-
-        async with create_quelware_client(
-            self._quelware_endpoint, self._quelware_port
-        ) as client:
-            mapper = InstrumentMapper()
-            for resource_id in get_all_instrument_ids_from_resource_infos(
-                await client.list_resource_infos()
-            ):
-                mapper.add_instrument_info(
-                    await client.get_instrument_info(resource_id)
-                )
-            alias_to_id = mapper.build_alias_to_id_map()
-            missing_aliases = [alias for alias in aliases if alias not in alias_to_id]
-            if missing_aliases:
-                available = sorted(alias_to_id.keys())
-                raise ValueError(
-                    f"Quelware aliases are missing: {missing_aliases}. available={available}"
-                )
-
-            session_resources = [alias_to_id[alias] for alias in aliases]
-            async with client.create_session(session_resources) as session:
-                alias_to_driver: dict[str, Any] = {}
-                sampling_period_ns: float | None = None
-                for alias in aliases:
-                    instrument_info = mapper.get_instrument_info(alias_to_id[alias])
-                    driver = create_instrument_driver_fixed_timeline(
-                        session,
-                        instrument_info,
-                    )
-                    alias_to_driver[alias] = driver
-                    sampling_period_fs = getattr(
-                        driver.instrument_config,
-                        "sampling_period_fs",
-                        None,
-                    )
-                    if isinstance(sampling_period_fs, int):
-                        sampling_period_ns = float(sampling_period_fs) / 1e6
-
-                for alias, driver in alias_to_driver.items():
-                    directive = sequencer.export_set_fixed_timeline_directive(
-                        alias,
-                        driver.instrument_config.sampling_period_fs,
-                    )
-                    await driver.apply(directive)
-                    await driver.setup()
-
-                shot_count = (
-                    payload.repeats
-                    if payload.mode == "avg" and payload.repeats > 1
-                    else 1
-                )
-                shot_samples = self._initialize_shot_samples(payload)
-                for _ in range(shot_count):
-                    await session.trigger(wait=self._trigger_wait)
-                    alias_results = {
-                        alias: await driver.fetch_result()
-                        for alias, driver in alias_to_driver.items()
-                    }
-                    for target, timeline in payload.timelines.items():
-                        alias = payload.instrument_aliases[target]
-                        result = alias_results[alias]
-                        for window in timeline.capture_windows:
-                            window_key = self._sequencer_compiler.capture_window_key(
-                                target, window.name
-                            )
-                            iq_datas = result.iq_datas.get(window_key, [])
-                            if len(iq_datas) == 0:
-                                continue
-                            shot_samples[target][window.name].append(
-                                np.asarray(iq_datas[-1].iq_array, dtype=np.complex128)
-                            )
-
-        return self._build_measurement_result(
-            payload=payload,
-            shot_samples=shot_samples,
-            sampling_period_ns=sampling_period_ns,
-        )
-
-    @staticmethod
-    def _initialize_shot_samples(
-        payload: object,
-    ) -> dict[str, dict[str, list[np.ndarray]]]:
-        """Initialize nested shot-sample container by target/capture window."""
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError("Expected Quel3ExecutionPayload.")
-        return {
-            target: {window.name: [] for window in timeline.capture_windows}
-            for target, timeline in payload.timelines.items()
-        }
+        """Execute one QuEL-3 measurement payload through quelware-client."""
+        return self._execution_manager.execute_measurement(payload=payload)
 
     @classmethod
     def _build_measurement_result(
@@ -372,104 +217,212 @@ class Quel3BackendController(BackendController):
         sampling_period_ns: float | None,
     ) -> object:
         """Build canonical measurement result from per-shot capture samples."""
-        from qubex.measurement.models.measurement_result import MeasurementResult
-
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError("Expected Quel3ExecutionPayload.")
-        measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
-        output_target_labels = getattr(payload, "output_target_labels", {})
-        for target, timeline in payload.timelines.items():
-            output_target = output_target_labels.get(
-                target, cls._measurement_target_label(target)
-            )
-            for window in timeline.capture_windows:
-                samples = shot_samples.get(target, {}).get(window.name, [])
-                if len(samples) == 0:
-                    measurement_data[output_target].append(
-                        np.array([], dtype=np.complex128)
-                    )
-                    continue
-                if payload.mode == "avg":
-                    values = np.stack(samples, axis=0)
-                    measurement_data[output_target].append(np.mean(values, axis=0))
-                else:
-                    measurement_data[output_target].append(samples[0])
-
-        mode = payload.mode
-        if mode not in {"single", "avg"}:
-            raise ValueError(f"Unsupported measurement mode: {mode}")
-
-        return MeasurementResult(
-            mode=cast(Literal["single", "avg"], mode),
-            data=dict(measurement_data),
-            device_config={},
-            measurement_config={
-                "mode": mode,
-                "shots": payload.repeats,
-                "interval_ns": payload.interval_ns,
-                "dsp_demodulation": payload.dsp_demodulation,
-                "enable_sum": payload.enable_sum,
-                "enable_classification": payload.enable_classification,
-                "line_param0": payload.line_param0,
-                "line_param1": payload.line_param1,
-            },
-            sampling_period_ns=(
-                float(sampling_period_ns)
-                if sampling_period_ns is not None
-                else float(cls.DEFAULT_SAMPLING_PERIOD)
-            ),
+        return Quel3ExecutionManager.build_measurement_result(
+            payload=payload,
+            shot_samples=shot_samples,
+            sampling_period_ns=sampling_period_ns,
+            default_sampling_period=cls.DEFAULT_SAMPLING_PERIOD,
             avg_sample_stride=cls.MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE,
         )
 
     @staticmethod
-    def _measurement_target_label(target: str) -> str:
-        """Return canonical measurement target label used by legacy APIs."""
-        from qubex.backend.target_registry import TargetRegistry
-
-        try:
-            return TargetRegistry().resolve_qubit_label(target, allow_legacy=True)
-        except Exception:
-            return target
-
-    @staticmethod
-    def _load_quelware_api() -> tuple[Any, Any, Any, Any, Any]:
+    def _load_quelware_api() -> tuple[object, object, object, object, object]:
         """Import quelware helpers lazily and return required symbols."""
-
-        def _import_api() -> tuple[Any, Any, Any, Any, Any]:
-            resource_module = importlib.import_module("quelware_core.entities.resource")
-            client_module = importlib.import_module("quelware_client.client")
-            mapper_module = importlib.import_module(
-                "quelware_client.client.helpers.instrument_mapper"
-            )
-            sequencer_module = importlib.import_module(
-                "quelware_client.client.helpers.sequencer"
-            )
-            driver_module = importlib.import_module(
-                "quelware_client.core.instrument_driver"
-            )
-            return (
-                client_module.create_quelware_client,
-                mapper_module.InstrumentMapper,
-                sequencer_module.Sequencer,
-                driver_module.create_instrument_driver_fixed_timeline,
-                resource_module.get_all_instrument_ids_from_resource_infos,
-            )
-
-        try:
-            return _import_api()
-        except (ModuleNotFoundError, SyntaxError):
-            Quel3BackendController._append_local_quelware_paths()
-            return _import_api()
+        return cast(
+            tuple[object, object, object, object, object],
+            Quel3ExecutionManager.load_quelware_api(),
+        )
 
     @staticmethod
     def _append_local_quelware_paths() -> None:
         """Append local quelware source paths when present in the workspace."""
-        root = Path(__file__).resolve().parents[4]
-        candidates = (
-            root / "packages" / "quelware-client" / "quelware-client" / "src",
-            root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
+        Quel3ExecutionManager.append_local_quelware_paths()
+
+    @staticmethod
+    def get_qubecalib() -> QubeCalib:
+        """Reject QuEL-1 specific qubecalib accessor for QuEL-3 backend."""
+        raise NotImplementedError("QuEL-3 backend does not provide qubecalib access.")
+
+    @staticmethod
+    def get_box(box_name: str) -> Quel1Box:
+        """Reject QuEL-1 specific direct box accessor for QuEL-3 backend."""
+        del box_name
+        raise NotImplementedError("QuEL-3 backend does not expose Quel1Box handles.")
+
+    @staticmethod
+    def run_skew_measurement(
+        *,
+        skew_yaml_path: Path,
+        box_yaml_path: Path,
+        clockmaster_ip: str,
+        box_names: Sequence[str],
+        estimate: bool,
+    ) -> tuple[dict[str, object], _FigureLike]:
+        """Reject QuEL-1 specific skew-measurement API for QuEL-3 backend."""
+        del skew_yaml_path, box_yaml_path, clockmaster_ip, box_names, estimate
+        raise NotImplementedError("QuEL-3 backend does not support skew measurement.")
+
+    @staticmethod
+    def dump_box(box_name: str) -> dict:
+        """Reject QuEL-1 specific box-dump API for QuEL-3 backend."""
+        del box_name
+        raise NotImplementedError("QuEL-3 backend does not expose box dump APIs.")
+
+    @staticmethod
+    def dump_port(box_name: str, port_number: int | tuple[int, int]) -> dict:
+        """Reject QuEL-1 specific port-dump API for QuEL-3 backend."""
+        del box_name, port_number
+        raise NotImplementedError("QuEL-3 backend does not expose port dump APIs.")
+
+    def clear_command_queue(self) -> None:
+        """Clear pending backend command queue."""
+        self._configuration_manager.clear_command_queue()
+
+    def clear_cache(self) -> None:
+        """Clear transient backend-side configuration cache."""
+        self._configuration_manager.clear_cache()
+
+    def set_box_options(self, box_options: dict[str, tuple[str, ...]]) -> None:
+        """Set optional per-box options."""
+        self._configuration_manager.set_box_options(box_options)
+
+    def define_clockmaster(self, *, ipaddr: str, reset: bool = True) -> None:
+        """Define backend clockmaster metadata."""
+        self._configuration_manager.define_clockmaster(ipaddr=ipaddr, reset=reset)
+
+    def define_box(
+        self,
+        *,
+        box_name: str,
+        ipaddr_wss: str,
+        boxtype: str,
+    ) -> None:
+        """Define one backend box."""
+        self._configuration_manager.define_box(
+            box_name=box_name,
+            ipaddr_wss=ipaddr_wss,
+            boxtype=boxtype,
         )
-        for path in candidates:
-            path_str = str(path)
-            if path.exists() and path_str not in sys.path:
-                sys.path.insert(0, path_str)
+
+    def define_port(
+        self,
+        *,
+        port_name: str,
+        box_name: str,
+        port_number: int | tuple[int, int],
+    ) -> None:
+        """Define one backend port."""
+        self._configuration_manager.define_port(
+            port_name=port_name,
+            box_name=box_name,
+            port_number=port_number,
+        )
+
+    def define_channel(
+        self,
+        *,
+        channel_name: str,
+        port_name: str,
+        channel_number: int,
+        ndelay_or_nwait: int = 0,
+    ) -> None:
+        """Define one backend channel."""
+        self._configuration_manager.define_channel(
+            channel_name=channel_name,
+            port_name=port_name,
+            channel_number=channel_number,
+            ndelay_or_nwait=ndelay_or_nwait,
+        )
+
+    def add_channel_target_relation(self, channel_name: str, target_name: str) -> None:
+        """Define one channel-to-target relation."""
+        self._configuration_manager.add_channel_target_relation(
+            channel_name,
+            target_name,
+        )
+
+    def define_target(
+        self,
+        *,
+        target_name: str,
+        channel_name: str,
+        target_frequency: float,
+    ) -> None:
+        """Define one backend target."""
+        self._configuration_manager.define_target(
+            target_name=target_name,
+            channel_name=channel_name,
+            target_frequency=target_frequency,
+        )
+
+    def modify_target_frequencies(self, frequencies: dict[str, float]) -> None:
+        """Update target-frequency definitions."""
+        self._configuration_manager.modify_target_frequencies(frequencies)
+
+    def config_port(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+    ) -> None:
+        """Store one port-configuration update."""
+        self._configuration_manager.config_port(
+            box_name,
+            port=port,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+            vatt=vatt,
+            sideband=sideband,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+        )
+
+    def config_channel(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        channel: int,
+        fnco_freq: float | None = None,
+    ) -> None:
+        """Store one channel-configuration update."""
+        self._configuration_manager.config_channel(
+            box_name,
+            port=port,
+            channel=channel,
+            fnco_freq=fnco_freq,
+        )
+
+    def config_runit(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        runit: int,
+        fnco_freq: float | None = None,
+    ) -> None:
+        """Store one runit-configuration update."""
+        self._configuration_manager.config_runit(
+            box_name,
+            port=port,
+            runit=runit,
+            fnco_freq=fnco_freq,
+        )
+
+    def initialize_awg_and_capunits(
+        self,
+        box_names: str | Sequence[str],
+        *,
+        parallel: bool | None = None,
+    ) -> None:
+        """Keep QuEL-1 compatibility API as a no-op for QuEL-3."""
+        self._configuration_manager.initialize_awg_and_capunits(
+            box_names,
+            parallel=parallel,
+        )

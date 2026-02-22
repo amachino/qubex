@@ -8,9 +8,10 @@ from typing import cast
 import numpy as np
 import pytest
 
-from qubex.backend.controller_types import BackendController
+from qubex.backend.controller_types import BackendBoxConfigProvider, BackendController
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 from qubex.measurement.adapters import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
@@ -30,6 +31,11 @@ def test_quel_controllers_implement_backend_controller_contract() -> None:
 def test_quel3_controller_is_not_quel1_subclass() -> None:
     """Given Quel3 controller, when checking class relation, then it is not a Quel1 subclass."""
     assert not isinstance(Quel3BackendController(), Quel1BackendController)
+
+
+def test_quel3_controller_does_not_expose_box_config_capability() -> None:
+    """Given Quel3 controller, when checking optional capabilities, then box-config capability is absent."""
+    assert not isinstance(Quel3BackendController(), BackendBoxConfigProvider)
 
 
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
@@ -101,9 +107,11 @@ def test_execute_measurement_surfaces_missing_quelware_dependency(
     payload = _make_payload()
 
     monkeypatch.setattr(
-        controller,
-        "_load_quelware_api",
-        lambda: (_ for _ in ()).throw(ModuleNotFoundError("quelware_client")),
+        Quel3ExecutionManager,
+        "load_quelware_api",
+        staticmethod(
+            lambda: (_ for _ in ()).throw(ModuleNotFoundError("quelware_client"))
+        ),
     )
 
     with pytest.raises(RuntimeError, match="quelware-client is not available"):
@@ -182,6 +190,6 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     controller = Quel3BackendController()
 
     assert pytest.approx(0.4) == controller.DEFAULT_SAMPLING_PERIOD
-    assert controller._quelware_endpoint == "localhost"  # noqa: SLF001
-    assert controller._quelware_port == 50051  # noqa: SLF001
-    assert controller._trigger_wait == 1_000_000  # noqa: SLF001
+    assert controller._runtime_context.quelware_endpoint == "localhost"  # noqa: SLF001
+    assert controller._runtime_context.quelware_port == 50051  # noqa: SLF001
+    assert controller._runtime_context.trigger_wait == 1_000_000  # noqa: SLF001

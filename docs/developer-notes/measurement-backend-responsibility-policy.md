@@ -101,6 +101,7 @@ classDiagram
   class Quel3ExecutionManager
   class Quel3ConnectionManager
   class Quel3ClockManager
+  class Quel3ConfigurationManager
 
   Measurement *-- MeasurementContext : delegates
   Measurement *-- MeasurementSessionService : delegates
@@ -136,6 +137,7 @@ classDiagram
   Quel3BackendController *-- Quel3ConnectionManager : delegates
   Quel3BackendController *-- Quel3ClockManager : delegates
   Quel3BackendController *-- Quel3ExecutionManager : delegates
+  Quel3BackendController *-- Quel3ConfigurationManager : delegates
 ```
 
 ## Class Responsibilities
@@ -215,6 +217,9 @@ classDiagram
 
 - `Quel{1,3}ExecutionManager`
   - Backend execution primitives and backend-local execution routines.
+
+- `Quel{1,3}ConfigurationManager`
+  - Backend-side configuration and definition operations.
 
 ## BackendController Required Methods
 
@@ -338,10 +343,13 @@ src/qubex/
         sequencer_execution_engine.py
     quel3/
       quel3_backend_controller.py
+      quel3_runtime_context.py
       managers/
         execution_manager.py
         connection_manager.py
         clock_manager.py
+        configuration_manager.py
+        sequencer_compiler.py
   measurement/
     measurement.py
     measurement_context.py
@@ -377,6 +385,7 @@ src/qubex/
 - `MeasurementExecutionService` owns measurement execution and calls `BackendController.execute(...)`.
 - `SystemManager` remains focused on state synchronization.
 - `Quel1BackendController` and `Quel3BackendController` implement required `BackendController` methods.
+- `Quel3BackendController` is implemented natively through `quelware-client` (no QuEL-1 control-plane delegation).
 - QuEL-1 and QuEL-3 controllers follow the same manager-delegation structure.
 - Backend internal execution details are hidden from measurement layer.
 - Measurement contract types remain owned by the `measurement` package.
