@@ -24,10 +24,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.backend.quel1 import (
-    SAMPLING_PERIOD,
-    ExecutionMode,
-)
+from qubex.backend.quel1 import ExecutionMode
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
@@ -38,8 +35,8 @@ from qubex.typing import ConfigurationMode, IQArray, MeasurementMode, TargetMap
 from .classifiers.state_classifier import StateClassifier
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_context import MeasurementContext
+from .measurement_execution_service import MeasurementExecutionService
 from .measurement_pulse_factory import MeasurementPulseFactory
-from .measurement_result_converter import MeasurementResultConverter
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .measurement_schedule_executor import MeasurementScheduleExecutor
 from .measurement_session_service import MeasurementSessionService
@@ -60,8 +57,8 @@ class MeasurementClient:
     responsibilities to focused collaborators: context access
     (`MeasurementContext`), configuration/backend lifecycle
     (`MeasurementSessionService`), schedule assembly
-    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`) and schedule
-    execution (`MeasurementScheduleExecutor`). It also keeps optional state
+    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), and execution
+    orchestration (`MeasurementExecutionService`). It also keeps optional state
     classifiers used during readout post-processing.
 
     Notes
@@ -140,6 +137,13 @@ class MeasurementClient:
         self._session_service = MeasurementSessionService(
             system_manager=self._system_manager,
             context=self._context,
+        )
+        self._execution_service = MeasurementExecutionService(
+            context=self._context,
+            session_service=self._session_service,
+            classifiers=self._classifiers,
+            execution_mode=self._execution_mode,
+            clock_health_checks=self._clock_health_checks,
         )
         if load_configs is None:
             load_configs = self.DEFAULT_LOAD_CONFIGS
@@ -248,34 +252,24 @@ class MeasurementClient:
         return self._session_service
 
     @property
+    def execution_service(self) -> MeasurementExecutionService:
+        """Return measurement execution service."""
+        return self._execution_service
+
+    @property
     def pulse_factory(self) -> MeasurementPulseFactory:
         """Create a pulse factory from current system state."""
-        target_registry = getattr(self.experiment_system, "target_registry", None)
-        return MeasurementPulseFactory(
-            control_params=self.control_params,
-            mux_dict=self.mux_dict,
-            target_registry=target_registry,
-        )
+        return self.execution_service.pulse_factory
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
         """Create a measurement schedule builder from current system state."""
-        target_registry = getattr(self.experiment_system, "target_registry", None)
-        return MeasurementScheduleBuilder(
-            control_params=self.control_params,
-            pulse_factory=self.pulse_factory,
-            targets=self.targets,
-            mux_dict=self.mux_dict,
-            target_registry=target_registry,
-            constraint_profile=self.constraint_profile,
-        )
+        return self.execution_service.schedule_builder
 
     @property
     def measurement_config_factory(self) -> MeasurementConfigFactory:
         """Create a measurement config factory from current system state."""
-        return MeasurementConfigFactory(
-            experiment_system=self.experiment_system,
-        )
+        return self.execution_service.measurement_config_factory
 
     @property
     def config_loader(self) -> ConfigLoader:
@@ -295,42 +289,17 @@ class MeasurementClient:
     @property
     def sampling_period(self) -> float:
         """Resolve sampling period (ns) from backend-controller contract."""
-        return self.constraint_profile.sampling_period_ns
+        return self.execution_service.sampling_period
 
     @property
     def constraint_profile(self) -> MeasurementConstraintProfile:
         """Resolve backend constraint profile from backend-controller hints."""
-        try:
-            profile = getattr(
-                self.backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None
-            )
-            mode = getattr(
-                self.backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "quel1"
-            )
-            sampling_period = getattr(
-                self.backend_controller, "DEFAULT_SAMPLING_PERIOD", None
-            )
-        except Exception:
-            return MeasurementConstraintProfile.quel1(SAMPLING_PERIOD)
-        if isinstance(profile, MeasurementConstraintProfile):
-            return profile
-        if mode == "quel3":
-            if isinstance(sampling_period, (int, float)):
-                return MeasurementConstraintProfile.quel3(float(sampling_period))
-            return MeasurementConstraintProfile.quel3(SAMPLING_PERIOD)
-        if isinstance(sampling_period, (int, float)):
-            return MeasurementConstraintProfile.quel1(float(sampling_period))
-        return MeasurementConstraintProfile.quel1(SAMPLING_PERIOD)
+        return self.execution_service.constraint_profile
 
     @property
     def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:
         """Return executor implementation used by schedule execution APIs."""
-        return MeasurementScheduleExecutor.create_default(
-            backend_controller=self.backend_controller,
-            experiment_system=self.experiment_system,
-            execution_mode=self._execution_mode,
-            clock_health_checks=self._clock_health_checks,
-        )
+        return self.execution_service.measurement_schedule_executor
 
     @property
     def control_params(self) -> ControlParams:
@@ -612,11 +581,10 @@ class MeasurementClient:
         MeasurementResult
             The measurement result.
         """
-        result = self.measurement_schedule_executor.execute(
+        return self.execution_service.execute_measurement_schedule(
             schedule=schedule,
             config=config,
         )
-        return result
 
     def measure_noise(
         self,
@@ -647,12 +615,9 @@ class MeasurementClient:
         --------
         >>> result = cli.measure_noise()
         """
-        return self.measure(
-            waveforms={target: np.zeros(0) for target in targets},
-            mode="avg",
-            shots=1,
-            readout_duration=duration,
-            readout_amplitudes=dict.fromkeys(targets, 0),
+        return self.execution_service.measure_noise(
+            targets=targets,
+            duration=duration,
             enable_dsp_sum=enable_dsp_sum,
         )
 
@@ -730,15 +695,8 @@ class MeasurementClient:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
-        if add_pump_pulses is None:
-            add_pump_pulses = False
-        if enable_dsp_demodulation is None:
-            enable_dsp_demodulation = True
-        if enable_dsp_classification is None:
-            enable_dsp_classification = False
-
-        result = self.execute(
-            schedule=waveforms,
+        return self.execution_service.measure(
+            waveforms=waveforms,
             mode=mode,
             shots=shots,
             interval=interval,
@@ -749,7 +707,6 @@ class MeasurementClient:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            add_last_measurement=True,
             add_pump_pulses=add_pump_pulses,
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
@@ -757,12 +714,6 @@ class MeasurementClient:
             line_param0=line_param0,
             line_param1=line_param1,
             plot=plot,
-        )
-        data = {target: measures[0] for target, measures in result.data.items()}
-        return MeasureResult(
-            mode=result.mode,
-            data=data,
-            config=result.config,
         )
 
     def execute(
@@ -834,29 +785,11 @@ class MeasurementClient:
         MultipleMeasureResult
             The measurement results.
         """
-        if add_pump_pulses is None:
-            add_pump_pulses = False
-        if enable_dsp_demodulation is None:
-            enable_dsp_demodulation = True
-        if enable_dsp_classification is None:
-            enable_dsp_classification = False
-
-        if not isinstance(schedule, PulseSchedule):
-            schedule = PulseSchedule.from_waveforms(schedule)
-
-        run_config = self.measurement_config_factory.create(
+        return self.execution_service.execute(
+            schedule=schedule,
             mode=mode,
             shots=shots,
             interval=interval,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
-
-        measurement_schedule = self.build_measurement_schedule(
-            pulse_schedule=schedule,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -866,22 +799,13 @@ class MeasurementClient:
             readout_ramp_type=readout_ramp_type,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
             plot=plot,
-        )
-
-        result = self.execute_measurement_schedule(
-            schedule=measurement_schedule,
-            config=run_config,
-        )
-
-        rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None:
-            result.save(rawdata_dir)
-
-        return MeasurementResultConverter.to_multiple_measure_result(
-            result,
-            config=self.backend_controller.box_config,
-            classifiers=self.classifiers,
+            save_result=save_result,
         )
 
     def create_measurement_config(
@@ -926,7 +850,7 @@ class MeasurementClient:
         MeasurementConfig
             The created measurement configuration.
         """
-        measurement_config = self.measurement_config_factory.create(
+        return self.execution_service.create_measurement_config(
             mode=mode,
             shots=shots,
             interval=interval,
@@ -937,7 +861,6 @@ class MeasurementClient:
             line_param0=line_param0,
             line_param1=line_param1,
         )
-        return measurement_config
 
     def build_measurement_schedule(
         self,
@@ -955,8 +878,8 @@ class MeasurementClient:
         plot: bool = False,
     ) -> MeasurementSchedule:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
-        measurement_schedule = self.schedule_builder.build(
-            schedule=pulse_schedule,
+        return self.execution_service.build_measurement_schedule(
+            pulse_schedule=pulse_schedule,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -968,4 +891,3 @@ class MeasurementClient:
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
-        return measurement_schedule

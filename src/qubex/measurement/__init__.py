@@ -19,6 +19,7 @@ from .measurement_client import MeasurementClient
 from .measurement_config_factory import MeasurementConfigFactory
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_context import MeasurementContext
+from .measurement_execution_service import MeasurementExecutionService
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_result_factory import MeasurementResultFactory
@@ -45,6 +46,7 @@ __all__ = [
     "MeasurementConfigFactory",
     "MeasurementConstraintProfile",
     "MeasurementContext",
+    "MeasurementExecutionService",
     "MeasurementPulseFactory",
     "MeasurementResult",
     "MeasurementResultConverter",

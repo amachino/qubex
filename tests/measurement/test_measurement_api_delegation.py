@@ -11,6 +11,7 @@ from qxpulse import PulseSchedule
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel1 import Quel1BackendRawResult
 from qubex.measurement.measurement_client import MeasurementClient
+from qubex.measurement.measurement_execution_service import MeasurementExecutionService
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_schedule_executor import MeasurementScheduleExecutor
 from qubex.measurement.models import (
@@ -58,6 +59,36 @@ def _make_multiple_result() -> MultipleMeasureResult:
     )
 
 
+def _bind_runtime(
+    measurement: MeasurementClient,
+    *,
+    backend_controller: object,
+    experiment_system: object,
+    rawdata_dir: object = None,
+) -> None:
+    context = type(
+        "_CTX",
+        (),
+        {
+            "backend_controller": backend_controller,
+            "experiment_system": experiment_system,
+            "mux_dict": {},
+            "system_manager": type("_SM", (), {"rawdata_dir": rawdata_dir})(),
+        },
+    )()
+    session_service = type(
+        "_SS",
+        (),
+        {
+            "backend_controller": backend_controller,
+        },
+    )()
+    measurement.__dict__["_context"] = context
+    measurement.__dict__["_session_service"] = session_service
+    measurement.execution_service.__dict__["_context"] = context
+    measurement.execution_service.__dict__["_session_service"] = session_service
+
+
 def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     """Given execute inputs, when execute is called, then it builds schedule and delegates to schedule execution."""
     measurement = MeasurementClient(
@@ -76,7 +107,7 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     called: dict[str, Any] = {}
 
     def fake_build(
-        self: MeasurementClient,
+        self: MeasurementExecutionService,
         *,
         pulse_schedule: PulseSchedule,
         **kwargs: object,
@@ -86,7 +117,7 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
         return built_schedule
 
     def fake_execute_measurement_schedule(
-        self: MeasurementClient,
+        self: MeasurementExecutionService,
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
@@ -95,9 +126,12 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
         called["run_config"] = config
         return MeasurementResultConverter.from_multiple(multiple)
 
-    measurement.build_measurement_schedule = MethodType(fake_build, measurement)
-    measurement.execute_measurement_schedule = MethodType(
-        fake_execute_measurement_schedule, measurement
+    execution_service = measurement.execution_service
+    execution_service.build_measurement_schedule = MethodType(
+        fake_build, execution_service
+    )
+    execution_service.execute_measurement_schedule = MethodType(
+        fake_execute_measurement_schedule, execution_service
     )
     experiment_system = type(
         "_ES",
@@ -107,19 +141,13 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
             "measurement_defaults": {},
         },
     )()
-    measurement.__dict__["_context"] = type(
-        "_CTX",
-        (),
-        {
-            "backend_controller": type("_BC", (), {"box_config": {"shots": 1}})(),
-            "experiment_system": experiment_system,
-        },
-    )()
-    measurement.__dict__["_system_manager"] = type(
-        "_SM",
-        (),
-        {"rawdata_dir": None},
-    )()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 1}})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+        rawdata_dir=None,
+    )
 
     result = measurement.execute(
         schedule=pulse_schedule,
@@ -147,12 +175,15 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     called: dict[str, Any] = {}
 
     def fake_execute(
-        self: MeasurementClient, **kwargs: object
+        self: MeasurementExecutionService, **kwargs: object
     ) -> MultipleMeasureResult:
         called["kwargs"] = kwargs
         return multiple
 
-    measurement.execute = MethodType(fake_execute, measurement)
+    measurement.execution_service.execute = MethodType(
+        fake_execute,
+        measurement.execution_service,
+    )
 
     result = measurement.measure(waveforms={"Q00": np.array([0.0 + 0.0j])})
 
@@ -172,12 +203,15 @@ def test_measure_initializes_optional_flags_with_measure_defaults() -> None:
     called: dict[str, Any] = {}
 
     def fake_execute(
-        self: MeasurementClient, **kwargs: object
+        self: MeasurementExecutionService, **kwargs: object
     ) -> MultipleMeasureResult:
         called["kwargs"] = kwargs
         return multiple
 
-    measurement.execute = MethodType(fake_execute, measurement)
+    measurement.execution_service.execute = MethodType(
+        fake_execute,
+        measurement.execution_service,
+    )
 
     measurement.measure(
         waveforms={"Q00": np.array([0.0 + 0.0j])},
@@ -204,11 +238,14 @@ def test_measure_noise_disables_dsp_sum_by_default() -> None:
     called: dict[str, Any] = {}
     expected = object()
 
-    def fake_measure(self: MeasurementClient, **kwargs: object) -> Any:
+    def fake_measure(self: MeasurementExecutionService, **kwargs: object) -> Any:
         called["kwargs"] = kwargs
         return expected
 
-    measurement.measure = MethodType(fake_measure, measurement)
+    measurement.execution_service.measure = MethodType(
+        fake_measure,
+        measurement.execution_service,
+    )
 
     result = measurement.measure_noise(["Q00"], duration=1024.0)
 
@@ -236,7 +273,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
     called: dict[str, Any] = {}
 
     def fake_build(
-        self: MeasurementClient,
+        self: MeasurementExecutionService,
         *,
         pulse_schedule: PulseSchedule,
         **kwargs: object,
@@ -245,7 +282,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
         return built_schedule
 
     def fake_execute_measurement_schedule(
-        self: MeasurementClient,
+        self: MeasurementExecutionService,
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
@@ -253,9 +290,12 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
         called["config"] = config
         return MeasurementResultConverter.from_multiple(multiple)
 
-    measurement.build_measurement_schedule = MethodType(fake_build, measurement)
-    measurement.execute_measurement_schedule = MethodType(
-        fake_execute_measurement_schedule, measurement
+    execution_service = measurement.execution_service
+    execution_service.build_measurement_schedule = MethodType(
+        fake_build, execution_service
+    )
+    execution_service.execute_measurement_schedule = MethodType(
+        fake_execute_measurement_schedule, execution_service
     )
     experiment_system = type(
         "_ES",
@@ -265,15 +305,13 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
             "measurement_defaults": {},
         },
     )()
-    measurement.__dict__["_context"] = type(
-        "_CTX",
-        (),
-        {
-            "backend_controller": type("_BC", (), {"box_config": {"shots": 1}})(),
-            "experiment_system": experiment_system,
-        },
-    )()
-    measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 1}})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+        rawdata_dir=None,
+    )
 
     measurement.execute(
         schedule=pulse_schedule,
@@ -323,14 +361,11 @@ def test_execute_measurement_schedule_delegates_to_executor(
 
     experiment_system = type("_ES", (), {})()
     backend_controller = type("_BC", (), {})()
-    measurement.__dict__["_context"] = type(
-        "_CTX",
-        (),
-        {
-            "backend_controller": backend_controller,
-            "experiment_system": experiment_system,
-        },
-    )()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+    )
 
     monkeypatch.setattr(
         MeasurementScheduleExecutor,
@@ -460,14 +495,11 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
             return _CustomResultFactory()
 
     experiment_system = object()
-    measurement.__dict__["_context"] = type(
-        "_CTX",
-        (),
-        {
-            "backend_controller": _BackendController(),
-            "experiment_system": experiment_system,
-        },
-    )()
+    _bind_runtime(
+        measurement,
+        backend_controller=_BackendController(),
+        experiment_system=experiment_system,
+    )
 
     result = measurement.execute_measurement_schedule(schedule=schedule, config=config)
 

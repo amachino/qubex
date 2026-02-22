@@ -35,7 +35,7 @@ def _make_measurement_client_with_backend(
             "targets": [type("_Target", (), {"label": "Q00"})()],
         },
     )()
-    measurement.__dict__["_context"] = type(
+    context = type(
         "_CTX",
         (),
         {
@@ -44,6 +44,17 @@ def _make_measurement_client_with_backend(
             "mux_dict": {},
         },
     )()
+    session_service = type(
+        "_SS",
+        (),
+        {
+            "backend_controller": backend_controller,
+        },
+    )()
+    measurement.__dict__["_context"] = context
+    measurement.__dict__["_session_service"] = session_service
+    measurement.execution_service.__dict__["_context"] = context
+    measurement.execution_service.__dict__["_session_service"] = session_service
     return measurement
 
 
