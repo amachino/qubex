@@ -21,8 +21,11 @@ Migrate the current implementation to the target architecture defined in `measur
   - Step 4
   - Step 5
   - Step 6
+- In progress
+  - Step 7A (remove `Quel3BackendController` inheritance from
+    `Quel1BackendController` while preserving behavior via delegation)
 - Remaining
-  - Step 7
+  - Step 7B
   - Step 8
   - Step 9
   - Step 10
@@ -161,6 +164,9 @@ Migrate the current implementation to the target architecture defined in `measur
 - Purpose
   - Keep QuEL-1 and QuEL-3 controller architecture consistent.
 - Main changes
+  - Remove `Quel3BackendController` class inheritance from
+    `Quel1BackendController` and switch to explicit delegation/composition
+    while preserving the same control-plane behavior.
   - Add `src/qubex/backend/quel3/managers/connection_manager.py`.
   - Add `src/qubex/backend/quel3/managers/clock_manager.py`.
   - Add `src/qubex/backend/quel3/managers/execution_manager.py`.

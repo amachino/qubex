@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, runtime_checkable
 
 from .backend_executor import BackendExecutionRequest, BackendExecutionResult
-from .quel1 import Quel1BackendController
-from .quel3 import Quel3BackendController
+
+if TYPE_CHECKING:
+    from .quel1 import Quel1BackendController
+    from .quel3 import Quel3BackendController
 
 BackendKind = Literal["quel1", "quel3"]
 
@@ -100,4 +102,6 @@ class BackendController(Protocol):
         ...
 
 
-SystemBackendController: TypeAlias = Quel1BackendController | Quel3BackendController
+SystemBackendController: TypeAlias = (
+    "Quel1BackendController | Quel3BackendController"
+)

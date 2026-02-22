@@ -18,6 +18,7 @@ from qubex.backend.backend_executor import (
     BackendExecutionResult,
     BackendExecutor,
 )
+from qubex.backend.controller_types import BackendController
 from qubex.backend.quel1 import ExecutionMode, Quel1BackendController
 
 from .quel3_execution_payload import Quel3ExecutionPayload
@@ -26,15 +27,15 @@ from .quel3_sequencer_compiler import Quel3SequencerCompiler
 QUEL3_DEFAULT_SAMPLING_PERIOD_NS = 0.4
 
 
-class Quel3BackendController(Quel1BackendController):
+class Quel3BackendController(BackendController):
     """
     Quel3 controller scaffold with measurement-layer capability hints.
 
     Notes
     -----
-    This class intentionally reuses the existing QuEL-1 control-plane
-    implementation for shared configuration operations while exposing
-    QuEL-3-specific measurement capability metadata.
+    This class composes a QuEL-1 control-plane controller for shared
+    configuration/connectivity operations while exposing QuEL-3-specific
+    measurement execution behavior.
     """
 
     MEASUREMENT_BACKEND_KIND: Literal["quel3"] = "quel3"
@@ -71,7 +72,7 @@ class Quel3BackendController(Quel1BackendController):
             Trigger wait count passed to quelware session trigger.
             Defaults to `1_000_000`.
         """
-        super().__init__(config_path=config_path)
+        self._control_plane = Quel1BackendController(config_path=config_path)
         if sampling_period_ns is not None:
             self.DEFAULT_SAMPLING_PERIOD = float(sampling_period_ns)
         self._alias_map = dict(alias_map or {})
@@ -84,9 +85,94 @@ class Quel3BackendController(Quel1BackendController):
         )
         self._sequencer_compiler = Quel3SequencerCompiler()
 
+    @property
+    def hash(self) -> int:
+        """Return stable hash from the delegated control-plane state."""
+        return self._control_plane.hash
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether backend resources are connected."""
+        return self._control_plane.is_connected
+
+    @property
+    def box_config(self) -> dict[str, Any]:
+        """Return connected box configuration cache."""
+        return self._control_plane.box_config
+
+    def connect(
+        self,
+        box_names: str | list[str] | None = None,
+        *,
+        parallel: bool | None = None,
+    ) -> None:
+        """Connect backend resources for selected boxes."""
+        self._control_plane.connect(box_names=box_names, parallel=parallel)
+
+    def disconnect(self) -> None:
+        """Disconnect backend resources."""
+        self._control_plane.disconnect()
+
+    def load_skew_yaml(self, file_path: str | Path) -> None:
+        """Load skew calibration settings."""
+        self._control_plane.load_skew_yaml(file_path)
+
+    def link_status(self, box_name: str) -> dict[int, bool]:
+        """Return link status for one box."""
+        return self._control_plane.link_status(box_name)
+
+    def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
+        """Read clock-related values for selected boxes."""
+        return self._control_plane.read_clocks(box_list)
+
+    def check_clocks(self, box_list: list[str]) -> bool:
+        """Return whether clocks are synchronized."""
+        return self._control_plane.check_clocks(box_list)
+
+    def linkup_boxes(
+        self,
+        box_list: list[str],
+        noise_threshold: int | None = None,
+        *,
+        parallel: bool | None = None,
+    ) -> dict[str, Any]:
+        """Link up selected boxes."""
+        return self._control_plane.linkup_boxes(
+            box_list=box_list,
+            noise_threshold=noise_threshold,
+            parallel=parallel,
+        )
+
+    def relinkup_boxes(
+        self,
+        box_list: list[str],
+        noise_threshold: int | None = None,
+        *,
+        parallel: bool | None = None,
+    ) -> None:
+        """Relink selected boxes."""
+        self._control_plane.relinkup_boxes(
+            box_list=box_list,
+            noise_threshold=noise_threshold,
+            parallel=parallel,
+        )
+
+    def sync_clocks(self, box_list: list[str]) -> bool:
+        """Synchronize clocks for selected boxes."""
+        return self._control_plane.sync_clocks(box_list)
+
+    def resync_clocks(self, box_list: list[str]) -> bool:
+        """Force re-synchronization of clocks for selected boxes."""
+        return self._control_plane.resync_clocks(box_list)
+
     def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
         """Replace full target-to-alias mapping for quelware execution."""
         self._alias_map = dict(alias_map)
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate unsupported operations to the shared QuEL-1 control plane."""
+        control_plane = object.__getattribute__(self, "_control_plane")
+        return getattr(control_plane, name)
 
     def update_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
         """Update target-to-alias mapping for quelware execution."""

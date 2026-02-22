@@ -8,6 +8,8 @@ from typing import cast
 import numpy as np
 import pytest
 
+from qubex.backend.controller_types import BackendController
+from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.measurement.adapters import (
     Quel3CaptureWindow,
@@ -17,6 +19,17 @@ from qubex.measurement.adapters import (
     Quel3WaveformEvent,
 )
 from qubex.measurement.models.measurement_result import MeasurementResult
+
+
+def test_quel_controllers_implement_backend_controller_contract() -> None:
+    """Given QuEL controllers, when checking protocol, then both satisfy BackendController contract."""
+    assert isinstance(Quel1BackendController(), BackendController)
+    assert isinstance(Quel3BackendController(), BackendController)
+
+
+def test_quel3_controller_is_not_quel1_subclass() -> None:
+    """Given Quel3 controller, when checking class relation, then it is not a Quel1 subclass."""
+    assert not isinstance(Quel3BackendController(), Quel1BackendController)
 
 
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:

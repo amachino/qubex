@@ -18,6 +18,7 @@ from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
+from qubex.backend.controller_types import BackendController
 from qubex.backend.parallel_box_executor import run_parallel_map
 
 from .managers import (
@@ -79,7 +80,7 @@ class Quel1BackendRawResult:
     config: dict
 
 
-class Quel1BackendController:
+class Quel1BackendController(BackendController):
     """Control and query device state through qube-calib."""
 
     # Measurement capability hints consumed by measurement-layer selector logic.
