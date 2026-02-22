@@ -6,11 +6,16 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContextReader
+
 logger = logging.getLogger(__name__)
 
 
 class Quel1ClockManager:
     """Handle read/check/resync operations for backend clocks."""
+
+    def __init__(self, *, runtime_context: Quel1RuntimeContextReader) -> None:
+        self._runtime_context = runtime_context
 
     def read_clocks(
         self,
@@ -73,7 +78,6 @@ class Quel1ClockManager:
         self,
         *,
         box_list: list[str],
-        get_connected_clockmaster: Callable[[], Any | None],
         get_clockmaster_setting_ipaddr: Callable[[], str | None],
         create_clockmaster_client: Callable[[str], Any],
         resolve_box_sss_ip: Callable[[str], str],
@@ -86,8 +90,6 @@ class Quel1ClockManager:
         ----------
         box_list : list[str]
             Box names.
-        get_connected_clockmaster : Callable[[], Any | None]
-            Connected clockmaster getter.
         get_clockmaster_setting_ipaddr : Callable[[], str | None]
             Configured clockmaster IP getter.
         create_clockmaster_client : Callable[[str], Any]
@@ -104,7 +106,7 @@ class Quel1ClockManager:
         """
         if len(box_list) < 2:
             return True
-        master = get_connected_clockmaster()
+        master = self._get_connected_clockmaster()
         if master is None:
             clockmaster_ipaddr = get_clockmaster_setting_ipaddr()
             if clockmaster_ipaddr is None:
@@ -117,7 +119,6 @@ class Quel1ClockManager:
         self,
         *,
         ipaddr: str,
-        get_connected_clockmaster: Callable[[], Any | None],
         get_clockmaster_setting_ipaddr: Callable[[], str | None],
         create_clockmaster_client: Callable[[str], Any],
     ) -> bool:
@@ -128,8 +129,6 @@ class Quel1ClockManager:
         ----------
         ipaddr : str
             Clockmaster IP address.
-        get_connected_clockmaster : Callable[[], Any | None]
-            Connected clockmaster getter.
         get_clockmaster_setting_ipaddr : Callable[[], str | None]
             Configured clockmaster IP getter.
         create_clockmaster_client : Callable[[str], Any]
@@ -140,11 +139,18 @@ class Quel1ClockManager:
         bool
             True when reset succeeded.
         """
-        connected_master = get_connected_clockmaster()
+        connected_master = self._get_connected_clockmaster()
         configured_ipaddr = get_clockmaster_setting_ipaddr()
         if connected_master is not None and configured_ipaddr == ipaddr:
             return connected_master.reset()
         return create_clockmaster_client(ipaddr).reset()
+
+    def _get_connected_clockmaster(self) -> Any | None:
+        """Return clockmaster from connected runtime system when available."""
+        quel1system = self._runtime_context.quel1system
+        if quel1system is None:
+            return None
+        return quel1system._clockmaster  # noqa: SLF001
 
     def sync_clocks(self, *, resync_clocks: Callable[[], bool], box_count: int) -> bool:
         """

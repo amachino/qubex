@@ -35,7 +35,7 @@ from qubex.backend import (
     TargetType,
 )
 from qubex.backend.control_system import GenPort
-from qubex.backend.quel1 import DeviceController, Quel1BackendController
+from qubex.backend.controller_types import SystemBackendController
 from qubex.measurement import (
     MeasurementClient,
     StateClassifier,
@@ -379,12 +379,12 @@ class ExperimentContext:
 
     @property
     @deprecated("Use `backend_controller` instead.")
-    def device_controller(self) -> DeviceController:
+    def device_controller(self) -> SystemBackendController:
         """Return the device controller."""
         return self.system_manager.device_controller
 
     @property
-    def backend_controller(self) -> Quel1BackendController:
+    def backend_controller(self) -> SystemBackendController:
         """Return the backend controller."""
         return self.system_manager.backend_controller
 

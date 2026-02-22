@@ -15,6 +15,7 @@ from qubex.backend.quel1.execution import SequencerExecutionEngine
 from qubex.backend.quel1.execution.parallel_action_builder import (
     ClockHealthCheckOptions,
 )
+from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContextReader
 from qubex.backend.quel1.quel1_backend_constants import ExecutionMode
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 class Quel1ExecutionManager:
     """Handle backend execution entrypoints for QuEL-1 controller."""
+
+    def __init__(self, *, runtime_context: Quel1RuntimeContextReader) -> None:
+        self._runtime_context = runtime_context
 
     def execute(
         self,
@@ -81,7 +85,6 @@ class Quel1ExecutionManager:
         enable_classification: bool,
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
-        boxpool: Any,
         make_backend_raw_result: Callable[..., object],
     ) -> object:
         """
@@ -107,8 +110,6 @@ class Quel1ExecutionManager:
             Classifier line parameter 0.
         line_param1 : tuple[float, float, float] | None
             Classifier line parameter 1.
-        boxpool : Any
-            Connected boxpool.
         make_backend_raw_result : Callable[..., object]
             Result-container factory.
 
@@ -128,7 +129,7 @@ class Quel1ExecutionManager:
             line_param0=line_param0,
             line_param1=line_param1,
         )
-        status, data, config = sequencer.execute(boxpool)
+        status, data, config = sequencer.execute(self._require_boxpool())
         return make_backend_raw_result(
             status=status,
             data=data,
@@ -148,8 +149,6 @@ class Quel1ExecutionManager:
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
         clock_health_checks: bool,
-        boxpool: Any,
-        quel1system: Any,
         action_builder: Any,
         runit_setting_factory: Any,
         runit_id_factory: Any,
@@ -182,10 +181,6 @@ class Quel1ExecutionManager:
             Classifier line parameter 1.
         clock_health_checks : bool
             Whether to enable clock health diagnostics.
-        boxpool : Any
-            Connected boxpool.
-        quel1system : Any
-            Connected Quel1System.
         action_builder : Any
             Action builder callable.
         runit_setting_factory : Any
@@ -218,8 +213,8 @@ class Quel1ExecutionManager:
         parsed_status, parsed_data, parsed_config = (
             SequencerExecutionEngine.execute_parallel(
                 sequencer=cast(Any, sequencer),
-                boxpool=boxpool,
-                system=quel1system,
+                boxpool=self._require_boxpool(),
+                system=self._require_quel1system(),
                 action_builder=action_builder,
                 runit_setting_factory=runit_setting_factory,
                 runit_id_factory=runit_id_factory,
@@ -243,3 +238,17 @@ class Quel1ExecutionManager:
             data=parsed_data,
             config=parsed_config,
         )
+
+    def _require_boxpool(self) -> Any:
+        """Return connected boxpool or raise when runtime is disconnected."""
+        boxpool = self._runtime_context.boxpool
+        if boxpool is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
+        return boxpool
+
+    def _require_quel1system(self) -> Any:
+        """Return connected Quel1System or raise when runtime is disconnected."""
+        quel1system = self._runtime_context.quel1system
+        if quel1system is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
+        return quel1system

@@ -147,6 +147,12 @@ Migrate the current implementation to the target architecture defined in `measur
   - Add `src/qubex/backend/quel1/managers/connection_manager.py`.
   - Add `src/qubex/backend/quel1/managers/clock_manager.py`.
   - Add `src/qubex/backend/quel1/managers/execution_manager.py`.
+  - Add `src/qubex/backend/quel1/managers/runtime_context.py` and make
+    `Quel1ConnectionManager` the runtime-state writer.
+  - Make `Quel1ClockManager` and `Quel1ExecutionManager` read runtime state
+    through `Quel1RuntimeContext` read-only interface.
+  - Add `src/qubex/backend/quel1/managers/configuration_manager.py` and
+    delegate `dump_*`, `config_*`, and configuration-definition operations.
   - Make `Quel1ConnectionManager` the owner of connection runtime state
     (`boxpool`, `quel1system`, `cap_resource_map`, `gen_resource_map`) and
     remove tuple-based connected-state returns from `connect(...)`.

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, cast
 
 from qubex.backend.quel1.managers.connection_manager import Quel1ConnectionManager
+from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContext
 from qubex.backend.quel1.quel1_qubecalib_protocols import (
     BoxPoolProtocol,
     Quel1SystemProtocol,
@@ -162,7 +163,7 @@ class _FakeQuel1System:
 
 def test_connect_stores_connected_runtime_state() -> None:
     """Given connect callbacks, when connect runs, then runtime state is stored in manager."""
-    manager = Quel1ConnectionManager()
+    manager = Quel1ConnectionManager(runtime_context=Quel1RuntimeContext())
     boxpool = cast(BoxPoolProtocol, _FakeBoxPool())
     quel1system = cast(Quel1SystemProtocol, _FakeQuel1System())
 
@@ -199,7 +200,7 @@ def test_connect_stores_connected_runtime_state() -> None:
 
 def test_connect_skips_when_already_connected() -> None:
     """Given connected state, when connect is called again, then no callback is executed."""
-    manager = Quel1ConnectionManager()
+    manager = Quel1ConnectionManager(runtime_context=Quel1RuntimeContext())
     manager.set_connected_state(
         boxpool=cast(BoxPoolProtocol, _FakeBoxPool()),
         quel1system=cast(Quel1SystemProtocol, _FakeQuel1System()),
@@ -239,7 +240,7 @@ def test_connect_skips_when_already_connected() -> None:
 
 def test_disconnect_clears_connected_runtime_state() -> None:
     """Given connected state, when disconnect runs, then state and resources are cleared."""
-    manager = Quel1ConnectionManager()
+    manager = Quel1ConnectionManager(runtime_context=Quel1RuntimeContext())
     disconnected: list[object] = []
     resources: list[object] = ["clockmaster", "box-a"]
     manager.set_connected_state(

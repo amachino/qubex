@@ -22,8 +22,10 @@ from qubex.backend.parallel_box_executor import run_parallel_map
 
 from .managers import (
     Quel1ClockManager,
+    Quel1ConfigurationManager,
     Quel1ConnectionManager,
     Quel1ExecutionManager,
+    Quel1RuntimeContext,
 )
 from .quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
@@ -102,9 +104,17 @@ class Quel1BackendController(BackendController):
         except Exception:
             self._qubecalib = None
         self._box_options: dict[str, tuple[str, ...]] = {}
-        self._connection_manager = Quel1ConnectionManager()
-        self._clock_manager = Quel1ClockManager()
-        self._execution_manager = Quel1ExecutionManager()
+        self._runtime_context = Quel1RuntimeContext()
+        self._connection_manager = Quel1ConnectionManager(
+            runtime_context=self._runtime_context
+        )
+        self._clock_manager = Quel1ClockManager(runtime_context=self._runtime_context)
+        self._execution_manager = Quel1ExecutionManager(
+            runtime_context=self._runtime_context
+        )
+        self._configuration_manager = Quel1ConfigurationManager(
+            runtime_context=self._runtime_context
+        )
 
     @property
     def is_connected(self) -> bool:
@@ -1079,13 +1089,6 @@ class Quel1BackendController(BackendController):
             return None
         return str(clockmaster_setting.ipaddr)
 
-    def _get_connected_clockmaster(self) -> Any | None:
-        """Return clockmaster from connected Quel1System when available."""
-        quel1system = self._connection_manager.quel1system
-        if quel1system is None:
-            return None
-        return quel1system._clockmaster
-
     def resync_clocks(self, box_list: list[str]) -> bool:
         """
         Resync the clock of the boxes.
@@ -1097,7 +1100,6 @@ class Quel1BackendController(BackendController):
         """
         return self._clock_manager.resync_clocks(
             box_list=box_list,
-            get_connected_clockmaster=self._get_connected_clockmaster,
             get_clockmaster_setting_ipaddr=self._get_clockmaster_setting_ipaddr,
             create_clockmaster_client=lambda ipaddr: self._driver.QuBEMasterClient(
                 master_ipaddr=ipaddr
@@ -1124,7 +1126,6 @@ class Quel1BackendController(BackendController):
         """
         return self._clock_manager.reset_clockmaster(
             ipaddr=ipaddr,
-            get_connected_clockmaster=self._get_connected_clockmaster,
             get_clockmaster_setting_ipaddr=self._get_clockmaster_setting_ipaddr,
             create_clockmaster_client=lambda addr: self._driver.QuBEMasterClient(
                 master_ipaddr=addr
@@ -1164,13 +1165,13 @@ class Quel1BackendController(BackendController):
         ValueError
             If the box is not in the available boxes.
         """
-        try:
-            box = self.get_box(box_name)
-            box_config = box.dump_box()
-        except Exception:
-            logger.exception(f"Failed to dump box {box_name}.")
-            box_config = {}
-        return box_config
+        return self._configuration_manager.dump_box(
+            box_name=box_name,
+            check_box_availability=self._check_box_availability,
+            create_box=lambda name, reconnect: self._create_box(
+                name, reconnect=reconnect
+            ),
+        )
 
     def dump_port(self, box_name: str, port_number: int | tuple[int, int]) -> dict:
         """
@@ -1193,13 +1194,14 @@ class Quel1BackendController(BackendController):
         ValueError
             If the box is not in the available boxes.
         """
-        try:
-            box = self.get_box(box_name)
-            port_config = box.dump_port(port_number)
-        except Exception:
-            logger.exception(f"Failed to dump port {port_number} of box {box_name}.")
-            port_config = {}
-        return port_config
+        return self._configuration_manager.dump_port(
+            box_name=box_name,
+            port_number=port_number,
+            check_box_availability=self._check_box_availability,
+            create_box=lambda name, reconnect: self._create_box(
+                name, reconnect=reconnect
+            ),
+        )
 
     def config_port(
         self,
@@ -1235,13 +1237,8 @@ class Quel1BackendController(BackendController):
         rfswitch : str | None, optional
             RF switch value.
         """
-        box = self.get_box(box_name)
-        if box.boxtype == "quel1se-riken8":
-            vatt = None
-            sideband = None
-        if box.boxtype == "quel1se-riken8" and port not in box.get_input_ports():
-            lo_freq = None
-        box.config_port(
+        self._configuration_manager.config_port(
+            box_name=box_name,
             port=port,
             lo_freq=lo_freq,
             cnco_freq=cnco_freq,
@@ -1249,6 +1246,10 @@ class Quel1BackendController(BackendController):
             sideband=sideband,
             fullscale_current=fullscale_current,
             rfswitch=rfswitch,
+            check_box_availability=self._check_box_availability,
+            create_box=lambda name, reconnect: self._create_box(
+                name, reconnect=reconnect
+            ),
         )
 
     def config_channel(
@@ -1273,11 +1274,15 @@ class Quel1BackendController(BackendController):
         fnco_freq : float | None, optional
             FNCO frequency in GHz.
         """
-        box = self.get_box(box_name)
-        box.config_channel(
+        self._configuration_manager.config_channel(
+            box_name=box_name,
             port=port,
             channel=channel,
             fnco_freq=fnco_freq,
+            check_box_availability=self._check_box_availability,
+            create_box=lambda name, reconnect: self._create_box(
+                name, reconnect=reconnect
+            ),
         )
 
     def config_runit(
@@ -1302,11 +1307,15 @@ class Quel1BackendController(BackendController):
         fnco_freq : float | None, optional
             FNCO frequency in GHz.
         """
-        box = self.get_box(box_name)
-        box.config_runit(
+        self._configuration_manager.config_runit(
+            box_name=box_name,
             port=port,
             runit=runit,
             fnco_freq=fnco_freq,
+            check_box_availability=self._check_box_availability,
+            create_box=lambda name, reconnect: self._create_box(
+                name, reconnect=reconnect
+            ),
         )
 
     def add_sequencer(self, sequencer: Sequencer) -> None:
@@ -1318,15 +1327,20 @@ class Quel1BackendController(BackendController):
         sequencer : Sequencer
             The sequencer to add to the queue.
         """
-        self.qubecalib._executor.add_command(sequencer)
+        self._configuration_manager.add_sequencer(
+            qubecalib=self.qubecalib,
+            sequencer=sequencer,
+        )
 
     def show_command_queue(self) -> None:
         """Show the current command queue."""
-        logger.info(self.qubecalib.show_command_queue())
+        logger.info(
+            self._configuration_manager.show_command_queue(qubecalib=self.qubecalib)
+        )
 
     def clear_command_queue(self) -> None:
         """Clear the command queue."""
-        self.qubecalib.clear_command_queue()
+        self._configuration_manager.clear_command_queue(qubecalib=self.qubecalib)
 
     def define_clockmaster(self, *, ipaddr: str, reset: bool = True) -> None:
         """
@@ -1339,7 +1353,11 @@ class Quel1BackendController(BackendController):
         reset : bool, optional
             Whether to reset clock master on define.
         """
-        self.qubecalib.define_clockmaster(ipaddr=ipaddr, reset=reset)
+        self._configuration_manager.define_clockmaster(
+            qubecalib=self.qubecalib,
+            ipaddr=ipaddr,
+            reset=reset,
+        )
 
     def define_box(
         self,
@@ -1360,7 +1378,8 @@ class Quel1BackendController(BackendController):
         boxtype : str
             Box type label.
         """
-        self.qubecalib.define_box(
+        self._configuration_manager.define_box(
+            qubecalib=self.qubecalib,
             box_name=box_name,
             ipaddr_wss=ipaddr_wss,
             boxtype=boxtype,
@@ -1385,7 +1404,8 @@ class Quel1BackendController(BackendController):
         port_number : int | tuple[int, int]
             Port number.
         """
-        self.qubecalib.define_port(
+        self._configuration_manager.define_port(
+            qubecalib=self.qubecalib,
             port_name=port_name,
             box_name=box_name,
             port_number=port_number,
@@ -1413,7 +1433,8 @@ class Quel1BackendController(BackendController):
         ndelay_or_nwait : int, optional
             Capture delay or wait words.
         """
-        self.qubecalib.define_channel(
+        self._configuration_manager.define_channel(
+            qubecalib=self.qubecalib,
             channel_name=channel_name,
             port_name=port_name,
             channel_number=channel_number,
@@ -1431,10 +1452,11 @@ class Quel1BackendController(BackendController):
         target_name : str
             Target name.
         """
-        relation = (channel_name, target_name)
-        sysdb = self.qubecalib.sysdb
-        if relation not in sysdb._relation_channel_target:
-            sysdb._relation_channel_target.append(relation)
+        self._configuration_manager.add_channel_target_relation(
+            qubecalib=self.qubecalib,
+            channel_name=channel_name,
+            target_name=target_name,
+        )
 
     def define_target(
         self,
@@ -1454,7 +1476,8 @@ class Quel1BackendController(BackendController):
         target_frequency : float, optional
             Frequency of the target in GHz.
         """
-        self.qubecalib.define_target(
+        self._configuration_manager.define_target(
+            qubecalib=self.qubecalib,
             target_name=target_name,
             channel_name=channel_name,
             target_frequency=target_frequency,
@@ -1471,7 +1494,11 @@ class Quel1BackendController(BackendController):
         frequency : float
             Modified frequency in GHz.
         """
-        self.qubecalib.modify_target_frequency(target, frequency)
+        self._configuration_manager.modify_target_frequency(
+            qubecalib=self.qubecalib,
+            target=target,
+            frequency=frequency,
+        )
 
     def modify_target_frequencies(self, frequencies: dict[str, float]) -> None:
         """
@@ -1482,8 +1509,10 @@ class Quel1BackendController(BackendController):
         frequencies : dict[str, float]
             Dictionary of target frequencies.
         """
-        for target, frequency in frequencies.items():
-            self.modify_target_frequency(target, frequency)
+        self._configuration_manager.modify_target_frequencies(
+            qubecalib=self.qubecalib,
+            frequencies=frequencies,
+        )
 
     def create_quel1_sequencer(
         self,
@@ -1673,7 +1702,6 @@ class Quel1BackendController(BackendController):
                 enable_classification=enable_classification,
                 line_param0=line_param0,
                 line_param1=line_param1,
-                boxpool=self.boxpool,
                 make_backend_raw_result=self._make_backend_raw_result,
             ),
         )
@@ -1737,8 +1765,6 @@ class Quel1BackendController(BackendController):
                 line_param0=line_param0,
                 line_param1=line_param1,
                 clock_health_checks=clock_health_checks,
-                boxpool=self.boxpool,
-                quel1system=self.quel1system,
                 action_builder=self._driver.Action.build,
                 runit_setting_factory=self._driver.RunitSetting,
                 runit_id_factory=self._driver.RunitId,

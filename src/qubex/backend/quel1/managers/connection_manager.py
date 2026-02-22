@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Collection
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
+from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
 
@@ -20,46 +20,36 @@ if TYPE_CHECKING:
     )
 
 
-@dataclass
-class Quel1ConnectionState:
-    """Mutable runtime state owned by the QuEL-1 connection manager."""
-
-    boxpool: BoxPool | None = None
-    quel1system: Quel1System | None = None
-    cap_resource_map: dict[str, dict] | None = None
-    gen_resource_map: dict[str, dict] | None = None
-
-
 class Quel1ConnectionManager:
     """Handle connect/disconnect and box link-maintenance flows for QuEL-1."""
 
-    def __init__(self) -> None:
-        self._state = Quel1ConnectionState()
+    def __init__(self, *, runtime_context: Quel1RuntimeContext) -> None:
+        self._runtime_context = runtime_context
 
     @property
     def is_connected(self) -> bool:
         """Return whether runtime state currently has a connected system."""
-        return self._state.quel1system is not None
+        return self._runtime_context.is_connected
 
     @property
     def boxpool(self) -> BoxPool | None:
         """Return connected boxpool when available."""
-        return self._state.boxpool
+        return self._runtime_context.boxpool
 
     @property
     def quel1system(self) -> Quel1System | None:
         """Return connected Quel1System when available."""
-        return self._state.quel1system
+        return self._runtime_context.quel1system
 
     @property
     def cap_resource_map(self) -> dict[str, dict] | None:
         """Return capture resource map when available."""
-        return self._state.cap_resource_map
+        return self._runtime_context.cap_resource_map
 
     @property
     def gen_resource_map(self) -> dict[str, dict] | None:
         """Return generator resource map when available."""
-        return self._state.gen_resource_map
+        return self._runtime_context.gen_resource_map
 
     def set_connected_state(
         self,
@@ -83,7 +73,7 @@ class Quel1ConnectionManager:
         gen_resource_map : dict[str, dict] | None
             Generator resource map.
         """
-        self._state = Quel1ConnectionState(
+        self._runtime_context.set_connected_state(
             boxpool=boxpool,
             quel1system=quel1system,
             cap_resource_map=cap_resource_map,
@@ -92,23 +82,23 @@ class Quel1ConnectionManager:
 
     def set_boxpool(self, boxpool: BoxPool | None) -> None:
         """Update only boxpool state."""
-        self._state.boxpool = boxpool
+        self._runtime_context.set_boxpool(boxpool)
 
     def set_quel1system(self, quel1system: Quel1System | None) -> None:
         """Update only Quel1System state."""
-        self._state.quel1system = quel1system
+        self._runtime_context.set_quel1system(quel1system)
 
     def set_cap_resource_map(self, resource_map: dict[str, dict] | None) -> None:
         """Update only capture resource map state."""
-        self._state.cap_resource_map = resource_map
+        self._runtime_context.set_cap_resource_map(resource_map)
 
     def set_gen_resource_map(self, resource_map: dict[str, dict] | None) -> None:
         """Update only generator resource map state."""
-        self._state.gen_resource_map = resource_map
+        self._runtime_context.set_gen_resource_map(resource_map)
 
     def clear_connected_state(self) -> None:
         """Clear connected runtime state."""
-        self._state = Quel1ConnectionState()
+        self._runtime_context.clear_connected_state()
 
     def connect(
         self,
