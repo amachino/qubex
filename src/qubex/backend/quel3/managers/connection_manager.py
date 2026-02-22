@@ -62,7 +62,6 @@ class Quel3ConnectionManager:
                 self._runtime_context.is_connected,
                 self._runtime_context.quelware_endpoint,
                 self._runtime_context.quelware_port,
-                self._runtime_context.trigger_wait,
                 alias_items,
             )
         )

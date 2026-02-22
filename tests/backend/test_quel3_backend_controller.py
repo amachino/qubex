@@ -1,41 +1,24 @@
-"""Tests for Quel3 backend controller measurement execution."""
+"""Tests for QuEL-3 backend controller behavior."""
 
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import cast
 
 import numpy as np
 import pytest
 
+from qubex.backend import BackendExecutionRequest
 from qubex.backend.controller_types import BackendBoxConfigProvider, BackendController
 from qubex.backend.quel1 import Quel1BackendController
-from qubex.backend.quel3 import Quel3BackendController
-from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
-from qubex.measurement.adapters import (
+from qubex.backend.quel3 import (
+    Quel3BackendController,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3TargetTimeline,
     Quel3WaveformDefinition,
     Quel3WaveformEvent,
 )
-from qubex.measurement.models.measurement_result import MeasurementResult
-
-
-def test_quel_controllers_implement_backend_controller_contract() -> None:
-    """Given QuEL controllers, when checking protocol, then both satisfy BackendController contract."""
-    assert isinstance(Quel1BackendController(), BackendController)
-    assert isinstance(Quel3BackendController(), BackendController)
-
-
-def test_quel3_controller_is_not_quel1_subclass() -> None:
-    """Given Quel3 controller, when checking class relation, then it is not a Quel1 subclass."""
-    assert not isinstance(Quel3BackendController(), Quel1BackendController)
-
-
-def test_quel3_controller_does_not_expose_box_config_capability() -> None:
-    """Given Quel3 controller, when checking optional capabilities, then box-config capability is absent."""
-    assert not isinstance(Quel3BackendController(), BackendBoxConfigProvider)
+from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 
 
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
@@ -74,8 +57,24 @@ def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPaylo
     )
 
 
+def test_quel_controllers_implement_backend_controller_contract() -> None:
+    """Given QuEL controllers, both satisfy BackendController protocol."""
+    assert isinstance(Quel1BackendController(), BackendController)
+    assert isinstance(Quel3BackendController(), BackendController)
+
+
+def test_quel3_controller_is_not_quel1_subclass() -> None:
+    """Given QuEL-3 controller, it is not a QuEL-1 subclass."""
+    assert not isinstance(Quel3BackendController(), Quel1BackendController)
+
+
+def test_quel3_controller_does_not_expose_box_config_capability() -> None:
+    """Given QuEL-3 controller, box-config optional capability is absent."""
+    assert not isinstance(Quel3BackendController(), BackendBoxConfigProvider)
+
+
 def test_resolve_instrument_alias_uses_alias_map() -> None:
-    """Given alias map, when resolving alias, then mapped alias is returned."""
+    """Given alias map, resolving alias returns mapped alias."""
     controller = Quel3BackendController(alias_map={"RQ00": "inst-00"})
 
     assert controller.resolve_instrument_alias("RQ00") == "inst-00"
@@ -83,7 +82,7 @@ def test_resolve_instrument_alias_uses_alias_map() -> None:
 
 
 def test_update_instrument_alias_map_overrides_target_alias() -> None:
-    """Given alias-map update, when resolving alias, then updated alias is returned."""
+    """Given alias update, resolve returns updated alias."""
     controller = Quel3BackendController(alias_map={"RQ00": "inst-00"})
     controller.update_instrument_alias_map({"RQ00": "inst-00-new", "RQ01": "inst-01"})
 
@@ -91,18 +90,18 @@ def test_update_instrument_alias_map_overrides_target_alias() -> None:
     assert controller.resolve_instrument_alias("RQ01") == "inst-01"
 
 
-def test_execute_measurement_rejects_non_quel3_payload() -> None:
-    """Given non-Quel3 payload, when executing, then TypeError is raised."""
+def test_execute_rejects_non_quel3_payload() -> None:
+    """Given non-QuEL-3 payload, execute raises TypeError."""
     controller = Quel3BackendController()
 
     with pytest.raises(TypeError, match="Quel3ExecutionPayload"):
-        controller.execute_measurement(payload=object())
+        controller.execute(request=BackendExecutionRequest(payload=object()))
 
 
-def test_execute_measurement_surfaces_missing_quelware_dependency(
+def test_execute_surfaces_missing_quelware_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given missing quelware dependency, when executing, then RuntimeError is raised."""
+    """Given missing quelware dependency, execute raises RuntimeError."""
     controller = Quel3BackendController()
     payload = _make_payload()
 
@@ -115,11 +114,11 @@ def test_execute_measurement_surfaces_missing_quelware_dependency(
     )
 
     with pytest.raises(RuntimeError, match="quelware-client is not available"):
-        controller.execute_measurement(payload=payload)
+        controller.execute(request=BackendExecutionRequest(payload=payload))
 
 
 def test_build_measurement_result_averages_shot_samples() -> None:
-    """Given shot samples, when mode is avg, then samples are averaged per capture."""
+    """Given avg mode shots, result samples are averaged."""
     payload = _make_payload(mode="avg", repeats=2)
     shot_samples = {
         "RQ00": {
@@ -130,13 +129,12 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         }
     }
 
-    result = cast(
-        MeasurementResult,
-        Quel3BackendController._build_measurement_result(  # noqa: SLF001
-            payload=payload,
-            shot_samples=shot_samples,
-            sampling_period_ns=0.4,
-        ),
+    result = Quel3ExecutionManager.build_measurement_result(
+        payload=payload,
+        shot_samples=shot_samples,
+        sampling_period_ns=0.4,
+        default_sampling_period=0.4,
+        avg_sample_stride=4,
     )
 
     assert result.mode == "avg"
@@ -149,7 +147,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
 
 
 def test_build_measurement_result_uses_output_target_labels() -> None:
-    """Given explicit output map, when building result, then mapped label is used."""
+    """Given output target mapping, measurement result uses mapped labels."""
     payload = _make_payload(mode="single", repeats=1)
     timeline = payload.timelines["RQ00"]
     payload = replace(
@@ -166,13 +164,12 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
         }
     }
 
-    result = cast(
-        MeasurementResult,
-        Quel3BackendController._build_measurement_result(  # noqa: SLF001
-            payload=payload,
-            shot_samples=shot_samples,
-            sampling_period_ns=0.4,
-        ),
+    result = Quel3ExecutionManager.build_measurement_result(
+        payload=payload,
+        shot_samples=shot_samples,
+        sampling_period_ns=0.4,
+        default_sampling_period=0.4,
+        avg_sample_stride=4,
     )
 
     assert "Q17" in result.data
@@ -182,14 +179,29 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
 def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given quelware env vars, constructor still uses builtin default values."""
+    """Given quelware env vars, constructor still uses builtin defaults."""
     monkeypatch.setenv("QUBEX_QUELWARE_ENDPOINT", "env-host")
     monkeypatch.setenv("QUBEX_QUELWARE_PORT", "12345")
-    monkeypatch.setenv("QUBEX_QUELWARE_TRIGGER_WAIT", "999")
 
     controller = Quel3BackendController()
 
     assert pytest.approx(0.4) == controller.DEFAULT_SAMPLING_PERIOD
     assert controller._runtime_context.quelware_endpoint == "localhost"  # noqa: SLF001
     assert controller._runtime_context.quelware_port == 50051  # noqa: SLF001
-    assert controller._runtime_context.trigger_wait == 1_000_000  # noqa: SLF001
+
+
+def test_execute_rejects_multiple_instrument_aliases() -> None:
+    """Given multiple aliases, execute raises NotImplementedError."""
+    controller = Quel3BackendController()
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        timelines={
+            "RQ00": payload.timelines["RQ00"],
+            "RQ01": payload.timelines["RQ00"],
+        },
+        instrument_aliases={"RQ00": "alias-0", "RQ01": "alias-1"},
+    )
+
+    with pytest.raises(NotImplementedError, match="single instrument alias"):
+        controller.execute(request=BackendExecutionRequest(payload=payload))

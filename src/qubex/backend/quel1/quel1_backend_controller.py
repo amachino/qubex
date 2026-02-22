@@ -29,6 +29,7 @@ from .managers import (
     Quel1ExecutionManager,
 )
 from .quel1_backend_constants import (
+    DEFAULT_CAPTURE_DELAY,
     DEFAULT_EXECUTION_MODE,
     WORD_LENGTH,
     ExecutionMode,
@@ -38,6 +39,9 @@ from .quel1_runtime_context import Quel1RuntimeContext
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from qubex.backend.control_system import Box
+    from qubex.backend.experiment_system import ExperimentSystem
+
     from .compat.qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
         BoxSettingProtocol as BoxSetting,
@@ -880,6 +884,113 @@ class Quel1BackendController(BackendController):
         box.initialize_all_awgunits()
         box.initialize_all_capunits()
 
+    def sync_box_to_hardware(self, box: Box) -> None:
+        """Apply one experiment-system box configuration to hardware."""
+        for port in box.ports:
+            port_type = getattr(port.type, "value", None)
+            if port_type in ("CTRL", "READ_OUT", "PUMP"):
+                try:
+                    self.config_port(
+                        box.id,
+                        port=port.number,
+                        lo_freq=port.lo_freq,
+                        cnco_freq=port.cnco_freq,
+                        vatt=getattr(port, "vatt", None),
+                        sideband=getattr(port, "sideband", None),
+                        fullscale_current=getattr(port, "fullscale_current", None),
+                        rfswitch=port.rfswitch,
+                    )
+                    for gen_channel in port.channels:
+                        self.config_channel(
+                            box.id,
+                            port=port.number,
+                            channel=gen_channel.number,
+                            fnco_freq=gen_channel.fnco_freq,
+                        )
+                except Exception:
+                    logger.exception("Failed to configure %s", port.id)
+            elif port_type == "READ_IN":
+                try:
+                    self.config_port(
+                        box.id,
+                        port=port.number,
+                        lo_freq=port.lo_freq,
+                        cnco_freq=port.cnco_freq,
+                        rfswitch=port.rfswitch,
+                    )
+                    for cap_channel in port.channels:
+                        self.config_runit(
+                            box.id,
+                            port=port.number,
+                            runit=cap_channel.number,
+                            fnco_freq=cap_channel.fnco_freq,
+                        )
+                except Exception:
+                    logger.exception("Failed to configure %s", port.id)
+
+    def sync_experiment_system_to_backend_controller(
+        self,
+        experiment_system: ExperimentSystem,
+    ) -> None:
+        """Rebuild backend-controller topology from one experiment-system model."""
+        control_system = experiment_system.control_system
+        control_params = experiment_system.control_params
+        self.define_clockmaster(
+            ipaddr=control_system.clock_master_address,
+            reset=True,
+        )
+        self.set_box_options({box.id: box.options for box in control_system.boxes})
+
+        for box in control_system.boxes:
+            self.define_box(
+                box_name=box.id,
+                ipaddr_wss=box.address,
+                boxtype=box.type.value,
+            )
+
+            for port in box.ports:
+                port_type = getattr(port.type, "value", None)
+                if port_type == "NA":
+                    continue
+                self.define_port(
+                    port_name=port.id,
+                    box_name=box.id,
+                    port_number=port.number,
+                )
+
+                for channel in port.channels:
+                    if port_type == "READ_IN":
+                        mux = experiment_system.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        ndelay_or_nwait = control_params.get_capture_delay(mux.index)
+                    elif port_type == "MNTR_IN":
+                        ndelay_or_nwait = DEFAULT_CAPTURE_DELAY
+                    else:
+                        ndelay_or_nwait = 0
+                    self.define_channel(
+                        channel_name=channel.id,
+                        port_name=port.id,
+                        channel_number=channel.number,
+                        ndelay_or_nwait=ndelay_or_nwait,
+                    )
+
+                if port_type in ("PUMP", "MNTR_OUT", "MNTR_IN"):
+                    self.add_channel_target_relation(
+                        port.channels[0].id,
+                        port.id,
+                    )
+
+        for target in experiment_system.all_targets:
+            self.define_target(
+                target_name=target.label,
+                channel_name=target.channel.id,
+                target_frequency=target.frequency,
+            )
+
+        self.clear_command_queue()
+        self.clear_cache()
+
     def linkup(
         self,
         box_name: str,
@@ -1390,7 +1501,7 @@ class Quel1BackendController(BackendController):
         *,
         port_name: str,
         box_name: str,
-        port_number: int,
+        port_number: int | tuple[int, int],
     ) -> None:
         """
         Define a port in qube-calib.

@@ -35,7 +35,11 @@ from qubex.backend import (
     TargetType,
 )
 from qubex.backend.control_system import GenPort
-from qubex.backend.controller_types import SystemBackendController
+from qubex.backend.controller_types import (
+    BackendClockResynchronizer,
+    BackendSkewYamlLoader,
+    SystemBackendController,
+)
 from qubex.measurement import (
     MeasurementClient,
     StateClassifier,
@@ -250,8 +254,11 @@ class ExperimentContext:
         if not skew_file_path.exists():
             logger.warning(f"Skew file not found: {skew_file_path}")
             return
+        backend_controller = self.backend_controller
+        if not isinstance(backend_controller, BackendSkewYamlLoader):
+            return
         try:
-            self.backend_controller.load_skew_yaml(skew_file_path)
+            backend_controller.load_skew_yaml(skew_file_path)
         except Exception:
             logger.exception("Failed to load the skew file.")
 
@@ -958,7 +965,12 @@ class ExperimentContext:
         """Resynchronize clocks for the specified boxes."""
         if box_ids is None:
             box_ids = self.box_ids
-        self.backend_controller.resync_clocks(box_ids)
+        backend_controller = self.backend_controller
+        if not isinstance(backend_controller, BackendClockResynchronizer):
+            raise NotImplementedError(
+                "Active backend does not support clock re-synchronization."
+            )
+        backend_controller.resync_clocks(box_ids)
 
     def configure(
         self,
@@ -1008,7 +1020,14 @@ class ExperimentContext:
         if len(box_ids) == 0:
             box_ids = self.box_ids
 
-        self.backend_controller.initialize_awg_and_capunits(box_ids)
+        initialize_awg_and_capunits = getattr(
+            self.backend_controller, "initialize_awg_and_capunits", None
+        )
+        if not callable(initialize_awg_and_capunits):
+            raise NotImplementedError(
+                "Active backend does not support AWG/CAP unit reset."
+            )
+        initialize_awg_and_capunits(box_ids)
 
     def _resolve_custom_target_qubit_label(
         self,
@@ -1105,7 +1124,12 @@ class ExperimentContext:
             channel=channel,
             type=target_type,
         )
-        self.backend_controller.define_target(
+        define_target = getattr(self.backend_controller, "define_target", None)
+        if not callable(define_target):
+            raise NotImplementedError(
+                "Active backend does not support custom target registration."
+            )
+        define_target(
             target_name=target.label,
             channel_name=target.channel.id,
             target_frequency=target.frequency,

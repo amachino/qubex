@@ -56,16 +56,17 @@ def test_quel3_backend_executor_delegates_to_backend_controller() -> None:
     expected = object()
 
     class _Controller:
-        def execute_measurement(self, *, payload: Quel3ExecutionPayload) -> object:
-            called["payload"] = payload
+        def execute(self, *, request: BackendExecutionRequest) -> object:
+            called["request"] = request
             return expected
 
     payload = _make_payload()
     executor = Quel3BackendExecutor(backend_controller=_Controller())
 
-    result = executor.execute(request=BackendExecutionRequest(payload=payload))
+    request = BackendExecutionRequest(payload=payload)
+    result = executor.execute(request=request)
 
-    assert called["payload"] is payload
+    assert called["request"] is request
     assert result is expected
 
 
@@ -82,5 +83,5 @@ def test_quel3_backend_executor_requires_backend_hook() -> None:
     payload = _make_payload()
     executor = Quel3BackendExecutor(backend_controller=object())
 
-    with pytest.raises(TypeError, match="execute_measurement"):
+    with pytest.raises(TypeError, match=r"execute\(request=.*\)"):
         executor.execute(request=BackendExecutionRequest(payload=payload))

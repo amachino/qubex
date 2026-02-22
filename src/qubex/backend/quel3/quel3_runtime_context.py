@@ -31,11 +31,6 @@ class Quel3RuntimeContextReader(Protocol):
         ...
 
     @property
-    def trigger_wait(self) -> int:
-        """Return trigger wait count for session trigger calls."""
-        ...
-
-    @property
     def default_sampling_period(self) -> float:
         """Return default sampling period in ns."""
         ...
@@ -55,7 +50,6 @@ class Quel3RuntimeContext:
         alias_map: Mapping[str, str],
         quelware_endpoint: str,
         quelware_port: int,
-        trigger_wait: int,
         default_sampling_period: float,
         measurement_result_avg_sample_stride: int,
     ) -> None:
@@ -63,7 +57,6 @@ class Quel3RuntimeContext:
         self._alias_map: dict[str, str] = dict(alias_map)
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
-        self._trigger_wait = trigger_wait
         self._default_sampling_period = default_sampling_period
         self._measurement_result_avg_sample_stride = (
             measurement_result_avg_sample_stride
@@ -88,11 +81,6 @@ class Quel3RuntimeContext:
     def quelware_port(self) -> int:
         """Return quelware API port."""
         return self._quelware_port
-
-    @property
-    def trigger_wait(self) -> int:
-        """Return trigger wait count for session trigger calls."""
-        return self._trigger_wait
 
     @property
     def default_sampling_period(self) -> float:

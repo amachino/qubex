@@ -7,7 +7,7 @@ import importlib
 import sys
 import threading
 from collections import defaultdict
-from collections.abc import Callable, Coroutine, Iterable
+from collections.abc import Coroutine, Iterable
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Literal, Protocol
@@ -15,11 +15,6 @@ from typing import TYPE_CHECKING, Literal, Protocol
 import numpy as np
 import numpy.typing as npt
 
-from qubex.backend.backend_executor import (
-    BackendExecutionRequest,
-    BackendExecutionResult,
-    BackendExecutor,
-)
 from qubex.backend.quel3.managers.sequencer_compiler import Quel3SequencerCompiler
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
@@ -124,7 +119,7 @@ class _InstrumentDriverProtocol(Protocol):
 class _SessionProtocol(Protocol):
     """Minimal quelware session protocol."""
 
-    async def trigger(self, wait: int) -> None:
+    async def trigger(self) -> None:
         """Trigger one fixed-timeline session run."""
         ...
 
@@ -159,9 +154,9 @@ class _QuelwareClientProtocol(Protocol):
 
     def create_session(
         self,
-        resource_ids: list[object],
+        resource_id: object,
     ) -> _SessionContextManagerProtocol:
-        """Create one execution session for selected resources."""
+        """Create one execution session for one selected resource."""
         ...
 
 
@@ -253,69 +248,19 @@ class Quel3ExecutionManager:
         self._runtime_context = runtime_context
         self._sequencer_compiler = Quel3SequencerCompiler()
 
-    def execute(
-        self,
-        *,
-        request: BackendExecutionRequest,
-        execution_mode: ExecutionMode | None,
-        clock_health_checks: bool | None,
-        create_default_executor: Callable[
-            [ExecutionMode | None, bool | None], BackendExecutor
-        ],
-        create_measurement_backend_executor: Callable[
-            [ExecutionMode | None, bool | None],
-            BackendExecutor,
-        ]
-        | None,
-    ) -> BackendExecutionResult:
-        """
-        Execute a prepared backend request with optional execution overrides.
-
-        Parameters
-        ----------
-        request : BackendExecutionRequest
-            Backend execution request.
-        execution_mode : ExecutionMode | None
-            Execution mode override.
-        clock_health_checks : bool | None
-            Clock health check override for parallel mode.
-        create_default_executor : Callable[[ExecutionMode | None, bool | None], BackendExecutor]
-            Default backend-executor factory.
-        create_measurement_backend_executor : Callable[[ExecutionMode | None, bool | None], BackendExecutor] | None
-            Optional backend-specific executor factory.
-
-        Returns
-        -------
-        BackendExecutionResult
-            Backend-specific execution result.
-        """
-        executor: BackendExecutor
-        if create_measurement_backend_executor is not None:
-            executor = create_measurement_backend_executor(
-                execution_mode,
-                clock_health_checks,
-            )
-        else:
-            executor = create_default_executor(execution_mode, clock_health_checks)
-        return executor.execute(request=request)
-
     def resolve_instrument_alias(self, target: str) -> str:
         """Resolve quelware instrument alias for a measurement target."""
         return self._runtime_context.alias_map.get(target, target)
 
-    def execute_measurement(self, *, payload: object) -> object:
+    def execute_payload(self, *, payload: Quel3ExecutionPayload) -> object:
         """
         Execute a QuEL-3 measurement payload.
 
         Parameters
         ----------
-        payload : object
+        payload : Quel3ExecutionPayload
             Backend execution payload produced by measurement adapter.
         """
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError(
-                "Quel3BackendController.execute_measurement expects Quel3ExecutionPayload."
-            )
         return self._run_coroutine(self._execute_measurement_async(payload))
 
     @staticmethod
@@ -344,13 +289,18 @@ class Quel3ExecutionManager:
 
     async def _execute_measurement_async(
         self,
-        payload: object,
+        payload: Quel3ExecutionPayload,
     ) -> object:
         """Execute one fixed-timeline measurement flow via quelware."""
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError(
-                "Quel3BackendController.execute_measurement expects Quel3ExecutionPayload."
+        aliases = sorted(set(payload.instrument_aliases.values()))
+        if len(aliases) == 0:
+            raise ValueError("Quel3ExecutionPayload must include instrument aliases.")
+        if len(aliases) > 1:
+            raise NotImplementedError(
+                "Quel3 execution currently supports a single instrument alias. "
+                "This keeps behavior within quelware-client examples."
             )
+
         try:
             (
                 create_quelware_client,
@@ -363,10 +313,6 @@ class Quel3ExecutionManager:
             raise RuntimeError(
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
             ) from exc
-
-        aliases = sorted(set(payload.instrument_aliases.values()))
-        if len(aliases) == 0:
-            raise ValueError("Quel3ExecutionPayload must include instrument aliases.")
 
         sequencer = self._sequencer_compiler.compile(
             payload=payload,
@@ -393,8 +339,8 @@ class Quel3ExecutionManager:
                     f"Quelware aliases are missing: {missing_aliases}. available={available}"
                 )
 
-            session_resources = [alias_to_id[alias] for alias in aliases]
-            async with client.create_session(session_resources) as session:
+            alias = aliases[0]
+            async with client.create_session(alias_to_id[alias]) as session:
                 alias_to_driver: dict[str, _InstrumentDriverProtocol] = {}
                 sampling_period_ns: float | None = None
                 for alias in aliases:
@@ -427,7 +373,7 @@ class Quel3ExecutionManager:
                 )
                 shot_samples = self._initialize_shot_samples(payload)
                 for _ in range(shot_count):
-                    await session.trigger(wait=self._runtime_context.trigger_wait)
+                    await session.trigger()
                     alias_results = {
                         alias: await driver.fetch_result()
                         for alias, driver in alias_to_driver.items()

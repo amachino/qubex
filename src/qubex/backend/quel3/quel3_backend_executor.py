@@ -13,29 +13,29 @@ from .quel3_execution_payload import Quel3ExecutionPayload
 
 
 @runtime_checkable
-class _Quel3ExecutionHook(Protocol):
-    """Protocol for backend controllers exposing QuEL-3 execution hook."""
+class _BackendExecuteHook(Protocol):
+    """Protocol for backend controllers exposing execute(request=...)."""
 
-    def execute_measurement(self, *, payload: Quel3ExecutionPayload) -> object:
-        """Execute one QuEL-3 backend payload."""
+    def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
+        """Execute one backend request."""
         ...
 
 
 class Quel3BackendExecutor:
-    """QuEL-3 backend executor delegating to backend-controller hook."""
+    """QuEL-3 backend executor delegating to backend-controller execute API."""
 
     def __init__(self, *, backend_controller: object) -> None:
         self._backend_controller = backend_controller
 
     def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
-        """Execute QuEL-3 payload using backend-controller integration hook."""
+        """Execute QuEL-3 payload using backend-controller execute API."""
         payload = request.payload
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError(
                 "Quel3BackendExecutor expects `Quel3ExecutionPayload` payload."
             )
-        if not isinstance(self._backend_controller, _Quel3ExecutionHook):
+        if not isinstance(self._backend_controller, _BackendExecuteHook):
             raise TypeError(
-                "Quel3 backend execution requires backend_controller.execute_measurement(payload=...)."
+                "Quel3 backend execution requires backend_controller.execute(request=...)."
             )
-        return self._backend_controller.execute_measurement(payload=payload)
+        return self._backend_controller.execute(request=request)

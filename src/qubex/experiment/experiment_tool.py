@@ -8,7 +8,7 @@ import subprocess
 from collections import defaultdict
 from collections.abc import Collection
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, cast
 
 import yaml
 from rich.console import Console
@@ -31,6 +31,26 @@ system_manager = SystemManager.shared()
 
 def _raise_unknown_method(method: str) -> NoReturn:
     raise ValueError(f"Unknown method: {method}")
+
+
+class _FigureLike(Protocol):
+    """Minimal plotting protocol for skew-check helper output."""
+
+    def update_layout(self, *, title: str, width: int) -> None:
+        """Update figure layout."""
+        ...
+
+    def show(self) -> None:
+        """Render figure."""
+        ...
+
+
+def _require_backend_callable(method_name: str) -> Any:
+    """Return one backend method or raise if unavailable."""
+    method = getattr(system_manager.backend_controller, method_name, None)
+    if not callable(method):
+        raise NotImplementedError(f"Active backend does not support `{method_name}`.")
+    return method
 
 
 def check_skew(
@@ -79,18 +99,20 @@ Do you want to continue?
         return {}
 
     all_box_ids = list({*box_ids, ref_port})
-    skew, fig = system_manager.backend_controller.run_skew_measurement(
+    run_skew_measurement = _require_backend_callable("run_skew_measurement")
+    skew, fig = run_skew_measurement(
         skew_yaml_path=skew_file_path,
         box_yaml_path=box_file_path,
         clockmaster_ip=clock_master_address,
         box_names=all_box_ids,
         estimate=estimate,
     )
-    fig.update_layout(
+    figure = cast(_FigureLike, fig)
+    figure.update_layout(
         title=f"Skew : {', '.join(box_ids)!s} (Ref. {ref_port})",
         width=800,
     )
-    fig.show()
+    figure.show()
     return {
         "skew": skew,
         "fig": fig,
@@ -99,12 +121,14 @@ Do you want to continue?
 
 def get_qubecalib() -> QubeCalib:
     """Get the QubeCalib instance."""
-    return system_manager.backend_controller.get_qubecalib()
+    get_qubecalib_impl = _require_backend_callable("get_qubecalib")
+    return cast(QubeCalib, get_qubecalib_impl())
 
 
 def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
-    box = system_manager.backend_controller.get_box(box_id)
+    get_box = _require_backend_callable("get_box")
+    box = cast(Quel1Box, get_box(box_id))
     # TODO: use appropriate noise threshold
     box.reconnect(background_noise_threshold=10000)
     return box
@@ -112,12 +136,14 @@ def get_quel1_box(box_id: str) -> Quel1Box:
 
 def dump_box(box_id: str) -> dict:
     """Dump the information of a box."""
-    return system_manager.backend_controller.dump_box(box_id)
+    dump_box_impl = _require_backend_callable("dump_box")
+    return cast(dict, dump_box_impl(box_id))
 
 
 def dump_port(box_id: str, port_number: int) -> dict:
     """Dump the information of a port."""
-    return system_manager.backend_controller.dump_port(box_id, port_number)
+    dump_port_impl = _require_backend_callable("dump_port")
+    return cast(dict, dump_port_impl(box_id, port_number))
 
 
 def reboot_fpga(box_id: str) -> None:
@@ -153,11 +179,13 @@ This operation will reset LO/NCO settings. Do you want to continue?
         return
 
     logger.info("Relinking up the boxes...")
-    system_manager.backend_controller.relinkup_boxes(
+    relinkup_boxes_impl = _require_backend_callable("relinkup_boxes")
+    sync_clocks = _require_backend_callable("sync_clocks")
+    relinkup_boxes_impl(
         box_ids,
         noise_threshold=noise_threshold,
     )
-    system_manager.backend_controller.sync_clocks(box_ids)
+    sync_clocks(box_ids)
     logger.info("Operation completed.")
 
 
@@ -168,12 +196,14 @@ def reset_clockmaster(
     if ipaddr is None:
         ipaddr = system_manager.experiment_system.control_system.clock_master_address
 
-    return system_manager.backend_controller.reset_clockmaster(ipaddr)
+    reset_clockmaster_impl = _require_backend_callable("reset_clockmaster")
+    return cast(bool, reset_clockmaster_impl(ipaddr))
 
 
 def resync_clocks(box_ids: Collection[str]) -> bool:
     """Resync the clocks of the boxes."""
-    return system_manager.backend_controller.resync_clocks(list(box_ids))
+    resync_clocks_impl = _require_backend_callable("resync_clocks")
+    return cast(bool, resync_clocks_impl(list(box_ids)))
 
 
 def print_chip_info(
@@ -675,7 +705,10 @@ def print_box_info(box_id: str, fetch: bool | None = None) -> None:
     table2.add_column("FNCO-2", justify="right")
 
     if fetch:
-        box_config = system_manager.backend_controller.dump_box(box_id)
+        dump_box_impl = _require_backend_callable("dump_box")
+        box_config = dump_box_impl(box_id)
+        if not isinstance(box_config, dict):
+            raise TypeError("Backend `dump_box` must return dict.")
         ports_config = box_config.get("ports", {})
         for port in box.ports:
             if port.type == PortType.MNTR_OUT:

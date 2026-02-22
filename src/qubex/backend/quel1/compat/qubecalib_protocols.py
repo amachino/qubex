@@ -413,7 +413,7 @@ class QubeCalibProtocol(Protocol):
         *,
         port_name: str,
         box_name: str,
-        port_number: int,
+        port_number: int | tuple[int, int],
     ) -> Any:
         """Define one port entry."""
         ...

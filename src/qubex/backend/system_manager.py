@@ -21,15 +21,16 @@ from qubex.constants import (
 )
 from qubex.typing import ConfigurationMode
 
-from .control_system import Box, CapPort, GenPort, PortType
+from .control_system import Box, PortType
 from .controller_types import (
+    BackendBoxHardwareSynchronizer,
+    BackendExperimentSystemSynchronizer,
     BackendKind,
     SystemBackendController,
 )
 from .experiment_system import ExperimentSystem
 from .parallel_box_executor import run_parallel_each, run_parallel_map
 from .quel1 import Quel1BackendController
-from .quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
 from .quel3 import Quel3BackendController
 
 logger = logging.getLogger(__name__)
@@ -601,49 +602,15 @@ This operation will overwrite the existing backend settings. Do you want to cont
         logger.exception("Failed to configure box %s", box.id, exc_info=exc)
 
     def _sync_box_to_hardware(self, box: Box) -> None:
-        """Apply experiment-system port/channel parameters to one hardware box."""
-        for port in box.ports:
-            if isinstance(port, GenPort):
-                if port.type in (PortType.CTRL, PortType.READ_OUT, PortType.PUMP):
-                    try:
-                        self.backend_controller.config_port(
-                            box_name=box.id,
-                            port=port.number,
-                            lo_freq=port.lo_freq,
-                            cnco_freq=port.cnco_freq,
-                            vatt=port.vatt,
-                            sideband=port.sideband,
-                            fullscale_current=port.fullscale_current,
-                            rfswitch=port.rfswitch,
-                        )
-                        for gen_channel in port.channels:
-                            self.backend_controller.config_channel(
-                                box_name=box.id,
-                                port=port.number,
-                                channel=gen_channel.number,
-                                fnco_freq=gen_channel.fnco_freq,
-                            )
-                    except Exception:
-                        logger.exception("Failed to configure %s", port.id)
-            elif isinstance(port, CapPort):
-                if port.type in (PortType.READ_IN,):
-                    try:
-                        self.backend_controller.config_port(
-                            box_name=box.id,
-                            port=port.number,
-                            lo_freq=port.lo_freq,
-                            cnco_freq=port.cnco_freq,
-                            rfswitch=port.rfswitch,
-                        )
-                        for cap_channel in port.channels:
-                            self.backend_controller.config_runit(
-                                box_name=box.id,
-                                port=port.number,
-                                runit=cap_channel.number,
-                                fnco_freq=cap_channel.fnco_freq,
-                            )
-                    except Exception:
-                        logger.exception("Failed to configure %s", port.id)
+        """Apply one experiment-system box configuration through backend delegate."""
+        backend_controller = self.backend_controller
+        if not isinstance(backend_controller, BackendBoxHardwareSynchronizer):
+            logger.debug(
+                "Skipping hardware sync for box %s because active backend has no box sync delegate.",
+                box.id,
+            )
+            return
+        backend_controller.sync_box_to_hardware(box)
 
     def _fetch_backend_settings_from_hardware(
         self,
@@ -679,13 +646,16 @@ This operation will overwrite the existing backend settings. Do you want to cont
         result = BackendSettings()
         if not boxes:
             return result
+        dump_box = getattr(self.backend_controller, "dump_box", None)
+        if not callable(dump_box):
+            return result
 
         def _dump_box(box: Box) -> dict[str, Any]:
-            return self.backend_controller.dump_box(box.id)
+            return cast(dict[str, Any], dump_box(box.id))
 
         if not parallel:
             for box in boxes:
-                result[box.id] = self.backend_controller.dump_box(box.id)
+                result[box.id] = cast(dict[str, Any], dump_box(box.id))
             return result
 
         result.update(
@@ -850,91 +820,17 @@ This operation will overwrite the existing backend settings. Do you want to cont
             )
 
     def _sync_experiment_system_to_backend_controller(self) -> None:
-        """Rebuild backend-controller model objects from experiment-system state."""
-        if not self._supports_methods(
-            self.backend_controller,
-            (
-                "define_clockmaster",
-                "set_box_options",
-                "define_box",
-                "define_port",
-                "define_channel",
-                "add_channel_target_relation",
-                "define_target",
-                "clear_command_queue",
-                "clear_cache",
-            ),
-        ):
+        """Rebuild backend-controller model via backend-specific delegate."""
+        backend_controller = self.backend_controller
+        if not isinstance(backend_controller, BackendExperimentSystemSynchronizer):
             logger.info(
-                "Skipping backend-controller topology sync because this backend does not expose definition APIs."
+                "Skipping backend-controller topology sync because this backend has no topology sync delegate."
             )
             self._update_cached_state()
             return
-        experiment_system = self.experiment_system
-        control_system = experiment_system.control_system
-        control_params = experiment_system.control_params
-
-        self.backend_controller.define_clockmaster(
-            ipaddr=control_system.clock_master_address,
-            reset=True,  # this option has no effect and will be removed in the future
+        backend_controller.sync_experiment_system_to_backend_controller(
+            self.experiment_system
         )
-        self.backend_controller.set_box_options(
-            {box.id: box.options for box in control_system.boxes}
-        )
-
-        for box in control_system.boxes:
-            self.backend_controller.define_box(
-                box_name=box.id,
-                ipaddr_wss=box.address,
-                boxtype=box.type.value,
-            )
-
-            for port in box.ports:
-                if port.type == PortType.NOT_AVAILABLE:
-                    continue
-                self.backend_controller.define_port(
-                    port_name=port.id,
-                    box_name=box.id,
-                    port_number=port.number,  # type: ignore
-                )
-
-                for channel in port.channels:
-                    if port.type == PortType.READ_IN:
-                        mux = experiment_system.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        ndelay_or_nwait = control_params.get_capture_delay(mux.index)
-                    elif port.type == PortType.MNTR_IN:
-                        ndelay_or_nwait = DEFAULT_CAPTURE_DELAY
-                    else:
-                        ndelay_or_nwait = 0
-                    self.backend_controller.define_channel(
-                        channel_name=channel.id,
-                        port_name=port.id,
-                        channel_number=channel.number,
-                        ndelay_or_nwait=ndelay_or_nwait,
-                    )
-
-                if port.type in (
-                    PortType.PUMP,
-                    PortType.MNTR_OUT,
-                    PortType.MNTR_IN,
-                ):
-                    self.backend_controller.add_channel_target_relation(
-                        port.channels[0].id,
-                        port.id,
-                    )
-
-        for target in experiment_system.all_targets:
-            self.backend_controller.define_target(
-                target_name=target.label,
-                channel_name=target.channel.id,
-                target_frequency=target.frequency,
-            )
-
-        # reset the cache
-        self.backend_controller.clear_command_queue()
-        self.backend_controller.clear_cache()
         self._update_cached_state()
 
     def _update_cached_state(self) -> None:
@@ -1012,19 +908,34 @@ This operation will overwrite the existing backend settings. Do you want to cont
         channel = target.channel
         port = channel.port
         box_cache = self._get_box_config_cache_snapshot()
+        config_port = getattr(self.backend_controller, "config_port", None)
+        config_channel = getattr(self.backend_controller, "config_channel", None)
+        config_runit = getattr(self.backend_controller, "config_runit", None)
+        initialize_awg_and_capunits = getattr(
+            self.backend_controller, "initialize_awg_and_capunits", None
+        )
+        if (
+            not callable(config_port)
+            or not callable(config_channel)
+            or not callable(config_runit)
+            or not callable(initialize_awg_and_capunits)
+        ):
+            raise NotImplementedError(
+                "Active backend does not support backend-settings cache operations."
+            )
 
         original_lo_freq = port.lo_freq
         original_cnco_freq = port.cnco_freq
         original_fnco_freq = channel.fnco_freq
         original_box_cache = deepcopy(box_cache)
 
-        self.backend_controller.config_port(
+        config_port(
             box_name=port.box_id,
             port=port.number,
             lo_freq=lo_freq,
             cnco_freq=cnco_freq,
         )
-        self.backend_controller.config_channel(
+        config_channel(
             box_name=port.box_id,
             port=port.number,
             channel=channel.number,
@@ -1042,13 +953,13 @@ This operation will overwrite the existing backend settings. Do you want to cont
         if target.is_read:
             cap_channel = self.experiment_system.get_cap_target(label).channel
             cap_port = cap_channel.port
-            self.backend_controller.config_port(
+            config_port(
                 box_name=cap_port.box_id,
                 port=cap_port.number,
                 lo_freq=lo_freq,
                 cnco_freq=cnco_freq,
             )
-            self.backend_controller.config_runit(
+            config_runit(
                 box_name=cap_port.box_id,
                 port=cap_port.number,
                 runit=cap_channel.number,
@@ -1063,7 +974,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             if cap_port.box_id not in initialized_box_ids:
                 initialized_box_ids.append(cap_port.box_id)
 
-        self.backend_controller.initialize_awg_and_capunits(initialized_box_ids)
+        initialize_awg_and_capunits(initialized_box_ids)
 
         self.experiment_system.update_port_params(
             label,
@@ -1081,26 +992,26 @@ This operation will overwrite the existing backend settings. Do you want to cont
                 cnco_freq=original_cnco_freq,
                 fnco_freq=original_fnco_freq,
             )
-            self.backend_controller.config_port(
+            config_port(
                 box_name=port.box_id,
                 port=port.number,
                 lo_freq=original_lo_freq,
                 cnco_freq=original_cnco_freq,
             )
-            self.backend_controller.config_channel(
+            config_channel(
                 box_name=port.box_id,
                 port=port.number,
                 channel=channel.number,
                 fnco_freq=original_fnco_freq,
             )
             if target.is_read:
-                self.backend_controller.config_port(
+                config_port(
                     box_name=cap_port.box_id,
                     port=cap_port.number,
                     lo_freq=original_lo_freq,
                     cnco_freq=original_cnco_freq,
                 )
-                self.backend_controller.config_runit(
+                config_runit(
                     box_name=cap_port.box_id,
                     port=cap_port.number,
                     runit=cap_channel.number,

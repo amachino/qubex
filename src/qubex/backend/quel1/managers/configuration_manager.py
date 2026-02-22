@@ -274,7 +274,7 @@ class Quel1ConfigurationManager:
         qubecalib: QubeCalib,
         port_name: str,
         box_name: str,
-        port_number: int,
+        port_number: int | tuple[int, int],
     ) -> None:
         """Define one port in qubecalib."""
         qubecalib.define_port(

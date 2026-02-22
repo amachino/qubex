@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias, runtime_che
 from .backend_executor import BackendExecutionRequest, BackendExecutionResult
 
 if TYPE_CHECKING:
+    from .control_system import Box
+    from .experiment_system import ExperimentSystem
     from .quel1 import Quel1BackendController
     from .quel3 import Quel3BackendController
 
@@ -138,6 +140,27 @@ class BackendClockResynchronizer(Protocol):
 
     def resync_clocks(self, box_list: list[str]) -> bool:
         """Force re-synchronization of clocks for selected boxes."""
+        ...
+
+
+@runtime_checkable
+class BackendBoxHardwareSynchronizer(Protocol):
+    """Capability protocol for box-level hardware synchronization."""
+
+    def sync_box_to_hardware(self, box: Box) -> None:
+        """Apply one experiment-system box configuration to hardware."""
+        ...
+
+
+@runtime_checkable
+class BackendExperimentSystemSynchronizer(Protocol):
+    """Capability protocol for backend topology synchronization."""
+
+    def sync_experiment_system_to_backend_controller(
+        self,
+        experiment_system: ExperimentSystem,
+    ) -> None:
+        """Rebuild backend-controller model objects from experiment-system state."""
         ...
 
 
