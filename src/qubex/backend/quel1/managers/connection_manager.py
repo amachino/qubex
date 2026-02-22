@@ -187,13 +187,6 @@ class Quel1ConnectionManager:
         if quel1system.config_cache:
             quel1system.config_fetched_at = datetime.now()
 
-    def create_resource_map(
-        self,
-        kind: Literal["cap", "gen"],
-    ) -> dict[str, dict]:
-        """Create capture or generator resource map from configuration."""
-        return self._create_resource_map(kind)
-
     def connect(
         self,
         *,

@@ -12,7 +12,7 @@ import logging
 from collections.abc import Collection
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
@@ -852,13 +852,6 @@ class Quel1BackendController(BackendController):
             for target in targets
             if target in self.gen_resource_map
         }
-
-    def create_resource_map(
-        self,
-        type: Literal["cap", "gen"],
-    ) -> dict[str, dict]:
-        """Create a capture or generator resource map from configuration."""
-        return self._connection_manager.create_resource_map(type)
 
     def load_skew_yaml(self, file_path: str | Path) -> None:
         """
