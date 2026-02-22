@@ -24,7 +24,7 @@ from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
-from .measurement_schedule_executor import MeasurementScheduleExecutor
+from .measurement_schedule_runner import MeasurementScheduleRunner
 from .measurement_session_service import MeasurementSessionService
 from .models import (
     MeasureData,
@@ -53,7 +53,7 @@ __all__ = [
     "MeasurementResultFactory",
     "MeasurementSchedule",
     "MeasurementScheduleBuilder",
-    "MeasurementScheduleExecutor",
+    "MeasurementScheduleRunner",
     "MeasurementSessionService",
     "MultipleMeasureResult",
     "Quel1MeasurementBackendAdapter",

@@ -18,7 +18,7 @@ Freeze the minimum compatibility test scope required for v1.5.0 beta sign-off.
 | Backend-kind forwarding (`load(..., backend_kind=...)`) | covered | `tests/measurement/test_backend_kind_selection.py` |
 | Legacy API delegation (`execute`, `measure` -> schedule execution) | covered | `tests/measurement/test_measurement_api_delegation.py` |
 | Schedule execution custom-factory hook path | covered | `tests/measurement/test_measurement_api_delegation.py` |
-| Default executor backend-kind selection (`quel1` / `quel3`) | covered | `tests/measurement/test_measurement_schedule_executor.py` |
+| Default executor backend-kind selection (`quel1` / `quel3`) | covered | `tests/measurement/test_measurement_schedule_runner.py` |
 | QuEL-3 adapter payload conversion and alias resolution | covered | `tests/measurement/test_quel3_measurement_backend_adapter.py` |
 | QuEL-3 backend executor hook contract | covered | `tests/measurement/test_quel3_backend_executor.py` |
 | Sampling-period source contract (`dt`) | covered | `tests/measurement/test_sampling_period_source.py` |

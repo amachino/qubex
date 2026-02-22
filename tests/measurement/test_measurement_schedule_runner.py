@@ -19,7 +19,7 @@ from qubex.measurement.measurement_constraint_profile import (
 )
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_result_factory import MeasurementResultFactory
-from qubex.measurement.measurement_schedule_executor import MeasurementScheduleExecutor
+from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models import (
     DspConfig,
     FrequencyConfig,
@@ -100,7 +100,7 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
             return expected
 
     backend_controller = type("_BC", (), {"box_config": {"shots": 2}})()
-    executor = MeasurementScheduleExecutor(
+    executor = MeasurementScheduleRunner(
         backend_executor=cast(BackendExecutor, _Executor()),
         measurement_backend_adapter=cast(MeasurementBackendAdapter, _Adapter()),
         measurement_result_factory=cast(MeasurementResultFactory, _ResultFactory()),
@@ -171,7 +171,7 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
             raise AssertionError("result factory should not be called")
 
     backend_controller = type("_BC", (), {"box_config": {"kind": "quel3"}})()
-    executor = MeasurementScheduleExecutor(
+    executor = MeasurementScheduleRunner(
         backend_executor=cast(BackendExecutor, _Executor()),
         measurement_backend_adapter=cast(MeasurementBackendAdapter, _Adapter()),
         measurement_result_factory=cast(MeasurementResultFactory, _ResultFactory()),
@@ -210,19 +210,19 @@ def test_create_default_passes_none_to_delegate_backend_defaults(monkeypatch) ->
             called["clock_health_checks"] = clock_health_checks
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _BackendExecutor,
     )
 
     backend_controller = object()
     experiment_system = object()
 
-    executor = MeasurementScheduleExecutor.create_default(
+    executor = MeasurementScheduleRunner.create_default(
         backend_controller=cast(Quel1BackendController, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )
 
-    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert isinstance(executor, MeasurementScheduleRunner)
     assert called["backend_controller"] is backend_controller
     assert called["execution_mode"] is None
     assert called["clock_health_checks"] is None
@@ -255,27 +255,27 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
             called["result_factory_experiment_system"] = experiment_system
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _BackendExecutor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
         _ResultFactory,
     )
 
     backend_controller = type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 4.0})()
     experiment_system = object()
 
-    executor = MeasurementScheduleExecutor.create_default(
+    executor = MeasurementScheduleRunner.create_default(
         backend_controller=cast(Quel1BackendController, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )
 
-    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert isinstance(executor, MeasurementScheduleRunner)
     assert called["adapter_backend_controller"] is backend_controller
     assert called["adapter_experiment_system"] is experiment_system
     profile = called["adapter_constraint_profile"]
@@ -303,15 +303,15 @@ def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
             called["result_factory_experiment_system"] = experiment_system
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _BackendExecutor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
         _ResultFactory,
     )
 
@@ -325,12 +325,12 @@ def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
     )()
     experiment_system = object()
 
-    executor = MeasurementScheduleExecutor.create_default(
+    executor = MeasurementScheduleRunner.create_default(
         backend_controller=cast(Quel1BackendController, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )
 
-    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert isinstance(executor, MeasurementScheduleRunner)
     profile = called["adapter_constraint_profile"]
     assert isinstance(profile, MeasurementConstraintProfile)
     assert profile.sampling_period_ns == 0.4
@@ -374,15 +374,15 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
         raise AssertionError("MeasurementResultFactory fallback should not be used.")
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _unexpected_backend_executor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _unexpected_adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
         _unexpected_result_factory,
     )
 
@@ -420,14 +420,14 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
 
     backend_controller = _Controller()
     experiment_system = object()
-    executor = MeasurementScheduleExecutor.create_default(
+    executor = MeasurementScheduleRunner.create_default(
         backend_controller=cast(Quel1BackendController, backend_controller),
         experiment_system=cast(Any, experiment_system),
         execution_mode="parallel",
         clock_health_checks=True,
     )
 
-    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert isinstance(executor, MeasurementScheduleRunner)
     assert called["execution_mode"] == "parallel"
     assert called["clock_health_checks"] is True
     assert called["experiment_system"] is experiment_system
@@ -467,19 +467,19 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
         raise AssertionError("Quel1 adapter fallback should not be used for quel3.")
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _BackendExecutor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _unexpected_quel1_adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel3MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel3MeasurementBackendAdapter",
         _Quel3Adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
         _ResultFactory,
     )
 
@@ -494,12 +494,12 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
     )()
     experiment_system = object()
 
-    executor = MeasurementScheduleExecutor.create_default(
+    executor = MeasurementScheduleRunner.create_default(
         backend_controller=cast(Quel1BackendController, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )
 
-    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert isinstance(executor, MeasurementScheduleRunner)
     assert called["adapter_backend_controller"] is backend_controller
     assert called["adapter_experiment_system"] is experiment_system
     profile = called["adapter_constraint_profile"]
@@ -530,19 +530,19 @@ def test_create_default_uses_builtin_quel3_executor_when_backend_hook_exists(
         raise AssertionError("Quel1 executor fallback should not be used for quel3.")
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _unexpected_quel1_executor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel3BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel3BackendExecutor",
         _Quel3Executor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel3MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel3MeasurementBackendAdapter",
         _Adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
         _ResultFactory,
     )
 
@@ -558,12 +558,12 @@ def test_create_default_uses_builtin_quel3_executor_when_backend_hook_exists(
     backend_controller = _Controller()
     experiment_system = object()
 
-    executor = MeasurementScheduleExecutor.create_default(
+    executor = MeasurementScheduleRunner.create_default(
         backend_controller=cast(Quel1BackendController, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )
 
-    assert isinstance(executor, MeasurementScheduleExecutor)
+    assert isinstance(executor, MeasurementScheduleRunner)
     assert called["executor_backend_controller"] is backend_controller
     assert called["result_factory_experiment_system"] is experiment_system
 
@@ -596,15 +596,15 @@ def test_create_default_requires_custom_executor_for_quel3_backend_kind(
         raise AssertionError("Quel1 executor fallback should not be used for quel3.")
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _unexpected_quel1_executor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel3MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel3MeasurementBackendAdapter",
         _Adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
         _ResultFactory,
     )
 
@@ -619,7 +619,7 @@ def test_create_default_requires_custom_executor_for_quel3_backend_kind(
         },
     )()
 
-    executor = MeasurementScheduleExecutor.create_default(
+    executor = MeasurementScheduleRunner.create_default(
         backend_controller=cast(Quel1BackendController, backend_controller),
         experiment_system=cast(Any, object()),
     )

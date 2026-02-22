@@ -13,7 +13,7 @@ from qubex.backend.quel1 import Quel1BackendRawResult
 from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_execution_service import MeasurementExecutionService
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
-from qubex.measurement.measurement_schedule_executor import MeasurementScheduleExecutor
+from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models import (
     DspConfig,
     FrequencyConfig,
@@ -368,7 +368,7 @@ def test_execute_measurement_schedule_delegates_to_executor(
     )
 
     monkeypatch.setattr(
-        MeasurementScheduleExecutor,
+        MeasurementScheduleRunner,
         "create_default",
         classmethod(
             lambda cls,
@@ -417,15 +417,15 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
         raise AssertionError("MeasurementResultFactory fallback should not be used.")
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1BackendExecutor",
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendExecutor",
         _unexpected_backend_executor,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.Quel1MeasurementBackendAdapter",
+        "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _unexpected_adapter,
     )
     monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_executor.MeasurementResultFactory",
+        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
         _unexpected_result_factory,
     )
 

@@ -55,7 +55,7 @@ Execution payloads are backend contracts and should be defined in backend module
 
 - `Quel3MeasurementBackendAdapter` stays in `qubex.measurement.adapters`.
 - `Quel3BackendExecutor` is owned by `qubex.backend.quel3` and imported by
-  `MeasurementScheduleExecutor` from backend layer.
+  `MeasurementScheduleRunner` from backend layer.
 
 ### 4) Align QuEL-1 payload shape with backend-plan pattern
 

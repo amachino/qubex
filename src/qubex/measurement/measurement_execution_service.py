@@ -30,7 +30,7 @@ from .measurement_context import MeasurementContext
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_schedule_builder import MeasurementScheduleBuilder
-from .measurement_schedule_executor import MeasurementScheduleExecutor
+from .measurement_schedule_runner import MeasurementScheduleRunner
 from .measurement_session_service import MeasurementSessionService
 from .models.measure_result import (
     MeasureResult,
@@ -162,9 +162,9 @@ class MeasurementExecutionService:
         return MeasurementConstraintProfile.quel1(SAMPLING_PERIOD)
 
     @property
-    def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:
+    def measurement_schedule_runner(self) -> MeasurementScheduleRunner:
         """Return executor implementation used by schedule execution APIs."""
-        return MeasurementScheduleExecutor.create_default(
+        return MeasurementScheduleRunner.create_default(
             backend_controller=self.backend_controller,
             experiment_system=self.experiment_system,
             execution_mode=self._execution_mode,
@@ -255,7 +255,7 @@ class MeasurementExecutionService:
         MeasurementResult
             The measurement result.
         """
-        result = self.measurement_schedule_executor.execute(
+        result = self.measurement_schedule_runner.execute(
             schedule=schedule,
             config=config,
         )

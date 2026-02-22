@@ -28,7 +28,7 @@ from .models.measurement_result import MeasurementResult
 from .models.measurement_schedule import MeasurementSchedule
 
 
-class MeasurementScheduleExecutor:
+class MeasurementScheduleRunner:
     """Execute measurement schedules with adapter/executor/result factory."""
 
     def __init__(
@@ -52,7 +52,7 @@ class MeasurementScheduleExecutor:
         experiment_system: ExperimentSystem,
         execution_mode: ExecutionMode | None = None,
         clock_health_checks: bool | None = None,
-    ) -> MeasurementScheduleExecutor:
+    ) -> MeasurementScheduleRunner:
         """
         Create the default QuEL-backed schedule executor.
 

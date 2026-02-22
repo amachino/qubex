@@ -38,7 +38,7 @@ from .measurement_context import MeasurementContext
 from .measurement_execution_service import MeasurementExecutionService
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
-from .measurement_schedule_executor import MeasurementScheduleExecutor
+from .measurement_schedule_runner import MeasurementScheduleRunner
 from .measurement_session_service import MeasurementSessionService
 from .models.measure_result import (
     MeasureResult,
@@ -297,9 +297,9 @@ class MeasurementClient:
         return self.execution_service.constraint_profile
 
     @property
-    def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:
+    def measurement_schedule_runner(self) -> MeasurementScheduleRunner:
         """Return executor implementation used by schedule execution APIs."""
-        return self.execution_service.measurement_schedule_executor
+        return self.execution_service.measurement_schedule_runner
 
     @property
     def control_params(self) -> ControlParams:
