@@ -11,6 +11,22 @@
 
 Migrate the current implementation to the target architecture defined in `measurement-backend-responsibility-policy.md`, in behavior-preserving increments.
 
+## Progress
+
+- Completed
+  - Step 1
+  - Step 2
+  - Step 2A
+  - Step 3
+  - Step 4
+  - Step 5
+  - Step 6
+- Remaining
+  - Step 7
+  - Step 8
+  - Step 9
+  - Step 10
+
 ## Migration Rules
 
 - Complete each step while preserving API compatibility.

@@ -1,0 +1,245 @@
+"""Execution manager for QuEL-1 backend controller."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from typing import Any, cast
+
+from qubex.backend.backend_executor import (
+    BackendExecutionRequest,
+    BackendExecutionResult,
+    BackendExecutor,
+)
+from qubex.backend.quel1.execution import SequencerExecutionEngine
+from qubex.backend.quel1.execution.parallel_action_builder import (
+    ClockHealthCheckOptions,
+)
+from qubex.backend.quel1.quel1_backend_constants import ExecutionMode
+
+logger = logging.getLogger(__name__)
+
+
+class Quel1ExecutionManager:
+    """Handle backend execution entrypoints for QuEL-1 controller."""
+
+    def execute(
+        self,
+        *,
+        request: BackendExecutionRequest,
+        execution_mode: ExecutionMode | None,
+        clock_health_checks: bool | None,
+        create_default_executor: Callable[
+            [ExecutionMode | None, bool | None], BackendExecutor
+        ],
+        create_measurement_backend_executor: Callable[
+            [ExecutionMode | None, bool | None],
+            BackendExecutor,
+        ]
+        | None,
+    ) -> BackendExecutionResult:
+        """
+        Execute a prepared backend request with optional execution overrides.
+
+        Parameters
+        ----------
+        request : BackendExecutionRequest
+            Backend execution request.
+        execution_mode : ExecutionMode | None
+            Execution mode override.
+        clock_health_checks : bool | None
+            Clock health check override for parallel mode.
+        create_default_executor : Callable[[ExecutionMode | None, bool | None], BackendExecutor]
+            Default backend-executor factory.
+        create_measurement_backend_executor : Callable[[ExecutionMode | None, bool | None], BackendExecutor] | None
+            Optional backend-specific executor factory.
+
+        Returns
+        -------
+        BackendExecutionResult
+            Backend-specific execution result.
+        """
+        executor: BackendExecutor
+        if create_measurement_backend_executor is not None:
+            executor = create_measurement_backend_executor(
+                execution_mode,
+                clock_health_checks,
+            )
+        else:
+            executor = create_default_executor(execution_mode, clock_health_checks)
+        return executor.execute(request=request)
+
+    def execute_sequencer(
+        self,
+        *,
+        sequencer: Any,
+        repeats: int,
+        integral_mode: str,
+        dsp_demodulation: bool,
+        software_demodulation: bool,
+        enable_sum: bool,
+        enable_classification: bool,
+        line_param0: tuple[float, float, float] | None,
+        line_param1: tuple[float, float, float] | None,
+        boxpool: Any,
+        make_backend_raw_result: Callable[..., object],
+    ) -> object:
+        """
+        Execute a sequencer through serial qubecalib path.
+
+        Parameters
+        ----------
+        sequencer : Any
+            Sequencer to execute.
+        repeats : int
+            Repeat count.
+        integral_mode : str
+            Integral mode.
+        dsp_demodulation : bool
+            DSP demodulation enable flag.
+        software_demodulation : bool
+            Software demodulation enable flag.
+        enable_sum : bool
+            DSP sum enable flag.
+        enable_classification : bool
+            DSP classification enable flag.
+        line_param0 : tuple[float, float, float] | None
+            Classifier line parameter 0.
+        line_param1 : tuple[float, float, float] | None
+            Classifier line parameter 1.
+        boxpool : Any
+            Connected boxpool.
+        make_backend_raw_result : Callable[..., object]
+            Result-container factory.
+
+        Returns
+        -------
+        object
+            Parsed backend result.
+        """
+        SequencerExecutionEngine.set_measurement_options(
+            sequencer=cast(Any, sequencer),
+            repeats=repeats,
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
+            enable_sum=enable_sum,
+            enable_classification=enable_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+        )
+        status, data, config = sequencer.execute(boxpool)
+        return make_backend_raw_result(
+            status=status,
+            data=data,
+            config=config,
+        )
+
+    def execute_sequencer_parallel(
+        self,
+        *,
+        sequencer: Any,
+        repeats: int,
+        integral_mode: str,
+        dsp_demodulation: bool,
+        software_demodulation: bool,
+        enable_sum: bool,
+        enable_classification: bool,
+        line_param0: tuple[float, float, float] | None,
+        line_param1: tuple[float, float, float] | None,
+        clock_health_checks: bool,
+        boxpool: Any,
+        quel1system: Any,
+        action_builder: Any,
+        runit_setting_factory: Any,
+        runit_id_factory: Any,
+        awg_setting_factory: Any,
+        awg_id_factory: Any,
+        make_backend_raw_result: Callable[..., object],
+    ) -> object:
+        """
+        Execute a sequencer through parallelized multi-box action path.
+
+        Parameters
+        ----------
+        sequencer : Any
+            Sequencer to execute.
+        repeats : int
+            Repeat count.
+        integral_mode : str
+            Integral mode.
+        dsp_demodulation : bool
+            DSP demodulation enable flag.
+        software_demodulation : bool
+            Software demodulation enable flag.
+        enable_sum : bool
+            DSP sum enable flag.
+        enable_classification : bool
+            DSP classification enable flag.
+        line_param0 : tuple[float, float, float] | None
+            Classifier line parameter 0.
+        line_param1 : tuple[float, float, float] | None
+            Classifier line parameter 1.
+        clock_health_checks : bool
+            Whether to enable clock health diagnostics.
+        boxpool : Any
+            Connected boxpool.
+        quel1system : Any
+            Connected Quel1System.
+        action_builder : Any
+            Action builder callable.
+        runit_setting_factory : Any
+            Runit-setting factory.
+        runit_id_factory : Any
+            Runit-id factory.
+        awg_setting_factory : Any
+            AWG-setting factory.
+        awg_id_factory : Any
+            AWG-id factory.
+        make_backend_raw_result : Callable[..., object]
+            Result-container factory.
+
+        Returns
+        -------
+        object
+            Parsed backend result.
+        """
+        SequencerExecutionEngine.set_measurement_options(
+            sequencer=cast(Any, sequencer),
+            repeats=repeats,
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
+            enable_sum=enable_sum,
+            enable_classification=enable_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+        )
+        parsed_status, parsed_data, parsed_config = (
+            SequencerExecutionEngine.execute_parallel(
+                sequencer=cast(Any, sequencer),
+                boxpool=boxpool,
+                system=quel1system,
+                action_builder=action_builder,
+                runit_setting_factory=runit_setting_factory,
+                runit_id_factory=runit_id_factory,
+                awg_setting_factory=awg_setting_factory,
+                awg_id_factory=awg_id_factory,
+                logger=logger,
+                clock_health_checks=(
+                    None
+                    if not clock_health_checks
+                    else ClockHealthCheckOptions(
+                        read_master_clock=True,
+                        read_box_latched_clock_on_build=True,
+                        measure_average_sysref_offset=True,
+                        validate_sysref_fluctuation_on_emit=True,
+                    )
+                ),
+            )
+        )
+        return make_backend_raw_result(
+            status=parsed_status,
+            data=parsed_data,
+            config=parsed_config,
+        )

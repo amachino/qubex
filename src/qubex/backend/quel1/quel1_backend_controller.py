@@ -17,12 +17,14 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
-    BackendExecutor,
 )
-from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
+from qubex.backend.parallel_box_executor import run_parallel_map
 
-from .execution import SequencerExecutionEngine
-from .execution.parallel_action_builder import ClockHealthCheckOptions
+from .managers import (
+    Quel1ClockManager,
+    Quel1ConnectionManager,
+    Quel1ExecutionManager,
+)
 from .quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
     WORD_LENGTH,
@@ -107,6 +109,9 @@ class Quel1BackendController:
         self._boxpool: BoxPool | None = None
         self._quel1system: Quel1System | None = None
         self._box_options: dict[str, tuple[str, ...]] = {}
+        self._connection_manager = Quel1ConnectionManager()
+        self._clock_manager = Quel1ClockManager()
+        self._execution_manager = Quel1ExecutionManager()
 
     @property
     def is_connected(self) -> bool:
@@ -246,6 +251,20 @@ class Quel1BackendController:
             Hash of the system configuration.
         """
         return hash(self.qubecalib.system_config_database.asjson())
+
+    def _make_backend_raw_result(
+        self,
+        *,
+        status: dict,
+        data: dict,
+        config: dict,
+    ) -> Quel1BackendRawResult:
+        """Build canonical QuEL-1 raw result container."""
+        return Quel1BackendRawResult(
+            status=status,
+            data=data,
+            config=config,
+        )
 
     def _check_box_availability(self, box_name: str):
         if box_name not in self.available_boxes:
@@ -671,24 +690,26 @@ class Quel1BackendController:
             legacy qubecalib implementation. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
-        if parallel is None:
-            parallel = _DEFAULT_PARALLEL_MODE
-        if self.is_connected:
-            logger.info("Already connected. Skipping backend reconnect.")
-            return
-        if box_names is None:
-            box_names = self.available_boxes
-        if isinstance(box_names, str):
-            box_names = [box_names]
-
-        self._boxpool = self._create_boxpool(
-            box_names,
+        connected_state = self._connection_manager.connect(
+            is_connected=self.is_connected,
+            box_names=box_names,
+            available_boxes=lambda: self.available_boxes,
             parallel=parallel,
+            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
+            create_boxpool=lambda names, parallel_mode: self._create_boxpool(
+                names,
+                parallel=parallel_mode,
+            ),
+            create_quel1system_from_boxpool=self._create_quel1system_from_boxpool,
+            create_resource_map=self.create_resource_map,
         )
-        self._quel1system = self._create_quel1system_from_boxpool(box_names)
-
-        self._cap_resource_map = self.create_resource_map("cap")
-        self._gen_resource_map = self.create_resource_map("gen")
+        if connected_state is None:
+            return
+        boxpool, quel1system, cap_resource_map, gen_resource_map = connected_state
+        self._boxpool = boxpool
+        self._quel1system = quel1system
+        self._cap_resource_map = cap_resource_map
+        self._gen_resource_map = gen_resource_map
 
     def _append_resource_if_new(
         self,
@@ -754,9 +775,10 @@ class Quel1BackendController:
 
     def disconnect(self) -> None:
         """Disconnect backend resources and reset connection-related state."""
-        for resource in self._collect_held_resources():
-            self._disconnect_resource_safely(resource)
-
+        self._connection_manager.disconnect(
+            collect_held_resources=self._collect_held_resources,
+            disconnect_resource_safely=self._disconnect_resource_safely,
+        )
         self._clear_quel1system_box_cache()
         self._quel1system = None
         self._boxpool = None
@@ -774,20 +796,27 @@ class Quel1BackendController:
         from .quel1_backend_executor import Quel1BackendExecutor
 
         factory = getattr(self, "create_measurement_backend_executor", None)
+        manager_factory = None
         if callable(factory):
-            executor = cast(
-                BackendExecutor,
+            manager_factory = lambda mode, clock: cast(
+                Any,
                 factory(
-                    execution_mode=execution_mode,
-                    clock_health_checks=clock_health_checks,
+                    execution_mode=mode,
+                    clock_health_checks=clock,
                 ),
             )
-            return executor.execute(request=request)
-        return Quel1BackendExecutor(
-            backend_controller=self,
+
+        return self._execution_manager.execute(
+            request=request,
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
-        ).execute(request=request)
+            create_default_executor=lambda mode, clock: Quel1BackendExecutor(
+                backend_controller=self,
+                execution_mode=mode,
+                clock_health_checks=clock,
+            ),
+            create_measurement_backend_executor=manager_factory,
+        )
 
     def get_box(self, box_name: str) -> Quel1Box:
         """
@@ -828,23 +857,13 @@ class Quel1BackendController:
             Whether to initialize boxes in parallel. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
-        if not self.is_connected:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        if isinstance(box_names, str):
-            box_names = [box_names]
-        # Avoid concurrent initialization of the same box when multiple qubits
-        # map to one box.
-        box_names = list(dict.fromkeys(box_names))
-        if parallel is None:
-            parallel = _DEFAULT_PARALLEL_MODE
-        if not parallel:
-            for box_name in box_names:
-                self._initialize_box_awg_and_capunits(box_name)
-            return
-        run_parallel_each(
-            list(box_names),
-            self._initialize_box_awg_and_capunits,
-            max_workers=_MAX_BOX_PARALLEL_WORKERS,
+        self._connection_manager.initialize_awg_and_capunits(
+            is_connected=self.is_connected,
+            box_names=box_names,
+            parallel=parallel,
+            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
+            max_parallel_workers=_MAX_BOX_PARALLEL_WORKERS,
+            initialize_box_awg_and_capunits=self._initialize_box_awg_and_capunits,
         )
 
     def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
@@ -882,35 +901,16 @@ class Quel1BackendController:
         ValueError
             If the box is not in the available boxes.
         """
-        # check if the box is available
-        self._check_box_availability(box_name)
-        # connect to the box
-        box = self._get_existing_or_create_box(box_name, reconnect=False)
-
-        if noise_threshold is None:
-            noise_threshold = _RELAXED_NOISE_THRESHOLD
-
-        # relinkup the box if any of the links are down
-        if not all(box.link_status().values()):
-            raise ConnectionError(f"Box {box_name} has down links before linkup.")
-            # config_options = self._resolve_config_options(
-            #     box_name=box_name,
-            #     boxtype=box.boxtype,
-            # )
-            # box.relinkup(
-            #     use_204b=False,
-            #     background_noise_threshold=noise_threshold,
-            #     config_options=config_options,
-            #     **kwargs,
-            # )
-        box.reconnect(background_noise_threshold=noise_threshold)
-
-        # check if all links are up
-        status = box.link_status()
-        if not all(status.values()):
-            logger.warning(f"Failed to linkup box {box_name}. Status: {status}")
-        # return the box
-        return box
+        return self._connection_manager.linkup(
+            box_name=box_name,
+            noise_threshold=noise_threshold,
+            relaxed_noise_threshold=_RELAXED_NOISE_THRESHOLD,
+            check_box_availability=self._check_box_availability,
+            get_existing_or_create_box=lambda name, reconnect: (
+                self._get_existing_or_create_box(name, reconnect=reconnect)
+            ),
+            **kwargs,
+        )
 
     def linkup_boxes(
         self,
@@ -937,36 +937,18 @@ class Quel1BackendController:
         dict[str, Quel1Box]
             Dictionary of linked up boxes.
         """
-        # Avoid concurrent linkup of the same box name, which can create
-        # duplicated low-level proxy objects for the same endpoint.
-        box_list = list(dict.fromkeys(box_list))
-        if parallel is None:
-            parallel = _DEFAULT_PARALLEL_MODE
-        if not parallel:
-            boxes = {}
-            for box_name in box_list:
-                linked_box = self._safe_linkup_box(
-                    box_name=box_name,
-                    noise_threshold=noise_threshold,
-                )
-                if linked_box is not None:
-                    boxes[box_name] = linked_box
-            return boxes
-
-        results = run_parallel_map(
-            box_list,
-            lambda box_name: self.linkup(box_name, noise_threshold=noise_threshold),
-            key=lambda box_name: box_name,
-            max_workers=_MAX_BOX_PARALLEL_WORKERS,
-            on_error=self._fallback_linkup_box_result,
+        linked_boxes = self._connection_manager.linkup_boxes(
+            box_list=box_list,
+            noise_threshold=noise_threshold,
+            parallel=parallel,
+            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
+            max_parallel_workers=_MAX_BOX_PARALLEL_WORKERS,
+            linkup_box=lambda name, threshold: self.linkup(
+                name,
+                noise_threshold=threshold,
+            ),
         )
-        boxes = {}
-        for box_name, linked_box in results.items():
-            if linked_box is None:
-                continue
-            boxes[box_name] = linked_box
-            logger.info(f"{box_name:5} : Linked up")
-        return boxes
+        return cast(Any, linked_boxes)
 
     def _safe_linkup_box(
         self,
@@ -1002,20 +984,19 @@ class Quel1BackendController:
         box_name : str
             Name of the box to relinkup.
         """
-        self._check_box_availability(box_name)
-        if noise_threshold is None:
-            noise_threshold = _RELAXED_NOISE_THRESHOLD
-        box = self._get_existing_or_create_box(box_name, reconnect=False)
-        config_options = self._resolve_config_options(
+        self._connection_manager.relinkup(
             box_name=box_name,
-            boxtype=box.boxtype,
+            noise_threshold=noise_threshold,
+            relaxed_noise_threshold=_RELAXED_NOISE_THRESHOLD,
+            check_box_availability=self._check_box_availability,
+            get_existing_or_create_box=lambda name, reconnect: (
+                self._get_existing_or_create_box(name, reconnect=reconnect)
+            ),
+            resolve_config_options=lambda name, boxtype: self._resolve_config_options(
+                box_name=name,
+                boxtype=boxtype,
+            ),
         )
-        box.relinkup(
-            use_204b=False,
-            background_noise_threshold=noise_threshold,
-            config_options=config_options,
-        )
-        box.reconnect(background_noise_threshold=noise_threshold)
 
     def relinkup_boxes(
         self,
@@ -1037,19 +1018,16 @@ class Quel1BackendController:
             Whether to relink boxes in parallel. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
-        # Avoid duplicate relinkup operations for the same box in one call.
-        box_list = list(dict.fromkeys(box_list))
-        if parallel is None:
-            parallel = _DEFAULT_PARALLEL_MODE
-        if not parallel:
-            for box_name in box_list:
-                self.relinkup(box_name, noise_threshold=noise_threshold)
-            return
-        run_parallel_each(
-            box_list,
-            lambda box_name: self.relinkup(box_name, noise_threshold=noise_threshold),
-            max_workers=_MAX_BOX_PARALLEL_WORKERS,
-            on_error=self._log_relinkup_error,
+        self._connection_manager.relinkup_boxes(
+            box_list=box_list,
+            noise_threshold=noise_threshold,
+            parallel=parallel,
+            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
+            max_parallel_workers=_MAX_BOX_PARALLEL_WORKERS,
+            relinkup_box=lambda name, threshold: self.relinkup(
+                name,
+                noise_threshold=threshold,
+            ),
         )
 
     @staticmethod
@@ -1071,16 +1049,16 @@ class Quel1BackendController:
         list[tuple[bool, int, int]]
             List of clocks.
         """
-        db = self.qubecalib.system_config_database
-        box_settings = db._box_settings
-        result: list[tuple[bool, int, int]] = []
-        for box_name in box_list:
-            self._check_box_availability(box_name)
-            ipaddr_sss = str(box_settings[box_name].ipaddr_sss)
-            result.append(
-                self._driver.SequencerClient(target_ipaddr=ipaddr_sss).read_clock()
-            )
-        return result
+        return self._clock_manager.read_clocks(
+            box_list=box_list,
+            check_box_availability=self._check_box_availability,
+            resolve_box_sss_ip=lambda box_name: str(
+                self.qubecalib.system_config_database._box_settings[box_name].ipaddr_sss
+            ),
+            read_clock_at_ip=lambda ipaddr_sss: self._driver.SequencerClient(
+                target_ipaddr=ipaddr_sss
+            ).read_clock(),
+        )
 
     def check_clocks(self, box_list: list[str]) -> bool:
         """
@@ -1096,15 +1074,9 @@ class Quel1BackendController:
         bool
             True if the clocks are synchronized, False otherwise.
         """
-        result = self.read_clocks(box_list)
-        timestamps: list[str] = []
-        accuracy = -8
-        for _, clock, sysref_latch in result:
-            timestamps.append(str(clock)[:accuracy])
-            timestamps.append(str(sysref_latch)[:accuracy])
-        timestamps = list(set(timestamps))
-        synchronized = len(timestamps) == 1
-        return synchronized
+        return self._clock_manager.check_clocks(
+            read_clocks=lambda: self.read_clocks(box_list),
+        )
 
     def _get_clockmaster_setting_ipaddr(self) -> str | None:
         """Return configured clockmaster IP address if available."""
@@ -1129,21 +1101,18 @@ class Quel1BackendController:
         box_list : list[str]
             List of box names.
         """
-        if len(box_list) < 2:
-            # NOTE: clockmaster will crash if there is only one box
-            return True
-        master = self._get_connected_clockmaster()
-        if master is None:
-            clockmaster_ipaddr = self._get_clockmaster_setting_ipaddr()
-            if clockmaster_ipaddr is None:
-                raise ValueError("clock master is not found")
-            master = self._driver.QuBEMasterClient(master_ipaddr=clockmaster_ipaddr)
-        db = self.qubecalib.system_config_database
-        box_settings = db._box_settings
-        master.kick_clock_synch(
-            [str(box_settings[box_name].ipaddr_sss) for box_name in box_list]
+        return self._clock_manager.resync_clocks(
+            box_list=box_list,
+            get_connected_clockmaster=self._get_connected_clockmaster,
+            get_clockmaster_setting_ipaddr=self._get_clockmaster_setting_ipaddr,
+            create_clockmaster_client=lambda ipaddr: self._driver.QuBEMasterClient(
+                master_ipaddr=ipaddr
+            ),
+            resolve_box_sss_ip=lambda box_name: str(
+                self.qubecalib.system_config_database._box_settings[box_name].ipaddr_sss
+            ),
+            check_clocks=self.check_clocks,
         )
-        return self.check_clocks(box_list)
 
     def reset_clockmaster(self, ipaddr: str) -> bool:
         """
@@ -1159,11 +1128,14 @@ class Quel1BackendController:
         bool
             True if reset succeeds.
         """
-        connected_master = self._get_connected_clockmaster()
-        configured_ipaddr = self._get_clockmaster_setting_ipaddr()
-        if connected_master is not None and configured_ipaddr == ipaddr:
-            return connected_master.reset()
-        return self._driver.QuBEMasterClient(master_ipaddr=ipaddr).reset()
+        return self._clock_manager.reset_clockmaster(
+            ipaddr=ipaddr,
+            get_connected_clockmaster=self._get_connected_clockmaster,
+            get_clockmaster_setting_ipaddr=self._get_clockmaster_setting_ipaddr,
+            create_clockmaster_client=lambda addr: self._driver.QuBEMasterClient(
+                master_ipaddr=addr
+            ),
+        )
 
     def sync_clocks(self, box_list: list[str]) -> bool:
         """
@@ -1174,12 +1146,10 @@ class Quel1BackendController:
         box_list : list[str]
             List of box names.
         """
-        if len(box_list) < 2:
-            return True
-        synchronized = self.resync_clocks(box_list)
-        if not synchronized:
-            logger.warning("Failed to synchronize clocks.")
-        return synchronized
+        return self._clock_manager.sync_clocks(
+            resync_clocks=lambda: self.resync_clocks(box_list),
+            box_count=len(box_list),
+        )
 
     def dump_box(self, box_name: str) -> dict:
         """
@@ -1697,22 +1667,21 @@ class Quel1BackendController:
         RawResult
             Measurement result.
         """
-        SequencerExecutionEngine.set_measurement_options(
-            sequencer=cast(Any, sequencer),
-            repeats=repeats,
-            integral_mode=integral_mode,
-            dsp_demodulation=dsp_demodulation,
-            software_demodulation=software_demodulation,
-            enable_sum=enable_sum,
-            enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
-        status, data, config = sequencer.execute(self.boxpool)
-        return Quel1BackendRawResult(
-            status=status,
-            data=data,
-            config=config,
+        return cast(
+            Quel1BackendRawResult,
+            self._execution_manager.execute_sequencer(
+                sequencer=sequencer,
+                repeats=repeats,
+                integral_mode=integral_mode,
+                dsp_demodulation=dsp_demodulation,
+                software_demodulation=software_demodulation,
+                enable_sum=enable_sum,
+                enable_classification=enable_classification,
+                line_param0=line_param0,
+                line_param1=line_param1,
+                boxpool=self.boxpool,
+                make_backend_raw_result=self._make_backend_raw_result,
+            ),
         )
 
     def execute_sequencer_parallel(
@@ -1761,44 +1730,28 @@ class Quel1BackendController:
         Quel1BackendRawResult
             Measurement result with qubecalib-compatible parsed payload.
         """
-        SequencerExecutionEngine.set_measurement_options(
-            sequencer=cast(Any, sequencer),
-            repeats=repeats,
-            integral_mode=integral_mode,
-            dsp_demodulation=dsp_demodulation,
-            software_demodulation=software_demodulation,
-            enable_sum=enable_sum,
-            enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
-        parsed_status, parsed_data, parsed_config = (
-            SequencerExecutionEngine.execute_parallel(
-                sequencer=cast(Any, sequencer),
+        return cast(
+            Quel1BackendRawResult,
+            self._execution_manager.execute_sequencer_parallel(
+                sequencer=sequencer,
+                repeats=repeats,
+                integral_mode=integral_mode,
+                dsp_demodulation=dsp_demodulation,
+                software_demodulation=software_demodulation,
+                enable_sum=enable_sum,
+                enable_classification=enable_classification,
+                line_param0=line_param0,
+                line_param1=line_param1,
+                clock_health_checks=clock_health_checks,
                 boxpool=self.boxpool,
-                system=self.quel1system,
+                quel1system=self.quel1system,
                 action_builder=self._driver.Action.build,
                 runit_setting_factory=self._driver.RunitSetting,
                 runit_id_factory=self._driver.RunitId,
                 awg_setting_factory=self._driver.AwgSetting,
                 awg_id_factory=self._driver.AwgId,
-                logger=logger,
-                clock_health_checks=(
-                    None
-                    if not clock_health_checks
-                    else ClockHealthCheckOptions(
-                        read_master_clock=True,
-                        read_box_latched_clock_on_build=True,
-                        measure_average_sysref_offset=True,
-                        validate_sysref_fluctuation_on_emit=True,
-                    )
-                ),
-            )
-        )
-        return Quel1BackendRawResult(
-            status=parsed_status,
-            data=parsed_data,
-            config=parsed_config,
+                make_backend_raw_result=self._make_backend_raw_result,
+            ),
         )
 
     def _execute_sequencer(
@@ -1889,15 +1842,13 @@ class Quel1BackendController:
             gen_sequences_map[gen_id][gen_label] = gen_sequence
 
         for gen_id, gen_sequences in gen_sequences_map.items():
-            muxed_sequence = self._driver.Converter.multiplex(
-                sequences=gen_sequences,
-                modfreqs={
-                    label: gen_sequence.modulation_frequency or 0
-                    for label, gen_sequence in gen_sequences.items()
-                },
-            )
-            wave_seq = self._driver.WaveSequenceTools.create(
-                sequence=muxed_sequence,
+            if len(gen_sequences) > 1:
+                raise ValueError(
+                    f"Duplicate generation ID found: {gen_id}\n{gen_sequences}"
+                )
+            gen_sequence = next(iter(gen_sequences.values()))
+            wave_sequence = self._driver.WaveSequenceTools.create(
+                sequence=gen_sequence,
                 wait_words=wait_words,
                 repeats=repeats,
                 interval_samples=interval_samples,
@@ -1909,26 +1860,57 @@ class Quel1BackendController:
                         port=gen_id[1],
                         channel=gen_id[2],
                     ),
-                    wseq=wave_seq,
+                    wseq=wave_sequence,
                 )
             )
 
         # trigger settings
-        settings += sequencer.select_trigger(self.quel1system, settings)
+        cap_channel_set = {
+            (
+                cap_resource["box"].box_name,
+                cap_resource["port"].port,
+            )
+            for cap_resource in self.cap_resource_map.values()
+        }
+        gen_channel_set = {
+            (
+                gen_resource["box"].box_name,
+                gen_resource["port"].port,
+                gen_resource["channel_number"],
+            )
+            for gen_resource in self.gen_resource_map.values()
+        }
+        for cap_channel in cap_channel_set:
+            box_name, cap_port = cap_channel
+            gen_channel = next(
+                (channel for channel in gen_channel_set if channel[0] == box_name),
+                None,
+            )
+            if gen_channel is None:
+                raise ValueError("No trigger target found.")
+            trigger_setting = self._driver.TriggerSetting(
+                triggerd_port=cap_port,
+                trigger_awg=self._driver.AwgId(
+                    box=gen_channel[0],
+                    port=gen_channel[1],
+                    channel=gen_channel[2],
+                ),
+            )
+            settings.append(trigger_setting)
 
-        if len(settings) == 0:
-            raise ValueError("no settings")
-
-        # execute
-        action = self._driver.Action.build(system=self.quel1system, settings=settings)
-        status, results = action.action()
-        status, data, config = sequencer.parse_capture_results(
-            status=status,
-            results=results,
-            action=action,
-            crmap=self.get_cap_resource_map(sequencer.cap_sampled_sequence.keys()),
+        # set and execute
+        self.clear_command_queue()
+        qubecalib = cast(Any, self.qubecalib)
+        for setting in settings:
+            qubecalib.add_sequence(setting)
+        status, data, config = cast(
+            tuple[dict, dict, dict],
+            qubecalib.step_execute(
+                repeats=repeats,
+                integral_mode=integral_mode,
+                dsp_demodulation=dsp_demodulation,
+            ),
         )
-
         return Quel1BackendRawResult(
             status=status,
             data=data,
