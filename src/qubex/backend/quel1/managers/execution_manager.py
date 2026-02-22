@@ -18,10 +18,7 @@ from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
     SequencerExecutionEngine,
 )
-from qubex.backend.quel1.quel1_backend_raw_result import (
-    Quel1BackendRawResult,
-    make_backend_raw_result,
-)
+from qubex.backend.quel1.quel1_backend_raw_result import Quel1BackendRawResult
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
@@ -137,7 +134,7 @@ class Quel1ExecutionManager:
             line_param1=line_param1,
         )
         status, data, config = sequencer.execute(self._runtime_context.boxpool)
-        return make_backend_raw_result(
+        return Quel1BackendRawResult(
             status=status,
             data=data,
             config=config,
@@ -222,7 +219,7 @@ class Quel1ExecutionManager:
                 ),
             )
         )
-        return make_backend_raw_result(
+        return Quel1BackendRawResult(
             status=parsed_status,
             data=parsed_data,
             config=parsed_config,

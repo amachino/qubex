@@ -12,17 +12,3 @@ class Quel1BackendRawResult:
     status: dict
     data: dict
     config: dict
-
-
-def make_backend_raw_result(
-    *,
-    status: dict,
-    data: dict,
-    config: dict,
-) -> Quel1BackendRawResult:
-    """Build canonical QuEL-1 raw result container."""
-    return Quel1BackendRawResult(
-        status=status,
-        data=data,
-        config=config,
-    )
