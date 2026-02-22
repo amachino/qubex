@@ -122,6 +122,30 @@ def test_measure_resolves_qubits_via_target_registry_for_reset() -> None:
     assert captured["reset_calls"] == [{"Q17"}]
 
 
+def test_execute_does_not_reset_awg_by_default() -> None:
+    """Given execute call without reset flag, when executed, then AWG reset is skipped by default."""
+    service, captured = _make_service()
+
+    with PulseSchedule(["custom-target"]) as schedule:
+        pass
+
+    service.execute(schedule, plot=False)
+
+    assert captured["reset_calls"] == []
+
+
+def test_measure_does_not_reset_awg_by_default() -> None:
+    """Given measure call without reset flag, when measured, then AWG reset is skipped by default."""
+    service, captured = _make_service()
+
+    service.measure(
+        sequence={"custom-target": np.array([0.0 + 0.0j], dtype=np.complex128)},
+        plot=False,
+    )
+
+    assert captured["reset_calls"] == []
+
+
 def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
     """Given custom targets, when building readout amplitudes, then read labels use target registry mapping."""
     service, _ = _make_service()

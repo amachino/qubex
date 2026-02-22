@@ -1388,7 +1388,7 @@ class Experiment:
         add_pump_pulses : bool, optional
             Whether to add pump pulses to the sequence. Defaults to False.
         reset_awg_and_capunits : bool, optional
-            Whether to reset the AWG and capture units before the experiment. Defaults to True.
+            Whether to reset the AWG and capture units before the experiment. Defaults to False.
         enable_dsp_demodulation : bool, optional
             Whether to enable DSP demodulation. Defaults to True.
         enable_dsp_sum : bool | None, optional
@@ -1504,7 +1504,7 @@ class Experiment:
         enable_dsp_classification : bool, optional
             Whether to enable DSP classification. Defaults to False.
         reset_awg_and_capunits : bool, optional
-            Whether to reset the AWG and capture units before the experiment. Defaults to True.
+            Whether to reset the AWG and capture units before the experiment. Defaults to False.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
