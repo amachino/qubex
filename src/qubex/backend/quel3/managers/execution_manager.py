@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import importlib
+import sys
+import threading
 from collections import defaultdict
-from collections.abc import Iterable
-from types import TracebackType
-from typing import TYPE_CHECKING, Literal, Protocol
+from collections.abc import Coroutine, Iterable
+from pathlib import Path
+from types import ModuleType, TracebackType
+from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 
-from qubex.backend.quel3.managers.quelware_runtime import (
-    import_module_with_workspace_fallback,
-    run_coroutine,
-)
 from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
@@ -23,6 +24,53 @@ if TYPE_CHECKING:
     from qubex.measurement.models.measurement_result import MeasurementResult
 
 ExecutionMode = Literal["serial", "parallel"]
+_T = TypeVar("_T")
+
+
+def _run_coroutine(coroutine: Coroutine[object, object, _T]) -> _T:
+    """Run an async workflow from a synchronous manager entrypoint."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
+
+    result_holder: dict[str, _T] = {}
+    error_holder: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result_holder["value"] = asyncio.run(coroutine)
+        except BaseException as exc:
+            error_holder["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in error_holder:
+        raise error_holder["error"]
+    return result_holder["value"]
+
+
+def _append_local_quelware_paths() -> None:
+    """Append local quelware source paths when present in the workspace."""
+    root = Path(__file__).resolve().parents[5]
+    candidates = (
+        root / "packages" / "quelware-client" / "quelware-client" / "src",
+        root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
+    )
+    for path in candidates:
+        path_str = str(path)
+        if path.exists() and path_str not in sys.path:
+            sys.path.insert(0, path_str)
+
+
+def _import_module_with_workspace_fallback(module_name: str) -> ModuleType:
+    """Import one module, retrying after local quelware path injection."""
+    try:
+        return importlib.import_module(module_name)
+    except (ModuleNotFoundError, SyntaxError):
+        _append_local_quelware_paths()
+        return importlib.import_module(module_name)
 
 
 class _DirectiveProtocol(Protocol):
@@ -282,7 +330,7 @@ class Quel3ExecutionManager:
         payload : Quel3ExecutionPayload
             Backend execution payload produced by measurement adapter.
         """
-        return run_coroutine(self._execute_measurement_async(payload))
+        return _run_coroutine(self._execute_measurement_async(payload))
 
     async def _execute_measurement_async(
         self,
@@ -486,17 +534,17 @@ class Quel3ExecutionManager:
         _ResourceIdResolver,
     ]:
         """Import quelware helpers lazily and return required symbols."""
-        resource_module = import_module_with_workspace_fallback(
+        resource_module = _import_module_with_workspace_fallback(
             "quelware_core.entities.resource"
         )
-        client_module = import_module_with_workspace_fallback("quelware_client.client")
-        mapper_module = import_module_with_workspace_fallback(
+        client_module = _import_module_with_workspace_fallback("quelware_client.client")
+        mapper_module = _import_module_with_workspace_fallback(
             "quelware_client.client.helpers.instrument_mapper"
         )
-        sequencer_module = import_module_with_workspace_fallback(
+        sequencer_module = _import_module_with_workspace_fallback(
             "quelware_client.client.helpers.sequencer"
         )
-        driver_module = import_module_with_workspace_fallback(
+        driver_module = _import_module_with_workspace_fallback(
             "quelware_client.core.instrument_driver"
         )
         create_quelware_client: _QuelwareClientFactory = (

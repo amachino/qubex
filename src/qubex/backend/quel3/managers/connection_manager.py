@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from types import TracebackType
-from typing import Protocol
+import asyncio
+import importlib
+import sys
+import threading
+from collections.abc import Coroutine, Mapping
+from pathlib import Path
+from types import ModuleType, TracebackType
+from typing import Protocol, TypeVar
 
-from qubex.backend.quel3.managers.quelware_runtime import (
-    import_module_with_workspace_fallback,
-    run_coroutine,
-)
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContext
+
+_T = TypeVar("_T")
 
 
 class _QuelwareClient(Protocol):
@@ -44,6 +47,52 @@ class _QuelwareClientFactory(Protocol):
     def __call__(self, endpoint: str, port: int) -> _QuelwareClientContextManager:
         """Create one quelware client context manager."""
         ...
+
+
+def _run_coroutine(coroutine: Coroutine[object, object, _T]) -> _T:
+    """Run an async workflow from a synchronous manager entrypoint."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
+
+    result_holder: dict[str, _T] = {}
+    error_holder: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result_holder["value"] = asyncio.run(coroutine)
+        except BaseException as exc:
+            error_holder["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in error_holder:
+        raise error_holder["error"]
+    return result_holder["value"]
+
+
+def _append_local_quelware_paths() -> None:
+    """Append local quelware source paths when present in the workspace."""
+    root = Path(__file__).resolve().parents[5]
+    candidates = (
+        root / "packages" / "quelware-client" / "quelware-client" / "src",
+        root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
+    )
+    for path in candidates:
+        path_str = str(path)
+        if path.exists() and path_str not in sys.path:
+            sys.path.insert(0, path_str)
+
+
+def _import_module_with_workspace_fallback(module_name: str) -> ModuleType:
+    """Import one module, retrying after local quelware path injection."""
+    try:
+        return importlib.import_module(module_name)
+    except (ModuleNotFoundError, SyntaxError):
+        _append_local_quelware_paths()
+        return importlib.import_module(module_name)
 
 
 class Quel3ConnectionManager:
@@ -80,7 +129,7 @@ class Quel3ConnectionManager:
         del box_names, parallel
         if self.is_connected:
             return
-        run_coroutine(self._probe_quelware_connection())
+        _run_coroutine(self._probe_quelware_connection())
         self._runtime_context.set_connected(True)
 
     def disconnect(self) -> None:
@@ -105,7 +154,7 @@ class Quel3ConnectionManager:
     @staticmethod
     def load_quelware_client_factory() -> _QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        client_module = import_module_with_workspace_fallback("quelware_client.client")
+        client_module = _import_module_with_workspace_fallback("quelware_client.client")
         return client_module.create_quelware_client
 
     def set_alias_map(self, alias_map: Mapping[str, str]) -> None:
