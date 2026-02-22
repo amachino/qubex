@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, TypeGuard
+from copy import deepcopy
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContext
@@ -112,6 +114,33 @@ class Quel1SystemSyncManager:
         quel1system.config_cache.clear()
         quel1system.config_fetched_at = None
 
+    def replace_box_config_cache(
+        self,
+        box_configs: dict[str, dict[str, Any]],
+    ) -> None:
+        """Replace the full box-config cache snapshot."""
+        boxpool = self._runtime_context.boxpool_or_none()
+        if boxpool is None:
+            if box_configs:
+                raise ValueError("Boxes not connected. Call connect() method first.")
+            return
+        boxpool._box_config_cache = deepcopy(box_configs)
+        self._replace_quel1system_box_cache(box_configs)
+
+    def update_box_config_cache(
+        self,
+        box_configs: dict[str, dict[str, Any]],
+    ) -> None:
+        """Update box-config cache entries keyed by box name."""
+        boxpool = self._runtime_context.boxpool_or_none()
+        if boxpool is None:
+            if box_configs:
+                raise ValueError("Boxes not connected. Call connect() method first.")
+            return
+        for box_name, box_config in box_configs.items():
+            boxpool._box_config_cache[box_name] = deepcopy(box_config)
+        self._update_quel1system_box_cache(box_configs)
+
     def _sync_generator_port(self, *, box: Box, port: GenPort) -> None:
         """Apply one output-like port configuration."""
         try:
@@ -157,6 +186,34 @@ class Quel1SystemSyncManager:
                 )
         except Exception:
             logger.exception("Failed to configure %s", port.id)
+
+    def _replace_quel1system_box_cache(
+        self,
+        box_configs: dict[str, dict[str, Any]],
+    ) -> None:
+        """Replace the Quel1System-side box cache."""
+        quel1system = self._runtime_context.quel1system_or_none()
+        if quel1system is None:
+            return
+        quel1system.config_cache.clear()
+        for box_name, box_config in box_configs.items():
+            quel1system.config_cache[box_name] = deepcopy(box_config)
+        quel1system.config_fetched_at = (
+            datetime.now() if quel1system.config_cache else None
+        )
+
+    def _update_quel1system_box_cache(
+        self,
+        box_configs: dict[str, dict[str, Any]],
+    ) -> None:
+        """Update entries in the Quel1System-side box cache."""
+        quel1system = self._runtime_context.quel1system_or_none()
+        if quel1system is None:
+            return
+        for box_name, box_config in box_configs.items():
+            quel1system.config_cache[box_name] = deepcopy(box_config)
+        if quel1system.config_cache:
+            quel1system.config_fetched_at = datetime.now()
 
     @staticmethod
     def _is_generator_port(port: GenPort | CapPort) -> TypeGuard[GenPort]:

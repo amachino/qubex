@@ -13,8 +13,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection
 from copy import deepcopy
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -31,15 +29,14 @@ from .managers import (
     Quel1ExecutionManager,
     Quel1SystemSyncManager,
 )
-from .quel1_backend_constants import (
-    DEFAULT_EXECUTION_MODE,
-    ExecutionMode,
+from .quel1_backend_constants import ExecutionMode
+from .quel1_backend_raw_result import (
+    Quel1BackendRawResult,
+    make_backend_raw_result,
 )
 from .quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
-
-_ = DEFAULT_EXECUTION_MODE == "parallel"
 
 if TYPE_CHECKING:
     from qubex.backend.control_system import Box
@@ -52,15 +49,6 @@ if TYPE_CHECKING:
         Quel1SystemProtocol as Quel1System,
         SequencerProtocol as Sequencer,
     )
-
-
-@dataclass
-class Quel1BackendRawResult:
-    """Raw status, data, and config returned from qube-calib execution."""
-
-    status: dict
-    data: dict
-    config: dict
 
 
 class Quel1BackendController(BackendController):
@@ -259,7 +247,7 @@ class Quel1BackendController(BackendController):
 
     def disconnect(self) -> None:
         """Disconnect backend resources and reset connection-related state."""
-        self._clear_quel1system_box_cache()
+        self._system_sync_manager.clear_cache()
         self._connection_manager.disconnect()
 
     def get_box(self, box_name: str) -> Quel1Box:
@@ -281,8 +269,11 @@ class Quel1BackendController(BackendController):
         ValueError
             If the box is not in the available boxes.
         """
-        self._check_box_availability(box_name)
-        return self._get_existing_or_create_box(box_name, reconnect=True)
+        self._runtime_context.validate_box_availability(box_name)
+        return self._connection_manager.get_existing_or_create_box(
+            box_name=box_name,
+            reconnect=True,
+        )
 
     def initialize_awg_and_capunits(
         self,
@@ -325,8 +316,11 @@ class Quel1BackendController(BackendController):
         ValueError
             If the box is not in the available boxes.
         """
-        self._check_box_availability(box_name)
-        box = self._get_existing_or_create_box(box_name, reconnect=False)
+        self._runtime_context.validate_box_availability(box_name)
+        box = self._connection_manager.get_existing_or_create_box(
+            box_name=box_name,
+            reconnect=False,
+        )
         return box.link_status()
 
     def linkup(
@@ -858,24 +852,11 @@ class Quel1BackendController(BackendController):
 
     def replace_box_config_cache(self, box_configs: dict[str, Any]) -> None:
         """Replace the box-config cache with the provided snapshot."""
-        boxpool = self._connection_manager.boxpool
-        if boxpool is None:
-            if box_configs:
-                raise ValueError("Boxes not connected. Call connect() method first.")
-            return
-        boxpool._box_config_cache = deepcopy(box_configs)
-        self._replace_quel1system_box_cache(box_configs)
+        self._system_sync_manager.replace_box_config_cache(box_configs)
 
     def update_box_config_cache(self, box_configs: dict[str, Any]) -> None:
         """Update cached box configurations by box name."""
-        boxpool = self._connection_manager.boxpool
-        if boxpool is None:
-            if box_configs:
-                raise ValueError("Boxes not connected. Call connect() method first.")
-            return
-        for box_name, box_config in box_configs.items():
-            boxpool._box_config_cache[box_name] = deepcopy(box_config)
-        self._update_quel1system_box_cache(box_configs)
+        self._system_sync_manager.update_box_config_cache(box_configs)
 
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
         """Build a resource map for the requested targets."""
@@ -1224,7 +1205,7 @@ class Quel1BackendController(BackendController):
             enable_classification=enable_classification,
             line_param0=line_param0,
             line_param1=line_param1,
-            make_backend_raw_result=self._make_backend_raw_result,
+            make_backend_raw_result=make_backend_raw_result,
         )
         if not isinstance(result, Quel1BackendRawResult):
             raise TypeError(
@@ -1294,112 +1275,13 @@ class Quel1BackendController(BackendController):
             runit_id_factory=self.driver.RunitId,
             awg_setting_factory=self.driver.AwgSetting,
             awg_id_factory=self.driver.AwgId,
-            make_backend_raw_result=self._make_backend_raw_result,
+            make_backend_raw_result=make_backend_raw_result,
         )
         if not isinstance(result, Quel1BackendRawResult):
             raise TypeError(
                 "Unexpected execution result type from QuEL-1 execution manager."
             )
         return result
-
-    def _make_backend_raw_result(
-        self,
-        *,
-        status: dict,
-        data: dict,
-        config: dict,
-    ) -> Quel1BackendRawResult:
-        """Build canonical QuEL-1 raw result container."""
-        return Quel1BackendRawResult(
-            status=status,
-            data=data,
-            config=config,
-        )
-
-    def _check_box_availability(self, box_name: str):
-        if box_name not in self.available_boxes:
-            raise ValueError(
-                f"Box {box_name} not in available boxes: {self.available_boxes}"
-            )
-
-    def _get_existing_or_create_box(
-        self,
-        box_name: str,
-        *,
-        reconnect: bool,
-    ) -> Quel1Box:
-        """Return an existing pooled box or create one when absent."""
-        boxpool = self._connection_manager.boxpool
-        if boxpool is not None and box_name in boxpool._boxes:
-            return boxpool._boxes[box_name][0]
-        return self._create_box(box_name, reconnect=reconnect)
-
-    def _create_boxpool(
-        self,
-        box_names: list[str],
-        *,
-        parallel: bool | None = None,
-    ) -> BoxPool:
-        """Create a box pool through connection-manager implementation."""
-        if parallel is None:
-            parallel = _
-        return self._connection_manager._create_boxpool(
-            box_names,
-            parallel=parallel,
-        )
-
-    def _create_box(self, box_name: str, *, reconnect: bool = True) -> Quel1Box:
-        """
-        Create a box from the system configuration.
-
-        Parameters
-        ----------
-        box_name : str
-            Box name to create.
-        reconnect : bool, optional
-            Whether to reconnect the box on creation.
-
-        Returns
-        -------
-        Quel1Box
-            Created box instance.
-
-        Raises
-        ------
-        ValueError
-            If the box is not in the available boxes.
-        """
-        self._check_box_availability(box_name)
-        db = self.qubecalib.system_config_database
-        return db.create_box(box_name, reconnect=reconnect)
-
-    def _clear_quel1system_box_cache(self) -> None:
-        """Clear the Quel1System-side box cache."""
-        system = self._connection_manager.quel1system
-        if system is None:
-            return
-        system.config_cache.clear()
-        system.config_fetched_at = None
-
-    def _replace_quel1system_box_cache(self, box_configs: dict[str, Any]) -> None:
-        """Replace the Quel1System-side box cache."""
-        system = self._connection_manager.quel1system
-        if system is None:
-            return
-        system.config_cache.clear()
-        for box_name, box_config in box_configs.items():
-            system.config_cache[box_name] = deepcopy(box_config)
-        system.config_fetched_at = datetime.now() if system.config_cache else None
-
-    def _update_quel1system_box_cache(self, box_configs: dict[str, Any]) -> None:
-        """Update entries in the Quel1System-side box cache."""
-        system = self._connection_manager.quel1system
-        if system is None:
-            return
-        for box_name, box_config in box_configs.items():
-            system.config_cache[box_name] = deepcopy(box_config)
-        if system.config_cache:
-            system.config_fetched_at = datetime.now()
 
 
 # TODO: Remove this alias in future versions.

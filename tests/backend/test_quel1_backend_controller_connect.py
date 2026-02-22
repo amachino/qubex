@@ -171,7 +171,10 @@ def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
         SequencerClient=lambda _ipaddr: object(),
     )
 
-    boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A", "B"]))
+    boxpool = cast(
+        _FakeBoxPool,
+        controller._connection_manager.create_boxpool(["A", "B"]),
+    )
 
     assert isinstance(boxpool, _FakeBoxPool)
     assert boxpool.clockmaster_ip == "192.0.2.1"
@@ -186,7 +189,7 @@ def test_create_boxpool_raises_for_unknown_box(monkeypatch) -> None:
     _override_driver_classes(controller, BoxPool=_FakeBoxPool)
 
     with pytest.raises(ValueError, match=r"box\(Z\) is not defined") as exc:
-        controller._create_boxpool(["A", "Z"])
+        controller._connection_manager.create_boxpool(["A", "Z"])
     assert exc.value.args
     if exc.value.args:
         assert "box(Z) is not defined" in str(exc)
@@ -200,9 +203,11 @@ def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
         BoxPool=_FakeBoxPool,
         SequencerClient=lambda _ipaddr: object(),
     )
-    boxpool = cast(_FakeBoxPool, controller._create_boxpool(["A"]))
+    boxpool = cast(_FakeBoxPool, controller._connection_manager.create_boxpool(["A"]))
     controller._connection_manager.set_boxpool(cast(Any, boxpool))
-    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
+    monkeypatch.setattr(
+        controller._runtime_context, "validate_box_availability", lambda _: None
+    )
 
     reconnect_count_before = boxpool._boxes["A"][0].reconnect_count
     box = controller.get_box("A")
@@ -221,7 +226,7 @@ def test_connect_skips_reconnect_when_already_connected(monkeypatch) -> None:
         raise AssertionError("connect path should be skipped when already connected")
 
     monkeypatch.setattr(
-        controller._connection_manager, "_create_boxpool", _raise_if_called
+        controller._connection_manager, "create_boxpool", _raise_if_called
     )
     monkeypatch.setattr(
         controller._connection_manager,

@@ -126,7 +126,7 @@ class Quel1ConnectionManager:
             return
 
         resolved_box_names = self._resolve_box_names(box_names)
-        boxpool = self._create_boxpool(resolved_box_names, parallel=parallel)
+        boxpool = self.create_boxpool(resolved_box_names, parallel=parallel)
         self.set_connected_state(
             boxpool=boxpool,
             quel1system=None,
@@ -293,6 +293,40 @@ class Quel1ConnectionManager:
             on_error=self._log_relinkup_error,
         )
 
+    def create_boxpool(
+        self,
+        box_names: list[str],
+        *,
+        parallel: bool | None = None,
+    ) -> BoxPool:
+        """Create a box pool and reconnect requested boxes."""
+        if parallel is None:
+            parallel = _DEFAULT_PARALLEL_MODE
+        return self._create_boxpool(box_names, parallel=parallel)
+
+    def create_box(
+        self,
+        *,
+        box_name: str,
+        reconnect: bool = True,
+    ) -> Quel1Box:
+        """Create one box from system configuration."""
+        self._runtime_context.validate_box_availability(box_name)
+        db = self._runtime_context.qubecalib.system_config_database
+        return db.create_box(box_name, reconnect=reconnect)
+
+    def get_existing_or_create_box(
+        self,
+        *,
+        box_name: str,
+        reconnect: bool,
+    ) -> Quel1Box:
+        """Return existing pooled box or create one from system configuration."""
+        return self._get_existing_or_create_box(
+            box_name=box_name,
+            reconnect=reconnect,
+        )
+
     def _resolve_box_names(self, box_names: str | list[str] | None) -> list[str]:
         """Resolve target box names from method input."""
         if box_names is None:
@@ -444,8 +478,7 @@ class Quel1ConnectionManager:
         boxpool = self.boxpool
         if boxpool is not None and box_name in boxpool._boxes:
             return boxpool._boxes[box_name][0]
-        db = self._runtime_context.qubecalib.system_config_database
-        return db.create_box(box_name, reconnect=reconnect)
+        return self.create_box(box_name=box_name, reconnect=reconnect)
 
     def _resolve_config_options(
         self,

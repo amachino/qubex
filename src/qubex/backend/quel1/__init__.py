@@ -18,9 +18,9 @@ from .quel1_backend_constants import (
 from .quel1_backend_controller import (
     DeviceController,
     Quel1BackendController,
-    Quel1BackendRawResult,
 )
 from .quel1_backend_executor import Quel1BackendExecutor
+from .quel1_backend_raw_result import Quel1BackendRawResult
 from .quel1_execution_payload import Quel1ExecutionPayload
 
 __all__ = [
