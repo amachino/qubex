@@ -1,14 +1,14 @@
 # Run a pulse schedule
 
-This guide shows how to build a `qxpulse.PulseSchedule` and execute it with `MeasurementClient`.
+This guide shows how to build a `qxpulse.PulseSchedule` and execute it with `Measurement`.
 
 ## Build a schedule
 
 ```python
 from qxpulse import Blank, FlatTop, Gaussian, PulseSchedule
-from qubex.measurement import MeasurementClient
+from qubex.measurement import Measurement
 
-cli = MeasurementClient(
+cli = Measurement(
     chip_id="64Q",
     qubits=["Q00", "Q01"],
     config_dir="/path/to/config",

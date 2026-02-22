@@ -6,15 +6,15 @@ Freeze the minimum compatibility test scope required for v1.5.0 beta sign-off.
 
 ## Scope policy
 
-- Primary contract surface: `MeasurementClient`
+- Primary contract surface: `Measurement`
 - Delegation smoke surface: `Experiment` core lifecycle and measurement delegation
 - Required execution modes: regular path and `mock_mode=True` compatibility path
 
-## MeasurementClient contract matrix
+## Measurement contract matrix
 
 | Contract item | Status | Evidence |
 | --- | --- | --- |
-| Public alias compatibility (`Measurement` -> `MeasurementClient`) | covered | `tests/measurement/test_measurement_client_alias.py` |
+| Primary facade import stability (`Measurement`) | covered | `tests/measurement/test_measurement_alias.py` |
 | Backend-kind forwarding (`load(..., backend_kind=...)`) | covered | `tests/measurement/test_backend_kind_selection.py` |
 | Legacy API delegation (`execute`, `measure` -> schedule execution) | covered | `tests/measurement/test_measurement_api_delegation.py` |
 | Schedule execution custom-factory hook path | covered | `tests/measurement/test_measurement_api_delegation.py` |

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from qubex.measurement.measurement_client import MeasurementClient
+from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_session_service import MeasurementSessionService
 
 
@@ -29,9 +29,9 @@ def test_measurement_session_service_load_forwards_backend_kind() -> None:
     assert called["backend_kind"] == "quel3"
 
 
-def test_measurement_client_load_forwards_backend_kind() -> None:
-    """Given backend kind input, when MeasurementClient loads, then session service receives the same kind."""
-    measurement = MeasurementClient(
+def test_measurement_load_forwards_backend_kind() -> None:
+    """Given backend kind input, when Measurement loads, then session service receives the same kind."""
+    measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
         load_configs=False,
@@ -54,14 +54,14 @@ def test_measurement_client_load_forwards_backend_kind() -> None:
     assert called["backend_kind"] == "quel3"
 
 
-def test_measurement_client_init_forwards_backend_kind_to_load(
+def test_measurement_init_forwards_backend_kind_to_load(
     monkeypatch,
 ) -> None:
-    """Given backend kind at init, when load is enabled, then MeasurementClient passes it to load()."""
+    """Given backend kind at init, when load is enabled, then Measurement passes it to load()."""
     called: dict[str, object] = {}
 
     def _fake_load(
-        self: MeasurementClient,
+        self: Measurement,
         *,
         config_dir: object,
         params_dir: object,
@@ -70,9 +70,9 @@ def test_measurement_client_init_forwards_backend_kind_to_load(
     ) -> None:
         called["backend_kind"] = backend_kind
 
-    monkeypatch.setattr(MeasurementClient, "load", _fake_load)
+    monkeypatch.setattr(Measurement, "load", _fake_load)
 
-    MeasurementClient(
+    Measurement(
         chip_id="TEST",
         qubits=["Q00"],
         load_configs=True,

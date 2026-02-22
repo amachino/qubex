@@ -9,12 +9,12 @@
 ## Highlights
 
 - QuEL-3 controller path added via `quelware-client` integration.
-- `MeasurementClient` compatibility contract preserved for core flows.
+- `Measurement` compatibility contract preserved for core flows.
 - Sampling-period handling shifted from fixed `2 ns` assumptions toward backend-derived `dt`.
 
 ## Compatibility contract (beta scope)
 
-- Primary contract surface: `MeasurementClient`
+- Primary contract surface: `Measurement`
 - Delegation smoke scope: `Experiment` core lifecycle and measurement calls
 - Required compatibility mode: `mock_mode=True`
 
@@ -24,7 +24,7 @@
   - Backend selection precedence: explicit argument > `system.yaml` > `chip.yaml` > `quel1` default.
   - QuEL-3 prefers `wiring.v2.yaml` when present.
 - Measurement:
-  - Backend kind may change adapter/executor path under `MeasurementClient`.
+  - Backend kind may change adapter/executor path under `Measurement`.
   - Result timing metadata should be consumed from `sampling_period_ns`.
 
 ## Known limitations (beta)

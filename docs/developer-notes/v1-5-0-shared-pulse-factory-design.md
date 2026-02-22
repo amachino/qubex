@@ -10,7 +10,7 @@
 
 - `qxpulse` manages sampling period as module-level global state.
 - Sampling period is determined by selected backend/controller.
-- Both `Experiment` and `MeasurementClient` must follow the same backend-defined sampling period.
+- Both `Experiment` and `Measurement` must follow the same backend-defined sampling period.
 - Current mitigation (`ExperimentContext` syncing `set_sampling_period`) reduces mismatch risk but still relies on mutable global state.
 
 ## Problem Statement
@@ -22,7 +22,7 @@
 ## Goals
 
 - Make backend/session context the owner of pulse sampling semantics.
-- Centralize pulse construction behind a shared factory used by both `Experiment` and `MeasurementClient`.
+- Centralize pulse construction behind a shared factory used by both `Experiment` and `Measurement`.
 - Keep QuEL-1 behavior unchanged while supporting non-2ns backends.
 - Enable incremental migration without large one-shot rewrites.
 
@@ -55,7 +55,7 @@
 ### 3) Ownership and integration points
 
 - Owner: backend/session scope (`SystemManager` or backend manager layer), not `Experiment` layer.
-- `ExperimentContext` and `MeasurementClient` both obtain the same shared factory instance.
+- `ExperimentContext` and `Measurement` both obtain the same shared factory instance.
 - `PulseService` and measurement-side pulse builders call shared factory methods instead of direct qxpulse constructors.
 - Existing `ExperimentContext._sync_pulse_sampling_period()` remains as compatibility bridge during migration.
 
@@ -97,7 +97,7 @@
 - Unit: factory scope restores previous global sampling period.
 - Unit: factory uses measurement/backend-derived sampling period.
 - Integration: two experiment instances with different sampling periods do not leak through factory calls.
-- Integration: `Experiment` and `MeasurementClient` share the same backend-derived factory behavior.
+- Integration: `Experiment` and `Measurement` share the same backend-derived factory behavior.
 - Regression: existing pulse-service delegation and calibration behavior stay unchanged in QuEL-1 (`2.0 ns`).
 
 ## Risks and Mitigations

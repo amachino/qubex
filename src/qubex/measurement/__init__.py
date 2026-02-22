@@ -17,7 +17,6 @@ from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMe
 from .measurement import Measurement
 from .measurement_amplification_service import MeasurementAmplificationService
 from .measurement_classification_service import MeasurementClassificationService
-from .measurement_client import MeasurementClient
 from .measurement_config_factory import MeasurementConfigFactory
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_context import MeasurementContext
@@ -46,7 +45,6 @@ __all__ = [
     "MeasurementAmplificationService",
     "MeasurementBackendAdapter",
     "MeasurementClassificationService",
-    "MeasurementClient",
     "MeasurementConfigFactory",
     "MeasurementConstraintProfile",
     "MeasurementContext",

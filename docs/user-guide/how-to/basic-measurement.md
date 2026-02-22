@@ -1,6 +1,6 @@
 # Basic measurement
 
-This guide walks through a simple measurement workflow using `MeasurementClient`.
+This guide walks through a simple measurement workflow using `Measurement`.
 
 ## Goal
 
@@ -12,9 +12,9 @@ Run a single measurement, visualize the result, and inspect the underlying data.
 
 ```python
 import numpy as np
-from qubex.measurement import MeasurementClient
+from qubex.measurement import Measurement
 
-cli = MeasurementClient(
+cli = Measurement(
     chip_id="64Q",
     qubits=["Q00", "Q01"],
     config_dir="/path/to/config",

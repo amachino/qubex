@@ -22,7 +22,7 @@ Use this template for repeatable QuEL-1 / QuEL-3 hardware checks before beta and
 | Scenario ID | Scenario | Expected result | Actual result | Status |
 | --- | --- | --- | --- | --- |
 | HV-001 | Baseline measurement execution | Runs without backend-specific timing errors |  | pending |
-| HV-002 | Compatibility at `MeasurementClient` level | Existing API calls succeed and result shape/type is compatible |  | pending |
+| HV-002 | Compatibility at `Measurement` level | Existing API calls succeed and result shape/type is compatible |  | pending |
 | HV-003 | Synchronized protocol path | End-to-end protocol completes |  | pending |
 | HV-004 | `mock_mode=True` compatibility check | Behavior remains operational for required flows |  | pending |
 | HV-005 | Sweep-related path (if in scope) | Sweep flow runs and returns expected structure |  | pending |

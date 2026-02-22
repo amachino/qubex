@@ -17,7 +17,7 @@ from .analysis import fitting as fit
 from .core import Frequency, FrequencyArray, Time, TimeArray, units
 from .experiment import Experiment
 from .logging import set_log_level
-from .measurement import Measurement, MeasurementClient
+from .measurement import Measurement
 
 # Set default log level to INFO
 set_log_level("INFO")
@@ -29,7 +29,6 @@ __all__ = [
     "Frequency",
     "FrequencyArray",
     "Measurement",
-    "MeasurementClient",
     "Pulse",
     "PulseArray",
     "PulseChannel",

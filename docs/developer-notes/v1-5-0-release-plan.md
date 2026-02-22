@@ -14,7 +14,7 @@
 
 - Add support for QuEL-3 controller using new `quelware-client`
 - Keep backward compatibility with existing controllers
-- Primary compatibility target is `Measurement` facade level (with `MeasurementClient` compatibility alias)
+- Primary compatibility target is `Measurement` facade level
 - `Experiment` compatibility is expected to be preserved through `Measurement` facade compatibility
 - Below measurement facade level, implementation may diverge for QuEL-3 specific behavior
 - Remove assumptions tied to fixed 2 ns sampling period; support backend-defined sampling period
@@ -30,7 +30,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | --- | --- | --- | --- | --- |
 | P0 | Define QuEL-3 integration design (adapter boundary, lifecycle, error model) | TBD (after `quelware-client` completion) | `quelware-client` completion | PROPOSED / ON_HOLD |
 | P0 | Implement QuEL-3 adapter with `quelware-client` | TBD (after `quelware-client` completion) | `quelware-client` completion | ON_HOLD (skeleton exists; implementation intentionally paused) |
-| P0 | Prepare compatibility contract tests at `MeasurementClient` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
+| P0 | Prepare compatibility contract tests at `Measurement` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
 | P0 | Implement synchronized measurement protocol execution path | TBD (after `quelware-client` completion) | `quelware-client` completion + task primitives baseline | PROPOSED / ON_HOLD |
 | P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | IN_PROGRESS (measurement result time-axis path migrated) |
 | P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
@@ -72,7 +72,7 @@ Calendar note:
 
 - QuEL-3 basic control flow works on target environment
 - Existing controller regression tests all pass
-- QuEL-3 is API-compatible at measurement facade level (`Measurement` / `MeasurementClient`)
+- QuEL-3 is API-compatible at measurement facade level (`Measurement`)
 - `Experiment` core flows remain operational through delegation
 - No blocking fixed `2 ns` assumptions remain in QuEL-3 code path
 - Core synchronized protocol path is executable
@@ -102,7 +102,7 @@ Calendar note:
 
 ### Measurement facade level (must keep compatible for QuEL-3)
 
-- Public alias compatibility (`MeasurementClient` -> `Measurement`)
+- Public facade stability (`Measurement`)
 - Constructor compatibility policy is practical/source-compatible:
   - required args and primary behavior must remain compatible
   - strict equality of all optional defaults is not required
@@ -113,14 +113,14 @@ Calendar note:
   - Note: `execute_measurement_schedule` is retained here as a historical
     compatibility term; current internal implementation path is
     `MeasurementScheduleRunner` + `BackendController.execute(request=...)`.
-- Legacy delegation behavior from `MeasurementClient` compatibility path remains compatible (keep delegation tests green)
+- Legacy delegation behavior from historical measurement APIs remains compatible (keep delegation tests green)
 - Measurement result compatibility criteria are type/shape centered
 - Timing semantics must not assume fixed `2 ns`; schedule/config creation must work with backend-defined sampling period
 - Canonical sampling period source is backend/controller `sampling_period`
 
 ### Out of scope for compatibility guarantee (allowed to diverge)
 
-- Backend/controller internals below `MeasurementClient`
+- Backend/controller internals below `Measurement`
 - Device-specific execution internals for QuEL-3
 - Internal adapter structure and lower protocol handling
 - High-level `Experiment` contrib APIs (`measure_bell_state`, `measure_ghz_state`, etc.)
@@ -138,9 +138,9 @@ Calendar note:
 - [ ] Finalize QuEL-3 integration interface based on current `quelware-client` source (`quel3-adapter-interface-draft.md`) after dependency completion.
 - [ ] Freeze decisions in `quel3-adapter-interface-draft.md` (alias mapping, capture key policy, trigger model, result shape) after dependency completion.
 - [x] Define minimal synchronized protocol scenario for beta sign-off (`v1-5-0-synchronized-protocol-scenario.md`).
-- [x] Lock `MeasurementClient` and `Experiment` delegation smoke test scope for beta (`v1-5-0-contract-test-scope.md`).
+- [x] Lock `Measurement` and `Experiment` delegation smoke test scope for beta (`v1-5-0-contract-test-scope.md`).
 - [x] Draft beta release notes template and known limitation section (`v1-5-0-beta-release-notes-template.md`).
-- [x] Document shared pulse factory design for backend-derived sampling-period ownership across `Experiment` and `MeasurementClient` (`v1-5-0-shared-pulse-factory-design.md`).
+- [x] Document shared pulse factory design for backend-derived sampling-period ownership across `Experiment` and `Measurement` (`v1-5-0-shared-pulse-factory-design.md`).
 - [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
 
 ## Sampling-period audit (2026-02-17)
@@ -176,7 +176,7 @@ Calendar note:
 - 2026-02-17: `avg` mode stride is now explicit metadata (`avg_sample_stride`, default `4`) to preserve 4-way multiplexed readout demodulation semantics while allowing backend-specific override.
 - 2026-02-17: `MeasurementScheduleRunner.create_default()` now supports backend-provided custom adapter factory (`create_measurement_backend_adapter`) with contract tests, while keeping QuEL-1 defaults unchanged.
 - 2026-02-17: Added `/docs/developer-notes/quel3-adapter-interface-draft.md` with `quelware-client` API mapping, constraint assumptions, and open questions for QuEL-3 adapter implementation.
-- 2026-02-17: Added `MeasurementClient`-level contract test to ensure backend custom factory hooks are honored end-to-end by `execute_measurement_schedule()`.
+- 2026-02-17: Added `Measurement`-level contract test to ensure backend custom factory hooks are honored end-to-end by `execute_measurement_schedule()`.
 - 2026-02-17: Added `Quel3MeasurementBackendAdapter` and `Quel3ExecutionPayload` skeleton for relaxed schedule validation and schedule-to-fixed-timeline payload conversion.
 - 2026-02-17: Default adapter selection now supports explicit backend kind hint (`MEASUREMENT_BACKEND_KIND="quel3"`), with tests ensuring Quel3 adapter path selection.
 - 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend executor hook is missing, to avoid accidental QuEL-1 executor fallback.
@@ -185,7 +185,7 @@ Calendar note:
 - 2026-02-17: Added `instrument_aliases` in Quel3 payload with optional controller hook (`resolve_instrument_alias`) for target-to-alias mapping.
 - 2026-02-17: Added explicit QuEL-1 capability hints on `Quel1BackendController` (`MEASUREMENT_BACKEND_KIND`, `MEASUREMENT_CONSTRAINT_MODE`, `MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE`).
 - 2026-02-22: Removed QuEL-1-only measurement capability hints from controller constants; backend selection/constraints are now resolved through runtime/session flow and adapter contracts.
-- 2026-02-17: Added `Quel3BackendController` scaffold and session-scoped backend-family selection (`backend_kind`) in `SystemManager`/`MeasurementClient` (`quel1` or `quel3`, no mixed session).
+- 2026-02-17: Added `Quel3BackendController` scaffold and session-scoped backend-family selection (`backend_kind`) in `SystemManager`/`Measurement` (`quel1` or `quel3`, no mixed session).
 - 2026-02-17: Implemented initial QuEL-3 backend execution path through `BackendController.execute(request)` that invokes quelware fixed-timeline execution and returns canonical `MeasurementResult` (with clear runtime error when quelware dependency is unavailable).
 - 2026-02-18: Added `ConfigLoader` support for `wiring.v2.yaml` (`schema_version: 2`) including physical-id maps (`control`/`readout`) and port-label normalization (`p2tx`, `p0p1trx`) into runtime wiring rows.
 - 2026-02-18: `SystemManager.load(..., backend_kind="quel3")` now prefers `wiring.v2.yaml` when present and falls back to legacy `wiring.yaml`.
@@ -207,8 +207,8 @@ Calendar note:
 - 2026-02-18: Returned QuEL-3 decision items (`DF-01` to `DF-04`) to `PROPOSED` and deferred finalization until `quelware-client` completion.
 - 2026-02-18: Switched execution order to prioritize non-QuEL-3 tasks while QuEL-3 dependency remains incomplete.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
-- 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`MeasurementClient.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
-- 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `MeasurementClient`); implementation is explicitly deferred to 2026-02-19 or later.
+- 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
+- 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.
 
 ## Commit plan
 
@@ -217,8 +217,8 @@ Calendar note:
 - Message draft: `docs: finalize v1.5.0 compatibility contract and sampling-period audit`
 
 - Commit 2 (next): tests-first for compatibility and `dt` sourcing
-- Scope: add/adjust tests for `MeasurementClient` compatibility, `mock_mode=True`, and `dt` propagation
-- Message draft: `test: add MeasurementClient compatibility and dt-source contract coverage`
+- Scope: add/adjust tests for `Measurement` compatibility, `mock_mode=True`, and `dt` propagation
+- Message draft: `test: add Measurement compatibility and dt-source contract coverage`
 
 - Commit 3 (next): core runtime refactor to `dt`
 - Scope: measurement schedule builder/adapter/result time axis and related constants wiring
@@ -233,7 +233,7 @@ Calendar note:
 ### Design goal
 
 - Support both strict backends (QuEL-1 style) and relaxed backends (QuEL-3 style)
-- Keep `MeasurementClient` API stable while backend-specific rules evolve
+- Keep `Measurement` API stable while backend-specific rules evolve
 
 ### Proposed model
 
@@ -278,7 +278,7 @@ Calendar note:
 
 ### Compatibility guardrails
 
-- Changes on `MeasurementClient` compatibility surface must include contract-test updates.
+- Changes on `Measurement` compatibility surface must include contract-test updates.
 - For profile/adapter changes, include strict and relaxed profile coverage in tests.
 
 ### Review DoD additions

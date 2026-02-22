@@ -4,7 +4,7 @@ Qubex returns structured result objects that support plotting and persistence.
 
 ## Measurement results
 
-- **`MeasureResult`**: High-level result returned by `Experiment.measure()` and `MeasurementClient.measure()`.
+- **`MeasureResult`**: High-level result returned by `Experiment.measure()` and `Measurement.measure()`.
   - Contains per-target data with helpers like `plot()`, `plot_fft()`, and classification utilities.
   - Can be saved via `result.save()`.
 

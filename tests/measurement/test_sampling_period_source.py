@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from qubex.measurement.measurement_client import MeasurementClient
+from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 
 
-def _make_measurement_client_with_backend(
+def _make_measurement_with_backend(
     *,
     sampling_period: float,
     constraint_mode: str | None = None,
-) -> MeasurementClient:
-    measurement = MeasurementClient(
+) -> Measurement:
+    measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
         load_configs=False,
@@ -57,21 +57,21 @@ def _make_measurement_client_with_backend(
 
 def test_sampling_period_uses_backend_controller_default() -> None:
     """Given backend dt, when resolving sampling period, backend dt is returned."""
-    measurement = _make_measurement_client_with_backend(sampling_period=4.0)
+    measurement = _make_measurement_with_backend(sampling_period=4.0)
 
     assert measurement.sampling_period == 4.0
 
 
 def test_schedule_builder_is_initialized_with_resolved_sampling_period() -> None:
     """Given backend dt, when creating schedule builder, then builder carries the resolved period."""
-    measurement = _make_measurement_client_with_backend(sampling_period=8.0)
+    measurement = _make_measurement_with_backend(sampling_period=8.0)
 
     assert measurement.schedule_builder.sampling_period == 8.0
 
 
 def test_constraint_profile_uses_quel3_mode_hint() -> None:
     """Given quel3 mode hint, when resolving profile, then quel3 constraints are returned."""
-    measurement = _make_measurement_client_with_backend(
+    measurement = _make_measurement_with_backend(
         sampling_period=0.4,
         constraint_mode="quel3",
     )

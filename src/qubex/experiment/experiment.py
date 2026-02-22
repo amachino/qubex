@@ -41,7 +41,7 @@ from qubex.backend.backend_controller import SystemBackendController
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (
-    MeasurementClient,
+    Measurement,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
@@ -290,7 +290,7 @@ class Experiment:
         return self.ctx.util
 
     @property
-    def measurement(self) -> MeasurementClient:
+    def measurement(self) -> Measurement:
         """Return the measurement instance."""
         return self.ctx.measurement
 

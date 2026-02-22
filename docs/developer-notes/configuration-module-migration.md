@@ -28,7 +28,7 @@ Reduce `qubex.backend` responsibility and move configuration concerns into
 
 - Keep behavior-compatible increments.
 - Keep one migration step per commit-sized change.
-- Keep `MeasurementClient` compatibility surface unchanged.
+- Keep `Measurement` compatibility surface unchanged.
 - Prefer extraction over rewrite.
 
 ## Phase plan

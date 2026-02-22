@@ -221,7 +221,8 @@ class SystemManager:
         if isinstance(system_synchronizer, Quel1SystemSynchronizer):
             if (
                 not isinstance(self._backend_controller, Quel1BackendController)
-                or system_synchronizer.backend_controller is not self._backend_controller
+                or system_synchronizer.backend_controller
+                is not self._backend_controller
             ):
                 system_synchronizer = self._create_system_synchronizer(
                     self._backend_controller,
@@ -232,7 +233,8 @@ class SystemManager:
         if isinstance(system_synchronizer, Quel3SystemSynchronizer):
             if (
                 not isinstance(self._backend_controller, Quel3BackendController)
-                or system_synchronizer.backend_controller is not self._backend_controller
+                or system_synchronizer.backend_controller
+                is not self._backend_controller
             ):
                 system_synchronizer = self._create_system_synchronizer(
                     self._backend_controller,

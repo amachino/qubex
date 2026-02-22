@@ -7,7 +7,7 @@ Qubex supports readout classification using k-means or Gaussian mixture models (
 - **k-means**: Simple clustering for state separation.
 - **GMM**: Gaussian mixture model with probabilistic outputs.
 
-Select the classifier type with `classifier_type` when creating an `Experiment` or `MeasurementClient`.
+Select the classifier type with `classifier_type` when creating an `Experiment` or `Measurement`.
 
 ## Storage layout
 

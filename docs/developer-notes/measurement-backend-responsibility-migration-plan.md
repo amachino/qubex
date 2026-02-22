@@ -45,17 +45,17 @@ Migrate the current implementation to the target architecture defined in `measur
 - Main changes
   - Add `src/qubex/measurement/measurement_context.py` and move context/query responsibilities there.
   - Add `src/qubex/measurement/measurement_session_service.py` and move `load/connect/reload/disconnect/check_*/linkup/relinkup` there.
-  - Remove `MeasurementBackendManager` references from `src/qubex/measurement/measurement_client.py` and delegate to the new services.
+  - Remove `MeasurementBackendManager` references from `src/qubex/measurement/measurement.py` and delegate to the new services.
   - Remove `src/qubex/measurement/measurement_backend_manager.py`.
 - Behavior-preserving guardrails
-  - Keep `MeasurementClient` public method names/signatures/return types unchanged.
+  - Keep `Measurement` public method names/signatures/return types unchanged.
   - Preserve `SystemManager`-based load/connect/pull/sync sequencing.
 - Verification
   - `uv run pytest tests/measurement/test_backend_kind_selection.py`
   - `uv run pytest tests/measurement/test_measurement_api_delegation.py`
   - `uv run pytest tests/measurement/test_sampling_period_source.py`
 
-### Step 2: Delegate execution responsibilities from `MeasurementClient` to `MeasurementExecutionService`
+### Step 2: Delegate execution responsibilities from `Measurement` to `MeasurementExecutionService`
 
 - Purpose
   - Move execution use-case ownership out of facade and into a dedicated service.
@@ -63,7 +63,7 @@ Migrate the current implementation to the target architecture defined in `measur
   - Add `src/qubex/measurement/measurement_execution_service.py`.
   - Move `create_measurement_config`, `build_measurement_schedule`, `execute_measurement_schedule`, `execute`, `measure`, and `measure_noise` into the service.
   - Move `sampling_period` and `constraint_profile` resolution into the service.
-  - Keep `MeasurementClient` as API facade only.
+  - Keep `Measurement` as API facade only.
 - Behavior-preserving guardrails
   - Port default-value initialization logic exactly.
   - Keep rawdata save behavior, classifier conversion behavior, and return value types unchanged.
@@ -71,7 +71,7 @@ Migrate the current implementation to the target architecture defined in `measur
   - `uv run pytest tests/measurement/test_measurement_api_delegation.py`
   - `uv run pytest tests/measurement/test_measurement_ordering.py`
 
-### Step 2A: Delegate classifier and DC amplification responsibilities from `MeasurementClient`
+### Step 2A: Delegate classifier and DC amplification responsibilities from `Measurement`
 
 - Purpose
   - Remove classifier-state and temporary DC-operation ownership from facade.
@@ -80,13 +80,13 @@ Migrate the current implementation to the target architecture defined in `measur
   - Add `src/qubex/measurement/measurement_amplification_service.py`.
   - Delegate `classifiers`, `update_classifiers`,
     `get_confusion_matrix`, and `get_inverse_confusion_matrix` from
-    `MeasurementClient` to `MeasurementClassificationService`.
-  - Delegate `apply_dc_voltages` from `MeasurementClient` to
+    `Measurement` to `MeasurementClassificationService`.
+  - Delegate `apply_dc_voltages` from `Measurement` to
     `MeasurementAmplificationService`.
   - Keep `MeasurementExecutionService` classifier mapping shared from
     `MeasurementClassificationService`.
 - Behavior-preserving guardrails
-  - Keep `MeasurementClient` public method names/signatures/return types unchanged.
+  - Keep `Measurement` public method names/signatures/return types unchanged.
   - Preserve confusion-matrix normalization and Kronecker-product semantics.
   - Preserve target-to-mux-to-voltage resolution behavior for temporary DC operations.
 - Verification
@@ -221,15 +221,15 @@ Migrate the current implementation to the target architecture defined in `measur
 ### Step 9: Align facade naming and exports to policy baseline
 
 - Purpose
-  - Make `Measurement` the canonical facade name while retaining `MeasurementClient` compatibility.
+  - Make `Measurement` the canonical facade name and remove `MeasurementClient`.
 - Main changes
   - Make `src/qubex/measurement/measurement.py` the primary facade entrypoint.
-  - Keep `MeasurementClient` as compatibility alias.
+  - Remove `src/qubex/measurement/measurement_client.py`.
   - Adjust exports in `src/qubex/measurement/__init__.py` and `src/qubex/__init__.py`.
 - Behavior-preserving guardrails
-  - Preserve existing import compatibility for `MeasurementClient`.
+  - Preserve `Measurement` public method names/signatures/return types.
 - Verification
-  - `uv run pytest tests/measurement/test_measurement_client_alias.py`
+  - `uv run pytest tests/measurement/test_measurement_alias.py`
   - `uv run pytest tests/backend/test_backend_public_api.py`
 
 ### Step 10: Clean compatibility layer and run final quality gates
@@ -237,7 +237,7 @@ Migrate the current implementation to the target architecture defined in `measur
 - Purpose
   - Remove temporary migration artifacts and converge to policy target structure.
 - Main changes
-  - Minimize temporary compatibility aliases/classes/modules.
+  - Remove temporary compatibility aliases/classes/modules.
   - Close remaining deltas against target directory and naming baseline.
   - Update cross-referenced development notes where needed.
 - Behavior-preserving guardrails

@@ -61,10 +61,6 @@ class Measurement:
     (`MeasurementClassificationService`), and temporary DC operations
     (`MeasurementAmplificationService`).
 
-    Notes
-    -----
-    For backward compatibility, `MeasurementClient` is provided as an alias of
-    this class.
     """
 
     _execution_mode: ExecutionMode | None = None

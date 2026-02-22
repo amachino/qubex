@@ -3,7 +3,7 @@
 ## Purpose
 
 Define a stable configuration contract for QuEL-3 that fits the current
-`MeasurementClient` compatibility boundary and supports future backend growth.
+`Measurement` compatibility boundary and supports future backend growth.
 
 Related policy:
 

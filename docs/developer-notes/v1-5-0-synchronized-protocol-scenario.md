@@ -11,7 +11,7 @@ Define the minimum synchronized measurement scenario required for v1.5.0 beta ga
 ## Scope
 
 - Backend family: QuEL-3 (`backend_kind="quel3"`)
-- API contract surface: `MeasurementClient.execute_measurement_schedule(...)`
+- API contract surface: `Measurement.execute_measurement_schedule(...)`
 - Mode: `avg`
 - Goal: verify one payload is applied and triggered as a synchronized flow across all involved aliases.
 
@@ -33,7 +33,7 @@ Define the minimum synchronized measurement scenario required for v1.5.0 beta ga
 
 1. Build one `MeasurementSchedule` with at least two readout targets and capture windows.
 2. Build one `MeasurementConfig` in `avg` mode (`shots >= 2`).
-3. Execute once through `MeasurementClient.execute_measurement_schedule(schedule, config)`.
+3. Execute once through `Measurement.execute_measurement_schedule(schedule, config)`.
 4. Confirm result uses canonical `MeasurementResult` shape by output target label.
 5. Confirm no backend timing/alignment error is raised for the synchronized payload.
 6. Record `dt`, backend kind, alias list, and pass/fail in hardware validation sheet.
