@@ -554,7 +554,7 @@ class Quel1BoxProtocol(Quel1BoxCommonProtocol, Protocol):
 class Quel1ConfigOptionProtocol(Protocol):
     """Protocol for Quel1 config option enum-like classes."""
 
-    _value2member_map_: ClassVar[Mapping[str, Any]]
+    _value2member_map_: ClassVar[Mapping[str, Quel1ConfigOptionProtocol]]
 
 
 class Quel1SystemProtocol(Protocol):
@@ -583,8 +583,16 @@ class Quel1SystemProtocol(Protocol):
 class QuelDriverClassesProtocol(Protocol):
     """Protocol for driver-loader class bundle consumed by qubex."""
 
-    package_name: str
-    DEFAULT_SAMPLING_PERIOD: float | int
+    @property
+    def package_name(self) -> object:
+        """Return driver package discriminator."""
+        ...
+
+    @property
+    def DEFAULT_SAMPLING_PERIOD(self) -> float:
+        """Return backend sampling period in ns."""
+        ...
+
     Action: type[ActionProtocol]
     AwgId: type[AwgIdProtocol]
     AwgSetting: type[AwgSettingProtocol]

@@ -92,7 +92,9 @@ class _FakeQubeCalib:
 
 def _make_controller() -> Quel1BackendController:
     controller = Quel1BackendController()
-    cast(Any, controller)._qubecalib = _FakeQubeCalib()
+    fake_qubecalib = _FakeQubeCalib()
+    cast(Any, controller)._qubecalib = fake_qubecalib
+    cast(Any, controller)._runtime_context._qubecalib = fake_qubecalib
     return controller
 
 
@@ -100,23 +102,27 @@ def _override_driver_classes(
     controller: Quel1BackendController, **overrides: Any
 ) -> None:
     """Replace selected driver classes in one controller instance."""
-    cast(Any, controller)._driver = replace(cast(Any, controller)._driver, **overrides)
+    driver = replace(cast(Any, controller)._driver, **overrides)
+    cast(Any, controller)._driver = driver
+    cast(Any, controller)._runtime_context._driver = driver
 
 
 def test_connect_uses_boxpool_by_default(monkeypatch) -> None:
     """Given default mode, connect builds a boxpool and system."""
     controller = _make_controller()
-    controller.create_resource_map = lambda _type: {}  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        controller._connection_manager, "_create_resource_map", lambda _type: {}
+    )
     fake_quel1_system = object()
 
     _override_driver_classes(controller, BoxPool=_FakeBoxPool)
 
-    def _fake_create_from_boxpool(self: Quel1BackendController, box_names: list[str]):
+    def _fake_create_from_boxpool(box_names: list[str]):
         assert box_names == ["A", "B"]
         return fake_quel1_system
 
     monkeypatch.setattr(
-        Quel1BackendController,
+        controller._connection_manager,
         "_create_quel1system_from_boxpool",
         _fake_create_from_boxpool,
     )
@@ -132,17 +138,19 @@ def test_connect_uses_boxpool_by_default(monkeypatch) -> None:
 def test_connect_parallel_mode_bypasses_legacy_create_boxpool(monkeypatch) -> None:
     """Given parallel mode, connect builds a boxpool and system."""
     controller = _make_controller()
-    controller.create_resource_map = lambda _type: {}  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        controller._connection_manager, "_create_resource_map", lambda _type: {}
+    )
     fake_quel1_system = object()
 
     _override_driver_classes(controller, BoxPool=_FakeBoxPool)
 
-    def _fake_create_from_boxpool(self: Quel1BackendController, box_names: list[str]):
+    def _fake_create_from_boxpool(box_names: list[str]):
         assert box_names == ["A", "B"]
         return fake_quel1_system
 
     monkeypatch.setattr(
-        Quel1BackendController,
+        controller._connection_manager,
         "_create_quel1system_from_boxpool",
         _fake_create_from_boxpool,
     )
@@ -213,11 +221,17 @@ def test_connect_skips_reconnect_when_already_connected(monkeypatch) -> None:
     def _raise_if_called(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("connect path should be skipped when already connected")
 
-    monkeypatch.setattr(controller, "_create_boxpool", _raise_if_called)
     monkeypatch.setattr(
-        controller, "_create_quel1system_from_boxpool", _raise_if_called
+        controller._connection_manager, "_create_boxpool", _raise_if_called
     )
-    monkeypatch.setattr(controller, "create_resource_map", _raise_if_called)
+    monkeypatch.setattr(
+        controller._connection_manager,
+        "_create_quel1system_from_boxpool",
+        _raise_if_called,
+    )
+    monkeypatch.setattr(
+        controller._connection_manager, "_create_resource_map", _raise_if_called
+    )
 
     controller.connect(["A"])
 

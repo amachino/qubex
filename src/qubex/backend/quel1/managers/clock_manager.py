@@ -1,14 +1,18 @@
+# ruff: noqa: SLF001
+
 """Clock synchronization manager for QuEL-1 backend controller."""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from qubex.backend.quel1.compat.qubecalib_protocols import QuBEMasterClientProtocol
 
 
 class Quel1ClockManager:
@@ -17,56 +21,17 @@ class Quel1ClockManager:
     def __init__(self, *, runtime_context: Quel1RuntimeContextReader) -> None:
         self._runtime_context = runtime_context
 
-    def read_clocks(
-        self,
-        *,
-        box_list: list[str],
-        check_box_availability: Callable[[str], None],
-        resolve_box_sss_ip: Callable[[str], str],
-        read_clock_at_ip: Callable[[str], tuple[bool, int, int]],
-    ) -> list[tuple[bool, int, int]]:
-        """
-        Read sequencer clocks for selected boxes.
-
-        Parameters
-        ----------
-        box_list : list[str]
-            Box names.
-        check_box_availability : Callable[[str], None]
-            Box availability validator.
-        resolve_box_sss_ip : Callable[[str], str]
-            Resolver from box name to sequencer IP address.
-        read_clock_at_ip : Callable[[str], tuple[bool, int, int]]
-            Sequencer-clock reader at one IP address.
-
-        Returns
-        -------
-        list[tuple[bool, int, int]]
-            Sequencer clock readings.
-        """
+    def read_clocks(self, *, box_list: list[str]) -> list[tuple[bool, int, int]]:
+        """Read sequencer clocks for selected boxes."""
         result: list[tuple[bool, int, int]] = []
         for box_name in box_list:
-            check_box_availability(box_name)
-            result.append(read_clock_at_ip(resolve_box_sss_ip(box_name)))
+            self._runtime_context.ensure_box_available(box_name)
+            result.append(self._read_clock_at_ip(self._resolve_box_sss_ip(box_name)))
         return result
 
-    def check_clocks(
-        self, *, read_clocks: Callable[[], list[tuple[bool, int, int]]]
-    ) -> bool:
-        """
-        Check whether clocks are synchronized.
-
-        Parameters
-        ----------
-        read_clocks : Callable[[], list[tuple[bool, int, int]]]
-            Clock-reading function for target boxes.
-
-        Returns
-        -------
-        bool
-            True when clocks are synchronized.
-        """
-        result = read_clocks()
+    def check_clocks(self, *, box_list: list[str]) -> bool:
+        """Check whether clocks are synchronized."""
+        result = self.read_clocks(box_list=box_list)
         timestamps: list[str] = []
         accuracy = -8
         for _, clock, sysref_latch in result:
@@ -74,103 +39,60 @@ class Quel1ClockManager:
             timestamps.append(str(sysref_latch)[:accuracy])
         return len(set(timestamps)) == 1
 
-    def resync_clocks(
-        self,
-        *,
-        box_list: list[str],
-        get_clockmaster_setting_ipaddr: Callable[[], str | None],
-        create_clockmaster_client: Callable[[str], Any],
-        resolve_box_sss_ip: Callable[[str], str],
-        check_clocks: Callable[[list[str]], bool],
-    ) -> bool:
-        """
-        Resynchronize clocks for selected boxes.
-
-        Parameters
-        ----------
-        box_list : list[str]
-            Box names.
-        get_clockmaster_setting_ipaddr : Callable[[], str | None]
-            Configured clockmaster IP getter.
-        create_clockmaster_client : Callable[[str], Any]
-            Clockmaster client factory.
-        resolve_box_sss_ip : Callable[[str], str]
-            Resolver from box name to sequencer IP address.
-        check_clocks : Callable[[list[str]], bool]
-            Clock synchronization checker.
-
-        Returns
-        -------
-        bool
-            True when synchronization succeeded.
-        """
+    def resync_clocks(self, *, box_list: list[str]) -> bool:
+        """Resynchronize clocks for selected boxes."""
         if len(box_list) < 2:
             return True
         master = self._get_connected_clockmaster()
         if master is None:
-            clockmaster_ipaddr = get_clockmaster_setting_ipaddr()
+            clockmaster_ipaddr = self._get_clockmaster_setting_ipaddr()
             if clockmaster_ipaddr is None:
                 raise ValueError("clock master is not found")
-            master = create_clockmaster_client(clockmaster_ipaddr)
-        master.kick_clock_synch([resolve_box_sss_ip(box_name) for box_name in box_list])
-        return check_clocks(box_list)
+            master = self._runtime_context.driver.QuBEMasterClient(clockmaster_ipaddr)
+        master.kick_clock_synch(
+            [self._resolve_box_sss_ip(box_name) for box_name in box_list]
+        )
+        return self.check_clocks(box_list=box_list)
 
-    def reset_clockmaster(
-        self,
-        *,
-        ipaddr: str,
-        get_clockmaster_setting_ipaddr: Callable[[], str | None],
-        create_clockmaster_client: Callable[[str], Any],
-    ) -> bool:
-        """
-        Reset the clockmaster endpoint.
-
-        Parameters
-        ----------
-        ipaddr : str
-            Clockmaster IP address.
-        get_clockmaster_setting_ipaddr : Callable[[], str | None]
-            Configured clockmaster IP getter.
-        create_clockmaster_client : Callable[[str], Any]
-            Clockmaster client factory.
-
-        Returns
-        -------
-        bool
-            True when reset succeeded.
-        """
+    def reset_clockmaster(self, *, ipaddr: str) -> bool:
+        """Reset the clockmaster endpoint."""
         connected_master = self._get_connected_clockmaster()
-        configured_ipaddr = get_clockmaster_setting_ipaddr()
+        configured_ipaddr = self._get_clockmaster_setting_ipaddr()
         if connected_master is not None and configured_ipaddr == ipaddr:
             return connected_master.reset()
-        return create_clockmaster_client(ipaddr).reset()
+        return self._runtime_context.driver.QuBEMasterClient(ipaddr).reset()
 
-    def _get_connected_clockmaster(self) -> Any | None:
-        """Return clockmaster from connected runtime system when available."""
-        quel1system = self._runtime_context.quel1system
-        if quel1system is None:
-            return None
-        return quel1system._clockmaster  # noqa: SLF001
-
-    def sync_clocks(self, *, resync_clocks: Callable[[], bool], box_count: int) -> bool:
-        """
-        Ensure clocks are synchronized, performing resync when needed.
-
-        Parameters
-        ----------
-        resync_clocks : Callable[[], bool]
-            Resynchronization action.
-        box_count : int
-            Number of boxes in target scope.
-
-        Returns
-        -------
-        bool
-            True when synchronized.
-        """
-        if box_count < 2:
+    def sync_clocks(self, *, box_list: list[str]) -> bool:
+        """Ensure clocks are synchronized, performing resync when needed."""
+        if len(box_list) < 2:
             return True
-        synchronized = resync_clocks()
+        synchronized = self.resync_clocks(box_list=box_list)
         if not synchronized:
             logger.warning("Failed to synchronize clocks.")
         return synchronized
+
+    def _get_connected_clockmaster(self) -> QuBEMasterClientProtocol | None:
+        """Return clockmaster from connected runtime system when available."""
+        quel1system = self._runtime_context.quel1system_or_none()
+        if quel1system is None:
+            return None
+        return quel1system._clockmaster
+
+    def _resolve_box_sss_ip(self, box_name: str) -> str:
+        """Resolve sequencer-service IP address for one box."""
+        db = self._runtime_context.qubecalib.system_config_database
+        return str(db._box_settings[box_name].ipaddr_sss)
+
+    def _read_clock_at_ip(self, ipaddr_sss: str) -> tuple[bool, int, int]:
+        """Read one sequencer clock tuple by IP address."""
+        return self._runtime_context.driver.SequencerClient(
+            target_ipaddr=ipaddr_sss
+        ).read_clock()
+
+    def _get_clockmaster_setting_ipaddr(self) -> str | None:
+        """Return configured clockmaster IP address if available."""
+        db = self._runtime_context.qubecalib.system_config_database
+        clockmaster_setting = db._clockmaster_setting
+        if clockmaster_setting is None:
+            return None
+        return str(clockmaster_setting.ipaddr)

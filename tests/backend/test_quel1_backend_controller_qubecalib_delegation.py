@@ -54,7 +54,9 @@ class _FakeQubeCalib:
 
 def _make_controller() -> Quel1BackendController:
     controller = Quel1BackendController()
-    cast(Any, controller)._qubecalib = _FakeQubeCalib()
+    fake_qubecalib = _FakeQubeCalib()
+    cast(Any, controller)._qubecalib = fake_qubecalib
+    cast(Any, controller)._runtime_context._qubecalib = fake_qubecalib
     return controller
 
 

@@ -69,7 +69,9 @@ def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> Non
         called.append(box_name)
 
     monkeypatch.setattr(
-        controller, "_initialize_box_awg_and_capunits", _fake_initialize
+        controller._connection_manager,
+        "_initialize_box_awg_and_capunits",
+        _fake_initialize,
     )
 
     controller.initialize_awg_and_capunits(["A", "B"], parallel=True)
@@ -88,7 +90,9 @@ def test_initialize_awg_and_capunits_parallel_deduplicates_boxes(monkeypatch) ->
         called.append(box_name)
 
     monkeypatch.setattr(
-        controller, "_initialize_box_awg_and_capunits", _fake_initialize
+        controller._connection_manager,
+        "_initialize_box_awg_and_capunits",
+        _fake_initialize,
     )
 
     controller.initialize_awg_and_capunits(["A", "A", "B"], parallel=True)
@@ -117,7 +121,7 @@ def test_linkup_boxes_parallel_collects_successes(monkeypatch) -> None:
             raise RuntimeError("boom")
         return object()
 
-    monkeypatch.setattr(controller, "linkup", _fake_linkup)
+    monkeypatch.setattr(controller._connection_manager, "linkup", _fake_linkup)
 
     boxes = controller.linkup_boxes(["A", "B"], parallel=True)
 
@@ -135,7 +139,7 @@ def test_linkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
         called.append(box_name)
         return object()
 
-    monkeypatch.setattr(controller, "linkup", _fake_linkup)
+    monkeypatch.setattr(controller._connection_manager, "linkup", _fake_linkup)
 
     boxes = controller.linkup_boxes(["A", "A", "B"], parallel=True)
 
@@ -153,7 +157,7 @@ def test_relinkup_boxes_parallel_calls_each_box(monkeypatch) -> None:
         _ = noise_threshold
         called.append(box_name)
 
-    monkeypatch.setattr(controller, "relinkup", _fake_relinkup)
+    monkeypatch.setattr(controller._connection_manager, "relinkup", _fake_relinkup)
 
     controller.relinkup_boxes(["A", "B"], parallel=True)
 
@@ -169,7 +173,7 @@ def test_relinkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
         _ = noise_threshold
         called.append(box_name)
 
-    monkeypatch.setattr(controller, "relinkup", _fake_relinkup)
+    monkeypatch.setattr(controller._connection_manager, "relinkup", _fake_relinkup)
 
     controller.relinkup_boxes(["A", "A", "B"], parallel=True)
 
@@ -197,13 +201,20 @@ def test_linkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None
     fake_box = _FakeBox()
     controller._connection_manager.set_boxpool(cast(Any, _FakeBoxPool(fake_box)))
 
-    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(
-        controller,
-        "_create_box",
+        controller._runtime_context, "ensure_box_available", lambda _: None
+    )
+    monkeypatch.setattr(
+        controller._runtime_context.qubecalib.system_config_database,
+        "create_box",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("must not create a new box")
         ),
+    )
+    monkeypatch.setattr(
+        controller._connection_manager,
+        "_resolve_config_options",
+        lambda **_: [],
     )
 
     linked_box = controller.linkup("A")
@@ -231,14 +242,18 @@ def test_relinkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> No
     fake_box = _FakeBox()
     controller._connection_manager.set_boxpool(cast(Any, _FakeBoxPool(fake_box)))
 
-    monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
-    monkeypatch.setattr(controller, "_resolve_config_options", lambda **_: [])
     monkeypatch.setattr(
-        controller,
-        "_create_box",
+        controller._runtime_context, "ensure_box_available", lambda _: None
+    )
+    monkeypatch.setattr(
+        controller._runtime_context.qubecalib.system_config_database,
+        "create_box",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("must not create a new box")
         ),
+    )
+    monkeypatch.setattr(
+        controller._connection_manager, "_resolve_config_options", lambda **_: []
     )
 
     controller.relinkup("A")

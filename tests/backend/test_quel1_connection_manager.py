@@ -1,9 +1,11 @@
+# ruff: noqa: SLF001
+
 """Tests for stateful QuEL-1 connection manager behavior."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from qubex.backend.quel1.compat.qubecalib_protocols import (
     BoxPoolProtocol,
@@ -13,186 +15,69 @@ from qubex.backend.quel1.managers.connection_manager import Quel1ConnectionManag
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContext
 
 
-class _FakeClockmaster:
+class _FakeDriver:
     pass
 
 
-class _FakeSequencerClient:
-    def read_counter(self) -> tuple[bool, int, int]:
-        return True, 0, 0
-
-
-class _FakeBox:
-    boxtype = "quel1-a"
-
-    def reconnect(self, *args: Any, **kwargs: Any) -> None:
-        _ = (args, kwargs)
-
-    def relinkup(self, *args: Any, **kwargs: Any) -> None:
-        _ = (args, kwargs)
-
-    def link_status(self) -> dict[int, bool]:
-        return {0: True}
-
-    def get_input_ports(self) -> tuple[int, ...]:
-        return (0,)
-
-    def get_output_ports(self) -> tuple[int, ...]:
-        return (1,)
-
-    def dump_box(self) -> dict[str, Any]:
-        return {}
-
-    def dump_port(self, port: int | tuple[int, int]) -> dict[str, Any]:
-        _ = port
-        return {}
-
-    def config_port(
-        self,
-        *,
-        port: int | tuple[int, int],
-        lo_freq: float | None = None,
-        cnco_freq: float | None = None,
-        vatt: int | None = None,
-        sideband: str | None = None,
-        fullscale_current: int | None = None,
-        rfswitch: str | None = None,
-    ) -> None:
-        _ = (
-            port,
-            lo_freq,
-            cnco_freq,
-            vatt,
-            sideband,
-            fullscale_current,
-            rfswitch,
-        )
-
-    def config_channel(
-        self,
-        *,
-        port: int | tuple[int, int],
-        channel: int,
-        fnco_freq: float | None = None,
-    ) -> None:
-        _ = (port, channel, fnco_freq)
-
-    def config_runit(
-        self,
-        *,
-        port: int | tuple[int, int],
-        runit: int,
-        fnco_freq: float | None = None,
-    ) -> None:
-        _ = (port, runit, fnco_freq)
+class _FakeQubeCalib:
+    pass
 
 
 class _FakeBoxPool:
     def __init__(self) -> None:
-        box = _FakeBox()
-        sequencer = _FakeSequencerClient()
-        self._boxes = {"A": (box, sequencer), "B": (box, sequencer)}
-        self._linkstatus = {"A": True, "B": True}
+        self._boxes: dict[str, tuple[object, object]] = {}
+        self._linkstatus: dict[str, bool] = {}
         self._box_config_cache: dict[str, dict[str, Any]] = {}
-
-    def create_clock_master(self, *, ipaddr: str) -> None:
-        _ = ipaddr
-
-    def create(
-        self,
-        box_name: str,
-        *,
-        ipaddr_wss: str,
-        ipaddr_sss: str,
-        ipaddr_css: str,
-        boxtype: str,
-    ) -> _FakeBox:
-        _ = (box_name, ipaddr_wss, ipaddr_sss, ipaddr_css, boxtype)
-        return _FakeBox()
-
-    def get_box(
-        self,
-        box_name: str,
-    ) -> tuple[_FakeBox, _FakeSequencerClient]:
-        return self._boxes[box_name]
-
-    def get_port_direction(self, box_name: str, port: int | tuple[int, int]) -> str:
-        _ = (box_name, port)
-        return "in"
-
-    def ensure_box_config_cache(
-        self,
-        *,
-        box_name: str,
-        box: _FakeBox,
-    ) -> dict[str, Any]:
-        _ = box
-        return self._box_config_cache.setdefault(box_name, {})
 
 
 class _FakeQuel1System:
-    boxes: dict[str, _FakeBox]
-    box: dict[str, _FakeBox]
-    _clockmaster: _FakeClockmaster
+    boxes: dict[str, object]
+    box: dict[str, object]
+    _clockmaster: object
     timing_shift: dict[str, int]
     displacement: int
     config_cache: dict[str, dict[str, Any]]
     config_fetched_at: datetime | None
 
     def __init__(self) -> None:
-        box = _FakeBox()
-        self.boxes = {"A": box, "B": box}
-        self.box = self.boxes
-        self._clockmaster = _FakeClockmaster()
+        self.boxes = {}
+        self.box = {}
+        self._clockmaster = object()
         self.timing_shift = {}
         self.displacement = 0
         self.config_cache = {}
         self.config_fetched_at = None
 
-    @classmethod
-    def create(
-        cls,
-        *,
-        clockmaster: _FakeClockmaster,
-        boxes: tuple[object, ...],
-        update_copnfig_cache: bool = False,
-    ) -> _FakeQuel1System:
-        _ = (clockmaster, boxes, update_copnfig_cache)
-        return cls()
 
-
-def _make_manager(
-    *,
-    available_boxes=lambda: ("A", "B"),
-    create_boxpool=lambda names, parallel: cast(BoxPoolProtocol, _FakeBoxPool()),
-    create_quel1system_from_boxpool=lambda names: cast(
-        Quel1SystemProtocol, _FakeQuel1System()
-    ),
-    create_resource_map=lambda kind: {},
-    default_parallel_mode: bool = True,
-) -> Quel1ConnectionManager:
-    """Create a connection manager with injectable connect collaborators."""
-    return Quel1ConnectionManager(
-        runtime_context=Quel1RuntimeContext(),
-        available_boxes=available_boxes,
-        default_parallel_mode=default_parallel_mode,
-        create_boxpool=create_boxpool,
-        create_quel1system_from_boxpool=create_quel1system_from_boxpool,
-        create_resource_map=create_resource_map,
+def _make_manager() -> Quel1ConnectionManager:
+    runtime_context = Quel1RuntimeContext(
+        driver=_FakeDriver(),  # type: ignore[arg-type]
+        qubecalib=_FakeQubeCalib(),  # type: ignore[arg-type]
+        sampling_period=2.0,
     )
+    return Quel1ConnectionManager(runtime_context=runtime_context)
 
 
 def test_connect_stores_connected_runtime_state() -> None:
-    """Given configured collaborators, when connect runs, then runtime state is stored in manager."""
-    boxpool = cast(BoxPoolProtocol, _FakeBoxPool())
-    quel1system = cast(Quel1SystemProtocol, _FakeQuel1System())
+    """Given connect collaborators, when connect runs, then runtime state is stored in manager."""
+    manager = _make_manager()
+    boxpool = _FakeBoxPool()
+    quel1system = _FakeQuel1System()
+
+    def _resolve_box_names(_box_names: str | list[str] | None) -> list[str]:
+        return ["A", "B"]
+
+    def _create_boxpool(box_names: list[str], *, parallel: bool) -> BoxPoolProtocol:
+        assert box_names == ["A", "B"]
+        assert parallel is True
+        return boxpool  # type: ignore[return-value]
 
     def _create_quel1system_from_boxpool(
         box_names: list[str],
     ) -> Quel1SystemProtocol:
         assert box_names == ["A", "B"]
         assert manager.boxpool is boxpool
-        return quel1system
+        return quel1system  # type: ignore[return-value]
 
     def _create_resource_map(kind: str) -> dict[str, dict]:
         assert manager.boxpool is boxpool
@@ -201,16 +86,16 @@ def test_connect_stores_connected_runtime_state() -> None:
             return {"cap-target": {"kind": "cap"}}
         return {"gen-target": {"kind": "gen"}}
 
-    manager = _make_manager(
-        available_boxes=lambda: ("A", "B"),
-        create_boxpool=lambda names, parallel: boxpool,
-        create_quel1system_from_boxpool=_create_quel1system_from_boxpool,
-        create_resource_map=_create_resource_map,
+    manager._resolve_box_names = _resolve_box_names  # type: ignore[method-assign]
+    manager._create_boxpool = _create_boxpool  # type: ignore[method-assign]
+    manager._create_quel1system_from_boxpool = (  # type: ignore[method-assign]
+        _create_quel1system_from_boxpool
     )
+    manager._create_resource_map = _create_resource_map  # type: ignore[method-assign]
 
     manager.connect(
         box_names=["A", "B"],
-        parallel=None,
+        parallel=True,
     )
 
     assert manager.is_connected
@@ -221,36 +106,27 @@ def test_connect_stores_connected_runtime_state() -> None:
 
 
 def test_connect_skips_when_already_connected() -> None:
-    """Given connected state, when connect is called again, then no callback is executed."""
-    called = False
-
-    def _unexpected_boxpool(_names: list[str], _parallel: bool) -> BoxPoolProtocol:
-        nonlocal called
-        called = True
-        return cast(BoxPoolProtocol, _FakeBoxPool())
-
-    def _unexpected_quel1system(_names: list[str]) -> Quel1SystemProtocol:
-        nonlocal called
-        called = True
-        return cast(Quel1SystemProtocol, _FakeQuel1System())
-
-    def _unexpected_resource_map(_kind: str) -> dict[str, dict]:
-        nonlocal called
-        called = True
-        return {}
-
-    manager = _make_manager(
-        available_boxes=lambda: ("A",),
-        create_boxpool=_unexpected_boxpool,
-        create_quel1system_from_boxpool=_unexpected_quel1system,
-        create_resource_map=_unexpected_resource_map,
-    )
+    """Given connected state, when connect is called again, then create pipeline is skipped."""
+    manager = _make_manager()
     manager.set_connected_state(
-        boxpool=cast(BoxPoolProtocol, _FakeBoxPool()),
-        quel1system=cast(Quel1SystemProtocol, _FakeQuel1System()),
+        boxpool=_FakeBoxPool(),  # type: ignore[arg-type]
+        quel1system=_FakeQuel1System(),  # type: ignore[arg-type]
         cap_resource_map={},
         gen_resource_map={},
     )
+    called = False
+
+    def _unexpected_create_boxpool(
+        box_names: list[str],
+        *,
+        parallel: bool,
+    ) -> BoxPoolProtocol:
+        nonlocal called
+        _ = (box_names, parallel)
+        called = True
+        return _FakeBoxPool()  # type: ignore[return-value]
+
+    manager._create_boxpool = _unexpected_create_boxpool  # type: ignore[method-assign]
 
     manager.connect(
         box_names=["A"],
@@ -266,16 +142,22 @@ def test_disconnect_clears_connected_runtime_state() -> None:
     disconnected: list[object] = []
     resources: list[object] = ["clockmaster", "box-a"]
     manager.set_connected_state(
-        boxpool=cast(BoxPoolProtocol, _FakeBoxPool()),
-        quel1system=cast(Quel1SystemProtocol, _FakeQuel1System()),
+        boxpool=_FakeBoxPool(),  # type: ignore[arg-type]
+        quel1system=_FakeQuel1System(),  # type: ignore[arg-type]
         cap_resource_map={"cap": {}},
         gen_resource_map={"gen": {}},
     )
 
-    manager.disconnect(
-        collect_held_resources=lambda: resources,
-        disconnect_resource_safely=lambda resource: disconnected.append(resource),
-    )
+    def _collect_held_resources() -> list[object]:
+        return resources
+
+    def _disconnect_resource_safely(resource: object) -> None:
+        disconnected.append(resource)
+
+    manager._collect_held_resources = _collect_held_resources  # type: ignore[method-assign]
+    manager._disconnect_resource_safely = _disconnect_resource_safely  # type: ignore[method-assign]
+
+    manager.disconnect()
 
     assert disconnected == resources
     assert manager.is_connected is False

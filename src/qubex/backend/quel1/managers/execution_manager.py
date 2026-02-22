@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
@@ -20,6 +20,12 @@ from qubex.backend.quel1.compat.sequencer_execution_engine import (
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from qubex.backend.quel1.compat.qubecalib_protocols import (
+        BoxPoolProtocol as BoxPool,
+        Quel1SystemProtocol as Quel1System,
+    )
 
 
 class Quel1ExecutionManager:
@@ -217,16 +223,10 @@ class Quel1ExecutionManager:
             config=parsed_config,
         )
 
-    def _require_boxpool(self) -> Any:
+    def _require_boxpool(self) -> BoxPool:
         """Return connected boxpool or raise when runtime is disconnected."""
-        boxpool = self._runtime_context.boxpool
-        if boxpool is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return boxpool
+        return self._runtime_context.boxpool
 
-    def _require_quel1system(self) -> Any:
+    def _require_quel1system(self) -> Quel1System:
         """Return connected Quel1System or raise when runtime is disconnected."""
-        quel1system = self._runtime_context.quel1system
-        if quel1system is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-        return quel1system
+        return self._runtime_context.quel1system

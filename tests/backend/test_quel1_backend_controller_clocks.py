@@ -85,9 +85,9 @@ class _FakeQuel1System:
 
 def _make_controller(*, include_clockmaster: bool = True) -> Quel1BackendController:
     controller = Quel1BackendController()
-    cast(Any, controller)._qubecalib = _FakeQubeCalib(
-        include_clockmaster=include_clockmaster
-    )
+    fake_qubecalib = _FakeQubeCalib(include_clockmaster=include_clockmaster)
+    cast(Any, controller)._qubecalib = fake_qubecalib
+    cast(Any, controller)._runtime_context._qubecalib = fake_qubecalib
     return controller
 
 
@@ -95,7 +95,9 @@ def _override_driver_classes(
     controller: Quel1BackendController, **overrides: Any
 ) -> None:
     """Replace selected driver classes in one controller instance."""
-    cast(Any, controller)._driver = replace(cast(Any, controller)._driver, **overrides)
+    driver = replace(cast(Any, controller)._driver, **overrides)
+    cast(Any, controller)._driver = driver
+    cast(Any, controller)._runtime_context._driver = driver
 
 
 def test_read_clocks_uses_sequencer_clients() -> None:

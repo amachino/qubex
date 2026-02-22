@@ -11,31 +11,27 @@ capabilities, while delegating concrete operations to QuEL-1 managers.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Mapping
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Collection
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
 )
 from qubex.backend.controller_types import BackendController
-from qubex.backend.parallel_box_executor import run_parallel_map
 
-from .compat.box_adapter import adapt_quel1_box
-from .compat.driver_loader import load_quel1_driver
 from .managers import (
     Quel1ClockManager,
     Quel1ConfigurationManager,
     Quel1ConnectionManager,
     Quel1ExecutionManager,
+    Quel1SystemSyncManager,
 )
 from .quel1_backend_constants import (
-    DEFAULT_CAPTURE_DELAY,
     DEFAULT_EXECUTION_MODE,
     WORD_LENGTH,
     ExecutionMode,
@@ -44,39 +40,20 @@ from .quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
 
+_RELAXED_NOISE_THRESHOLD = 10000
+_DEFAULT_PARALLEL_MODE = DEFAULT_EXECUTION_MODE == "parallel"
+
 if TYPE_CHECKING:
     from qubex.backend.control_system import Box
     from qubex.backend.experiment_system import ExperimentSystem
 
     from .compat.qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
-        BoxSettingProtocol as BoxSetting,
         QubeCalibProtocol as QubeCalib,
         Quel1BoxCommonProtocol as Quel1Box,
-        Quel1ConfigOptionProtocol as Quel1ConfigOption,
         Quel1SystemProtocol as Quel1System,
         SequencerProtocol as Sequencer,
     )
-
-# TODO: use appropriate noise threshold
-_RELAXED_NOISE_THRESHOLD = 10000
-_MAX_BOX_PARALLEL_WORKERS = 32
-_DEFAULT_PARALLEL_MODE = DEFAULT_EXECUTION_MODE == "parallel"
-_QUEL1SE_R8_AWG_OPTIONS = {
-    "se8_mxfe1_awg1331",
-    "se8_mxfe1_awg2222",
-    "se8_mxfe1_awg3113",
-}
-_QUEL1SE_R8_DEFAULT_AWG_OPTION = "se8_mxfe1_awg2222"
-
-
-def _resolve_quel1se_r8_awg_option(options: list[str]) -> str:
-    awg_options = [label for label in options if label in _QUEL1SE_R8_AWG_OPTIONS]
-    if len(awg_options) > 1:
-        raise ValueError("Multiple AWG options are not allowed for quel1se-riken8.")
-    if len(awg_options) == 1:
-        return awg_options[0]
-    return _QUEL1SE_R8_DEFAULT_AWG_OPTION
 
 
 @dataclass
@@ -107,34 +84,12 @@ class Quel1BackendController(BackendController):
         self,
         config_path: str | Path | None = None,
     ):
-        self._driver = load_quel1_driver()
-        self._sampling_period = self._driver.DEFAULT_SAMPLING_PERIOD
-
-        try:
-            if config_path is None:
-                self._qubecalib = self._driver.QubeCalib()
-            else:
-                try:
-                    self._qubecalib = self._driver.QubeCalib(str(config_path))
-                except FileNotFoundError:
-                    logger.warning(f"Configuration file {config_path} not found.")
-                    raise
-        except Exception:
-            self._qubecalib = None
-        self._box_options: dict[str, tuple[str, ...]] = {}
-        self._runtime_context = Quel1RuntimeContext()
+        self._runtime_context = Quel1RuntimeContext.create(
+            config_path=config_path,
+        )
+        self._driver: Any = self._runtime_context.driver
         self._connection_manager = Quel1ConnectionManager(
             runtime_context=self._runtime_context,
-            available_boxes=lambda: self.available_boxes,
-            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
-            create_boxpool=lambda names, parallel_mode: self._create_boxpool(
-                names,
-                parallel=parallel_mode,
-            ),
-            create_quel1system_from_boxpool=lambda names: (
-                self._create_quel1system_from_boxpool(names)
-            ),
-            create_resource_map=lambda kind: self.create_resource_map(kind),
         )
         self._clock_manager = Quel1ClockManager(
             runtime_context=self._runtime_context,
@@ -145,11 +100,14 @@ class Quel1BackendController(BackendController):
         self._configuration_manager = Quel1ConfigurationManager(
             runtime_context=self._runtime_context,
         )
+        self._system_sync_manager = Quel1SystemSyncManager(
+            runtime_context=self._runtime_context,
+        )
 
     @property
     def sampling_period(self) -> float:
         """Return backend sampling period in ns."""
-        return self._sampling_period
+        return self._runtime_context.sampling_period
 
     @property
     def is_connected(self) -> bool:
@@ -159,9 +117,7 @@ class Quel1BackendController(BackendController):
     @property
     def qubecalib(self) -> QubeCalib:
         """Return the QubeCalib instance or raise if unavailable."""
-        if self._qubecalib is None:
-            raise ModuleNotFoundError(name="qubecalib")
-        return self._qubecalib
+        return self._runtime_context.qubecalib
 
     @property
     def hash(self) -> int:
@@ -307,10 +263,7 @@ class Quel1BackendController(BackendController):
     def disconnect(self) -> None:
         """Disconnect backend resources and reset connection-related state."""
         self._clear_quel1system_box_cache()
-        self._connection_manager.disconnect(
-            collect_held_resources=self._collect_held_resources,
-            disconnect_resource_safely=self._disconnect_resource_safely,
-        )
+        self._connection_manager.disconnect()
 
     def get_box(self, box_name: str) -> Quel1Box:
         """
@@ -352,12 +305,8 @@ class Quel1BackendController(BackendController):
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
         self._connection_manager.initialize_awg_and_capunits(
-            is_connected=self.is_connected,
             box_names=box_names,
             parallel=parallel,
-            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
-            max_parallel_workers=_MAX_BOX_PARALLEL_WORKERS,
-            initialize_box_awg_and_capunits=self._initialize_box_awg_and_capunits,
         )
 
     def link_status(self, box_name: str) -> dict[int, bool]:
@@ -410,11 +359,6 @@ class Quel1BackendController(BackendController):
         return self._connection_manager.linkup(
             box_name=box_name,
             noise_threshold=noise_threshold,
-            relaxed_noise_threshold=_RELAXED_NOISE_THRESHOLD,
-            check_box_availability=self._check_box_availability,
-            get_existing_or_create_box=lambda name, reconnect: (
-                self._get_existing_or_create_box(name, reconnect=reconnect)
-            ),
             **kwargs,
         )
 
@@ -447,14 +391,8 @@ class Quel1BackendController(BackendController):
             box_list=box_list,
             noise_threshold=noise_threshold,
             parallel=parallel,
-            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
-            max_parallel_workers=_MAX_BOX_PARALLEL_WORKERS,
-            linkup_box=lambda name, threshold: self.linkup(
-                name,
-                noise_threshold=threshold,
-            ),
         )
-        return cast(Any, linked_boxes)
+        return linked_boxes
 
     def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
         """
@@ -468,15 +406,6 @@ class Quel1BackendController(BackendController):
         self._connection_manager.relinkup(
             box_name=box_name,
             noise_threshold=noise_threshold,
-            relaxed_noise_threshold=_RELAXED_NOISE_THRESHOLD,
-            check_box_availability=self._check_box_availability,
-            get_existing_or_create_box=lambda name, reconnect: (
-                self._get_existing_or_create_box(name, reconnect=reconnect)
-            ),
-            resolve_config_options=lambda name, boxtype: self._resolve_config_options(
-                box_name=name,
-                boxtype=boxtype,
-            ),
         )
 
     def relinkup_boxes(
@@ -503,12 +432,6 @@ class Quel1BackendController(BackendController):
             box_list=box_list,
             noise_threshold=noise_threshold,
             parallel=parallel,
-            default_parallel_mode=_DEFAULT_PARALLEL_MODE,
-            max_parallel_workers=_MAX_BOX_PARALLEL_WORKERS,
-            relinkup_box=lambda name, threshold: self.relinkup(
-                name,
-                noise_threshold=threshold,
-            ),
         )
 
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
@@ -525,16 +448,7 @@ class Quel1BackendController(BackendController):
         list[tuple[bool, int, int]]
             List of clocks.
         """
-        return self._clock_manager.read_clocks(
-            box_list=box_list,
-            check_box_availability=self._check_box_availability,
-            resolve_box_sss_ip=lambda box_name: str(
-                self.qubecalib.system_config_database._box_settings[box_name].ipaddr_sss
-            ),
-            read_clock_at_ip=lambda ipaddr_sss: self._driver.SequencerClient(
-                target_ipaddr=ipaddr_sss
-            ).read_clock(),
-        )
+        return self._clock_manager.read_clocks(box_list=box_list)
 
     def check_clocks(self, box_list: list[str]) -> bool:
         """
@@ -550,9 +464,7 @@ class Quel1BackendController(BackendController):
         bool
             True if the clocks are synchronized, False otherwise.
         """
-        return self._clock_manager.check_clocks(
-            read_clocks=lambda: self.read_clocks(box_list),
-        )
+        return self._clock_manager.check_clocks(box_list=box_list)
 
     def sync_clocks(self, box_list: list[str]) -> bool:
         """
@@ -563,10 +475,7 @@ class Quel1BackendController(BackendController):
         box_list : list[str]
             List of box names.
         """
-        return self._clock_manager.sync_clocks(
-            resync_clocks=lambda: self.resync_clocks(box_list),
-            box_count=len(box_list),
-        )
+        return self._clock_manager.sync_clocks(box_list=box_list)
 
     def resync_clocks(self, box_list: list[str]) -> bool:
         """
@@ -577,17 +486,7 @@ class Quel1BackendController(BackendController):
         box_list : list[str]
             List of box names.
         """
-        return self._clock_manager.resync_clocks(
-            box_list=box_list,
-            get_clockmaster_setting_ipaddr=self._get_clockmaster_setting_ipaddr,
-            create_clockmaster_client=lambda ipaddr: self._driver.QuBEMasterClient(
-                master_ipaddr=ipaddr
-            ),
-            resolve_box_sss_ip=lambda box_name: str(
-                self.qubecalib.system_config_database._box_settings[box_name].ipaddr_sss
-            ),
-            check_clocks=self.check_clocks,
-        )
+        return self._clock_manager.resync_clocks(box_list=box_list)
 
     def reset_clockmaster(self, ipaddr: str) -> bool:
         """
@@ -603,120 +502,20 @@ class Quel1BackendController(BackendController):
         bool
             True if reset succeeds.
         """
-        return self._clock_manager.reset_clockmaster(
-            ipaddr=ipaddr,
-            get_clockmaster_setting_ipaddr=self._get_clockmaster_setting_ipaddr,
-            create_clockmaster_client=lambda addr: self._driver.QuBEMasterClient(
-                master_ipaddr=addr
-            ),
-        )
+        return self._clock_manager.reset_clockmaster(ipaddr=ipaddr)
 
     def sync_experiment_system_to_backend_controller(
         self,
         experiment_system: ExperimentSystem,
     ) -> None:
         """Rebuild backend-controller topology from one experiment-system model."""
-        control_system = experiment_system.control_system
-        control_params = experiment_system.control_params
-        self.define_clockmaster(
-            ipaddr=control_system.clock_master_address,
-            reset=True,
+        self._system_sync_manager.sync_experiment_system_to_backend_controller(
+            experiment_system
         )
-        self.set_box_options({box.id: box.options for box in control_system.boxes})
-
-        for box in control_system.boxes:
-            self.define_box(
-                box_name=box.id,
-                ipaddr_wss=box.address,
-                boxtype=box.type.value,
-            )
-
-            for port in box.ports:
-                port_type = getattr(port.type, "value", None)
-                if port_type == "NA":
-                    continue
-                self.define_port(
-                    port_name=port.id,
-                    box_name=box.id,
-                    port_number=port.number,
-                )
-
-                for channel in port.channels:
-                    if port_type == "READ_IN":
-                        mux = experiment_system.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        ndelay_or_nwait = control_params.get_capture_delay(mux.index)
-                    elif port_type == "MNTR_IN":
-                        ndelay_or_nwait = DEFAULT_CAPTURE_DELAY
-                    else:
-                        ndelay_or_nwait = 0
-                    self.define_channel(
-                        channel_name=channel.id,
-                        port_name=port.id,
-                        channel_number=channel.number,
-                        ndelay_or_nwait=ndelay_or_nwait,
-                    )
-
-                if port_type in ("PUMP", "MNTR_OUT", "MNTR_IN"):
-                    self.add_channel_target_relation(
-                        port.channels[0].id,
-                        port.id,
-                    )
-
-        for target in experiment_system.all_targets:
-            self.define_target(
-                target_name=target.label,
-                channel_name=target.channel.id,
-                target_frequency=target.frequency,
-            )
-
-        self.clear_command_queue()
-        self.clear_cache()
 
     def sync_box_to_hardware(self, box: Box) -> None:
         """Apply one experiment-system box configuration to hardware."""
-        for port in box.ports:
-            port_type = getattr(port.type, "value", None)
-            if port_type in ("CTRL", "READ_OUT", "PUMP"):
-                try:
-                    self.config_port(
-                        box.id,
-                        port=port.number,
-                        lo_freq=port.lo_freq,
-                        cnco_freq=port.cnco_freq,
-                        vatt=getattr(port, "vatt", None),
-                        sideband=getattr(port, "sideband", None),
-                        fullscale_current=getattr(port, "fullscale_current", None),
-                        rfswitch=port.rfswitch,
-                    )
-                    for gen_channel in port.channels:
-                        self.config_channel(
-                            box.id,
-                            port=port.number,
-                            channel=gen_channel.number,
-                            fnco_freq=gen_channel.fnco_freq,
-                        )
-                except Exception:
-                    logger.exception("Failed to configure %s", port.id)
-            elif port_type == "READ_IN":
-                try:
-                    self.config_port(
-                        box.id,
-                        port=port.number,
-                        lo_freq=port.lo_freq,
-                        cnco_freq=port.cnco_freq,
-                        rfswitch=port.rfswitch,
-                    )
-                    for cap_channel in port.channels:
-                        self.config_runit(
-                            box.id,
-                            port=port.number,
-                            runit=cap_channel.number,
-                            fnco_freq=cap_channel.fnco_freq,
-                        )
-                except Exception:
-                    logger.exception("Failed to configure %s", port.id)
+        self._system_sync_manager.sync_box_to_hardware(box)
 
     def define_clockmaster(self, *, ipaddr: str, reset: bool = True) -> None:
         """
@@ -729,11 +528,7 @@ class Quel1BackendController(BackendController):
         reset : bool, optional
             Whether to reset clock master on define.
         """
-        self._configuration_manager.define_clockmaster(
-            qubecalib=self.qubecalib,
-            ipaddr=ipaddr,
-            reset=reset,
-        )
+        self._configuration_manager.define_clockmaster(ipaddr=ipaddr, reset=reset)
 
     def define_box(
         self,
@@ -755,7 +550,6 @@ class Quel1BackendController(BackendController):
             Box type label.
         """
         self._configuration_manager.define_box(
-            qubecalib=self.qubecalib,
             box_name=box_name,
             ipaddr_wss=ipaddr_wss,
             boxtype=boxtype,
@@ -781,7 +575,6 @@ class Quel1BackendController(BackendController):
             Port number.
         """
         self._configuration_manager.define_port(
-            qubecalib=self.qubecalib,
             port_name=port_name,
             box_name=box_name,
             port_number=port_number,
@@ -810,7 +603,6 @@ class Quel1BackendController(BackendController):
             Capture delay or wait words.
         """
         self._configuration_manager.define_channel(
-            qubecalib=self.qubecalib,
             channel_name=channel_name,
             port_name=port_name,
             channel_number=channel_number,
@@ -829,7 +621,6 @@ class Quel1BackendController(BackendController):
             Target name.
         """
         self._configuration_manager.add_channel_target_relation(
-            qubecalib=self.qubecalib,
             channel_name=channel_name,
             target_name=target_name,
         )
@@ -853,7 +644,6 @@ class Quel1BackendController(BackendController):
             Frequency of the target in GHz.
         """
         self._configuration_manager.define_target(
-            qubecalib=self.qubecalib,
             target_name=target_name,
             channel_name=channel_name,
             target_frequency=target_frequency,
@@ -871,7 +661,6 @@ class Quel1BackendController(BackendController):
             Modified frequency in GHz.
         """
         self._configuration_manager.modify_target_frequency(
-            qubecalib=self.qubecalib,
             target=target,
             frequency=frequency,
         )
@@ -885,10 +674,7 @@ class Quel1BackendController(BackendController):
         frequencies : dict[str, float]
             Dictionary of target frequencies.
         """
-        self._configuration_manager.modify_target_frequencies(
-            qubecalib=self.qubecalib,
-            frequencies=frequencies,
-        )
+        self._configuration_manager.modify_target_frequencies(frequencies=frequencies)
 
     def config_port(
         self,
@@ -933,10 +719,6 @@ class Quel1BackendController(BackendController):
             sideband=sideband,
             fullscale_current=fullscale_current,
             rfswitch=rfswitch,
-            check_box_availability=self._check_box_availability,
-            create_box=lambda name, reconnect: self._create_box(
-                name, reconnect=reconnect
-            ),
         )
 
     def config_channel(
@@ -966,10 +748,6 @@ class Quel1BackendController(BackendController):
             port=port,
             channel=channel,
             fnco_freq=fnco_freq,
-            check_box_availability=self._check_box_availability,
-            create_box=lambda name, reconnect: self._create_box(
-                name, reconnect=reconnect
-            ),
         )
 
     def config_runit(
@@ -999,10 +777,6 @@ class Quel1BackendController(BackendController):
             port=port,
             runit=runit,
             fnco_freq=fnco_freq,
-            check_box_availability=self._check_box_availability,
-            create_box=lambda name, reconnect: self._create_box(
-                name, reconnect=reconnect
-            ),
         )
 
     def dump_box(self, box_name: str) -> dict:
@@ -1026,10 +800,6 @@ class Quel1BackendController(BackendController):
         """
         return self._configuration_manager.dump_box(
             box_name=box_name,
-            check_box_availability=self._check_box_availability,
-            create_box=lambda name, reconnect: self._create_box(
-                name, reconnect=reconnect
-            ),
         )
 
     def dump_port(self, box_name: str, port_number: int | tuple[int, int]) -> dict:
@@ -1056,18 +826,11 @@ class Quel1BackendController(BackendController):
         return self._configuration_manager.dump_port(
             box_name=box_name,
             port_number=port_number,
-            check_box_availability=self._check_box_availability,
-            create_box=lambda name, reconnect: self._create_box(
-                name, reconnect=reconnect
-            ),
         )
 
     def set_box_options(self, box_options: dict[str, tuple[str, ...]]) -> None:
         """Set box option labels used for relinkup config options."""
-        self._box_options = {
-            box_name: tuple(option_labels)
-            for box_name, option_labels in box_options.items()
-        }
+        self._configuration_manager.set_box_options(box_options)
 
     def add_sequencer(self, sequencer: Sequencer) -> None:
         """
@@ -1078,27 +841,19 @@ class Quel1BackendController(BackendController):
         sequencer : Sequencer
             The sequencer to add to the queue.
         """
-        self._configuration_manager.add_sequencer(
-            qubecalib=self.qubecalib,
-            sequencer=sequencer,
-        )
+        self._configuration_manager.add_sequencer(sequencer=sequencer)
 
     def show_command_queue(self) -> None:
         """Show the current command queue."""
-        logger.info(
-            self._configuration_manager.show_command_queue(qubecalib=self.qubecalib)
-        )
+        logger.info(self._configuration_manager.show_command_queue())
 
     def clear_command_queue(self) -> None:
         """Clear the command queue."""
-        self._configuration_manager.clear_command_queue(qubecalib=self.qubecalib)
+        self._configuration_manager.clear_command_queue()
 
     def clear_cache(self) -> None:
         """Clear cached box configuration data."""
-        boxpool = self._connection_manager.boxpool
-        if boxpool is not None:
-            boxpool._box_config_cache.clear()
-        self._clear_quel1system_box_cache()
+        self._system_sync_manager.clear_cache()
 
     def get_box_config_cache(self) -> dict[str, Any]:
         """Return a snapshot of the box-config cache."""
@@ -1462,21 +1217,23 @@ class Quel1BackendController(BackendController):
         RawResult
             Measurement result.
         """
-        return cast(
-            Quel1BackendRawResult,
-            self._execution_manager.execute_sequencer(
-                sequencer=sequencer,
-                repeats=repeats,
-                integral_mode=integral_mode,
-                dsp_demodulation=dsp_demodulation,
-                software_demodulation=software_demodulation,
-                enable_sum=enable_sum,
-                enable_classification=enable_classification,
-                line_param0=line_param0,
-                line_param1=line_param1,
-                make_backend_raw_result=self._make_backend_raw_result,
-            ),
+        result = self._execution_manager.execute_sequencer(
+            sequencer=sequencer,
+            repeats=repeats,
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
+            enable_sum=enable_sum,
+            enable_classification=enable_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+            make_backend_raw_result=self._make_backend_raw_result,
         )
+        if not isinstance(result, Quel1BackendRawResult):
+            raise TypeError(
+                "Unexpected execution result type from QuEL-1 execution manager."
+            )
+        return result
 
     def execute_sequencer_parallel(
         self,
@@ -1524,27 +1281,29 @@ class Quel1BackendController(BackendController):
         Quel1BackendRawResult
             Measurement result with qubecalib-compatible parsed payload.
         """
-        return cast(
-            Quel1BackendRawResult,
-            self._execution_manager.execute_sequencer_parallel(
-                sequencer=sequencer,
-                repeats=repeats,
-                integral_mode=integral_mode,
-                dsp_demodulation=dsp_demodulation,
-                software_demodulation=software_demodulation,
-                enable_sum=enable_sum,
-                enable_classification=enable_classification,
-                line_param0=line_param0,
-                line_param1=line_param1,
-                clock_health_checks=clock_health_checks,
-                action_builder=self._driver.Action.build,
-                runit_setting_factory=self._driver.RunitSetting,
-                runit_id_factory=self._driver.RunitId,
-                awg_setting_factory=self._driver.AwgSetting,
-                awg_id_factory=self._driver.AwgId,
-                make_backend_raw_result=self._make_backend_raw_result,
-            ),
+        result = self._execution_manager.execute_sequencer_parallel(
+            sequencer=sequencer,
+            repeats=repeats,
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
+            enable_sum=enable_sum,
+            enable_classification=enable_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+            clock_health_checks=clock_health_checks,
+            action_builder=self._driver.Action.build,
+            runit_setting_factory=self._driver.RunitSetting,
+            runit_id_factory=self._driver.RunitId,
+            awg_setting_factory=self._driver.AwgSetting,
+            awg_id_factory=self._driver.AwgId,
+            make_backend_raw_result=self._make_backend_raw_result,
         )
+        if not isinstance(result, Quel1BackendRawResult):
+            raise TypeError(
+                "Unexpected execution result type from QuEL-1 execution manager."
+            )
+        return result
 
     def _make_backend_raw_result(
         self,
@@ -1566,31 +1325,6 @@ class Quel1BackendController(BackendController):
                 f"Box {box_name} not in available boxes: {self.available_boxes}"
             )
 
-    def _resolve_config_options(
-        self,
-        *,
-        box_name: str,
-        boxtype: str,
-    ) -> list[Quel1ConfigOption] | None:
-        """Resolve config options for relinkup from optional per-box labels."""
-        option_labels = list(self._box_options.get(box_name, ()))
-        if boxtype == "quel1se-riken8":
-            awg_option = _resolve_quel1se_r8_awg_option(option_labels)
-            if awg_option not in option_labels:
-                option_labels.insert(0, awg_option)
-        if not option_labels:
-            return None
-        config_options: list[Quel1ConfigOption] = []
-        option_map = self._driver.Quel1ConfigOption._value2member_map_
-        for option_label in option_labels:
-            option = option_map.get(option_label)
-            if option is None:
-                raise ValueError(
-                    f"Unknown Quel1 config option `{option_label}` for box `{box_name}`."
-                )
-            config_options.append(cast(Any, option))
-        return config_options
-
     def _get_existing_or_create_box(
         self,
         box_name: str,
@@ -1602,6 +1336,20 @@ class Quel1BackendController(BackendController):
         if boxpool is not None and box_name in boxpool._boxes:
             return boxpool._boxes[box_name][0]
         return self._create_box(box_name, reconnect=reconnect)
+
+    def _create_boxpool(
+        self,
+        box_names: list[str],
+        *,
+        parallel: bool | None = None,
+    ) -> BoxPool:
+        """Create a box pool through connection-manager implementation."""
+        if parallel is None:
+            parallel = _DEFAULT_PARALLEL_MODE
+        return self._connection_manager._create_boxpool(
+            box_names,
+            parallel=parallel,
+        )
 
     def _create_box(self, box_name: str, *, reconnect: bool = True) -> Quel1Box:
         """
@@ -1627,201 +1375,6 @@ class Quel1BackendController(BackendController):
         self._check_box_availability(box_name)
         db = self.qubecalib.system_config_database
         return db.create_box(box_name, reconnect=reconnect)
-
-    def _create_boxpool(
-        self,
-        box_names: list[str],
-        *,
-        parallel: bool | None = None,
-    ) -> BoxPool:
-        """
-        Create a box pool and reconnect boxes.
-
-        Parameters
-        ----------
-        box_names : list[str]
-            Box names to add to the pool.
-        parallel : bool, optional
-            Whether to process box creation/reconnect in parallel.
-
-        Returns
-        -------
-        BoxPool
-            Created box pool with connected boxes.
-        """
-        if parallel is None:
-            parallel = _DEFAULT_PARALLEL_MODE
-        db = self.qubecalib.system_config_database
-        boxpool = self._driver.BoxPool()
-        clockmaster_setting = db._clockmaster_setting
-        if clockmaster_setting is not None:
-            boxpool.create_clock_master(ipaddr=str(clockmaster_setting.ipaddr))
-
-        box_settings = db._box_settings
-        settings_by_name: dict[str, BoxSetting] = {}
-        for box_name in box_names:
-            if box_name not in box_settings:
-                raise ValueError(f"box({box_name}) is not defined")
-            settings_by_name[box_name] = box_settings[box_name]
-
-        boxes_to_reconnect: list[Quel1Box] = []
-        if parallel and box_names:
-            created_boxes = run_parallel_map(
-                box_names,
-                lambda box_name: db.create_box(box_name, reconnect=False),
-                key=lambda box_name: box_name,
-                max_workers=min(_MAX_BOX_PARALLEL_WORKERS, len(box_names)),
-            )
-            for box_name in box_names:
-                setting = settings_by_name[box_name]
-                box = created_boxes[box_name]
-                sequencer = self._driver.SequencerClient(str(setting.ipaddr_sss))
-                boxpool._boxes[box_name] = (box, sequencer)
-                boxpool._linkstatus[box_name] = False
-                boxes_to_reconnect.append(box)
-        else:
-            for box_name in box_names:
-                setting = settings_by_name[box_name]
-                box = boxpool.create(
-                    box_name,
-                    ipaddr_wss=str(setting.ipaddr_wss),
-                    ipaddr_sss=str(setting.ipaddr_sss),
-                    ipaddr_css=str(setting.ipaddr_css),
-                    boxtype=setting.boxtype,
-                )
-                boxes_to_reconnect.append(box)
-
-        if parallel and boxes_to_reconnect:
-            max_workers = max(1, len(boxes_to_reconnect))
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(box.reconnect) for box in boxes_to_reconnect]
-                for future in futures:
-                    future.result()
-        else:
-            for box in boxes_to_reconnect:
-                box.reconnect()
-
-        return boxpool
-
-    def _create_quel1system_from_boxpool(
-        self,
-        box_names: list[str],
-    ) -> Quel1System:
-        """
-        Build a Quel1System from already-connected boxpool entries.
-
-        Parameters
-        ----------
-        box_names : list[str]
-            Box names to include in the system.
-
-        Returns
-        -------
-        Quel1System
-            Initialized system instance.
-        """
-        boxpool = self._connection_manager.boxpool
-        if boxpool is None:
-            raise ValueError("Boxes not connected. Call connect() method first.")
-
-        db = self.qubecalib.system_config_database
-        clockmaster_setting = db._clockmaster_setting
-        if clockmaster_setting is None:
-            raise ValueError("clock master is not found")
-
-        pooled_boxes = boxpool._boxes
-        boxes: list[Any] = [
-            self._driver.NamedBox(name=box_name, box=pooled_boxes[box_name][0])
-            for box_name in box_names
-        ]
-        system = self._driver.Quel1System.create(
-            clockmaster=self._driver.QuBEMasterClient(str(clockmaster_setting.ipaddr)),
-            boxes=boxes,
-            update_copnfig_cache=False,
-        )
-        return system
-
-    def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
-        """Initialize AWG and capture units for one box."""
-        self._check_box_availability(box_name)
-        boxpool = self._connection_manager.boxpool
-        if boxpool is None or box_name not in boxpool._boxes:
-            raise ValueError(
-                f"Box {box_name} is not connected. Call connect() method first."
-            )
-        box = adapt_quel1_box(boxpool._boxes[box_name][0])
-        box.initialize_all_awgunits()
-        box.initialize_all_capunits()
-
-    def _get_clockmaster_setting_ipaddr(self) -> str | None:
-        """Return configured clockmaster IP address if available."""
-        db = self.qubecalib.system_config_database
-        clockmaster_setting = db._clockmaster_setting
-        if clockmaster_setting is None:
-            return None
-        return str(clockmaster_setting.ipaddr)
-
-    def _append_resource_if_new(
-        self,
-        resources: list[Any],
-        seen: set[int],
-        resource: Any | None,
-    ) -> None:
-        """Append one resource object once by identity."""
-        if resource is None:
-            return
-        resource_id = id(resource)
-        if resource_id in seen:
-            return
-        seen.add(resource_id)
-        resources.append(resource)
-
-    def _collect_held_resources(self) -> list[Any]:
-        """Collect clockmaster and box objects currently held by the controller."""
-        resources: list[Any] = []
-        seen: set[int] = set()
-
-        system = self._connection_manager.quel1system
-        if system is not None:
-            self._append_resource_if_new(
-                resources,
-                seen,
-                getattr(system, "_clockmaster", None),
-            )
-            boxes = getattr(system, "boxes", None)
-            if isinstance(boxes, Mapping):
-                for box in boxes.values():
-                    self._append_resource_if_new(resources, seen, box)
-
-        boxpool = self._connection_manager.boxpool
-        if boxpool is not None:
-            self._append_resource_if_new(
-                resources,
-                seen,
-                getattr(boxpool, "_clock_master", None),
-            )
-            pooled_boxes = getattr(boxpool, "_boxes", {})
-            if isinstance(pooled_boxes, Mapping):
-                for box, *_ in pooled_boxes.values():
-                    self._append_resource_if_new(resources, seen, box)
-
-        return resources
-
-    def _disconnect_resource(self, resource: Any) -> None:
-        """Disconnect one resource object via close/terminate if available."""
-        for method_name in ("close", "terminate"):
-            method = getattr(resource, method_name, None)
-            if not callable(method):
-                continue
-            method()
-            return
-
-    def _disconnect_resource_safely(self, resource: Any) -> None:
-        """Disconnect one resource and log errors without aborting cleanup."""
-        try:
-            self._disconnect_resource(resource)
-        except Exception:
-            logger.exception("Failed to disconnect backend resource: %r", resource)
 
     def _clear_quel1system_box_cache(self) -> None:
         """Clear the Quel1System-side box cache."""
