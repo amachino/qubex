@@ -6,7 +6,7 @@ from collections.abc import Callable
 from logging import Logger
 from typing import TypeAlias
 
-from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
+from qubex.backend.quel1.compat.qubecalib_protocols import (
     ActionProtocol,
     AwgIdProtocol,
     AwgSettingProtocol,

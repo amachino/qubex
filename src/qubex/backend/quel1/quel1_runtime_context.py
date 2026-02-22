@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
+    from qubex.backend.quel1.compat.qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
         Quel1SystemProtocol as Quel1System,
     )

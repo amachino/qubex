@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, cast
 
-from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
+from qubex.backend.quel1.compat.qubecalib_protocols import (
     BoxPoolProtocol,
     Quel1SystemProtocol,
 )

@@ -20,8 +20,8 @@ from qubex.backend.backend_executor import (
 from qubex.backend.controller_types import BackendController
 from qubex.backend.parallel_box_executor import run_parallel_map
 
-from .compat.quel1_box_adapter import adapt_quel1_box
-from .compat.quel1_driver_loader import load_quel1_driver
+from .compat.box_adapter import adapt_quel1_box
+from .compat.driver_loader import load_quel1_driver
 from .managers import (
     Quel1ClockManager,
     Quel1ConfigurationManager,
@@ -38,7 +38,7 @@ from .quel1_runtime_context import Quel1RuntimeContext
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from .compat.quel1_qubecalib_protocols import (
+    from .compat.qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
         BoxSettingProtocol as BoxSetting,
         QubeCalibProtocol as QubeCalib,
@@ -1541,7 +1541,7 @@ class Quel1BackendController(BackendController):
         Sequencer
             Constructed sequencer.
         """
-        from qubex.backend.quel1.compat.quel1_sequencer import Quel1Sequencer
+        from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 
         return Quel1Sequencer(
             gen_sampled_sequence=gen_sampled_sequence,

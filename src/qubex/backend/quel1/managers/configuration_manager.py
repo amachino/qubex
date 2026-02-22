@@ -13,7 +13,7 @@ from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
+    from qubex.backend.quel1.compat.qubecalib_protocols import (
         QubeCalibProtocol as QubeCalib,
         Quel1BoxCommonProtocol as Quel1Box,
     )

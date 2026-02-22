@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, ClassVar, cast
 
-import qubex.backend.quel1.compat.quel1_sequencer as sequencer_module
-from qubex.backend.quel1.compat.quel1_sequencer import Quel1Sequencer
+import qubex.backend.quel1.compat.sequencer as sequencer_module
+from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 
 
 @dataclass

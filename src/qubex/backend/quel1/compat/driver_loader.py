@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 from qubex.patches.quel_ic_config import apply_quelware_runtime_patches
 
 if TYPE_CHECKING:
-    from .quel1_qubecalib_protocols import (
+    from .qubecalib_protocols import (
         ActionProtocol,
         AwgIdProtocol,
         AwgSettingProtocol,

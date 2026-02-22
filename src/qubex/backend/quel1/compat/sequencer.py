@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import override
 
-from .quel1_driver_loader import load_quel1_driver
+from .driver_loader import load_quel1_driver
 
 driver = load_quel1_driver()
 
 if TYPE_CHECKING:
-    from .quel1_qubecalib_protocols import (
+    from .qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
         PortConfigAcquirerProtocol,
         SequencerProtocol as Sequencer,

@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-import qubex.backend.quel1.compat.quel1_sequencer as sequencer_module
+import qubex.backend.quel1.compat.sequencer as sequencer_module
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
 
