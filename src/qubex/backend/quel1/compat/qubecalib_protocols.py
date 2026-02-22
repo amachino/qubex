@@ -157,11 +157,39 @@ class CapSampledSequenceProtocol(Protocol):
 
     modulation_frequency: float | None
 
+    def __init__(
+        self,
+        *,
+        target_name: str,
+        repeats: int | None,
+        prev_blank: int,
+        post_blank: int | None,
+        original_prev_blank: int,
+        original_post_blank: int | None,
+        modulation_frequency: float,
+        sub_sequences: Sequence[CapSampledSubSequenceProtocol],
+    ) -> None:
+        """Create one capture sampled sequence."""
+        ...
+
 
 class CapSampledSubSequenceProtocol(Protocol):
     """Protocol for capture sub-sequence objects."""
 
     capture_slots: list[CaptureSlotsProtocol]
+
+    def __init__(
+        self,
+        *,
+        capture_slots: Sequence[CaptureSlotsProtocol],
+        repeats: int | None,
+        prev_blank: int,
+        post_blank: int | None,
+        original_prev_blank: int,
+        original_post_blank: int | None,
+    ) -> None:
+        """Create one capture sub-sequence."""
+        ...
 
 
 class CaptureParamToolsProtocol(Protocol):
@@ -273,9 +301,35 @@ class GenSampledSequenceProtocol(Protocol):
 
     modulation_frequency: float | None
 
+    def __init__(
+        self,
+        *,
+        target_name: str,
+        prev_blank: int,
+        post_blank: int | None,
+        original_prev_blank: int,
+        original_post_blank: int | None,
+        modulation_frequency: float,
+        sub_sequences: Sequence[GenSampledSubSequenceProtocol],
+    ) -> None:
+        """Create one generation sampled sequence."""
+        ...
+
 
 class GenSampledSubSequenceProtocol(Protocol):
     """Protocol for generation sub-sequence objects."""
+
+    def __init__(
+        self,
+        *,
+        real: Any,
+        imag: Any,
+        repeats: int,
+        post_blank: int | None,
+        original_post_blank: int | None,
+    ) -> None:
+        """Create one generation sub-sequence."""
+        ...
 
 
 class MultiActionProtocol(Protocol):
@@ -584,7 +638,7 @@ class QuelDriverClassesProtocol(Protocol):
     """Protocol for driver-loader class bundle consumed by qubex."""
 
     @property
-    def package_name(self) -> object:
+    def package_name(self) -> str:
         """Return driver package discriminator."""
         ...
 

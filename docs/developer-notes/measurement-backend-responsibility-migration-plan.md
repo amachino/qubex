@@ -23,8 +23,8 @@ Migrate the current implementation to the target architecture defined in `measur
   - Step 6
   - Step 7A
   - Step 7B
-- Remaining
   - Step 8
+- Remaining
   - Step 9
   - Step 10
 
@@ -206,6 +206,8 @@ Migrate the current implementation to the target architecture defined in `measur
   - Formalize `load/reload` as session-service + system-manager coordinated flow.
   - Gate optional capability APIs based on backend support.
   - Move active controller/session resolution responsibility into session service.
+  - Delegate backend-specific synchronization logic from `SystemManager` to
+    `Quel1SystemSynchronizer` / `Quel3SystemSynchronizer`.
 - Behavior-preserving guardrails
   - Preserve externally visible behavior from `ExperimentContext.connect/reload/configure`.
 - Verification

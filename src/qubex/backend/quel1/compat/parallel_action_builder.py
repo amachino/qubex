@@ -10,13 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from logging import Logger
 from types import MappingProxyType
-from typing import Final, Protocol, TypeAlias, TypeGuard, cast
+from typing import Any, Final, Protocol, TypeAlias, TypeGuard, cast
 
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
 from qubex.backend.quel1.compat.driver_loader import load_quel1_driver
 from qubex.backend.quel1.compat.qubecalib_protocols import (
     ActionProtocol,
     AwgSettingProtocol,
+    CaptureParamMap as DriverCaptureParamMap,
     MultiActionProtocol,
     PortType,
     Quel1BoxCommonProtocol,
@@ -33,7 +34,7 @@ from qubex.backend.quel1.compat.qubecalib_protocols import (
 
 PortLike: TypeAlias = PortType | str
 CaptureParamMapKey: TypeAlias = tuple[str, PortType, int]
-CaptureParamMap: TypeAlias = dict[CaptureParamMapKey, object]
+CaptureParamMap: TypeAlias = DriverCaptureParamMap
 SingleSetting: TypeAlias = (
     SingleRunitSettingProtocol | SingleAwgSettingProtocol | SingleTriggerSettingProtocol
 )
@@ -51,7 +52,7 @@ class _ActionBuilderProtocol(Protocol):
         self,
         *,
         system: Quel1SystemProtocol,
-        settings: list[object],
+        settings: list[Any],
     ) -> ActionProtocol:
         """Build an action from common settings."""
         ...
@@ -60,13 +61,13 @@ class _ActionBuilderProtocol(Protocol):
 class _WavegenTaskProtocol(Protocol):
     """Internal future-like protocol used by parallel wavegen reservation."""
 
-    def result(self) -> object:
+    def result(self) -> Any:
         """Wait for completion."""
         ...
 
 
 def _is_runit_setting_shape(
-    setting: object,
+    setting: Any,
 ) -> TypeGuard[RunitSettingProtocol]:
     runit_ref = getattr(setting, "runit", None)
     return (
@@ -76,7 +77,7 @@ def _is_runit_setting_shape(
     )
 
 
-def _is_awg_setting_shape(setting: object) -> TypeGuard[AwgSettingProtocol]:
+def _is_awg_setting_shape(setting: Any) -> TypeGuard[AwgSettingProtocol]:
     awg_ref = getattr(setting, "awg", None)
     return (
         awg_ref is not None
@@ -86,7 +87,7 @@ def _is_awg_setting_shape(setting: object) -> TypeGuard[AwgSettingProtocol]:
 
 
 def _is_trigger_setting_shape(
-    setting: object,
+    setting: Any,
 ) -> TypeGuard[TriggerSettingProtocol]:
     trigger_awg_ref = getattr(setting, "trigger_awg", None)
     return (
@@ -136,7 +137,7 @@ class _NormalizedRunitSetting:
     box: str
     port: PortLike
     runit: int
-    cprm: object
+    cprm: Any
 
 
 @dataclass(frozen=True)
@@ -144,7 +145,7 @@ class _NormalizedAwgSetting:
     box: str
     port: PortLike
     channel: int
-    wseq: object
+    wseq: Any
 
 
 @dataclass(frozen=True)
@@ -160,7 +161,7 @@ NormalizedSetting: TypeAlias = (
 )
 
 
-def _normalize_common_settings(settings: Sequence[object]) -> list[NormalizedSetting]:
+def _normalize_common_settings(settings: Sequence[Any]) -> list[NormalizedSetting]:
     """Extract known common-setting rows into normalized records."""
     normalized: list[NormalizedSetting] = []
     for setting in settings:
@@ -198,7 +199,7 @@ def _normalize_common_settings(settings: Sequence[object]) -> list[NormalizedSet
 
 def _convert_to_box_setting_dict(
     *,
-    settings: Sequence[object],
+    settings: Sequence[Any],
     awg_id_class: SingleAwgIdFactory,
     awg_setting_class: SingleAwgSettingFactory,
     runit_id_class: SingleRunitIdFactory,
@@ -210,7 +211,7 @@ def _convert_to_box_setting_dict(
 
     Parameters
     ----------
-    settings : Sequence[object]
+    settings : Sequence[Any]
         Flat common settings where each entry includes a `box` location.
     awg_id_class : FactoryLike
         AWG identifier class.
@@ -479,7 +480,7 @@ class QubexMultiAction:
         """Return True if action has runit capture settings."""
         return bool(action._cprms)
 
-    def capture_start(self) -> dict[str, dict[PortType, object]]:
+    def capture_start(self) -> dict[str, dict[PortType, Any]]:
         """Start capture for boxes that include capture settings."""
         return {
             name: action.capture_start()
@@ -489,18 +490,18 @@ class QubexMultiAction:
 
     def capture_stop(
         self,
-        futures: dict[str, dict[PortType, object]],
+        futures: dict[str, dict[PortType, Any]],
     ) -> tuple[
-        dict[tuple[str, PortType], object],
-        dict[tuple[str, PortType, int], object],
+        dict[tuple[str, PortType], Any],
+        dict[tuple[str, PortType, int], Any],
     ]:
         """Stop capture and flatten per-box status/data maps."""
         box_results = {
             name: self._actions[name].capture_stop(future)
             for name, future in futures.items()
         }
-        status: dict[tuple[str, PortType], object] = {}
-        data: dict[tuple[str, PortType, int], object] = {}
+        status: dict[tuple[str, PortType], Any] = {}
+        data: dict[tuple[str, PortType, int], Any] = {}
         for name, (box_status, box_data) in box_results.items():
             for port, capture_return_code in box_status.items():
                 status[(name, port)] = capture_return_code
@@ -511,8 +512,8 @@ class QubexMultiAction:
     def action(
         self,
     ) -> tuple[
-        dict[tuple[str, PortType], object],
-        dict[tuple[str, PortType, int], object],
+        dict[tuple[str, PortType], Any],
+        dict[tuple[str, PortType, int], Any],
     ]:
         """Run capture start -> timed emission reservation -> capture stop."""
         futures = self.capture_start()
@@ -590,7 +591,7 @@ class QubexMultiAction:
 def build_parallel_multi_action(
     *,
     system: Quel1SystemProtocol,
-    settings: Sequence[object],
+    settings: Sequence[Any],
     action_builder: _ActionBuilderProtocol,
     logger: Logger,
     clock_health_checks: ClockHealthCheckOptions | None = None,
@@ -606,7 +607,7 @@ def build_parallel_multi_action(
     ----------
     system : Quel1SystemProtocol
         Quel1System-like object used by action execution.
-    settings : Sequence[object]
+    settings : Sequence[Any]
         Common driver settings.
     action_builder : _ActionBuilderProtocol
         Builder compatible with `Action.build(system=..., settings=...)`.

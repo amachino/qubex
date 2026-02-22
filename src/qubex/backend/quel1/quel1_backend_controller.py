@@ -1,5 +1,3 @@
-# ruff: noqa: SLF001
-
 """
 QuEL-1 backend controller implementing measurement-facing backend contracts.
 
@@ -14,7 +12,7 @@ import logging
 from collections.abc import Collection
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
@@ -152,9 +150,7 @@ class Quel1BackendController(BackendController):
     @property
     def box_config(self) -> dict[str, Any]:
         """Get the box configuration."""
-        if not self.is_connected:
-            return {}
-        return self._connection_manager.boxpool._box_config_cache
+        return self._connection_manager.get_box_config_cache()
 
     @property
     def boxpool(self) -> BoxPool:
@@ -218,8 +214,7 @@ class Quel1BackendController(BackendController):
         box_names : str | list[str], optional
             List of box names to connect to. If None, connect to all available boxes.
         parallel : bool | None, optional
-            If True, use parallel box reconnect implementation. If False, use
-            legacy qubecalib implementation. If `None`, it follows
+            Whether to reconnect boxes in parallel. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
         self._connection_manager.connect(box_names=box_names, parallel=parallel)
@@ -826,27 +821,7 @@ class Quel1BackendController(BackendController):
 
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
         """Build a resource map for the requested targets."""
-        db = self.qubecalib.system_config_database
-        target_settings = db._target_settings
-        box_settings = db._box_settings
-        port_settings = db._port_settings
-        result = {}
-        for target in targets:
-            if target not in target_settings:
-                raise ValueError(f"Target {target} not in available targets.")
-
-            channels = db.get_channels_by_target(target)
-            bpc_list = [db.get_channel(channel) for channel in channels]
-            result[target] = [
-                {
-                    "box": box_settings[box_name],
-                    "port": port_settings[port_name],
-                    "channel_number": channel_number,
-                    "target": target_settings[target],
-                }
-                for box_name, port_name, channel_number in bpc_list
-            ]
-        return result
+        return self._configuration_manager.get_resource_map(targets=targets)
 
     def get_cap_resource_map(self, targets: Collection[str]) -> dict[str, dict]:
         """
@@ -883,31 +858,7 @@ class Quel1BackendController(BackendController):
         type: Literal["cap", "gen"],
     ) -> dict[str, dict]:
         """Create a capture or generator resource map from configuration."""
-        boxpool = self._connection_manager.boxpool
-        db = self.qubecalib.system_config_database
-        target_settings = db._target_settings
-        box_settings = db._box_settings
-        port_settings = db._port_settings
-        pooled_boxes = boxpool._boxes
-        result = {}
-        for target in target_settings:
-            channels = db.get_channels_by_target(target)
-            bpc_list = [db.get_channel(channel) for channel in channels]
-            for box_name, port_name, channel_number in bpc_list:
-                if box_name not in pooled_boxes:
-                    continue
-                box = self.get_box(box_name)
-                port_setting = port_settings[port_name]
-                if (type == "cap" and port_setting.port in box.get_input_ports()) or (
-                    type == "gen" and port_setting.port in box.get_output_ports()
-                ):
-                    result[target] = {
-                        "box": box_settings[box_name],
-                        "port": port_settings[port_name],
-                        "channel_number": channel_number,
-                        "target": target_settings[target],
-                    }
-        return result
+        return self._connection_manager.create_resource_map(type)
 
     def load_skew_yaml(self, file_path: str | Path) -> None:
         """
@@ -950,8 +901,7 @@ class Quel1BackendController(BackendController):
         tuple[Any, Any]
             A tuple of (skew object, plotly figure).
         """
-        driver = cast(Any, self.driver)
-        skew = driver.Skew.from_yaml(
+        skew = self.driver.Skew.from_yaml(
             str(skew_yaml_path),
             box_yaml=str(box_yaml_path),
             clockmaster_ip=clockmaster_ip,
@@ -1053,8 +1003,7 @@ class Quel1BackendController(BackendController):
         Any
             GenSampledSequence object.
         """
-        driver = cast(Any, self.driver)
-        return driver.GenSampledSequence(
+        return self.driver.GenSampledSequence(
             target_name=target_name,
             prev_blank=0,
             post_blank=None,
@@ -1062,7 +1011,7 @@ class Quel1BackendController(BackendController):
             original_post_blank=None,
             modulation_frequency=modulation_frequency,
             sub_sequences=[
-                driver.GenSampledSubSequence(
+                self.driver.GenSampledSubSequence(
                     real=real,
                     imag=imag,
                     repeats=1,
@@ -1099,8 +1048,7 @@ class Quel1BackendController(BackendController):
         Any
             CapSampledSequence object.
         """
-        driver = cast(Any, self.driver)
-        cap_sub_sequence = driver.CapSampledSubSequence(
+        cap_sub_sequence = self.driver.CapSampledSubSequence(
             capture_slots=[],
             repeats=None,
             prev_blank=capture_delay,
@@ -1110,14 +1058,14 @@ class Quel1BackendController(BackendController):
         )
         for duration, post_blank in capture_slots:
             cap_sub_sequence.capture_slots.append(
-                driver.CaptureSlots(
+                self.driver.CaptureSlots(
                     duration=duration,
                     post_blank=post_blank,
                     original_duration=None,  # type: ignore[arg-type]
                     original_post_blank=None,  # type: ignore[arg-type]
                 )
             )
-        return driver.CapSampledSequence(
+        return self.driver.CapSampledSequence(
             target_name=target_name,
             repeats=None,
             prev_blank=0,

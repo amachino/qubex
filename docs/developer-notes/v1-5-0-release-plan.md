@@ -110,10 +110,13 @@ Calendar note:
   - `load`, `connect`, `reload`, `disconnect`
   - `execute_measurement_schedule`, `execute`, `measure`
   - `create_measurement_config`, `build_measurement_schedule`
+  - Note: `execute_measurement_schedule` is retained here as a historical
+    compatibility term; current internal implementation path is
+    `MeasurementScheduleRunner` + `BackendController.execute(request=...)`.
 - Legacy delegation behavior from old measurement APIs remains compatible (keep delegation tests green)
 - Measurement result compatibility criteria are type/shape centered
 - Timing semantics must not assume fixed `2 ns`; schedule/config creation must work with backend-defined sampling period
-- Canonical sampling period source is backend/controller `dt`
+- Canonical sampling period source is backend/controller `sampling_period`
 
 ### Out of scope for compatibility guarantee (allowed to diverge)
 
@@ -181,6 +184,7 @@ Calendar note:
 - 2026-02-17: Added built-in `Quel3BackendExecutor` (controller hook delegation) and tests for payload-type checks and hook presence checks.
 - 2026-02-17: Added `instrument_aliases` in Quel3 payload with optional controller hook (`resolve_instrument_alias`) for target-to-alias mapping.
 - 2026-02-17: Added explicit QuEL-1 capability hints on `Quel1BackendController` (`MEASUREMENT_BACKEND_KIND`, `MEASUREMENT_CONSTRAINT_MODE`, `MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE`).
+- 2026-02-22: Removed QuEL-1-only measurement capability hints from controller constants; backend selection/constraints are now resolved through runtime/session flow and adapter contracts.
 - 2026-02-17: Added `Quel3BackendController` scaffold and session-scoped backend-family selection (`backend_kind`) in `SystemManager`/`MeasurementClient` (`quel1` or `quel3`, no mixed session).
 - 2026-02-17: Implemented initial QuEL-3 backend execution path through `BackendController.execute(request)` that invokes quelware fixed-timeline execution and returns canonical `MeasurementResult` (with clear runtime error when quelware dependency is unavailable).
 - 2026-02-18: Added `ConfigLoader` support for `wiring.v2.yaml` (`schema_version: 2`) including physical-id maps (`control`/`readout`) and port-label normalization (`p2tx`, `p0p1trx`) into runtime wiring rows.

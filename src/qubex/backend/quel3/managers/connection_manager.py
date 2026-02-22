@@ -9,7 +9,7 @@ import threading
 from collections.abc import Coroutine, Mapping
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol
+from typing import Any, Protocol
 
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContext
 
@@ -17,7 +17,7 @@ from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContext
 class _QuelwareClient(Protocol):
     """Minimal quelware client protocol for connectivity checks."""
 
-    async def list_resource_infos(self) -> object:
+    async def list_resource_infos(self) -> Any:
         """List available quelware resources."""
         ...
 
@@ -131,7 +131,7 @@ class Quel3ConnectionManager:
                 sys.path.insert(0, path_str)
 
     @staticmethod
-    def _run_coroutine(coroutine: Coroutine[object, object, None]) -> None:
+    def _run_coroutine(coroutine: Coroutine[Any, Any, None]) -> None:
         """Run async connectivity workflow in sync controller entrypoint."""
         try:
             asyncio.get_running_loop()

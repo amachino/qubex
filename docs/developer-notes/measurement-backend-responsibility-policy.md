@@ -98,10 +98,12 @@ classDiagram
   class Quel1ExecutionManager
   class Quel1ConnectionManager
   class Quel1ClockManager
+  class Quel1SystemSynchronizer
   class Quel3ExecutionManager
   class Quel3ConnectionManager
   class Quel3ClockManager
   class Quel3ConfigurationManager
+  class Quel3SystemSynchronizer
 
   Measurement *-- MeasurementContext : delegates
   Measurement *-- MeasurementSessionService : delegates
@@ -127,6 +129,10 @@ classDiagram
   MeasurementScheduleRunner --> BackendController : execute(request)
   MeasurementScheduleRunner ..> BackendBoxConfigProvider : optional device config
   SystemManager --> BackendController : resolves active controller
+  SystemManager *-- Quel1SystemSynchronizer : QuEL-1 sync delegation
+  SystemManager *-- Quel3SystemSynchronizer : QuEL-3 sync delegation
+  Quel1SystemSynchronizer --> BackendController : backend operations
+  Quel3SystemSynchronizer --> BackendController : backend operations
 
   BackendController <|.. Quel1BackendController
   BackendController <|.. Quel3BackendController
@@ -197,7 +203,9 @@ classDiagram
 - `SystemManager`
   - Cross-system state management and synchronization.
   - Owns backend-kind/session selection and active-controller state.
-  - Owns pull/push state synchronization policy.
+  - Owns pull/push synchronization orchestration and backend selection.
+  - Delegates backend-specific sync implementation to `Quel1SystemSynchronizer`
+    and `Quel3SystemSynchronizer`.
   - Is not the owner of backend operation implementations.
 
 - `BackendController`
@@ -220,6 +228,10 @@ classDiagram
 
 - `Quel1ConfigurationManager`
   - Backend-side configuration and definition operations.
+
+- `Quel1SystemSynchronizer`, `Quel3SystemSynchronizer`
+  - SystemManager delegation targets for backend-specific synchronization flows.
+  - May consume backend-controller APIs as device-operation gateway.
 
 ## BackendController Required Methods
 

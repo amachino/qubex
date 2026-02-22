@@ -245,6 +245,29 @@ class Quel1ConfigurationManager:
         """Clear qubecalib command queue."""
         self._runtime_context.qubecalib.clear_command_queue()
 
+    def get_resource_map(self, *, targets: list[str]) -> dict[str, list[dict]]:
+        """Build a resource map for selected targets from system config database."""
+        db = self._runtime_context.qubecalib.system_config_database
+        target_settings = db._target_settings
+        box_settings = db._box_settings
+        port_settings = db._port_settings
+        result: dict[str, list[dict]] = {}
+        for target in targets:
+            if target not in target_settings:
+                raise ValueError(f"Target {target} not in available targets.")
+            channels = db.get_channels_by_target(target)
+            bpc_list = [db.get_channel(channel) for channel in channels]
+            result[target] = [
+                {
+                    "box": box_settings[box_name],
+                    "port": port_settings[port_name],
+                    "channel_number": channel_number,
+                    "target": target_settings[target],
+                }
+                for box_name, port_name, channel_number in bpc_list
+            ]
+        return result
+
     def _resolve_box(
         self,
         *,

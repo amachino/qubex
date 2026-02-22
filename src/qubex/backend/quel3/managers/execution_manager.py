@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Coroutine, Iterable
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -24,6 +24,23 @@ if TYPE_CHECKING:
     from qubex.measurement.models.measurement_result import MeasurementResult
 
 ExecutionMode = Literal["serial", "parallel"]
+_T = TypeVar("_T")
+
+
+class _DirectiveProtocol(Protocol):
+    """Marker protocol for quelware directives."""
+
+
+class _ResourceInfosProtocol(Protocol):
+    """Marker protocol for quelware resource-info payloads."""
+
+
+class _ResourceIdProtocol(Protocol):
+    """Marker protocol for quelware instrument resource IDs."""
+
+
+class _InstrumentInfoProtocol(Protocol):
+    """Marker protocol for quelware instrument-info payloads."""
 
 
 class _CompileSequencerProtocol(Protocol):
@@ -63,7 +80,7 @@ class _CompileSequencerProtocol(Protocol):
         self,
         instrument_alias: str,
         sampling_period_fs: int,
-    ) -> object:
+    ) -> _DirectiveProtocol:
         """Export fixed-timeline directive for one instrument alias."""
         ...
 
@@ -103,7 +120,7 @@ class _InstrumentDriverProtocol(Protocol):
         """Return instrument runtime configuration."""
         ...
 
-    async def apply(self, directive: object) -> None:
+    async def apply(self, directive: _DirectiveProtocol) -> None:
         """Apply one fixed-timeline directive."""
         ...
 
@@ -144,17 +161,19 @@ class _SessionContextManagerProtocol(Protocol):
 class _QuelwareClientProtocol(Protocol):
     """Minimal quelware client protocol for execution."""
 
-    async def list_resource_infos(self) -> object:
+    async def list_resource_infos(self) -> _ResourceInfosProtocol:
         """List available resources."""
         ...
 
-    async def get_instrument_info(self, resource_id: object) -> object:
+    async def get_instrument_info(
+        self, resource_id: _ResourceIdProtocol
+    ) -> _InstrumentInfoProtocol:
         """Get instrument info for one resource ID."""
         ...
 
     def create_session(
         self,
-        resource_id: object,
+        resource_id: _ResourceIdProtocol,
     ) -> _SessionContextManagerProtocol:
         """Create one execution session for one selected resource."""
         ...
@@ -188,15 +207,17 @@ class _QuelwareClientFactory(Protocol):
 class _InstrumentMapperProtocol(Protocol):
     """Minimal instrument-mapper protocol."""
 
-    def add_instrument_info(self, instrument_info: object) -> None:
+    def add_instrument_info(self, instrument_info: _InstrumentInfoProtocol) -> None:
         """Add one instrument info object."""
         ...
 
-    def build_alias_to_id_map(self) -> dict[str, object]:
+    def build_alias_to_id_map(self) -> dict[str, _ResourceIdProtocol]:
         """Build mapping from alias to resource ID."""
         ...
 
-    def get_instrument_info(self, resource_id: object) -> object:
+    def get_instrument_info(
+        self, resource_id: _ResourceIdProtocol
+    ) -> _InstrumentInfoProtocol:
         """Get instrument info by resource ID."""
         ...
 
@@ -227,7 +248,7 @@ class _InstrumentDriverFactory(Protocol):
     def __call__(
         self,
         session: _SessionProtocol,
-        instrument_info: object,
+        instrument_info: _InstrumentInfoProtocol,
     ) -> _InstrumentDriverProtocol:
         """Create one instrument driver for a resource."""
         ...
@@ -236,7 +257,9 @@ class _InstrumentDriverFactory(Protocol):
 class _ResourceIdResolver(Protocol):
     """Protocol for resolving resource IDs from resource-info payload."""
 
-    def __call__(self, resource_infos: object) -> Iterable[object]:
+    def __call__(
+        self, resource_infos: _ResourceInfosProtocol
+    ) -> Iterable[_ResourceIdProtocol]:
         """Resolve all instrument resource IDs."""
         ...
 
@@ -252,7 +275,7 @@ class Quel3ExecutionManager:
         """Resolve quelware instrument alias for a measurement target."""
         return self._runtime_context.alias_map.get(target, target)
 
-    def execute_payload(self, *, payload: Quel3ExecutionPayload) -> object:
+    def execute_payload(self, *, payload: Quel3ExecutionPayload) -> MeasurementResult:
         """
         Execute a QuEL-3 measurement payload.
 
@@ -264,14 +287,14 @@ class Quel3ExecutionManager:
         return self._run_coroutine(self._execute_measurement_async(payload))
 
     @staticmethod
-    def _run_coroutine(coroutine: Coroutine[object, object, object]) -> object:
+    def _run_coroutine(coroutine: Coroutine[Any, Any, _T]) -> _T:
         """Run async quelware workflow in sync measurement entrypoint."""
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(coroutine)
 
-        result_holder: dict[str, object] = {}
+        result_holder: dict[str, _T] = {}
         error_holder: dict[str, BaseException] = {}
 
         def _runner() -> None:
@@ -290,7 +313,7 @@ class Quel3ExecutionManager:
     async def _execute_measurement_async(
         self,
         payload: Quel3ExecutionPayload,
-    ) -> object:
+    ) -> MeasurementResult:
         """Execute one fixed-timeline measurement flow via quelware."""
         aliases = sorted(set(payload.instrument_aliases.values()))
         if len(aliases) == 0:
@@ -402,11 +425,9 @@ class Quel3ExecutionManager:
 
     @staticmethod
     def _initialize_shot_samples(
-        payload: object,
+        payload: Quel3ExecutionPayload,
     ) -> dict[str, dict[str, list[np.ndarray]]]:
         """Initialize nested shot-sample container by target/capture window."""
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError("Expected Quel3ExecutionPayload.")
         return {
             target: {window.name: [] for window in timeline.capture_windows}
             for target, timeline in payload.timelines.items()
@@ -415,7 +436,7 @@ class Quel3ExecutionManager:
     @staticmethod
     def build_measurement_result(
         *,
-        payload: object,
+        payload: Quel3ExecutionPayload,
         shot_samples: dict[str, dict[str, list[np.ndarray]]],
         sampling_period_ns: float | None,
         backend_sampling_period: float,
@@ -424,8 +445,6 @@ class Quel3ExecutionManager:
         """Build canonical measurement result from per-shot capture samples."""
         from qubex.measurement.models.measurement_result import MeasurementResult
 
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError("Expected Quel3ExecutionPayload.")
         measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
         output_target_labels = payload.output_target_labels
         for target, timeline in payload.timelines.items():

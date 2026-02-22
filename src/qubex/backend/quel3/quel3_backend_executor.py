@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
@@ -24,7 +24,7 @@ class _BackendExecuteHook(Protocol):
 class Quel3BackendExecutor:
     """QuEL-3 backend executor delegating to backend-controller execute API."""
 
-    def __init__(self, *, backend_controller: object) -> None:
+    def __init__(self, *, backend_controller: Any) -> None:
         self._backend_controller = backend_controller
 
     def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:

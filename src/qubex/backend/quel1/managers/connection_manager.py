@@ -9,7 +9,7 @@ from collections.abc import Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
@@ -39,6 +39,25 @@ _QUEL1SE_R8_AWG_OPTIONS = {
     "se8_mxfe1_awg3113",
 }
 _QUEL1SE_R8_DEFAULT_AWG_OPTION = "se8_mxfe1_awg2222"
+
+
+class _ClosableResource(Protocol):
+    """Resource exposing `close()` used in backend disconnect cleanup."""
+
+    def close(self) -> Any:
+        """Close one held backend resource."""
+        ...
+
+
+class _TerminableResource(Protocol):
+    """Resource exposing `terminate()` used in backend disconnect cleanup."""
+
+    def terminate(self) -> Any:
+        """Terminate one held backend resource."""
+        ...
+
+
+_DisconnectResource = _ClosableResource | _TerminableResource
 
 
 def _resolve_quel1se_r8_awg_option(options: list[str]) -> str:
@@ -92,6 +111,12 @@ class Quel1ConnectionManager:
             return self._runtime_context.gen_resource_map
         except ValueError as exc:
             raise ValueError(NOT_CONNECTED_ERROR_MESSAGE) from exc
+
+    def get_box_config_cache(self) -> dict[str, dict]:
+        """Return connected box-config cache, or empty when not connected."""
+        if not self.is_connected:
+            return {}
+        return self.boxpool._box_config_cache
 
     def set_connected_state(
         self,
@@ -161,6 +186,13 @@ class Quel1ConnectionManager:
             quel1system.config_cache[box_name] = deepcopy(box_config)
         if quel1system.config_cache:
             quel1system.config_fetched_at = datetime.now()
+
+    def create_resource_map(
+        self,
+        kind: Literal["cap", "gen"],
+    ) -> dict[str, dict]:
+        """Create capture or generator resource map from configuration."""
+        return self._create_resource_map(kind)
 
     def connect(
         self,
@@ -233,7 +265,7 @@ class Quel1ConnectionManager:
         *,
         box_name: str,
         noise_threshold: int | None,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> Quel1Box:
         """Linkup one box and return the connected box."""
         self._runtime_context.validate_box_availability(box_name)
@@ -551,9 +583,9 @@ class Quel1ConnectionManager:
             config_options.append(option)
         return config_options
 
-    def _collect_held_resources(self) -> list[object]:
+    def _collect_held_resources(self) -> list[_DisconnectResource]:
         """Collect clockmaster and box objects currently held by runtime state."""
-        resources: list[object] = []
+        resources: list[_DisconnectResource] = []
         seen: set[int] = set()
         if not self.is_connected:
             return resources
@@ -580,9 +612,9 @@ class Quel1ConnectionManager:
 
     def _append_resource_if_new(
         self,
-        resources: list[object],
+        resources: list[_DisconnectResource],
         seen: set[int],
-        resource: object | None,
+        resource: _DisconnectResource | None,
     ) -> None:
         """Append one resource object once by identity."""
         if resource is None:
@@ -593,14 +625,14 @@ class Quel1ConnectionManager:
         seen.add(resource_id)
         resources.append(resource)
 
-    def _disconnect_resource_safely(self, resource: object) -> None:
+    def _disconnect_resource_safely(self, resource: _DisconnectResource) -> None:
         """Disconnect one resource and log errors without aborting cleanup."""
         try:
             self._disconnect_resource(resource)
         except Exception:
             logger.exception("Failed to disconnect backend resource: %r", resource)
 
-    def _disconnect_resource(self, resource: object) -> None:
+    def _disconnect_resource(self, resource: _DisconnectResource) -> None:
         """Disconnect one resource object via close/terminate if available."""
         for method_name in ("close", "terminate"):
             method = getattr(resource, method_name, None)
