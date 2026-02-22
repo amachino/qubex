@@ -12,9 +12,9 @@ from logging import Logger
 from types import MappingProxyType
 from typing import Final, Protocol, TypeAlias, TypeGuard, cast
 
-from qubex.backend.quel1.quel1_box_adapter import adapt_quel1_box
-from qubex.backend.quel1.quel1_driver_loader import load_quel1_driver
-from qubex.backend.quel1.quel1_qubecalib_protocols import (
+from qubex.backend.quel1.compat.quel1_box_adapter import adapt_quel1_box
+from qubex.backend.quel1.compat.quel1_driver_loader import load_quel1_driver
+from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
     ActionProtocol,
     AwgSettingProtocol,
     MultiActionProtocol,

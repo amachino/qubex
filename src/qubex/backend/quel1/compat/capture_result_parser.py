@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from qubex.backend.quel1.quel1_qubecalib_protocols import (
+from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
     BoxSettingProtocol,
     CaptureParamMap,
     CaptureResourceMap,

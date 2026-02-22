@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 
-from qubex.backend.quel1 import quel1_driver_loader
+from qubex.backend.quel1.compat import quel1_driver_loader
 
 
 @pytest.fixture(autouse=True)

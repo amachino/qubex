@@ -8,7 +8,9 @@ from typing import Any, cast
 
 import pytest
 
-from qubex.backend.quel1.execution import SequencerExecutionEngine
+from qubex.backend.quel1.compat.sequencer_execution_engine import (
+    SequencerExecutionEngine,
+)
 from qubex.backend.quel1.quel1_backend_controller import (
     Quel1BackendController,
     Quel1BackendRawResult,

@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 
-import qubex.backend.quel1.execution.parallel_action_builder as parallel_action_builder
-from qubex.backend.quel1.execution.parallel_action_builder import (
+import qubex.backend.quel1.compat.parallel_action_builder as parallel_action_builder
+from qubex.backend.quel1.compat.parallel_action_builder import (
     _convert_to_box_setting_dict,
     build_parallel_multi_action,
 )

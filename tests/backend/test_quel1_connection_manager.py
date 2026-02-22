@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, cast
 
-from qubex.backend.quel1.managers.connection_manager import Quel1ConnectionManager
-from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContext
-from qubex.backend.quel1.quel1_qubecalib_protocols import (
+from qubex.backend.quel1.compat.quel1_qubecalib_protocols import (
     BoxPoolProtocol,
     Quel1SystemProtocol,
 )
+from qubex.backend.quel1.managers.connection_manager import Quel1ConnectionManager
+from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContext
 
 
 class _FakeClockmaster:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from qubex.backend.quel1 import quel1_qubecalib_protocols
+from qubex.backend.quel1.compat import quel1_qubecalib_protocols
 
 
 def test_quel1_qubecalib_protocols_export_expected_contracts() -> None:

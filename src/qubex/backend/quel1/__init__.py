@@ -1,5 +1,6 @@
 """QuEL-1 specific backend components."""
 
+from .compat.quel1_sequencer import Quel1Sequencer, SequencerMod
 from .quel1_backend_constants import (
     BLOCK_DURATION,
     BLOCK_LENGTH,
@@ -20,7 +21,6 @@ from .quel1_backend_controller import (
     Quel1BackendRawResult,
 )
 from .quel1_backend_executor import Quel1BackendExecutor, Quel1ExecutionPayload
-from .quel1_sequencer import Quel1Sequencer, SequencerMod
 
 __all__ = [
     "BLOCK_DURATION",

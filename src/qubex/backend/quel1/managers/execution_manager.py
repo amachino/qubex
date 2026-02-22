@@ -11,9 +11,11 @@ from qubex.backend.backend_executor import (
     BackendExecutionResult,
     BackendExecutor,
 )
-from qubex.backend.quel1.execution import SequencerExecutionEngine
-from qubex.backend.quel1.execution.parallel_action_builder import (
+from qubex.backend.quel1.compat.parallel_action_builder import (
     ClockHealthCheckOptions,
+)
+from qubex.backend.quel1.compat.sequencer_execution_engine import (
+    SequencerExecutionEngine,
 )
 from qubex.backend.quel1.managers.runtime_context import Quel1RuntimeContextReader
 from qubex.backend.quel1.quel1_backend_constants import ExecutionMode
