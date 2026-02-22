@@ -38,11 +38,6 @@ class Quel1ExecutionManager:
         create_default_executor: Callable[
             [ExecutionMode | None, bool | None], BackendExecutor
         ],
-        create_measurement_backend_executor: Callable[
-            [ExecutionMode | None, bool | None],
-            BackendExecutor,
-        ]
-        | None,
     ) -> BackendExecutionResult:
         """
         Execute a prepared backend request with optional execution overrides.
@@ -57,22 +52,13 @@ class Quel1ExecutionManager:
             Clock health check override for parallel mode.
         create_default_executor : Callable[[ExecutionMode | None, bool | None], BackendExecutor]
             Default backend-executor factory.
-        create_measurement_backend_executor : Callable[[ExecutionMode | None, bool | None], BackendExecutor] | None
-            Optional backend-specific executor factory.
 
         Returns
         -------
         BackendExecutionResult
             Backend-specific execution result.
         """
-        executor: BackendExecutor
-        if create_measurement_backend_executor is not None:
-            executor = create_measurement_backend_executor(
-                execution_mode,
-                clock_health_checks,
-            )
-        else:
-            executor = create_default_executor(execution_mode, clock_health_checks)
+        executor = create_default_executor(execution_mode, clock_health_checks)
         return executor.execute(request=request)
 
     def execute_sequencer(

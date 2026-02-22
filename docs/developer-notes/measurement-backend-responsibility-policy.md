@@ -212,13 +212,13 @@ classDiagram
 - `Quel{1,3}ConnectionManager`
   - Connection and link-maintenance operations.
 
-- `Quel{1,3}ClockManager`
-  - Multi-device clock/synchronization operations.
-
 - `Quel{1,3}ExecutionManager`
   - Backend execution primitives and backend-local execution routines.
 
-- `Quel{1,3}ConfigurationManager`
+- `Quel1ClockManager`
+  - Multi-device clock/synchronization operations (QuEL-1 only).
+
+- `Quel1ConfigurationManager`
   - Backend-side configuration and definition operations.
 
 ## BackendController Required Methods
@@ -347,9 +347,7 @@ src/qubex/
       managers/
         execution_manager.py
         connection_manager.py
-        clock_manager.py
-        configuration_manager.py
-        sequencer_compiler.py
+        sequencer_builder.py
   measurement/
     measurement.py
     measurement_context.py
@@ -372,7 +370,7 @@ src/qubex/
 - Internal execution component: `MeasurementScheduleRunner`
 - Backend operation contract: `BackendController`
 - Concrete backend controllers: `Quel1BackendController`, `Quel3BackendController`
-- Backend feature managers: `Quel{1,3}ExecutionManager`, `Quel{1,3}ConnectionManager`, `Quel{1,3}ClockManager`
+- Backend feature managers: `Quel{1,3}ExecutionManager`, `Quel{1,3}ConnectionManager`, `Quel1ClockManager`
 
 ## Acceptance Criteria (v1.5.0)
 

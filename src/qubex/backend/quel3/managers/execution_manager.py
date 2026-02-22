@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 import numpy as np
 import numpy.typing as npt
 
-from qubex.backend.quel3.managers.sequencer_compiler import Quel3SequencerCompiler
+from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
 from qubex.backend.target_registry import TargetRegistry
@@ -246,7 +246,7 @@ class Quel3ExecutionManager:
 
     def __init__(self, *, runtime_context: Quel3RuntimeContextReader) -> None:
         self._runtime_context = runtime_context
-        self._sequencer_compiler = Quel3SequencerCompiler()
+        self._sequencer_builder = Quel3SequencerBuilder()
 
     def resolve_instrument_alias(self, target: str) -> str:
         """Resolve quelware instrument alias for a measurement target."""
@@ -314,7 +314,7 @@ class Quel3ExecutionManager:
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
             ) from exc
 
-        sequencer = self._sequencer_compiler.compile(
+        sequencer = self._sequencer_builder.build(
             payload=payload,
             sequencer_factory=sequencer_factory,
             default_sampling_period_ns=self._runtime_context.default_sampling_period,
@@ -382,7 +382,7 @@ class Quel3ExecutionManager:
                         alias = payload.instrument_aliases[target]
                         result = alias_results[alias]
                         for window in timeline.capture_windows:
-                            window_key = self._sequencer_compiler.capture_window_key(
+                            window_key = self._sequencer_builder.capture_window_key(
                                 target, window.name
                             )
                             iq_datas = result.iq_datas.get(window_key, [])

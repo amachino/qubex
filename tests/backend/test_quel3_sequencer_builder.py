@@ -1,4 +1,4 @@
-"""Tests for Quel3 sequencer compiler."""
+"""Tests for QuEL-3 sequencer builder."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from qubex.backend.quel3.managers.sequencer_compiler import Quel3SequencerCompiler
+from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.measurement.adapters import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
@@ -115,8 +115,8 @@ def _make_payload(
     )
 
 
-def test_compiler_registers_waveforms_and_forwards_events() -> None:
-    """Given payload library/events, when compiling, then waveforms and events are forwarded."""
+def test_builder_registers_waveforms_and_forwards_events() -> None:
+    """Given payload library/events, when building, waveforms and events are forwarded."""
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j, 0.3 + 0.2j], dtype=np.complex128)
     timeline = Quel3TargetTimeline(
@@ -144,8 +144,8 @@ def test_compiler_registers_waveforms_and_forwards_events() -> None:
         timelines={"RQ00": timeline},
     )
 
-    compiler = Quel3SequencerCompiler()
-    sequencer = compiler.compile(
+    builder = Quel3SequencerBuilder()
+    sequencer = builder.build(
         payload=payload,
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
@@ -174,8 +174,8 @@ def test_compiler_registers_waveforms_and_forwards_events() -> None:
     ]
 
 
-def test_compiler_reuses_payload_waveform_across_targets() -> None:
-    """Given shared waveform name in payload, when compiling, then both targets reference one registered waveform."""
+def test_builder_reuses_payload_waveform_across_targets() -> None:
+    """Given shared waveform name in payload, when building, both targets reuse one registered waveform."""
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j], dtype=np.complex128)
     timeline_a = Quel3TargetTimeline(
@@ -207,8 +207,8 @@ def test_compiler_reuses_payload_waveform_across_targets() -> None:
         timelines={"RQ00": timeline_a, "RQ01": timeline_b},
     )
 
-    compiler = Quel3SequencerCompiler()
-    sequencer = compiler.compile(
+    builder = Quel3SequencerBuilder()
+    sequencer = builder.build(
         payload=payload,
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
@@ -221,8 +221,8 @@ def test_compiler_reuses_payload_waveform_across_targets() -> None:
     ]
 
 
-def test_compiler_rejects_event_with_unknown_waveform_name() -> None:
-    """Given unknown waveform name, when compiling, then ValueError is raised."""
+def test_builder_rejects_event_with_unknown_waveform_name() -> None:
+    """Given unknown waveform name, when building, ValueError is raised."""
     payload = _make_payload(
         waveform_library={
             "wf_known": Quel3WaveformDefinition(
@@ -245,9 +245,9 @@ def test_compiler_rejects_event_with_unknown_waveform_name() -> None:
         },
     )
 
-    compiler = Quel3SequencerCompiler()
+    builder = Quel3SequencerBuilder()
     with pytest.raises(ValueError, match="Unknown waveform name"):
-        compiler.compile(
+        builder.build(
             payload=payload,
             sequencer_factory=_RecordingSequencer,
             default_sampling_period_ns=0.4,

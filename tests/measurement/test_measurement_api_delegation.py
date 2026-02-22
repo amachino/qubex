@@ -461,16 +461,6 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
         DEFAULT_SAMPLING_PERIOD: ClassVar[float] = 0.4
         MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
 
-        def create_measurement_backend_executor(
-            self,
-            *,
-            execution_mode: str | None,
-            clock_health_checks: bool | None,
-        ) -> _CustomBackendExecutor:
-            called["execution_mode"] = execution_mode
-            called["clock_health_checks"] = clock_health_checks
-            return _CustomBackendExecutor()
-
         def create_measurement_backend_adapter(
             self,
             *,
@@ -496,10 +486,9 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
             execution_mode: str | None = None,
             clock_health_checks: bool | None = None,
         ) -> Quel1BackendRawResult:
-            executor = self.create_measurement_backend_executor(
-                execution_mode=execution_mode,
-                clock_health_checks=clock_health_checks,
-            )
+            called["execution_mode"] = execution_mode
+            called["clock_health_checks"] = clock_health_checks
+            executor = _CustomBackendExecutor()
             return executor.execute(request=request)
 
     experiment_system = object()

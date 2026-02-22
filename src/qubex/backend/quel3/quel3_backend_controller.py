@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, Protocol, runtime_checkable
+from typing import Literal
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
-    BackendExecutor,
 )
 from qubex.backend.controller_types import BackendController
 
@@ -19,20 +18,6 @@ from .quel3_execution_payload import Quel3ExecutionPayload
 from .quel3_runtime_context import Quel3RuntimeContext
 
 QUEL3_DEFAULT_SAMPLING_PERIOD_NS = 0.4
-
-
-@runtime_checkable
-class _MeasurementBackendExecutorFactory(Protocol):
-    """Factory protocol for optional measurement backend executor hook."""
-
-    def create_measurement_backend_executor(
-        self,
-        *,
-        execution_mode: ExecutionMode | None = None,
-        clock_health_checks: bool | None = None,
-    ) -> BackendExecutor:
-        """Create a backend-specific measurement executor."""
-        ...
 
 
 class Quel3BackendController(BackendController):
@@ -142,12 +127,7 @@ class Quel3BackendController(BackendController):
         clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request using QuEL-3 execution defaults."""
-        if isinstance(self, _MeasurementBackendExecutorFactory):
-            executor = self.create_measurement_backend_executor(
-                execution_mode=execution_mode,
-                clock_health_checks=clock_health_checks,
-            )
-            return executor.execute(request=request)
+        del execution_mode, clock_health_checks
 
         payload = request.payload
         if not isinstance(payload, Quel3ExecutionPayload):

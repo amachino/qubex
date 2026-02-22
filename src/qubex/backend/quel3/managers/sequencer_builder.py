@@ -1,4 +1,4 @@
-"""Compile QuEL-3 execution payloads into sequencer directives."""
+"""Build quelware sequencers from QuEL-3 execution payloads."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 
 
 class _SequencerProtocol(Protocol):
-    """Minimal protocol required by the sequencer compiler."""
+    """Minimal protocol required by the sequencer builder."""
 
     def register_waveform(
         self,
@@ -47,10 +47,10 @@ class _SequencerProtocol(Protocol):
 T = TypeVar("T", bound=_SequencerProtocol)
 
 
-class Quel3SequencerCompiler:
-    """Compile `Quel3ExecutionPayload` to sequencer events and waveforms."""
+class Quel3SequencerBuilder:
+    """Build sequencer events and waveforms from `Quel3ExecutionPayload`."""
 
-    def compile(
+    def build(
         self,
         *,
         payload: Quel3ExecutionPayload,
@@ -72,7 +72,7 @@ class Quel3SequencerCompiler:
         Returns
         -------
         T
-            Compiled sequencer instance.
+            Built sequencer instance.
         """
         sequencer = sequencer_factory(
             default_sampling_period_ns=default_sampling_period_ns

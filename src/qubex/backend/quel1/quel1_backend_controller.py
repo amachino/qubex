@@ -801,17 +801,6 @@ class Quel1BackendController(BackendController):
         """Execute a backend request using QuEL-1 execution defaults."""
         from .quel1_backend_executor import Quel1BackendExecutor
 
-        factory = getattr(self, "create_measurement_backend_executor", None)
-        manager_factory = None
-        if callable(factory):
-            manager_factory = lambda mode, clock: cast(
-                Any,
-                factory(
-                    execution_mode=mode,
-                    clock_health_checks=clock,
-                ),
-            )
-
         return self._execution_manager.execute(
             request=request,
             execution_mode=execution_mode,
@@ -821,7 +810,6 @@ class Quel1BackendController(BackendController):
                 execution_mode=mode,
                 clock_health_checks=clock,
             ),
-            create_measurement_backend_executor=manager_factory,
         )
 
     def get_box(self, box_name: str) -> Quel1Box:

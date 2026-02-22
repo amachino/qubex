@@ -183,20 +183,18 @@ Migrate the current implementation to the target architecture defined in `measur
   - Implement QuEL-3 connection/execution natively through
     `quelware-client`.
   - Add `src/qubex/backend/quel3/managers/connection_manager.py`.
-  - Add `src/qubex/backend/quel3/managers/clock_manager.py`.
   - Add `src/qubex/backend/quel3/managers/execution_manager.py`.
-  - Add `src/qubex/backend/quel3/managers/configuration_manager.py`.
-  - Add `src/qubex/backend/quel3/managers/sequencer_compiler.py`.
+  - Add `src/qubex/backend/quel3/managers/sequencer_builder.py`.
   - Add `src/qubex/backend/quel3/quel3_runtime_context.py`.
   - Update `Quel3BackendController` to delegate to managers and implement shared `execute(...)` contract.
-  - Remove standalone `src/qubex/backend/quel3/quel3_sequencer_compiler.py` and absorb compiler into manager package.
+  - Remove standalone QuEL-3 sequencer module and absorb builder into manager package.
 - Behavior-preserving guardrails
-  - Keep `execute_measurement(...)` path and route measurement boundary through `execute(...)`.
-  - Keep QuEL-1-only helper APIs on QuEL-3 as explicit no-op or unsupported stubs where required for shared utility typing.
+  - Route measurement boundary only through `execute(...)`.
+  - Keep QuEL-1-only helper APIs unsupported on QuEL-3.
   - Keep QuEL-3 without `box_config` capability.
 - Verification
   - `uv run pytest tests/backend/test_quel3_backend_controller.py`
-  - `uv run pytest tests/backend/test_quel3_sequencer_compiler.py`
+  - `uv run pytest tests/backend/test_quel3_sequencer_builder.py`
   - `uv run pytest tests/measurement/test_quel3_backend_executor.py`
   - `uv run pytest tests/measurement/test_quel3_measurement_backend_adapter.py`
 

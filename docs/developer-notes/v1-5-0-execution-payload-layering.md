@@ -47,7 +47,7 @@ Execution payloads are backend contracts and should be defined in backend module
 ### 2) Remove backend -> measurement dependency in QuEL-3 path
 
 - Updated `src/qubex/backend/quel3/quel3_backend_controller.py` to use backend-local payload types.
-- Updated `src/qubex/backend/quel3/quel3_sequencer_compiler.py` to use backend-local payload types.
+- Updated `src/qubex/backend/quel3/managers/sequencer_builder.py` to use backend-local payload types.
 - Updated `src/qubex/backend/quel3/quel3_backend_executor.py` as backend-local executor for
   QuEL-3 payload execution.
 - This removes direct payload imports from `qubex.measurement.adapters.backend_adapter`.
@@ -56,8 +56,7 @@ Execution payloads are backend contracts and should be defined in backend module
 
 - `Quel3MeasurementBackendAdapter` stays in `qubex.measurement.adapters`.
 - `MeasurementScheduleRunner` calls only `BackendController.execute(request=...)`.
-- Backend controllers own executor selection (`create_measurement_backend_executor(...)`
-  hook or backend default executor), keeping executor classes backend-internal.
+- Backend controllers own execution, keeping executor classes backend-internal.
 
 ### 4) Align QuEL-1 payload shape with backend-plan pattern
 

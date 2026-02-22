@@ -24,25 +24,22 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Backend-specific behavior diverges below `MeasurementClient`.
 - One experiment session uses a single backend family (`quel1` or `quel3`), not mixed operation.
 - `MeasurementScheduleRunner.create_default()` now supports backend-provided hooks:
-  - `create_measurement_backend_executor(execution_mode, clock_health_checks)`
   - `create_measurement_backend_adapter(experiment_system, constraint_profile)`
   - `create_measurement_result_factory(experiment_system)`
 
 ## Current implementation scaffold
 
 - Added `Quel3MeasurementBackendAdapter` in `src/qubex/measurement/adapters/backend_adapter.py`.
-- Added `Quel3BackendExecutor` in `src/qubex/backend/quel3/quel3_backend_executor.py` (delegates to `execute_measurement(payload=...)` hook).
+- Added `Quel3BackendExecutor` in `src/qubex/backend/quel3/quel3_backend_executor.py` (delegates to `execute(request=...)`).
 - Added `Quel3ExecutionPayload`/timeline dataclasses in `src/qubex/backend/quel3/quel3_execution_payload.py`.
 - Adapter builds backend payload models; backend controller/executor consume them.
 - Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_instrument_alias(target)` hook when available (fallback: target label itself).
 - Added `Quel3BackendController` scaffold in `src/qubex/backend/quel3/quel3_backend_controller.py`.
-- `Quel3BackendController.execute_measurement(...)` now includes an initial quelware invocation path and returns canonical `MeasurementResult` directly.
+- `Quel3BackendController.execute(...)` includes a quelware invocation path and returns canonical `MeasurementResult` directly.
 - If quelware dependencies are missing, execution fails fast with an explicit runtime error message.
 - `SystemManager.load(..., backend_kind=...)` and `MeasurementClient.load(..., backend_kind=...)` now select backend family at session scope.
 - Added default adapter-selection hint: `MEASUREMENT_BACKEND_KIND="quel3"` in `MeasurementScheduleRunner`.
-- For `MEASUREMENT_BACKEND_KIND="quel3"`, backend must provide either:
-  - `create_measurement_backend_executor(...)`, or
-  - `execute_measurement(payload=...)` (used by built-in `Quel3BackendExecutor`).
+- For `MEASUREMENT_BACKEND_KIND="quel3"`, backend executes through `execute(request=...)`.
 - `MeasurementScheduleRunner.execute()` now accepts a backend executor returning canonical `MeasurementResult` directly (result-factory bypass path).
 - Added adapter tests in `tests/measurement/test_quel3_measurement_backend_adapter.py`.
 - Scope is intentionally minimal: relaxed validation + payload construction; direct quelware invocation remains in follow-up work.
