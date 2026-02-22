@@ -144,6 +144,9 @@ Migrate the current implementation to the target architecture defined in `measur
   - Add `src/qubex/backend/quel1/managers/connection_manager.py`.
   - Add `src/qubex/backend/quel1/managers/clock_manager.py`.
   - Add `src/qubex/backend/quel1/managers/execution_manager.py`.
+  - Make `Quel1ConnectionManager` the owner of connection runtime state
+    (`boxpool`, `quel1system`, `cap_resource_map`, `gen_resource_map`) and
+    remove tuple-based connected-state returns from `connect(...)`.
   - Reduce `Quel1BackendController` to a thin facade delegating to managers.
 - Behavior-preserving guardrails
   - Preserve existing public methods and side-effect ordering (connect/reconnect/linkup/clock sync).

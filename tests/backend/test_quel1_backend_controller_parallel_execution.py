@@ -1,8 +1,10 @@
+# ruff: noqa: SLF001
+
 """Tests for parallel sequencer execution in Quel1BackendController."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -26,8 +28,8 @@ def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -
 
     controller = Quel1BackendController()
     sequencer = _Sequencer()
-    controller.__dict__["_boxpool"] = object()
-    controller.__dict__["_quel1system"] = object()
+    cast(Any, controller)._boxpool = object()
+    cast(Any, controller)._quel1system = object()
 
     def _fake_execute_parallel(
         **kwargs: object,
@@ -58,7 +60,7 @@ def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -
 def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> None:
     """Given parallel init, when initializing boxes, then each box is processed once."""
     controller = Quel1BackendController()
-    controller.__dict__["_quel1system"] = object()
+    cast(Any, controller)._quel1system = object()
     called: list[str] = []
 
     def _fake_initialize(box_name: str) -> None:
@@ -77,7 +79,7 @@ def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> Non
 def test_initialize_awg_and_capunits_parallel_deduplicates_boxes(monkeypatch) -> None:
     """Given duplicate boxes, each box is initialized only once."""
     controller = Quel1BackendController()
-    controller.__dict__["_quel1system"] = object()
+    cast(Any, controller)._quel1system = object()
     called: list[str] = []
 
     def _fake_initialize(box_name: str) -> None:
@@ -191,7 +193,7 @@ def test_linkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None
 
     controller = Quel1BackendController()
     fake_box = _FakeBox()
-    controller.__dict__["_boxpool"] = _FakeBoxPool(fake_box)
+    cast(Any, controller)._boxpool = _FakeBoxPool(fake_box)
 
     monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(
@@ -225,7 +227,7 @@ def test_relinkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> No
 
     controller = Quel1BackendController()
     fake_box = _FakeBox()
-    controller.__dict__["_boxpool"] = _FakeBoxPool(fake_box)
+    cast(Any, controller)._boxpool = _FakeBoxPool(fake_box)
 
     monkeypatch.setattr(controller, "_check_box_availability", lambda _: None)
     monkeypatch.setattr(controller, "_resolve_config_options", lambda **_: [])

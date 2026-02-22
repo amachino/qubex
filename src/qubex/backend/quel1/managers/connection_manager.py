@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Collection
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
@@ -11,13 +12,99 @@ from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class Quel1ConnectionState:
+    """Mutable runtime state owned by the QuEL-1 connection manager."""
+
+    boxpool: Any | None = None
+    quel1system: Any | None = None
+    cap_resource_map: dict[str, dict] | None = None
+    gen_resource_map: dict[str, dict] | None = None
+
+
 class Quel1ConnectionManager:
     """Handle connect/disconnect and box link-maintenance flows for QuEL-1."""
+
+    def __init__(self) -> None:
+        self._state = Quel1ConnectionState()
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether runtime state currently has a connected system."""
+        return self._state.quel1system is not None
+
+    @property
+    def boxpool(self) -> Any | None:
+        """Return connected boxpool when available."""
+        return self._state.boxpool
+
+    @property
+    def quel1system(self) -> Any | None:
+        """Return connected Quel1System when available."""
+        return self._state.quel1system
+
+    @property
+    def cap_resource_map(self) -> dict[str, dict] | None:
+        """Return capture resource map when available."""
+        return self._state.cap_resource_map
+
+    @property
+    def gen_resource_map(self) -> dict[str, dict] | None:
+        """Return generator resource map when available."""
+        return self._state.gen_resource_map
+
+    def set_connected_state(
+        self,
+        *,
+        boxpool: Any | None,
+        quel1system: Any | None,
+        cap_resource_map: dict[str, dict] | None,
+        gen_resource_map: dict[str, dict] | None,
+    ) -> None:
+        """
+        Replace full connected runtime state.
+
+        Parameters
+        ----------
+        boxpool : Any | None
+            Connected boxpool.
+        quel1system : Any | None
+            Connected Quel1System.
+        cap_resource_map : dict[str, dict] | None
+            Capture resource map.
+        gen_resource_map : dict[str, dict] | None
+            Generator resource map.
+        """
+        self._state = Quel1ConnectionState(
+            boxpool=boxpool,
+            quel1system=quel1system,
+            cap_resource_map=cap_resource_map,
+            gen_resource_map=gen_resource_map,
+        )
+
+    def set_boxpool(self, boxpool: Any | None) -> None:
+        """Update only boxpool state."""
+        self._state.boxpool = boxpool
+
+    def set_quel1system(self, quel1system: Any | None) -> None:
+        """Update only Quel1System state."""
+        self._state.quel1system = quel1system
+
+    def set_cap_resource_map(self, resource_map: dict[str, dict] | None) -> None:
+        """Update only capture resource map state."""
+        self._state.cap_resource_map = resource_map
+
+    def set_gen_resource_map(self, resource_map: dict[str, dict] | None) -> None:
+        """Update only generator resource map state."""
+        self._state.gen_resource_map = resource_map
+
+    def clear_connected_state(self) -> None:
+        """Clear connected runtime state."""
+        self._state = Quel1ConnectionState()
 
     def connect(
         self,
         *,
-        is_connected: bool,
         box_names: str | list[str] | None,
         available_boxes: Callable[[], Collection[str]],
         parallel: bool | None,
@@ -25,14 +112,12 @@ class Quel1ConnectionManager:
         create_boxpool: Callable[[list[str], bool], Any],
         create_quel1system_from_boxpool: Callable[[list[str]], Any],
         create_resource_map: Callable[[Literal["cap", "gen"]], dict[str, dict]],
-    ) -> tuple[Any, Any, dict[str, dict], dict[str, dict]] | None:
+    ) -> None:
         """
         Resolve and create connected runtime state for requested boxes.
 
         Parameters
         ----------
-        is_connected : bool
-            Whether backend resources are already connected.
         box_names : str | list[str] | None
             Target boxes. If None, all available boxes are selected.
         available_boxes : Callable[[], Collection[str]]
@@ -47,18 +132,12 @@ class Quel1ConnectionManager:
             Factory to create a Quel1System from connected boxes.
         create_resource_map : Callable[[str], dict[str, dict]]
             Factory for resource maps (`"cap"` and `"gen"`).
-
-        Returns
-        -------
-        tuple[Any, Any, dict[str, dict], dict[str, dict]] | None
-            Connected state tuple `(boxpool, quel1system, cap_map, gen_map)`,
-            or `None` when already connected.
         """
         if parallel is None:
             parallel = default_parallel_mode
-        if is_connected:
+        if self.is_connected:
             logger.info("Already connected. Skipping backend reconnect.")
-            return None
+            return
         resolved_box_names: list[str]
         if box_names is None:
             resolved_box_names = list(available_boxes())
@@ -68,10 +147,22 @@ class Quel1ConnectionManager:
             resolved_box_names = list(box_names)
 
         boxpool = create_boxpool(resolved_box_names, parallel)
-        quel1system = create_quel1system_from_boxpool(resolved_box_names)
-        cap_resource_map = create_resource_map("cap")
-        gen_resource_map = create_resource_map("gen")
-        return boxpool, quel1system, cap_resource_map, gen_resource_map
+        self.set_connected_state(
+            boxpool=boxpool,
+            quel1system=None,
+            cap_resource_map=None,
+            gen_resource_map=None,
+        )
+        try:
+            quel1system = create_quel1system_from_boxpool(resolved_box_names)
+            self.set_quel1system(quel1system)
+            cap_resource_map = create_resource_map("cap")
+            gen_resource_map = create_resource_map("gen")
+        except Exception:
+            self.clear_connected_state()
+            raise
+        self.set_cap_resource_map(cap_resource_map)
+        self.set_gen_resource_map(gen_resource_map)
 
     def disconnect(
         self,
@@ -91,6 +182,7 @@ class Quel1ConnectionManager:
         """
         for resource in collect_held_resources():
             disconnect_resource_safely(resource)
+        self.clear_connected_state()
 
     def initialize_awg_and_capunits(
         self,

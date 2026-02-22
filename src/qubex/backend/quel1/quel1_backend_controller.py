@@ -104,10 +104,6 @@ class Quel1BackendController:
                     raise
         except Exception:
             self._qubecalib = None
-        self._cap_resource_map: dict | None = None
-        self._gen_resource_map: dict | None = None
-        self._boxpool: BoxPool | None = None
-        self._quel1system: Quel1System | None = None
         self._box_options: dict[str, tuple[str, ...]] = {}
         self._connection_manager = Quel1ConnectionManager()
         self._clock_manager = Quel1ClockManager()
@@ -116,7 +112,47 @@ class Quel1BackendController:
     @property
     def is_connected(self) -> bool:
         """Return whether the hardware is connected."""
-        return self._quel1system is not None
+        return self._connection_manager.is_connected
+
+    @property
+    def _boxpool(self) -> BoxPool | None:
+        """Compatibility bridge for pooled-box runtime state."""
+        return cast(Any, self._connection_manager.boxpool)
+
+    @_boxpool.setter
+    def _boxpool(self, boxpool: BoxPool | None) -> None:
+        """Compatibility bridge for pooled-box runtime state."""
+        self._connection_manager.set_boxpool(boxpool)
+
+    @property
+    def _quel1system(self) -> Quel1System | None:
+        """Compatibility bridge for Quel1System runtime state."""
+        return cast(Any, self._connection_manager.quel1system)
+
+    @_quel1system.setter
+    def _quel1system(self, quel1system: Quel1System | None) -> None:
+        """Compatibility bridge for Quel1System runtime state."""
+        self._connection_manager.set_quel1system(quel1system)
+
+    @property
+    def _cap_resource_map(self) -> dict[str, dict] | None:
+        """Compatibility bridge for capture resource-map runtime state."""
+        return self._connection_manager.cap_resource_map
+
+    @_cap_resource_map.setter
+    def _cap_resource_map(self, resource_map: dict[str, dict] | None) -> None:
+        """Compatibility bridge for capture resource-map runtime state."""
+        self._connection_manager.set_cap_resource_map(resource_map)
+
+    @property
+    def _gen_resource_map(self) -> dict[str, dict] | None:
+        """Compatibility bridge for generator resource-map runtime state."""
+        return self._connection_manager.gen_resource_map
+
+    @_gen_resource_map.setter
+    def _gen_resource_map(self, resource_map: dict[str, dict] | None) -> None:
+        """Compatibility bridge for generator resource-map runtime state."""
+        self._connection_manager.set_gen_resource_map(resource_map)
 
     @property
     def qubecalib(self) -> QubeCalib:
@@ -690,8 +726,7 @@ class Quel1BackendController:
             legacy qubecalib implementation. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
-        connected_state = self._connection_manager.connect(
-            is_connected=self.is_connected,
+        self._connection_manager.connect(
             box_names=box_names,
             available_boxes=lambda: self.available_boxes,
             parallel=parallel,
@@ -703,13 +738,6 @@ class Quel1BackendController:
             create_quel1system_from_boxpool=self._create_quel1system_from_boxpool,
             create_resource_map=self.create_resource_map,
         )
-        if connected_state is None:
-            return
-        boxpool, quel1system, cap_resource_map, gen_resource_map = connected_state
-        self._boxpool = boxpool
-        self._quel1system = quel1system
-        self._cap_resource_map = cap_resource_map
-        self._gen_resource_map = gen_resource_map
 
     def _append_resource_if_new(
         self,
@@ -775,15 +803,11 @@ class Quel1BackendController:
 
     def disconnect(self) -> None:
         """Disconnect backend resources and reset connection-related state."""
+        self._clear_quel1system_box_cache()
         self._connection_manager.disconnect(
             collect_held_resources=self._collect_held_resources,
             disconnect_resource_safely=self._disconnect_resource_safely,
         )
-        self._clear_quel1system_box_cache()
-        self._quel1system = None
-        self._boxpool = None
-        self._cap_resource_map = None
-        self._gen_resource_map = None
 
     def execute(
         self,
