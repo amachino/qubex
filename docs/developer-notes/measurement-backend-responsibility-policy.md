@@ -102,8 +102,7 @@ classDiagram
   class Quel1SystemSynchronizer
   class Quel3ExecutionManager
   class Quel3ConnectionManager
-  class Quel3ClockManager
-  class Quel3ConfigurationManager
+  class Quel3SequencerBuilder
   class Quel3SystemSynchronizer
 
   Measurement *-- MeasurementContext : delegates
@@ -143,9 +142,8 @@ classDiagram
   Quel1BackendController *-- Quel1ExecutionManager : delegates
   Quel1BackendController *-- Quel1SkewManager : delegates
   Quel3BackendController *-- Quel3ConnectionManager : delegates
-  Quel3BackendController *-- Quel3ClockManager : delegates
   Quel3BackendController *-- Quel3ExecutionManager : delegates
-  Quel3BackendController *-- Quel3ConfigurationManager : delegates
+  Quel3ExecutionManager *-- Quel3SequencerBuilder : delegates
 ```
 
 ## Class Responsibilities

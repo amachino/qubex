@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: `DRAFT-PLAN`
+- State: `COMPLETED`
 - Created: 2026-02-22
 - Updated: 2026-02-22
 - Target policy: `docs/developer-notes/measurement-backend-responsibility-policy.md`
@@ -24,9 +24,10 @@ Migrate the current implementation to the target architecture defined in `measur
   - Step 7A
   - Step 7B
   - Step 8
-- Remaining
   - Step 9
   - Step 10
+- Remaining
+  - None
 
 ## Migration Rules
 
@@ -112,7 +113,7 @@ Migrate the current implementation to the target architecture defined in `measur
 - Purpose
   - Make measurement-facing backend contract explicit at type level.
 - Main changes
-  - Replace union alias in `src/qubex/backend/controller_types.py` with a Protocol-based contract.
+  - Replace union alias in `src/qubex/backend/backend_controller.py` with a Protocol-based contract.
   - Required contract: `hash`, `is_connected`, `execute(...)`, `connect(...)`, `disconnect()`.
   - Move backend-dependent operations to separate capability protocols
     (`BackendSkewYamlLoader`, `BackendLinkStatusReader`,
@@ -255,3 +256,5 @@ Migrate the current implementation to the target architecture defined in `measur
 - QuEL-1 and QuEL-3 controllers both follow manager-delegation structure.
 - `SystemManager` remains focused on state synchronization and is not the owner of backend operation implementations.
 - Compatibility APIs are preserved and full quality gates pass.
+- Shared system synchronization behavior is represented by
+  `src/qubex/backend/system_synchronizer.py` `SystemSynchronizer` protocol.

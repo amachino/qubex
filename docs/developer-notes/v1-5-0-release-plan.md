@@ -14,9 +14,9 @@
 
 - Add support for QuEL-3 controller using new `quelware-client`
 - Keep backward compatibility with existing controllers
-- Primary compatibility target is `MeasurementClient` level
-- `Experiment` compatibility is expected to be preserved through `MeasurementClient` compatibility
-- Below `MeasurementClient`, implementation may diverge for QuEL-3 specific behavior
+- Primary compatibility target is `Measurement` facade level (with `MeasurementClient` compatibility alias)
+- `Experiment` compatibility is expected to be preserved through `Measurement` facade compatibility
+- Below measurement facade level, implementation may diverge for QuEL-3 specific behavior
 - Remove assumptions tied to fixed 2 ns sampling period; support backend-defined sampling period
 - Enable end-to-end experiment protocols including synchronized measurements
 - Provide task-based, async-friendly new measurement primitive methods
@@ -72,7 +72,7 @@ Calendar note:
 
 - QuEL-3 basic control flow works on target environment
 - Existing controller regression tests all pass
-- QuEL-3 is API-compatible at `MeasurementClient` level
+- QuEL-3 is API-compatible at measurement facade level (`Measurement` / `MeasurementClient`)
 - `Experiment` core flows remain operational through delegation
 - No blocking fixed `2 ns` assumptions remain in QuEL-3 code path
 - Core synchronized protocol path is executable
@@ -84,14 +84,14 @@ Calendar note:
 ## GA exit criteria (must pass)
 
 - Beta issues triaged and critical/high issues closed
-- QuEL-3 + existing controllers compatibility verified at `MeasurementClient` level
+- QuEL-3 + existing controllers compatibility verified at measurement facade level
 - Sampling-period differences are handled without API breakage
 - Synchronized protocol and sweep measurement are documented and tested
 - Migration/upgrade notes finalized
 - Release notes finalized
 - MkDocs `user-guide` and `developer-guide` are updated to final v1.5.0 behavior and provide sufficient end-to-end understanding for experiment users and developers
 
-## Compatibility contract draft (`Experiment` / `MeasurementClient`)
+## Compatibility contract draft (`Experiment` / measurement facade)
 
 ### `Experiment` level (compatibility by delegation)
 
@@ -100,9 +100,9 @@ Calendar note:
   - `connect`, `disconnect`, `reload`, `run`
   - `execute`, `measure`, `measure_state`, `measure_idle_states`
 
-### `MeasurementClient` level (must keep compatible for QuEL-3)
+### Measurement facade level (must keep compatible for QuEL-3)
 
-- Public alias compatibility (`Measurement` -> `MeasurementClient`)
+- Public alias compatibility (`MeasurementClient` -> `Measurement`)
 - Constructor compatibility policy is practical/source-compatible:
   - required args and primary behavior must remain compatible
   - strict equality of all optional defaults is not required
@@ -113,7 +113,7 @@ Calendar note:
   - Note: `execute_measurement_schedule` is retained here as a historical
     compatibility term; current internal implementation path is
     `MeasurementScheduleRunner` + `BackendController.execute(request=...)`.
-- Legacy delegation behavior from old measurement APIs remains compatible (keep delegation tests green)
+- Legacy delegation behavior from `MeasurementClient` compatibility path remains compatible (keep delegation tests green)
 - Measurement result compatibility criteria are type/shape centered
 - Timing semantics must not assume fixed `2 ns`; schedule/config creation must work with backend-defined sampling period
 - Canonical sampling period source is backend/controller `sampling_period`
