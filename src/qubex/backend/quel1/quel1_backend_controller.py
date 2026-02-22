@@ -33,7 +33,6 @@ from .managers import (
 )
 from .quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
-    WORD_LENGTH,
     ExecutionMode,
 )
 from .quel1_runtime_context import Quel1RuntimeContext
@@ -74,11 +73,6 @@ class Quel1BackendController(BackendController):
     delegates connection, clock, configuration, and execution details to
     backend-local manager components.
     """
-
-    # Measurement capability hints consumed by measurement-layer selector logic.
-    MEASUREMENT_BACKEND_KIND: Literal["quel1"] = "quel1"
-    MEASUREMENT_CONSTRAINT_MODE: Literal["quel1"] = "quel1"
-    MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = WORD_LENGTH
 
     def __init__(
         self,
