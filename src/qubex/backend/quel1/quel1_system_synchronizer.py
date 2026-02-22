@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING, Any, Literal, TypeGuard, cast
 
-from qubex.backend.parallel_box_executor import run_parallel_each
+from qubex.backend.control_system import PortType
+from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,11 @@ class Quel1SystemSynchronizer:
 
     def __init__(self, *, backend_controller: Quel1BackendController) -> None:
         self._backend_controller = backend_controller
+
+    @property
+    def backend_controller(self) -> Quel1BackendController:
+        """Return backend controller bound to this synchronizer."""
+        return self._backend_controller
 
     def sync_experiment_system_to_backend_controller(
         self,
@@ -117,6 +123,210 @@ class Quel1SystemSynchronizer:
             on_error=self._log_box_sync_error,
         )
 
+    def supports_box_settings_cache_sync(self) -> bool:
+        """Return whether backend supports dump/cache synchronization APIs."""
+        return self._supports_methods(
+            (
+                "dump_box",
+                "get_box_config_cache",
+                "replace_box_config_cache",
+                "update_box_config_cache",
+            ),
+        )
+
+    def supports_backend_settings_mutation(self) -> bool:
+        """Return whether backend supports temporary backend-setting overrides."""
+        return self._supports_methods(
+            (
+                "get_box_config_cache",
+                "replace_box_config_cache",
+                "update_box_config_cache",
+                "config_port",
+                "config_channel",
+                "config_runit",
+                "initialize_awg_and_capunits",
+            ),
+        )
+
+    def get_box_config_cache_snapshot(self) -> dict[str, dict]:
+        """Return a snapshot of backend box-config cache when supported."""
+        get_cache = getattr(self._backend_controller, "get_box_config_cache", None)
+        if not callable(get_cache):
+            return {}
+        return dict(cast(dict[str, dict], get_cache()))
+
+    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Replace backend box-config cache when supported."""
+        replace_cache = getattr(
+            self._backend_controller, "replace_box_config_cache", None
+        )
+        if callable(replace_cache):
+            replace_cache(dict(box_configs))
+
+    def fetch_backend_settings_from_hardware(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        box_ids: Sequence[str],
+        parallel: bool | None = None,
+    ) -> dict[str, dict]:
+        """Fetch raw backend settings from hardware for selected boxes."""
+        if not self.supports_box_settings_cache_sync():
+            return {}
+        if parallel is None:
+            parallel = True
+        boxes = [experiment_system.get_box(box_id) for box_id in box_ids]
+        if not boxes:
+            return {}
+        dump_box = getattr(self._backend_controller, "dump_box", None)
+        if not callable(dump_box):
+            return {}
+
+        def _dump_box(box: Box) -> dict[str, Any]:
+            return cast(dict[str, Any], dump_box(box.id))
+
+        if not parallel:
+            result: dict[str, dict] = {}
+            for box in boxes:
+                result[box.id] = cast(dict[str, Any], dump_box(box.id))
+            return result
+
+        return cast(
+            dict[str, dict],
+            run_parallel_map(
+                boxes,
+                _dump_box,
+                key=lambda box: box.id,
+                as_completed_order=True,
+                on_error=self._fallback_dump_box_result,
+            ),
+        )
+
+    def sync_backend_settings_to_device_controller(
+        self,
+        *,
+        backend_settings: dict[str, dict],
+    ) -> None:
+        """Apply backend-settings snapshots to backend-controller cache."""
+        if not self.supports_box_settings_cache_sync():
+            return
+        update_cache = getattr(
+            self._backend_controller, "update_box_config_cache", None
+        )
+        if callable(update_cache):
+            update_cache(backend_settings)
+
+    def sync_backend_settings_to_experiment_system(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        backend_settings: dict[str, dict],
+    ) -> None:
+        """Apply backend-settings snapshots to the in-memory experiment system."""
+        updates: list[
+            tuple[
+                str,
+                int,
+                Literal["U", "L"] | None,
+                int | None,
+                int,
+                list[int],
+                int | None,
+            ]
+        ] = []
+        for box_id, box_config in backend_settings.items():
+            ports_config = box_config.get("ports", {})
+            try:
+                box = experiment_system.get_box(box_id)
+            except KeyError:
+                logger.warning("Box %s is not found.", box_id)
+                continue
+            for experiment_port in box.ports:
+                if experiment_port.type in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
+                    continue
+                port_number = experiment_port.number
+                if not isinstance(port_number, int):
+                    continue
+                port_config = ports_config.get(port_number)
+                if not isinstance(port_config, dict):
+                    continue
+                direction = port_config.get("direction")
+                lo_freq = port_config.get("lo_freq")
+                lo_freq = int(lo_freq) if lo_freq is not None else None
+                cnco_freq = int(port_config["cnco_freq"])
+                if direction == "out":
+                    raw_sideband = port_config.get("sideband")
+                    sideband: Literal["U", "L"] | None = (
+                        raw_sideband if raw_sideband in ("U", "L") else None
+                    )
+                    fullscale_current = port_config.get("fullscale_current")
+                    fullscale_current = (
+                        int(fullscale_current)
+                        if fullscale_current is not None
+                        else None
+                    )
+                    fnco_freqs = [
+                        int(channel["fnco_freq"])
+                        for channel in port_config.get("channels", {}).values()
+                    ]
+                elif direction == "in":
+                    sideband = None
+                    fullscale_current = None
+                    fnco_freqs = [
+                        int(channel["fnco_freq"])
+                        for channel in port_config.get("runits", {}).values()
+                    ]
+                else:
+                    continue
+                channels = getattr(experiment_port, "channels", ())
+                expected_fnco_count = (
+                    len(channels)
+                    if isinstance(channels, tuple) and len(channels) > 0
+                    else None
+                )
+                if (
+                    expected_fnco_count is not None
+                    and len(fnco_freqs) != expected_fnco_count
+                ):
+                    logger.warning(
+                        "Skipping backend port sync for %s:%s due to fnco count mismatch "
+                        "(expected=%s, actual=%s).",
+                        box_id,
+                        port_number,
+                        expected_fnco_count,
+                        len(fnco_freqs),
+                    )
+                    continue
+                updates.append(
+                    (
+                        box_id,
+                        port_number,
+                        sideband,
+                        lo_freq,
+                        cnco_freq,
+                        fnco_freqs,
+                        fullscale_current,
+                    )
+                )
+        for (
+            box_id,
+            port_number,
+            sideband,
+            lo_freq,
+            cnco_freq,
+            fnco_freqs,
+            fullscale_current,
+        ) in updates:
+            experiment_system.control_system.set_port_params(
+                box_id=box_id,
+                port_number=port_number,
+                sideband=sideband,
+                lo_freq=lo_freq,
+                cnco_freq=cnco_freq,
+                fnco_freqs=fnco_freqs,
+                fullscale_current=fullscale_current,
+            )
+
     def _sync_generator_port(self, *, box: Box, port: GenPort) -> None:
         """Apply one output-like port configuration."""
         try:
@@ -167,6 +377,19 @@ class Quel1SystemSynchronizer:
     def _log_box_sync_error(box: Box, exc: BaseException) -> None:
         """Log a failure during per-box hardware synchronization."""
         logger.exception("Failed to configure box %s", box.id, exc_info=exc)
+
+    @staticmethod
+    def _fallback_dump_box_result(box: Box, exc: BaseException) -> dict[str, Any]:
+        """Log a box dump failure and return an empty fallback config."""
+        logger.exception("Failed to dump box %s", box.id, exc_info=exc)
+        return {}
+
+    def _supports_methods(self, method_names: Sequence[str]) -> bool:
+        """Return whether all named methods are available on backend controller."""
+        return all(
+            callable(getattr(self._backend_controller, method_name, None))
+            for method_name in method_names
+        )
 
     @staticmethod
     def _is_generator_port(port: GenPort | CapPort) -> TypeGuard[GenPort]:

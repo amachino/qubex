@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Protocol, cast
 
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
@@ -21,18 +21,81 @@ from qubex.constants import (
 )
 from qubex.typing import ConfigurationMode
 
-from .control_system import Box, PortType
+from .control_system import Box
 from .controller_types import (
     BackendKind,
     SystemBackendController,
 )
 from .experiment_system import ExperimentSystem
-from .parallel_box_executor import run_parallel_map
 from .quel1 import Quel1BackendController
 from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
 from .quel3 import Quel3BackendController
+from .quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
 
 logger = logging.getLogger(__name__)
+
+
+class _SystemSynchronizerProtocol(Protocol):
+    """Backend-specific synchronizer interface consumed by `SystemManager`."""
+
+    def sync_experiment_system_to_backend_controller(
+        self,
+        experiment_system: ExperimentSystem,
+    ) -> None:
+        """Rebuild backend-local topology from experiment-system state."""
+        ...
+
+    def sync_experiment_system_to_hardware(
+        self,
+        *,
+        boxes: Sequence[Box],
+        parallel: bool | None = None,
+    ) -> None:
+        """Apply experiment-system settings to hardware boxes."""
+        ...
+
+    def supports_box_settings_cache_sync(self) -> bool:
+        """Return whether backend supports dump/cache synchronization APIs."""
+        ...
+
+    def supports_backend_settings_mutation(self) -> bool:
+        """Return whether backend supports temporary backend-setting overrides."""
+        ...
+
+    def get_box_config_cache_snapshot(self) -> dict[str, dict]:
+        """Return a snapshot of backend box-config cache when supported."""
+        ...
+
+    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Replace backend box-config cache when supported."""
+        ...
+
+    def fetch_backend_settings_from_hardware(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        box_ids: Sequence[str],
+        parallel: bool | None = None,
+    ) -> dict[str, dict]:
+        """Fetch raw backend settings from hardware for selected boxes."""
+        ...
+
+    def sync_backend_settings_to_device_controller(
+        self,
+        *,
+        backend_settings: dict[str, dict],
+    ) -> None:
+        """Apply backend-settings snapshots to backend-controller cache."""
+        ...
+
+    def sync_backend_settings_to_experiment_system(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        backend_settings: dict[str, dict],
+    ) -> None:
+        """Apply backend-settings snapshots to in-memory experiment system."""
+        ...
 
 
 class BackendSettings(dict[str, dict]):
@@ -143,7 +206,8 @@ class SystemManager:
         self._backend_kind: BackendKind = "quel1"
         self._backend_controller = self._create_backend_controller(self._backend_kind)
         self._system_sync_manager = self._create_system_sync_manager(
-            self._backend_controller
+            self._backend_controller,
+            self._backend_kind,
         )
         self._backend_settings: BackendSettings = BackendSettings()
         self._cached_state = SystemState(0, 0, 0)
@@ -183,20 +247,61 @@ class SystemManager:
         self._backend_kind = backend_kind
         self._backend_controller = self._create_backend_controller(backend_kind)
         self._system_sync_manager = self._create_system_sync_manager(
-            self._backend_controller
+            self._backend_controller,
+            self._backend_kind,
         )
         self._backend_settings = BackendSettings()
 
-    @staticmethod
     def _create_system_sync_manager(
+        self,
         backend_controller: SystemBackendController,
-    ) -> Quel1SystemSynchronizer | None:
+        backend_kind: BackendKind | None = None,
+    ) -> Quel1SystemSynchronizer | Quel3SystemSynchronizer | None:
         """Create backend-specific system synchronizer when supported."""
-        if isinstance(backend_controller, Quel1BackendController):
+        resolved_backend_kind = backend_kind or self._backend_kind
+        if resolved_backend_kind == "quel1":
             return Quel1SystemSynchronizer(
-                backend_controller=backend_controller,
+                backend_controller=cast(Quel1BackendController, backend_controller),
             )
+        if resolved_backend_kind == "quel3":
+            return Quel3SystemSynchronizer(
+                backend_controller=cast(Quel3BackendController, backend_controller),
+            )
+        if isinstance(backend_controller, Quel1BackendController):
+            return Quel1SystemSynchronizer(backend_controller=backend_controller)
+        if isinstance(backend_controller, Quel3BackendController):
+            return Quel3SystemSynchronizer(backend_controller=backend_controller)
         return None
+
+    def _resolve_system_sync_manager(
+        self,
+    ) -> _SystemSynchronizerProtocol | None:
+        """Return active system synchronizer, refreshing built-in synchronizers when needed."""
+        system_sync_manager = self._system_sync_manager
+        backend_controller = self._backend_controller
+        if isinstance(system_sync_manager, Quel1SystemSynchronizer):
+            if (
+                not isinstance(backend_controller, Quel1BackendController)
+                or system_sync_manager.backend_controller is not backend_controller
+            ):
+                system_sync_manager = self._create_system_sync_manager(
+                    backend_controller,
+                    self._backend_kind,
+                )
+                self._system_sync_manager = system_sync_manager
+            return system_sync_manager
+        if isinstance(system_sync_manager, Quel3SystemSynchronizer):
+            if (
+                not isinstance(backend_controller, Quel3BackendController)
+                or system_sync_manager.backend_controller is not backend_controller
+            ):
+                system_sync_manager = self._create_system_sync_manager(
+                    backend_controller,
+                    self._backend_kind,
+                )
+                self._system_sync_manager = system_sync_manager
+            return system_sync_manager
+        return system_sync_manager
 
     @property
     def rawdata_dir(self) -> Path | None:
@@ -530,55 +635,33 @@ This operation will overwrite the existing backend settings. Do you want to cont
         """Replace cached backend settings with normalized `BackendSettings`."""
         self._backend_settings = BackendSettings(backend_settings)
 
-    @staticmethod
-    def _supports_methods(controller: object, method_names: Sequence[str]) -> bool:
-        """Return whether all named methods are available on one controller."""
-        return all(
-            callable(getattr(controller, method_name, None))
-            for method_name in method_names
-        )
-
     def _supports_box_settings_cache_sync(self) -> bool:
         """Return whether backend supports dump/cache synchronization APIs."""
-        return self._supports_methods(
-            self.backend_controller,
-            (
-                "dump_box",
-                "get_box_config_cache",
-                "replace_box_config_cache",
-                "update_box_config_cache",
-            ),
-        )
+        system_sync_manager = self._resolve_system_sync_manager()
+        if system_sync_manager is None:
+            return False
+        return system_sync_manager.supports_box_settings_cache_sync()
 
     def _supports_backend_settings_mutation(self) -> bool:
         """Return whether backend supports temporary backend-setting overrides."""
-        return self._supports_methods(
-            self.backend_controller,
-            (
-                "get_box_config_cache",
-                "replace_box_config_cache",
-                "update_box_config_cache",
-                "config_port",
-                "config_channel",
-                "config_runit",
-                "initialize_awg_and_capunits",
-            ),
-        )
+        system_sync_manager = self._resolve_system_sync_manager()
+        if system_sync_manager is None:
+            return False
+        return system_sync_manager.supports_backend_settings_mutation()
 
     def _get_box_config_cache_snapshot(self) -> dict[str, dict]:
         """Return a snapshot of backend box-config cache when supported."""
-        get_cache = getattr(self.backend_controller, "get_box_config_cache", None)
-        if not callable(get_cache):
+        system_sync_manager = self._resolve_system_sync_manager()
+        if system_sync_manager is None:
             return {}
-        return cast(dict[str, dict], get_cache())
+        return system_sync_manager.get_box_config_cache_snapshot()
 
     def _replace_box_config_cache(self, box_configs: Mapping[str, dict]) -> None:
         """Replace backend box-config cache when supported."""
-        replace_cache = getattr(
-            self.backend_controller, "replace_box_config_cache", None
-        )
-        if callable(replace_cache):
-            replace_cache(dict(box_configs))
+        system_sync_manager = self._resolve_system_sync_manager()
+        if system_sync_manager is None:
+            return
+        system_sync_manager.replace_box_config_cache(dict(box_configs))
 
     def _sync_experiment_system_to_hardware(
         self,
@@ -597,7 +680,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             Whether to configure boxes in parallel. If `None`, defaults to
             `True`.
         """
-        system_sync_manager = self._system_sync_manager
+        system_sync_manager = self._resolve_system_sync_manager()
         if system_sync_manager is None:
             logger.debug(
                 "Skipping hardware sync because active backend has no system sync manager.",
@@ -634,42 +717,15 @@ This operation will overwrite the existing backend settings. Do you want to cont
         -----
         This method has no side effects on `SystemManager` state.
         """
-        if not self._supports_box_settings_cache_sync():
+        system_sync_manager = self._resolve_system_sync_manager()
+        if system_sync_manager is None:
             return BackendSettings()
-        if parallel is None:
-            parallel = True
-        boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
-        result = BackendSettings()
-        if not boxes:
-            return result
-        dump_box = getattr(self.backend_controller, "dump_box", None)
-        if not callable(dump_box):
-            return result
-
-        def _dump_box(box: Box) -> dict[str, Any]:
-            return cast(dict[str, Any], dump_box(box.id))
-
-        if not parallel:
-            for box in boxes:
-                result[box.id] = cast(dict[str, Any], dump_box(box.id))
-            return result
-
-        result.update(
-            run_parallel_map(
-                boxes,
-                _dump_box,
-                key=lambda box: box.id,
-                as_completed_order=True,
-                on_error=self._fallback_dump_box_result,
-            )
+        fetched = system_sync_manager.fetch_backend_settings_from_hardware(
+            experiment_system=self.experiment_system,
+            box_ids=box_ids,
+            parallel=parallel,
         )
-        return result
-
-    @staticmethod
-    def _fallback_dump_box_result(box: Box, exc: BaseException) -> dict[str, Any]:
-        """Log a box dump failure and return an empty fallback config."""
-        logger.exception("Failed to dump box %s", box.id, exc_info=exc)
-        return {}
+        return BackendSettings(fetched)
 
     def _sync_backend_settings_to_device_controller(
         self,
@@ -684,13 +740,14 @@ This operation will overwrite the existing backend settings. Do you want to cont
         backend_settings : BackendSettings | None, optional
             Settings to apply. If `None`, uses `self._backend_settings`.
         """
-        if not self._supports_box_settings_cache_sync():
+        system_sync_manager = self._resolve_system_sync_manager()
+        if system_sync_manager is None:
             return
         if backend_settings is None:
             backend_settings = self._backend_settings
-        update_cache = getattr(self.backend_controller, "update_box_config_cache", None)
-        if callable(update_cache):
-            update_cache(backend_settings)
+        system_sync_manager.sync_backend_settings_to_device_controller(
+            backend_settings=backend_settings,
+        )
 
     def _sync_backend_settings_to_experiment_system(
         self,
@@ -709,115 +766,19 @@ This operation will overwrite the existing backend settings. Do you want to cont
         -----
         Only synchronization-target ports are applied.
         """
-        updates: list[
-            tuple[
-                str,
-                int,
-                Literal["U", "L"] | None,
-                int | None,
-                int,
-                list[int],
-                int | None,
-            ]
-        ] = []
+        system_sync_manager = self._resolve_system_sync_manager()
+        if system_sync_manager is None:
+            return
         if backend_settings is None:
             backend_settings = self._backend_settings
-        for box_id, box_config in backend_settings.items():
-            ports_config = box_config.get("ports", {})
-            try:
-                box = self.experiment_system.get_box(box_id)
-            except KeyError:
-                logger.warning("Box %s is not found.", box_id)
-                continue
-            for experiment_port in box.ports:
-                if experiment_port.type in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
-                    continue
-                port_number = experiment_port.number
-                if not isinstance(port_number, int):
-                    continue
-                port_config = ports_config.get(port_number)
-                if not isinstance(port_config, dict):
-                    continue
-                direction = port_config.get("direction")
-                lo_freq = port_config.get("lo_freq")
-                lo_freq = int(lo_freq) if lo_freq is not None else None
-                cnco_freq = int(port_config["cnco_freq"])
-                if direction == "out":
-                    raw_sideband = port_config.get("sideband")
-                    sideband: Literal["U", "L"] | None = (
-                        raw_sideband if raw_sideband in ("U", "L") else None
-                    )
-                    fullscale_current = port_config.get("fullscale_current")
-                    fullscale_current = (
-                        int(fullscale_current)
-                        if fullscale_current is not None
-                        else None
-                    )
-                    fnco_freqs = [
-                        int(channel["fnco_freq"])
-                        for channel in port_config.get("channels", {}).values()
-                    ]
-                elif direction == "in":
-                    sideband = None
-                    fullscale_current = None
-                    fnco_freqs = [
-                        int(channel["fnco_freq"])
-                        for channel in port_config.get("runits", {}).values()
-                    ]
-                else:
-                    continue
-                channels = getattr(experiment_port, "channels", ())
-                expected_fnco_count = (
-                    len(channels)
-                    if isinstance(channels, tuple) and len(channels) > 0
-                    else None
-                )
-                if (
-                    expected_fnco_count is not None
-                    and len(fnco_freqs) != expected_fnco_count
-                ):
-                    logger.warning(
-                        "Skipping backend port sync for %s:%s due to fnco count mismatch "
-                        "(expected=%s, actual=%s).",
-                        box_id,
-                        port_number,
-                        expected_fnco_count,
-                        len(fnco_freqs),
-                    )
-                    continue
-                updates.append(
-                    (
-                        box_id,
-                        port_number,
-                        sideband,
-                        lo_freq,
-                        cnco_freq,
-                        fnco_freqs,
-                        fullscale_current,
-                    )
-                )
-        for (
-            box_id,
-            port_number,
-            sideband,
-            lo_freq,
-            cnco_freq,
-            fnco_freqs,
-            fullscale_current,
-        ) in updates:
-            self.experiment_system.control_system.set_port_params(
-                box_id=box_id,
-                port_number=port_number,
-                sideband=sideband,
-                lo_freq=lo_freq,
-                cnco_freq=cnco_freq,
-                fnco_freqs=fnco_freqs,
-                fullscale_current=fullscale_current,
-            )
+        system_sync_manager.sync_backend_settings_to_experiment_system(
+            experiment_system=self.experiment_system,
+            backend_settings=backend_settings,
+        )
 
     def _sync_experiment_system_to_backend_controller(self) -> None:
         """Rebuild backend-local topology via backend-specific sync manager."""
-        system_sync_manager = self._system_sync_manager
+        system_sync_manager = self._resolve_system_sync_manager()
         if system_sync_manager is None:
             logger.info(
                 "Skipping backend-controller topology sync because this backend has no system sync manager."
