@@ -52,12 +52,13 @@ result_avg.plot()
 ```python
 target = exp.qubit_labels[0]
 
-with exp.pulse_schedule([target]) as ps:
-    ps.add(target, exp.hpi_pulse[target])  # X90
-    ps.barrier()
-    ps.call(exp.measurement())             # readout
+schedule = qx.PulseSchedule()
+with schedule as s:
+    s.add(target, exp.hpi_pulse[target])  # X90
+    s.barrier()
+    s.call(exp.measurement())             # readout
 
-custom_result = exp.measure_schedule(ps, mode="avg", shots=1024)
+custom_result = exp.measure_schedule(schedule, mode="avg", shots=1024)
 custom_result.plot()
 ```
 

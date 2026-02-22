@@ -5,7 +5,7 @@ Qubex provides helpers to persist measurement results and experiment records for
 ## Save a measurement result
 
 ```python
-result = cli.measure({"Q00": [0.01 + 0.01j] * 16}, mode="avg", shots=1024)
+result = session.measure({"Q00": [0.01 + 0.01j] * 16}, mode="avg", shots=1024)
 record = result.save()
 print(record.file_name)
 ```

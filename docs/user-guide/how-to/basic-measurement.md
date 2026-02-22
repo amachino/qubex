@@ -8,13 +8,13 @@ Run a single measurement, visualize the result, and inspect the underlying data.
 
 ## Steps
 
-### 1. Create a measurement client
+### 1. Create a measurement session
 
 ```python
 import numpy as np
 from qubex.measurement import Measurement
 
-cli = Measurement(
+session = Measurement(
     chip_id="64Q",
     qubits=["Q00", "Q01"],
     config_dir="/path/to/config",
@@ -26,7 +26,7 @@ cli = Measurement(
 
 ```python
 # Required for real hardware. Skip in mock mode or offline tests.
-cli.connect()
+session.connect()
 ```
 
 ### 3. Execute a measurement
@@ -37,7 +37,7 @@ control_waveforms = {
     "Q01": np.full(16, 0.03),
 }
 
-result = cli.measure(
+result = session.measure(
     control_waveforms,
     mode="avg",
     shots=1024,
@@ -50,7 +50,7 @@ print(result.data)
 ### 4. Run a single-shot measurement
 
 ```python
-result = cli.measure(
+result = session.measure(
     control_waveforms,
     mode="single",
     shots=1024,
