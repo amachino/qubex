@@ -317,7 +317,7 @@ class Quel3ExecutionManager:
         sequencer = self._sequencer_builder.build(
             payload=payload,
             sequencer_factory=sequencer_factory,
-            default_sampling_period_ns=self._runtime_context.default_sampling_period,
+            default_sampling_period_ns=self._runtime_context.sampling_period,
         )
 
         async with create_quelware_client(
@@ -396,7 +396,7 @@ class Quel3ExecutionManager:
             payload=payload,
             shot_samples=shot_samples,
             sampling_period_ns=sampling_period_ns,
-            default_sampling_period=self._runtime_context.default_sampling_period,
+            backend_sampling_period=self._runtime_context.sampling_period,
             avg_sample_stride=self._runtime_context.measurement_result_avg_sample_stride,
         )
 
@@ -418,7 +418,7 @@ class Quel3ExecutionManager:
         payload: object,
         shot_samples: dict[str, dict[str, list[np.ndarray]]],
         sampling_period_ns: float | None,
-        default_sampling_period: float,
+        backend_sampling_period: float,
         avg_sample_stride: int,
     ) -> MeasurementResult:
         """Build canonical measurement result from per-shot capture samples."""
@@ -471,7 +471,7 @@ class Quel3ExecutionManager:
             sampling_period_ns=(
                 sampling_period_ns
                 if sampling_period_ns is not None
-                else default_sampling_period
+                else backend_sampling_period
             ),
             avg_sample_stride=avg_sample_stride,
         )

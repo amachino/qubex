@@ -102,7 +102,7 @@ def test_quel3_adapter_accepts_relaxed_schedule() -> None:
     )
 
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
         experiment_system=object(),  # type: ignore[arg-type]
     )
 
@@ -128,7 +128,7 @@ def test_quel3_adapter_rejects_capture_outside_pulse_duration() -> None:
         ),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
         experiment_system=object(),  # type: ignore[arg-type]
     )
 
@@ -158,7 +158,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
         ),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
         experiment_system=cast(
             Any,
             type(
@@ -217,7 +217,7 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
         experiment_system=cast(
             Any,
             type(
@@ -276,7 +276,7 @@ def test_quel3_adapter_uses_backend_alias_resolver_hook() -> None:
         "_BC",
         (),
         {
-            "DEFAULT_SAMPLING_PERIOD": 0.4,
+            "sampling_period": 0.4,
             "resolve_instrument_alias": staticmethod(lambda value: f"alias-{value}"),
         },
     )()
@@ -331,7 +331,7 @@ def test_quel3_adapter_uses_registry_for_output_target_labels() -> None:
             return "Q17" if label == target else label
 
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
         experiment_system=cast(
             Any,
             type(
@@ -374,7 +374,7 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 0.4})(),
+        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
         experiment_system=cast(
             Any,
             type(

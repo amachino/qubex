@@ -229,6 +229,7 @@ Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provi
 - Required now
   - `hash`
   - `is_connected`
+  - `sampling_period`
   - `execute(...)`
   - `connect(...)`
   - `disconnect()`

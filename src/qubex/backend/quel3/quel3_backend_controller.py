@@ -17,7 +17,7 @@ from .managers.execution_manager import ExecutionMode, Quel3ExecutionManager
 from .quel3_execution_payload import Quel3ExecutionPayload
 from .quel3_runtime_context import Quel3RuntimeContext
 
-QUEL3_DEFAULT_SAMPLING_PERIOD_NS = 0.4
+QUEL3_SAMPLING_PERIOD_NS = 0.4
 
 
 class Quel3BackendController(BackendController):
@@ -26,7 +26,6 @@ class Quel3BackendController(BackendController):
     MEASUREMENT_BACKEND_KIND: Literal["quel3"] = "quel3"
     MEASUREMENT_CONSTRAINT_MODE: Literal["quel3"] = "quel3"
     MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = 4
-    DEFAULT_SAMPLING_PERIOD: float = QUEL3_DEFAULT_SAMPLING_PERIOD_NS
 
     def __init__(
         self,
@@ -54,10 +53,10 @@ class Quel3BackendController(BackendController):
             Quelware API port. Defaults to 50051.
         """
         del config_path
-        self._default_sampling_period = (
+        self._sampling_period = (
             sampling_period_ns
             if sampling_period_ns is not None
-            else self.DEFAULT_SAMPLING_PERIOD
+            else QUEL3_SAMPLING_PERIOD_NS
         )
 
         self._runtime_context = Quel3RuntimeContext(
@@ -66,7 +65,7 @@ class Quel3BackendController(BackendController):
                 quelware_endpoint if quelware_endpoint is not None else "localhost"
             ),
             quelware_port=quelware_port if quelware_port is not None else 50051,
-            default_sampling_period=self._default_sampling_period,
+            sampling_period=self._sampling_period,
             measurement_result_avg_sample_stride=self.MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE,
         )
         self._connection_manager = Quel3ConnectionManager(
@@ -115,9 +114,9 @@ class Quel3BackendController(BackendController):
         return self._execution_manager.resolve_instrument_alias(target)
 
     @property
-    def default_sampling_period(self) -> float:
-        """Return instance-scoped default sampling period in ns."""
-        return self._default_sampling_period
+    def sampling_period(self) -> float:
+        """Return backend sampling period in ns."""
+        return self._sampling_period
 
     def execute(
         self,

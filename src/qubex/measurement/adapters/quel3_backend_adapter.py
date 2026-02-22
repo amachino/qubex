@@ -40,15 +40,13 @@ class Quel3MeasurementBackendAdapter:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
         if constraint_profile is None:
-            sampling_period = getattr(
-                backend_controller, "DEFAULT_SAMPLING_PERIOD", None
-            )
+            sampling_period = getattr(backend_controller, "sampling_period", None)
             if not isinstance(sampling_period, (float, int)):
                 raise ValueError(
-                    "Quel3MeasurementBackendAdapter requires a relaxed constraint profile or backend DEFAULT_SAMPLING_PERIOD."
+                    "Quel3MeasurementBackendAdapter requires a relaxed constraint profile or backend sampling_period."
                 )
             constraint_profile = MeasurementConstraintProfile.quel3(
-                sampling_period_ns=float(sampling_period)
+                sampling_period_ns=sampling_period
             )
         self._constraint_profile = constraint_profile
 

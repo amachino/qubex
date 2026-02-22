@@ -95,6 +95,7 @@ class Quel1BackendController(BackendController):
         config_path: str | Path | None = None,
     ):
         self._driver = load_quel1_driver()
+        self._sampling_period = self._driver.DEFAULT_SAMPLING_PERIOD
 
         try:
             if config_path is None:
@@ -110,15 +111,22 @@ class Quel1BackendController(BackendController):
         self._box_options: dict[str, tuple[str, ...]] = {}
         self._runtime_context = Quel1RuntimeContext()
         self._connection_manager = Quel1ConnectionManager(
-            runtime_context=self._runtime_context
+            runtime_context=self._runtime_context,
         )
-        self._clock_manager = Quel1ClockManager(runtime_context=self._runtime_context)
+        self._clock_manager = Quel1ClockManager(
+            runtime_context=self._runtime_context,
+        )
         self._execution_manager = Quel1ExecutionManager(
-            runtime_context=self._runtime_context
+            runtime_context=self._runtime_context,
         )
         self._configuration_manager = Quel1ConfigurationManager(
-            runtime_context=self._runtime_context
+            runtime_context=self._runtime_context,
         )
+
+    @property
+    def sampling_period(self) -> float:
+        """Return backend sampling period in ns."""
+        return self._sampling_period
 
     @property
     def is_connected(self) -> bool:
@@ -131,17 +139,6 @@ class Quel1BackendController(BackendController):
         if self._qubecalib is None:
             raise ModuleNotFoundError(name="qubecalib")
         return self._qubecalib
-
-    def get_qubecalib(self) -> QubeCalib:
-        """
-        Return the underlying QubeCalib instance.
-
-        Returns
-        -------
-        QubeCalib
-            QubeCalib instance.
-        """
-        return self.qubecalib
 
     @property
     def box_config(self) -> dict[str, Any]:

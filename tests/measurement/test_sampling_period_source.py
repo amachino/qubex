@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
@@ -11,7 +10,7 @@ from qubex.measurement.measurement_constraint_profile import (
 
 def _make_measurement_client_with_backend(
     *,
-    default_sampling_period: float | None,
+    sampling_period: float,
     constraint_mode: str | None = None,
 ) -> MeasurementClient:
     measurement = MeasurementClient(
@@ -21,9 +20,7 @@ def _make_measurement_client_with_backend(
         connect_devices=False,
     )
 
-    backend_attrs: dict[str, object] = {}
-    if default_sampling_period is not None:
-        backend_attrs["DEFAULT_SAMPLING_PERIOD"] = default_sampling_period
+    backend_attrs: dict[str, object] = {"sampling_period": sampling_period}
     if constraint_mode is not None:
         backend_attrs["MEASUREMENT_CONSTRAINT_MODE"] = constraint_mode
     backend_controller = type("_BC", (), backend_attrs)()
@@ -59,22 +56,15 @@ def _make_measurement_client_with_backend(
 
 
 def test_sampling_period_uses_backend_controller_default() -> None:
-    """Given backend dt, when resolving sampling period, then backend dt is returned."""
-    measurement = _make_measurement_client_with_backend(default_sampling_period=4.0)
+    """Given backend dt, when resolving sampling period, backend dt is returned."""
+    measurement = _make_measurement_client_with_backend(sampling_period=4.0)
 
     assert measurement.sampling_period == 4.0
 
 
-def test_sampling_period_falls_back_when_backend_default_is_missing() -> None:
-    """Given backend without dt, when resolving sampling period, then legacy default is returned."""
-    measurement = _make_measurement_client_with_backend(default_sampling_period=None)
-
-    assert measurement.sampling_period == SAMPLING_PERIOD
-
-
 def test_schedule_builder_is_initialized_with_resolved_sampling_period() -> None:
     """Given backend dt, when creating schedule builder, then builder carries the resolved period."""
-    measurement = _make_measurement_client_with_backend(default_sampling_period=8.0)
+    measurement = _make_measurement_client_with_backend(sampling_period=8.0)
 
     assert measurement.schedule_builder.sampling_period == 8.0
 
@@ -82,7 +72,7 @@ def test_schedule_builder_is_initialized_with_resolved_sampling_period() -> None
 def test_constraint_profile_uses_quel3_mode_hint() -> None:
     """Given quel3 mode hint, when resolving profile, then quel3 constraints are returned."""
     measurement = _make_measurement_client_with_backend(
-        default_sampling_period=0.4,
+        sampling_period=0.4,
         constraint_mode="quel3",
     )
 

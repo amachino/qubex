@@ -36,6 +36,11 @@ class BackendController(Protocol):
         """Return whether backend resources are connected."""
         ...
 
+    @property
+    def sampling_period(self) -> float:
+        """Return backend sampling period in ns."""
+        ...
+
     def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
         """Execute prepared backend request payload."""
         ...

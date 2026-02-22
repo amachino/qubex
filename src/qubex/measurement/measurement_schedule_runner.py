@@ -11,7 +11,6 @@ from qubex.backend import (
 )
 from qubex.backend.controller_types import BackendBoxConfigProvider
 from qubex.backend.quel1 import (
-    SAMPLING_PERIOD,
     ExecutionMode,
 )
 
@@ -140,10 +139,7 @@ class MeasurementScheduleRunner:
         backend_controller: BackendController,
     ) -> float:
         """Resolve sampling period (ns) from backend-controller contract."""
-        sampling_period = getattr(backend_controller, "DEFAULT_SAMPLING_PERIOD", None)
-        if isinstance(sampling_period, (int, float)):
-            return float(sampling_period)
-        return SAMPLING_PERIOD
+        return backend_controller.sampling_period
 
     @classmethod
     def _resolve_constraint_profile(

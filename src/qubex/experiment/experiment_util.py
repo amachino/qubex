@@ -53,7 +53,7 @@ class ExperimentUtil:
         backend_controller = getattr(SystemManager.shared(), "backend_controller", None)
         backend_sampling_period = getattr(
             backend_controller,
-            "DEFAULT_SAMPLING_PERIOD",
+            "sampling_period",
             None,
         )
         if isinstance(backend_sampling_period, (int, float)):

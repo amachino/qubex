@@ -89,6 +89,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
 
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
+        sampling_period: ClassVar[float] = 2.0
 
         def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
             called["execute_request"] = request
@@ -145,6 +146,7 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
 
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
+        sampling_period: ClassVar[float] = 2.0
 
         def execute(
             self,
@@ -199,6 +201,8 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
             return request
 
     class _BackendController:
+        sampling_period: ClassVar[float] = 2.0
+
         def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
             _ = request
             return backend_result
@@ -299,7 +303,7 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
         _ResultFactory,
     )
 
-    backend_controller = type("_BC", (), {"DEFAULT_SAMPLING_PERIOD": 4.0})()
+    backend_controller = type("_BC", (), {"sampling_period": 4.0})()
     experiment_system = object()
 
     runner = MeasurementScheduleRunner.create_default(
@@ -342,7 +346,7 @@ def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
         "_BC",
         (),
         {
-            "DEFAULT_SAMPLING_PERIOD": 0.4,
+            "sampling_period": 0.4,
             "MEASUREMENT_CONSTRAINT_MODE": "quel3",
         },
     )()
@@ -407,7 +411,7 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
 
     class _Controller:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
-        DEFAULT_SAMPLING_PERIOD: ClassVar[float] = 0.4
+        sampling_period: ClassVar[float] = 0.4
         MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
 
         def create_measurement_backend_adapter(
@@ -502,7 +506,7 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
         "_BC",
         (),
         {
-            "DEFAULT_SAMPLING_PERIOD": 0.4,
+            "sampling_period": 0.4,
             "MEASUREMENT_CONSTRAINT_MODE": "quel3",
             "MEASUREMENT_BACKEND_KIND": "quel3",
         },

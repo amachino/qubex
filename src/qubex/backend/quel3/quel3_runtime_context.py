@@ -31,8 +31,8 @@ class Quel3RuntimeContextReader(Protocol):
         ...
 
     @property
-    def default_sampling_period(self) -> float:
-        """Return default sampling period in ns."""
+    def sampling_period(self) -> float:
+        """Return backend sampling period in ns."""
         ...
 
     @property
@@ -50,14 +50,14 @@ class Quel3RuntimeContext:
         alias_map: Mapping[str, str],
         quelware_endpoint: str,
         quelware_port: int,
-        default_sampling_period: float,
+        sampling_period: float,
         measurement_result_avg_sample_stride: int,
     ) -> None:
         self._is_connected = False
         self._alias_map: dict[str, str] = dict(alias_map)
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
-        self._default_sampling_period = default_sampling_period
+        self._sampling_period = sampling_period
         self._measurement_result_avg_sample_stride = (
             measurement_result_avg_sample_stride
         )
@@ -83,9 +83,9 @@ class Quel3RuntimeContext:
         return self._quelware_port
 
     @property
-    def default_sampling_period(self) -> float:
-        """Return default sampling period in ns."""
-        return self._default_sampling_period
+    def sampling_period(self) -> float:
+        """Return backend sampling period in ns."""
+        return self._sampling_period
 
     @property
     def measurement_result_avg_sample_stride(self) -> int:

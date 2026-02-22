@@ -11,9 +11,7 @@ def test_discretize_time_range_uses_backend_sampling_period_by_default(
     monkeypatch,
 ) -> None:
     """Given backend dt, when discretizing without dt, then utility uses backend sampling period."""
-    backend_controller = type(
-        "_BackendController", (), {"DEFAULT_SAMPLING_PERIOD": 0.4}
-    )()
+    backend_controller = type("_BackendController", (), {"sampling_period": 0.4})()
     system_manager = type(
         "_SystemManager",
         (),

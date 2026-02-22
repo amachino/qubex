@@ -133,7 +133,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         payload=payload,
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
-        default_sampling_period=0.4,
+        backend_sampling_period=0.4,
         avg_sample_stride=4,
     )
 
@@ -168,7 +168,7 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
         payload=payload,
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
-        default_sampling_period=0.4,
+        backend_sampling_period=0.4,
         avg_sample_stride=4,
     )
 
@@ -185,7 +185,7 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
 
     controller = Quel3BackendController()
 
-    assert pytest.approx(0.4) == controller.DEFAULT_SAMPLING_PERIOD
+    assert pytest.approx(0.4) == controller.sampling_period
     assert controller._runtime_context.quelware_endpoint == "localhost"  # noqa: SLF001
     assert controller._runtime_context.quelware_port == 50051  # noqa: SLF001
 

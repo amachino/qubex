@@ -19,7 +19,6 @@ from qubex.backend import (
 )
 from qubex.backend.controller_types import BackendBoxConfigProvider
 from qubex.backend.quel1 import (
-    SAMPLING_PERIOD,
     ExecutionMode,
 )
 from qubex.typing import IQArray, MeasurementMode, TargetMap
@@ -140,27 +139,16 @@ class MeasurementExecutionService:
     @property
     def constraint_profile(self) -> MeasurementConstraintProfile:
         """Resolve backend constraint profile from backend-controller hints."""
-        try:
-            profile = getattr(
-                self.backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None
-            )
-            mode = getattr(
-                self.backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "quel1"
-            )
-            sampling_period = getattr(
-                self.backend_controller, "DEFAULT_SAMPLING_PERIOD", None
-            )
-        except Exception:
-            return MeasurementConstraintProfile.quel1(SAMPLING_PERIOD)
+        profile = getattr(
+            self.backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None
+        )
+        mode = getattr(self.backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "quel1")
+        sampling_period = self.backend_controller.sampling_period
         if isinstance(profile, MeasurementConstraintProfile):
             return profile
         if mode == "quel3":
-            if isinstance(sampling_period, (int, float)):
-                return MeasurementConstraintProfile.quel3(float(sampling_period))
-            return MeasurementConstraintProfile.quel3(SAMPLING_PERIOD)
-        if isinstance(sampling_period, (int, float)):
-            return MeasurementConstraintProfile.quel1(float(sampling_period))
-        return MeasurementConstraintProfile.quel1(SAMPLING_PERIOD)
+            return MeasurementConstraintProfile.quel3(sampling_period)
+        return MeasurementConstraintProfile.quel1(sampling_period)
 
     @property
     def measurement_schedule_runner(self) -> MeasurementScheduleRunner:
