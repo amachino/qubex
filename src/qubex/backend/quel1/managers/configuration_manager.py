@@ -252,7 +252,7 @@ class Quel1ConfigurationManager:
         reconnect: bool,
     ) -> Quel1Box:
         """Resolve a box from runtime context or create it lazily."""
-        self._runtime_context.ensure_box_available(box_name)
+        self._runtime_context.validate_box_availability(box_name)
         boxpool = self._runtime_context.boxpool_or_none()
         if boxpool is not None and box_name in boxpool._boxes:
             return boxpool._boxes[box_name][0]

@@ -41,7 +41,7 @@ class Quel1RuntimeContextReader(Protocol):
         """Return currently defined box names."""
         ...
 
-    def ensure_box_available(self, box_name: str) -> None:
+    def validate_box_availability(self, box_name: str) -> None:
         """Validate that the target box exists in current system configuration."""
         ...
 
@@ -277,7 +277,7 @@ class Quel1RuntimeContext:
             gen_resource_map=None,
         )
 
-    def ensure_box_available(self, box_name: str) -> None:
+    def validate_box_availability(self, box_name: str) -> None:
         """Validate that the target box exists in current system configuration."""
         available_boxes = self.available_boxes
         if box_name not in available_boxes:

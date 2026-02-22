@@ -185,7 +185,7 @@ class Quel1ConnectionManager:
         **kwargs: object,
     ) -> Quel1Box:
         """Linkup one box and return the connected box."""
-        self._runtime_context.ensure_box_available(box_name)
+        self._runtime_context.validate_box_availability(box_name)
         box = self._get_existing_or_create_box(box_name=box_name, reconnect=False)
         if noise_threshold is None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
@@ -247,7 +247,7 @@ class Quel1ConnectionManager:
         noise_threshold: int | None,
     ) -> None:
         """Relink one box."""
-        self._runtime_context.ensure_box_available(box_name)
+        self._runtime_context.validate_box_availability(box_name)
         if noise_threshold is None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
         box = self._get_existing_or_create_box(box_name=box_name, reconnect=False)
@@ -424,7 +424,7 @@ class Quel1ConnectionManager:
 
     def _initialize_box_awg_and_capunits(self, box_name: str) -> None:
         """Initialize AWG and capture units for one box."""
-        self._runtime_context.ensure_box_available(box_name)
+        self._runtime_context.validate_box_availability(box_name)
         boxpool = self.boxpool
         if boxpool is None or box_name not in boxpool._boxes:
             raise ValueError(

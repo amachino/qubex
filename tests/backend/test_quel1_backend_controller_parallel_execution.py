@@ -202,7 +202,7 @@ def test_linkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None
     controller._connection_manager.set_boxpool(cast(Any, _FakeBoxPool(fake_box)))
 
     monkeypatch.setattr(
-        controller._runtime_context, "ensure_box_available", lambda _: None
+        controller._runtime_context, "validate_box_availability", lambda _: None
     )
     monkeypatch.setattr(
         controller._runtime_context.qubecalib.system_config_database,
@@ -243,7 +243,7 @@ def test_relinkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> No
     controller._connection_manager.set_boxpool(cast(Any, _FakeBoxPool(fake_box)))
 
     monkeypatch.setattr(
-        controller._runtime_context, "ensure_box_available", lambda _: None
+        controller._runtime_context, "validate_box_availability", lambda _: None
     )
     monkeypatch.setattr(
         controller._runtime_context.qubecalib.system_config_database,

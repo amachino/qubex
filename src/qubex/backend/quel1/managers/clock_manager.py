@@ -25,7 +25,7 @@ class Quel1ClockManager:
         """Read sequencer clocks for selected boxes."""
         result: list[tuple[bool, int, int]] = []
         for box_name in box_list:
-            self._runtime_context.ensure_box_available(box_name)
+            self._runtime_context.validate_box_availability(box_name)
             result.append(self._read_clock_at_ip(self._resolve_box_sss_ip(box_name)))
         return result
 

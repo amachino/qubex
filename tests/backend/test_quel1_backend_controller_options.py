@@ -60,7 +60,7 @@ def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -
     fake_box = _FakeBox("quel1se-riken8", {0: False})
     _override_driver_classes(controller, Quel1ConfigOption=_FakeQuel1ConfigOption)
     monkeypatch.setattr(
-        controller._runtime_context, "ensure_box_available", lambda _: None
+        controller._runtime_context, "validate_box_availability", lambda _: None
     )
     monkeypatch.setattr(
         controller._connection_manager,
@@ -82,7 +82,7 @@ def test_relinkup_maps_explicit_options(monkeypatch: pytest.MonkeyPatch) -> None
     fake_box = _FakeBox("quel1se-riken8", {0: False})
     _override_driver_classes(controller, Quel1ConfigOption=_FakeQuel1ConfigOption)
     monkeypatch.setattr(
-        controller._runtime_context, "ensure_box_available", lambda _: None
+        controller._runtime_context, "validate_box_availability", lambda _: None
     )
     monkeypatch.setattr(
         controller._connection_manager,
@@ -115,7 +115,7 @@ def test_relinkup_rejects_conflicting_awg_options(
     fake_box = _FakeBox("quel1se-riken8", {0: False})
     _override_driver_classes(controller, Quel1ConfigOption=_FakeQuel1ConfigOption)
     monkeypatch.setattr(
-        controller._runtime_context, "ensure_box_available", lambda _: None
+        controller._runtime_context, "validate_box_availability", lambda _: None
     )
     monkeypatch.setattr(
         controller._connection_manager,
@@ -142,7 +142,7 @@ def test_linkup_uses_relaxed_noise_threshold_by_default(
     fake_box.reconnect = _fake_reconnect  # type: ignore[method-assign]
 
     monkeypatch.setattr(
-        controller._runtime_context, "ensure_box_available", lambda _: None
+        controller._runtime_context, "validate_box_availability", lambda _: None
     )
     monkeypatch.setattr(
         controller._connection_manager,
@@ -173,7 +173,7 @@ def test_linkup_keeps_explicit_noise_threshold(
     fake_box.reconnect = _fake_reconnect  # type: ignore[method-assign]
 
     monkeypatch.setattr(
-        controller._runtime_context, "ensure_box_available", lambda _: None
+        controller._runtime_context, "validate_box_availability", lambda _: None
     )
     monkeypatch.setattr(
         controller._connection_manager,
