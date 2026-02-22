@@ -15,6 +15,8 @@ from .adapters import (
 )
 from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
 from .measurement import Measurement
+from .measurement_amplification_service import MeasurementAmplificationService
+from .measurement_classification_service import MeasurementClassificationService
 from .measurement_client import MeasurementClient
 from .measurement_config_factory import MeasurementConfigFactory
 from .measurement_constraint_profile import MeasurementConstraintProfile
@@ -41,7 +43,9 @@ __all__ = [
     "MeasureMode",
     "MeasureResult",
     "Measurement",
+    "MeasurementAmplificationService",
     "MeasurementBackendAdapter",
+    "MeasurementClassificationService",
     "MeasurementClient",
     "MeasurementConfigFactory",
     "MeasurementConstraintProfile",

@@ -27,6 +27,8 @@ Define a shared architecture for QuEL-1 and QuEL-3 measurement execution paths i
   - `measurement -> backend`
   - `experiment -> measurement`
 - `MeasurementExecutionService` owns measurement execution orchestration in the measurement layer.
+- `MeasurementClassificationService` owns classifier map updates and confusion-matrix helpers.
+- `MeasurementAmplificationService` owns temporary DC-voltage application operations.
 - `MeasurementScheduleRunner` is an internal execution component used by
   `MeasurementExecutionService` for request construction and result conversion.
 - `MeasurementSessionService` may call `BackendController` directly for
@@ -46,6 +48,8 @@ classDiagram
   class MeasurementSessionService
   class MeasurementContext
   class MeasurementExecutionService
+  class MeasurementClassificationService
+  class MeasurementAmplificationService
   class SystemManager
   class MeasurementScheduleRunner
   class BackendController {
@@ -70,11 +74,15 @@ classDiagram
   Measurement *-- MeasurementContext : delegates
   Measurement *-- MeasurementSessionService : delegates
   Measurement *-- MeasurementExecutionService : delegates
+  Measurement *-- MeasurementClassificationService : delegates
+  Measurement *-- MeasurementAmplificationService : delegates
 
   MeasurementContext --> SystemManager : reads ExperimentSystem context
   MeasurementSessionService --> BackendController : connect/disconnect (required)
   MeasurementSessionService ..> BackendController : check_*/linkup/relinkup (optional)
   MeasurementSessionService --> SystemManager : syncs and coordinates session state
+  MeasurementAmplificationService --> MeasurementContext : resolves target/mux/control params
+  MeasurementClassificationService --> MeasurementExecutionService : shared classifier mapping
   MeasurementExecutionService --> MeasurementSessionService : resolves active session/controller
   MeasurementExecutionService *-- MeasurementScheduleRunner : uses
   MeasurementScheduleRunner --> BackendController : execute(request)
@@ -99,14 +107,19 @@ classDiagram
   - Public API facade.
   - Owns input/output contract and compatibility surface.
   - Delegates non-API logic to `MeasurementContext`,
-    `MeasurementSessionService`, and `MeasurementExecutionService`.
+    `MeasurementSessionService`, `MeasurementExecutionService`,
+    `MeasurementClassificationService`, and `MeasurementAmplificationService`.
 
 - `MeasurementContext`
   - Context provider for measurement features.
   - Provides `ExperimentSystem`-derived information through `SystemManager`.
   - Owns read/query helpers for targets, frequencies, and related context access.
-  - Owns classifier update and confusion-matrix related logic.
   - Does not resolve active backend/controller session state.
+
+- `MeasurementClassificationService`
+  - Classifier-state helper service on measurement side.
+  - Owns classifier map update operations and confusion-matrix helper APIs.
+  - Provides shared classifier mapping consumed by `MeasurementExecutionService`.
 
 - `MeasurementSessionService`
   - Session lifecycle and connectivity service on measurement side.
@@ -125,6 +138,11 @@ classDiagram
   - Resolves active backend/controller session state via
     `MeasurementSessionService`.
   - Executes measurement requests through `BackendController.execute(...)`.
+
+- `MeasurementAmplificationService`
+  - Temporary amplification/DC operation service on measurement side.
+  - Owns target-to-mux resolution and DC-voltage application context handling.
+  - Uses `MeasurementContext`/`ExperimentSystem` to resolve control metadata.
 
 - `MeasurementScheduleRunner`
   - Internal execution component used by `MeasurementExecutionService`.
@@ -199,10 +217,11 @@ Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provi
 | `execute_measurement_schedule`, `execute`, `measure`, `measure_noise` | `MeasurementExecutionService` |
 | `create_measurement_config`, `build_measurement_schedule` | `MeasurementExecutionService` |
 | `sampling_period`, `constraint_profile` | `MeasurementExecutionService` |
+| `apply_dc_voltages` | `MeasurementAmplificationService` |
 | `chip_id`, `targets`, `control_params` | `MeasurementContext` |
 | `nco_frequencies`, `awg_frequencies`, `get_awg_frequency`, `get_diff_frequency` | `MeasurementContext` |
 | `experiment_system` and other ExperimentSystem-derived context queries | `MeasurementContext` |
-| classifier APIs and confusion-matrix APIs | `MeasurementContext` |
+| classifier APIs and confusion-matrix APIs | `MeasurementClassificationService` |
 
 ## Session Lifecycle Sequence
 

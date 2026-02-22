@@ -53,6 +53,29 @@ Migrate the current implementation to the target architecture defined in `measur
   - `uv run pytest tests/measurement/test_measurement_api_delegation.py`
   - `uv run pytest tests/measurement/test_measurement_ordering.py`
 
+### Step 2A: Delegate classifier and DC amplification responsibilities from `MeasurementClient`
+
+- Purpose
+  - Remove classifier-state and temporary DC-operation ownership from facade.
+- Main changes
+  - Add `src/qubex/measurement/measurement_classification_service.py`.
+  - Add `src/qubex/measurement/measurement_amplification_service.py`.
+  - Delegate `classifiers`, `update_classifiers`,
+    `get_confusion_matrix`, and `get_inverse_confusion_matrix` from
+    `MeasurementClient` to `MeasurementClassificationService`.
+  - Delegate `apply_dc_voltages` from `MeasurementClient` to
+    `MeasurementAmplificationService`.
+  - Keep `MeasurementExecutionService` classifier mapping shared from
+    `MeasurementClassificationService`.
+- Behavior-preserving guardrails
+  - Keep `MeasurementClient` public method names/signatures/return types unchanged.
+  - Preserve confusion-matrix normalization and Kronecker-product semantics.
+  - Preserve target-to-mux-to-voltage resolution behavior for temporary DC operations.
+- Verification
+  - `uv run pytest tests/measurement/test_measurement_classification_service.py`
+  - `uv run pytest tests/measurement/test_measurement_amplification_service.py`
+  - `uv run pytest tests/measurement/test_measurement_api_delegation.py`
+
 ### Step 3: Internalize `MeasurementScheduleExecutor` as `MeasurementScheduleRunner`
 
 - Purpose
@@ -176,6 +199,7 @@ Migrate the current implementation to the target architecture defined in `measur
 ## Done Criteria
 
 - `Measurement` is API-focused and delegates non-API responsibilities to `MeasurementContext`, `MeasurementSessionService`, and `MeasurementExecutionService`.
+- `Measurement` is API-focused and delegates non-API responsibilities to `MeasurementContext`, `MeasurementSessionService`, `MeasurementExecutionService`, `MeasurementClassificationService`, and `MeasurementAmplificationService`.
 - Measurement-layer execution boundary call is only `BackendController.execute(...)`.
 - QuEL-1 and QuEL-3 controllers both follow manager-delegation structure.
 - `SystemManager` remains focused on state synchronization and is not the owner of backend operation implementations.

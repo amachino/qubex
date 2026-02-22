@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import MethodType
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from qxpulse import PulseSchedule
@@ -27,6 +28,7 @@ from qubex.measurement.models.measure_result import (
     MultipleMeasureResult,
 )
 from qubex.measurement.models.measurement_result import MeasurementResult
+from qubex.typing import TargetMap
 
 
 def _make_config() -> MeasurementConfig:
@@ -536,3 +538,78 @@ def test_disconnect_delegates_to_session_service() -> None:
     measurement.disconnect()
 
     assert called["disconnect"] == 1
+
+
+def test_classifier_apis_delegate_to_classification_service() -> None:
+    """Given classification API calls, when invoked, then they delegate to classification service."""
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    classifiers = {"Q00": object()}
+    confusion = np.array([[1.0]])
+    inverse = np.array([[2.0]])
+    called: dict[str, object] = {}
+
+    class _ClassificationService:
+        @property
+        def classifiers(self) -> TargetMap:  # type: ignore[type-arg]
+            return classifiers
+
+        def update_classifiers(self, new_classifiers: TargetMap) -> None:  # type: ignore[type-arg]
+            called["updated"] = new_classifiers
+
+        def get_confusion_matrix(self, targets: list[str]) -> np.ndarray:
+            called["confusion_targets"] = targets
+            return confusion
+
+        def get_inverse_confusion_matrix(self, targets: list[str]) -> np.ndarray:
+            called["inverse_targets"] = targets
+            return inverse
+
+    measurement.__dict__["_classification_service"] = _ClassificationService()
+
+    updated = cast(TargetMap, {"Q01": object()})  # type: ignore[type-arg]
+    assert measurement.classifiers is classifiers
+    measurement.update_classifiers(updated)
+    assert called["updated"] is updated
+    assert np.array_equal(measurement.get_confusion_matrix(["Q00"]), confusion)
+    assert np.array_equal(
+        measurement.get_inverse_confusion_matrix(["Q00"]),
+        inverse,
+    )
+    assert called["confusion_targets"] == ["Q00"]
+    assert called["inverse_targets"] == ["Q00"]
+
+
+def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
+    """Given DC-voltage API call, when context is entered, then it delegates to amplification service."""
+    measurement = MeasurementClient(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called: dict[str, object] = {}
+
+    class _AmplificationService:
+        @contextmanager
+        def apply_dc_voltages(self, targets: str | list[str]):  # type: ignore[no-untyped-def]
+            called["targets"] = targets
+            called["entered"] = True
+            try:
+                yield
+            finally:
+                called["exited"] = True
+
+    measurement.__dict__["_amplification_service"] = _AmplificationService()
+
+    with measurement.apply_dc_voltages(["Q00"]):
+        called["inside"] = True
+
+    assert called["targets"] == ["Q00"]
+    assert called["entered"] is True
+    assert called["inside"] is True
+    assert called["exited"] is True

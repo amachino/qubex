@@ -5,11 +5,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
-from functools import reduce
 from pathlib import Path
 from typing import Final
 
-import numpy as np
 import numpy.typing as npt
 from qxpulse import PulseSchedule, RampType
 
@@ -23,7 +21,6 @@ from qubex.backend import (
     SystemManager,
     Target,
 )
-from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.backend.quel1 import ExecutionMode
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
@@ -33,6 +30,8 @@ from qubex.measurement.models.measurement_result import (
 from qubex.typing import ConfigurationMode, IQArray, MeasurementMode, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
+from .measurement_amplification_service import MeasurementAmplificationService
+from .measurement_classification_service import MeasurementClassificationService
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_context import MeasurementContext
 from .measurement_execution_service import MeasurementExecutionService
@@ -58,8 +57,9 @@ class MeasurementClient:
     (`MeasurementContext`), configuration/backend lifecycle
     (`MeasurementSessionService`), schedule assembly
     (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), and execution
-    orchestration (`MeasurementExecutionService`). It also keeps optional state
-    classifiers used during readout post-processing.
+    orchestration (`MeasurementExecutionService`), classifier state
+    (`MeasurementClassificationService`), and temporary DC operations
+    (`MeasurementAmplificationService`).
 
     Notes
     -----
@@ -128,11 +128,14 @@ class MeasurementClient:
         self._qubits: Final = list(qubits)
         self._execution_mode: Final[ExecutionMode | None] = _execution_mode
         self._clock_health_checks: Final[bool | None] = _clock_health_checks
-        self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
         self._context = MeasurementContext(
             system_manager=self._system_manager,
             qubits=self._qubits,
+        )
+        self._classification_service = MeasurementClassificationService(classifiers={})
+        self._amplification_service = MeasurementAmplificationService(
+            context=self._context
         )
         self._session_service = MeasurementSessionService(
             system_manager=self._system_manager,
@@ -141,7 +144,7 @@ class MeasurementClient:
         self._execution_service = MeasurementExecutionService(
             context=self._context,
             session_service=self._session_service,
-            classifiers=self._classifiers,
+            classifiers=self._classification_service.classifiers,
             execution_mode=self._execution_mode,
             clock_health_checks=self._clock_health_checks,
         )
@@ -257,6 +260,16 @@ class MeasurementClient:
         return self._execution_service
 
     @property
+    def classification_service(self) -> MeasurementClassificationService:
+        """Return classification service."""
+        return self._classification_service
+
+    @property
+    def amplification_service(self) -> MeasurementAmplificationService:
+        """Return amplification service."""
+        return self._amplification_service
+
+    @property
     def pulse_factory(self) -> MeasurementPulseFactory:
         """Create a pulse factory from current system state."""
         return self.execution_service.pulse_factory
@@ -335,7 +348,7 @@ class MeasurementClient:
     @property
     def classifiers(self) -> TargetMap[StateClassifier]:
         """Get the state classifiers."""
-        return self._classifiers
+        return self.classification_service.classifiers
 
     def get_awg_frequency(self, target: str) -> float:
         """
@@ -371,8 +384,7 @@ class MeasurementClient:
 
     def update_classifiers(self, classifiers: TargetMap[StateClassifier]) -> None:
         """Update the state classifiers."""
-        for target, classifier in classifiers.items():
-            self._classifiers[target] = classifier  # type: ignore
+        self.classification_service.update_classifiers(classifiers)
 
     def get_confusion_matrix(
         self,
@@ -391,13 +403,7 @@ class MeasurementClient:
         npt.NDArray
             Kronecker-product confusion matrix.
         """
-        targets = list(targets)
-        confusion_matrices = []
-        for target in targets:
-            cm = self.classifiers[target].confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
-        return reduce(np.kron, confusion_matrices)
+        return self.classification_service.get_confusion_matrix(targets)
 
     def get_inverse_confusion_matrix(
         self,
@@ -416,9 +422,7 @@ class MeasurementClient:
         npt.NDArray
             Inverse confusion matrix.
         """
-        targets = list(targets)
-        confusion_matrix = self.get_confusion_matrix(targets)
-        return np.linalg.inv(confusion_matrix)
+        return self.classification_service.get_inverse_confusion_matrix(targets)
 
     def is_connected(self) -> bool:
         """
@@ -547,17 +551,7 @@ class MeasurementClient:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
-        if isinstance(targets, str):
-            targets = [targets]
-        qubits = []
-        for target in targets:
-            qubit = self.experiment_system.resolve_qubit_label(target)
-            qubits.append(qubit)
-        muxes = {
-            self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
-        }
-        voltages = {mux + 1: self.control_params.get_dc_voltage(mux) for mux in muxes}
-        with dc_voltage(voltages):
+        with self.amplification_service.apply_dc_voltages(targets):
             yield
 
     def execute_measurement_schedule(
