@@ -798,15 +798,14 @@ class Quel1BackendController(BackendController):
         """Execute a backend request using QuEL-1 execution defaults."""
         from .quel1_backend_executor import Quel1BackendExecutor
 
-        return self._execution_manager.execute(
-            request=request,
+        executor = Quel1BackendExecutor(
+            backend_controller=self,
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
-            create_default_executor=lambda mode, clock: Quel1BackendExecutor(
-                backend_controller=self,
-                execution_mode=mode,
-                clock_health_checks=clock,
-            ),
+        )
+        return self._execution_manager.execute(
+            request=request,
+            executor=executor,
         )
 
     def get_box(self, box_name: str) -> Quel1Box:

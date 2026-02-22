@@ -17,7 +17,6 @@ from qubex.backend.quel1.compat.parallel_action_builder import (
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
     SequencerExecutionEngine,
 )
-from qubex.backend.quel1.quel1_backend_constants import ExecutionMode
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
@@ -33,32 +32,23 @@ class Quel1ExecutionManager:
         self,
         *,
         request: BackendExecutionRequest,
-        execution_mode: ExecutionMode | None,
-        clock_health_checks: bool | None,
-        create_default_executor: Callable[
-            [ExecutionMode | None, bool | None], BackendExecutor
-        ],
+        executor: BackendExecutor,
     ) -> BackendExecutionResult:
         """
-        Execute a prepared backend request with optional execution overrides.
+        Execute a prepared backend request with a configured executor.
 
         Parameters
         ----------
         request : BackendExecutionRequest
             Backend execution request.
-        execution_mode : ExecutionMode | None
-            Execution mode override.
-        clock_health_checks : bool | None
-            Clock health check override for parallel mode.
-        create_default_executor : Callable[[ExecutionMode | None, bool | None], BackendExecutor]
-            Default backend-executor factory.
+        executor : BackendExecutor
+            Backend executor that handles request execution.
 
         Returns
         -------
         BackendExecutionResult
             Backend-specific execution result.
         """
-        executor = create_default_executor(execution_mode, clock_health_checks)
         return executor.execute(request=request)
 
     def execute_sequencer(
