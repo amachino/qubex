@@ -839,7 +839,3 @@ class Quel1BackendController(BackendController):
             line_param1=line_param1,
             clock_health_checks=clock_health_checks,
         )
-
-
-# TODO: Remove this alias in future versions.
-DeviceController = Quel1BackendController

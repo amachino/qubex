@@ -16,7 +16,6 @@ from .quel1_backend_constants import (
     ExecutionMode,
 )
 from .quel1_backend_controller import (
-    DeviceController,
     Quel1BackendController,
 )
 from .quel1_backend_executor import Quel1BackendExecutor
@@ -35,7 +34,6 @@ __all__ = [
     "SAMPLING_PERIOD",
     "WORD_DURATION",
     "WORD_LENGTH",
-    "DeviceController",  # TODO: Remove this alias in future versions.
     "ExecutionMode",
     "Quel1BackendController",
     "Quel1BackendExecutor",
