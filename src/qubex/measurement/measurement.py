@@ -44,6 +44,8 @@ from .models.measure_result import (
     MultipleMeasureResult,
 )
 from .models.measurement_schedule import MeasurementSchedule
+from .models.sweep_measurement_config import SweepMeasurementConfig
+from .models.sweep_measurement_result import SweepMeasurementResult
 
 logger = logging.getLogger(__name__)
 
@@ -550,7 +552,7 @@ class Measurement:
         with self.amplification_service.apply_dc_voltages(targets):
             yield
 
-    def run_measurement_schedule(
+    def run_measurement(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -571,12 +573,12 @@ class Measurement:
         MeasurementResult
             The measurement result.
         """
-        return self.execution_service.run_measurement_schedule(
+        return self.execution_service.run_measurement(
             schedule=schedule,
             config=config,
         )
 
-    async def run_measurement_schedule_async(
+    async def run_measurement_async(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -597,8 +599,18 @@ class Measurement:
         MeasurementResult
             The measurement result.
         """
-        return await self.execution_service.run_measurement_schedule_async(
+        return await self.execution_service.run_measurement_async(
             schedule=schedule,
+            config=config,
+        )
+
+    def run_sweep_measurement(
+        self,
+        *,
+        config: SweepMeasurementConfig,
+    ) -> SweepMeasurementResult:
+        """Run sweep measurement (skeleton)."""
+        return self.execution_service.run_sweep_measurement(
             config=config,
         )
 

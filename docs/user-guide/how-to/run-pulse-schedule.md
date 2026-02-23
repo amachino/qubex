@@ -52,7 +52,7 @@ config = session.create_measurement_config(
     line_param1=(0.0, 1.0, 0.0),
 )
 
-result = session.run_measurement_schedule(
+result = session.run_measurement(
     schedule=measurement_schedule,
     config=config,
 )

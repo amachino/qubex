@@ -8,6 +8,7 @@ from types import MethodType
 from typing import Any, ClassVar, cast
 
 import numpy as np
+import pytest
 from qxpulse import PulseSchedule
 
 from qubex.backend import BackendExecutionRequest
@@ -19,6 +20,7 @@ from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRun
 from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementSchedule,
+    SweepMeasurementConfig,
 )
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
@@ -115,7 +117,7 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    def fake_run_measurement_schedule(
+    def fake_run_measurement(
         self: MeasurementExecutionService,
         *,
         schedule: MeasurementSchedule,
@@ -129,8 +131,8 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.run_measurement_schedule = MethodType(
-        fake_run_measurement_schedule, execution_service
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
     )
     experiment_system = type(
         "_ES",
@@ -310,7 +312,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    def fake_run_measurement_schedule(
+    def fake_run_measurement(
         self: MeasurementExecutionService,
         *,
         schedule: MeasurementSchedule,
@@ -323,8 +325,8 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.run_measurement_schedule = MethodType(
-        fake_run_measurement_schedule, execution_service
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
     )
     experiment_system = type(
         "_ES",
@@ -357,7 +359,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
     assert config.enable_dsp_classification is False
 
 
-def test_run_measurement_schedule_delegates_to_executor(
+def test_run_measurement_delegates_to_executor(
     monkeypatch,
 ) -> None:
     """Given schedule execution inputs, when method is called, then it delegates to executor."""
@@ -408,14 +410,14 @@ def test_run_measurement_schedule_delegates_to_executor(
             clock_health_checks=False: _Executor()
         ),
     )
-    result = measurement.run_measurement_schedule(schedule=schedule, config=config)
+    result = measurement.run_measurement(schedule=schedule, config=config)
 
     assert called["schedule"] is schedule
     assert called["config"] is config
     assert result is expected
 
 
-def test_run_measurement_schedule_async_delegates_to_executor(
+def test_run_measurement_async_delegates_to_executor(
     monkeypatch,
 ) -> None:
     """Given async schedule execution inputs, when method is called, then it delegates to async executor."""
@@ -467,7 +469,7 @@ def test_run_measurement_schedule_async_delegates_to_executor(
         ),
     )
     result = asyncio.run(
-        measurement.run_measurement_schedule_async(schedule=schedule, config=config)
+        measurement.run_measurement_async(schedule=schedule, config=config)
     )
 
     assert called["schedule"] is schedule
@@ -475,7 +477,7 @@ def test_run_measurement_schedule_async_delegates_to_executor(
     assert result is expected
 
 
-def test_run_measurement_schedule_uses_backend_custom_factories(
+def test_run_measurement_uses_backend_custom_factories(
     monkeypatch,
 ) -> None:
     """Given backend factory hooks, when executing a schedule, then Measurement uses the custom path."""
@@ -585,7 +587,7 @@ def test_run_measurement_schedule_uses_backend_custom_factories(
         experiment_system=experiment_system,
     )
 
-    result = measurement.run_measurement_schedule(schedule=schedule, config=config)
+    result = measurement.run_measurement(schedule=schedule, config=config)
 
     assert called["validated_schedule"] is schedule
     assert called["request_schedule"] is schedule
@@ -593,6 +595,19 @@ def test_run_measurement_schedule_uses_backend_custom_factories(
     assert called["experiment_system"] is experiment_system
     assert called["result_factory_experiment_system"] is experiment_system
     assert result.device_config == {"kind": "quel3"}
+
+
+def test_run_sweep_measurement_raises_not_implemented() -> None:
+    """Given sweep measurement call, when invoked, then NotImplementedError is raised."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+
+    with pytest.raises(NotImplementedError, match="run_sweep_measurement"):
+        measurement.run_sweep_measurement(config=SweepMeasurementConfig())
 
 
 def test_execute_async_delegates_to_schedule_executor_with_built_schedule() -> None:
@@ -621,7 +636,7 @@ def test_execute_async_delegates_to_schedule_executor_with_built_schedule() -> N
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    async def fake_run_measurement_schedule_async(
+    async def fake_run_measurement_async(
         self: MeasurementExecutionService,
         *,
         schedule: MeasurementSchedule,
@@ -635,8 +650,8 @@ def test_execute_async_delegates_to_schedule_executor_with_built_schedule() -> N
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.run_measurement_schedule_async = MethodType(
-        fake_run_measurement_schedule_async, execution_service
+    execution_service.run_measurement_async = MethodType(
+        fake_run_measurement_async, execution_service
     )
     experiment_system = type(
         "_ES",

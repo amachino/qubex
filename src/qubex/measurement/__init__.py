@@ -34,6 +34,8 @@ from .models import (
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
+    SweepMeasurementConfig,
+    SweepMeasurementResult,
 )
 from .sweep_measurement_builder import SweepMeasurementBuilder
 
@@ -65,6 +67,8 @@ __all__ = [
     "StateClassifierGMM",
     "StateClassifierKMeans",
     "SweepMeasurementBuilder",
+    "SweepMeasurementConfig",
+    "SweepMeasurementResult",
     "make_measurement_schedule_figure",
     "make_sequencer_timeline_figure",
     "plot_measurement_schedule",

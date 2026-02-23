@@ -38,6 +38,8 @@ from .models.measure_result import (
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
 from .models.measurement_schedule import MeasurementSchedule
+from .models.sweep_measurement_config import SweepMeasurementConfig
+from .models.sweep_measurement_result import SweepMeasurementResult
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +234,7 @@ class MeasurementExecutionService:
         """
         return self.experiment_system.get_diff_frequency(target)
 
-    def run_measurement_schedule(
+    def run_measurement(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -259,7 +261,7 @@ class MeasurementExecutionService:
         )
         return result
 
-    async def run_measurement_schedule_async(
+    async def run_measurement_async(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -285,6 +287,15 @@ class MeasurementExecutionService:
             config=config,
         )
         return result
+
+    def run_sweep_measurement(
+        self,
+        *,
+        config: SweepMeasurementConfig,
+    ) -> SweepMeasurementResult:
+        """Run sweep measurement (skeleton)."""
+        del config
+        raise NotImplementedError("run_sweep_measurement is not implemented yet.")
 
     def measure_noise(
         self,
@@ -617,7 +628,7 @@ class MeasurementExecutionService:
             plot=plot,
         )
 
-        result = self.run_measurement_schedule(
+        result = self.run_measurement(
             schedule=measurement_schedule,
             config=run_config,
         )
@@ -734,7 +745,7 @@ class MeasurementExecutionService:
             plot=plot,
         )
 
-        result = await self.run_measurement_schedule_async(
+        result = await self.run_measurement_async(
             schedule=measurement_schedule,
             config=run_config,
         )
