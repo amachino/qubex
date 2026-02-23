@@ -1261,7 +1261,10 @@ class MeasurementService:
         effective_time_range = time_range + ramptime
 
         # measure ground states as reference points
-        reference_points = self.obtain_reference_points(targets)["iq"]
+        reference_points = self.obtain_reference_points(
+            targets,
+            shots=DEFAULT_SHOTS,
+        )["iq"]
 
         # target frequencies
         if frequencies is None:
@@ -1688,6 +1691,8 @@ class MeasurementService:
         if shots is None:
             shots = 10000
 
+        # Refresh |g> reference phases before training so GMM phase alignment
+        # and stored state_params use a drift-updated baseline.
         self.obtain_reference_points(targets)
 
         results = self.measure_state_distribution(
