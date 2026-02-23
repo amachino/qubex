@@ -8,11 +8,7 @@ from qxpulse import Blank, PulseSchedule
 
 from qubex.measurement.adapters.backend_adapter import Quel1MeasurementBackendAdapter
 from qubex.measurement.models.capture_schedule import CaptureSchedule
-from qubex.measurement.models.measurement_config import (
-    DspConfig,
-    FrequencyConfig,
-    MeasurementConfig,
-)
+from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 
@@ -30,14 +26,12 @@ def _make_config(interval: float) -> MeasurementConfig:
         mode="avg",
         shots=1,
         interval=interval,
-        dsp=DspConfig(
-            enable_dsp_demodulation=True,
-            enable_dsp_sum=False,
-            enable_dsp_classification=False,
-            line_param0=(1.0, 0.0, 0.0),
-            line_param1=(0.0, 1.0, 0.0),
-        ),
-        frequency=FrequencyConfig(frequencies={}),
+        frequencies={},
+        enable_dsp_demodulation=True,
+        enable_dsp_sum=False,
+        enable_dsp_classification=False,
+        line_param0=(1.0, 0.0, 0.0),
+        line_param1=(0.0, 1.0, 0.0),
     )
 
 

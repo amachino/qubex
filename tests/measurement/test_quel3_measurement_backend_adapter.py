@@ -16,8 +16,6 @@ from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 from qubex.measurement.models import (
-    DspConfig,
-    FrequencyConfig,
     MeasurementConfig,
     MeasurementSchedule,
 )
@@ -51,14 +49,12 @@ def _make_config() -> MeasurementConfig:
         mode="avg",
         shots=16,
         interval=100.0,
-        frequency=FrequencyConfig(frequencies={}),
-        dsp=DspConfig(
-            enable_dsp_demodulation=True,
-            enable_dsp_sum=False,
-            enable_dsp_classification=False,
-            line_param0=(1.0, 0.0, 0.0),
-            line_param1=(0.0, 1.0, 0.0),
-        ),
+        frequencies={},
+        enable_dsp_demodulation=True,
+        enable_dsp_sum=False,
+        enable_dsp_classification=False,
+        line_param0=(1.0, 0.0, 0.0),
+        line_param1=(0.0, 1.0, 0.0),
     )
 
 

@@ -41,7 +41,16 @@ result.plot()
 
 ```python
 measurement_schedule = session.build_measurement_schedule(pulse_schedule=schedule)
-config = session.create_measurement_config(mode="single", shots=1024)
+config = session.create_measurement_config(
+    mode="single",
+    shots=1024,
+    frequencies={"Q00": 5.0},
+    enable_dsp_demodulation=True,
+    enable_dsp_sum=True,
+    enable_dsp_classification=False,
+    line_param0=(1.0, 0.0, 0.0),
+    line_param1=(0.0, 1.0, 0.0),
+)
 
 result = session.run_measurement_schedule(
     schedule=measurement_schedule,

@@ -232,11 +232,11 @@ class Quel1MeasurementBackendAdapter:
             interval=interval,
             repeats=config.shots,
             integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=config.dsp.enable_dsp_demodulation,
-            enable_sum=config.dsp.enable_dsp_sum,
-            enable_classification=config.dsp.enable_dsp_classification,
-            line_param0=config.dsp.line_param0,
-            line_param1=config.dsp.line_param1,
+            dsp_demodulation=config.enable_dsp_demodulation,
+            enable_sum=config.enable_dsp_sum,
+            enable_classification=config.enable_dsp_classification,
+            line_param0=config.line_param0,
+            line_param1=config.line_param1,
         )
         return BackendExecutionRequest(
             payload=payload,

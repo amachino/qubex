@@ -16,11 +16,7 @@ from .measurement_defaults import (
     DEFAULT_LINE_PARAM1,
     DEFAULT_SHOTS,
 )
-from .models.measurement_config import (
-    DspConfig,
-    FrequencyConfig,
-    MeasurementConfig,
-)
+from .models.measurement_config import MeasurementConfig
 
 T = TypeVar("T")
 
@@ -31,7 +27,7 @@ def _or_default(value: T | None, default: T) -> T:
 
 
 class MeasurementConfigFactory:
-    """Build `MeasurementConfig` and nested models from partial options."""
+    """Build `MeasurementConfig` from partial options."""
 
     def __init__(
         self,
@@ -39,52 +35,6 @@ class MeasurementConfigFactory:
         experiment_system: ExperimentSystem,
     ) -> None:
         self._experiment_system: ExperimentSystem = experiment_system
-
-    def create_dsp_config(
-        self,
-        *,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
-    ) -> DspConfig:
-        """Create `DspConfig` using configured defaults."""
-        return DspConfig(
-            enable_dsp_demodulation=_or_default(
-                enable_dsp_demodulation,
-                DEFAULT_ENABLE_DSP_DEMODULATION,
-            ),
-            enable_dsp_sum=_or_default(
-                enable_dsp_sum,
-                DEFAULT_ENABLE_DSP_SUM,
-            ),
-            enable_dsp_classification=_or_default(
-                enable_dsp_classification,
-                DEFAULT_ENABLE_DSP_CLASSIFICATION,
-            ),
-            line_param0=_or_default(
-                line_param0,
-                DEFAULT_LINE_PARAM0,
-            ),
-            line_param1=_or_default(
-                line_param1,
-                DEFAULT_LINE_PARAM1,
-            ),
-        )
-
-    def create_frequency_config(
-        self,
-        *,
-        frequencies: dict[str, float] | None = None,
-    ) -> FrequencyConfig:
-        """Create `FrequencyConfig` using configured defaults."""
-        return FrequencyConfig(
-            frequencies=_or_default(
-                frequencies,
-                {},
-            ),
-        )
 
     def create(
         self,
@@ -110,14 +60,28 @@ class MeasurementConfigFactory:
                 interval,
                 DEFAULT_INTERVAL,
             ),
-            frequency=self.create_frequency_config(
-                frequencies=frequencies,
+            frequencies=_or_default(
+                frequencies,
+                {},
             ),
-            dsp=self.create_dsp_config(
-                enable_dsp_demodulation=enable_dsp_demodulation,
-                enable_dsp_sum=enable_dsp_sum,
-                enable_dsp_classification=enable_dsp_classification,
-                line_param0=line_param0,
-                line_param1=line_param1,
+            enable_dsp_demodulation=_or_default(
+                enable_dsp_demodulation,
+                DEFAULT_ENABLE_DSP_DEMODULATION,
+            ),
+            enable_dsp_sum=_or_default(
+                enable_dsp_sum,
+                DEFAULT_ENABLE_DSP_SUM,
+            ),
+            enable_dsp_classification=_or_default(
+                enable_dsp_classification,
+                DEFAULT_ENABLE_DSP_CLASSIFICATION,
+            ),
+            line_param0=_or_default(
+                line_param0,
+                DEFAULT_LINE_PARAM0,
+            ),
+            line_param1=_or_default(
+                line_param1,
+                DEFAULT_LINE_PARAM1,
             ),
         )

@@ -42,8 +42,8 @@ def test_factory_applies_context_defaults() -> None:
     assert config.mode == "avg"
     assert config.shots == DEFAULT_SHOTS
     assert config.interval == DEFAULT_INTERVAL
-    assert config.frequency.frequencies == {}
-    assert config.dsp.enable_dsp_demodulation is True
+    assert config.frequencies == {}
+    assert config.enable_dsp_demodulation is True
 
 
 def test_factory_maps_dsp_and_line_params() -> None:
@@ -67,11 +67,11 @@ def test_factory_maps_dsp_and_line_params() -> None:
         line_param1=(4.0, 5.0, 6.0),
     )
 
-    assert config.dsp.enable_dsp_demodulation is False
-    assert config.dsp.enable_dsp_sum is True
-    assert config.dsp.enable_dsp_classification is True
-    assert config.dsp.line_param0 == (1.0, 2.0, 3.0)
-    assert config.dsp.line_param1 == (4.0, 5.0, 6.0)
+    assert config.enable_dsp_demodulation is False
+    assert config.enable_dsp_sum is True
+    assert config.enable_dsp_classification is True
+    assert config.line_param0 == (1.0, 2.0, 3.0)
+    assert config.line_param1 == (4.0, 5.0, 6.0)
 
 
 def test_factory_maps_frequency_overrides() -> None:
@@ -89,4 +89,4 @@ def test_factory_maps_frequency_overrides() -> None:
     )
     config = factory.create(frequencies={"Q00": 5.0, "Q01": 5.2})
 
-    assert config.frequency.frequencies == {"Q00": 5.0, "Q01": 5.2}
+    assert config.frequencies == {"Q00": 5.0, "Q01": 5.2}

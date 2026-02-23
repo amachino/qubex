@@ -3,7 +3,7 @@
 ## Status
 
 - State: `PROPOSED`
-- Last updated: `2026-02-20`
+- Last updated: `2026-02-23`
 - Scope: freeze qubex-side internal model semantics before qxschema v1 externalization
 
 ## Goal
@@ -37,25 +37,18 @@ This document is the source of truth for "what qubex currently executes and guar
 - `mode: MeasurementMode` (`"single"` or `"avg"`)
 - `shots: int`
 - `interval: float` (ns)
-- `dsp: DspConfig`
-- `frequency: FrequencyConfig`
-
-`DspConfig`:
-
+- `frequencies: dict[str, float]`
 - `enable_dsp_demodulation: bool`
 - `enable_dsp_sum: bool`
 - `enable_dsp_classification: bool`
 - `line_param0: tuple[float, float, float]`
 - `line_param1: tuple[float, float, float]`
 
-`FrequencyConfig`:
-
-- `frequencies: dict[str, float]`
-
 ### Execution-effective semantics (freeze target)
 
-- `mode`, `shots`, `interval`, `dsp.*` are execution-effective in backend adapters.
-- `frequency.frequencies` is currently not consumed in the direct
+- `mode`, `shots`, `interval`, `enable_dsp_*`, `line_param0`, and `line_param1`
+  are execution-effective in backend adapters.
+- `frequencies` is currently not consumed in the direct
   `run_measurement_schedule(...)` path; treat as reserved/advisory until wired.
 
 ### Validation/invariants
@@ -135,6 +128,6 @@ only part of it in `SweepMeasurementBuilder`.
    first, or keeps draft passthrough.
 2. Decide if `MeasurementResult.measurement_config` remains dict snapshot or is
    replaced by a typed internal snapshot model.
-3. Decide when `MeasurementConfig.frequency.frequencies` becomes execution-effective
+3. Decide when `MeasurementConfig.frequencies` becomes execution-effective
    in schedule execution path (or remove from internal config if unused).
 4. Define a strict qubex internal axis order contract for sweep result tensors.

@@ -8,7 +8,7 @@
 - **Target**: A qubit or resonator addressable by the control system.
 - **Pulse**: A time-domain waveform applied to a target.
 - **PulseSchedule**: An ordered, time-aware collection of pulses.
-- **MeasurementConfig**: Execution settings such as shots, mode, and readout timing.
+- **MeasurementConfig**: Execution settings such as `mode`, `shots`, `interval`, `frequencies`, and DSP flags/line parameters.
 - **MeasurementResult / MeasureResult**: Structured results of a measurement, with plotting helpers.
 - **ExperimentRecord**: Serialized experiment results for reproducibility.
 - **ExperimentNote / CalibrationNote**: Key-value metadata stored alongside experiments.

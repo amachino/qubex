@@ -12,11 +12,7 @@ from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
 from qubex.measurement.models.capture_schedule import CaptureSchedule
-from qubex.measurement.models.measurement_config import (
-    DspConfig,
-    FrequencyConfig,
-    MeasurementConfig,
-)
+from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 
@@ -216,14 +212,12 @@ def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
         mode="avg",
         shots=1,
         interval=100.0,
-        dsp=DspConfig(
-            enable_dsp_demodulation=True,
-            enable_dsp_sum=False,
-            enable_dsp_classification=False,
-            line_param0=(1.0, 0.0, 0.0),
-            line_param1=(0.0, 1.0, 0.0),
-        ),
-        frequency=FrequencyConfig(frequencies={}),
+        frequencies={},
+        enable_dsp_demodulation=True,
+        enable_dsp_sum=False,
+        enable_dsp_classification=False,
+        line_param0=(1.0, 0.0, 0.0),
+        line_param1=(0.0, 1.0, 0.0),
     )
 
     schedule = MeasurementSchedule(

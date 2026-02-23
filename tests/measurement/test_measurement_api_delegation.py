@@ -17,8 +17,6 @@ from qubex.measurement.measurement_execution_service import MeasurementExecution
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models import (
-    DspConfig,
-    FrequencyConfig,
     MeasurementConfig,
     MeasurementSchedule,
 )
@@ -37,14 +35,12 @@ def _make_config() -> MeasurementConfig:
         mode="avg",
         shots=2,
         interval=100.0,
-        frequency=FrequencyConfig(frequencies={}),
-        dsp=DspConfig(
-            enable_dsp_demodulation=True,
-            enable_dsp_sum=False,
-            enable_dsp_classification=False,
-            line_param0=(1.0, 0.0, 0.0),
-            line_param1=(0.0, 1.0, 0.0),
-        ),
+        frequencies={},
+        enable_dsp_demodulation=True,
+        enable_dsp_sum=False,
+        enable_dsp_classification=False,
+        line_param0=(1.0, 0.0, 0.0),
+        line_param1=(0.0, 1.0, 0.0),
     )
 
 
@@ -356,9 +352,9 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
 
     assert called["build_kwargs"]["add_pump_pulses"] is False
     config = called["config"]
-    assert config.dsp.enable_dsp_demodulation is True
-    assert config.dsp.enable_dsp_sum is True
-    assert config.dsp.enable_dsp_classification is False
+    assert config.enable_dsp_demodulation is True
+    assert config.enable_dsp_sum is True
+    assert config.enable_dsp_classification is False
 
 
 def test_run_measurement_schedule_delegates_to_executor(
