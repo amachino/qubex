@@ -86,6 +86,7 @@ nav:
   - Developer guide:
       - Overview: developer-guide/index.md
       - Development flow: developer-guide/development-flow.md
+      - Experiment API delegation guidelines: developer-guide/experiment-api-delegation-guidelines.md
       - Document guidelines: developer-guide/document-guidelines.md
       - Docstring guidelines: developer-guide/docstring-guidelines.md
       - Dependency guidelines: developer-guide/dependency-guidelines.md

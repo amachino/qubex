@@ -47,7 +47,6 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
 )
-from qubex.pulse import set_sampling_period
 from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
 
@@ -202,7 +201,6 @@ class ExperimentContext:
             load_configs=False,
             connect_devices=False,
         )
-        self._sync_pulse_sampling_period()
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
         self._system_note: Final = ExperimentNote(file_path=SYSTEM_NOTE_PATH)
         self._calib_note: Final = CalibrationNote(
@@ -220,12 +218,6 @@ class ExperimentContext:
                 self._measurement.classifiers[qubit] = StateClassifier.load(  # type: ignore
                     classifier_path
                 )
-
-    def _sync_pulse_sampling_period(self) -> float:
-        """Synchronize pulse-library sampling period with backend measurement dt."""
-        sampling_period = float(self._measurement.sampling_period)
-        set_sampling_period(sampling_period)
-        return sampling_period
 
     def _load_config(
         self,
@@ -879,146 +871,23 @@ class ExperimentContext:
         """Return the inverse confusion matrix for the specified targets."""
         return self.measurement.get_inverse_confusion_matrix(targets)
 
-    def is_connected(self) -> bool:
-        """Report whether the measurement backend is connected."""
-        return self._measurement.is_connected()
-
-    def disconnect(self) -> None:
-        """Disconnect backend resources held by measurement and backend controllers."""
-        self._measurement.disconnect()
-
-    def check_status(self) -> None:
-        """Log connectivity, clock, and configuration status."""
-        if not self.is_connected():
-            logger.warning(
-                "Not connected to the devices. Call `connect()` method first."
-            )
-            return
-
-        if len(self.box_ids) == 0:
-            logger.warning("No boxes are selected.")
-            return
-
-        # link status
-        link_status = self._measurement.check_link_status(self.box_ids)
-        if link_status["status"]:
-            logger.info("Link status: OK")
-        else:
-            logger.warning("Link status: NG")
-        logger.info(link_status["links"])
-
-        # clock status
-        clock_status = self._measurement.check_clock_status(self.box_ids)
-        if clock_status["status"]:
-            logger.info("Clock status: OK")
-        else:
-            logger.warning("Clock status: NG")
-        logger.info(clock_status["clocks"])
-
-        # config status
-        config_status = self.system_manager.is_synced(box_ids=self.box_ids)
-        if config_status:
-            logger.info("Config status: OK")
-        else:
-            logger.warning("Config status: NG")
-        logger.info(self.system_manager.backend_settings)
-
-    def connect(
-        self,
-        *,
-        sync_clocks: bool | None = None,
-        parallel: bool | None = None,
-    ) -> None:
-        """
-        Connect to the measurement backend and optionally sync clocks.
-
-        Parameters
-        ----------
-        sync_clocks : bool | None, optional
-            Whether to resync clocks, by default True.
-        parallel : bool | None, optional
-            Whether to fetch backend settings in parallel, by default True.
-        """
-        try:
-            self._measurement.connect(sync_clocks=sync_clocks, parallel=parallel)
-            self._sync_pulse_sampling_period()
-            logger.info("Successfully connected.")
-        except Exception:
-            logger.exception("Failed to connect to the devices.")
-            raise
-
-    def linkup(
-        self,
-        box_ids: list[str] | None = None,
-        noise_threshold: int | None = None,
-    ) -> None:
-        """Link up specified boxes with optional noise threshold."""
-        if box_ids is None:
-            box_ids = self.box_ids
-        self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
-
-    def resync_clocks(
-        self,
-        box_ids: list[str] | None = None,
-    ) -> None:
-        """Resynchronize clocks for the specified boxes."""
-        if box_ids is None:
-            box_ids = self.box_ids
-        backend_controller = self.backend_controller
-        resync_clocks = getattr(backend_controller, "resync_clocks", None)
-        if not callable(resync_clocks):
-            raise NotImplementedError(
-                "Active backend does not support clock re-synchronization."
-            )
-        resync_clocks(box_ids)
-
-    def configure(
-        self,
-        box_ids: str | list[str] | None = None,
-        exclude: str | list[str] | None = None,
-        mode: ConfigurationMode | None = None,
-    ) -> None:
-        """Configure hardware targets and push settings to devices."""
-        if isinstance(box_ids, str):
-            box_ids = [box_ids]
-        if isinstance(exclude, str):
-            exclude = [exclude]
-        if mode is None:
-            mode = self.configuration_mode
-        self.system_manager.load(
-            chip_id=self.chip_id,
-            config_dir=self.config_path,
-            params_dir=self.params_path,
-            targets_to_exclude=exclude,
-            configuration_mode=mode,
-        )
-        self.system_manager.push(
-            box_ids=box_ids or self.box_ids,
-        )
-        self._sync_pulse_sampling_period()
-
-    def reload(self) -> None:
-        """Reload measurement configuration from the backend."""
-        try:
-            self._measurement.reload(configuration_mode=self.configuration_mode)
-            self._sync_pulse_sampling_period()
-            logger.info("Successfully reloaded.")
-        except Exception:
-            logger.exception("Failed to reload the devices.")
-            raise
-
     def reset_awg_and_capunits(
         self,
         box_ids: str | Collection[str] | None = None,
         qubits: Collection[str] | None = None,
     ) -> None:
         """Reset AWG and capture units for specified boxes or qubits."""
-        box_ids = []
+        selected_box_ids: list[str] = []
         if qubits is not None:
             boxes = self.experiment_system.get_boxes_for_qubits(qubits)
-            box_ids += [box.id for box in boxes]
-        if len(box_ids) == 0:
-            box_ids = self.box_ids
+            selected_box_ids += [box.id for box in boxes]
+        if len(selected_box_ids) == 0:
+            if isinstance(box_ids, str):
+                selected_box_ids = [box_ids]
+            elif box_ids is not None:
+                selected_box_ids = list(box_ids)
+            else:
+                selected_box_ids = self.box_ids
 
         initialize_awg_and_capunits = getattr(
             self.backend_controller, "initialize_awg_and_capunits", None
@@ -1027,7 +896,7 @@ class ExperimentContext:
             raise NotImplementedError(
                 "Active backend does not support AWG/CAP unit reset."
             )
-        initialize_awg_and_capunits(box_ids)
+        initialize_awg_and_capunits(selected_box_ids)
 
     def _resolve_custom_target_qubit_label(
         self,

@@ -89,6 +89,39 @@ class _ExperimentContextStub:
         self.calls.append(("register_custom_target", kwargs))
 
 
+class _SessionServiceStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def disconnect(self) -> None:
+        self.calls.append(("disconnect", {}))
+
+    def connect(
+        self,
+        *,
+        sync_clocks: bool | None = None,
+        parallel: bool | None = None,
+    ) -> None:
+        self.calls.append(
+            ("connect", {"sync_clocks": sync_clocks, "parallel": parallel})
+        )
+
+    def reload(self) -> None:
+        self.calls.append(("reload", {}))
+
+    def configure(self, **kwargs: Any) -> None:
+        self.calls.append(("configure", kwargs))
+
+    def linkup(self, **kwargs: Any) -> None:
+        self.calls.append(("linkup", kwargs))
+
+    def resync_clocks(self, **kwargs: Any) -> None:
+        self.calls.append(("resync_clocks", kwargs))
+
+    def reset_awg_and_capunits(self, **kwargs: Any) -> None:
+        self.calls.append(("reset_awg_and_capunits", kwargs))
+
+
 class _BenchmarkingServicePropertyStub:
     def __init__(self) -> None:
         self.clifford_generator = object()
@@ -282,37 +315,113 @@ def test_clifford_property_delegates_to_benchmarking_service() -> None:
     assert exp.clifford is benchmarking_stub.clifford
 
 
-def test_disconnect_delegates_to_context() -> None:
-    """Given disconnect call, when called, then it delegates to experiment context."""
+def test_disconnect_delegates_to_session_service() -> None:
+    """Given disconnect call, when called, then it delegates to session service."""
     exp = object.__new__(Experiment)
-    context_stub = _ExperimentContextStub()
-    exp.__dict__["_experiment_context"] = context_stub
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
 
     exp.disconnect()
 
-    assert context_stub.calls == [("disconnect", {})]
+    assert session_stub.calls == [("disconnect", {})]
 
 
-def test_connect_delegates_to_context() -> None:
-    """Given connect args, when called, then it delegates to experiment context."""
+def test_connect_delegates_to_session_service() -> None:
+    """Given connect args, when called, then it delegates to session service."""
     exp = object.__new__(Experiment)
-    context_stub = _ExperimentContextStub()
-    exp.__dict__["_experiment_context"] = context_stub
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
 
     exp.connect(sync_clocks=False, parallel=True)
 
-    assert context_stub.calls == [("connect", {"sync_clocks": False, "parallel": True})]
+    assert session_stub.calls == [("connect", {"sync_clocks": False, "parallel": True})]
 
 
-def test_reload_delegates_to_context() -> None:
-    """Given reload call, when called, then it delegates to experiment context."""
+def test_reload_delegates_to_session_service() -> None:
+    """Given reload call, when called, then it delegates to session service."""
     exp = object.__new__(Experiment)
-    context_stub = _ExperimentContextStub()
-    exp.__dict__["_experiment_context"] = context_stub
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
 
     exp.reload()
 
-    assert context_stub.calls == [("reload", {})]
+    assert session_stub.calls == [("reload", {})]
+
+
+def test_configure_delegates_to_session_service() -> None:
+    """Given configure args, when called, then it delegates to session service."""
+    exp = object.__new__(Experiment)
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
+
+    exp.configure(box_ids="Q2A", exclude="Q00", mode="ge-cr-cr")
+
+    assert session_stub.calls == [
+        (
+            "configure",
+            {
+                "box_ids": "Q2A",
+                "exclude": "Q00",
+                "mode": "ge-cr-cr",
+            },
+        )
+    ]
+
+
+def test_linkup_delegates_to_session_service() -> None:
+    """Given linkup args, when called, then it delegates to session service."""
+    exp = object.__new__(Experiment)
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
+
+    exp.linkup(box_ids=["Q2A"], noise_threshold=100)
+
+    assert session_stub.calls == [
+        (
+            "linkup",
+            {
+                "box_ids": ["Q2A"],
+                "noise_threshold": 100,
+            },
+        )
+    ]
+
+
+def test_resync_clocks_delegates_to_session_service() -> None:
+    """Given resync args, when called, then it delegates to session service."""
+    exp = object.__new__(Experiment)
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
+
+    exp.resync_clocks(box_ids=["Q2A"])
+
+    assert session_stub.calls == [
+        (
+            "resync_clocks",
+            {
+                "box_ids": ["Q2A"],
+            },
+        )
+    ]
+
+
+def test_reset_awg_and_capunits_delegates_to_session_service() -> None:
+    """Given reset args, when called, then it delegates to session service."""
+    exp = object.__new__(Experiment)
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
+
+    exp.reset_awg_and_capunits(box_ids="Q2A", qubits=["Q00"])
+
+    assert session_stub.calls == [
+        (
+            "reset_awg_and_capunits",
+            {
+                "box_ids": "Q2A",
+                "qubits": ["Q00"],
+            },
+        )
+    ]
 
 
 def test_measure_idle_states_delegates_to_measurement_service() -> None:

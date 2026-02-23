@@ -80,6 +80,7 @@ from .services import (
     MeasurementService,
     OptimizationService,
     PulseService,
+    SessionService,
 )
 
 T = TypeVar("T", bound=ExperimentTaskResult)
@@ -181,6 +182,9 @@ class Experiment:
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
+        session_service = SessionService(
+            experiment_context=experiment_context,
+        )
         pulse_service = PulseService(
             experiment_context=experiment_context,
         )
@@ -213,6 +217,7 @@ class Experiment:
             pulse_service=pulse_service,
         )
         self._experiment_context = experiment_context
+        self._session_service = session_service
         self._pulse_service = pulse_service
         self._measurement_service = measurement_service
         self._calibration_service = calibration_service
@@ -231,12 +236,12 @@ class Experiment:
 
         Parameters
         ----------
-        task : ExperimentTask[R]
+        task : ExperimentTask[T]
             The experiment task to run.
 
         Returns
         -------
-        R
+        T
             The experiment result.
         """
         return task.execute(self)
@@ -253,6 +258,11 @@ class Experiment:
     def pulse(self) -> PulseService:
         """Return the pulse service."""
         return self._pulse_service
+
+    @property
+    def session_service(self) -> SessionService:
+        """Return the session lifecycle service."""
+        return self._session_service
 
     @property
     def measurement_service(self) -> MeasurementService:
@@ -685,15 +695,15 @@ class Experiment:
 
     def is_connected(self) -> bool:
         """Report whether the measurement backend is connected."""
-        return self.ctx.is_connected()
+        return self.session_service.is_connected()
 
     def disconnect(self) -> None:
         """Disconnect backend resources held by measurement and backend controllers."""
-        return self.ctx.disconnect()
+        return self.session_service.disconnect()
 
     def check_status(self) -> None:
         """Log connectivity, clock, and configuration status."""
-        return self.ctx.check_status()
+        return self.session_service.check_status()
 
     def connect(
         self,
@@ -711,7 +721,10 @@ class Experiment:
         parallel : bool | None, optional
             Whether to fetch backend settings in parallel, by default True.
         """
-        return self.ctx.connect(sync_clocks=sync_clocks, parallel=parallel)
+        return self.session_service.connect(
+            sync_clocks=sync_clocks,
+            parallel=parallel,
+        )
 
     def linkup(
         self,
@@ -719,7 +732,7 @@ class Experiment:
         noise_threshold: int | None = None,
     ) -> None:
         """Link up specified boxes with optional noise threshold."""
-        return self.ctx.linkup(
+        return self.session_service.linkup(
             box_ids=box_ids,
             noise_threshold=noise_threshold,
         )
@@ -729,7 +742,7 @@ class Experiment:
         box_ids: list[str] | None = None,
     ) -> None:
         """Resynchronize clocks for the specified boxes."""
-        return self.ctx.resync_clocks(box_ids=box_ids)
+        return self.session_service.resync_clocks(box_ids=box_ids)
 
     def configure(
         self,
@@ -738,7 +751,7 @@ class Experiment:
         mode: ConfigurationMode | None = None,
     ) -> None:
         """Configure hardware targets and push settings to devices."""
-        return self.ctx.configure(
+        return self.session_service.configure(
             box_ids=box_ids,
             exclude=exclude,
             mode=mode,
@@ -746,7 +759,7 @@ class Experiment:
 
     def reload(self) -> None:
         """Reload measurement configuration from the backend."""
-        return self.ctx.reload()
+        return self.session_service.reload()
 
     def reset_awg_and_capunits(
         self,
@@ -754,7 +767,7 @@ class Experiment:
         qubits: Collection[str] | None = None,
     ) -> None:
         """Reset AWG and capture units for specified boxes or qubits."""
-        return self.ctx.reset_awg_and_capunits(
+        return self.session_service.reset_awg_and_capunits(
             box_ids=box_ids,
             qubits=qubits,
         )

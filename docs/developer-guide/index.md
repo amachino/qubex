@@ -3,6 +3,7 @@
 This section contains contributor-facing guidelines and internal development notes.
 
 - [Development flow](development-flow.md)
+- [Experiment API delegation guidelines](experiment-api-delegation-guidelines.md)
 - [Document guidelines](document-guidelines.md)
 - [Docstring guidelines](docstring-guidelines.md)
 - [Typing guidelines](typing-guidelines.md)
