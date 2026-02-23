@@ -11,6 +11,7 @@ and qubex.simulator.
 from __future__ import annotations
 
 import logging
+import warnings
 from collections import defaultdict
 from collections.abc import Collection, Mapping
 from copy import deepcopy
@@ -546,6 +547,8 @@ class PulseSchedule:
     def get_sequence(
         self,
         label: str,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
         copy: bool = True,
     ) -> PulseArray:
         """
@@ -555,6 +558,10 @@ class PulseSchedule:
         ----------
         label : str
             The channel label.
+        duration : float, optional
+            Deprecated. Duration for padded output sequence.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
         copy : bool, optional
             If True, returns a copy of the sequence.
 
@@ -563,14 +570,28 @@ class PulseSchedule:
         PulseArray
             The pulse sequence for the channel.
         """
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
         sequence = self._channels[label].sequence
-        if copy:
-            return sequence.copy()
+        if duration is not None:
+            pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
+            if copy:
+                return sequence.padded(duration, pad_side)
+            else:
+                sequence.pad(duration, pad_side)
+                return sequence
         else:
-            return sequence
+            if copy:
+                return sequence.copy()
+            else:
+                return sequence
 
     def get_sequences(
         self,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
         copy: bool = True,
     ) -> dict[str, PulseArray]:
         """
@@ -578,6 +599,10 @@ class PulseSchedule:
 
         Parameters
         ----------
+        duration : float, optional
+            Deprecated. Duration for padded output sequences.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
         copy : bool, optional
             If True, returns a copy of the sequences.
 
@@ -586,9 +611,15 @@ class PulseSchedule:
         dict[str, PulseArray]
             The pulse sequences.
         """
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
         return {
             label: self.get_sequence(
                 label=label,
+                duration=duration,
+                align=align,
                 copy=copy,
             )
             for label in self.labels
@@ -597,6 +628,9 @@ class PulseSchedule:
     def get_sampled_sequence(
         self,
         label: str,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+        copy: bool = False,
     ) -> npt.NDArray[np.complex128]:
         """
         Return the sampled pulse sequence for a specific channel.
@@ -605,26 +639,66 @@ class PulseSchedule:
         ----------
         label : str
             The channel label.
+        duration : float, optional
+            Deprecated. Duration for padded output sequence.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
+        copy : bool, optional
+            If True, returns a copy of the sampled sequence.
 
         Returns
         -------
         npt.NDArray[np.complex128]
             The sampled pulse sequence for the channel.
         """
-        return self._channels[label].sequence.values
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
+        sequence = self.get_sequence(
+            label=label,
+            duration=duration,
+            align=align,
+            copy=copy,
+        )
+        return sequence.values
 
     def get_sampled_sequences(
         self,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+        copy: bool = False,
     ) -> dict[str, npt.NDArray[np.complex128]]:
         """
         Return the sampled pulse sequences.
+
+        Parameters
+        ----------
+        duration : float, optional
+            Deprecated. Duration for padded output sequences.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
+        copy : bool, optional
+            If True, returns copies of sampled sequences.
 
         Returns
         -------
         dict[str, npt.NDArray[np.complex128]]
             The sampled pulse sequences
         """
-        return {label: self._channels[label].sequence.values for label in self.labels}
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
+        return {
+            label: self.get_sampled_sequence(
+                label=label,
+                duration=duration,
+                align=align,
+                copy=copy,
+            )
+            for label in self.labels
+        }
 
     def get_final_frame_shift(
         self,
@@ -864,3 +938,21 @@ class PulseSchedule:
             return data
         indices = np.linspace(0, len(data) - 1, n_max_points).astype(int)
         return data[indices]
+
+    @staticmethod
+    def _warn_deprecated_duration_argument() -> None:
+        """Warn that the legacy duration option is deprecated."""
+        warnings.warn(
+            "`duration` in sequence accessor methods is deprecated and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    @staticmethod
+    def _warn_deprecated_align_argument() -> None:
+        """Warn that the legacy align option is deprecated."""
+        warnings.warn(
+            "`align` in sequence accessor methods is deprecated and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=3,
+        )

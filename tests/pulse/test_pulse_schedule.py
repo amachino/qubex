@@ -201,8 +201,8 @@ def test_get_sampled_sequences():
     assert sampled["Q01"] == pytest.approx([1j, 0, 1])
 
 
-def test_sequence_accessors_reject_removed_duration_options():
-    """Sequence accessor methods should reject removed duration options."""
+def test_sequence_accessors_warn_on_deprecated_duration_and_align_options():
+    """Given duration and align options, when sequence accessors are called, then deprecation warnings are emitted."""
     with PulseSchedule() as ps:
         ps.add("Q00", Arbitrary([1, 0, 1j]))
         ps.add("Q01", Arbitrary([1j, 0, 1]))
@@ -212,28 +212,48 @@ def test_sequence_accessors_reject_removed_duration_options():
     sampled_sequence = cast(Any, ps).get_sampled_sequence
     sampled_sequences = cast(Any, ps).get_sampled_sequences
 
-    with pytest.raises(TypeError):
-        _ = sequence("Q00", duration=5 * dt)
-    with pytest.raises(TypeError):
-        _ = sequences(duration=5 * dt)
-    with pytest.raises(TypeError):
-        _ = sampled_sequence("Q00", duration=5 * dt)
-    with pytest.raises(TypeError):
-        _ = sampled_sequences(duration=5 * dt)
+    with pytest.warns(DeprecationWarning, match="duration"):
+        padded = sequence("Q00", duration=5 * dt, align="end")
+    assert padded.values == pytest.approx([0, 0, 1, 0, 1j])
+
+    with pytest.warns(DeprecationWarning, match="duration"):
+        padded_all = sequences(duration=5 * dt, align="end")
+    assert padded_all["Q01"].values == pytest.approx([0, 0, 1j, 0, 1])
+
+    with pytest.warns(DeprecationWarning, match="duration"):
+        sampled_padded = sampled_sequence("Q00", duration=5 * dt, align="end")
+    assert sampled_padded == pytest.approx([0, 0, 1, 0, 1j])
+
+    with pytest.warns(DeprecationWarning, match="duration"):
+        sampled_padded_all = sampled_sequences(duration=5 * dt, align="end")
+    assert sampled_padded_all["Q01"] == pytest.approx([0, 0, 1j, 0, 1])
 
 
-def test_sampled_sequence_accessors_reject_removed_copy_options():
-    """Sampled sequence accessors should reject removed copy options."""
+def test_sampled_sequence_accessors_support_copy_options():
+    """Given sampled sequence accessors, when copy option is used, then copy semantics are applied."""
     with PulseSchedule() as ps:
         ps.add("Q00", Arbitrary([1, 0, 1j]))
         ps.add("Q01", Arbitrary([1j, 0, 1]))
 
-    sampled_sequence = cast(Any, ps).get_sampled_sequence
-    sampled_sequences = cast(Any, ps).get_sampled_sequences
-    with pytest.raises(TypeError):
-        _ = sampled_sequence("Q00", copy=False)
-    with pytest.raises(TypeError):
-        _ = sampled_sequences(copy=False)
+    sampled_default = ps.get_sampled_sequence("Q00")
+    sampled_copied = ps.get_sampled_sequence("Q00", copy=True)
+    assert sampled_default == pytest.approx([1, 0, 1j])
+    assert sampled_copied == pytest.approx([1, 0, 1j])
+
+    sampled_default_all = ps.get_sampled_sequences()
+    sampled_copied_all = ps.get_sampled_sequences(copy=True)
+    assert sampled_default_all["Q01"] == pytest.approx([1j, 0, 1])
+    assert sampled_copied_all["Q01"] == pytest.approx([1j, 0, 1])
+
+
+def test_sequence_accessors_warn_on_deprecated_align_option():
+    """Given align option only, when sequence accessors are called, then deprecation warning is emitted."""
+    with PulseSchedule() as ps:
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
+
+    with pytest.warns(DeprecationWarning, match="align"):
+        sequence = ps.get_sequence("Q00", align="end")
+    assert sequence.values == pytest.approx([1, 0, 1j])
 
 
 def test_get_pulse_ranges():
