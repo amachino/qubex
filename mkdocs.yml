@@ -80,6 +80,7 @@ nav:
   - Reference:
       - Overview: user-guide/reference/index.md
       - Configuration: user-guide/reference/configuration.md
+      - Skew adjustment: user-guide/reference/skew-adjustment.md
       - Results and records: user-guide/reference/results-and-records.md
       - State classification: user-guide/reference/state-classification.md
   - Developer guide:

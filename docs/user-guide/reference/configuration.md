@@ -26,6 +26,8 @@ By default, `<base>` is `/home/shared/qubex-config`. You can override paths usin
 - **wiring.yaml**: Mux-level wiring and port mapping.
 - **skew.yaml**: Timing skew calibration used by the backend controller.
 
+For detailed skew behavior and workflow, see [Skew adjustment](skew-adjustment.md).
+
 ### Minimal examples
 
 ```yaml
