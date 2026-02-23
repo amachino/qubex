@@ -123,3 +123,13 @@ def test_nested():
     arr = PulseArray([pulse, pulse.scaled(2)])
     nested = PulseArray([arr, arr.scaled(2)])
     assert nested.values == pytest.approx([1, 2, 3, 2, 4, 6, 2, 4, 6, 4, 8, 12])
+
+
+def test_elements_returns_detached_list_view():
+    """PulseArray elements should return a detached list view."""
+    arr = PulseArray([Arbitrary([1 + 0j])])
+
+    exposed = arr.elements
+    exposed.append(Arbitrary([2 + 0j]))
+
+    assert arr.values == pytest.approx([1 + 0j])

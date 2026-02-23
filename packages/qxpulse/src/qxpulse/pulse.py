@@ -110,7 +110,8 @@ class Pulse(Waveform):
         if duration is not None:
             self._length = self._number_of_samples(duration)
         if values is not None:
-            sampled_values = np.asarray(values, dtype=np.complex128)
+            # Detach from caller-owned buffers to prevent accidental aliasing side effects.
+            sampled_values = np.array(values, dtype=np.complex128, copy=True)
             self._values = sampled_values
             self._length = len(sampled_values)
 

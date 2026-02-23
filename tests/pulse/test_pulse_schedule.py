@@ -335,3 +335,21 @@ def test_usecase():
         ]
     )
     assert phase2 == pytest.approx(0)
+
+
+def test_length_is_stable_against_global_sampling_period_changes():
+    """PulseSchedule length should be stable after global sampling period changes."""
+    from qubex.pulse import get_sampling_period, set_sampling_period
+
+    original_dt = get_sampling_period()
+    try:
+        set_sampling_period(2.0)
+        with PulseSchedule() as ps:
+            ps.add("Q00", Arbitrary([1, 2, 3]))
+
+        assert ps.length == 3
+
+        set_sampling_period(1.0)
+        assert ps.length == 3
+    finally:
+        set_sampling_period(original_dt)

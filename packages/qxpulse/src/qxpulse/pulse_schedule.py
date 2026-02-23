@@ -168,13 +168,20 @@ class PulseSchedule:
             return 0
         if not self.is_valid():
             raise ValueError("Inconsistent sequence lengths.")
+        sampling_periods = {
+            channel.sequence.sampling_period for channel in self._channels.values()
+        }
+        if len(sampling_periods) != 1:
+            raise ValueError("Inconsistent sampling periods across channels.")
+        # Bind length computation to schedule-contained sampling periods, not mutable global defaults.
+        sampling_period = next(iter(sampling_periods))
         # NOTE:
         #   Using floor division (//) with floating point numbers can lead to an off-by-one
         #   error due to binary representation (e.g. 100 // 0.1 -> 999.0 instead of 1000.0).
         #   We therefore compute the ratio and round it to the nearest integer.
         #   This assumes that duration is always intended to be an integer multiple of
-        #   Waveform.SAMPLING_PERIOD within normal floating point tolerance.
-        return round(self.duration / Waveform.SAMPLING_PERIOD)
+        #   sampling period within normal floating point tolerance.
+        return round(self.duration / sampling_period)
 
     @property
     def duration(self) -> float:

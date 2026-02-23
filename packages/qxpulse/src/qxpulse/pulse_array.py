@@ -83,7 +83,8 @@ class PulseArray(Waveform):
     @property
     def elements(self) -> list[Waveform | PhaseShift]:
         """Returns the list of waveforms and phase shifts in the pulse array."""
-        return self._elements
+        # Return a detached list object so external list mutations cannot alter internal structure.
+        return list(self._elements)
 
     @property
     def waveforms(self) -> list[Waveform]:

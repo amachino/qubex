@@ -207,3 +207,13 @@ def test_shape_hash_depends_on_detuning():
     shape_hash_a = pulse_a.shape_hash
     shape_hash_b = pulse_b.shape_hash
     assert shape_hash_a != shape_hash_b
+
+
+def test_init_detaches_from_external_ndarray():
+    """Arbitrary should not alias caller-provided ndarray storage."""
+    source = np.array([1 + 0j, 2 + 0j], dtype=np.complex128)
+    pulse = Arbitrary(source)
+
+    source[0] = 99 + 0j
+
+    assert pulse.values == pytest.approx([1 + 0j, 2 + 0j])
