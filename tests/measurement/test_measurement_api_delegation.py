@@ -14,7 +14,6 @@ from qxpulse import PulseSchedule
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel1 import Quel1BackendRawResult
 from qubex.measurement.measurement import Measurement
-from qubex.measurement.measurement_execution_service import MeasurementExecutionService
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models import (
@@ -29,6 +28,9 @@ from qubex.measurement.models.measure_result import (
     MultipleMeasureResult,
 )
 from qubex.measurement.models.measurement_result import MeasurementResult
+from qubex.measurement.services.measurement_execution_service import (
+    MeasurementExecutionService,
+)
 from qubex.typing import TargetMap
 
 

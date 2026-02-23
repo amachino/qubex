@@ -1,4 +1,4 @@
-"""Tests for functional APIs in `qubex.contrib.simultaneous_coherence_measurement`."""
+"""Tests for functional APIs in `qubex.contrib.experiment.simultaneous_coherence_measurement`."""
 
 from __future__ import annotations
 

@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from qubex.measurement.measurement_session_service import MeasurementSessionService
+from qubex.measurement.services.measurement_session_service import (
+    MeasurementSessionService,
+)
 
 
 class _BackendWithoutOptionalCapabilities:

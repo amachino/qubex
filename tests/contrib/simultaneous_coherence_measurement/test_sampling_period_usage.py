@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from qubex.contrib.simultaneous_coherence_measurement import (
+from qubex.contrib.experiment.simultaneous_coherence_measurement import (
     simultaneous_coherence_measurement,
 )
 

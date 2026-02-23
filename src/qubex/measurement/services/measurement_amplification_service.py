@@ -7,8 +7,7 @@ from contextlib import contextmanager
 
 from qubex.backend import ControlParams, ExperimentSystem
 from qubex.backend.dc_voltage_controller import dc_voltage
-
-from .measurement_context import MeasurementContext
+from qubex.measurement.measurement_context import MeasurementContext
 
 
 class MeasurementAmplificationService:

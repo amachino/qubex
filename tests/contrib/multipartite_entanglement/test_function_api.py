@@ -1,4 +1,4 @@
-"""Tests for functional APIs in `qubex.contrib.multipartite_entanglement`."""
+"""Tests for functional APIs in `qubex.contrib.experiment.multipartite_entanglement`."""
 
 from __future__ import annotations
 

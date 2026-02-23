@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any, cast
 
 from qubex.measurement.measurement import Measurement
-from qubex.measurement.measurement_session_service import MeasurementSessionService
+from qubex.measurement.services.measurement_session_service import (
+    MeasurementSessionService,
+)
 
 
 def test_measurement_session_service_load_forwards_backend_kind() -> None:

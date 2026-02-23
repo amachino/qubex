@@ -7,4 +7,3 @@ from qubex.core import DataModel
 
 class SweepMeasurementResult(DataModel):
     """Temporary placeholder model for sweep measurement execution API."""
-

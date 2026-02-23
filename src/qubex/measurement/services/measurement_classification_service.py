@@ -8,9 +8,8 @@ from functools import reduce
 import numpy as np
 import numpy.typing as npt
 
+from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.typing import TargetMap
-
-from .classifiers.state_classifier import StateClassifier
 
 
 class MeasurementClassificationService:

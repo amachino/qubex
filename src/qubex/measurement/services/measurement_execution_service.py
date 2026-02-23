@@ -20,26 +20,29 @@ from qubex.backend import (
 from qubex.backend.quel1 import (
     ExecutionMode,
 )
-from qubex.typing import IQArray, MeasurementMode, TargetMap
-
-from .classifiers.state_classifier import StateClassifier
-from .measurement_config_factory import MeasurementConfigFactory
-from .measurement_constraint_profile import MeasurementConstraintProfile
-from .measurement_context import MeasurementContext
-from .measurement_pulse_factory import MeasurementPulseFactory
-from .measurement_result_converter import MeasurementResultConverter
-from .measurement_schedule_builder import MeasurementScheduleBuilder
-from .measurement_schedule_runner import MeasurementScheduleRunner
-from .measurement_session_service import MeasurementSessionService
-from .models.measure_result import (
+from qubex.measurement.classifiers.state_classifier import StateClassifier
+from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
+from qubex.measurement.measurement_context import MeasurementContext
+from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
+from qubex.measurement.measurement_result_converter import MeasurementResultConverter
+from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
+from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
+from qubex.measurement.models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
-from .models.measurement_config import MeasurementConfig
-from .models.measurement_result import MeasurementResult
-from .models.measurement_schedule import MeasurementSchedule
-from .models.sweep_measurement_config import SweepMeasurementConfig
-from .models.sweep_measurement_result import SweepMeasurementResult
+from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_result import MeasurementResult
+from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.measurement.models.sweep_measurement_config import SweepMeasurementConfig
+from qubex.measurement.models.sweep_measurement_result import SweepMeasurementResult
+from qubex.measurement.services.measurement_session_service import (
+    MeasurementSessionService,
+)
+from qubex.typing import IQArray, MeasurementMode, TargetMap
 
 logger = logging.getLogger(__name__)
 

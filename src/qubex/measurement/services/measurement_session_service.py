@@ -15,9 +15,8 @@ from qubex.backend import (
     ExperimentSystem,
     SystemManager,
 )
+from qubex.measurement.measurement_context import MeasurementContext
 from qubex.typing import ConfigurationMode
-
-from .measurement_context import MeasurementContext
 
 logger = logging.getLogger(__name__)
 

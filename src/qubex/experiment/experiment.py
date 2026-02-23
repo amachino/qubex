@@ -1091,7 +1091,7 @@ class Experiment:
             x180_margin=x180_margin,
         )
 
-    @deprecated("This API is moved to `qubex.contrib.rzx_gate`.")
+    @deprecated("This API is moved to `qubex.contrib.experiment.rzx_gate`.")
     def rzx(
         self,
         control_qubit: str,
@@ -1113,13 +1113,13 @@ class Experiment:
     ) -> PulseSchedule:
         """Warn that RZX pulse API moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.rzx_gate`. Use contrib function APIs instead.",
+            "Moved to `qubex.contrib.experiment.rzx_gate`. Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.rzx_gate`.")
+        raise NotImplementedError("Moved to `qubex.contrib.experiment.rzx_gate`.")
 
-    @deprecated("This API is moved to `qubex.contrib.rzx_gate`.")
+    @deprecated("This API is moved to `qubex.contrib.experiment.rzx_gate`.")
     def rzx_gate_property(
         self,
         control_qubit: str,
@@ -1130,11 +1130,11 @@ class Experiment:
     ) -> Result:
         """Warn that RZX gate property API moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.rzx_gate`. Use contrib function APIs instead.",
+            "Moved to `qubex.contrib.experiment.rzx_gate`. Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.rzx_gate`.")
+        raise NotImplementedError("Moved to `qubex.contrib.experiment.rzx_gate`.")
 
     def cnot(
         self,
@@ -2467,258 +2467,350 @@ class Experiment:
             mle_fit=mle_fit,
         )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_entangle_sequence(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_entangle_sequence` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_ghz_sequence(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_ghz_sequence` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def measure_ghz_state(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `measure_ghz_state` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def ghz_state_tomography(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `ghz_state_tomography` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_mqc_sequence(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_mqc_sequence` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def mqc_experiment(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `mqc_experiment` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def fourier_analysis(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `fourier_analysis` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def parity_oscillation(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `parity_oscillation` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_1d_cluster_sequence(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_1d_cluster_sequence` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def measure_1d_cluster_state(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `measure_1d_cluster_state` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def partial_transpose(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `partial_transpose` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_connected_graphs(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_connected_graphs` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_maximum_graph(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_maximum_graph` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_maximum_1d_chain(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_maximum_1d_chain` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_maximum_spanning_tree(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_maximum_spanning_tree` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_maximum_directed_tree(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_maximum_directed_tree` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_cz_rounds(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_cz_rounds` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_graph_sequence(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_graph_sequence` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def create_measurement_rounds(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `create_measurement_rounds` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def visualize_graph(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `visualize_graph` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def measure_graph_state(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `measure_graph_state` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def measure_bell_state_fidelities(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `measure_bell_state_fidelities` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.multipartite_entanglement`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.multipartite_entanglement`."
+    )
     def measure_bell_states(self, *args: Any, **kwargs: Any) -> Any:
         """Warn that `measure_bell_states` moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.multipartite_entanglement`."
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.multipartite_entanglement`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.multipartite_entanglement`."
+        )
 
     # endregion
 
@@ -3303,7 +3395,9 @@ class Experiment:
             plot=plot,
         )
 
-    @deprecated("This API is moved to `qubex.contrib.crosstalk_cross_resonance`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.crosstalk_cross_resonance`."
+    )
     def measure_cr_crosstalk(
         self,
         *,
@@ -3333,14 +3427,18 @@ class Experiment:
     ) -> Result:
         """Warn that CR crosstalk measurement moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.crosstalk_cross_resonance`."
+            "Moved to `qubex.contrib.experiment.crosstalk_cross_resonance`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.crosstalk_cross_resonance`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.crosstalk_cross_resonance`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.crosstalk_cross_resonance`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.crosstalk_cross_resonance`."
+    )
     def cr_crosstalk_hamiltonian_tomography(
         self,
         *,
@@ -3367,12 +3465,14 @@ class Experiment:
     ) -> Result:
         """Warn that CR crosstalk tomography moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.crosstalk_cross_resonance`."
+            "Moved to `qubex.contrib.experiment.crosstalk_cross_resonance`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.crosstalk_cross_resonance`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.crosstalk_cross_resonance`."
+        )
 
     def cr_hamiltonian_tomography(
         self,
@@ -3866,7 +3966,7 @@ class Experiment:
         )
 
     @deprecated(
-        "This API is moved to `qubex.contrib.simultaneous_coherence_measurement`."
+        "This API is moved to `qubex.contrib.experiment.simultaneous_coherence_measurement`."
     )
     def _simultaneous_measurement_coherence(
         self,
@@ -3882,16 +3982,18 @@ class Experiment:
     ) -> dict[str, ExperimentResult]:
         """Warn that simultaneous coherence moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.simultaneous_coherence_measurement`."
+            "Moved to `qubex.contrib.experiment.simultaneous_coherence_measurement`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
         raise NotImplementedError(
-            "Moved to `qubex.contrib.simultaneous_coherence_measurement`."
+            "Moved to `qubex.contrib.experiment.simultaneous_coherence_measurement`."
         )
 
-    @deprecated("This API is moved to `qubex.contrib.stark_characterization`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.stark_characterization`."
+    )
     def _stark_t1_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3908,14 +4010,18 @@ class Experiment:
     ) -> ExperimentResult[T1Data]:
         """Warn that stark T1 moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.stark_characterization`."
+            "Moved to `qubex.contrib.experiment.stark_characterization`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.stark_characterization`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.stark_characterization`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.stark_characterization`.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.experiment.stark_characterization`."
+    )
     def _stark_ramsey_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3933,12 +4039,14 @@ class Experiment:
     ) -> ExperimentResult[RamseyData]:
         """Warn that stark Ramsey moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.stark_characterization`."
+            "Moved to `qubex.contrib.experiment.stark_characterization`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.stark_characterization`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.stark_characterization`."
+        )
 
     def obtain_effective_control_frequency(
         self,
@@ -4560,7 +4668,7 @@ class Experiment:
             save_image=save_image,
         )
 
-    @deprecated("This API is moved to `qubex.contrib.purity_benchmarking`.")
+    @deprecated("This API is moved to `qubex.contrib.experiment.purity_benchmarking`.")
     def purity_benchmarking(
         self,
         targets: Collection[str] | str,
@@ -4580,14 +4688,16 @@ class Experiment:
     ) -> Result:
         """Warn that purity benchmarking moved to contrib and stop execution."""
         warnings.warn(
-            "Moved to `qubex.contrib.purity_benchmarking`."
+            "Moved to `qubex.contrib.experiment.purity_benchmarking`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.purity_benchmarking`."
+        )
 
-    @deprecated("This API is moved to `qubex.contrib.purity_benchmarking`.")
+    @deprecated("This API is moved to `qubex.contrib.experiment.purity_benchmarking`.")
     def interleaved_purity_benchmarking(
         self,
         targets: Collection[str] | str,
@@ -4610,12 +4720,14 @@ class Experiment:
     ) -> Result:
         """Warn that interleaved purity benchmarking moved to contrib and stop."""
         warnings.warn(
-            "Moved to `qubex.contrib.purity_benchmarking`."
+            "Moved to `qubex.contrib.experiment.purity_benchmarking`."
             " Use contrib function APIs instead.",
             category=FutureWarning,
             stacklevel=2,
         )
-        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.experiment.purity_benchmarking`."
+        )
 
     # endregion
 

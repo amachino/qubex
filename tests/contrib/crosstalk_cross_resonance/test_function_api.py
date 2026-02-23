@@ -1,4 +1,4 @@
-"""Tests for functional APIs in `qubex.contrib.crosstalk_cross_resonance`."""
+"""Tests for functional APIs in `qubex.contrib.experiment.crosstalk_cross_resonance`."""
 
 from __future__ import annotations
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, cast
 
-from qubex.measurement.measurement_amplification_service import (
+from qubex.measurement.services.measurement_amplification_service import (
     MeasurementAmplificationService,
 )
 
@@ -24,7 +24,7 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
             called["exited"] = True
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_amplification_service.dc_voltage",
+        "qubex.measurement.services.measurement_amplification_service.dc_voltage",
         _fake_dc_voltage,
     )
 
@@ -67,7 +67,7 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
         yield
 
     monkeypatch.setattr(
-        "qubex.measurement.measurement_amplification_service.dc_voltage",
+        "qubex.measurement.services.measurement_amplification_service.dc_voltage",
         _fake_dc_voltage,
     )
 

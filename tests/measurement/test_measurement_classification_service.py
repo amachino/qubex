@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import numpy as np
 
-from qubex.measurement.measurement_classification_service import (
+from qubex.measurement.services.measurement_classification_service import (
     MeasurementClassificationService,
 )
 

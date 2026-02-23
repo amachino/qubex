@@ -1,4 +1,4 @@
-"""Tests for functional APIs in `qubex.contrib.rzx_gate`."""
+"""Tests for functional APIs in `qubex.contrib.experiment.rzx_gate`."""
 
 from __future__ import annotations
 

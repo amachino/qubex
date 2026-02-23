@@ -1,4 +1,4 @@
-"""Tests for functional APIs in `qubex.contrib.purity_benchmarking`."""
+"""Tests for functional APIs in `qubex.contrib.experiment.purity_benchmarking`."""
 
 from __future__ import annotations
 
