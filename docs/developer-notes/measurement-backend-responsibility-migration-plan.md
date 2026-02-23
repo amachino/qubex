@@ -133,14 +133,14 @@ Migrate the current implementation to the target architecture defined in `measur
   - Match policy boundary and remove measurement-layer coupling to backend-internal executors.
 - Main changes
   - Update `MeasurementScheduleRunner` to call `backend_controller.execute(request=...)`.
-  - Remove direct measurement-layer references to `Quel1BackendExecutor` and `Quel3BackendExecutor`.
+  - Remove direct measurement-layer references to backend-executor classes.
   - Implement `execute(...)` entrypoint in backend controllers.
 - Behavior-preserving guardrails
   - Keep payload contract (`BackendExecutionRequest`) and result-conversion path unchanged.
 - Verification
   - `uv run pytest tests/measurement/test_measurement_schedule_runner.py`
   - `uv run pytest tests/backend/test_quel1_backend_executor_mode.py`
-  - `uv run pytest tests/measurement/test_quel3_backend_executor.py`
+  - `uv run pytest tests/backend/test_quel3_backend_controller.py`
 
 ### Step 6: Split QuEL-1 controller into manager-delegation structure
 
@@ -199,7 +199,7 @@ Migrate the current implementation to the target architecture defined in `measur
 - Verification
   - `uv run pytest tests/backend/test_quel3_backend_controller.py`
   - `uv run pytest tests/backend/test_quel3_sequencer_builder.py`
-  - `uv run pytest tests/measurement/test_quel3_backend_executor.py`
+  - `uv run pytest tests/backend/test_quel3_backend_controller.py`
   - `uv run pytest tests/measurement/test_quel3_measurement_backend_adapter.py`
 
 ### Step 8: Lock `MeasurementSessionService` and `SystemManager` collaboration boundary per policy

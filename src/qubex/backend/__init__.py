@@ -2,11 +2,11 @@
 
 from qubex.constants import DEFAULT_CONFIG_DIR
 
-from .backend_controller import BackendController, BackendKind
-from .backend_executor import (
+from .backend_controller import (
+    BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
-    BackendExecutor,
+    BackendKind,
 )
 from .config_loader import ConfigLoader
 from .control_system import Box, BoxType, Channel, ControlSystem, Port, PortType
@@ -22,7 +22,6 @@ __all__ = [
     "BackendController",
     "BackendExecutionRequest",
     "BackendExecutionResult",
-    "BackendExecutor",
     "BackendKind",
     "Box",
     "BoxType",

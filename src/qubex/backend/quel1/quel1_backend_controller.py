@@ -14,8 +14,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from qubex.backend.backend_controller import BackendController
-from qubex.backend.backend_executor import (
+from qubex.backend.backend_controller import (
+    BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
@@ -28,7 +28,6 @@ from .managers import (
     Quel1SkewManager,
 )
 from .quel1_backend_constants import ExecutionMode
-from .quel1_backend_raw_result import Quel1BackendRawResult
 from .quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
@@ -753,69 +752,8 @@ class Quel1BackendController(BackendController):
         clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request using QuEL-1 execution defaults."""
-        from .quel1_backend_executor import Quel1BackendExecutor
-
-        executor = Quel1BackendExecutor(
-            backend_controller=self,
-            execution_manager=self._execution_manager,
-            execution_mode=execution_mode,
-            clock_health_checks=clock_health_checks,
-        )
         return self._execution_manager.execute(
             request=request,
-            executor=executor,
-        )
-
-    def execute_sequencer(
-        self,
-        sequencer: Sequencer,
-        *,
-        repeats: int,
-        integral_mode: str = "integral",
-        dsp_demodulation: bool = True,
-        software_demodulation: bool = False,
-        enable_sum: bool = False,
-        enable_classification: bool = False,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
-    ) -> Quel1BackendRawResult:
-        """Execute one sequencer via serial path."""
-        return self._execution_manager.execute_sequencer(
-            sequencer=sequencer,
-            repeats=repeats,
-            integral_mode=integral_mode,
-            dsp_demodulation=dsp_demodulation,
-            software_demodulation=software_demodulation,
-            enable_sum=enable_sum,
-            enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
-
-    def execute_sequencer_parallel(
-        self,
-        sequencer: Sequencer,
-        *,
-        repeats: int,
-        integral_mode: str = "integral",
-        dsp_demodulation: bool = True,
-        software_demodulation: bool = False,
-        enable_sum: bool = False,
-        enable_classification: bool = False,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
-        clock_health_checks: bool = False,
-    ) -> Quel1BackendRawResult:
-        """Execute one sequencer via parallel action path."""
-        return self._execution_manager.execute_sequencer_parallel(
-            sequencer=sequencer,
-            repeats=repeats,
-            integral_mode=integral_mode,
-            dsp_demodulation=dsp_demodulation,
-            software_demodulation=software_demodulation,
-            enable_sum=enable_sum,
-            enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
         )

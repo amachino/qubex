@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
@@ -13,15 +14,6 @@ from qubex.backend import (
     ConfigLoader,
     ExperimentSystem,
     SystemManager,
-)
-from qubex.backend.backend_controller import (
-    BackendClockResynchronizer,
-    BackendClockStatusReader,
-    BackendClockSynchronizer,
-    BackendLinkStatusReader,
-    BackendLinkupOperator,
-    BackendRelinkupOperator,
-    BackendSkewYamlLoader,
 )
 from qubex.typing import ConfigurationMode
 
@@ -98,13 +90,14 @@ class MeasurementSessionService:
             logger.warning(f"Skew file not found: {skew_file_path}")
             return
         backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendSkewYamlLoader):
+        load_skew_yaml = getattr(backend_controller, "load_skew_yaml", None)
+        if not callable(load_skew_yaml):
             logger.info(
                 "Skipping skew file load because this backend does not support skew calibration."
             )
             return
         try:
-            backend_controller.load_skew_yaml(skew_file_path)
+            load_skew_yaml(skew_file_path)
         except Exception:
             logger.exception("Failed to load the skew file.")
 
@@ -135,8 +128,9 @@ class MeasurementSessionService:
         backend_controller.connect(box_ids, parallel=parallel)
         self.system_manager.pull(box_ids, parallel=parallel)
         if sync_clocks:
-            if isinstance(backend_controller, BackendClockResynchronizer):
-                backend_controller.resync_clocks(box_ids)
+            resync_clocks = getattr(backend_controller, "resync_clocks", None)
+            if callable(resync_clocks):
+                resync_clocks(box_ids)
             else:
                 logger.info(
                     "Skipping clock re-synchronization because this backend does not support it."
@@ -153,11 +147,15 @@ class MeasurementSessionService:
     def check_link_status(self, box_list: list[str]) -> dict:
         """Check link status for the provided box list."""
         backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendLinkStatusReader):
+        link_status = cast(
+            Callable[[str], dict[int, bool]] | None,
+            getattr(backend_controller, "link_status", None),
+        )
+        if not callable(link_status):
             raise NotImplementedError(
                 "Active backend does not support link status checks."
             )
-        link_statuses = {box: backend_controller.link_status(box) for box in box_list}
+        link_statuses = {box: link_status(box) for box in box_list}
         is_linkedup = all(all(status.values()) for status in link_statuses.values())
         return {
             "status": is_linkedup,
@@ -167,11 +165,19 @@ class MeasurementSessionService:
     def check_clock_status(self, box_list: list[str]) -> dict:
         """Check clock synchronization status for the provided box list."""
         backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendClockStatusReader):
+        read_clocks = cast(
+            Callable[[list[str]], list[tuple[bool, int, int]]] | None,
+            getattr(backend_controller, "read_clocks", None),
+        )
+        check_clocks = cast(
+            Callable[[list[str]], bool] | None,
+            getattr(backend_controller, "check_clocks", None),
+        )
+        if not callable(read_clocks) or not callable(check_clocks):
             raise NotImplementedError(
                 "Active backend does not support clock status checks."
             )
-        clocks = backend_controller.read_clocks(box_list)
+        clocks = read_clocks(box_list)
         clock_statuses = dict(
             zip(
                 box_list,
@@ -179,7 +185,7 @@ class MeasurementSessionService:
                 strict=True,
             )
         )
-        is_synced = backend_controller.check_clocks(box_list)
+        is_synced = check_clocks(box_list)
         return {
             "status": is_synced,
             "clocks": clock_statuses,
@@ -188,26 +194,42 @@ class MeasurementSessionService:
     def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """Link up boxes and synchronize clocks."""
         backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendLinkupOperator):
+        linkup_boxes = cast(
+            Callable[..., Any] | None,
+            getattr(backend_controller, "linkup_boxes", None),
+        )
+        sync_clocks = cast(
+            Callable[[list[str]], bool] | None,
+            getattr(backend_controller, "sync_clocks", None),
+        )
+        if not callable(linkup_boxes):
             raise NotImplementedError("Active backend does not support linkup.")
-        if not isinstance(backend_controller, BackendClockSynchronizer):
+        if not callable(sync_clocks):
             raise NotImplementedError(
                 "Active backend does not support clock synchronization."
             )
-        backend_controller.linkup_boxes(box_list, noise_threshold=noise_threshold)
-        backend_controller.sync_clocks(box_list)
+        linkup_boxes(box_list, noise_threshold=noise_threshold)
+        sync_clocks(box_list)
 
     def relinkup(self, box_list: list[str]) -> None:
         """Relink up boxes and synchronize clocks."""
         backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendRelinkupOperator):
+        relinkup_boxes = cast(
+            Callable[[list[str]], None] | None,
+            getattr(backend_controller, "relinkup_boxes", None),
+        )
+        sync_clocks = cast(
+            Callable[[list[str]], bool] | None,
+            getattr(backend_controller, "sync_clocks", None),
+        )
+        if not callable(relinkup_boxes):
             raise NotImplementedError("Active backend does not support relinkup.")
-        if not isinstance(backend_controller, BackendClockSynchronizer):
+        if not callable(sync_clocks):
             raise NotImplementedError(
                 "Active backend does not support clock synchronization."
             )
-        backend_controller.relinkup_boxes(box_list)
-        backend_controller.sync_clocks(box_list)
+        relinkup_boxes(box_list)
+        sync_clocks(box_list)
 
     @contextmanager
     def modified_frequencies(

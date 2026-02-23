@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from qubex.backend.backend_executor import (
+from qubex.backend.backend_controller import (
     BackendExecutionRequest,
     BackendExecutionResult,
-    BackendExecutor,
 )
 from qubex.backend.quel1.compat.parallel_action_builder import (
     ClockHealthCheckOptions,
@@ -18,7 +17,13 @@ from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
     SequencerExecutionEngine,
 )
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_CLOCK_HEALTH_CHECKS,
+    DEFAULT_EXECUTION_MODE,
+    ExecutionMode,
+)
 from qubex.backend.quel1.quel1_backend_raw_result import Quel1BackendRawResult
+from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 logger = logging.getLogger(__name__)
@@ -41,26 +46,68 @@ class Quel1ExecutionManager:
         self,
         *,
         request: BackendExecutionRequest,
-        executor: BackendExecutor,
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """
-        Execute a prepared backend request with a configured executor.
+        Execute a prepared backend request.
 
         Parameters
         ----------
         request : BackendExecutionRequest
             Backend execution request.
-        executor : BackendExecutor
-            Backend executor that handles request execution.
+        execution_mode : ExecutionMode | None, optional
+            Backend execution mode selector.
+        clock_health_checks : bool | None, optional
+            Whether to enable clock diagnostics on parallel path.
 
         Returns
         -------
         BackendExecutionResult
             Backend-specific execution result.
         """
-        return executor.execute(request=request)
+        payload = request.payload
+        if not isinstance(payload, Quel1ExecutionPayload):
+            raise TypeError(
+                "Quel1ExecutionManager expects `Quel1ExecutionPayload` payload."
+            )
+        mode = execution_mode or DEFAULT_EXECUTION_MODE
+        if mode not in {"serial", "parallel"}:
+            raise ValueError(f"Unsupported execution mode: {mode}")
+        if clock_health_checks is None:
+            clock_health_checks = DEFAULT_CLOCK_HEALTH_CHECKS
+        sequencer = self._create_quel1_sequencer(
+            gen_sampled_sequence=payload.gen_sampled_sequence,
+            cap_sampled_sequence=payload.cap_sampled_sequence,
+            resource_map=payload.resource_map,
+            interval=payload.interval,
+        )
+        if mode == "parallel":
+            return self._execute_sequencer_parallel(
+                sequencer=sequencer,
+                repeats=payload.repeats,
+                integral_mode=payload.integral_mode,
+                dsp_demodulation=payload.dsp_demodulation,
+                software_demodulation=False,
+                enable_sum=payload.enable_sum,
+                enable_classification=payload.enable_classification,
+                line_param0=payload.line_param0,
+                line_param1=payload.line_param1,
+                clock_health_checks=clock_health_checks,
+            )
+        return self._execute_sequencer(
+            sequencer=sequencer,
+            repeats=payload.repeats,
+            integral_mode=payload.integral_mode,
+            dsp_demodulation=payload.dsp_demodulation,
+            software_demodulation=False,
+            enable_sum=payload.enable_sum,
+            enable_classification=payload.enable_classification,
+            line_param0=payload.line_param0,
+            line_param1=payload.line_param1,
+        )
 
-    def create_quel1_sequencer(
+    def _create_quel1_sequencer(
         self,
         *,
         gen_sampled_sequence: dict[str, GenSampledSequenceProtocol],
@@ -80,7 +127,7 @@ class Quel1ExecutionManager:
             driver=self._runtime_context.quel1system,
         )
 
-    def execute_sequencer(
+    def _execute_sequencer(
         self,
         *,
         sequencer: SequencerProtocol,
@@ -93,35 +140,7 @@ class Quel1ExecutionManager:
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
     ) -> Quel1BackendRawResult:
-        """
-        Execute a sequencer through serial qubecalib path.
-
-        Parameters
-        ----------
-        sequencer : SequencerProtocol
-            Sequencer to execute.
-        repeats : int
-            Repeat count.
-        integral_mode : str
-            Integral mode.
-        dsp_demodulation : bool
-            DSP demodulation enable flag.
-        software_demodulation : bool
-            Software demodulation enable flag.
-        enable_sum : bool
-            DSP sum enable flag.
-        enable_classification : bool
-            DSP classification enable flag.
-        line_param0 : tuple[float, float, float] | None
-            Classifier line parameter 0.
-        line_param1 : tuple[float, float, float] | None
-            Classifier line parameter 1.
-
-        Returns
-        -------
-        Quel1BackendRawResult
-            Parsed backend result.
-        """
+        """Execute a sequencer through serial qubecalib path."""
         SequencerExecutionEngine.set_measurement_options(
             sequencer=sequencer,
             repeats=repeats,
@@ -140,7 +159,7 @@ class Quel1ExecutionManager:
             config=config,
         )
 
-    def execute_sequencer_parallel(
+    def _execute_sequencer_parallel(
         self,
         *,
         sequencer: SequencerProtocol,
@@ -154,37 +173,7 @@ class Quel1ExecutionManager:
         line_param1: tuple[float, float, float] | None,
         clock_health_checks: bool,
     ) -> Quel1BackendRawResult:
-        """
-        Execute a sequencer through parallelized multi-box action path.
-
-        Parameters
-        ----------
-        sequencer : SequencerProtocol
-            Sequencer to execute.
-        repeats : int
-            Repeat count.
-        integral_mode : str
-            Integral mode.
-        dsp_demodulation : bool
-            DSP demodulation enable flag.
-        software_demodulation : bool
-            Software demodulation enable flag.
-        enable_sum : bool
-            DSP sum enable flag.
-        enable_classification : bool
-            DSP classification enable flag.
-        line_param0 : tuple[float, float, float] | None
-            Classifier line parameter 0.
-        line_param1 : tuple[float, float, float] | None
-            Classifier line parameter 1.
-        clock_health_checks : bool
-            Whether to enable clock health diagnostics.
-
-        Returns
-        -------
-        Quel1BackendRawResult
-            Parsed backend result.
-        """
+        """Execute a sequencer through parallelized multi-box action path."""
         SequencerExecutionEngine.set_measurement_options(
             sequencer=sequencer,
             repeats=repeats,

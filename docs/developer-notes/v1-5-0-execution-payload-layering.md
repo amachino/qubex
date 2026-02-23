@@ -31,7 +31,7 @@ Execution payloads are backend contracts and should be defined in backend module
 - Direction rule: `measurement -> backend`
 - No reverse dependency from backend to measurement for payload models
 - Measurement adapters build backend payloads
-- Backend executors/controllers consume backend payloads
+- Backend controllers/execution managers consume backend payloads
 
 ## Implemented changes
 
@@ -48,15 +48,13 @@ Execution payloads are backend contracts and should be defined in backend module
 
 - Updated `src/qubex/backend/quel3/quel3_backend_controller.py` to use backend-local payload types.
 - Updated `src/qubex/backend/quel3/managers/sequencer_builder.py` to use backend-local payload types.
-- Updated `src/qubex/backend/quel3/quel3_backend_executor.py` as backend-local executor for
-  QuEL-3 payload execution.
 - This removes direct payload imports from `qubex.measurement.adapters.backend_adapter`.
 
 ### 3) Keep measurement layer focused on schedule-to-payload conversion
 
 - `Quel3MeasurementBackendAdapter` stays in `qubex.measurement.adapters`.
 - `MeasurementScheduleRunner` calls only `BackendController.execute(request=...)`.
-- Backend controllers own execution, keeping executor classes backend-internal.
+- Backend controllers own execution through backend-local execution managers.
 
 ### 4) Align QuEL-1 payload shape with backend-plan pattern
 
@@ -68,8 +66,7 @@ Execution payloads are backend contracts and should be defined in backend module
 - `interval`
 - execution options (`repeats`, `integral_mode`, DSP/classifier settings)
 
-`Quel1BackendExecutor` now requests sequencer compilation through
-`Quel1ExecutionManager.create_quel1_sequencer(...)` right before execution.
+`Quel1ExecutionManager` compiles sequencers right before execution.
 
 This keeps adapter responsibility at "build execution plan" and backend responsibility at
 "compile and execute".

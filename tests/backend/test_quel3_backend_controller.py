@@ -1,3 +1,5 @@
+# ruff: noqa: SLF001
+
 """Tests for QuEL-3 backend controller behavior."""
 
 from __future__ import annotations
@@ -8,7 +10,7 @@ import numpy as np
 import pytest
 
 from qubex.backend import BackendExecutionRequest
-from qubex.backend.backend_controller import BackendBoxConfigProvider, BackendController
+from qubex.backend.backend_controller import BackendController
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import (
     Quel3BackendController,
@@ -70,7 +72,7 @@ def test_quel3_controller_is_not_quel1_subclass() -> None:
 
 def test_quel3_controller_does_not_expose_box_config_capability() -> None:
     """Given QuEL-3 controller, box-config optional capability is absent."""
-    assert not isinstance(Quel3BackendController(), BackendBoxConfigProvider)
+    assert not hasattr(Quel3BackendController(), "box_config")
 
 
 def test_resolve_instrument_alias_uses_alias_map() -> None:
@@ -107,7 +109,7 @@ def test_execute_surfaces_missing_quelware_dependency(
 
     monkeypatch.setattr(
         Quel3ExecutionManager,
-        "load_quelware_api",
+        "_load_quelware_api",
         staticmethod(
             lambda: (_ for _ in ()).throw(ModuleNotFoundError("quelware_client"))
         ),
@@ -129,7 +131,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         }
     }
 
-    result = Quel3ExecutionManager.build_measurement_result(
+    result = Quel3ExecutionManager._build_measurement_result(
         payload=payload,
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
@@ -164,7 +166,7 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
         }
     }
 
-    result = Quel3ExecutionManager.build_measurement_result(
+    result = Quel3ExecutionManager._build_measurement_result(
         payload=payload,
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
@@ -186,8 +188,8 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     controller = Quel3BackendController()
 
     assert pytest.approx(0.4) == controller.sampling_period
-    assert controller._runtime_context.quelware_endpoint == "localhost"  # noqa: SLF001
-    assert controller._runtime_context.quelware_port == 50051  # noqa: SLF001
+    assert controller._runtime_context.quelware_endpoint == "localhost"
+    assert controller._runtime_context.quelware_port == 50051
 
 
 def test_execute_rejects_multiple_instrument_aliases() -> None:

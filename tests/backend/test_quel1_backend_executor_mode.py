@@ -1,4 +1,4 @@
-"""Tests for mode switching in Quel1BackendExecutor."""
+"""Tests for mode switching in Quel1ExecutionManager."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ import qubex.backend.quel1.managers.execution_manager as execution_manager_modul
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel1 import Quel1ExecutionPayload
 from qubex.backend.quel1.managers.execution_manager import Quel1ExecutionManager
-from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
-from qubex.backend.quel1.quel1_backend_executor import Quel1BackendExecutor
 
 
 def _make_payload() -> Quel1ExecutionPayload:
@@ -35,30 +33,24 @@ def test_execute_uses_parallel_mode_by_default() -> None:
     called: dict[str, Any] = {}
     sequencer = object()
 
-    class _Controller:
-        def execute_sequencer(self, **kwargs: Any) -> str:
-            called["serial"] = kwargs
-            return "serial"
-
-        def execute_sequencer_parallel(self, **kwargs: Any) -> str:
-            called["parallel"] = kwargs
-            return "parallel"
-
-    class _ExecutionManager:
-        def create_quel1_sequencer(self, **kwargs: Any) -> object:
+    class _ExecutionManager(Quel1ExecutionManager):
+        def _create_quel1_sequencer(self, **kwargs: Any) -> object:
             called["create"] = kwargs
             return sequencer
 
-    executor = Quel1BackendExecutor(
-        backend_controller=cast(Quel1BackendController, _Controller()),
-        execution_manager=cast(Quel1ExecutionManager, _ExecutionManager()),
-    )
+        def _execute_sequencer(self, **kwargs: Any) -> str:
+            called["serial"] = kwargs
+            return "serial"
 
-    result = executor.execute(request=BackendExecutionRequest(payload=_make_payload()))
+        def _execute_sequencer_parallel(self, **kwargs: Any) -> str:
+            called["parallel"] = kwargs
+            return "parallel"
+
+    manager = _ExecutionManager(runtime_context=cast(Any, object()))
+    result = manager.execute(request=BackendExecutionRequest(payload=_make_payload()))
 
     assert result == "parallel"
     assert called["parallel"]["sequencer"] is sequencer
-    assert "parallel" in called
     assert called["parallel"]["clock_health_checks"] is False
     assert "serial" not in called
 
@@ -68,47 +60,47 @@ def test_execute_uses_serial_mode_when_configured() -> None:
     called: dict[str, Any] = {}
     sequencer = object()
 
-    class _Controller:
-        def execute_sequencer(self, **kwargs: Any) -> str:
-            called["serial"] = kwargs
-            return "serial"
-
-        def execute_sequencer_parallel(self, **kwargs: Any) -> str:
-            called["parallel"] = kwargs
-            return "parallel"
-
-    class _ExecutionManager:
-        def create_quel1_sequencer(self, **kwargs: Any) -> object:
+    class _ExecutionManager(Quel1ExecutionManager):
+        def _create_quel1_sequencer(self, **kwargs: Any) -> object:
             called["create"] = kwargs
             return sequencer
 
-    executor = Quel1BackendExecutor(
-        backend_controller=cast(Quel1BackendController, _Controller()),
-        execution_manager=cast(Quel1ExecutionManager, _ExecutionManager()),
+        def _execute_sequencer(self, **kwargs: Any) -> str:
+            called["serial"] = kwargs
+            return "serial"
+
+        def _execute_sequencer_parallel(self, **kwargs: Any) -> str:
+            called["parallel"] = kwargs
+            return "parallel"
+
+    manager = _ExecutionManager(runtime_context=cast(Any, object()))
+    result = manager.execute(
+        request=BackendExecutionRequest(payload=_make_payload()),
         execution_mode="serial",
     )
 
-    result = executor.execute(request=BackendExecutionRequest(payload=_make_payload()))
-
     assert result == "serial"
     assert called["serial"]["sequencer"] is sequencer
-    assert "serial" in called
     assert "parallel" not in called
 
 
 def test_init_raises_for_unknown_execution_mode() -> None:
-    """Given unsupported mode, initializer raises ValueError."""
-
-    class _Controller:
-        def execute_sequencer(self, **kwargs: Any) -> str:
-            return "serial"
+    """Given unsupported mode, execute raises ValueError."""
+    manager = Quel1ExecutionManager(runtime_context=cast(Any, object()))
 
     with pytest.raises(ValueError, match="Unsupported execution mode"):
-        Quel1BackendExecutor(
-            backend_controller=cast(Quel1BackendController, _Controller()),
-            execution_manager=cast(Quel1ExecutionManager, object()),
+        manager.execute(
+            request=BackendExecutionRequest(payload=_make_payload()),
             execution_mode=cast(Any, "invalid"),
         )
+
+
+def test_execute_raises_for_non_quel1_payload() -> None:
+    """Given non-QuEL-1 payload, execute raises TypeError."""
+    manager = Quel1ExecutionManager(runtime_context=cast(Any, object()))
+
+    with pytest.raises(TypeError, match="expects `Quel1ExecutionPayload` payload"):
+        manager.execute(request=BackendExecutionRequest(payload=object()))
 
 
 def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
@@ -133,15 +125,16 @@ def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
             return fake_system
 
     monkeypatch.setattr(execution_manager_module, "Quel1Sequencer", _FakeSequencer)
-    execution_manager = Quel1ExecutionManager(
-        runtime_context=cast(Any, _RuntimeContext())
-    )
 
-    execution_manager.create_quel1_sequencer(
-        gen_sampled_sequence={"Q00": cast(Any, object())},
-        cap_sampled_sequence={"RQ00": cast(Any, object())},
-        resource_map={"Q00": [{}]},
-        interval=128,
+    class _ExecutionManager(Quel1ExecutionManager):
+        def _execute_sequencer(self, **kwargs: Any) -> str:
+            _ = kwargs
+            return "serial"
+
+    execution_manager = _ExecutionManager(runtime_context=cast(Any, _RuntimeContext()))
+    _ = execution_manager.execute(
+        request=BackendExecutionRequest(payload=_make_payload()),
+        execution_mode="serial",
     )
 
     assert created_kwargs["driver"] is fake_system

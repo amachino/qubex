@@ -35,8 +35,6 @@ from qubex.backend import (
     TargetType,
 )
 from qubex.backend.backend_controller import (
-    BackendClockResynchronizer,
-    BackendSkewYamlLoader,
     SystemBackendController,
 )
 from qubex.backend.control_system import GenPort
@@ -255,10 +253,11 @@ class ExperimentContext:
             logger.warning(f"Skew file not found: {skew_file_path}")
             return
         backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendSkewYamlLoader):
+        load_skew_yaml = getattr(backend_controller, "load_skew_yaml", None)
+        if not callable(load_skew_yaml):
             return
         try:
-            backend_controller.load_skew_yaml(skew_file_path)
+            load_skew_yaml(skew_file_path)
         except Exception:
             logger.exception("Failed to load the skew file.")
 
@@ -966,11 +965,12 @@ class ExperimentContext:
         if box_ids is None:
             box_ids = self.box_ids
         backend_controller = self.backend_controller
-        if not isinstance(backend_controller, BackendClockResynchronizer):
+        resync_clocks = getattr(backend_controller, "resync_clocks", None)
+        if not callable(resync_clocks):
             raise NotImplementedError(
                 "Active backend does not support clock re-synchronization."
             )
-        backend_controller.resync_clocks(box_ids)
+        resync_clocks(box_ids)
 
     def configure(
         self,

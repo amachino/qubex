@@ -179,9 +179,9 @@ Calendar note:
 - 2026-02-17: Added `Measurement`-level contract test to ensure backend custom factory hooks are honored end-to-end by `execute_measurement_schedule()`.
 - 2026-02-17: Added `Quel3MeasurementBackendAdapter` and `Quel3ExecutionPayload` skeleton for relaxed schedule validation and schedule-to-fixed-timeline payload conversion.
 - 2026-02-17: Default adapter selection now supports explicit backend kind hint (`MEASUREMENT_BACKEND_KIND="quel3"`), with tests ensuring Quel3 adapter path selection.
-- 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend executor hook is missing, to avoid accidental QuEL-1 executor fallback.
-- 2026-02-17: `MeasurementScheduleRunner` now supports backend executors returning canonical `MeasurementResult` directly, enabling staged quelware integration before result-factory unification.
-- 2026-02-17: Added built-in `Quel3BackendExecutor` (controller hook delegation) and tests for payload-type checks and hook presence checks.
+- 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend controller execution hook is missing, to avoid accidental QuEL-1 fallback.
+- 2026-02-17: `MeasurementScheduleRunner` now supports backend controller execution returning canonical `MeasurementResult` directly, enabling staged quelware integration before result-factory unification.
+- 2026-02-23: Removed standalone backend-executor classes and unified execution flow to `BackendController.execute(request=...) -> Quel{1,3}ExecutionManager.execute(...)`.
 - 2026-02-17: Added `instrument_aliases` in Quel3 payload with optional controller hook (`resolve_instrument_alias`) for target-to-alias mapping.
 - 2026-02-17: Added explicit QuEL-1 capability hints on `Quel1BackendController` (`MEASUREMENT_BACKEND_KIND`, `MEASUREMENT_CONSTRAINT_MODE`, `MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE`).
 - 2026-02-22: Removed QuEL-1-only measurement capability hints from controller constants; backend selection/constraints are now resolved through runtime/session flow and adapter contracts.

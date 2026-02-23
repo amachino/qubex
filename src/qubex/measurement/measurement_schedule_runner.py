@@ -9,7 +9,6 @@ from qubex.backend import (
     BackendController,
     ExperimentSystem,
 )
-from qubex.backend.backend_controller import BackendBoxConfigProvider
 from qubex.backend.quel1 import (
     ExecutionMode,
 )
@@ -191,8 +190,9 @@ class MeasurementScheduleRunner:
         backend_controller: BackendController,
     ) -> dict[str, Any]:
         """Resolve backend device config if supported by the controller."""
-        if isinstance(backend_controller, BackendBoxConfigProvider):
-            return backend_controller.box_config
+        box_config = getattr(backend_controller, "box_config", None)
+        if isinstance(box_config, dict):
+            return box_config
         return {}
 
     def execute(

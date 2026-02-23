@@ -11,15 +11,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
-from qubex.backend.backend_controller import BackendController
-from qubex.backend.backend_executor import (
+from qubex.backend.backend_controller import (
+    BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
 
 from .managers.connection_manager import Quel3ConnectionManager
-from .managers.execution_manager import ExecutionMode, Quel3ExecutionManager
-from .quel3_execution_payload import Quel3ExecutionPayload
+from .managers.execution_manager import Quel3ExecutionManager
 from .quel3_runtime_context import Quel3RuntimeContext
 
 QUEL3_SAMPLING_PERIOD_NS = 0.4
@@ -124,7 +123,7 @@ class Quel3BackendController(BackendController):
 
     def resolve_instrument_alias(self, target: str) -> str:
         """Resolve quelware instrument alias for a measurement target."""
-        return self._execution_manager.resolve_instrument_alias(target)
+        return self._runtime_context.alias_map.get(target, target)
 
     @property
     def sampling_period(self) -> float:
@@ -135,16 +134,6 @@ class Quel3BackendController(BackendController):
         self,
         *,
         request: BackendExecutionRequest,
-        execution_mode: ExecutionMode | None = None,
-        clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request using QuEL-3 execution defaults."""
-        del execution_mode, clock_health_checks
-
-        payload = request.payload
-        if not isinstance(payload, Quel3ExecutionPayload):
-            raise TypeError(
-                "Quel3 backend execution expects `Quel3ExecutionPayload` payload."
-            )
-
-        return self._execution_manager.execute_payload(payload=payload)
+        return self._execution_manager.execute(request=request)

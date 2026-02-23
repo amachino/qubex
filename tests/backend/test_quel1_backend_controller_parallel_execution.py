@@ -8,17 +8,18 @@ from typing import Any, cast
 
 import pytest
 
+from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
     SequencerExecutionEngine,
 )
-from qubex.backend.quel1.quel1_backend_controller import (
-    Quel1BackendController,
-    Quel1BackendRawResult,
-)
+from qubex.backend.quel1.managers.execution_manager import Quel1ExecutionManager
+from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
+from qubex.backend.quel1.quel1_backend_raw_result import Quel1BackendRawResult
+from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 
 
-def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -> None:
-    """Given parallel mode, execute_sequencer_parallel delegates to engine and wraps result."""
+def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> None:
+    """Given parallel mode, manager delegates to engine and wraps result."""
 
     class _Sequencer:
         interval = 256
@@ -32,6 +33,12 @@ def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -
     sequencer = _Sequencer()
     controller._connection_manager.set_boxpool(cast(Any, object()))
     controller._connection_manager.set_quel1system(cast(Any, object()))
+    execution_manager = Quel1ExecutionManager(
+        runtime_context=controller._runtime_context
+    )
+    monkeypatch.setattr(
+        execution_manager, "_create_quel1_sequencer", lambda **_: sequencer
+    )
 
     def _fake_execute_parallel(
         **kwargs: object,
@@ -45,9 +52,23 @@ def test_execute_sequencer_parallel_delegates_to_execution_engine(monkeypatch) -
         staticmethod(_fake_execute_parallel),
     )
 
-    result = controller.execute_sequencer_parallel(
-        sequencer=sequencer,  # type: ignore[arg-type]
-        repeats=16,
+    result = execution_manager.execute(
+        request=BackendExecutionRequest(
+            payload=Quel1ExecutionPayload(
+                gen_sampled_sequence={"Q00": object()},
+                cap_sampled_sequence={"RQ00": object()},
+                resource_map={"Q00": [{}]},
+                interval=128,
+                repeats=16,
+                integral_mode="integral",
+                dsp_demodulation=True,
+                enable_sum=False,
+                enable_classification=False,
+                line_param0=(1.0, 0.0, 0.0),
+                line_param1=(0.0, 1.0, 0.0),
+            ),
+        ),
+        execution_mode="parallel",
     )
 
     assert isinstance(result, Quel1BackendRawResult)

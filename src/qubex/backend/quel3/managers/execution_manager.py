@@ -317,19 +317,20 @@ class Quel3ExecutionManager:
         self._runtime_context = runtime_context
         self._sequencer_builder = Quel3SequencerBuilder()
 
-    def resolve_instrument_alias(self, target: str) -> str:
-        """Resolve quelware instrument alias for a measurement target."""
-        return self._runtime_context.alias_map.get(target, target)
-
-    def execute_payload(self, *, payload: Quel3ExecutionPayload) -> MeasurementResult:
+    def execute(self, *, request: object) -> MeasurementResult:
         """
-        Execute a QuEL-3 measurement payload.
+        Execute a QuEL-3 backend request.
 
         Parameters
         ----------
-        payload : Quel3ExecutionPayload
-            Backend execution payload produced by measurement adapter.
+        request : object
+            Backend execution request with `payload`.
         """
+        payload = getattr(request, "payload", None)
+        if not isinstance(payload, Quel3ExecutionPayload):
+            raise TypeError(
+                "Quel3ExecutionManager expects request payload to be `Quel3ExecutionPayload`."
+            )
         return _run_coroutine(self._execute_measurement_async(payload))
 
     async def _execute_measurement_async(
@@ -353,7 +354,7 @@ class Quel3ExecutionManager:
                 sequencer_factory,
                 create_instrument_driver_fixed_timeline,
                 get_all_instrument_ids_from_resource_infos,
-            ) = self.load_quelware_api()
+            ) = self._load_quelware_api()
         except (ModuleNotFoundError, SyntaxError) as exc:
             raise RuntimeError(
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
@@ -437,7 +438,7 @@ class Quel3ExecutionManager:
                                 np.asarray(iq_datas[-1].iq_array, dtype=np.complex128)
                             )
 
-        return self.build_measurement_result(
+        return self._build_measurement_result(
             payload=payload,
             shot_samples=shot_samples,
             sampling_period_ns=sampling_period_ns,
@@ -456,7 +457,7 @@ class Quel3ExecutionManager:
         }
 
     @staticmethod
-    def build_measurement_result(
+    def _build_measurement_result(
         *,
         payload: Quel3ExecutionPayload,
         shot_samples: dict[str, dict[str, list[np.ndarray]]],
@@ -526,7 +527,7 @@ class Quel3ExecutionManager:
             return target
 
     @staticmethod
-    def load_quelware_api() -> tuple[
+    def _load_quelware_api() -> tuple[
         _QuelwareClientFactory,
         _InstrumentMapperFactory,
         _SequencerFactory,

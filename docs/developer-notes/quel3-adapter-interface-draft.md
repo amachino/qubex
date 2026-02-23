@@ -30,9 +30,8 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 ## Current implementation scaffold
 
 - Added `Quel3MeasurementBackendAdapter` in `src/qubex/measurement/adapters/backend_adapter.py`.
-- Added `Quel3BackendExecutor` in `src/qubex/backend/quel3/quel3_backend_executor.py` (delegates to `execute(request=...)`).
 - Added `Quel3ExecutionPayload`/timeline dataclasses in `src/qubex/backend/quel3/quel3_execution_payload.py`.
-- Adapter builds backend payload models; backend controller/executor consume them.
+- Adapter builds backend payload models; backend controller/execution manager consume them.
 - Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_instrument_alias(target)` hook when available (fallback: target label itself).
 - Added `Quel3BackendController` scaffold in `src/qubex/backend/quel3/quel3_backend_controller.py`.
 - `Quel3BackendController.execute(...)` includes a quelware invocation path and returns canonical `MeasurementResult` directly.
@@ -40,7 +39,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - `SystemManager.load(..., backend_kind=...)` and `Measurement.load(..., backend_kind=...)` now select backend family at session scope.
 - Added default adapter-selection hint: `MEASUREMENT_BACKEND_KIND="quel3"` in `MeasurementScheduleRunner`.
 - For `MEASUREMENT_BACKEND_KIND="quel3"`, backend executes through `execute(request=...)`.
-- `MeasurementScheduleRunner.execute()` now accepts a backend executor returning canonical `MeasurementResult` directly (result-factory bypass path).
+- `MeasurementScheduleRunner.execute()` calls `BackendController.execute(request=...)`, and QuEL-3 execution manager returns canonical `MeasurementResult` directly (result-factory bypass path).
 - Added adapter tests in `tests/measurement/test_quel3_measurement_backend_adapter.py`.
 - Scope is intentionally minimal: relaxed validation + payload construction; direct quelware invocation remains in follow-up work.
 
