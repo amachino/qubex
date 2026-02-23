@@ -43,7 +43,7 @@ result.plot()
 measurement_schedule = session.build_measurement_schedule(pulse_schedule=schedule)
 config = session.create_measurement_config(mode="single", shots=1024)
 
-result = session.execute_measurement_schedule(
+result = session.run_measurement_schedule(
     schedule=measurement_schedule,
     config=config,
 )

@@ -137,3 +137,11 @@ class Quel3BackendController(BackendController):
     ) -> BackendExecutionResult:
         """Execute a backend request using QuEL-3 execution defaults."""
         return self._execution_manager.execute(request=request)
+
+    async def execute_async(
+        self,
+        *,
+        request: BackendExecutionRequest,
+    ) -> BackendExecutionResult:
+        """Execute a backend request asynchronously using QuEL-3 defaults."""
+        return await self._execution_manager.execute_async(request=request)

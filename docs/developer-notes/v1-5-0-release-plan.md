@@ -108,9 +108,9 @@ Calendar note:
   - strict equality of all optional defaults is not required
 - Lifecycle/API compatibility:
   - `load`, `connect`, `reload`, `disconnect`
-  - `execute_measurement_schedule`, `execute`, `measure`
+  - `run_measurement_schedule`, `execute`, `measure`
   - `create_measurement_config`, `build_measurement_schedule`
-  - Note: `execute_measurement_schedule` is retained here as a historical
+  - Note: `run_measurement_schedule` is retained here as a historical
     compatibility term; current internal implementation path is
     `MeasurementScheduleRunner` + `BackendController.execute(request=...)`.
 - Legacy delegation behavior from historical measurement APIs remains compatible (keep delegation tests green)
@@ -176,7 +176,7 @@ Calendar note:
 - 2026-02-17: `avg` mode stride is now explicit metadata (`avg_sample_stride`, default `4`) to preserve 4-way multiplexed readout demodulation semantics while allowing backend-specific override.
 - 2026-02-17: `MeasurementScheduleRunner.create_default()` now supports backend-provided custom adapter factory (`create_measurement_backend_adapter`) with contract tests, while keeping QuEL-1 defaults unchanged.
 - 2026-02-17: Added `/docs/developer-notes/quel3-adapter-interface-draft.md` with `quelware-client` API mapping, constraint assumptions, and open questions for QuEL-3 adapter implementation.
-- 2026-02-17: Added `Measurement`-level contract test to ensure backend custom factory hooks are honored end-to-end by `execute_measurement_schedule()`.
+- 2026-02-17: Added `Measurement`-level contract test to ensure backend custom factory hooks are honored end-to-end by `run_measurement_schedule()`.
 - 2026-02-17: Added `Quel3MeasurementBackendAdapter` and `Quel3ExecutionPayload` skeleton for relaxed schedule validation and schedule-to-fixed-timeline payload conversion.
 - 2026-02-17: Default adapter selection now supports explicit backend kind hint (`MEASUREMENT_BACKEND_KIND="quel3"`), with tests ensuring Quel3 adapter path selection.
 - 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend controller execution hook is missing, to avoid accidental QuEL-1 fallback.

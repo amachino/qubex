@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -105,6 +106,37 @@ class Quel1ExecutionManager:
             enable_classification=payload.enable_classification,
             line_param0=payload.line_param0,
             line_param1=payload.line_param1,
+        )
+
+    async def execute_async(
+        self,
+        *,
+        request: BackendExecutionRequest,
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
+    ) -> BackendExecutionResult:
+        """
+        Execute a prepared backend request asynchronously.
+
+        Parameters
+        ----------
+        request : BackendExecutionRequest
+            Backend execution request.
+        execution_mode : ExecutionMode | None, optional
+            Backend execution mode selector.
+        clock_health_checks : bool | None, optional
+            Whether to enable clock diagnostics on parallel path.
+
+        Returns
+        -------
+        BackendExecutionResult
+            Backend-specific execution result.
+        """
+        return await asyncio.to_thread(
+            self.execute,
+            request=request,
+            execution_mode=execution_mode,
+            clock_health_checks=clock_health_checks,
         )
 
     def _create_quel1_sequencer(

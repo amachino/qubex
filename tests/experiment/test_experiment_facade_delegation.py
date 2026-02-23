@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
+
+from qxpulse import PulseSchedule
 
 from qubex.experiment.experiment import Experiment
 
@@ -38,6 +41,22 @@ class _MeasurementServiceStub:
     def measure_idle_states(self, **kwargs: Any) -> str:
         self.calls.append(("measure_idle_states", kwargs))
         return "measure_idle_states_result"
+
+    def execute(self, schedule: object, **kwargs: Any) -> str:
+        self.calls.append(("execute", {"schedule": schedule, **kwargs}))
+        return "execute_result"
+
+    async def execute_async(self, schedule: object, **kwargs: Any) -> str:
+        self.calls.append(("execute_async", {"schedule": schedule, **kwargs}))
+        return "execute_async_result"
+
+    def measure(self, sequence: object, **kwargs: Any) -> str:
+        self.calls.append(("measure", {"sequence": sequence, **kwargs}))
+        return "measure_result"
+
+    async def measure_async(self, sequence: object, **kwargs: Any) -> str:
+        self.calls.append(("measure_async", {"sequence": sequence, **kwargs}))
+        return "measure_async_result"
 
 
 class _ExperimentContextStub:
@@ -324,6 +343,98 @@ def test_measure_idle_states_delegates_to_measurement_service() -> None:
                 "readout_pre_margin": None,
                 "readout_post_margin": None,
                 "add_pump_pulses": False,
+                "plot": True,
+            },
+        )
+    ]
+
+
+def test_execute_async_delegates_to_measurement_service() -> None:
+    """Given execute_async args, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    schedule = PulseSchedule(["Q00"])
+
+    result = asyncio.run(
+        exp.execute_async(
+            schedule=schedule,
+            shots=512,
+            plot=False,
+        )
+    )
+
+    assert result == "execute_async_result"
+    assert measurement_stub.calls == [
+        (
+            "execute_async",
+            {
+                "schedule": schedule,
+                "frequencies": None,
+                "mode": None,
+                "shots": 512,
+                "interval": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramptime": None,
+                "readout_drag_coeff": None,
+                "readout_ramp_type": None,
+                "add_last_measurement": None,
+                "add_pump_pulses": None,
+                "enable_dsp_demodulation": None,
+                "enable_dsp_sum": None,
+                "enable_dsp_classification": None,
+                "line_param0": None,
+                "line_param1": None,
+                "reset_awg_and_capunits": None,
+                "plot": False,
+            },
+        )
+    ]
+
+
+def test_measure_async_delegates_to_measurement_service() -> None:
+    """Given measure_async args, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sequence = {"Q00": [0.0 + 0.0j]}
+
+    result = asyncio.run(
+        exp.measure_async(
+            sequence=sequence,
+            shots=256,
+            plot=True,
+        )
+    )
+
+    assert result == "measure_async_result"
+    assert measurement_stub.calls == [
+        (
+            "measure_async",
+            {
+                "sequence": sequence,
+                "frequencies": None,
+                "initial_states": None,
+                "mode": None,
+                "shots": 256,
+                "interval": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramptime": None,
+                "readout_drag_coeff": None,
+                "readout_ramp_type": None,
+                "add_pump_pulses": None,
+                "enable_dsp_demodulation": None,
+                "enable_dsp_sum": None,
+                "enable_dsp_classification": None,
+                "line_param0": None,
+                "line_param1": None,
+                "reset_awg_and_capunits": None,
                 "plot": True,
             },
         )

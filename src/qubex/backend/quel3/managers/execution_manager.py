@@ -326,12 +326,23 @@ class Quel3ExecutionManager:
         request : object
             Backend execution request with `payload`.
         """
+        return _run_coroutine(self.execute_async(request=request))
+
+    async def execute_async(self, *, request: object) -> MeasurementResult:
+        """
+        Execute a QuEL-3 backend request asynchronously.
+
+        Parameters
+        ----------
+        request : object
+            Backend execution request with `payload`.
+        """
         payload = getattr(request, "payload", None)
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError(
                 "Quel3ExecutionManager expects request payload to be `Quel3ExecutionPayload`."
             )
-        return _run_coroutine(self._execute_measurement_async(payload))
+        return await self._execute_measurement_async(payload)
 
     async def _execute_measurement_async(
         self,

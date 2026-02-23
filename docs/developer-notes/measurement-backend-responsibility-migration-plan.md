@@ -61,7 +61,7 @@ Migrate the current implementation to the target architecture defined in `measur
   - Move execution use-case ownership out of facade and into a dedicated service.
 - Main changes
   - Add `src/qubex/measurement/measurement_execution_service.py`.
-  - Move `create_measurement_config`, `build_measurement_schedule`, `execute_measurement_schedule`, `execute`, `measure`, and `measure_noise` into the service.
+  - Move `create_measurement_config`, `build_measurement_schedule`, `run_measurement_schedule`, `execute`, `measure`, and `measure_noise` into the service.
   - Move `sampling_period` and `constraint_profile` resolution into the service.
   - Keep `Measurement` as API facade only.
 - Behavior-preserving guardrails

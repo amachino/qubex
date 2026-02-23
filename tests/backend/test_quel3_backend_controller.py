@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 
 import numpy as np
@@ -100,6 +101,16 @@ def test_execute_rejects_non_quel3_payload() -> None:
         controller.execute(request=BackendExecutionRequest(payload=object()))
 
 
+def test_execute_async_rejects_non_quel3_payload() -> None:
+    """Given non-QuEL-3 payload, execute_async raises TypeError."""
+    controller = Quel3BackendController()
+
+    with pytest.raises(TypeError, match="Quel3ExecutionPayload"):
+        asyncio.run(
+            controller.execute_async(request=BackendExecutionRequest(payload=object()))
+        )
+
+
 def test_execute_surfaces_missing_quelware_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -117,6 +128,27 @@ def test_execute_surfaces_missing_quelware_dependency(
 
     with pytest.raises(RuntimeError, match="quelware-client is not available"):
         controller.execute(request=BackendExecutionRequest(payload=payload))
+
+
+def test_execute_async_surfaces_missing_quelware_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given missing quelware dependency, execute_async raises RuntimeError."""
+    controller = Quel3BackendController()
+    payload = _make_payload()
+
+    monkeypatch.setattr(
+        Quel3ExecutionManager,
+        "_load_quelware_api",
+        staticmethod(
+            lambda: (_ for _ in ()).throw(ModuleNotFoundError("quelware_client"))
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="quelware-client is not available"):
+        asyncio.run(
+            controller.execute_async(request=BackendExecutionRequest(payload=payload))
+        )
 
 
 def test_build_measurement_result_averages_shot_samples() -> None:

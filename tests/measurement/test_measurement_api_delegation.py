@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from types import MethodType
 from typing import Any, ClassVar, cast
@@ -118,7 +119,7 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    def fake_execute_measurement_schedule(
+    def fake_run_measurement_schedule(
         self: MeasurementExecutionService,
         *,
         schedule: MeasurementSchedule,
@@ -132,8 +133,8 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.execute_measurement_schedule = MethodType(
-        fake_execute_measurement_schedule, execution_service
+    execution_service.run_measurement_schedule = MethodType(
+        fake_run_measurement_schedule, execution_service
     )
     experiment_system = type(
         "_ES",
@@ -188,6 +189,36 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     )
 
     result = measurement.measure(waveforms={"Q00": np.array([0.0 + 0.0j])})
+
+    assert called["kwargs"]["add_last_measurement"] is True
+    assert result.data["Q00"] is multiple.data["Q00"][0]
+
+
+def test_measure_async_delegates_to_execute_async_and_returns_first_capture() -> None:
+    """Given measure_async inputs, when called, then it delegates to execute_async and flattens first capture."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    multiple = _make_multiple_result()
+    called: dict[str, Any] = {}
+
+    async def fake_execute_async(
+        self: MeasurementExecutionService, **kwargs: object
+    ) -> MultipleMeasureResult:
+        called["kwargs"] = kwargs
+        return multiple
+
+    measurement.execution_service.execute_async = MethodType(
+        fake_execute_async,
+        measurement.execution_service,
+    )
+
+    result = asyncio.run(
+        measurement.measure_async(waveforms={"Q00": np.array([0.0 + 0.0j])})
+    )
 
     assert called["kwargs"]["add_last_measurement"] is True
     assert result.data["Q00"] is multiple.data["Q00"][0]
@@ -283,7 +314,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    def fake_execute_measurement_schedule(
+    def fake_run_measurement_schedule(
         self: MeasurementExecutionService,
         *,
         schedule: MeasurementSchedule,
@@ -296,8 +327,8 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.execute_measurement_schedule = MethodType(
-        fake_execute_measurement_schedule, execution_service
+    execution_service.run_measurement_schedule = MethodType(
+        fake_run_measurement_schedule, execution_service
     )
     experiment_system = type(
         "_ES",
@@ -330,7 +361,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
     assert config.dsp.enable_dsp_classification is False
 
 
-def test_execute_measurement_schedule_delegates_to_executor(
+def test_run_measurement_schedule_delegates_to_executor(
     monkeypatch,
 ) -> None:
     """Given schedule execution inputs, when method is called, then it delegates to executor."""
@@ -381,14 +412,74 @@ def test_execute_measurement_schedule_delegates_to_executor(
             clock_health_checks=False: _Executor()
         ),
     )
-    result = measurement.execute_measurement_schedule(schedule=schedule, config=config)
+    result = measurement.run_measurement_schedule(schedule=schedule, config=config)
 
     assert called["schedule"] is schedule
     assert called["config"] is config
     assert result is expected
 
 
-def test_execute_measurement_schedule_uses_backend_custom_factories(
+def test_run_measurement_schedule_async_delegates_to_executor(
+    monkeypatch,
+) -> None:
+    """Given async schedule execution inputs, when method is called, then it delegates to async executor."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+
+    pulse_schedule = PulseSchedule(["RQ00"])
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    config = _make_config()
+    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+    called: dict[str, Any] = {}
+
+    class _Executor:
+        async def execute_async(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> MeasurementResult:
+            called["schedule"] = schedule
+            called["config"] = config
+            return expected
+
+    experiment_system = type("_ES", (), {})()
+    backend_controller = type("_BC", (), {})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+    )
+
+    monkeypatch.setattr(
+        MeasurementScheduleRunner,
+        "create_default",
+        classmethod(
+            lambda cls,
+            *,
+            backend_controller,
+            experiment_system,
+            execution_mode="serial",
+            clock_health_checks=False: _Executor()
+        ),
+    )
+    result = asyncio.run(
+        measurement.run_measurement_schedule_async(schedule=schedule, config=config)
+    )
+
+    assert called["schedule"] is schedule
+    assert called["config"] is config
+    assert result is expected
+
+
+def test_run_measurement_schedule_uses_backend_custom_factories(
     monkeypatch,
 ) -> None:
     """Given backend factory hooks, when executing a schedule, then Measurement uses the custom path."""
@@ -498,7 +589,7 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
         experiment_system=experiment_system,
     )
 
-    result = measurement.execute_measurement_schedule(schedule=schedule, config=config)
+    result = measurement.run_measurement_schedule(schedule=schedule, config=config)
 
     assert called["validated_schedule"] is schedule
     assert called["request_schedule"] is schedule
@@ -506,6 +597,81 @@ def test_execute_measurement_schedule_uses_backend_custom_factories(
     assert called["experiment_system"] is experiment_system
     assert called["result_factory_experiment_system"] is experiment_system
     assert result.device_config == {"kind": "quel3"}
+
+
+def test_execute_async_delegates_to_schedule_executor_with_built_schedule() -> None:
+    """Given execute_async inputs, when called, then it builds schedule and delegates to async schedule execution."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    pulse_schedule = PulseSchedule(["Q00"])
+    built_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["RQ00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    multiple = _make_multiple_result()
+    called: dict[str, Any] = {}
+
+    def fake_build(
+        self: MeasurementExecutionService,
+        *,
+        pulse_schedule: PulseSchedule,
+        **kwargs: object,
+    ) -> MeasurementSchedule:
+        called["build_schedule"] = pulse_schedule
+        called["build_kwargs"] = kwargs
+        return built_schedule
+
+    async def fake_run_measurement_schedule_async(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        called["run_schedule"] = schedule
+        called["run_config"] = config
+        return MeasurementResultConverter.from_multiple(multiple)
+
+    execution_service = measurement.execution_service
+    execution_service.build_measurement_schedule = MethodType(
+        fake_build, execution_service
+    )
+    execution_service.run_measurement_schedule_async = MethodType(
+        fake_run_measurement_schedule_async, execution_service
+    )
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 1}})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+        rawdata_dir=None,
+    )
+
+    result = asyncio.run(
+        measurement.execute_async(
+            schedule=pulse_schedule,
+            add_last_measurement=True,
+            save_result=False,
+        )
+    )
+
+    assert result.mode == multiple.mode
+    assert np.array_equal(result.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
+    assert called["build_schedule"] is pulse_schedule
+    assert called["run_schedule"] is built_schedule
+    assert called["build_kwargs"]["add_last_measurement"] is True
+    assert called["run_config"].mode == "avg"
 
 
 def test_disconnect_delegates_to_session_service() -> None:

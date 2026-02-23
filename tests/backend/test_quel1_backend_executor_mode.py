@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 
 import pytest
@@ -101,6 +102,22 @@ def test_execute_raises_for_non_quel1_payload() -> None:
 
     with pytest.raises(TypeError, match="expects `Quel1ExecutionPayload` payload"):
         manager.execute(request=BackendExecutionRequest(payload=object()))
+
+
+def test_execute_async_delegates_to_execute() -> None:
+    """Given async execute, manager delegates to sync execute implementation."""
+
+    class _ExecutionManager(Quel1ExecutionManager):
+        def execute(self, **kwargs: Any) -> str:
+            _ = kwargs
+            return "async-ok"
+
+    manager = _ExecutionManager(runtime_context=cast(Any, object()))
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=_make_payload()))
+    )
+
+    assert result == "async-ok"
 
 
 def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(

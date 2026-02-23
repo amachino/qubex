@@ -246,3 +246,57 @@ class MeasurementScheduleRunner:
             ),
         )
         return result
+
+    async def execute_async(
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        """
+        Execute a measurement schedule asynchronously with the given configuration.
+
+        Parameters
+        ----------
+        schedule : MeasurementSchedule
+            The measurement schedule.
+        config : MeasurementConfig
+            The measurement configuration.
+
+        Returns
+        -------
+        MeasurementResult
+            The measurement result.
+        """
+        self._measurement_backend_adapter.validate_schedule(schedule)
+        request = self._measurement_backend_adapter.build_execution_request(
+            schedule=schedule,
+            config=config,
+        )
+        if self._execution_mode is None and self._clock_health_checks is None:
+            backend_result = await self._backend_controller.execute_async(
+                request=request
+            )
+        else:
+            backend_result = await cast(Any, self._backend_controller).execute_async(
+                request=request,
+                execution_mode=self._execution_mode,
+                clock_health_checks=self._clock_health_checks,
+            )
+        if isinstance(backend_result, MeasurementResult):
+            return backend_result
+        result = self._measurement_result_factory.create(
+            backend_result=backend_result,
+            measurement_config=config,
+            device_config=self._resolve_device_config(self._backend_controller),
+            sampling_period_ns=getattr(
+                self._measurement_backend_adapter,
+                "sampling_period",
+                self._resolve_sampling_period_ns(self._backend_controller),
+            ),
+            avg_sample_stride=self._resolve_avg_sample_stride(
+                self._backend_controller,
+                getattr(self._measurement_backend_adapter, "constraint_profile", None),
+            ),
+        )
+        return result

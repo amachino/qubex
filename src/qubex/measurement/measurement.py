@@ -550,7 +550,7 @@ class Measurement:
         with self.amplification_service.apply_dc_voltages(targets):
             yield
 
-    def execute_measurement_schedule(
+    def run_measurement_schedule(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -571,7 +571,33 @@ class Measurement:
         MeasurementResult
             The measurement result.
         """
-        return self.execution_service.execute_measurement_schedule(
+        return self.execution_service.run_measurement_schedule(
+            schedule=schedule,
+            config=config,
+        )
+
+    async def run_measurement_schedule_async(
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        """
+        Run the measurement asynchronously with the given schedule and configuration.
+
+        Parameters
+        ----------
+        schedule : MeasurementSchedule
+            The measurement schedule.
+        config : MeasurementConfig
+            The measurement configuration.
+
+        Returns
+        -------
+        MeasurementResult
+            The measurement result.
+        """
+        return await self.execution_service.run_measurement_schedule_async(
             schedule=schedule,
             config=config,
         )
@@ -706,6 +732,93 @@ class Measurement:
             plot=plot,
         )
 
+    async def measure_async(
+        self,
+        waveforms: Mapping[str, IQArray],
+        *,
+        mode: MeasurementMode = "avg",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
+        enable_dsp_sum: bool = True,
+        enable_dsp_classification: bool | None = None,
+        line_param0: tuple[float, float, float] | None = None,
+        line_param1: tuple[float, float, float] | None = None,
+        plot: bool = False,
+    ) -> MeasureResult:
+        """
+        Measure asynchronously with the given control waveforms.
+
+        Parameters
+        ----------
+        waveforms : Mapping[str, IQArray]
+            The control waveforms for each target.
+        mode : MeasurementMode, optional
+            The measurement mode, by default "single".
+            - "single": Measure once.
+            - "avg": Measure multiple times and average the results.
+        shots : int, optional
+            The number of shots.
+        interval : float, optional
+            The interval in ns.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit.
+        readout_duration : float, optional
+            The readout duration in ns.
+        readout_pre_margin : float, optional
+            The readout pre-margin in ns.
+        readout_post_margin : float, optional
+            The readout post-margin in ns.
+        readout_ramptime : float, optional
+            The readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            The readout drag coefficient.
+        readout_ramp_type : RampType, optional
+            The readout ramp type.
+        add_pump_pulses : bool | None, optional
+            Whether to add pump pulses. If `None`, defaults to `False`.
+        enable_dsp_demodulation : bool | None, optional
+            Whether to enable DSP demodulation. If `None`, defaults to `True`.
+        enable_dsp_sum : bool, optional
+            Whether to enable DSP summation. Defaults to `True`.
+        enable_dsp_classification : bool | None, optional
+            Whether to enable DSP classification. If `None`, defaults to
+            `False`.
+
+        Returns
+        -------
+        MeasureResult
+            The measurement results.
+        """
+        return await self.execution_service.measure_async(
+            waveforms=waveforms,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
+            add_pump_pulses=add_pump_pulses,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+            plot=plot,
+        )
+
     def execute(
         self,
         schedule: PulseSchedule | TargetMap[IQArray],
@@ -776,6 +889,98 @@ class Measurement:
             The measurement results.
         """
         return self.execution_service.execute(
+            schedule=schedule,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+            plot=plot,
+            save_result=save_result,
+        )
+
+    async def execute_async(
+        self,
+        schedule: PulseSchedule | TargetMap[IQArray],
+        *,
+        mode: MeasurementMode = "avg",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        add_last_measurement: bool = False,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
+        enable_dsp_sum: bool = True,
+        enable_dsp_classification: bool | None = None,
+        line_param0: tuple[float, float, float] | None = None,
+        line_param1: tuple[float, float, float] | None = None,
+        plot: bool = False,
+        save_result: bool = True,
+    ) -> MultipleMeasureResult:
+        """
+        Measure asynchronously with the given control waveforms.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule | TargetMap[IQArray]
+            The pulse schedule or control waveforms.
+        mode : MeasurementMode, optional
+            The measurement mode, by default "single".
+            - "single": Measure once.
+            - "avg": Measure multiple times and average the results.
+        shots : int, optional
+            The number of shots.
+        interval : float, optional
+            The interval in ns.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit.
+        readout_duration : float, optional
+            The readout duration in ns.
+        readout_pre_margin : float, optional
+            The readout pre-margin in ns.
+        readout_post_margin : float, optional
+            The readout post-margin in ns.
+        readout_ramptime : float, optional
+            The readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            The readout drag coefficient.
+        readout_ramp_type : RampType, optional
+            The readout ramp type.
+        add_last_measurement : bool, optional
+            Whether to add the last measurement, by default False.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses, by default False.
+        enable_dsp_sum : bool, optional
+            Whether to enable DSP summation, by default True.
+        enable_dsp_classification : bool, optional
+            Whether to enable DSP classification, by default False.
+        plot : bool, optional
+            Whether to plot the results, by default False.
+
+        Returns
+        -------
+        MultipleMeasureResult
+            The measurement results.
+        """
+        return await self.execution_service.execute_async(
             schedule=schedule,
             mode=mode,
             shots=shots,

@@ -56,7 +56,7 @@ This document is the source of truth for "what qubex currently executes and guar
 
 - `mode`, `shots`, `interval`, `dsp.*` are execution-effective in backend adapters.
 - `frequency.frequencies` is currently not consumed in the direct
-  `execute_measurement_schedule(...)` path; treat as reserved/advisory until wired.
+  `run_measurement_schedule(...)` path; treat as reserved/advisory until wired.
 
 ### Validation/invariants
 

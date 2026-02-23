@@ -283,7 +283,7 @@ Concrete classes (`Quel1BackendController`, `Quel3BackendController`) must provi
 | `load`, `connect`, `reload` | `MeasurementSessionService` |
 | `disconnect` | `MeasurementSessionService` |
 | `check_link_status`, `check_clock_status`, `linkup`, `relinkup` | `MeasurementSessionService` (capability-gated via backend capability protocols) |
-| `execute_measurement_schedule`, `execute`, `measure`, `measure_noise` | `MeasurementExecutionService` |
+| `run_measurement_schedule`, `execute`, `measure`, `measure_noise` | `MeasurementExecutionService` |
 | `create_measurement_config`, `build_measurement_schedule` | `MeasurementExecutionService` |
 | `sampling_period`, `constraint_profile` | `MeasurementExecutionService` |
 | `apply_dc_voltages` | `MeasurementAmplificationService` |

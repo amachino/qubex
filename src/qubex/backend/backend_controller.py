@@ -52,6 +52,14 @@ class BackendController(Protocol):
         """Execute prepared backend request payload."""
         ...
 
+    async def execute_async(
+        self,
+        *,
+        request: BackendExecutionRequest,
+    ) -> BackendExecutionResult:
+        """Execute prepared backend request payload asynchronously."""
+        ...
+
     def connect(
         self,
         box_names: str | list[str] | None = None,
