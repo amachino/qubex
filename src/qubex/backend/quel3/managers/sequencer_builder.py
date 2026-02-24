@@ -81,11 +81,11 @@ class Quel3SequencerBuilder:
         for waveform_name, waveform_def in payload.waveform_library.items():
             sequencer.register_waveform(
                 waveform_name,
-                waveform_def.waveform,
+                waveform_def.iq_array,
                 sampling_period_ns=waveform_def.sampling_period_ns,
             )
 
-        for target, timeline in payload.timelines.items():
+        for target, timeline in payload.fixed_timelines.items():
             alias = payload.instrument_aliases[target]
             for event in timeline.events:
                 if event.waveform_name not in payload.waveform_library:

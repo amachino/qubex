@@ -442,7 +442,7 @@ class Quel3ExecutionManager:
                         alias: await driver.fetch_result()
                         for alias, driver in alias_to_driver.items()
                     }
-                    for target, timeline in payload.timelines.items():
+                    for target, timeline in payload.fixed_timelines.items():
                         alias = payload.instrument_aliases[target]
                         result = alias_results[alias]
                         for capture_index, window in enumerate(
@@ -475,7 +475,7 @@ class Quel3ExecutionManager:
         """Initialize nested shot-sample container by target/capture window."""
         return {
             target: {window.name: [] for window in timeline.capture_windows}
-            for target, timeline in payload.timelines.items()
+            for target, timeline in payload.fixed_timelines.items()
         }
 
     @staticmethod
@@ -513,7 +513,7 @@ class Quel3ExecutionManager:
 
         measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
         output_target_labels = payload.output_target_labels
-        for target, timeline in payload.timelines.items():
+        for target, timeline in payload.fixed_timelines.items():
             output_target = output_target_labels.get(
                 target,
                 Quel3ExecutionManager._measurement_target_label(target),
@@ -547,11 +547,6 @@ class Quel3ExecutionManager:
                 "mode": mode,
                 "shots": payload.repeats,
                 "interval_ns": payload.interval_ns,
-                "dsp_demodulation": payload.dsp_demodulation,
-                "enable_sum": payload.enable_sum,
-                "enable_classification": payload.enable_classification,
-                "line_param0": payload.line_param0,
-                "line_param1": payload.line_param1,
             },
             sampling_period_ns=(
                 sampling_period_ns

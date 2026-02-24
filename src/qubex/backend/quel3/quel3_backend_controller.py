@@ -121,14 +121,10 @@ class Quel3BackendController(BackendController):
         """Update target-to-alias mapping for quelware execution."""
         self._connection_manager.update_alias_map(alias_map)
 
-    def resolve_instrument_alias(self, target: str) -> str:
-        """Resolve quelware instrument alias for a measurement target."""
-        alias = self._runtime_context.alias_map.get(target)
-        if alias is None:
-            raise ValueError(
-                f"Instrument alias is not configured for target `{target}`."
-            )
-        return alias
+    @property
+    def instrument_alias_map(self) -> Mapping[str, str]:
+        """Return configured target-to-instrument alias mapping."""
+        return self._runtime_context.alias_map
 
     @property
     def sampling_period(self) -> float:

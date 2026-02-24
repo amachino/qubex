@@ -185,7 +185,7 @@ Calendar note:
 - 2026-02-17: Added explicit runtime guard for `quel3` backend kind when backend controller execution hook is missing, to avoid accidental QuEL-1 fallback.
 - 2026-02-17: `MeasurementScheduleRunner` now supports backend controller execution returning canonical `MeasurementResult` directly, enabling staged quelware integration before result-factory unification.
 - 2026-02-23: Removed standalone backend-executor classes and unified execution flow to `BackendController.execute(request=...) -> Quel{1,3}ExecutionManager.execute(...)`.
-- 2026-02-17: Added `instrument_aliases` in Quel3 payload with optional controller hook (`resolve_instrument_alias`) for target-to-alias mapping.
+- 2026-02-17: Added `instrument_aliases` in Quel3 payload with explicit target-to-alias mapping support.
 - 2026-02-17: Added explicit QuEL-1 capability hints on `Quel1BackendController` (`MEASUREMENT_BACKEND_KIND`, `MEASUREMENT_CONSTRAINT_MODE`, `MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE`).
 - 2026-02-22: Removed QuEL-1-only measurement capability hints from controller constants; backend selection/constraints are now resolved through runtime/session flow and adapter contracts.
 - 2026-02-17: Added `Quel3BackendController` scaffold and session-scoped backend-family selection (`backend_kind`) in `SystemManager`/`Measurement` (`quel1` or `quel3`, no mixed session).
@@ -212,7 +212,8 @@ Calendar note:
 - 2026-02-24: Fixed DF-01 (`instrument_alias` explicit resolution required; fallback to target label prohibited) and DF-02 (capture key standardized as `{target}:{capture_index}` with deterministic per-target ordering). DF-03/DF-04 remain deferred.
 - 2026-02-24: Updated QuEL-3 runtime integration to follow latest `quelware-client-internal` APIs (`Session.trigger(instrument_ids=...)` and `ResultContainer.iq_result`), and made workspace import fallback prefer `packages/quelware-client-internal`.
 - 2026-02-24: Updated sequencer capture-window key generation/lookup to `{target}:{capture_index}` in both export and result-fetch paths.
-- 2026-02-24: Updated QuEL-3 adapter contract to require explicit `resolve_instrument_alias(target)` hook at payload-build time.
+- 2026-02-24: Updated QuEL-3 adapter contract to require explicit alias mapping (`instrument_alias_map`) at payload-build time.
+- 2026-02-24: Removed `MeasurementResultFactory` and moved backend-result vocabulary conversion responsibility fully into measurement adapters (`build_measurement_result`).
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.

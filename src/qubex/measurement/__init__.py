@@ -20,7 +20,6 @@ from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_context import MeasurementContext
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
-from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .measurement_schedule_runner import MeasurementScheduleRunner
 from .models import (
@@ -56,7 +55,6 @@ __all__ = [
     "MeasurementPulseFactory",
     "MeasurementResult",
     "MeasurementResultConverter",
-    "MeasurementResultFactory",
     "MeasurementSchedule",
     "MeasurementScheduleBuilder",
     "MeasurementScheduleRunner",

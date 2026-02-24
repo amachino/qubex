@@ -15,14 +15,15 @@ from qubex.backend.quel3 import (
     Quel3BackendController,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
-    Quel3TargetTimeline,
-    Quel3WaveformDefinition,
+    Quel3FixedTimeline,
+    Quel3Waveform,
     Quel3WaveformEvent,
 )
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 
@@ -74,14 +75,14 @@ class Quel3MeasurementBackendAdapter:
         """Build backend execution request as Quel3 fixed-timeline payload."""
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
-        waveform_library: dict[str, Quel3WaveformDefinition] = {}
+        waveform_library: dict[str, Quel3Waveform] = {}
         waveform_name_by_shape_key: dict[str, str] = {}
         waveform_index = 0
-        timelines: dict[str, Quel3TargetTimeline] = {}
+        fixed_timelines: dict[str, Quel3FixedTimeline] = {}
         instrument_aliases: dict[str, str] = {}
         output_target_labels: dict[str, str] = {}
         target_registry = self._experiment_system.target_registry
-        sampling_period = self._constraint_profile.sampling_period_ns
+        alias_map = self._backend_controller.instrument_alias_map
 
         for target in pulse_schedule.labels:
             sequence = pulse_schedule.get_sequence(target, copy=False)
@@ -102,26 +103,15 @@ class Quel3MeasurementBackendAdapter:
                 )
                 for index, capture in enumerate(captures)
             )
-            modulation_frequency_hz: float | None
-            try:
-                modulation_frequency_hz = float(
-                    self._experiment_system.get_awg_frequency(target)
-                )
-            except Exception:
-                modulation_frequency_hz = None
-            timelines[target] = Quel3TargetTimeline(
-                sampling_period_ns=sampling_period,
+            fixed_timelines[target] = Quel3FixedTimeline(
                 events=events,
                 capture_windows=capture_windows,
                 length_ns=pulse_schedule.duration,
-                modulation_frequency_hz=modulation_frequency_hz,
             )
-            alias = str(
-                self._backend_controller.resolve_instrument_alias(target)
-            ).strip()
+            alias = str(alias_map.get(target, "")).strip()
             if len(alias) == 0:
                 raise ValueError(
-                    f"Resolved instrument alias must not be empty: target={target}."
+                    f"Instrument alias is not configured for target `{target}`."
                 )
             instrument_aliases[target] = alias
             try:
@@ -135,19 +125,34 @@ class Quel3MeasurementBackendAdapter:
         interval_ns = math.ceil(pulse_schedule.duration + config.interval)
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,
-            timelines=timelines,
+            fixed_timelines=fixed_timelines,
             instrument_aliases=instrument_aliases,
             output_target_labels=output_target_labels,
             interval_ns=interval_ns,
             repeats=config.shots,
             mode=config.mode,
-            dsp_demodulation=config.enable_dsp_demodulation,
-            enable_sum=config.enable_dsp_sum,
-            enable_classification=config.enable_dsp_classification,
-            line_param0=config.line_param0,
-            line_param1=config.line_param1,
         )
         return BackendExecutionRequest(payload=payload)
+
+    def build_measurement_result(
+        self,
+        *,
+        backend_result: object,
+        measurement_config: MeasurementConfig,
+        device_config: dict,
+        sampling_period_ns: float | None,
+        avg_sample_stride: int | None,
+    ) -> MeasurementResult:
+        """Return canonical QuEL-3 result or raise for unsupported payload types."""
+        _ = measurement_config
+        _ = device_config
+        _ = sampling_period_ns
+        _ = avg_sample_stride
+        if isinstance(backend_result, MeasurementResult):
+            return backend_result
+        raise TypeError(
+            "QuEL-3 backend must return MeasurementResult from execute/execute_async."
+        )
 
     @classmethod
     def _create_waveform_events(
@@ -155,7 +160,7 @@ class Quel3MeasurementBackendAdapter:
         *,
         sequence: PulseArray,
         waveform_name_by_shape_key: dict[str, str],
-        waveform_library: dict[str, Quel3WaveformDefinition],
+        waveform_library: dict[str, Quel3Waveform],
         waveform_index: int,
     ) -> tuple[tuple[Quel3WaveformEvent, ...], int]:
         """Create sparse waveform events and shared waveform library entries."""
@@ -176,8 +181,8 @@ class Quel3MeasurementBackendAdapter:
                 if waveform_name is None:
                     waveform_name = f"waveform_{waveform_index:04d}"
                     waveform_index += 1
-                    waveform_library[waveform_name] = Quel3WaveformDefinition(
-                        waveform=shape,
+                    waveform_library[waveform_name] = Quel3Waveform(
+                        iq_array=shape,
                         sampling_period_ns=sampling_period_ns,
                     )
                     waveform_name_by_shape_key[shape_hash] = waveform_name

@@ -17,8 +17,8 @@ from qubex.backend.quel3 import (
     Quel3BackendController,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
-    Quel3TargetTimeline,
-    Quel3WaveformDefinition,
+    Quel3FixedTimeline,
+    Quel3Waveform,
     Quel3WaveformEvent,
 )
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
@@ -26,8 +26,7 @@ from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
     waveform_name = "wf0"
-    timeline = Quel3TargetTimeline(
-        sampling_period_ns=0.4,
+    timeline = Quel3FixedTimeline(
         events=(
             Quel3WaveformEvent(
                 waveform_name=waveform_name,
@@ -41,22 +40,17 @@ def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPaylo
     )
     return Quel3ExecutionPayload(
         waveform_library={
-            waveform_name: Quel3WaveformDefinition(
-                waveform=np.array([0.0 + 0.0j, 1.0 + 0.0j], dtype=np.complex128),
+            waveform_name: Quel3Waveform(
+                iq_array=np.array([0.0 + 0.0j, 1.0 + 0.0j], dtype=np.complex128),
                 sampling_period_ns=0.4,
             )
         },
-        timelines={"RQ00": timeline},
+        fixed_timelines={"RQ00": timeline},
         instrument_aliases={"RQ00": "alias-rq00"},
         output_target_labels={"RQ00": "Q00"},
         interval_ns=100.0,
         repeats=repeats,
         mode=mode,
-        dsp_demodulation=True,
-        enable_sum=False,
-        enable_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
     )
 
 
@@ -76,22 +70,22 @@ def test_quel3_controller_does_not_expose_box_config_capability() -> None:
     assert not hasattr(Quel3BackendController(), "box_config")
 
 
-def test_resolve_instrument_alias_uses_alias_map() -> None:
-    """Given alias map, resolving alias returns mapped alias."""
+def test_instrument_alias_map_exposes_configured_mapping() -> None:
+    """Given alias map, controller exposes configured target-to-alias mapping."""
     controller = Quel3BackendController(alias_map={"RQ00": "inst-00"})
 
-    assert controller.resolve_instrument_alias("RQ00") == "inst-00"
-    with pytest.raises(ValueError, match="Instrument alias is not configured"):
-        controller.resolve_instrument_alias("RQ01")
+    assert dict(controller.instrument_alias_map) == {"RQ00": "inst-00"}
 
 
 def test_update_instrument_alias_map_overrides_target_alias() -> None:
-    """Given alias update, resolve returns updated alias."""
+    """Given alias update, controller mapping reflects updated aliases."""
     controller = Quel3BackendController(alias_map={"RQ00": "inst-00"})
     controller.update_instrument_alias_map({"RQ00": "inst-00-new", "RQ01": "inst-01"})
 
-    assert controller.resolve_instrument_alias("RQ00") == "inst-00-new"
-    assert controller.resolve_instrument_alias("RQ01") == "inst-01"
+    assert dict(controller.instrument_alias_map) == {
+        "RQ00": "inst-00-new",
+        "RQ01": "inst-01",
+    }
 
 
 def test_execute_rejects_non_quel3_payload() -> None:
@@ -184,10 +178,10 @@ def test_build_measurement_result_averages_shot_samples() -> None:
 def test_build_measurement_result_uses_output_target_labels() -> None:
     """Given output target mapping, measurement result uses mapped labels."""
     payload = _make_payload(mode="single", repeats=1)
-    timeline = payload.timelines["RQ00"]
+    timeline = payload.fixed_timelines["RQ00"]
     payload = replace(
         payload,
-        timelines={"raw-target": timeline},
+        fixed_timelines={"raw-target": timeline},
         instrument_aliases={"raw-target": "alias-rq00"},
         output_target_labels={"raw-target": "Q17"},
     )
@@ -271,9 +265,9 @@ def test_execute_rejects_multiple_instrument_aliases() -> None:
     payload = _make_payload()
     payload = replace(
         payload,
-        timelines={
-            "RQ00": payload.timelines["RQ00"],
-            "RQ01": payload.timelines["RQ00"],
+        fixed_timelines={
+            "RQ00": payload.fixed_timelines["RQ00"],
+            "RQ01": payload.fixed_timelines["RQ00"],
         },
         instrument_aliases={"RQ00": "alias-0", "RQ01": "alias-1"},
     )

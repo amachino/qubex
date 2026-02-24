@@ -503,16 +503,9 @@ def test_run_measurement_uses_backend_custom_factories(
             "Quel1MeasurementBackendAdapter fallback should not be used."
         )
 
-    def _unexpected_result_factory(**kwargs: object) -> object:
-        raise AssertionError("MeasurementResultFactory fallback should not be used.")
-
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _unexpected_adapter,
-    )
-    monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
-        _unexpected_result_factory,
     )
 
     class _CustomBackendExecutor:
@@ -537,9 +530,22 @@ def test_run_measurement_uses_backend_custom_factories(
             called["request_config"] = config
             return BackendExecutionRequest(payload=object())
 
-    class _CustomResultFactory:
-        def create(self, **kwargs: object) -> MeasurementResult:
-            called["result_kwargs"] = kwargs
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            called["result_kwargs"] = {
+                "backend_result": backend_result,
+                "measurement_config": measurement_config,
+                "device_config": device_config,
+                "sampling_period_ns": sampling_period_ns,
+                "avg_sample_stride": avg_sample_stride,
+            }
             return MeasurementResult(
                 mode="avg",
                 data={"Q00": [np.array([1.0 + 0.0j])]},
@@ -561,14 +567,6 @@ def test_run_measurement_uses_backend_custom_factories(
             called["experiment_system"] = experiment_system
             called["constraint_profile"] = constraint_profile
             return _CustomAdapter()
-
-        def create_measurement_result_factory(
-            self,
-            *,
-            experiment_system: object,
-        ) -> _CustomResultFactory:
-            called["result_factory_experiment_system"] = experiment_system
-            return _CustomResultFactory()
 
         def execute(
             self,
@@ -595,7 +593,6 @@ def test_run_measurement_uses_backend_custom_factories(
     assert called["request_schedule"] is schedule
     assert called["request_config"] is config
     assert called["experiment_system"] is experiment_system
-    assert called["result_factory_experiment_system"] is experiment_system
     assert result.device_config == {"kind": "quel3"}
 
 

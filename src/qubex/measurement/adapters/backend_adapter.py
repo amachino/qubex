@@ -6,6 +6,7 @@ from typing import Protocol
 
 from qubex.backend import BackendExecutionRequest
 from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 from .quel1_backend_adapter import Quel1MeasurementBackendAdapter
@@ -26,6 +27,18 @@ class MeasurementBackendAdapter(Protocol):
         config: MeasurementConfig,
     ) -> BackendExecutionRequest:
         """Build backend execution request from measurement schedule/config."""
+        ...
+
+    def build_measurement_result(
+        self,
+        *,
+        backend_result: object,
+        measurement_config: MeasurementConfig,
+        device_config: dict,
+        sampling_period_ns: float | None,
+        avg_sample_stride: int | None,
+    ) -> MeasurementResult:
+        """Build canonical result from a backend-specific result payload."""
         ...
 
 

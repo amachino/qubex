@@ -19,6 +19,7 @@ from qubex.measurement.measurement_constraint_profile import (
 )
 from qubex.measurement.models import (
     MeasurementConfig,
+    MeasurementResult,
     MeasurementSchedule,
 )
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
@@ -200,9 +201,8 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert payload.mode == "avg"
     assert payload.instrument_aliases == {target: "alias-RQ00"}
     assert payload.output_target_labels == {target: "Q00"}
-    assert target in payload.timelines
-    timeline = payload.timelines[target]
-    assert timeline.sampling_period_ns == 0.4
+    assert target in payload.fixed_timelines
+    timeline = payload.fixed_timelines[target]
     assert len(timeline.events) == 1
     event = timeline.events[0]
     assert event.start_offset_ns == pytest.approx(0.0)
@@ -212,11 +212,10 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     waveform_def = payload.waveform_library[event.waveform_name]
     assert waveform_def.sampling_period_ns == pytest.approx(0.4)
     assert np.array_equal(
-        waveform_def.waveform,
+        waveform_def.iq_array,
         shape,
     )
     assert timeline.length_ns == pytest.approx(1.2)
-    assert timeline.modulation_frequency_hz == pytest.approx(100_000_000.0)
     assert len(timeline.capture_windows) == 1
     assert timeline.capture_windows[0].name == "capture_0"
     assert timeline.capture_windows[0].start_offset_ns == pytest.approx(0.4)
@@ -247,7 +246,7 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
 
     payload = request.payload
     assert isinstance(payload, Quel3ExecutionPayload)
-    timeline = payload.timelines[target]
+    timeline = payload.fixed_timelines[target]
     assert len(timeline.events) == 1
     event = timeline.events[0]
     assert event.start_offset_ns == pytest.approx(0.0)
@@ -255,7 +254,7 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
     assert event.phase_offset_deg == pytest.approx(0.0)
     waveform_def = payload.waveform_library[event.waveform_name]
     assert np.array_equal(
-        waveform_def.waveform,
+        waveform_def.iq_array,
         np.array(
             [0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j, 0.5 + 0.0j, 0.0 + 0.0j],
             dtype=np.complex128,
@@ -378,8 +377,8 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
     payload = request.payload
     assert isinstance(payload, Quel3ExecutionPayload)
     assert len(payload.waveform_library) == 1
-    event_a = payload.timelines[target_a].events[0]
-    event_b = payload.timelines[target_b].events[0]
+    event_a = payload.fixed_timelines[target_a].events[0]
+    event_b = payload.fixed_timelines[target_b].events[0]
     assert event_a.waveform_name == event_b.waveform_name
     assert event_a.gain == pytest.approx(1.0)
     assert event_a.phase_offset_deg == pytest.approx(0.0)
@@ -418,3 +417,46 @@ def test_quel3_adapter_requires_explicit_alias_mapping_for_execution_payload() -
 
     with pytest.raises(ValueError, match="Instrument alias is not configured"):
         adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+
+def test_quel3_adapter_build_measurement_result_returns_canonical_result() -> None:
+    """Given canonical result, when adapter builds result, then it returns the same instance."""
+    expected = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([1.0 + 0.0j], dtype=np.complex128)]},
+        device_config={"kind": "quel3"},
+        measurement_config={"mode": "avg"},
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+
+    result = adapter.build_measurement_result(
+        backend_result=expected,
+        measurement_config=_make_config(),
+        device_config={"kind": "quel3"},
+        sampling_period_ns=0.4,
+        avg_sample_stride=4,
+    )
+
+    assert result is expected
+
+
+def test_quel3_adapter_build_measurement_result_rejects_noncanonical_type() -> None:
+    """Given non-canonical backend result, when adapter builds result, then it raises TypeError."""
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+
+    with pytest.raises(TypeError, match="must return MeasurementResult"):
+        adapter.build_measurement_result(
+            backend_result={"iq_result": {}},
+            measurement_config=_make_config(),
+            device_config={},
+            sampling_period_ns=0.4,
+            avg_sample_stride=4,
+        )

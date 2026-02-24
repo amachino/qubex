@@ -84,6 +84,24 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
             called["request_config"] = config
             return request
 
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            called["result_kwargs"] = {
+                "backend_result": backend_result,
+                "measurement_config": measurement_config,
+                "device_config": device_config,
+                "sampling_period_ns": sampling_period_ns,
+                "avg_sample_stride": avg_sample_stride,
+            }
+            return expected
+
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
@@ -92,14 +110,8 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
             called["execute_request"] = request
             return backend_result
 
-    class _ResultFactory:
-        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
-            called["result_kwargs"] = kwargs
-            return expected
-
     runner = MeasurementScheduleRunner(
         measurement_backend_adapter=cast(Any, _Adapter()),
-        measurement_result_factory=cast(Any, _ResultFactory()),
         backend_controller=cast(Any, _BackendController()),
     )
 
@@ -141,6 +153,22 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
             _ = config
             return base_request
 
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            _ = backend_result
+            _ = measurement_config
+            _ = device_config
+            _ = sampling_period_ns
+            _ = avg_sample_stride
+            return expected
+
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
@@ -157,14 +185,8 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
             called["clock_health_checks"] = clock_health_checks
             return backend_result
 
-    class _ResultFactory:
-        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
-            _ = kwargs
-            return expected
-
     runner = MeasurementScheduleRunner(
         measurement_backend_adapter=cast(Any, _Adapter()),
-        measurement_result_factory=cast(Any, _ResultFactory()),
         backend_controller=cast(Any, _BackendController()),
         execution_mode="serial",
         clock_health_checks=True,
@@ -197,6 +219,24 @@ def test_execute_async_validates_builds_calls_backend_and_creates_result() -> No
             called["request_config"] = config
             return request
 
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            called["result_kwargs"] = {
+                "backend_result": backend_result,
+                "measurement_config": measurement_config,
+                "device_config": device_config,
+                "sampling_period_ns": sampling_period_ns,
+                "avg_sample_stride": avg_sample_stride,
+            }
+            return expected
+
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
@@ -207,14 +247,8 @@ def test_execute_async_validates_builds_calls_backend_and_creates_result() -> No
             called["execute_request"] = request
             return backend_result
 
-    class _ResultFactory:
-        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
-            called["result_kwargs"] = kwargs
-            return expected
-
     runner = MeasurementScheduleRunner(
         measurement_backend_adapter=cast(Any, _Adapter()),
-        measurement_result_factory=cast(Any, _ResultFactory()),
         backend_controller=cast(Any, _BackendController()),
     )
 
@@ -256,6 +290,22 @@ def test_execute_async_forwards_execution_options_to_backend_controller() -> Non
             _ = config
             return base_request
 
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            _ = backend_result
+            _ = measurement_config
+            _ = device_config
+            _ = sampling_period_ns
+            _ = avg_sample_stride
+            return expected
+
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
@@ -272,14 +322,8 @@ def test_execute_async_forwards_execution_options_to_backend_controller() -> Non
             called["clock_health_checks"] = clock_health_checks
             return backend_result
 
-    class _ResultFactory:
-        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
-            _ = kwargs
-            return expected
-
     runner = MeasurementScheduleRunner(
         measurement_backend_adapter=cast(Any, _Adapter()),
-        measurement_result_factory=cast(Any, _ResultFactory()),
         backend_controller=cast(Any, _BackendController()),
         execution_mode="serial",
         clock_health_checks=True,
@@ -294,7 +338,7 @@ def test_execute_async_forwards_execution_options_to_backend_controller() -> Non
 
 
 def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
-    """Given backend without box config capability, when execute runs, then result factory receives an empty config."""
+    """Given backend without box config capability, when execute runs, then adapter result builder receives an empty config."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendRawResult(status={}, data={}, config={})
@@ -314,6 +358,24 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
             _ = config
             return request
 
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            called["result_kwargs"] = {
+                "backend_result": backend_result,
+                "measurement_config": measurement_config,
+                "device_config": device_config,
+                "sampling_period_ns": sampling_period_ns,
+                "avg_sample_stride": avg_sample_stride,
+            }
+            return expected
+
     class _BackendController:
         sampling_period: ClassVar[float] = 2.0
 
@@ -321,14 +383,8 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
             _ = request
             return backend_result
 
-    class _ResultFactory:
-        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
-            called["result_kwargs"] = kwargs
-            return expected
-
     runner = MeasurementScheduleRunner(
         measurement_backend_adapter=cast(Any, _Adapter()),
-        measurement_result_factory=cast(Any, _ResultFactory()),
         backend_controller=cast(Any, _BackendController()),
     )
 
@@ -372,17 +428,158 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
             _ = request
             return expected
 
-    class _ResultFactory:
-        def create(self, **kwargs: object):  # type: ignore[no-untyped-def]
-            raise AssertionError("result factory should not be called")
-
     runner = MeasurementScheduleRunner(
         measurement_backend_adapter=cast(Any, _Adapter()),
-        measurement_result_factory=cast(Any, _ResultFactory()),
         backend_controller=cast(Any, _BackendController()),
     )
     result = runner.execute(schedule=_make_schedule(), config=_make_config())
 
+    assert result is expected
+
+
+def test_execute_prefers_adapter_measurement_result_builder_when_available() -> None:
+    """Given adapter result builder, when execute is called, then runner uses adapter conversion."""
+    called: dict[str, object] = {}
+    request = BackendExecutionRequest(payload=object())
+    backend_result = Quel1BackendRawResult(status={}, data={}, config={})
+    expected = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([2.0 + 0.0j])]},
+        device_config={"kind": "adapter"},
+        measurement_config={"mode": "avg"},
+    )
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            called["validated"] = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            called["request_schedule"] = schedule
+            called["request_config"] = config
+            return request
+
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            called["builder_backend_result"] = backend_result
+            called["builder_measurement_config"] = measurement_config
+            called["builder_device_config"] = device_config
+            called["builder_sampling_period_ns"] = sampling_period_ns
+            called["builder_avg_sample_stride"] = avg_sample_stride
+            return expected
+
+    class _BackendController:
+        box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
+        sampling_period: ClassVar[float] = 0.4
+
+        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
+            called["execute_request"] = request
+            return backend_result
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+
+    config = _make_config()
+    schedule = _make_schedule()
+    result = runner.execute(schedule=schedule, config=config)
+
+    assert called["validated"] is schedule
+    assert called["request_schedule"] is schedule
+    assert called["request_config"] is config
+    assert called["execute_request"] is request
+    assert called["builder_backend_result"] is backend_result
+    assert called["builder_measurement_config"] is config
+    assert called["builder_device_config"] == {"kind": "quel3"}
+    assert called["builder_sampling_period_ns"] == 0.4
+    assert called["builder_avg_sample_stride"] == 4
+    assert result is expected
+
+
+def test_execute_async_prefers_adapter_measurement_result_builder_when_available() -> (
+    None
+):
+    """Given adapter result builder, when execute_async is called, then runner uses adapter conversion."""
+    called: dict[str, object] = {}
+    request = BackendExecutionRequest(payload=object())
+    backend_result = Quel1BackendRawResult(status={}, data={}, config={})
+    expected = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([3.0 + 0.0j])]},
+        device_config={"kind": "adapter"},
+        measurement_config={"mode": "avg"},
+    )
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            called["validated"] = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            called["request_schedule"] = schedule
+            called["request_config"] = config
+            return request
+
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            called["builder_backend_result"] = backend_result
+            called["builder_measurement_config"] = measurement_config
+            called["builder_device_config"] = device_config
+            called["builder_sampling_period_ns"] = sampling_period_ns
+            called["builder_avg_sample_stride"] = avg_sample_stride
+            return expected
+
+    class _BackendController:
+        box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
+        sampling_period: ClassVar[float] = 0.4
+
+        async def execute_async(
+            self, *, request: BackendExecutionRequest
+        ) -> Quel1BackendRawResult:
+            called["execute_request"] = request
+            return backend_result
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+
+    config = _make_config()
+    schedule = _make_schedule()
+    result = asyncio.run(runner.execute_async(schedule=schedule, config=config))
+
+    assert called["validated"] is schedule
+    assert called["request_schedule"] is schedule
+    assert called["request_config"] is config
+    assert called["execute_request"] is request
+    assert called["builder_backend_result"] is backend_result
+    assert called["builder_measurement_config"] is config
+    assert called["builder_device_config"] == {"kind": "quel3"}
+    assert called["builder_sampling_period_ns"] == 0.4
+    assert called["builder_avg_sample_stride"] == 4
     assert result is expected
 
 
@@ -404,17 +601,9 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
             called["adapter_experiment_system"] = experiment_system
             called["adapter_constraint_profile"] = constraint_profile
 
-    class _ResultFactory:
-        def __init__(self, *, experiment_system: object) -> None:
-            called["result_factory_experiment_system"] = experiment_system
-
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
-    )
-    monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
-        _ResultFactory,
     )
 
     backend_controller = type("_BC", (), {"sampling_period": 4.0})()
@@ -443,17 +632,9 @@ def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
         ) -> None:
             called["adapter_constraint_profile"] = constraint_profile
 
-    class _ResultFactory:
-        def __init__(self, *, experiment_system: object) -> None:
-            called["result_factory_experiment_system"] = experiment_system
-
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
-    )
-    monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
-        _ResultFactory,
     )
 
     backend_controller = type(
@@ -478,8 +659,8 @@ def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
     assert profile.require_workaround_capture is False
 
 
-def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
-    """Given backend custom factories, when creating default runner, then custom adapter and result factory are used."""
+def test_create_default_prefers_backend_custom_adapter_factory(monkeypatch) -> None:
+    """Given backend custom adapter factory, when creating default runner, then custom adapter is used."""
     called: dict[str, object] = {}
 
     class _Adapter:
@@ -496,9 +677,22 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
             called["request_config"] = config
             return BackendExecutionRequest(payload=object())
 
-    class _ResultFactory:
-        def create(self, **kwargs: object) -> MeasurementResult:
-            called["result_kwargs"] = kwargs
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+            avg_sample_stride: int,
+        ) -> MeasurementResult:
+            called["result_kwargs"] = {
+                "backend_result": backend_result,
+                "measurement_config": measurement_config,
+                "device_config": device_config,
+                "sampling_period_ns": sampling_period_ns,
+                "avg_sample_stride": avg_sample_stride,
+            }
             return MeasurementResult(
                 mode="avg",
                 data={"Q00": [np.array([1.0 + 0.0j])]},
@@ -511,16 +705,9 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
             "Quel1MeasurementBackendAdapter fallback should not be used."
         )
 
-    def _unexpected_result_factory(**kwargs: object) -> object:
-        raise AssertionError("MeasurementResultFactory fallback should not be used.")
-
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _unexpected_adapter,
-    )
-    monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
-        _unexpected_result_factory,
     )
 
     class _Controller:
@@ -537,14 +724,6 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
             called["experiment_system"] = experiment_system
             called["constraint_profile"] = constraint_profile
             return _Adapter()
-
-        def create_measurement_result_factory(
-            self,
-            *,
-            experiment_system: object,
-        ) -> _ResultFactory:
-            called["result_factory_experiment_system"] = experiment_system
-            return _ResultFactory()
 
         def execute(
             self,
@@ -570,7 +749,6 @@ def test_create_default_prefers_backend_custom_factories(monkeypatch) -> None:
 
     assert isinstance(runner, MeasurementScheduleRunner)
     assert called["experiment_system"] is experiment_system
-    assert called["result_factory_experiment_system"] is experiment_system
     assert isinstance(called["constraint_profile"], MeasurementConstraintProfile)
     assert isinstance(called["execute_request"], BackendExecutionRequest)
     assert called["execution_mode"] == "parallel"
@@ -596,10 +774,6 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
             called["adapter_experiment_system"] = experiment_system
             called["adapter_constraint_profile"] = constraint_profile
 
-    class _ResultFactory:
-        def __init__(self, *, experiment_system: object) -> None:
-            called["result_factory_experiment_system"] = experiment_system
-
     def _unexpected_quel1_adapter(**kwargs: object) -> object:
         raise AssertionError("Quel1 adapter fallback should not be used for quel3.")
 
@@ -610,10 +784,6 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel3MeasurementBackendAdapter",
         _Quel3Adapter,
-    )
-    monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_runner.MeasurementResultFactory",
-        _ResultFactory,
     )
 
     backend_controller = type(

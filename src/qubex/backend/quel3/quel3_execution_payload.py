@@ -28,37 +28,30 @@ class Quel3WaveformEvent:
 
 
 @dataclass(frozen=True)
-class Quel3WaveformDefinition:
+class Quel3Waveform:
     """Registered waveform definition for one name in QuEL-3 execution."""
 
-    waveform: npt.NDArray[np.complex128]
+    iq_array: npt.NDArray[np.complex128]
     sampling_period_ns: float | None = None
 
 
 @dataclass(frozen=True)
-class Quel3TargetTimeline:
-    """Timeline definition for one target in QuEL-3 execution."""
+class Quel3FixedTimeline:
+    """Fixed-timeline definition for one target in QuEL-3 execution."""
 
-    sampling_period_ns: float
     events: tuple[Quel3WaveformEvent, ...]
     capture_windows: tuple[Quel3CaptureWindow, ...]
     length_ns: float
-    modulation_frequency_hz: float | None = None
 
 
 @dataclass(frozen=True)
 class Quel3ExecutionPayload:
     """Execution payload for translating measurement requests to fixed timeline."""
 
-    waveform_library: dict[str, Quel3WaveformDefinition]
-    timelines: dict[str, Quel3TargetTimeline]
+    waveform_library: dict[str, Quel3Waveform]
+    fixed_timelines: dict[str, Quel3FixedTimeline]
     instrument_aliases: dict[str, str]
     output_target_labels: dict[str, str]
     interval_ns: float
     repeats: int
     mode: str
-    dsp_demodulation: bool
-    enable_sum: bool
-    enable_classification: bool
-    line_param0: tuple[float, float, float]
-    line_param1: tuple[float, float, float]

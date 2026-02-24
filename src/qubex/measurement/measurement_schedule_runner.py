@@ -20,27 +20,24 @@ from .adapters import (
     Quel3MeasurementBackendAdapter,
 )
 from .measurement_constraint_profile import MeasurementConstraintProfile
-from .measurement_result_factory import MeasurementResultFactory
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
 from .models.measurement_schedule import MeasurementSchedule
 
 
 class MeasurementScheduleRunner:
-    """Execute measurement schedules with adapter/executor/result factory."""
+    """Execute measurement schedules with adapter and backend controller."""
 
     def __init__(
         self,
         *,
         measurement_backend_adapter: MeasurementBackendAdapter,
-        measurement_result_factory: MeasurementResultFactory,
         backend_controller: BackendController,
         constraint_profile: MeasurementConstraintProfile | None = None,
         execution_mode: ExecutionMode | None = None,
         clock_health_checks: bool | None = None,
     ) -> None:
         self._measurement_backend_adapter = measurement_backend_adapter
-        self._measurement_result_factory = measurement_result_factory
         self._backend_controller = backend_controller
         self._constraint_profile = constraint_profile
         self._execution_mode = execution_mode
@@ -78,10 +75,6 @@ class MeasurementScheduleRunner:
                 constraint_profile=constraint_profile,
                 backend_kind=backend_kind,
             ),
-            measurement_result_factory=cls._create_result_factory(
-                backend_controller=backend_controller,
-                experiment_system=experiment_system,
-            ),
             backend_controller=backend_controller,
             constraint_profile=constraint_profile,
             execution_mode=execution_mode,
@@ -117,24 +110,6 @@ class MeasurementScheduleRunner:
             backend_controller=cast(Any, backend_controller),
             experiment_system=experiment_system,
             constraint_profile=constraint_profile,
-        )
-
-    @staticmethod
-    def _create_result_factory(
-        *,
-        backend_controller: BackendController,
-        experiment_system: ExperimentSystem,
-    ) -> MeasurementResultFactory:
-        """Create result factory with optional backend-specific factory hook."""
-        factory = getattr(
-            backend_controller,
-            "create_measurement_result_factory",
-            None,
-        )
-        if isinstance(factory, Callable):
-            return factory(experiment_system=experiment_system)
-        return MeasurementResultFactory(
-            experiment_system=experiment_system,
         )
 
     @staticmethod
@@ -199,6 +174,30 @@ class MeasurementScheduleRunner:
             return box_config
         return {}
 
+    def _build_result(
+        self,
+        *,
+        backend_result: object,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        """Build canonical measurement result via measurement backend adapter."""
+        if isinstance(backend_result, MeasurementResult):
+            return backend_result
+
+        device_config = self._resolve_device_config(self._backend_controller)
+        sampling_period_ns = self._resolve_sampling_period_ns(self._backend_controller)
+        avg_sample_stride = self._resolve_avg_sample_stride(
+            self._backend_controller,
+            self._constraint_profile,
+        )
+        return self._measurement_backend_adapter.build_measurement_result(
+            backend_result=backend_result,
+            measurement_config=config,
+            device_config=device_config,
+            sampling_period_ns=sampling_period_ns,
+            avg_sample_stride=avg_sample_stride,
+        )
+
     def execute(
         self,
         *,
@@ -233,19 +232,9 @@ class MeasurementScheduleRunner:
                 execution_mode=self._execution_mode,
                 clock_health_checks=self._clock_health_checks,
             )
-        if isinstance(backend_result, MeasurementResult):
-            return backend_result
-        result = self._measurement_result_factory.create(
+        result = self._build_result(
             backend_result=backend_result,
-            measurement_config=config,
-            device_config=self._resolve_device_config(self._backend_controller),
-            sampling_period_ns=self._resolve_sampling_period_ns(
-                self._backend_controller
-            ),
-            avg_sample_stride=self._resolve_avg_sample_stride(
-                self._backend_controller,
-                self._constraint_profile,
-            ),
+            config=config,
         )
         return result
 
@@ -285,18 +274,8 @@ class MeasurementScheduleRunner:
                 execution_mode=self._execution_mode,
                 clock_health_checks=self._clock_health_checks,
             )
-        if isinstance(backend_result, MeasurementResult):
-            return backend_result
-        result = self._measurement_result_factory.create(
+        result = self._build_result(
             backend_result=backend_result,
-            measurement_config=config,
-            device_config=self._resolve_device_config(self._backend_controller),
-            sampling_period_ns=self._resolve_sampling_period_ns(
-                self._backend_controller
-            ),
-            avg_sample_stride=self._resolve_avg_sample_stride(
-                self._backend_controller,
-                self._constraint_profile,
-            ),
+            config=config,
         )
         return result

@@ -12,8 +12,8 @@ from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.measurement.adapters import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
-    Quel3TargetTimeline,
-    Quel3WaveformDefinition,
+    Quel3FixedTimeline,
+    Quel3Waveform,
     Quel3WaveformEvent,
 )
 
@@ -96,22 +96,17 @@ class _RecordingSequencer:
 
 def _make_payload(
     *,
-    waveform_library: dict[str, Quel3WaveformDefinition],
-    timelines: dict[str, Quel3TargetTimeline],
+    waveform_library: dict[str, Quel3Waveform],
+    fixed_timelines: dict[str, Quel3FixedTimeline],
 ) -> Quel3ExecutionPayload:
     return Quel3ExecutionPayload(
         waveform_library=waveform_library,
-        timelines=timelines,
-        instrument_aliases={target: f"alias-{target}" for target in timelines},
-        output_target_labels={target: target for target in timelines},
+        fixed_timelines=fixed_timelines,
+        instrument_aliases={target: f"alias-{target}" for target in fixed_timelines},
+        output_target_labels={target: target for target in fixed_timelines},
         interval_ns=100.0,
         repeats=16,
         mode="avg",
-        dsp_demodulation=True,
-        enable_sum=False,
-        enable_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
     )
 
 
@@ -119,8 +114,7 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
     """Given payload library/events, when building, waveforms and events are forwarded."""
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j, 0.3 + 0.2j], dtype=np.complex128)
-    timeline = Quel3TargetTimeline(
-        sampling_period_ns=0.4,
+    timeline = Quel3FixedTimeline(
         events=(
             Quel3WaveformEvent(
                 waveform_name=waveform_name,
@@ -136,12 +130,12 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
     )
     payload = _make_payload(
         waveform_library={
-            waveform_name: Quel3WaveformDefinition(
-                waveform=waveform_values,
+            waveform_name: Quel3Waveform(
+                iq_array=waveform_values,
                 sampling_period_ns=0.4,
             )
         },
-        timelines={"RQ00": timeline},
+        fixed_timelines={"RQ00": timeline},
     )
 
     builder = Quel3SequencerBuilder()
@@ -178,14 +172,12 @@ def test_builder_reuses_payload_waveform_across_targets() -> None:
     """Given shared waveform name in payload, when building, both targets reuse one registered waveform."""
     waveform_name = "wf_shared_0000"
     waveform_values = np.array([1.0 + 0.0j], dtype=np.complex128)
-    timeline_a = Quel3TargetTimeline(
-        sampling_period_ns=0.4,
+    timeline_a = Quel3FixedTimeline(
         events=(Quel3WaveformEvent(waveform_name=waveform_name, start_offset_ns=4.0),),
         capture_windows=(),
         length_ns=10.0,
     )
-    timeline_b = Quel3TargetTimeline(
-        sampling_period_ns=0.4,
+    timeline_b = Quel3FixedTimeline(
         events=(
             Quel3WaveformEvent(
                 waveform_name=waveform_name,
@@ -199,12 +191,12 @@ def test_builder_reuses_payload_waveform_across_targets() -> None:
     )
     payload = _make_payload(
         waveform_library={
-            waveform_name: Quel3WaveformDefinition(
-                waveform=waveform_values,
+            waveform_name: Quel3Waveform(
+                iq_array=waveform_values,
                 sampling_period_ns=0.4,
             )
         },
-        timelines={"RQ00": timeline_a, "RQ01": timeline_b},
+        fixed_timelines={"RQ00": timeline_a, "RQ01": timeline_b},
     )
 
     builder = Quel3SequencerBuilder()
@@ -225,14 +217,13 @@ def test_builder_rejects_event_with_unknown_waveform_name() -> None:
     """Given unknown waveform name, when building, ValueError is raised."""
     payload = _make_payload(
         waveform_library={
-            "wf_known": Quel3WaveformDefinition(
-                waveform=np.array([1.0 + 0.0j], dtype=np.complex128),
+            "wf_known": Quel3Waveform(
+                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
                 sampling_period_ns=0.4,
             )
         },
-        timelines={
-            "RQ00": Quel3TargetTimeline(
-                sampling_period_ns=0.4,
+        fixed_timelines={
+            "RQ00": Quel3FixedTimeline(
                 events=(
                     Quel3WaveformEvent(
                         waveform_name="wf_unknown",

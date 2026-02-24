@@ -4,8 +4,8 @@
 from qubex.backend.quel3 import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
-    Quel3TargetTimeline,
-    Quel3WaveformDefinition,
+    Quel3FixedTimeline,
+    Quel3Waveform,
     Quel3WaveformEvent,
 )
 
@@ -20,8 +20,8 @@ __all__ = [
     "Quel1MeasurementBackendAdapter",
     "Quel3CaptureWindow",
     "Quel3ExecutionPayload",
+    "Quel3FixedTimeline",
     "Quel3MeasurementBackendAdapter",
-    "Quel3TargetTimeline",
-    "Quel3WaveformDefinition",
+    "Quel3Waveform",
     "Quel3WaveformEvent",
 ]

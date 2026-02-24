@@ -14,6 +14,7 @@ from qubex.backend import (
 )
 from qubex.backend.quel1 import (
     Quel1BackendController,
+    Quel1BackendRawResult,
     Quel1ExecutionPayload,
 )
 from qubex.measurement.measurement_constraint_profile import (
@@ -21,6 +22,7 @@ from qubex.measurement.measurement_constraint_profile import (
 )
 from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 if TYPE_CHECKING:
@@ -231,6 +233,70 @@ class Quel1MeasurementBackendAdapter:
         )
         return BackendExecutionRequest(
             payload=payload,
+        )
+
+    def build_measurement_result(
+        self,
+        *,
+        backend_result: object,
+        measurement_config: MeasurementConfig,
+        device_config: dict,
+        sampling_period_ns: float | None,
+        avg_sample_stride: int | None,
+    ) -> MeasurementResult:
+        """Build canonical result from a QuEL-1 backend raw result."""
+        if not isinstance(backend_result, Quel1BackendRawResult):
+            raise TypeError(
+                "QuEL-1 adapter expects backend_result to be `Quel1BackendRawResult`."
+            )
+
+        measure_mode = measurement_config.mode
+        label_slice = slice(1, None)  # remove the resonator prefix "R"
+        norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
+
+        iq_data: dict[str, list[npt.ArrayLike]] = {}
+        for target, iqs in sorted(backend_result.data.items()):
+            sideband = self._experiment_system.get_target(target).sideband
+            if sideband == "L":
+                iq_data[target] = [np.conjugate(iq) for iq in iqs]
+            else:
+                iq_data[target] = iqs
+
+        measure_data: dict[str, list[np.ndarray]] = {}
+        if measure_mode == "single":
+            for target, iqs in iq_data.items():
+                qubit = target[label_slice]
+                values: list[np.ndarray] = []
+                for index, iq in enumerate(iqs):
+                    if index == 0:
+                        # skip the first extra capture
+                        continue
+                    values.append(np.asarray(iq, dtype=np.complex128) * norm_factor)
+                measure_data[qubit] = values
+        elif measure_mode == "avg":
+            for target, iqs in iq_data.items():
+                qubit = target[label_slice]
+                values = []
+                for index, iq in enumerate(iqs):
+                    if index == 0:
+                        # skip the first extra capture
+                        continue
+                    values.append(
+                        np.asarray(iq, dtype=np.complex128).squeeze()
+                        * norm_factor
+                        / measurement_config.shots
+                    )
+                measure_data[qubit] = values
+        else:
+            raise ValueError(f"Invalid measure mode: {measure_mode}")
+
+        return MeasurementResult(
+            mode=measure_mode,
+            data=measure_data,
+            device_config=device_config,
+            measurement_config=measurement_config.to_dict(),
+            sampling_period_ns=sampling_period_ns,
+            avg_sample_stride=avg_sample_stride,
         )
 
     def _create_sampled_sequences(

@@ -39,8 +39,9 @@ Execution payloads are backend contracts and should be defined in backend module
 
 - Added `src/qubex/backend/quel3/quel3_execution_payload.py`:
   - `Quel3CaptureWindow`
+  - `Quel3Waveform`
   - `Quel3WaveformEvent`
-  - `Quel3TargetTimeline`
+  - `Quel3FixedTimeline`
   - `Quel3ExecutionPayload`
 - Exported these in `src/qubex/backend/quel3/__init__.py`.
 
@@ -68,8 +69,8 @@ Execution payloads are backend contracts and should be defined in backend module
 
 `Quel1ExecutionManager` compiles sequencers right before execution.
 
-This keeps adapter responsibility at "build execution plan" and backend responsibility at
-"compile and execute".
+This keeps adapter responsibility at "request/result boundary conversion" and backend
+responsibility at "compile and execute".
 
 ## Compatibility notes
 
