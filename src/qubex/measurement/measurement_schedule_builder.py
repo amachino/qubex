@@ -19,12 +19,6 @@ from .measurement_pulse_factory import MeasurementPulseFactory
 from .models.capture_schedule import Capture, CaptureSchedule
 from .models.measurement_schedule import MeasurementSchedule
 
-_STRICT_PROFILE = MeasurementConstraintProfile.quel1()
-WORD_DURATION = _STRICT_PROFILE.word_duration_ns or 0.0
-BLOCK_DURATION = _STRICT_PROFILE.block_duration_ns or 0.0
-EXTRA_SUM_SECTION_LENGTH = _STRICT_PROFILE.extra_sum_section_length_samples
-EXTRA_CAPTURE_DURATION = _STRICT_PROFILE.extra_capture_duration_ns
-
 
 class MeasurementScheduleBuilder:
     """Build hardware-ready measurement schedules for execution."""
