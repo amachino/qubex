@@ -100,10 +100,10 @@ class Quel3SequencerBuilder:
                     phase_offset_deg=event.phase_offset_deg,
                 )
 
-            for capture_window in timeline.capture_windows:
+            for capture_index, capture_window in enumerate(timeline.capture_windows):
                 sequencer.add_capture_window(
                     alias,
-                    self.capture_window_key(target, capture_window.name),
+                    self.capture_window_key(target, capture_index),
                     start_offset_ns=capture_window.start_offset_ns,
                     length_ns=capture_window.length_ns,
                 )
@@ -111,6 +111,6 @@ class Quel3SequencerBuilder:
         return sequencer
 
     @staticmethod
-    def capture_window_key(target: str, window_name: str) -> str:
+    def capture_window_key(target: str, capture_index: int) -> str:
         """Return deterministic capture-window key for one target/window pair."""
-        return f"{target}:{window_name}"
+        return f"{target}:{capture_index}"

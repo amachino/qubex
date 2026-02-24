@@ -55,6 +55,13 @@ def _append_local_quelware_paths() -> None:
     """Append local quelware source paths when present in the workspace."""
     root = Path(__file__).resolve().parents[5]
     candidates = (
+        root / "packages" / "quelware-client-internal" / "quelware-client" / "src",
+        root
+        / "packages"
+        / "quelware-client-internal"
+        / "quelware-core"
+        / "python"
+        / "src",
         root / "packages" / "quelware-client" / "quelware-client" / "src",
         root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
     )
@@ -140,12 +147,12 @@ class _IqDataProtocol(Protocol):
         ...
 
 
-class _FixedTimelineResultProtocol(Protocol):
-    """Minimal fixed-timeline result protocol."""
+class _ResultContainerProtocol(Protocol):
+    """Minimal result-container protocol from quelware instrument driver."""
 
     @property
-    def iq_datas(self) -> dict[str, list[_IqDataProtocol]]:
-        """Return capture-window IQ data mapping."""
+    def iq_result(self) -> dict[str, list[complex] | list[_IqDataProtocol]]:
+        """Return capture-window IQ result mapping."""
         ...
 
 
@@ -170,11 +177,7 @@ class _InstrumentDriverProtocol(Protocol):
         """Apply one fixed-timeline directive."""
         ...
 
-    async def setup(self) -> None:
-        """Set up the instrument for trigger."""
-        ...
-
-    async def fetch_result(self) -> _FixedTimelineResultProtocol:
+    async def fetch_result(self) -> _ResultContainerProtocol:
         """Fetch one fixed-timeline execution result."""
         ...
 
@@ -182,7 +185,11 @@ class _InstrumentDriverProtocol(Protocol):
 class _SessionProtocol(Protocol):
     """Minimal quelware session protocol."""
 
-    async def trigger(self) -> None:
+    async def trigger(
+        self,
+        instrument_ids: Iterable[_ResourceIdProtocol],
+        wait: int = 1_000_000,
+    ) -> None:
         """Trigger one fixed-timeline session run."""
         ...
 
@@ -219,9 +226,9 @@ class _QuelwareClientProtocol(Protocol):
 
     def create_session(
         self,
-        resource_id: _ResourceIdProtocol,
+        resource_ids: Iterable[_ResourceIdProtocol],
     ) -> _SessionContextManagerProtocol:
-        """Create one execution session for one selected resource."""
+        """Create one execution session for selected resources."""
         ...
 
 
@@ -397,7 +404,7 @@ class Quel3ExecutionManager:
                 )
 
             alias = aliases[0]
-            async with client.create_session(alias_to_id[alias]) as session:
+            async with client.create_session([alias_to_id[alias]]) as session:
                 alias_to_driver: dict[str, _InstrumentDriverProtocol] = {}
                 sampling_period_ns: float | None = None
                 for alias in aliases:
@@ -421,7 +428,6 @@ class Quel3ExecutionManager:
                         driver.instrument_config.sampling_period_fs,
                     )
                     await driver.apply(directive)
-                    await driver.setup()
 
                 shot_count = (
                     payload.repeats
@@ -429,8 +435,9 @@ class Quel3ExecutionManager:
                     else 1
                 )
                 shot_samples = self._initialize_shot_samples(payload)
+                instrument_ids = [alias_to_id[alias] for alias in aliases]
                 for _ in range(shot_count):
-                    await session.trigger()
+                    await session.trigger(instrument_ids=instrument_ids)
                     alias_results = {
                         alias: await driver.fetch_result()
                         for alias, driver in alias_to_driver.items()
@@ -438,16 +445,20 @@ class Quel3ExecutionManager:
                     for target, timeline in payload.timelines.items():
                         alias = payload.instrument_aliases[target]
                         result = alias_results[alias]
-                        for window in timeline.capture_windows:
+                        for capture_index, window in enumerate(
+                            timeline.capture_windows
+                        ):
                             window_key = self._sequencer_builder.capture_window_key(
-                                target, window.name
+                                target,
+                                capture_index,
                             )
-                            iq_datas = result.iq_datas.get(window_key, [])
-                            if len(iq_datas) == 0:
+                            capture_samples = self._extract_capture_samples(
+                                result,
+                                window_key,
+                            )
+                            if capture_samples is None:
                                 continue
-                            shot_samples[target][window.name].append(
-                                np.asarray(iq_datas[-1].iq_array, dtype=np.complex128)
-                            )
+                            shot_samples[target][window.name].append(capture_samples)
 
         return self._build_measurement_result(
             payload=payload,
@@ -466,6 +477,27 @@ class Quel3ExecutionManager:
             target: {window.name: [] for window in timeline.capture_windows}
             for target, timeline in payload.timelines.items()
         }
+
+    @staticmethod
+    def _extract_capture_samples(
+        result: object,
+        window_key: str,
+    ) -> np.ndarray | None:
+        """Extract one capture sample-array from a result container entry."""
+        iq_result = getattr(result, "iq_result", None)
+        if not isinstance(iq_result, dict):
+            return None
+        values = iq_result.get(window_key, [])
+        if not isinstance(values, list) or len(values) == 0:
+            return None
+        first = values[0]
+        if hasattr(first, "iq_array"):
+            latest = values[-1]
+            iq_array = getattr(latest, "iq_array", None)
+            if iq_array is None:
+                return None
+            return np.asarray(iq_array, dtype=np.complex128)
+        return np.asarray(values, dtype=np.complex128)
 
     @staticmethod
     def _build_measurement_result(

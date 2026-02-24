@@ -210,6 +210,46 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
     assert "raw-target" not in result.data
 
 
+def test_extract_capture_samples_from_waveform_result_container() -> None:
+    """Given waveform-style iq_result, extraction returns latest waveform samples."""
+
+    class _Waveform:
+        def __init__(self, values: np.ndarray) -> None:
+            self.iq_array = values
+
+    class _Result:
+        def __init__(self) -> None:
+            self.iq_result = {
+                "RQ00:0": [
+                    _Waveform(np.array([1.0 + 0.0j], dtype=np.complex128)),
+                    _Waveform(np.array([2.0 + 0.0j], dtype=np.complex128)),
+                ]
+            }
+
+    values = Quel3ExecutionManager._extract_capture_samples(_Result(), "RQ00:0")
+
+    assert values is not None
+    assert np.array_equal(values, np.array([2.0 + 0.0j], dtype=np.complex128))
+
+
+def test_extract_capture_samples_from_point_result_container() -> None:
+    """Given point-style iq_result, extraction returns complex-point array."""
+
+    class _Result:
+        def __init__(self) -> None:
+            self.iq_result = {
+                "RQ00:0": [1.0 + 2.0j, 3.0 + 4.0j],
+            }
+
+    values = Quel3ExecutionManager._extract_capture_samples(_Result(), "RQ00:0")
+
+    assert values is not None
+    assert np.array_equal(
+        values,
+        np.array([1.0 + 2.0j, 3.0 + 4.0j], dtype=np.complex128),
+    )
+
+
 def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -51,8 +51,8 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 | schedule pulse placement | `Sequencer.add_event` | Use schedule start offset in ns and waveform name. |
 | capture schedule | `Sequencer.add_capture_window` | Capture windows are added in ns, then exported in samples. |
 | backend timeline export | `Sequencer.export_set_fixed_timeline_directive` | Convert ns timeline into sample timeline using instrument `sampling_period_fs`. |
-| hardware execution | `InstrumentDriver.apply` + `Session.trigger` | Apply fixed-timeline directive then trigger session. |
-| measured data fetch | `InstrumentDriver.fetch_result` | Read `FixedTimelineResult.iq_datas`. |
+| hardware execution | `InstrumentDriver.apply` + `Session.trigger(instrument_ids=...)` | Apply fixed-timeline directive, then trigger selected instruments via session API. |
+| measured data fetch | `InstrumentDriver.fetch_result` | Read `ResultContainer.iq_result` (`WaveformList` or `IqPointList`). |
 
 ## Constraint model assumptions
 
@@ -65,7 +65,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 
 ## Result conversion draft
 
-- Convert `FixedTimelineResult.iq_datas` into Qubex measurement result payload.
+- Convert `ResultContainer.iq_result` into Qubex measurement result payload.
 - Keep `sampling_period_ns` in result metadata.
 - Keep `avg_sample_stride` explicit. Default remains `4` for 4-way multiplexed readout demodulation semantics unless backend contract provides another value.
 - Remove QuEL-1 specific extra-capture assumptions from QuEL-3 result path.

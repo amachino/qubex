@@ -167,7 +167,7 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
     assert sequencer.capture_windows == [
         _CaptureWindow(
             instrument_alias="alias-RQ00",
-            window_name="RQ00:capture_0",
+            window_name="RQ00:0",
             start_offset_ns=20.0,
             length_ns=8.0,
         )
@@ -252,3 +252,10 @@ def test_builder_rejects_event_with_unknown_waveform_name() -> None:
             sequencer_factory=_RecordingSequencer,
             default_sampling_period_ns=0.4,
         )
+
+
+def test_capture_window_key_uses_target_and_capture_index() -> None:
+    """Given target and index, key format is target plus capture index."""
+    key = Quel3SequencerBuilder.capture_window_key("RQ00", 3)
+
+    assert key == "RQ00:3"

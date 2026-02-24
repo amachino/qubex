@@ -153,7 +153,16 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
         ),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
+        backend_controller=type(
+            "_BC",
+            (),
+            {
+                "sampling_period": 0.4,
+                "resolve_instrument_alias": staticmethod(
+                    lambda value: f"alias-{value}"
+                ),
+            },
+        )(),
         experiment_system=cast(
             Any,
             type(
@@ -172,7 +181,7 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert payload.interval_ns == 102
     assert payload.repeats == 16
     assert payload.mode == "avg"
-    assert payload.instrument_aliases == {target: target}
+    assert payload.instrument_aliases == {target: "alias-RQ00"}
     assert payload.output_target_labels == {target: "Q00"}
     assert target in payload.timelines
     timeline = payload.timelines[target]
@@ -212,7 +221,16 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
+        backend_controller=type(
+            "_BC",
+            (),
+            {
+                "sampling_period": 0.4,
+                "resolve_instrument_alias": staticmethod(
+                    lambda value: f"alias-{value}"
+                ),
+            },
+        )(),
         experiment_system=cast(
             Any,
             type(
@@ -326,7 +344,16 @@ def test_quel3_adapter_uses_registry_for_output_target_labels() -> None:
             return "Q17" if label == target else label
 
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
+        backend_controller=type(
+            "_BC",
+            (),
+            {
+                "sampling_period": 0.4,
+                "resolve_instrument_alias": staticmethod(
+                    lambda value: f"alias-{value}"
+                ),
+            },
+        )(),
         experiment_system=cast(
             Any,
             type(
@@ -369,7 +396,16 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
+        backend_controller=type(
+            "_BC",
+            (),
+            {
+                "sampling_period": 0.4,
+                "resolve_instrument_alias": staticmethod(
+                    lambda value: f"alias-{value}"
+                ),
+            },
+        )(),
         experiment_system=cast(
             Any,
             type(
@@ -393,3 +429,43 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
     assert event_a.phase_offset_deg == pytest.approx(0.0)
     assert event_b.gain == pytest.approx(0.6)
     assert event_b.phase_offset_deg == pytest.approx(30.0)
+
+
+def test_quel3_adapter_requires_alias_resolver_for_execution_payload() -> None:
+    """Given missing resolver hook, building payload raises configuration error."""
+    target = "RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.4,
+                ),
+            ]
+        ),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=type("_BC", (), {"sampling_period": 0.4})(),
+        experiment_system=cast(
+            Any,
+            type(
+                "_ES",
+                (),
+                {"get_awg_frequency": staticmethod(lambda _: 100_000_000.0)},
+            )(),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+
+    with pytest.raises(TypeError, match="resolve_instrument_alias"):
+        adapter.build_execution_request(schedule=schedule, config=_make_config())

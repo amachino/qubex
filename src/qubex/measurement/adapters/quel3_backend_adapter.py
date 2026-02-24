@@ -101,6 +101,10 @@ class Quel3MeasurementBackendAdapter:
             "resolve_instrument_alias",
             None,
         )
+        if not callable(alias_resolver):
+            raise TypeError(
+                "QuEL-3 backend requires `resolve_instrument_alias(target)` for explicit alias resolution."
+            )
         target_registry = getattr(self._experiment_system, "target_registry", None)
         fallback_registry = TargetRegistry()
 
@@ -158,10 +162,12 @@ class Quel3MeasurementBackendAdapter:
                 length_ns=pulse_schedule.duration,
                 modulation_frequency_hz=modulation_frequency_hz,
             )
-            if callable(alias_resolver):
-                instrument_aliases[target] = str(alias_resolver(target))
-            else:
-                instrument_aliases[target] = target
+            alias = str(alias_resolver(target)).strip()
+            if len(alias) == 0:
+                raise ValueError(
+                    f"Resolved instrument alias must not be empty: target={target}."
+                )
+            instrument_aliases[target] = alias
             if target_registry is not None and hasattr(
                 target_registry, "measurement_output_label"
             ):

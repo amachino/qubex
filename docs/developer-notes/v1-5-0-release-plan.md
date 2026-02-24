@@ -210,6 +210,9 @@ Calendar note:
 - 2026-02-18: Returned QuEL-3 decision items (`DF-01` to `DF-04`) to `PROPOSED` and deferred finalization until `quelware-client` completion.
 - 2026-02-18: Switched execution order to prioritize non-QuEL-3 tasks while QuEL-3 dependency remains incomplete.
 - 2026-02-24: Fixed DF-01 (`instrument_alias` explicit resolution required; fallback to target label prohibited) and DF-02 (capture key standardized as `{target}:{capture_index}` with deterministic per-target ordering). DF-03/DF-04 remain deferred.
+- 2026-02-24: Updated QuEL-3 runtime integration to follow latest `quelware-client-internal` APIs (`Session.trigger(instrument_ids=...)` and `ResultContainer.iq_result`), and made workspace import fallback prefer `packages/quelware-client-internal`.
+- 2026-02-24: Updated sequencer capture-window key generation/lookup to `{target}:{capture_index}` in both export and result-fetch paths.
+- 2026-02-24: Updated QuEL-3 adapter contract to require explicit `resolve_instrument_alias(target)` hook at payload-build time.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.
