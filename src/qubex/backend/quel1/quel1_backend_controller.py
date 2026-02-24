@@ -60,26 +60,59 @@ class Quel1BackendController(BackendController):
 
     def __init__(
         self,
-        config_path: str | Path | None = None,
+        *,
+        runtime_context: Quel1RuntimeContext | None = None,
+        connection_manager: Quel1ConnectionManager | None = None,
+        clock_manager: Quel1ClockManager | None = None,
+        execution_manager: Quel1ExecutionManager | None = None,
+        configuration_manager: Quel1ConfigurationManager | None = None,
+        skew_manager: Quel1SkewManager | None = None,
     ):
-        """Initialize QuEL-1 controller and manager delegates."""
-        self._runtime_context = Quel1RuntimeContext.create(
-            config_path=config_path,
+        """
+        Initialize QuEL-1 controller and manager delegates.
+
+        Parameters
+        ----------
+        runtime_context : Quel1RuntimeContext | None, optional
+            Injected runtime context for testing or customization.
+        connection_manager : Quel1ConnectionManager | None, optional
+            Injected connection manager for testing or customization.
+        clock_manager : Quel1ClockManager | None, optional
+            Injected clock manager for testing or customization.
+        execution_manager : Quel1ExecutionManager | None, optional
+            Injected execution manager for testing or customization.
+        configuration_manager : Quel1ConfigurationManager | None, optional
+            Injected configuration manager for testing or customization.
+        skew_manager : Quel1SkewManager | None, optional
+            Injected skew manager for testing or customization.
+        """
+        self._runtime_context = (
+            runtime_context if runtime_context is not None else Quel1RuntimeContext()
         )
-        self._connection_manager = Quel1ConnectionManager(
-            runtime_context=self._runtime_context,
+        self._connection_manager = (
+            connection_manager
+            if connection_manager is not None
+            else Quel1ConnectionManager(runtime_context=self._runtime_context)
         )
-        self._clock_manager = Quel1ClockManager(
-            runtime_context=self._runtime_context,
+        self._clock_manager = (
+            clock_manager
+            if clock_manager is not None
+            else Quel1ClockManager(runtime_context=self._runtime_context)
         )
-        self._execution_manager = Quel1ExecutionManager(
-            runtime_context=self._runtime_context,
+        self._execution_manager = (
+            execution_manager
+            if execution_manager is not None
+            else Quel1ExecutionManager(runtime_context=self._runtime_context)
         )
-        self._configuration_manager = Quel1ConfigurationManager(
-            runtime_context=self._runtime_context,
+        self._configuration_manager = (
+            configuration_manager
+            if configuration_manager is not None
+            else Quel1ConfigurationManager(runtime_context=self._runtime_context)
         )
-        self._skew_manager = Quel1SkewManager(
-            runtime_context=self._runtime_context,
+        self._skew_manager = (
+            skew_manager
+            if skew_manager is not None
+            else Quel1SkewManager(runtime_context=self._runtime_context)
         )
 
     # Core Properties

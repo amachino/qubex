@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -69,22 +70,31 @@ def test_quel3_controller_does_not_expose_box_config_capability() -> None:
     assert not hasattr(Quel3BackendController(), "box_config")
 
 
-def test_instrument_alias_map_exposes_configured_mapping() -> None:
-    """Given alias map, controller exposes configured target-to-alias mapping."""
-    controller = Quel3BackendController(alias_map={"RQ00": "inst-00"})
+def test_quel3_controller_does_not_expose_alias_mapping_capability() -> None:
+    """Given QuEL-3 controller, target-to-alias mapping capability is absent."""
+    controller = Quel3BackendController()
 
-    assert dict(controller.instrument_alias_map) == {"RQ00": "inst-00"}
+    assert not hasattr(controller, "instrument_alias_map")
+    assert not hasattr(controller, "set_instrument_alias_map")
+    assert not hasattr(controller, "update_instrument_alias_map")
 
 
-def test_update_instrument_alias_map_overrides_target_alias() -> None:
-    """Given alias update, controller mapping reflects updated aliases."""
-    controller = Quel3BackendController(alias_map={"RQ00": "inst-00"})
-    controller.update_instrument_alias_map({"RQ00": "inst-00-new", "RQ01": "inst-01"})
+def test_quel3_constructor_rejects_config_path_argument() -> None:
+    """Given legacy config_path kwarg, constructor raises TypeError."""
+    with pytest.raises(TypeError, match="config_path"):
+        cast(Any, Quel3BackendController)(config_path="dummy")
 
-    assert dict(controller.instrument_alias_map) == {
-        "RQ00": "inst-00-new",
-        "RQ01": "inst-01",
-    }
+
+def test_quel3_constructor_rejects_sampling_period_override_argument() -> None:
+    """Given legacy sampling-period override kwarg, constructor raises TypeError."""
+    with pytest.raises(TypeError, match="sampling_period_ns"):
+        cast(Any, Quel3BackendController)(sampling_period_ns=0.8)
+
+
+def test_quel3_constructor_rejects_alias_map_argument() -> None:
+    """Given legacy alias-map kwarg, constructor raises TypeError."""
+    with pytest.raises(TypeError, match="alias_map"):
+        cast(Any, Quel3BackendController)(alias_map={"RQ00": "inst-00"})
 
 
 def test_execute_rejects_non_quel3_payload() -> None:
@@ -233,8 +243,8 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     controller = Quel3BackendController()
 
     assert pytest.approx(0.4) == controller.sampling_period
-    assert controller._runtime_context.quelware_endpoint == "localhost"
-    assert controller._runtime_context.quelware_port == 50051
+    assert controller._connection_manager.quelware_endpoint == "localhost"
+    assert controller._connection_manager.quelware_port == 50051
 
 
 def test_execute_rejects_multiple_instrument_aliases() -> None:

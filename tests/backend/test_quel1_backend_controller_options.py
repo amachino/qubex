@@ -52,6 +52,52 @@ def _override_driver_classes(
     cast(Any, controller)._runtime_context._driver = driver
 
 
+def test_constructor_rejects_config_path_argument() -> None:
+    """Given legacy config_path kwarg, constructor raises TypeError."""
+    with pytest.raises(TypeError, match="config_path"):
+        cast(Any, Quel1BackendController)(config_path="dummy")
+
+
+def test_constructor_allows_runtime_context_injection() -> None:
+    """Given injected runtime context, default managers share the same context."""
+    runtime_context = cast(Any, object())
+
+    controller = cast(Any, Quel1BackendController)(runtime_context=runtime_context)
+
+    assert controller._runtime_context is runtime_context
+    assert controller._connection_manager._runtime_context is runtime_context
+    assert controller._clock_manager._runtime_context is runtime_context
+    assert controller._execution_manager._runtime_context is runtime_context
+    assert controller._configuration_manager._runtime_context is runtime_context
+    assert controller._skew_manager._runtime_context is runtime_context
+
+
+def test_constructor_allows_manager_injection() -> None:
+    """Given injected managers, constructor uses provided manager instances."""
+    runtime_context = cast(Any, object())
+    connection_manager = cast(Any, object())
+    clock_manager = cast(Any, object())
+    execution_manager = cast(Any, object())
+    configuration_manager = cast(Any, object())
+    skew_manager = cast(Any, object())
+
+    controller = cast(Any, Quel1BackendController)(
+        runtime_context=runtime_context,
+        connection_manager=connection_manager,
+        clock_manager=clock_manager,
+        execution_manager=execution_manager,
+        configuration_manager=configuration_manager,
+        skew_manager=skew_manager,
+    )
+
+    assert controller._runtime_context is runtime_context
+    assert controller._connection_manager is connection_manager
+    assert controller._clock_manager is clock_manager
+    assert controller._execution_manager is execution_manager
+    assert controller._configuration_manager is configuration_manager
+    assert controller._skew_manager is skew_manager
+
+
 def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -> None:
     """Given R8 box without options, when relinkup runs, then default awg2222 is used."""
     controller = _make_controller()

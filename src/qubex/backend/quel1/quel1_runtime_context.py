@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast, runtime_checkable
 
 from .compat.driver_loader import load_quel1_driver
@@ -89,45 +87,38 @@ class Quel1RuntimeContextReader(Protocol):
 class Quel1RuntimeContext:
     """Mutable runtime state shared by QuEL-1 backend managers."""
 
-    logger = logging.getLogger(__name__)
-
     def __init__(
         self,
         *,
-        driver: QuelDriverClassesProtocol,
-        qubecalib: QubeCalib | None,
-        sampling_period: float,
+        driver: QuelDriverClassesProtocol | None = None,
+        qubecalib: QubeCalib | None = None,
+        sampling_period: float | None = None,
     ) -> None:
-        self._driver = driver
-        self._qubecalib = qubecalib
-        self._sampling_period = sampling_period
+        resolved_driver = (
+            driver
+            if driver is not None
+            else cast("QuelDriverClassesProtocol", load_quel1_driver())
+        )
+        resolved_qubecalib = qubecalib
+        if resolved_qubecalib is None:
+            try:
+                resolved_qubecalib = resolved_driver.QubeCalib()
+            except Exception:
+                resolved_qubecalib = None
+        resolved_sampling_period = (
+            sampling_period
+            if sampling_period is not None
+            else resolved_driver.DEFAULT_SAMPLING_PERIOD
+        )
+
+        self._driver = resolved_driver
+        self._qubecalib = resolved_qubecalib
+        self._sampling_period = resolved_sampling_period
         self._box_options: dict[str, tuple[str, ...]] = {}
         self._boxpool: BoxPool | None = None
         self._quel1system: Quel1System | None = None
         self._cap_resource_map: dict[str, dict] | None = None
         self._gen_resource_map: dict[str, dict] | None = None
-
-    @classmethod
-    def create(cls, *, config_path: str | Path | None = None) -> Quel1RuntimeContext:
-        """Create runtime context from driver-loader and optional config file."""
-        driver = cast("QuelDriverClassesProtocol", load_quel1_driver())
-        qubecalib: QubeCalib | None
-        try:
-            if config_path is None:
-                qubecalib = driver.QubeCalib()
-            else:
-                try:
-                    qubecalib = driver.QubeCalib(str(config_path))
-                except FileNotFoundError:
-                    cls.logger.warning(f"Configuration file {config_path} not found.")
-                    raise
-        except Exception:
-            qubecalib = None
-        return cls(
-            driver=driver,
-            qubecalib=qubecalib,
-            sampling_period=driver.DEFAULT_SAMPLING_PERIOD,
-        )
 
     @property
     def driver(self) -> QuelDriverClassesProtocol:

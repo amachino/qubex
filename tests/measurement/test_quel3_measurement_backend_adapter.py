@@ -70,15 +70,8 @@ class _FakeExperimentSystem:
             return str(resolver(label))
 
 
-def _make_backend_controller(
-    *,
-    alias_map: dict[str, str] | None = None,
-    sampling_period_ns: float = 0.4,
-) -> Quel3BackendController:
-    return Quel3BackendController(
-        sampling_period_ns=sampling_period_ns,
-        alias_map=alias_map or {},
-    )
+def _make_backend_controller() -> Quel3BackendController:
+    return Quel3BackendController()
 
 
 def _make_config() -> MeasurementConfig:
@@ -191,9 +184,10 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
         ),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(alias_map={target: alias}),
+        backend_controller=_make_backend_controller(),
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())
@@ -240,9 +234,10 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(alias_map={target: alias}),
+        backend_controller=_make_backend_controller(),
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())
@@ -265,8 +260,8 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
     )
 
 
-def test_quel3_adapter_uses_backend_alias_map() -> None:
-    """Given alias map, when building request, then fixed timeline keys use aliases."""
+def test_quel3_adapter_uses_adapter_alias_map() -> None:
+    """Given adapter alias map, when building request, fixed timeline keys use aliases."""
     target = "RQ00"
     alias = "alias-RQ00"
     schedule = MeasurementSchedule.model_construct(
@@ -290,9 +285,10 @@ def test_quel3_adapter_uses_backend_alias_map() -> None:
         ),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(alias_map={target: alias}),
+        backend_controller=_make_backend_controller(),
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())
@@ -321,11 +317,10 @@ def test_quel3_adapter_rejects_multiple_targets_for_same_alias() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(
-            alias_map={"RQ00": "alias-shared", "RQ01": "alias-shared"}
-        ),
+        backend_controller=_make_backend_controller(),
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={"RQ00": "alias-shared", "RQ01": "alias-shared"},
     )
 
     with pytest.raises(ValueError, match="Multiple targets mapped to one"):
@@ -363,20 +358,19 @@ def test_quel3_adapter_uses_registry_for_result_target_labels() -> None:
             return "Q17" if label == target else label
 
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(alias_map={target: alias}),
+        backend_controller=_make_backend_controller(),
         experiment_system=cast(
             Any,
             _FakeExperimentSystem(target_registry=_TargetRegistry()),
         ),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
     )
 
     _ = adapter.build_execution_request(schedule=schedule, config=_make_config())
     backend_result = Quel3BackendExecutionResult(
         mode="avg",
         data={alias: [np.array([1.0 + 0.0j], dtype=np.complex128)]},
-        device_config={},
-        measurement_config={},
     )
     result = adapter.build_measurement_result(
         backend_result=backend_result,
@@ -409,11 +403,10 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(
-            alias_map={target_a: "alias-RQ00", target_b: "alias-RQ01"}
-        ),
+        backend_controller=_make_backend_controller(),
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target_a: "alias-RQ00", target_b: "alias-RQ01"},
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())
@@ -514,14 +507,13 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     backend_result = Quel3BackendExecutionResult(
         mode="avg",
         data={alias: [np.array([2.0 + 0.0j], dtype=np.complex128)]},
-        device_config={"kind": "quel3"},
-        measurement_config={"mode": "single", "shots": 1},
         sampling_period_ns=0.4,
     )
     adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(alias_map={target: alias}),
+        backend_controller=_make_backend_controller(),
         experiment_system=cast(Any, _FakeExperimentSystem()),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
     )
     _ = adapter.build_execution_request(schedule=schedule, config=_make_config())
 

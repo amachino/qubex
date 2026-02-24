@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -16,6 +15,4 @@ class Quel3BackendExecutionResult:
 
     mode: MeasurementMode
     data: dict[str, list[np.ndarray]]
-    device_config: dict[str, Any] = field(default_factory=dict)
-    measurement_config: dict[str, Any] = field(default_factory=dict)
     sampling_period_ns: float | None = None

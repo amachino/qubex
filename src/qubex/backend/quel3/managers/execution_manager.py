@@ -16,7 +16,6 @@ import numpy.typing as npt
 from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.quel3_backend_result import Quel3BackendExecutionResult
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
-from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
 
 
 def _append_local_quelware_paths() -> None:
@@ -291,10 +290,14 @@ class Quel3ExecutionManager:
     def __init__(
         self,
         *,
-        runtime_context: Quel3RuntimeContextReader,
+        quelware_endpoint: str,
+        quelware_port: int,
+        sampling_period: float,
         capture_decimation_factor: int,
     ) -> None:
-        self._runtime_context = runtime_context
+        self._quelware_endpoint = quelware_endpoint
+        self._quelware_port = quelware_port
+        self._sampling_period = sampling_period
         self._capture_decimation_factor = capture_decimation_factor
         self._sequencer_builder = Quel3SequencerBuilder()
 
@@ -344,12 +347,12 @@ class Quel3ExecutionManager:
         sequencer = self._sequencer_builder.build(
             payload=payload,
             sequencer_factory=sequencer_factory,
-            default_sampling_period_ns=self._runtime_context.sampling_period,
+            default_sampling_period_ns=self._sampling_period,
         )
 
         async with create_quelware_client(
-            self._runtime_context.quelware_endpoint,
-            self._runtime_context.quelware_port,
+            self._quelware_endpoint,
+            self._quelware_port,
         ) as client:
             mapper = instrument_mapper_factory()
             for resource_id in get_all_instrument_ids_from_resource_infos(
@@ -421,7 +424,7 @@ class Quel3ExecutionManager:
             payload=payload,
             shot_samples=shot_samples,
             sampling_period_ns=sampling_period_ns,
-            backend_sampling_period=self._runtime_context.sampling_period,
+            backend_sampling_period=self._sampling_period,
             capture_decimation_factor=self._capture_decimation_factor,
         )
 
@@ -501,12 +504,6 @@ class Quel3ExecutionManager:
         return Quel3BackendExecutionResult(
             mode=result_mode,
             data=dict(measurement_data),
-            device_config={},
-            measurement_config={
-                "mode": mode,
-                "shots": payload.repeats,
-                "interval_ns": payload.interval_ns,
-            },
             sampling_period_ns=effective_sampling_period,
         )
 

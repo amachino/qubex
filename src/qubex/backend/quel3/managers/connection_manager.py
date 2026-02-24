@@ -6,12 +6,10 @@ import asyncio
 import importlib
 import sys
 import threading
-from collections.abc import Coroutine, Mapping
+from collections.abc import Coroutine
 from pathlib import Path
 from types import ModuleType, TracebackType
 from typing import Protocol, TypeVar
-
-from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContext
 
 _T = TypeVar("_T")
 
@@ -98,26 +96,35 @@ def _import_module_with_workspace_fallback(module_name: str) -> ModuleType:
 class Quel3ConnectionManager:
     """Handle connect/disconnect lifecycle for QuEL-3."""
 
-    def __init__(self, *, runtime_context: Quel3RuntimeContext) -> None:
-        self._runtime_context = runtime_context
+    def __init__(
+        self,
+        *,
+        quelware_endpoint: str,
+        quelware_port: int,
+    ) -> None:
+        self._is_connected = False
+        self._quelware_endpoint = quelware_endpoint
+        self._quelware_port = quelware_port
 
     @property
     def hash(self) -> int:
         """Return stable hash for connection-side runtime state."""
-        alias_items = tuple(sorted(self._runtime_context.alias_map.items()))
-        return hash(
-            (
-                self._runtime_context.is_connected,
-                self._runtime_context.quelware_endpoint,
-                self._runtime_context.quelware_port,
-                alias_items,
-            )
-        )
+        return hash((self._is_connected, self._quelware_endpoint, self._quelware_port))
 
     @property
     def is_connected(self) -> bool:
         """Return whether backend resources are connected."""
-        return self._runtime_context.is_connected
+        return self._is_connected
+
+    @property
+    def quelware_endpoint(self) -> str:
+        """Return quelware endpoint."""
+        return self._quelware_endpoint
+
+    @property
+    def quelware_port(self) -> int:
+        """Return quelware port."""
+        return self._quelware_port
 
     def connect(
         self,
@@ -130,11 +137,11 @@ class Quel3ConnectionManager:
         if self.is_connected:
             return
         _run_coroutine(self._probe_quelware_connection())
-        self._runtime_context.set_connected(True)
+        self._is_connected = True
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""
-        self._runtime_context.set_connected(False)
+        self._is_connected = False
 
     async def _probe_quelware_connection(self) -> None:
         """Probe quelware endpoint by listing resources once."""
@@ -146,8 +153,8 @@ class Quel3ConnectionManager:
             ) from exc
 
         async with client_factory(
-            self._runtime_context.quelware_endpoint,
-            self._runtime_context.quelware_port,
+            self._quelware_endpoint,
+            self._quelware_port,
         ) as client:
             await client.list_resource_infos()
 
@@ -156,11 +163,3 @@ class Quel3ConnectionManager:
         """Import quelware client factory lazily."""
         client_module = _import_module_with_workspace_fallback("quelware_client.client")
         return client_module.create_quelware_client
-
-    def set_alias_map(self, alias_map: Mapping[str, str]) -> None:
-        """Replace target-to-instrument alias mapping."""
-        self._runtime_context.set_alias_map(alias_map)
-
-    def update_alias_map(self, alias_map: Mapping[str, str]) -> None:
-        """Update target-to-instrument alias mapping."""
-        self._runtime_context.update_alias_map(alias_map)

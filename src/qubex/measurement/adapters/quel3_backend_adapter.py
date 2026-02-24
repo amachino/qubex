@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 import numpy as np
 from qxpulse import Blank, Pulse, PulseArray
@@ -37,15 +38,30 @@ class Quel3MeasurementBackendAdapter:
         backend_controller: Quel3BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile | None = None,
+        instrument_alias_map: Mapping[str, str] | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
+        self._instrument_alias_map = dict(instrument_alias_map or {})
         self._output_target_labels_by_alias: dict[str, str] = {}
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel3(
                 sampling_period_ns=backend_controller.sampling_period
             )
         self._constraint_profile = constraint_profile
+
+    @property
+    def instrument_alias_map(self) -> Mapping[str, str]:
+        """Return configured target-to-instrument alias mapping."""
+        return self._instrument_alias_map
+
+    def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
+        """Replace full target-to-alias mapping in adapter layer."""
+        self._instrument_alias_map = dict(alias_map)
+
+    def update_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
+        """Update target-to-alias mapping entries in adapter layer."""
+        self._instrument_alias_map.update(alias_map)
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate schedule with relaxed Quel3 constraints."""
@@ -83,7 +99,7 @@ class Quel3MeasurementBackendAdapter:
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
         output_target_labels_by_alias: dict[str, str] = {}
         target_registry = self._experiment_system.target_registry
-        alias_map = self._backend_controller.instrument_alias_map
+        alias_map = self._instrument_alias_map
 
         for target in pulse_schedule.labels:
             alias = str(alias_map.get(target, "")).strip()

@@ -2,13 +2,10 @@
 QuEL-3 backend controller implementing the shared measurement-facing contract.
 
 This module defines the QuEL-3 concrete `BackendController` implementation
-built on quelware-client managers and runtime context.
+built on quelware-client managers.
 """
 
 from __future__ import annotations
-
-from collections.abc import Mapping
-from pathlib import Path
 
 from qubex.backend.backend_controller import (
     BackendController,
@@ -18,7 +15,6 @@ from qubex.backend.backend_controller import (
 
 from .managers.connection_manager import Quel3ConnectionManager
 from .managers.execution_manager import Quel3ExecutionManager
-from .quel3_runtime_context import Quel3RuntimeContext
 
 
 class Quel3BackendController(BackendController):
@@ -36,10 +32,7 @@ class Quel3BackendController(BackendController):
 
     def __init__(
         self,
-        config_path: str | Path | None = None,
         *,
-        sampling_period_ns: float | None = None,
-        alias_map: Mapping[str, str] | None = None,
         quelware_endpoint: str | None = None,
         quelware_port: int | None = None,
     ) -> None:
@@ -48,38 +41,23 @@ class Quel3BackendController(BackendController):
 
         Parameters
         ----------
-        config_path : str | Path | None, optional
-            Reserved for API compatibility.
-        sampling_period_ns : float | None, optional
-            Session sampling period used by measurement-layer adapters.
-        alias_map : Mapping[str, str] | None, optional
-            Optional target-label to instrument-alias mapping.
         quelware_endpoint : str | None, optional
             Quelware API endpoint. Defaults to "localhost".
         quelware_port : int | None, optional
             Quelware API port. Defaults to 50051.
         """
-        # Kept for API compatibility with QuEL-1 constructor signature.
-        del config_path
-        sampling_period = (
-            sampling_period_ns
-            if sampling_period_ns is not None
-            else self.SAMPLING_PERIOD_NS
-        )
+        self._sampling_period = self.SAMPLING_PERIOD_NS
+        endpoint = quelware_endpoint if quelware_endpoint is not None else "localhost"
+        port = quelware_port if quelware_port is not None else 50051
 
-        self._runtime_context = Quel3RuntimeContext(
-            alias_map=dict(alias_map or {}),
-            quelware_endpoint=(
-                quelware_endpoint if quelware_endpoint is not None else "localhost"
-            ),
-            quelware_port=quelware_port if quelware_port is not None else 50051,
-            sampling_period=sampling_period,
-        )
         self._connection_manager = Quel3ConnectionManager(
-            runtime_context=self._runtime_context
+            quelware_endpoint=endpoint,
+            quelware_port=port,
         )
         self._execution_manager = Quel3ExecutionManager(
-            runtime_context=self._runtime_context,
+            quelware_endpoint=endpoint,
+            quelware_port=port,
+            sampling_period=self._sampling_period,
             capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
         )
 
@@ -109,23 +87,10 @@ class Quel3BackendController(BackendController):
         """Disconnect backend resources."""
         self._connection_manager.disconnect()
 
-    def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
-        """Replace full target-to-alias mapping for quelware execution."""
-        self._connection_manager.set_alias_map(alias_map)
-
-    def update_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
-        """Update target-to-alias mapping for quelware execution."""
-        self._connection_manager.update_alias_map(alias_map)
-
-    @property
-    def instrument_alias_map(self) -> Mapping[str, str]:
-        """Return configured target-to-instrument alias mapping."""
-        return self._runtime_context.alias_map
-
     @property
     def sampling_period(self) -> float:
         """Return backend sampling period in ns."""
-        return self._runtime_context.sampling_period
+        return self._sampling_period
 
     async def execute(
         self,
