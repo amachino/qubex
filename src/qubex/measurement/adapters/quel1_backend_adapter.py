@@ -48,21 +48,12 @@ class Quel1MeasurementBackendAdapter:
             constraint_profile = MeasurementConstraintProfile.quel1()
         self._constraint_profile = constraint_profile
 
-    @property
-    def sampling_period(self) -> float:
-        """Return sampling period (ns)."""
-        return self.constraint_profile.sampling_period_ns
-
-    @property
-    def constraint_profile(self) -> MeasurementConstraintProfile:
-        """Return backend measurement constraints."""
-        return self._constraint_profile
-
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate QuEL-1 specific pulse/capture constraints."""
-        profile = self.constraint_profile
+        profile = self._constraint_profile
         block_duration = profile.block_duration_ns
         word_duration = profile.word_duration_ns
+        sampling_period = profile.sampling_period_ns
         pulse_schedule = schedule.pulse_schedule
         if not pulse_schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -140,8 +131,8 @@ class Quel1MeasurementBackendAdapter:
                 )
             offset = 1 if profile.require_workaround_capture else 0
             for capture, rng in zip(sorted_captures[offset:], ranges, strict=True):
-                expected_start = rng.start * self.sampling_period
-                expected_duration = len(rng) * self.sampling_period
+                expected_start = rng.start * sampling_period
+                expected_duration = len(rng) * sampling_period
                 if not np.isclose(capture.start_time, expected_start):
                     raise ValueError(
                         f"Capture start mismatch for {channel}: {capture.start_time} != {expected_start}."
@@ -194,7 +185,7 @@ class Quel1MeasurementBackendAdapter:
         config: MeasurementConfig,
     ) -> BackendExecutionRequest:
         """Build a QuEL backend execution request from measurement inputs."""
-        profile = self.constraint_profile
+        profile = self._constraint_profile
         block_duration = profile.block_duration_ns
         measure_mode = MeasureMode(config.mode)
         base_duration = schedule.pulse_schedule.duration
@@ -259,7 +250,8 @@ class Quel1MeasurementBackendAdapter:
         readout_ranges = pulse_schedule.get_pulse_ranges(readout_targets)
 
         capture_delay_sample: dict[str, int] = {}
-        word_length = self.constraint_profile.word_length_samples
+        word_length = self._constraint_profile.word_length_samples
+        sampling_period = self._constraint_profile.sampling_period_ns
         if word_length is None:
             raise ValueError(
                 "word_length_samples is required for backend execution request."
@@ -300,7 +292,7 @@ class Quel1MeasurementBackendAdapter:
             omega = 2 * np.pi * self._experiment_system.get_diff_frequency(target)
             delay = capture_delay_sample[target]
             for rng in ranges:
-                offset = (rng.start + delay) * self.sampling_period
+                offset = (rng.start + delay) * sampling_period
                 seq[rng] *= np.exp(1j * omega * offset)
 
         gen_sequences: dict[str, GenSampledSequenceProtocol] = {}
@@ -322,13 +314,11 @@ class Quel1MeasurementBackendAdapter:
 
             capture_slots: list[tuple[int, int]] = []
             for idx, current_capture in enumerate(sorted_captures):
-                current_start = round(current_capture.start_time / self.sampling_period)
-                capture_range_length = round(
-                    current_capture.duration / self.sampling_period
-                )
+                current_start = round(current_capture.start_time / sampling_period)
+                capture_range_length = round(current_capture.duration / sampling_period)
                 if idx + 1 < len(sorted_captures):
                     next_start = round(
-                        sorted_captures[idx + 1].start_time / self.sampling_period
+                        sorted_captures[idx + 1].start_time / sampling_period
                     )
                     post_blank_length = next_start - (
                         current_start + capture_range_length

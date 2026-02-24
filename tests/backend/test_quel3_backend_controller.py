@@ -81,7 +81,8 @@ def test_resolve_instrument_alias_uses_alias_map() -> None:
     controller = Quel3BackendController(alias_map={"RQ00": "inst-00"})
 
     assert controller.resolve_instrument_alias("RQ00") == "inst-00"
-    assert controller.resolve_instrument_alias("RQ01") == "RQ01"
+    with pytest.raises(ValueError, match="Instrument alias is not configured"):
+        controller.resolve_instrument_alias("RQ01")
 
 
 def test_update_instrument_alias_map_overrides_target_alias() -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from typing import Any
 
 import numpy as np
 from qxpulse import Blank, Pulse, PulseArray
@@ -11,9 +10,9 @@ from qxpulse import Blank, Pulse, PulseArray
 from qubex.backend import (
     BackendExecutionRequest,
     ExperimentSystem,
-    TargetRegistry,
 )
 from qubex.backend.quel3 import (
+    Quel3BackendController,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3TargetTimeline,
@@ -28,37 +27,22 @@ from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 
 class Quel3MeasurementBackendAdapter:
-    """Relaxed backend adapter that builds Quel3 fixed-timeline payloads."""
+    """Measurement backend adapter for QuEL-3 fixed-timeline execution."""
 
     def __init__(
         self,
         *,
-        backend_controller: Any,
+        backend_controller: Quel3BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
         if constraint_profile is None:
-            sampling_period = getattr(backend_controller, "sampling_period", None)
-            if not isinstance(sampling_period, (float, int)):
-                raise ValueError(
-                    "Quel3MeasurementBackendAdapter requires a relaxed constraint profile or backend sampling_period."
-                )
             constraint_profile = MeasurementConstraintProfile.quel3(
-                sampling_period_ns=sampling_period
+                sampling_period_ns=backend_controller.sampling_period
             )
         self._constraint_profile = constraint_profile
-
-    @property
-    def sampling_period(self) -> float:
-        """Return sampling period (ns)."""
-        return self.constraint_profile.sampling_period_ns
-
-    @property
-    def constraint_profile(self) -> MeasurementConstraintProfile:
-        """Return backend measurement constraints."""
-        return self._constraint_profile
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate schedule with relaxed Quel3 constraints."""
@@ -96,38 +80,8 @@ class Quel3MeasurementBackendAdapter:
         timelines: dict[str, Quel3TargetTimeline] = {}
         instrument_aliases: dict[str, str] = {}
         output_target_labels: dict[str, str] = {}
-        alias_resolver = getattr(
-            self._backend_controller,
-            "resolve_instrument_alias",
-            None,
-        )
-        if not callable(alias_resolver):
-            raise TypeError(
-                "QuEL-3 backend requires `resolve_instrument_alias(target)` for explicit alias resolution."
-            )
-        target_registry = getattr(self._experiment_system, "target_registry", None)
-        fallback_registry = TargetRegistry()
-
-        def _resolve_qubit_label(target: str) -> str:
-            resolve_qubit_label = getattr(
-                self._experiment_system,
-                "resolve_qubit_label",
-                None,
-            )
-            if callable(resolve_qubit_label):
-                return str(resolve_qubit_label(target))
-
-            if target_registry is not None and hasattr(
-                target_registry,
-                "resolve_qubit_label",
-            ):
-                resolver = target_registry.resolve_qubit_label
-                try:
-                    return str(resolver(target, allow_legacy=True))
-                except TypeError:
-                    return str(resolver(target))
-
-            return fallback_registry.resolve_qubit_label(target, allow_legacy=True)
+        target_registry = self._experiment_system.target_registry
+        sampling_period = self._constraint_profile.sampling_period_ns
 
         for target in pulse_schedule.labels:
             sequence = pulse_schedule.get_sequence(target, copy=False)
@@ -156,29 +110,28 @@ class Quel3MeasurementBackendAdapter:
             except Exception:
                 modulation_frequency_hz = None
             timelines[target] = Quel3TargetTimeline(
-                sampling_period_ns=self.sampling_period,
+                sampling_period_ns=sampling_period,
                 events=events,
                 capture_windows=capture_windows,
                 length_ns=pulse_schedule.duration,
                 modulation_frequency_hz=modulation_frequency_hz,
             )
-            alias = str(alias_resolver(target)).strip()
+            alias = str(
+                self._backend_controller.resolve_instrument_alias(target)
+            ).strip()
             if len(alias) == 0:
                 raise ValueError(
                     f"Resolved instrument alias must not be empty: target={target}."
                 )
             instrument_aliases[target] = alias
-            if target_registry is not None and hasattr(
-                target_registry, "measurement_output_label"
-            ):
+            try:
+                output_target_labels[target] = str(
+                    self._experiment_system.resolve_qubit_label(target)
+                )
+            except ValueError:
                 output_target_labels[target] = str(
                     target_registry.measurement_output_label(target)
                 )
-            else:
-                try:
-                    output_target_labels[target] = _resolve_qubit_label(target)
-                except ValueError:
-                    output_target_labels[target] = target
         interval_ns = math.ceil(pulse_schedule.duration + config.interval)
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,

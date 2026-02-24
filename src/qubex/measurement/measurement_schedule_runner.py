@@ -12,6 +12,7 @@ from qubex.backend import (
 from qubex.backend.quel1 import (
     ExecutionMode,
 )
+from qubex.backend.quel3 import Quel3BackendController
 
 from .adapters import (
     MeasurementBackendAdapter,
@@ -34,12 +35,14 @@ class MeasurementScheduleRunner:
         measurement_backend_adapter: MeasurementBackendAdapter,
         measurement_result_factory: MeasurementResultFactory,
         backend_controller: BackendController,
+        constraint_profile: MeasurementConstraintProfile | None = None,
         execution_mode: ExecutionMode | None = None,
         clock_health_checks: bool | None = None,
     ) -> None:
         self._measurement_backend_adapter = measurement_backend_adapter
         self._measurement_result_factory = measurement_result_factory
         self._backend_controller = backend_controller
+        self._constraint_profile = constraint_profile
         self._execution_mode = execution_mode
         self._clock_health_checks = clock_health_checks
 
@@ -80,6 +83,7 @@ class MeasurementScheduleRunner:
                 experiment_system=experiment_system,
             ),
             backend_controller=backend_controller,
+            constraint_profile=constraint_profile,
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
         )
@@ -105,7 +109,7 @@ class MeasurementScheduleRunner:
             )
         if backend_kind == "quel3":
             return Quel3MeasurementBackendAdapter(
-                backend_controller=backend_controller,
+                backend_controller=cast(Quel3BackendController, backend_controller),
                 experiment_system=experiment_system,
                 constraint_profile=constraint_profile,
             )
@@ -235,14 +239,12 @@ class MeasurementScheduleRunner:
             backend_result=backend_result,
             measurement_config=config,
             device_config=self._resolve_device_config(self._backend_controller),
-            sampling_period_ns=getattr(
-                self._measurement_backend_adapter,
-                "sampling_period",
-                self._resolve_sampling_period_ns(self._backend_controller),
+            sampling_period_ns=self._resolve_sampling_period_ns(
+                self._backend_controller
             ),
             avg_sample_stride=self._resolve_avg_sample_stride(
                 self._backend_controller,
-                getattr(self._measurement_backend_adapter, "constraint_profile", None),
+                self._constraint_profile,
             ),
         )
         return result
@@ -289,14 +291,12 @@ class MeasurementScheduleRunner:
             backend_result=backend_result,
             measurement_config=config,
             device_config=self._resolve_device_config(self._backend_controller),
-            sampling_period_ns=getattr(
-                self._measurement_backend_adapter,
-                "sampling_period",
-                self._resolve_sampling_period_ns(self._backend_controller),
+            sampling_period_ns=self._resolve_sampling_period_ns(
+                self._backend_controller
             ),
             avg_sample_stride=self._resolve_avg_sample_stride(
                 self._backend_controller,
-                getattr(self._measurement_backend_adapter, "constraint_profile", None),
+                self._constraint_profile,
             ),
         )
         return result

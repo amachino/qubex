@@ -123,7 +123,12 @@ class Quel3BackendController(BackendController):
 
     def resolve_instrument_alias(self, target: str) -> str:
         """Resolve quelware instrument alias for a measurement target."""
-        return self._runtime_context.alias_map.get(target, target)
+        alias = self._runtime_context.alias_map.get(target)
+        if alias is None:
+            raise ValueError(
+                f"Instrument alias is not configured for target `{target}`."
+            )
+        return alias
 
     @property
     def sampling_period(self) -> float:
