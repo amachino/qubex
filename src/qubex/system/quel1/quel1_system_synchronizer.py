@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Literal, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
@@ -33,7 +33,7 @@ class Quel1SystemSynchronizer:
         self,
         experiment_system: ExperimentSystem,
     ) -> None:
-        """Rebuild backend-controller topology from one experiment-system model."""
+        """Rebuild backend controller from one experiment-system model."""
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
         self._backend_controller.define_clockmaster(
@@ -52,7 +52,7 @@ class Quel1SystemSynchronizer:
             )
 
             for port in box.ports:
-                port_type = getattr(port.type, "value", None)
+                port_type = port.type.value
                 if port_type == "NA":
                     continue
                 self._backend_controller.define_port(
@@ -123,45 +123,13 @@ class Quel1SystemSynchronizer:
             on_error=self._log_box_sync_error,
         )
 
-    def supports_box_settings_cache_sync(self) -> bool:
-        """Return whether backend supports dump/cache synchronization APIs."""
-        return self._supports_methods(
-            (
-                "dump_box",
-                "get_box_config_cache",
-                "replace_box_config_cache",
-                "update_box_config_cache",
-            ),
-        )
-
-    def supports_backend_settings_mutation(self) -> bool:
-        """Return whether backend supports temporary backend-setting overrides."""
-        return self._supports_methods(
-            (
-                "get_box_config_cache",
-                "replace_box_config_cache",
-                "update_box_config_cache",
-                "config_port",
-                "config_channel",
-                "config_runit",
-                "initialize_awg_and_capunits",
-            ),
-        )
-
     def get_box_config_cache_snapshot(self) -> dict[str, dict]:
         """Return a snapshot of backend box-config cache when supported."""
-        get_cache = getattr(self._backend_controller, "get_box_config_cache", None)
-        if not callable(get_cache):
-            return {}
-        return dict(cast(dict[str, dict], get_cache()))
+        return dict(self._backend_controller.get_box_config_cache())
 
     def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
         """Replace backend box-config cache when supported."""
-        replace_cache = getattr(
-            self._backend_controller, "replace_box_config_cache", None
-        )
-        if callable(replace_cache):
-            replace_cache(dict(box_configs))
+        self._backend_controller.replace_box_config_cache(dict(box_configs))
 
     def fetch_backend_settings_from_hardware(
         self,
@@ -171,37 +139,29 @@ class Quel1SystemSynchronizer:
         parallel: bool | None = None,
     ) -> dict[str, dict]:
         """Fetch backend settings from hardware and skip failed box dumps."""
-        if not self.supports_box_settings_cache_sync():
-            return {}
         if parallel is None:
             parallel = True
         boxes = [experiment_system.get_box(box_id) for box_id in box_ids]
         if not boxes:
             return {}
-        dump_box = getattr(self._backend_controller, "dump_box", None)
-        if not callable(dump_box):
-            return {}
 
         def _dump_box(box: Box) -> dict[str, Any]:
-            return cast(dict[str, Any], dump_box(box.id))
+            return self._backend_controller.dump_box(box.id)
 
         if not parallel:
             result: dict[str, dict] = {}
             for box in boxes:
-                box_config = cast(dict[str, Any], dump_box(box.id))
+                box_config = self._backend_controller.dump_box(box.id)
                 if self._is_valid_dumped_box_config(box.id, box_config):
                     result[box.id] = box_config
             return result
 
-        raw_result = cast(
-            dict[str, dict[str, Any]],
-            run_parallel_map(
-                boxes,
-                _dump_box,
-                key=lambda box: box.id,
-                as_completed_order=True,
-                on_error=self._fallback_dump_box_result,
-            ),
+        raw_result = run_parallel_map(
+            boxes,
+            _dump_box,
+            key=lambda box: box.id,
+            as_completed_order=True,
+            on_error=self._fallback_dump_box_result,
         )
         return {
             box_id: box_config
@@ -209,19 +169,13 @@ class Quel1SystemSynchronizer:
             if self._is_valid_dumped_box_config(box_id, box_config)
         }
 
-    def sync_backend_settings_to_device_controller(
+    def sync_backend_settings_to_backend_controller(
         self,
         *,
         backend_settings: dict[str, dict],
     ) -> None:
-        """Apply backend-settings snapshots to backend-controller cache."""
-        if not self.supports_box_settings_cache_sync():
-            return
-        update_cache = getattr(
-            self._backend_controller, "update_box_config_cache", None
-        )
-        if callable(update_cache):
-            update_cache(backend_settings)
+        """Apply backend-settings snapshots to backend controller cache."""
+        self._backend_controller.update_box_config_cache(backend_settings)
 
     def sync_backend_settings_to_experiment_system(
         self,
@@ -285,12 +239,8 @@ class Quel1SystemSynchronizer:
                     ]
                 else:
                     continue
-                channels = getattr(experiment_port, "channels", ())
-                expected_fnco_count = (
-                    len(channels)
-                    if isinstance(channels, tuple) and len(channels) > 0
-                    else None
-                )
+                channels = experiment_port.channels
+                expected_fnco_count = len(channels) if len(channels) > 0 else None
                 if (
                     expected_fnco_count is not None
                     and len(fnco_freqs) != expected_fnco_count
@@ -405,13 +355,6 @@ class Quel1SystemSynchronizer:
             )
             return False
         return True
-
-    def _supports_methods(self, method_names: Sequence[str]) -> bool:
-        """Return whether all named methods are available on backend controller."""
-        return all(
-            callable(getattr(self._backend_controller, method_name, None))
-            for method_name in method_names
-        )
 
     @staticmethod
     def _is_generator_port(port: GenPort | CapPort) -> TypeGuard[GenPort]:

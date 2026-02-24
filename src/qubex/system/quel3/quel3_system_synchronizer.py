@@ -26,7 +26,7 @@ class Quel3SystemSynchronizer:
         self,
         experiment_system: ExperimentSystem,
     ) -> None:
-        """No-op: QuEL-3 backend-controller topology sync is not implemented."""
+        """No-op: QuEL-3 backend controller model sync is not implemented."""
         del experiment_system
 
     def sync_experiment_system_to_hardware(
@@ -37,22 +37,6 @@ class Quel3SystemSynchronizer:
     ) -> None:
         """No-op: QuEL-3 hardware sync path is not implemented."""
         del boxes, parallel
-
-    def supports_box_settings_cache_sync(self) -> bool:
-        """Return whether backend supports dump/cache synchronization APIs."""
-        return False
-
-    def supports_backend_settings_mutation(self) -> bool:
-        """Return whether backend supports temporary backend-setting overrides."""
-        return False
-
-    def get_box_config_cache_snapshot(self) -> dict[str, dict]:
-        """Return a snapshot of backend box-config cache when supported."""
-        return {}
-
-    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
-        """Replace backend box-config cache when supported."""
-        del box_configs
 
     def fetch_backend_settings_from_hardware(
         self,
@@ -65,12 +49,12 @@ class Quel3SystemSynchronizer:
         del experiment_system, box_ids, parallel
         return {}
 
-    def sync_backend_settings_to_device_controller(
+    def sync_backend_settings_to_backend_controller(
         self,
         *,
         backend_settings: dict[str, dict],
     ) -> None:
-        """Apply backend-settings snapshots to backend-controller cache."""
+        """Apply backend-settings snapshots to backend controller cache."""
         del backend_settings
 
     def sync_backend_settings_to_experiment_system(

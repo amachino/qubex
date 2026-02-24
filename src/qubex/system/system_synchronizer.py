@@ -23,7 +23,7 @@ class SystemSynchronizer(Protocol):
         self,
         experiment_system: ExperimentSystem,
     ) -> None:
-        """Rebuild backend-local topology from experiment-system state."""
+        """Rebuild backend controller state from experiment-system state."""
         ...
 
     def sync_experiment_system_to_hardware(
@@ -33,22 +33,6 @@ class SystemSynchronizer(Protocol):
         parallel: bool | None = None,
     ) -> None:
         """Apply experiment-system settings to hardware boxes."""
-        ...
-
-    def supports_box_settings_cache_sync(self) -> bool:
-        """Return whether backend supports dump/cache synchronization APIs."""
-        ...
-
-    def supports_backend_settings_mutation(self) -> bool:
-        """Return whether backend supports temporary backend-setting overrides."""
-        ...
-
-    def get_box_config_cache_snapshot(self) -> dict[str, dict]:
-        """Return a snapshot of backend box-config cache when supported."""
-        ...
-
-    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
-        """Replace backend box-config cache when supported."""
         ...
 
     def fetch_backend_settings_from_hardware(
@@ -61,12 +45,12 @@ class SystemSynchronizer(Protocol):
         """Fetch raw backend settings from hardware for selected boxes."""
         ...
 
-    def sync_backend_settings_to_device_controller(
+    def sync_backend_settings_to_backend_controller(
         self,
         *,
         backend_settings: dict[str, dict],
     ) -> None:
-        """Apply backend-settings snapshots to backend-controller cache."""
+        """Apply backend-settings snapshots to backend controller cache."""
         ...
 
     def sync_backend_settings_to_experiment_system(

@@ -180,7 +180,7 @@ def test_fetch_backend_settings_from_hardware_collects_ports(
         parallel=parallel,
     )
     manager._backend_settings = fetched  # noqa: SLF001
-    manager._sync_backend_settings_to_device_controller()  # noqa: SLF001
+    manager._sync_backend_settings_to_backend_controller()  # noqa: SLF001
 
     # Assert
     assert fetched == {

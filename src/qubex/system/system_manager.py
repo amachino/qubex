@@ -92,7 +92,7 @@ class SystemManager:
     This singleton owns three related states:
 
     - experiment-system state (in-memory model used by application logic)
-    - backend-controller state (qubecalib system model and caches)
+    - backend controller state (qubecalib system model and caches)
     - backend-settings state (raw `dump_box` snapshots indexed by box ID)
 
     It exposes explicit pull/push operations and keeps a cached hash-based
@@ -280,12 +280,6 @@ class SystemManager:
         return BackendSettings(self._backend_settings)
 
     @property
-    @deprecated("Use `backend_settings` property instead.")
-    def device_settings(self) -> dict[str, dict]:
-        """Backward-compatible alias of `backend_settings`."""
-        return dict(self.backend_settings)
-
-    @property
     def current_state(self) -> SystemState:
         """Return hash summary of current in-memory state."""
         return SystemState(
@@ -293,12 +287,6 @@ class SystemManager:
             backend_controller=self.backend_controller.hash,
             backend_settings=self.backend_settings.hash,
         )
-
-    @property
-    @deprecated("Use `current_state` property instead.")
-    def state(self) -> SystemState:
-        """Backward-compatible alias of `current_state`."""
-        return self.current_state
 
     @property
     def cached_state(self) -> SystemState:
@@ -349,7 +337,7 @@ class SystemManager:
         backend_kind : BackendKind | None, optional
             Backend family used for this experiment session.
         mock_mode : bool, optional
-            If `True`, skip backend-controller model synchronization.
+            If `True`, skip backend controller model synchronization.
         """
         resolved_backend_kind = backend_kind
         if resolved_backend_kind is None:
@@ -397,7 +385,7 @@ class SystemManager:
         The method fetches raw backend settings from hardware for `box_ids`,
         merges them into cached settings, then applies the same subset to:
 
-        - backend-controller cache
+        - backend controller cache
         - experiment-system control parameters
 
         Parameters
@@ -426,7 +414,7 @@ class SystemManager:
         )
         try:
             self._set_backend_settings(merged_backend_settings)
-            self._sync_backend_settings_to_device_controller(
+            self._sync_backend_settings_to_backend_controller(
                 backend_settings=fetched_backend_settings
             )
             self._sync_backend_settings_to_experiment_system(
@@ -481,10 +469,10 @@ This operation will overwrite the existing backend settings. Do you want to cont
 """
             )
             if not confirmed:
-                # `load()` clears backend-controller caches before `push()`.
+                # `load()` clears backend controller caches before `push()`.
                 # When push is canceled, restore the previous cache snapshot from
                 # backend settings so subsequent read paths can continue to work.
-                self._sync_backend_settings_to_device_controller()
+                self._sync_backend_settings_to_backend_controller()
                 self._update_cached_state()
                 logger.info("Operation cancelled.")
                 return
@@ -505,7 +493,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         )
         try:
             self._set_backend_settings(merged_backend_settings)
-            self._sync_backend_settings_to_device_controller(
+            self._sync_backend_settings_to_backend_controller(
                 backend_settings=fetched_backend_settings
             )
         except Exception:
@@ -576,26 +564,19 @@ This operation will overwrite the existing backend settings. Do you want to cont
         system_synchronizer = self._resolve_system_synchronizer()
         if system_synchronizer is None:
             return False
-        return system_synchronizer.supports_box_settings_cache_sync()
-
-    def _supports_backend_settings_mutation(self) -> bool:
-        """Return whether backend supports temporary backend-setting overrides."""
-        system_synchronizer = self._resolve_system_synchronizer()
-        if system_synchronizer is None:
-            return False
-        return system_synchronizer.supports_backend_settings_mutation()
+        return isinstance(system_synchronizer, Quel1SystemSynchronizer)
 
     def _get_box_config_cache_snapshot(self) -> dict[str, dict]:
         """Return a snapshot of backend box-config cache when supported."""
         system_synchronizer = self._resolve_system_synchronizer()
-        if system_synchronizer is None:
+        if not isinstance(system_synchronizer, Quel1SystemSynchronizer):
             return {}
         return system_synchronizer.get_box_config_cache_snapshot()
 
     def _replace_box_config_cache(self, box_configs: Mapping[str, dict]) -> None:
         """Replace backend box-config cache when supported."""
         system_synchronizer = self._resolve_system_synchronizer()
-        if system_synchronizer is None:
+        if not isinstance(system_synchronizer, Quel1SystemSynchronizer):
             return
         system_synchronizer.replace_box_config_cache(dict(box_configs))
 
@@ -663,13 +644,13 @@ This operation will overwrite the existing backend settings. Do you want to cont
         )
         return BackendSettings(fetched)
 
-    def _sync_backend_settings_to_device_controller(
+    def _sync_backend_settings_to_backend_controller(
         self,
         *,
         backend_settings: BackendSettings | None = None,
     ) -> None:
         """
-        Apply backend-settings snapshots to backend-controller cache.
+        Apply backend-settings snapshots to backend controller cache.
 
         Parameters
         ----------
@@ -681,7 +662,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             return
         if backend_settings is None:
             backend_settings = self._backend_settings
-        system_synchronizer.sync_backend_settings_to_device_controller(
+        system_synchronizer.sync_backend_settings_to_backend_controller(
             backend_settings=backend_settings,
         )
 
@@ -713,11 +694,11 @@ This operation will overwrite the existing backend settings. Do you want to cont
         )
 
     def _sync_experiment_system_to_backend_controller(self) -> None:
-        """Rebuild backend-local topology via backend-specific synchronizer."""
+        """Rebuild backend controller state via backend-specific synchronizer."""
         system_synchronizer = self._resolve_system_synchronizer()
         if system_synchronizer is None:
             logger.info(
-                "Skipping backend-controller topology sync because this backend has no system synchronizer."
+                "Skipping backend controller model sync because this backend has no system synchronizer."
             )
             self._update_cached_state()
             return
@@ -793,7 +774,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         ... ):
         ...     ...
         """
-        if not self._supports_backend_settings_mutation():
+        if not self._supports_box_settings_cache_sync():
             raise NotImplementedError(
                 "Active backend does not support backend-settings cache operations."
             )
