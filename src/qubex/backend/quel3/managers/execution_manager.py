@@ -14,7 +14,9 @@ import numpy as np
 import numpy.typing as npt
 
 from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
-from qubex.backend.quel3.quel3_backend_result import Quel3BackendExecutionResult
+from qubex.backend.quel3.quel3_backend_execution_result import (
+    Quel3BackendExecutionResult,
+)
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 
 

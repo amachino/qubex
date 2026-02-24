@@ -15,7 +15,9 @@ from qubex.backend.quel1.compat.sequencer_execution_engine import (
 )
 from qubex.backend.quel1.managers.execution_manager import Quel1ExecutionManager
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
-from qubex.backend.quel1.quel1_backend_result import Quel1BackendExecutionResult
+from qubex.backend.quel1.quel1_backend_execution_result import (
+    Quel1BackendExecutionResult,
+)
 from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 
 

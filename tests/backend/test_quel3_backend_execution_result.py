@@ -7,7 +7,9 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from qubex.backend.quel3.quel3_backend_result import Quel3BackendExecutionResult
+from qubex.backend.quel3.quel3_backend_execution_result import (
+    Quel3BackendExecutionResult,
+)
 
 
 def test_backend_result_rejects_device_config_argument() -> None:

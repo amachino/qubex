@@ -19,7 +19,7 @@ from .quel1_backend_constants import (
 from .quel1_backend_controller import (
     Quel1BackendController,
 )
-from .quel1_backend_result import Quel1BackendExecutionResult
+from .quel1_backend_execution_result import Quel1BackendExecutionResult
 from .quel1_execution_payload import Quel1ExecutionPayload
 
 __all__ = [

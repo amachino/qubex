@@ -23,7 +23,9 @@ from qubex.backend.quel1.quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
     ExecutionMode,
 )
-from qubex.backend.quel1.quel1_backend_result import Quel1BackendExecutionResult
+from qubex.backend.quel1.quel1_backend_execution_result import (
+    Quel1BackendExecutionResult,
+)
 from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
