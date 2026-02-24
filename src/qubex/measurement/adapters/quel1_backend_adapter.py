@@ -14,7 +14,7 @@ from qubex.backend import (
 )
 from qubex.backend.quel1 import (
     Quel1BackendController,
-    Quel1BackendRawResult,
+    Quel1BackendResult,
     Quel1ExecutionPayload,
 )
 from qubex.measurement.measurement_constraint_profile import (
@@ -244,10 +244,10 @@ class Quel1MeasurementBackendAdapter:
         sampling_period_ns: float | None,
         avg_sample_stride: int | None,
     ) -> MeasurementResult:
-        """Build canonical result from a QuEL-1 backend raw result."""
-        if not isinstance(backend_result, Quel1BackendRawResult):
+        """Build canonical result from a QuEL-1 backend result payload."""
+        if not isinstance(backend_result, Quel1BackendResult):
             raise TypeError(
-                "QuEL-1 adapter expects backend_result to be `Quel1BackendRawResult`."
+                "QuEL-1 adapter expects backend_result to be `Quel1BackendResult`."
             )
 
         measure_mode = measurement_config.mode

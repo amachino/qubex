@@ -14,7 +14,7 @@ from qubex.backend.quel1.compat.sequencer_execution_engine import (
 )
 from qubex.backend.quel1.managers.execution_manager import Quel1ExecutionManager
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
-from qubex.backend.quel1.quel1_backend_raw_result import Quel1BackendRawResult
+from qubex.backend.quel1.quel1_backend_result import Quel1BackendResult
 from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 
 
@@ -71,7 +71,7 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
         execution_mode="parallel",
     )
 
-    assert isinstance(result, Quel1BackendRawResult)
+    assert isinstance(result, Quel1BackendResult)
     assert result.status == {"Q00": "OK"}
     assert result.data == {"Q00": ["RAW", "CPRM"]}
     assert result.config == {}

@@ -23,7 +23,7 @@ from qubex.backend.quel1.quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
     ExecutionMode,
 )
-from qubex.backend.quel1.quel1_backend_raw_result import Quel1BackendRawResult
+from qubex.backend.quel1.quel1_backend_result import Quel1BackendResult
 from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
@@ -171,7 +171,7 @@ class Quel1ExecutionManager:
         enable_classification: bool,
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
-    ) -> Quel1BackendRawResult:
+    ) -> Quel1BackendResult:
         """Execute a sequencer through serial qubecalib path."""
         SequencerExecutionEngine.set_measurement_options(
             sequencer=sequencer,
@@ -185,7 +185,7 @@ class Quel1ExecutionManager:
             line_param1=line_param1,
         )
         status, data, config = sequencer.execute(self._runtime_context.boxpool)
-        return Quel1BackendRawResult(
+        return Quel1BackendResult(
             status=status,
             data=data,
             config=config,
@@ -204,7 +204,7 @@ class Quel1ExecutionManager:
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
         clock_health_checks: bool,
-    ) -> Quel1BackendRawResult:
+    ) -> Quel1BackendResult:
         """Execute a sequencer through parallelized multi-box action path."""
         SequencerExecutionEngine.set_measurement_options(
             sequencer=sequencer,
@@ -240,7 +240,7 @@ class Quel1ExecutionManager:
                 ),
             )
         )
-        return Quel1BackendRawResult(
+        return Quel1BackendResult(
             status=parsed_status,
             data=parsed_data,
             config=parsed_config,

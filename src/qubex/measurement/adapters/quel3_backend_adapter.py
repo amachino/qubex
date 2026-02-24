@@ -13,6 +13,7 @@ from qubex.backend import (
 )
 from qubex.backend.quel3 import (
     Quel3BackendController,
+    Quel3BackendResult,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
@@ -143,15 +144,24 @@ class Quel3MeasurementBackendAdapter:
         sampling_period_ns: float | None,
         avg_sample_stride: int | None,
     ) -> MeasurementResult:
-        """Return canonical QuEL-3 result or raise for unsupported payload types."""
+        """Build canonical result from QuEL-3 backend result payload."""
         _ = measurement_config
         _ = device_config
         _ = sampling_period_ns
         _ = avg_sample_stride
         if isinstance(backend_result, MeasurementResult):
             return backend_result
+        if isinstance(backend_result, Quel3BackendResult):
+            return MeasurementResult(
+                mode=backend_result.mode,
+                data=backend_result.data,
+                device_config=backend_result.device_config,
+                measurement_config=backend_result.measurement_config,
+                sampling_period_ns=backend_result.sampling_period_ns,
+                avg_sample_stride=backend_result.avg_sample_stride,
+            )
         raise TypeError(
-            "QuEL-3 backend must return MeasurementResult from execute/execute_async."
+            "QuEL-3 backend must return `Quel3BackendResult` or `MeasurementResult`."
         )
 
     @classmethod

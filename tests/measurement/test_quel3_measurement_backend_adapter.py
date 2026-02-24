@@ -9,7 +9,10 @@ import numpy as np
 import pytest
 
 from qubex.backend import TargetRegistry
-from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3 import (
+    Quel3BackendController,
+    Quel3BackendResult,
+)
 from qubex.measurement.adapters import (
     Quel3ExecutionPayload,
     Quel3MeasurementBackendAdapter,
@@ -444,6 +447,42 @@ def test_quel3_adapter_build_measurement_result_returns_canonical_result() -> No
     assert result is expected
 
 
+def test_quel3_adapter_build_measurement_result_converts_backend_result() -> None:
+    """Given QuEL-3 backend result, when adapter builds result, then it converts to canonical model."""
+    backend_result = Quel3BackendResult(
+        mode="avg",
+        data={"Q00": [np.array([2.0 + 0.0j], dtype=np.complex128)]},
+        device_config={"kind": "quel3"},
+        measurement_config={"mode": "avg"},
+        sampling_period_ns=0.4,
+        avg_sample_stride=4,
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+
+    result = adapter.build_measurement_result(
+        backend_result=backend_result,
+        measurement_config=_make_config(),
+        device_config={"unused": True},
+        sampling_period_ns=1.0,
+        avg_sample_stride=8,
+    )
+
+    assert isinstance(result, MeasurementResult)
+    assert result.mode == "avg"
+    assert result.device_config == {"kind": "quel3"}
+    assert result.measurement_config == {"mode": "avg"}
+    assert result.sampling_period_ns == pytest.approx(0.4)
+    assert result.avg_sample_stride == 4
+    assert np.array_equal(
+        result.data["Q00"][0],
+        np.array([2.0 + 0.0j], dtype=np.complex128),
+    )
+
+
 def test_quel3_adapter_build_measurement_result_rejects_noncanonical_type() -> None:
     """Given non-canonical backend result, when adapter builds result, then it raises TypeError."""
     adapter = Quel3MeasurementBackendAdapter(
@@ -452,7 +491,7 @@ def test_quel3_adapter_build_measurement_result_rejects_noncanonical_type() -> N
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
 
-    with pytest.raises(TypeError, match="must return MeasurementResult"):
+    with pytest.raises(TypeError, match="Quel3BackendResult"):
         adapter.build_measurement_result(
             backend_result={"iq_result": {}},
             measurement_config=_make_config(),

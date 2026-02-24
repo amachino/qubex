@@ -10,18 +10,16 @@ from collections import defaultdict
 from collections.abc import Coroutine, Iterable
 from pathlib import Path
 from types import ModuleType, TracebackType
-from typing import TYPE_CHECKING, Literal, Protocol, TypeVar
+from typing import Literal, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 
 from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
+from qubex.backend.quel3.quel3_backend_result import Quel3BackendResult
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
 from qubex.backend.target_registry import TargetRegistry
-
-if TYPE_CHECKING:
-    from qubex.measurement.models.measurement_result import MeasurementResult
 
 ExecutionMode = Literal["serial", "parallel"]
 _T = TypeVar("_T")
@@ -324,7 +322,7 @@ class Quel3ExecutionManager:
         self._runtime_context = runtime_context
         self._sequencer_builder = Quel3SequencerBuilder()
 
-    def execute(self, *, request: object) -> MeasurementResult:
+    def execute(self, *, request: object) -> Quel3BackendResult:
         """
         Execute a QuEL-3 backend request.
 
@@ -335,7 +333,7 @@ class Quel3ExecutionManager:
         """
         return _run_coroutine(self.execute_async(request=request))
 
-    async def execute_async(self, *, request: object) -> MeasurementResult:
+    async def execute_async(self, *, request: object) -> Quel3BackendResult:
         """
         Execute a QuEL-3 backend request asynchronously.
 
@@ -354,7 +352,7 @@ class Quel3ExecutionManager:
     async def _execute_measurement_async(
         self,
         payload: Quel3ExecutionPayload,
-    ) -> MeasurementResult:
+    ) -> Quel3BackendResult:
         """Execute one fixed-timeline measurement flow via quelware."""
         aliases = sorted(set(payload.instrument_aliases.values()))
         if len(aliases) == 0:
@@ -507,10 +505,8 @@ class Quel3ExecutionManager:
         sampling_period_ns: float | None,
         backend_sampling_period: float,
         avg_sample_stride: int,
-    ) -> MeasurementResult:
+    ) -> Quel3BackendResult:
         """Build canonical measurement result from per-shot capture samples."""
-        from qubex.measurement.models.measurement_result import MeasurementResult
-
         measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
         output_target_labels = payload.output_target_labels
         for target, timeline in payload.fixed_timelines.items():
@@ -539,7 +535,7 @@ class Quel3ExecutionManager:
         else:
             raise ValueError(f"Unsupported measurement mode: {mode}")
 
-        return MeasurementResult(
+        return Quel3BackendResult(
             mode=result_mode,
             data=dict(measurement_data),
             device_config={},

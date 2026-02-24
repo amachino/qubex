@@ -12,7 +12,7 @@ import pytest
 from qxpulse import PulseSchedule
 
 from qubex.backend import BackendExecutionRequest
-from qubex.backend.quel1 import Quel1BackendRawResult
+from qubex.backend.quel1 import Quel1BackendResult
 from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
@@ -509,9 +509,9 @@ def test_run_measurement_uses_backend_custom_factories(
     )
 
     class _CustomBackendExecutor:
-        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
+        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendResult:
             called["request"] = request
-            return Quel1BackendRawResult(status={}, data={}, config={})
+            return Quel1BackendResult(status={}, data={}, config={})
 
     class _CustomAdapter:
         sampling_period = 0.4
@@ -574,7 +574,7 @@ def test_run_measurement_uses_backend_custom_factories(
             request: BackendExecutionRequest,
             execution_mode: str | None = None,
             clock_health_checks: bool | None = None,
-        ) -> Quel1BackendRawResult:
+        ) -> Quel1BackendResult:
             called["execution_mode"] = execution_mode
             called["clock_health_checks"] = clock_health_checks
             executor = _CustomBackendExecutor()

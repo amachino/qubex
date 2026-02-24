@@ -15,6 +15,7 @@ from qubex.backend.backend_controller import BackendController
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import (
     Quel3BackendController,
+    Quel3BackendResult,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
@@ -166,6 +167,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         avg_sample_stride=4,
     )
 
+    assert isinstance(result, Quel3BackendResult)
     assert result.mode == "avg"
     assert "Q00" in result.data
     assert np.array_equal(
@@ -201,6 +203,7 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
         avg_sample_stride=4,
     )
 
+    assert isinstance(result, Quel3BackendResult)
     assert "Q17" in result.data
     assert "raw-target" not in result.data
 
