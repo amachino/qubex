@@ -17,6 +17,7 @@ Manage development notes and operational documents.
 - [QuEL-3 Configuration Design](quel3-configuration-design.md)
 - [QuEL-3 Wiring And Binding Policy](quel3-wiring-binding-policy.md)
 - [qubex Measurement Model Baseline (Pre-qxschema)](qubex-measurement-model-baseline.md)
+- [run_sweep_measurement Minimal Spec](run-sweep-measurement-minimal-spec.md)
 - [qxschema Measurement Protocol Design](qxschema-measurement-protocol-design.md)
 - [System Configuration Schema](system-configuration-schema-draft.md)
 - [Configuration Module Migration Plan](configuration-module-migration.md)

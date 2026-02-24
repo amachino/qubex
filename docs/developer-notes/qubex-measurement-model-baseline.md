@@ -122,12 +122,28 @@ only part of it in `SweepMeasurementBuilder`.
 - Freeze decision: do not build internal logic on this type until qubex-side
   sweep-result requirements are defined.
 
-## Decisions for next phase (before qxschema external proposal)
+## Decision update (2026-02-24)
 
-1. Define whether qubex introduces its own internal `SweepMeasurementResult` model
-   first, or keeps draft passthrough.
-2. Decide if `MeasurementResult.measurement_config` remains dict snapshot or is
+The following sweep-API contract was accepted for the minimal v1 implementation:
+
+- Sweep execution API uses internal models and is decoupled from `qxschema` model
+  shape.
+- `run_sweep_measurement(...)` reuses `MeasurementConfig` directly.
+- A dedicated `SweepMeasurementConfig` is not introduced in v1.
+- New minimal internal result model is introduced:
+  - `SweepPointResult(index, point, result)`
+  - `SweepMeasurementResult(results: list[SweepPointResult])`
+- Execution policy is fixed to:
+  - pointwise dispatch
+  - fail-fast error handling
+
+See details:
+
+- [`run_sweep_measurement` minimal spec](run-sweep-measurement-minimal-spec.md)
+
+Open items that remain for later phases:
+
+1. Decide if `MeasurementResult.measurement_config` remains dict snapshot or is
    replaced by a typed internal snapshot model.
-3. Decide when `MeasurementConfig.frequencies` becomes execution-effective
-   in schedule execution path (or remove from internal config if unused).
-4. Define a strict qubex internal axis order contract for sweep result tensors.
+2. Define a strict qubex internal axis order contract for future tensor-style
+   sweep result aggregation.
