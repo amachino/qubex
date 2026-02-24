@@ -41,6 +41,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | P1 | GA release notes and documentation finalization | 2026-03-25 | GA scope frozen | TODO |
 | P1 | Finalize MkDocs user-guide and developer-guide for v1.5.0 (sufficient for experiment users and developers) | 2026-03-25 | GA scope frozen and config/runtime behavior stabilized | TODO |
 | P2 | Developer ergonomics improvements (logs/errors/examples) for new flows | 2026-03-25 | Main features implemented | TODO |
+| P2 | Clean up test code and remove obsolete test cases | 2026-03-25 | Main features implemented and compatibility/test scope stabilized | TODO |
 
 Calendar note:
 
