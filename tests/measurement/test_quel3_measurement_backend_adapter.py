@@ -11,7 +11,7 @@ import pytest
 from qubex.backend import TargetRegistry
 from qubex.backend.quel3 import (
     Quel3BackendController,
-    Quel3BackendResult,
+    Quel3BackendExecutionResult,
 )
 from qubex.measurement.adapters import (
     Quel3ExecutionPayload,
@@ -372,7 +372,7 @@ def test_quel3_adapter_uses_registry_for_result_target_labels() -> None:
     )
 
     _ = adapter.build_execution_request(schedule=schedule, config=_make_config())
-    backend_result = Quel3BackendResult(
+    backend_result = Quel3BackendExecutionResult(
         mode="avg",
         data={alias: [np.array([1.0 + 0.0j], dtype=np.complex128)]},
         device_config={},
@@ -513,7 +513,7 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
             ]
         ),
     )
-    backend_result = Quel3BackendResult(
+    backend_result = Quel3BackendExecutionResult(
         mode="avg",
         data={alias: [np.array([2.0 + 0.0j], dtype=np.complex128)]},
         device_config={"kind": "quel3"},
@@ -556,7 +556,7 @@ def test_quel3_adapter_build_measurement_result_rejects_noncanonical_type() -> N
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
 
-    with pytest.raises(TypeError, match="Quel3BackendResult"):
+    with pytest.raises(TypeError, match="Quel3BackendExecutionResult"):
         adapter.build_measurement_result(
             backend_result={"iq_result": {}},
             measurement_config=_make_config(),

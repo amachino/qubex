@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class Quel1BackendResult:
+class Quel1BackendExecutionResult:
     """Backend-level status, data, and config returned from qube-calib execution."""
 
     status: dict

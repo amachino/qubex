@@ -10,7 +10,7 @@ import pytest
 from qxpulse import PulseSchedule
 
 from qubex.backend import BackendExecutionRequest
-from qubex.backend.quel1 import Quel1BackendResult
+from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
@@ -68,7 +68,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
     """Given runner inputs, when execute is called, then it validates, runs backend controller, and builds result."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
-    backend_result = Quel1BackendResult(status={}, data={}, config={})
+    backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
     expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
 
     class _Adapter:
@@ -109,7 +109,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
 
         async def execute(
             self, *, request: BackendExecutionRequest
-        ) -> Quel1BackendResult:
+        ) -> Quel1BackendExecutionResult:
             called["execute_request"] = request
             return backend_result
 
@@ -139,7 +139,7 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
     """Given execution options, when execute is called, then backend controller receives options."""
     called: dict[str, object] = {}
     base_request = BackendExecutionRequest(payload=object())
-    backend_result = Quel1BackendResult(status={}, data={}, config={})
+    backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
     expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
 
     class _Adapter:
@@ -182,7 +182,7 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
             request: BackendExecutionRequest,
             execution_mode: str | None = None,
             clock_health_checks: bool | None = None,
-        ) -> Quel1BackendResult:
+        ) -> Quel1BackendExecutionResult:
             called["request"] = request
             called["execution_mode"] = execution_mode
             called["clock_health_checks"] = clock_health_checks
@@ -230,7 +230,7 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
     """Given backend without box config capability, when execute runs, then adapter result builder receives an empty config."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
-    backend_result = Quel1BackendResult(status={}, data={}, config={})
+    backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
     expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
 
     class _Adapter:
@@ -270,7 +270,7 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
 
         async def execute(
             self, *, request: BackendExecutionRequest
-        ) -> Quel1BackendResult:
+        ) -> Quel1BackendExecutionResult:
             _ = request
             return backend_result
 
@@ -338,7 +338,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
     """Given adapter result builder, when execute is called, then runner uses adapter conversion."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
-    backend_result = Quel1BackendResult(status={}, data={}, config={})
+    backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
     expected = MeasurementResult(
         mode="avg",
         data={"Q00": [np.array([2.0 + 0.0j])]},
@@ -382,7 +382,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
 
         async def execute(
             self, *, request: BackendExecutionRequest
-        ) -> Quel1BackendResult:
+        ) -> Quel1BackendExecutionResult:
             called["execute_request"] = request
             return backend_result
 

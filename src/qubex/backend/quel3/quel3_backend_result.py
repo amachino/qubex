@@ -11,7 +11,7 @@ from qubex.typing import MeasurementMode
 
 
 @dataclass
-class Quel3BackendResult:
+class Quel3BackendExecutionResult:
     """Backend-level measurement result returned by QuEL-3 execution."""
 
     mode: MeasurementMode

@@ -12,7 +12,7 @@ import pytest
 from qxpulse import PulseSchedule
 
 from qubex.backend import BackendExecutionRequest
-from qubex.backend.quel1 import Quel1BackendResult
+from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import (
@@ -496,11 +496,11 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
             request: BackendExecutionRequest,
             execution_mode: str | None = None,
             clock_health_checks: bool | None = None,
-        ) -> Quel1BackendResult:
+        ) -> Quel1BackendExecutionResult:
             called["request"] = request
             called["execution_mode"] = execution_mode
             called["clock_health_checks"] = clock_health_checks
-            return Quel1BackendResult(status={}, data={}, config={})
+            return Quel1BackendExecutionResult(status={}, data={}, config={})
 
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel3BackendController",

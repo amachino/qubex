@@ -8,7 +8,7 @@ from typing import Any, cast
 import numpy as np
 from numpy.testing import assert_allclose
 
-from qubex.backend.quel1 import Quel1BackendResult
+from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.adapters.backend_adapter import Quel1MeasurementBackendAdapter
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.typing import MeasurementMode
@@ -44,7 +44,7 @@ def _make_config(*, mode: MeasurementMode, shots: int) -> MeasurementConfig:
 def test_build_measurement_result_converts_single_mode_to_qubit_labels() -> None:
     """Given QuEL-1 raw result, when converting single mode, then qubit labels and normalization are applied."""
     norm_factor = 2 ** (-32)
-    backend_result = Quel1BackendResult(
+    backend_result = Quel1BackendExecutionResult(
         status={},
         data={
             "RQ00": [
@@ -85,7 +85,7 @@ def test_build_measurement_result_converts_single_mode_to_qubit_labels() -> None
 def test_build_measurement_result_converts_avg_mode_with_shot_scaling() -> None:
     """Given QuEL-1 raw result, when converting avg mode, then waveform is shot-normalized and squeezed."""
     norm_factor = 2 ** (-32)
-    backend_result = Quel1BackendResult(
+    backend_result = Quel1BackendExecutionResult(
         status={},
         data={
             "RQ00": [

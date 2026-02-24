@@ -2,7 +2,7 @@
 
 from .managers.sequencer_builder import Quel3SequencerBuilder
 from .quel3_backend_controller import Quel3BackendController
-from .quel3_backend_result import Quel3BackendResult
+from .quel3_backend_result import Quel3BackendExecutionResult
 from .quel3_execution_payload import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
@@ -13,7 +13,7 @@ from .quel3_execution_payload import (
 
 __all__ = [
     "Quel3BackendController",
-    "Quel3BackendResult",
+    "Quel3BackendExecutionResult",
     "Quel3CaptureWindow",
     "Quel3ExecutionPayload",
     "Quel3FixedTimeline",

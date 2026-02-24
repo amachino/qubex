@@ -14,7 +14,7 @@ import numpy as np
 import numpy.typing as npt
 
 from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
-from qubex.backend.quel3.quel3_backend_result import Quel3BackendResult
+from qubex.backend.quel3.quel3_backend_result import Quel3BackendExecutionResult
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
 
@@ -292,7 +292,7 @@ class Quel3ExecutionManager:
         self._runtime_context = runtime_context
         self._sequencer_builder = Quel3SequencerBuilder()
 
-    async def execute(self, *, request: object) -> Quel3BackendResult:
+    async def execute(self, *, request: object) -> Quel3BackendExecutionResult:
         """
         Execute a QuEL-3 backend request asynchronously.
 
@@ -311,7 +311,7 @@ class Quel3ExecutionManager:
     async def _execute(
         self,
         payload: Quel3ExecutionPayload,
-    ) -> Quel3BackendResult:
+    ) -> Quel3BackendExecutionResult:
         """Execute one fixed-timeline measurement flow via quelware."""
         aliases = sorted(payload.fixed_timelines.keys())
         if len(aliases) == 0:
@@ -458,7 +458,7 @@ class Quel3ExecutionManager:
         sampling_period_ns: float | None,
         backend_sampling_period: float,
         avg_sample_stride: int,
-    ) -> Quel3BackendResult:
+    ) -> Quel3BackendExecutionResult:
         """Build canonical measurement result from per-shot capture samples."""
         measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
         for alias, timeline in payload.fixed_timelines.items():
@@ -481,7 +481,7 @@ class Quel3ExecutionManager:
         else:
             raise ValueError(f"Unsupported measurement mode: {mode}")
 
-        return Quel3BackendResult(
+        return Quel3BackendExecutionResult(
             mode=result_mode,
             data=dict(measurement_data),
             device_config={},

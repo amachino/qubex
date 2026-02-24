@@ -18,7 +18,7 @@ from .quel1_backend_constants import (
 from .quel1_backend_controller import (
     Quel1BackendController,
 )
-from .quel1_backend_result import Quel1BackendResult
+from .quel1_backend_result import Quel1BackendExecutionResult
 from .quel1_execution_payload import Quel1ExecutionPayload
 
 __all__ = [
@@ -35,7 +35,7 @@ __all__ = [
     "WORD_LENGTH",
     "ExecutionMode",
     "Quel1BackendController",
-    "Quel1BackendResult",
+    "Quel1BackendExecutionResult",
     "Quel1ExecutionPayload",
     "Quel1Sequencer",
 ]

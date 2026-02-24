@@ -13,7 +13,7 @@ from qubex.backend import (
 )
 from qubex.backend.quel3 import (
     Quel3BackendController,
-    Quel3BackendResult,
+    Quel3BackendExecutionResult,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
@@ -152,7 +152,7 @@ class Quel3MeasurementBackendAdapter:
         _ = measurement_config
         if isinstance(backend_result, MeasurementResult):
             return backend_result
-        if isinstance(backend_result, Quel3BackendResult):
+        if isinstance(backend_result, Quel3BackendExecutionResult):
             converted_data: dict[str, list[np.ndarray]] = {}
             for alias, values in backend_result.data.items():
                 output_target = self._output_target_labels_by_alias.get(alias, alias)
@@ -182,7 +182,7 @@ class Quel3MeasurementBackendAdapter:
                 ),
             )
         raise TypeError(
-            "QuEL-3 backend must return `Quel3BackendResult` or `MeasurementResult`."
+            "QuEL-3 backend must return `Quel3BackendExecutionResult` or `MeasurementResult`."
         )
 
     @classmethod
