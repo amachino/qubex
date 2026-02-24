@@ -8,7 +8,8 @@
 ## Dependency status
 
 - `quelware-client` is not yet complete for final QuEL-3 execution-path decisions.
-- QuEL-3-specific implementation lock items remain `PROPOSED` and are resumed after dependency completion.
+- QuEL-3 beta decision items `DF-01` and `DF-02` are fixed.
+- QuEL-3 decision items `DF-03` and `DF-04` remain deferred and are resumed after dependency completion.
 
 ## Scope
 
@@ -50,7 +51,7 @@ Calendar note:
 1. Wave A (current): non-QuEL-3 freeze and test scope lock
    - Lock compatibility and delegation contract scope.
    - Define synchronized scenario and beta release-note template.
-   - Keep QuEL-3 decisions as `PROPOSED` until dependency completion.
+   - Lock DF-01/DF-02 and keep DF-03/DF-04 deferred until dependency completion.
 2. Wave B (next): non-QuEL-3 beta-blocking implementation
    - Close remaining fixed `2 ns` assumptions in runtime and experiment paths.
    - Implement task-based async measurement primitives.
@@ -60,7 +61,8 @@ Calendar note:
    - Run hardware gate scenarios for QuEL-1.
    - Publish beta release notes + known limitations + migration notes.
 4. Wave Q (triggered when `quelware-client` is ready): QuEL-3 track resume
-   - Re-open and finalize DF-01 to DF-04.
+   - Re-open and finalize DF-03/DF-04.
+   - Apply DF-01/DF-02 decisions in QuEL-3 runtime paths.
    - Implement synchronized execution path and QuEL-3 runtime integration.
    - Run QuEL-3 hardware gates.
 5. Wave D (2026-03-01 to 2026-03-25): GA hardening and release
@@ -136,7 +138,8 @@ Calendar note:
 ## Current sprint checklist (2026-02-18 to 2026-02-21)
 
 - [ ] Finalize QuEL-3 integration interface based on current `quelware-client` source (`quel3-adapter-interface-draft.md`) after dependency completion.
-- [ ] Freeze decisions in `quel3-adapter-interface-draft.md` (alias mapping, capture key policy, trigger model, result shape) after dependency completion.
+- [x] Freeze DF-01/DF-02 decisions in `quel3-adapter-interface-draft.md` (alias mapping and capture key policy).
+- [ ] Finalize deferred DF-03/DF-04 decisions (trigger model and result-mode contract) after dependency completion.
 - [x] Define minimal synchronized protocol scenario for beta sign-off (`v1-5-0-synchronized-protocol-scenario.md`).
 - [x] Lock `Measurement` and `Experiment` delegation smoke test scope for beta (`v1-5-0-contract-test-scope.md`).
 - [x] Draft beta release notes template and known limitation section (`v1-5-0-beta-release-notes-template.md`).
@@ -206,6 +209,7 @@ Calendar note:
 - 2026-02-18: Added facade delegation tests for `Experiment.run`, `connect`, `reload`, and `measure_idle_states` in `tests/experiment/test_experiment_facade_delegation.py`.
 - 2026-02-18: Returned QuEL-3 decision items (`DF-01` to `DF-04`) to `PROPOSED` and deferred finalization until `quelware-client` completion.
 - 2026-02-18: Switched execution order to prioritize non-QuEL-3 tasks while QuEL-3 dependency remains incomplete.
+- 2026-02-24: Fixed DF-01 (`instrument_alias` explicit resolution required; fallback to target label prohibited) and DF-02 (capture key standardized as `{target}:{capture_index}` with deterministic per-target ordering). DF-03/DF-04 remain deferred.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.

@@ -32,7 +32,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Added `Quel3MeasurementBackendAdapter` in `src/qubex/measurement/adapters/backend_adapter.py`.
 - Added `Quel3ExecutionPayload`/timeline dataclasses in `src/qubex/backend/quel3/quel3_execution_payload.py`.
 - Adapter builds backend payload models; backend controller/execution manager consume them.
-- Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_instrument_alias(target)` hook when available (fallback: target label itself).
+- Added `instrument_aliases` to `Quel3ExecutionPayload`; adapter resolves alias via `resolve_instrument_alias(target)` hook.
 - Added `Quel3BackendController` scaffold in `src/qubex/backend/quel3/quel3_backend_controller.py`.
 - `Quel3BackendController.execute(...)` includes a quelware invocation path and returns canonical `MeasurementResult` directly.
 - If quelware dependencies are missing, execution fails fast with an explicit runtime error message.
@@ -70,19 +70,27 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Keep `avg_sample_stride` explicit. Default remains `4` for 4-way multiplexed readout demodulation semantics unless backend contract provides another value.
 - Remove QuEL-1 specific extra-capture assumptions from QuEL-3 result path.
 
-## v1.5.0 beta decision candidates (as of 2026-02-18, `PROPOSED`)
+## v1.5.0 beta decisions (updated on 2026-02-24)
 
 Dependency note:
 
-- Final decision lock is deferred until `quelware-client` is completed.
-- QuEL-3 execution-path implementation is intentionally on hold until that dependency is ready.
+- `quelware-client` completion is still required for full QuEL-3 execution-path validation.
+- Despite the dependency status, DF-01 and DF-02 are fixed for beta scope.
+- DF-03 and DF-04 remain deferred until upstream behavior is finalized.
 
-| ID | Topic | Proposed decision for beta | Why now | Status |
+| ID | Topic | Beta decision | Why now | Status |
 | --- | --- | --- | --- | --- |
-| DF-01 | Target-to-alias mapping | Require explicit instrument alias resolution for execution. Do not rely on target-label fallback in production path. | QuEL-3 execution is not valid without instrument mapping. | PROPOSED (blocked by `quelware-client`) |
-| DF-02 | Capture-window key policy | Standardize key as `{target}:{capture_index}` where `capture_index` is deterministic order by start time. | If `window_name` is mechanically index-based, it adds no extra information over `capture_index`. | PROPOSED |
-| DF-03 | Trigger orchestration | Decision deferred until `quelware-client` orchestrator behavior is finalized. | Current dependency is incomplete; fixing policy now would be speculative. | PROPOSED (deferred) |
-| DF-04 | Result mode contract | Decision deferred until `quelware-client` result contracts are finalized. | Mode-level guarantees depend on unfinished upstream behavior. | PROPOSED (deferred) |
+| DF-01 | Target-to-alias mapping | Require explicit instrument alias resolution for execution and prohibit fallback to target labels. | QuEL-3 execution is not valid without explicit instrument mapping. | DECIDED |
+| DF-02 | Capture-window key policy | Standardize key as `{target}:{capture_index}`. `capture_index` is per-target 0-based and deterministic (`start_time` asc, `duration` asc, then definition order). | Removes coupling to `window_name` and keeps key generation stable across internal naming changes. | DECIDED |
+| DF-03 | Trigger orchestration | Keep deferred until `quelware-client` orchestrator behavior is finalized. | Current dependency is incomplete; fixing policy now would be speculative. | DEFERRED |
+| DF-04 | Result mode contract | Keep deferred until `quelware-client` result contracts are finalized. | Mode-level guarantees depend on unfinished upstream behavior. | DEFERRED |
+
+## Implementation notes from DF-01 and DF-02
+
+- `instrument_aliases` must be resolved explicitly for all execution targets.
+- Missing alias resolution must raise a clear runtime/configuration error.
+- Capture lookup keys in sequencer/export/result-fetch paths must use `{target}:{capture_index}`.
+- `window_name` is treated as metadata/display only and is not part of the contract key.
 
 ## Follow-up questions (post-beta candidate)
 

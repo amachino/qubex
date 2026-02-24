@@ -109,11 +109,15 @@ exclude = [
     "**/__pycache__",
     "**/.*",
     "packages/quelware-client",
+    "packages/quelware-client-internal",
 ]
 typeCheckingMode = "basic"
 
 [tool.ruff]
-extend-exclude = ["packages/quelware-client"]
+extend-exclude = [
+    "packages/quelware-client",
+    "packages/quelware-client-internal",
+]
 
 [tool.ruff.lint]
 select = [
