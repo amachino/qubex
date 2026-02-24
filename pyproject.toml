@@ -41,7 +41,7 @@ dependencies = [
 [project.optional-dependencies]
 backend = [
     "qxdriver-quel @ git+https://github.com/amachino/qxdriver-quel.git@qubex-quelware-v0.10",
-    # "quelware-client @ git+https://github.com/quel-inc/quelware-client.git@main#subdirectory=quelware-client",
+    "quelware-client @ git+https://github.com/quel-inc/quelware-client.git@main#subdirectory=quelware-client",
 ]
 
 [project.scripts]
@@ -86,7 +86,7 @@ qxvisualizer = { workspace = true }
 
 [tool.uv.workspace]
 members = [
-    # "packages/quelware-client/quelware-client",
+    "packages/quelware-client/quelware-client",
     "packages/qxcore",
     "packages/qxdriver-quel",
     "packages/qxfitting",
@@ -109,15 +109,11 @@ exclude = [
     "**/__pycache__",
     "**/.*",
     "packages/quelware-client",
-    "packages/quelware-client-internal",
 ]
 typeCheckingMode = "basic"
 
 [tool.ruff]
-extend-exclude = [
-    "packages/quelware-client",
-    "packages/quelware-client-internal",
-]
+extend-exclude = ["packages/quelware-client"]
 
 [tool.ruff.lint]
 select = [
