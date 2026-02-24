@@ -9,6 +9,7 @@ DEFAULT_EXECUTION_MODE: Final[ExecutionMode] = "parallel"
 DEFAULT_CLOCK_HEALTH_CHECKS: Final[bool] = False
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
+CAPTURE_DECIMATION_FACTOR: Final[int] = 4
 WORD_LENGTH: Final[int] = 4  # samples
 WORD_DURATION: Final[float] = WORD_LENGTH * SAMPLING_PERIOD  # ns
 BLOCK_LENGTH: Final[int] = WORD_LENGTH * 16  # samples

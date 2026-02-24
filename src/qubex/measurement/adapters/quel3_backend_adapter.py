@@ -142,47 +142,29 @@ class Quel3MeasurementBackendAdapter:
     def build_measurement_result(
         self,
         *,
-        backend_result: object,
+        backend_result: Quel3BackendExecutionResult,
         measurement_config: MeasurementConfig,
         device_config: dict,
         sampling_period_ns: float | None,
-        avg_sample_stride: int | None,
     ) -> MeasurementResult:
         """Build canonical result from QuEL-3 backend result payload."""
-        _ = measurement_config
-        if isinstance(backend_result, MeasurementResult):
-            return backend_result
-        if isinstance(backend_result, Quel3BackendExecutionResult):
-            converted_data: dict[str, list[np.ndarray]] = {}
-            for alias, values in backend_result.data.items():
-                output_target = self._output_target_labels_by_alias.get(alias, alias)
-                converted_data.setdefault(output_target, []).extend(values)
-            return MeasurementResult(
-                mode=backend_result.mode,
-                data=converted_data,
-                device_config=(
-                    backend_result.device_config
-                    if len(backend_result.device_config) > 0
-                    else device_config
-                ),
-                measurement_config=(
-                    backend_result.measurement_config
-                    if len(backend_result.measurement_config) > 0
-                    else measurement_config.to_dict()
-                ),
-                sampling_period_ns=(
-                    backend_result.sampling_period_ns
-                    if backend_result.sampling_period_ns is not None
-                    else sampling_period_ns
-                ),
-                avg_sample_stride=(
-                    backend_result.avg_sample_stride
-                    if backend_result.avg_sample_stride is not None
-                    else avg_sample_stride
-                ),
-            )
-        raise TypeError(
-            "QuEL-3 backend must return `Quel3BackendExecutionResult` or `MeasurementResult`."
+        _ = device_config
+        if not isinstance(backend_result, Quel3BackendExecutionResult):
+            raise TypeError("QuEL-3 backend must return `Quel3BackendExecutionResult`.")
+        converted_data: dict[str, list[np.ndarray]] = {}
+        for alias, values in backend_result.data.items():
+            output_target = self._output_target_labels_by_alias.get(alias, alias)
+            converted_data.setdefault(output_target, []).extend(values)
+        return MeasurementResult(
+            mode=backend_result.mode,
+            data=converted_data,
+            device_config={},
+            measurement_config=measurement_config.to_dict(),
+            sampling_period_ns=(
+                backend_result.sampling_period_ns
+                if backend_result.sampling_period_ns is not None
+                else sampling_period_ns
+            ),
         )
 
     @classmethod

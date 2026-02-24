@@ -27,7 +27,10 @@ from .managers import (
     Quel1ExecutionManager,
     Quel1SkewManager,
 )
-from .quel1_backend_constants import ExecutionMode
+from .quel1_backend_constants import (
+    CAPTURE_DECIMATION_FACTOR,
+    ExecutionMode,
+)
 from .quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
@@ -52,6 +55,8 @@ class Quel1BackendController(BackendController):
     delegates connection, clock, configuration, and execution details to
     backend-local manager components.
     """
+
+    CAPTURE_DECIMATION_FACTOR: int = CAPTURE_DECIMATION_FACTOR
 
     def __init__(
         self,

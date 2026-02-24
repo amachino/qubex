@@ -383,7 +383,6 @@ def test_quel3_adapter_uses_registry_for_result_target_labels() -> None:
         measurement_config=_make_config(),
         device_config={},
         sampling_period_ns=0.4,
-        avg_sample_stride=4,
     )
 
     assert set(result.data.keys()) == {"Q17"}
@@ -464,9 +463,9 @@ def test_quel3_adapter_requires_explicit_alias_mapping_for_execution_payload() -
         adapter.build_execution_request(schedule=schedule, config=_make_config())
 
 
-def test_quel3_adapter_build_measurement_result_returns_canonical_result() -> None:
-    """Given canonical result, when adapter builds result, then it returns the same instance."""
-    expected = MeasurementResult(
+def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> None:
+    """Given canonical result input, when adapter builds result, then it raises TypeError."""
+    unexpected = MeasurementResult(
         mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j], dtype=np.complex128)]},
         device_config={"kind": "quel3"},
@@ -478,15 +477,13 @@ def test_quel3_adapter_build_measurement_result_returns_canonical_result() -> No
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
 
-    result = adapter.build_measurement_result(
-        backend_result=expected,
-        measurement_config=_make_config(),
-        device_config={"kind": "quel3"},
-        sampling_period_ns=0.4,
-        avg_sample_stride=4,
-    )
-
-    assert result is expected
+    with pytest.raises(TypeError, match="Quel3BackendExecutionResult"):
+        adapter.build_measurement_result(
+            backend_result=cast(Any, unexpected),
+            measurement_config=_make_config(),
+            device_config={"kind": "quel3"},
+            sampling_period_ns=0.4,
+        )
 
 
 def test_quel3_adapter_build_measurement_result_converts_backend_result() -> None:
@@ -513,13 +510,13 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
             ]
         ),
     )
+    config = _make_config()
     backend_result = Quel3BackendExecutionResult(
         mode="avg",
         data={alias: [np.array([2.0 + 0.0j], dtype=np.complex128)]},
         device_config={"kind": "quel3"},
-        measurement_config={"mode": "avg"},
+        measurement_config={"mode": "single", "shots": 1},
         sampling_period_ns=0.4,
-        avg_sample_stride=4,
     )
     adapter = Quel3MeasurementBackendAdapter(
         backend_controller=_make_backend_controller(alias_map={target: alias}),
@@ -530,18 +527,16 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
 
     result = adapter.build_measurement_result(
         backend_result=backend_result,
-        measurement_config=_make_config(),
+        measurement_config=config,
         device_config={"unused": True},
         sampling_period_ns=1.0,
-        avg_sample_stride=8,
     )
 
     assert isinstance(result, MeasurementResult)
     assert result.mode == "avg"
-    assert result.device_config == {"kind": "quel3"}
-    assert result.measurement_config == {"mode": "avg"}
+    assert result.device_config == {}
+    assert result.measurement_config == config.to_dict()
     assert result.sampling_period_ns == pytest.approx(0.4)
-    assert result.avg_sample_stride == 4
     assert np.array_equal(
         result.data["Q00"][0],
         np.array([2.0 + 0.0j], dtype=np.complex128),
@@ -558,9 +553,8 @@ def test_quel3_adapter_build_measurement_result_rejects_noncanonical_type() -> N
 
     with pytest.raises(TypeError, match="Quel3BackendExecutionResult"):
         adapter.build_measurement_result(
-            backend_result={"iq_result": {}},
+            backend_result=cast(Any, {"iq_result": {}}),
             measurement_config=_make_config(),
             device_config={},
             sampling_period_ns=0.4,
-            avg_sample_stride=4,
         )

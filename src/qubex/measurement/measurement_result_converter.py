@@ -7,10 +7,10 @@ from typing import Any
 
 import numpy as np
 
+from qubex.backend.quel1 import SAMPLING_PERIOD
+
 from .classifiers.state_classifier import StateClassifier
 from .models.measure_result import (
-    DEFAULT_AVG_SAMPLE_STRIDE,
-    DEFAULT_SAMPLING_PERIOD_NS,
     MeasureData,
     MeasureMode,
     MeasureResult,
@@ -33,20 +33,7 @@ class MeasurementResultConverter:
             return explicit
         if result.sampling_period_ns is not None:
             return float(result.sampling_period_ns)
-        return DEFAULT_SAMPLING_PERIOD_NS
-
-    @staticmethod
-    def _resolve_avg_sample_stride(
-        *,
-        explicit: int | None,
-        result: MeasurementResult,
-    ) -> int:
-        """Resolve AVG-mode stride for legacy result models."""
-        if explicit is not None:
-            return explicit
-        if result.avg_sample_stride is not None:
-            return int(result.avg_sample_stride)
-        return DEFAULT_AVG_SAMPLE_STRIDE
+        return SAMPLING_PERIOD
 
     @staticmethod
     def from_multiple(multiple: MultipleMeasureResult) -> MeasurementResult:
@@ -78,11 +65,6 @@ class MeasurementResultConverter:
                 if isinstance(first_capture, MeasureData)
                 else None
             ),
-            avg_sample_stride=(
-                first_capture.avg_sample_stride
-                if isinstance(first_capture, MeasureData)
-                else None
-            ),
         )
 
     @staticmethod
@@ -92,7 +74,6 @@ class MeasurementResultConverter:
         config: dict[str, Any] | None = None,
         classifiers: Mapping[str, StateClassifier] | None = None,
         sampling_period_ns: float | None = None,
-        avg_sample_stride: int | None = None,
     ) -> MultipleMeasureResult:
         """
         Convert a canonical result to the legacy multi-capture model.
@@ -122,10 +103,6 @@ class MeasurementResultConverter:
                 result=result,
             )
         )
-        resolved_avg_stride = MeasurementResultConverter._resolve_avg_sample_stride(
-            explicit=avg_sample_stride,
-            result=result,
-        )
         legacy_data = {
             target: [
                 MeasureData(
@@ -134,7 +111,6 @@ class MeasurementResultConverter:
                     raw=np.asarray(raw),
                     classifier=classifier_map.get(target),
                     sampling_period_ns=resolved_sampling_period,
-                    avg_sample_stride=resolved_avg_stride,
                 )
                 for raw in captures
             ]
@@ -154,7 +130,6 @@ class MeasurementResultConverter:
         config: dict[str, Any] | None = None,
         classifiers: Mapping[str, StateClassifier] | None = None,
         sampling_period_ns: float | None = None,
-        avg_sample_stride: int | None = None,
     ) -> MeasureResult:
         """
         Convert one capture index to a legacy per-target result.
@@ -188,10 +163,6 @@ class MeasurementResultConverter:
                 result=result,
             )
         )
-        resolved_avg_stride = MeasurementResultConverter._resolve_avg_sample_stride(
-            explicit=avg_sample_stride,
-            result=result,
-        )
         single_data: dict[str, MeasureData] = {}
         for target, captures in result.data.items():
             if not (-len(captures) <= index < len(captures)):
@@ -204,7 +175,6 @@ class MeasurementResultConverter:
                 raw=np.asarray(captures[index]),
                 classifier=classifier_map.get(target),
                 sampling_period_ns=resolved_sampling_period,
-                avg_sample_stride=resolved_avg_stride,
             )
 
         return MeasureResult(

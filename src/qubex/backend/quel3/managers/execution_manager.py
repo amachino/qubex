@@ -288,8 +288,14 @@ class _ResourceIdResolver(Protocol):
 class Quel3ExecutionManager:
     """Handle backend execution entrypoints for QuEL-3 controller."""
 
-    def __init__(self, *, runtime_context: Quel3RuntimeContextReader) -> None:
+    def __init__(
+        self,
+        *,
+        runtime_context: Quel3RuntimeContextReader,
+        capture_decimation_factor: int,
+    ) -> None:
         self._runtime_context = runtime_context
+        self._capture_decimation_factor = capture_decimation_factor
         self._sequencer_builder = Quel3SequencerBuilder()
 
     async def execute(self, *, request: object) -> Quel3BackendExecutionResult:
@@ -416,7 +422,7 @@ class Quel3ExecutionManager:
             shot_samples=shot_samples,
             sampling_period_ns=sampling_period_ns,
             backend_sampling_period=self._runtime_context.sampling_period,
-            avg_sample_stride=self._runtime_context.measurement_result_avg_sample_stride,
+            capture_decimation_factor=self._capture_decimation_factor,
         )
 
     @staticmethod
@@ -457,7 +463,7 @@ class Quel3ExecutionManager:
         shot_samples: dict[str, dict[str, list[np.ndarray]]],
         sampling_period_ns: float | None,
         backend_sampling_period: float,
-        avg_sample_stride: int,
+        capture_decimation_factor: int,
     ) -> Quel3BackendExecutionResult:
         """Build canonical measurement result from per-shot capture samples."""
         measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
@@ -481,6 +487,17 @@ class Quel3ExecutionManager:
         else:
             raise ValueError(f"Unsupported measurement mode: {mode}")
 
+        base_sampling_period = (
+            sampling_period_ns
+            if sampling_period_ns is not None
+            else backend_sampling_period
+        )
+        effective_sampling_period = (
+            base_sampling_period * capture_decimation_factor
+            if result_mode == "avg"
+            else base_sampling_period
+        )
+
         return Quel3BackendExecutionResult(
             mode=result_mode,
             data=dict(measurement_data),
@@ -490,12 +507,7 @@ class Quel3ExecutionManager:
                 "shots": payload.repeats,
                 "interval_ns": payload.interval_ns,
             },
-            sampling_period_ns=(
-                sampling_period_ns
-                if sampling_period_ns is not None
-                else backend_sampling_period
-            ),
-            avg_sample_stride=avg_sample_stride,
+            sampling_period_ns=effective_sampling_period,
         )
 
     @staticmethod

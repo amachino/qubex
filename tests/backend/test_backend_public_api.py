@@ -6,12 +6,14 @@ from typing import get_args
 
 import qubex.backend as backend
 from qubex.backend.quel1 import (
+    CAPTURE_DECIMATION_FACTOR as QUEL1_DECIMATION_FACTOR,
     SAMPLING_PERIOD,
     ExecutionMode,
     Quel1BackendController,
     Quel1BackendExecutionResult,
     Quel1ExecutionPayload,
 )
+from qubex.backend.quel3 import Quel3BackendController
 
 
 def test_backend_module_hides_quel1_specific_symbols() -> None:
@@ -19,6 +21,7 @@ def test_backend_module_hides_quel1_specific_symbols() -> None:
     assert not hasattr(backend, "Quel1BackendController")
     assert not hasattr(backend, "Quel1ExecutionPayload")
     assert not hasattr(backend, "Quel1BackendExecutionResult")
+    assert not hasattr(backend, "CAPTURE_DECIMATION_FACTOR")
     assert not hasattr(backend, "SAMPLING_PERIOD")
 
 
@@ -29,3 +32,16 @@ def test_backend_quel1_module_exposes_quel1_specific_symbols() -> None:
     assert Quel1BackendExecutionResult.__name__ == "Quel1BackendExecutionResult"
     assert isinstance(SAMPLING_PERIOD, float)
     assert set(get_args(ExecutionMode)) == {"serial", "parallel"}
+
+
+def test_backend_modules_expose_decimation_factor_constants() -> None:
+    """Given backend controllers, when reading decimation constants, then values are positive integers."""
+    assert QUEL1_DECIMATION_FACTOR > 0
+    assert Quel3BackendController.CAPTURE_DECIMATION_FACTOR > 0
+
+
+def test_backend_quel3_module_hides_module_level_decimation_constant() -> None:
+    """Given backend.quel3 module, module-level decimation constant is not re-exported."""
+    import qubex.backend.quel3 as quel3
+
+    assert not hasattr(quel3, "CAPTURE_DECIMATION_FACTOR")

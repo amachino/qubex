@@ -35,11 +35,6 @@ class Quel3RuntimeContextReader(Protocol):
         """Return backend sampling period in ns."""
         ...
 
-    @property
-    def measurement_result_avg_sample_stride(self) -> int:
-        """Return AVG-mode sample-stride multiplier for result conversion."""
-        ...
-
 
 class Quel3RuntimeContext:
     """Mutable runtime state shared by QuEL-3 backend managers."""
@@ -51,16 +46,12 @@ class Quel3RuntimeContext:
         quelware_endpoint: str,
         quelware_port: int,
         sampling_period: float,
-        measurement_result_avg_sample_stride: int,
     ) -> None:
         self._is_connected = False
         self._alias_map: dict[str, str] = dict(alias_map)
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
         self._sampling_period = sampling_period
-        self._measurement_result_avg_sample_stride = (
-            measurement_result_avg_sample_stride
-        )
 
     @property
     def is_connected(self) -> bool:
@@ -86,11 +77,6 @@ class Quel3RuntimeContext:
     def sampling_period(self) -> float:
         """Return backend sampling period in ns."""
         return self._sampling_period
-
-    @property
-    def measurement_result_avg_sample_stride(self) -> int:
-        """Return AVG-mode sample-stride multiplier for result conversion."""
-        return self._measurement_result_avg_sample_stride
 
     def set_connected(self, connected: bool) -> None:
         """Update connected state."""

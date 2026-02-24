@@ -19,4 +19,3 @@ class Quel3BackendExecutionResult:
     device_config: dict[str, Any] = field(default_factory=dict)
     measurement_config: dict[str, Any] = field(default_factory=dict)
     sampling_period_ns: float | None = None
-    avg_sample_stride: int | None = None

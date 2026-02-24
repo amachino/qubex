@@ -68,7 +68,10 @@ class MeasurementScheduleRunner:
                     "Unsupported backend controller for measurement adapter selection."
                 )
 
-        self._measurement_backend_adapter = measurement_backend_adapter
+        self._measurement_backend_adapter: MeasurementBackendAdapter = cast(
+            MeasurementBackendAdapter,
+            measurement_backend_adapter,
+        )
         self._backend_controller = backend_controller
         self._constraint_profile = constraint_profile
         self._execution_mode = execution_mode
@@ -90,31 +93,27 @@ class MeasurementScheduleRunner:
         else:
             device_config = {}
 
-        backend_stride = getattr(
+        capture_decimation_factor = getattr(
             self._backend_controller,
-            "MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE",
+            "CAPTURE_DECIMATION_FACTOR",
             None,
         )
-        if isinstance(backend_stride, int) and backend_stride > 0:
-            avg_sample_stride = backend_stride
-        else:
-            word_length_samples = (
-                self._constraint_profile.word_length_samples
-                if isinstance(self._constraint_profile, MeasurementConstraintProfile)
-                else None
+        if not (
+            isinstance(capture_decimation_factor, int) and capture_decimation_factor > 0
+        ):
+            raise ValueError(
+                "backend_controller.CAPTURE_DECIMATION_FACTOR must be a positive integer."
             )
-            avg_sample_stride = (
-                int(word_length_samples)
-                if isinstance(word_length_samples, int) and word_length_samples > 0
-                else 4
-            )
+
+        sampling_period_ns = self._backend_controller.sampling_period
+        if config.mode == "avg":
+            sampling_period_ns = sampling_period_ns * capture_decimation_factor
 
         return self._measurement_backend_adapter.build_measurement_result(
             backend_result=backend_result,
             measurement_config=config,
             device_config=device_config,
-            sampling_period_ns=self._backend_controller.sampling_period,
-            avg_sample_stride=avg_sample_stride,
+            sampling_period_ns=sampling_period_ns,
         )
 
     async def execute(

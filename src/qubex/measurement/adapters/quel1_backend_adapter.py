@@ -242,7 +242,6 @@ class Quel1MeasurementBackendAdapter:
         measurement_config: MeasurementConfig,
         device_config: dict,
         sampling_period_ns: float | None,
-        avg_sample_stride: int | None,
     ) -> MeasurementResult:
         """Build canonical result from a QuEL-1 backend result payload."""
         if not isinstance(backend_result, Quel1BackendExecutionResult):
@@ -296,7 +295,6 @@ class Quel1MeasurementBackendAdapter:
             device_config=device_config,
             measurement_config=measurement_config.to_dict(),
             sampling_period_ns=sampling_period_ns,
-            avg_sample_stride=avg_sample_stride,
         )
 
     def _create_sampled_sequences(

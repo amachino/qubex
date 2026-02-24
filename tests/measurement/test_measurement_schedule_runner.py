@@ -92,20 +92,19 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
             sampling_period_ns: float,
-            avg_sample_stride: int,
         ) -> MeasurementResult:
             called["result_kwargs"] = {
                 "backend_result": backend_result,
                 "measurement_config": measurement_config,
                 "device_config": device_config,
                 "sampling_period_ns": sampling_period_ns,
-                "avg_sample_stride": avg_sample_stride,
             }
             return expected
 
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute(
             self, *, request: BackendExecutionRequest
@@ -130,8 +129,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
     assert result_kwargs["backend_result"] is backend_result
     assert result_kwargs["measurement_config"] is config
     assert result_kwargs["device_config"] == {"shots": 2}
-    assert result_kwargs["sampling_period_ns"] == 2.0
-    assert result_kwargs["avg_sample_stride"] == 4
+    assert result_kwargs["sampling_period_ns"] == 8.0
     assert result is expected
 
 
@@ -163,18 +161,17 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
             sampling_period_ns: float,
-            avg_sample_stride: int,
         ) -> MeasurementResult:
             _ = backend_result
             _ = measurement_config
             _ = device_config
             _ = sampling_period_ns
-            _ = avg_sample_stride
             return expected
 
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute(
             self,
@@ -254,19 +251,18 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
             sampling_period_ns: float,
-            avg_sample_stride: int,
         ) -> MeasurementResult:
             called["result_kwargs"] = {
                 "backend_result": backend_result,
                 "measurement_config": measurement_config,
                 "device_config": device_config,
                 "sampling_period_ns": sampling_period_ns,
-                "avg_sample_stride": avg_sample_stride,
             }
             return expected
 
     class _BackendController:
         sampling_period: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute(
             self, *, request: BackendExecutionRequest
@@ -285,6 +281,64 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
 
     result_kwargs = cast(dict[str, object], called["result_kwargs"])
     assert result_kwargs["device_config"] == {}
+    assert result is expected
+
+
+def test_execute_prefers_backend_capture_decimation_hint() -> None:
+    """Given backend capture decimation, when execute runs, then adapter receives effective sampling metadata."""
+    called: dict[str, object] = {}
+    request = BackendExecutionRequest(payload=object())
+    backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
+    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            _ = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            _ = schedule
+            _ = config
+            return request
+
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period_ns: float,
+        ) -> MeasurementResult:
+            _ = backend_result
+            _ = measurement_config
+            _ = device_config
+            called["sampling_period_ns"] = sampling_period_ns
+            return expected
+
+    class _BackendController:
+        sampling_period: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 8
+
+        async def execute(
+            self, *, request: BackendExecutionRequest
+        ) -> Quel1BackendExecutionResult:
+            _ = request
+            return backend_result
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+
+    result = asyncio.run(
+        runner.execute(schedule=_make_schedule(), config=_make_config())
+    )
+
+    assert called["sampling_period_ns"] == 16.0
     assert result is expected
 
 
@@ -367,18 +421,17 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
             sampling_period_ns: float,
-            avg_sample_stride: int,
         ) -> MeasurementResult:
             called["builder_backend_result"] = backend_result
             called["builder_measurement_config"] = measurement_config
             called["builder_device_config"] = device_config
             called["builder_sampling_period_ns"] = sampling_period_ns
-            called["builder_avg_sample_stride"] = avg_sample_stride
             return expected
 
     class _BackendController:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         sampling_period: ClassVar[float] = 0.4
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute(
             self, *, request: BackendExecutionRequest
@@ -402,8 +455,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
     assert called["builder_backend_result"] is backend_result
     assert called["builder_measurement_config"] is config
     assert called["builder_device_config"] == {"kind": "quel3"}
-    assert called["builder_sampling_period_ns"] == 0.4
-    assert called["builder_avg_sample_stride"] == 4
+    assert called["builder_sampling_period_ns"] == 1.6
     assert result is expected
 
 

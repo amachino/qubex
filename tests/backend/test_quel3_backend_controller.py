@@ -142,7 +142,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
         backend_sampling_period=0.4,
-        avg_sample_stride=4,
+        capture_decimation_factor=4,
     )
 
     assert isinstance(result, Quel3BackendExecutionResult)
@@ -152,7 +152,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         result.data["alias-rq00"][0],
         np.array([2.0 + 2.0j, 4.0 + 4.0j], dtype=np.complex128),
     )
-    assert result.sampling_period_ns == 0.4
+    assert result.sampling_period_ns == 1.6
 
 
 def test_build_measurement_result_keeps_backend_alias_labels() -> None:
@@ -176,7 +176,7 @@ def test_build_measurement_result_keeps_backend_alias_labels() -> None:
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
         backend_sampling_period=0.4,
-        avg_sample_stride=4,
+        capture_decimation_factor=4,
     )
 
     assert isinstance(result, Quel3BackendExecutionResult)

@@ -23,10 +23,6 @@ from qubex.measurement.classifiers import StateClassifier
 
 from .measurement_record import MeasurementRecord
 
-DEFAULT_SAMPLING_PERIOD_NS = SAMPLING_PERIOD
-# AVG mode uses a 4x stride by default due to 4-way multiplexed readout demodulation.
-DEFAULT_AVG_SAMPLE_STRIDE = 4
-
 
 class MeasureMode(Enum):
     """Measurement mode for result processing."""
@@ -53,15 +49,12 @@ class MeasureData:
     mode: MeasureMode
     raw: NDArray
     classifier: StateClassifier | None = None
-    sampling_period_ns: float = DEFAULT_SAMPLING_PERIOD_NS
-    avg_sample_stride: int = DEFAULT_AVG_SAMPLE_STRIDE
+    sampling_period_ns: float = SAMPLING_PERIOD
 
     def __post_init__(self) -> None:
         """Validate sampling metadata values."""
         if self.sampling_period_ns <= 0:
             raise ValueError("sampling_period_ns must be positive.")
-        if self.avg_sample_stride <= 0:
-            raise ValueError("avg_sample_stride must be positive.")
 
     @cached_property
     def n_states(self) -> int:
@@ -102,14 +95,9 @@ class MeasureData:
     @cached_property
     def times(self) -> NDArray[np.float64]:
         """Return capture times for the measurement mode."""
-        if self.mode == MeasureMode.SINGLE:
+        if self.mode in (MeasureMode.SINGLE, MeasureMode.AVG):
             return np.arange(self.length) * self.sampling_period_ns
-        elif self.mode == MeasureMode.AVG:
-            return np.arange(self.length) * (
-                self.sampling_period_ns * self.avg_sample_stride
-            )
-        else:
-            raise ValueError(f"Invalid mode: {self.mode}")
+        raise ValueError(f"Invalid mode: {self.mode}")
 
     @cached_property
     def counts(self) -> dict[str, int]:
@@ -274,11 +262,10 @@ class MeasureData:
             return None
         elif self.mode == MeasureMode.AVG:
             plot_title = title or f"Readout waveform : {self.target}"
-            sampling_period = self.sampling_period_ns * self.avg_sample_stride
             if return_figure:
                 fig = viz.make_waveform_figure(
                     data=self.raw,
-                    sampling_period=sampling_period,
+                    sampling_period=self.sampling_period_ns,
                     title=plot_title,
                     xlabel="Capture time (ns)",
                     ylabel="Signal (arb. units)",
@@ -291,7 +278,7 @@ class MeasureData:
                 return fig
             viz.plot_waveform(
                 data=self.raw,
-                sampling_period=sampling_period,
+                sampling_period=self.sampling_period_ns,
                 title=plot_title,
                 xlabel="Capture time (ns)",
                 ylabel="Signal (arb. units)",

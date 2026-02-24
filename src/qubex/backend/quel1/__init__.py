@@ -4,6 +4,7 @@ from .compat.sequencer import Quel1Sequencer
 from .quel1_backend_constants import (
     BLOCK_DURATION,
     BLOCK_LENGTH,
+    CAPTURE_DECIMATION_FACTOR,
     DEFAULT_CLOCK_HEALTH_CHECKS,
     DEFAULT_EXECUTION_MODE,
     EXTRA_CAPTURE_DURATION,
@@ -24,6 +25,7 @@ from .quel1_execution_payload import Quel1ExecutionPayload
 __all__ = [
     "BLOCK_DURATION",
     "BLOCK_LENGTH",
+    "CAPTURE_DECIMATION_FACTOR",
     "DEFAULT_CLOCK_HEALTH_CHECKS",
     "DEFAULT_EXECUTION_MODE",
     "EXTRA_CAPTURE_DURATION",

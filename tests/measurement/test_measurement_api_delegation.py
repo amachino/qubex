@@ -465,14 +465,12 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
             sampling_period_ns: float,
-            avg_sample_stride: int,
         ) -> MeasurementResult:
             called["result_kwargs"] = {
                 "backend_result": backend_result,
                 "measurement_config": measurement_config,
                 "device_config": device_config,
                 "sampling_period_ns": sampling_period_ns,
-                "avg_sample_stride": avg_sample_stride,
             }
             return MeasurementResult(
                 mode="avg",
@@ -489,6 +487,7 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
     class _Quel3Controller:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         sampling_period: ClassVar[float] = 0.4
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute(
             self,

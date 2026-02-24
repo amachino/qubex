@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from qubex.backend import BackendExecutionRequest
 from qubex.measurement.models.measurement_config import MeasurementConfig
@@ -32,11 +32,10 @@ class MeasurementBackendAdapter(Protocol):
     def build_measurement_result(
         self,
         *,
-        backend_result: object,
+        backend_result: Any,
         measurement_config: MeasurementConfig,
         device_config: dict,
         sampling_period_ns: float | None,
-        avg_sample_stride: int | None,
     ) -> MeasurementResult:
         """Build canonical result from a backend-specific result payload."""
         ...

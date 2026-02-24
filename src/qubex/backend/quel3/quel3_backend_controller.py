@@ -20,8 +20,6 @@ from .managers.connection_manager import Quel3ConnectionManager
 from .managers.execution_manager import Quel3ExecutionManager
 from .quel3_runtime_context import Quel3RuntimeContext
 
-QUEL3_SAMPLING_PERIOD_NS = 0.4
-
 
 class Quel3BackendController(BackendController):
     """
@@ -33,7 +31,8 @@ class Quel3BackendController(BackendController):
     contract.
     """
 
-    MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = 4
+    SAMPLING_PERIOD_NS: float = 0.4
+    CAPTURE_DECIMATION_FACTOR: int = 4
 
     def __init__(
         self,
@@ -65,7 +64,7 @@ class Quel3BackendController(BackendController):
         sampling_period = (
             sampling_period_ns
             if sampling_period_ns is not None
-            else QUEL3_SAMPLING_PERIOD_NS
+            else self.SAMPLING_PERIOD_NS
         )
 
         self._runtime_context = Quel3RuntimeContext(
@@ -75,13 +74,13 @@ class Quel3BackendController(BackendController):
             ),
             quelware_port=quelware_port if quelware_port is not None else 50051,
             sampling_period=sampling_period,
-            measurement_result_avg_sample_stride=self.MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE,
         )
         self._connection_manager = Quel3ConnectionManager(
             runtime_context=self._runtime_context
         )
         self._execution_manager = Quel3ExecutionManager(
-            runtime_context=self._runtime_context
+            runtime_context=self._runtime_context,
+            capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
         )
 
     @property

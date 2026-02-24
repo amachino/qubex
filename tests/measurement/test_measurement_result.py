@@ -64,13 +64,12 @@ def test_measure_data_times_use_runtime_sampling_period_in_single_mode() -> None
 
 
 def test_measure_data_times_use_runtime_sampling_period_in_avg_mode() -> None:
-    """Given avg-mode data with custom dt and stride, when reading times, then dt*stride is used."""
+    """Given avg-mode data with custom dt, when reading times, then dt is used directly."""
     data = MeasureData(
         target="Q00",
         mode=MeasureMode.AVG,
         raw=np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]),
-        sampling_period_ns=0.4,
-        avg_sample_stride=2,
+        sampling_period_ns=0.8,
     )
 
     assert np.array_equal(data.times, np.array([0.0, 0.8, 1.6]))
