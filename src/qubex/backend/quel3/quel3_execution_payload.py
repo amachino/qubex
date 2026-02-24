@@ -50,8 +50,6 @@ class Quel3ExecutionPayload:
 
     waveform_library: dict[str, Quel3Waveform]
     fixed_timelines: dict[str, Quel3FixedTimeline]
-    instrument_aliases: dict[str, str]
-    output_target_labels: dict[str, str]
     interval_ns: float
     repeats: int
     mode: str

@@ -46,9 +46,7 @@ def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPaylo
                 sampling_period_ns=0.4,
             )
         },
-        fixed_timelines={"RQ00": timeline},
-        instrument_aliases={"RQ00": "alias-rq00"},
-        output_target_labels={"RQ00": "Q00"},
+        fixed_timelines={"alias-rq00": timeline},
         interval_ns=100.0,
         repeats=repeats,
         mode=mode,
@@ -151,7 +149,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
     """Given avg mode shots, result samples are averaged."""
     payload = _make_payload(mode="avg", repeats=2)
     shot_samples = {
-        "RQ00": {
+        "alias-rq00": {
             "capture_0": [
                 np.array([1.0 + 1.0j, 3.0 + 3.0j], dtype=np.complex128),
                 np.array([3.0 + 3.0j, 5.0 + 5.0j], dtype=np.complex128),
@@ -169,26 +167,24 @@ def test_build_measurement_result_averages_shot_samples() -> None:
 
     assert isinstance(result, Quel3BackendResult)
     assert result.mode == "avg"
-    assert "Q00" in result.data
+    assert "alias-rq00" in result.data
     assert np.array_equal(
-        result.data["Q00"][0],
+        result.data["alias-rq00"][0],
         np.array([2.0 + 2.0j, 4.0 + 4.0j], dtype=np.complex128),
     )
     assert result.sampling_period_ns == 0.4
 
 
-def test_build_measurement_result_uses_output_target_labels() -> None:
-    """Given output target mapping, measurement result uses mapped labels."""
+def test_build_measurement_result_keeps_backend_alias_labels() -> None:
+    """Given backend flow result, measurement labels remain instrument aliases."""
     payload = _make_payload(mode="single", repeats=1)
-    timeline = payload.fixed_timelines["RQ00"]
+    timeline = payload.fixed_timelines["alias-rq00"]
     payload = replace(
         payload,
-        fixed_timelines={"raw-target": timeline},
-        instrument_aliases={"raw-target": "alias-rq00"},
-        output_target_labels={"raw-target": "Q17"},
+        fixed_timelines={"alias-raw": timeline},
     )
     shot_samples = {
-        "raw-target": {
+        "alias-raw": {
             "capture_0": [
                 np.array([7.0 + 0.0j], dtype=np.complex128),
             ]
@@ -204,8 +200,7 @@ def test_build_measurement_result_uses_output_target_labels() -> None:
     )
 
     assert isinstance(result, Quel3BackendResult)
-    assert "Q17" in result.data
-    assert "raw-target" not in result.data
+    assert "alias-raw" in result.data
 
 
 def test_extract_capture_samples_from_waveform_result_container() -> None:
@@ -263,16 +258,15 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
 
 
 def test_execute_rejects_multiple_instrument_aliases() -> None:
-    """Given multiple aliases, execute raises NotImplementedError."""
+    """Given multiple instrument timelines, execute raises NotImplementedError."""
     controller = Quel3BackendController()
     payload = _make_payload()
     payload = replace(
         payload,
         fixed_timelines={
-            "RQ00": payload.fixed_timelines["RQ00"],
-            "RQ01": payload.fixed_timelines["RQ00"],
+            "alias-0": payload.fixed_timelines["alias-rq00"],
+            "alias-1": payload.fixed_timelines["alias-rq00"],
         },
-        instrument_aliases={"RQ00": "alias-0", "RQ01": "alias-1"},
     )
 
     with pytest.raises(NotImplementedError, match="single instrument alias"):

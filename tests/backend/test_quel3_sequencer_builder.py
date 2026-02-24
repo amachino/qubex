@@ -102,8 +102,6 @@ def _make_payload(
     return Quel3ExecutionPayload(
         waveform_library=waveform_library,
         fixed_timelines=fixed_timelines,
-        instrument_aliases={target: f"alias-{target}" for target in fixed_timelines},
-        output_target_labels={target: target for target in fixed_timelines},
         interval_ns=100.0,
         repeats=16,
         mode="avg",
@@ -135,7 +133,7 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
                 sampling_period_ns=0.4,
             )
         },
-        fixed_timelines={"RQ00": timeline},
+        fixed_timelines={"alias-RQ00": timeline},
     )
 
     builder = Quel3SequencerBuilder()
@@ -161,7 +159,7 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
     assert sequencer.capture_windows == [
         _CaptureWindow(
             instrument_alias="alias-RQ00",
-            window_name="RQ00:0",
+            window_name="capture_0",
             start_offset_ns=20.0,
             length_ns=8.0,
         )
@@ -196,7 +194,7 @@ def test_builder_reuses_payload_waveform_across_targets() -> None:
                 sampling_period_ns=0.4,
             )
         },
-        fixed_timelines={"RQ00": timeline_a, "RQ01": timeline_b},
+        fixed_timelines={"alias-RQ00": timeline_a, "alias-RQ01": timeline_b},
     )
 
     builder = Quel3SequencerBuilder()
@@ -223,7 +221,7 @@ def test_builder_rejects_event_with_unknown_waveform_name() -> None:
             )
         },
         fixed_timelines={
-            "RQ00": Quel3FixedTimeline(
+            "alias-RQ00": Quel3FixedTimeline(
                 events=(
                     Quel3WaveformEvent(
                         waveform_name="wf_unknown",
@@ -243,10 +241,3 @@ def test_builder_rejects_event_with_unknown_waveform_name() -> None:
             sequencer_factory=_RecordingSequencer,
             default_sampling_period_ns=0.4,
         )
-
-
-def test_capture_window_key_uses_target_and_capture_index() -> None:
-    """Given target and index, key format is target plus capture index."""
-    key = Quel3SequencerBuilder.capture_window_key("RQ00", 3)
-
-    assert key == "RQ00:3"

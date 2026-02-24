@@ -40,6 +40,7 @@ class Quel3MeasurementBackendAdapter:
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
+        self._output_target_labels_by_alias: dict[str, str] = {}
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel3(
                 sampling_period_ns=backend_controller.sampling_period
@@ -80,12 +81,21 @@ class Quel3MeasurementBackendAdapter:
         waveform_name_by_shape_key: dict[str, str] = {}
         waveform_index = 0
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
-        instrument_aliases: dict[str, str] = {}
-        output_target_labels: dict[str, str] = {}
+        output_target_labels_by_alias: dict[str, str] = {}
         target_registry = self._experiment_system.target_registry
         alias_map = self._backend_controller.instrument_alias_map
 
         for target in pulse_schedule.labels:
+            alias = str(alias_map.get(target, "")).strip()
+            if len(alias) == 0:
+                raise ValueError(
+                    f"Instrument alias is not configured for target `{target}`."
+                )
+            if alias in fixed_timelines:
+                raise ValueError(
+                    f"Multiple targets mapped to one instrument alias are not supported: `{alias}`."
+                )
+
             sequence = pulse_schedule.get_sequence(target, copy=False)
             events, waveform_index = self._create_waveform_events(
                 sequence=sequence,
@@ -98,37 +108,31 @@ class Quel3MeasurementBackendAdapter:
             )
             capture_windows = tuple(
                 Quel3CaptureWindow(
-                    name=f"capture_{index}",
+                    name=f"{alias}:{index}",
                     start_offset_ns=capture.start_time,
                     length_ns=capture.duration,
                 )
                 for index, capture in enumerate(captures)
             )
-            fixed_timelines[target] = Quel3FixedTimeline(
+            fixed_timelines[alias] = Quel3FixedTimeline(
                 events=events,
                 capture_windows=capture_windows,
                 length_ns=pulse_schedule.duration,
             )
-            alias = str(alias_map.get(target, "")).strip()
-            if len(alias) == 0:
-                raise ValueError(
-                    f"Instrument alias is not configured for target `{target}`."
-                )
-            instrument_aliases[target] = alias
             try:
-                output_target_labels[target] = str(
+                output_target_labels_by_alias[alias] = str(
                     self._experiment_system.resolve_qubit_label(target)
                 )
             except ValueError:
-                output_target_labels[target] = str(
+                output_target_labels_by_alias[alias] = str(
                     target_registry.measurement_output_label(target)
                 )
+
+        self._output_target_labels_by_alias = output_target_labels_by_alias
         interval_ns = math.ceil(pulse_schedule.duration + config.interval)
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,
             fixed_timelines=fixed_timelines,
-            instrument_aliases=instrument_aliases,
-            output_target_labels=output_target_labels,
             interval_ns=interval_ns,
             repeats=config.shots,
             mode=config.mode,
@@ -146,19 +150,36 @@ class Quel3MeasurementBackendAdapter:
     ) -> MeasurementResult:
         """Build canonical result from QuEL-3 backend result payload."""
         _ = measurement_config
-        _ = device_config
-        _ = sampling_period_ns
-        _ = avg_sample_stride
         if isinstance(backend_result, MeasurementResult):
             return backend_result
         if isinstance(backend_result, Quel3BackendResult):
+            converted_data: dict[str, list[np.ndarray]] = {}
+            for alias, values in backend_result.data.items():
+                output_target = self._output_target_labels_by_alias.get(alias, alias)
+                converted_data.setdefault(output_target, []).extend(values)
             return MeasurementResult(
                 mode=backend_result.mode,
-                data=backend_result.data,
-                device_config=backend_result.device_config,
-                measurement_config=backend_result.measurement_config,
-                sampling_period_ns=backend_result.sampling_period_ns,
-                avg_sample_stride=backend_result.avg_sample_stride,
+                data=converted_data,
+                device_config=(
+                    backend_result.device_config
+                    if len(backend_result.device_config) > 0
+                    else device_config
+                ),
+                measurement_config=(
+                    backend_result.measurement_config
+                    if len(backend_result.measurement_config) > 0
+                    else measurement_config.to_dict()
+                ),
+                sampling_period_ns=(
+                    backend_result.sampling_period_ns
+                    if backend_result.sampling_period_ns is not None
+                    else sampling_period_ns
+                ),
+                avg_sample_stride=(
+                    backend_result.avg_sample_stride
+                    if backend_result.avg_sample_stride is not None
+                    else avg_sample_stride
+                ),
             )
         raise TypeError(
             "QuEL-3 backend must return `Quel3BackendResult` or `MeasurementResult`."

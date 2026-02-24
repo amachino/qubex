@@ -11,13 +11,16 @@ from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
-from qubex.measurement.measurement_schedule_builder import (
-    BLOCK_DURATION,
-    EXTRA_SUM_SECTION_LENGTH,
-    WORD_DURATION,
-)
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+
+_STRICT_PROFILE = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+BLOCK_DURATION = _STRICT_PROFILE.block_duration_ns
+WORD_DURATION = _STRICT_PROFILE.word_duration_ns
+EXTRA_SUM_SECTION_LENGTH = _STRICT_PROFILE.extra_sum_section_length_samples
+
+assert BLOCK_DURATION is not None
+assert WORD_DURATION is not None
 
 
 @dataclass

@@ -19,7 +19,6 @@ from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.quel3_backend_result import Quel3BackendResult
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
-from qubex.backend.target_registry import TargetRegistry
 
 ExecutionMode = Literal["serial", "parallel"]
 _T = TypeVar("_T")
@@ -354,9 +353,9 @@ class Quel3ExecutionManager:
         payload: Quel3ExecutionPayload,
     ) -> Quel3BackendResult:
         """Execute one fixed-timeline measurement flow via quelware."""
-        aliases = sorted(set(payload.instrument_aliases.values()))
+        aliases = sorted(payload.fixed_timelines.keys())
         if len(aliases) == 0:
-            raise ValueError("Quel3ExecutionPayload must include instrument aliases.")
+            raise ValueError("Quel3ExecutionPayload must include fixed timelines.")
         if len(aliases) > 1:
             raise NotImplementedError(
                 "Quel3 execution currently supports a single instrument alias. "
@@ -440,23 +439,17 @@ class Quel3ExecutionManager:
                         alias: await driver.fetch_result()
                         for alias, driver in alias_to_driver.items()
                     }
-                    for target, timeline in payload.fixed_timelines.items():
-                        alias = payload.instrument_aliases[target]
+                    for alias, timeline in payload.fixed_timelines.items():
                         result = alias_results[alias]
-                        for capture_index, window in enumerate(
-                            timeline.capture_windows
-                        ):
-                            window_key = self._sequencer_builder.capture_window_key(
-                                target,
-                                capture_index,
-                            )
+                        for window in timeline.capture_windows:
+                            window_key = window.name
                             capture_samples = self._extract_capture_samples(
                                 result,
                                 window_key,
                             )
                             if capture_samples is None:
                                 continue
-                            shot_samples[target][window.name].append(capture_samples)
+                            shot_samples[alias][window.name].append(capture_samples)
 
         return self._build_measurement_result(
             payload=payload,
@@ -470,10 +463,10 @@ class Quel3ExecutionManager:
     def _initialize_shot_samples(
         payload: Quel3ExecutionPayload,
     ) -> dict[str, dict[str, list[np.ndarray]]]:
-        """Initialize nested shot-sample container by target/capture window."""
+        """Initialize nested shot-sample container by alias/capture window."""
         return {
-            target: {window.name: [] for window in timeline.capture_windows}
-            for target, timeline in payload.fixed_timelines.items()
+            alias: {window.name: [] for window in timeline.capture_windows}
+            for alias, timeline in payload.fixed_timelines.items()
         }
 
     @staticmethod
@@ -508,24 +501,19 @@ class Quel3ExecutionManager:
     ) -> Quel3BackendResult:
         """Build canonical measurement result from per-shot capture samples."""
         measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
-        output_target_labels = payload.output_target_labels
-        for target, timeline in payload.fixed_timelines.items():
-            output_target = output_target_labels.get(
-                target,
-                Quel3ExecutionManager._measurement_target_label(target),
-            )
+        for alias, timeline in payload.fixed_timelines.items():
             for window in timeline.capture_windows:
-                samples = shot_samples.get(target, {}).get(window.name, [])
+                samples = shot_samples.get(alias, {}).get(window.name, [])
                 if len(samples) == 0:
-                    measurement_data[output_target].append(
+                    measurement_data[alias].append(
                         np.array([], dtype=np.complex128)
                     )
                     continue
                 if payload.mode == "avg":
                     values = np.stack(samples, axis=0)
-                    measurement_data[output_target].append(np.mean(values, axis=0))
+                    measurement_data[alias].append(np.mean(values, axis=0))
                 else:
-                    measurement_data[output_target].append(samples[0])
+                    measurement_data[alias].append(samples[0])
 
         mode = payload.mode
         if mode == "single":
@@ -551,14 +539,6 @@ class Quel3ExecutionManager:
             ),
             avg_sample_stride=avg_sample_stride,
         )
-
-    @staticmethod
-    def _measurement_target_label(target: str) -> str:
-        """Return canonical measurement target label used by legacy APIs."""
-        try:
-            return TargetRegistry().resolve_qubit_label(target, allow_legacy=True)
-        except Exception:
-            return target
 
     @staticmethod
     def _load_quelware_api() -> tuple[
