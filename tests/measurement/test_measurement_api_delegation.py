@@ -15,7 +15,6 @@ from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel1 import Quel1BackendResult
 from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
-from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementSchedule,
@@ -383,16 +382,9 @@ def test_run_measurement_delegates_to_executor(
     )
 
     monkeypatch.setattr(
-        MeasurementScheduleRunner,
-        "create_default",
-        classmethod(
-            lambda cls,
-            *,
-            backend_controller,
-            experiment_system,
-            execution_mode="serial",
-            clock_health_checks=False: _Executor()
-        ),
+        MeasurementExecutionService,
+        "measurement_schedule_runner",
+        property(lambda self: _Executor()),
     )
     result = asyncio.run(measurement.run_measurement(schedule=schedule, config=config))
 

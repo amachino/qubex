@@ -211,6 +211,21 @@ def test_execute_async_entrypoint_is_removed() -> None:
     assert not hasattr(runner, "execute_async")
 
 
+def test_build_execution_request_entrypoint_is_removed() -> None:
+    """Given schedule runner, _build_execution_request helper is not exposed."""
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, object()),
+        backend_controller=cast(Any, object()),
+    )
+
+    assert not hasattr(runner, "_build_execution_request")
+
+
+def test_create_default_entrypoint_is_removed() -> None:
+    """Given schedule runner class, create_default entrypoint is not exposed."""
+    assert not hasattr(MeasurementScheduleRunner, "create_default")
+
+
 def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
     """Given backend without box config capability, when execute runs, then adapter result builder receives an empty config."""
     called: dict[str, object] = {}
@@ -392,10 +407,10 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
     assert result is expected
 
 
-def test_create_default_passes_backend_constraint_profile_to_adapter(
+def test_init_sets_default_adapter_and_constraint_profile_for_quel1(
     monkeypatch,
 ) -> None:
-    """Given backend dt, when creating default runner, then adapter receives strict profile with that period."""
+    """Given quel1 backend, when adapter is omitted, then init creates quel1 adapter with strict profile."""
     called: dict[str, object] = {}
 
     class _Adapter:
@@ -426,7 +441,7 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
     backend_controller = _Quel1Controller()
     experiment_system = object()
 
-    runner = MeasurementScheduleRunner.create_default(
+    runner = MeasurementScheduleRunner(
         backend_controller=cast(Any, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )
@@ -439,10 +454,10 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
     assert profile.enforce_block_alignment is True
 
 
-def test_create_default_ignores_constraint_mode_hint_for_quel1(
+def test_init_ignores_constraint_mode_hint_for_quel1(
     monkeypatch,
 ) -> None:
-    """Given quel1 backend type, when creating default runner, then quel1 constraints are used."""
+    """Given quel1 backend type, when adapter is omitted, then init still applies quel1 constraints."""
     called: dict[str, object] = {}
 
     class _Adapter:
@@ -468,7 +483,7 @@ def test_create_default_ignores_constraint_mode_hint_for_quel1(
     backend_controller = _Quel1Controller()
     experiment_system = object()
 
-    runner = MeasurementScheduleRunner.create_default(
+    runner = MeasurementScheduleRunner(
         backend_controller=cast(Any, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )
@@ -480,21 +495,34 @@ def test_create_default_ignores_constraint_mode_hint_for_quel1(
     assert profile.require_workaround_capture is True
 
 
-def test_create_default_raises_for_unsupported_backend_controller() -> None:
-    """Given unsupported backend controller, when creating default runner, then it raises TypeError."""
+def test_init_raises_for_unsupported_backend_controller_without_adapter() -> None:
+    """Given unsupported backend controller, when adapter is omitted, then init raises TypeError."""
     backend_controller = type("_UnsupportedController", (), {"sampling_period": 0.4})()
 
     with pytest.raises(TypeError, match="Unsupported backend controller"):
-        _ = MeasurementScheduleRunner.create_default(
+        _ = MeasurementScheduleRunner(
             backend_controller=cast(Any, backend_controller),
             experiment_system=cast(Any, object()),
         )
 
 
-def test_create_default_uses_quel3_adapter_when_backend_controller_is_quel3(
+def test_init_requires_experiment_system_when_adapter_is_omitted() -> None:
+    """Given omitted adapter without experiment system, when init runs, then it raises ValueError."""
+
+    class _Quel1Controller:
+        sampling_period: ClassVar[float] = 0.4
+
+    with pytest.raises(ValueError, match="experiment_system"):
+        _ = MeasurementScheduleRunner(
+            backend_controller=cast(Any, _Quel1Controller()),
+            measurement_backend_adapter=None,
+        )
+
+
+def test_init_uses_quel3_adapter_when_backend_controller_is_quel3(
     monkeypatch,
 ) -> None:
-    """Given quel3 backend controller, when creating default runner, then Quel3 adapter is selected."""
+    """Given quel3 backend controller, when adapter is omitted, then init selects quel3 adapter."""
     called: dict[str, object] = {}
 
     class _Quel3Adapter:
@@ -532,7 +560,7 @@ def test_create_default_uses_quel3_adapter_when_backend_controller_is_quel3(
     backend_controller = _Quel3Controller()
     experiment_system = object()
 
-    runner = MeasurementScheduleRunner.create_default(
+    runner = MeasurementScheduleRunner(
         backend_controller=cast(Any, backend_controller),
         experiment_system=cast(Any, experiment_system),
     )

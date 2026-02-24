@@ -196,7 +196,7 @@ class MeasurementExecutionService:
     @property
     def measurement_schedule_runner(self) -> MeasurementScheduleRunner:
         """Return executor implementation used by schedule execution APIs."""
-        return MeasurementScheduleRunner.create_default(
+        return MeasurementScheduleRunner(
             backend_controller=self.backend_controller,
             experiment_system=self.experiment_system,
             execution_mode=self._execution_mode,

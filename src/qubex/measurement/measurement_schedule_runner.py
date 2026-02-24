@@ -7,7 +7,6 @@ from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
-    BackendExecutionRequest,
     ExperimentSystem,
 )
 from qubex.backend.quel1 import (
@@ -33,84 +32,47 @@ class MeasurementScheduleRunner:
     def __init__(
         self,
         *,
-        measurement_backend_adapter: MeasurementBackendAdapter,
+        measurement_backend_adapter: MeasurementBackendAdapter | None = None,
         backend_controller: BackendController,
+        experiment_system: ExperimentSystem | None = None,
         constraint_profile: MeasurementConstraintProfile | None = None,
         execution_mode: ExecutionMode | None = None,
         clock_health_checks: bool | None = None,
     ) -> None:
+        if measurement_backend_adapter is None:
+            if experiment_system is None:
+                raise ValueError(
+                    "experiment_system is required when "
+                    "measurement_backend_adapter is not provided."
+                )
+            if isinstance(backend_controller, Quel3BackendController):
+                constraint_profile = MeasurementConstraintProfile.quel3(
+                    backend_controller.sampling_period
+                )
+                measurement_backend_adapter = Quel3MeasurementBackendAdapter(
+                    backend_controller=backend_controller,
+                    experiment_system=experiment_system,
+                    constraint_profile=constraint_profile,
+                )
+            elif isinstance(backend_controller, Quel1BackendController):
+                constraint_profile = MeasurementConstraintProfile.quel1(
+                    backend_controller.sampling_period
+                )
+                measurement_backend_adapter = Quel1MeasurementBackendAdapter(
+                    backend_controller=backend_controller,
+                    experiment_system=experiment_system,
+                    constraint_profile=constraint_profile,
+                )
+            else:
+                raise TypeError(
+                    "Unsupported backend controller for measurement adapter selection."
+                )
+
         self._measurement_backend_adapter = measurement_backend_adapter
         self._backend_controller = backend_controller
         self._constraint_profile = constraint_profile
         self._execution_mode = execution_mode
         self._clock_health_checks = clock_health_checks
-
-    @classmethod
-    def create_default(
-        cls,
-        *,
-        backend_controller: BackendController,
-        experiment_system: ExperimentSystem,
-        execution_mode: ExecutionMode | None = None,
-        clock_health_checks: bool | None = None,
-    ) -> MeasurementScheduleRunner:
-        """
-        Create the default QuEL-backed schedule executor.
-
-        Parameters
-        ----------
-        backend_controller : BackendController
-            Backend controller bound to connected hardware.
-        experiment_system : ExperimentSystem
-            Experiment-system model used by adapter/result conversion.
-        execution_mode : ExecutionMode | None, optional
-            Backend execution mode.
-        clock_health_checks : bool | None, optional
-            Whether to enable additional clock-health I/O in parallel mode.
-        """
-        if isinstance(backend_controller, Quel3BackendController):
-            constraint_profile = MeasurementConstraintProfile.quel3(
-                backend_controller.sampling_period
-            )
-            measurement_backend_adapter = Quel3MeasurementBackendAdapter(
-                backend_controller=backend_controller,
-                experiment_system=experiment_system,
-                constraint_profile=constraint_profile,
-            )
-        elif isinstance(backend_controller, Quel1BackendController):
-            constraint_profile = MeasurementConstraintProfile.quel1(
-                backend_controller.sampling_period
-            )
-            measurement_backend_adapter = Quel1MeasurementBackendAdapter(
-                backend_controller=backend_controller,
-                experiment_system=experiment_system,
-                constraint_profile=constraint_profile,
-            )
-        else:
-            raise TypeError(
-                "Unsupported backend controller for measurement adapter selection."
-            )
-
-        return cls(
-            measurement_backend_adapter=measurement_backend_adapter,
-            backend_controller=backend_controller,
-            constraint_profile=constraint_profile,
-            execution_mode=execution_mode,
-            clock_health_checks=clock_health_checks,
-        )
-
-    def _build_execution_request(
-        self,
-        *,
-        schedule: MeasurementSchedule,
-        config: MeasurementConfig,
-    ) -> BackendExecutionRequest:
-        """Validate schedule and convert it into a backend execution request."""
-        self._measurement_backend_adapter.validate_schedule(schedule)
-        return self._measurement_backend_adapter.build_execution_request(
-            schedule=schedule,
-            config=config,
-        )
 
     def _build_result(
         self,
@@ -176,7 +138,11 @@ class MeasurementScheduleRunner:
         MeasurementResult
             The measurement result.
         """
-        request = self._build_execution_request(schedule=schedule, config=config)
+        self._measurement_backend_adapter.validate_schedule(schedule)
+        request = self._measurement_backend_adapter.build_execution_request(
+            schedule=schedule,
+            config=config,
+        )
         options: dict[str, object] = {}
         if self._execution_mode is not None:
             options["execution_mode"] = self._execution_mode
