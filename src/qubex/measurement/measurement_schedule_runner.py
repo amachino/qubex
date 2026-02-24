@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Mapping
 from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
+    BackendExecutionRequest,
     ExperimentSystem,
 )
 from qubex.backend.quel1 import (
     ExecutionMode,
+    Quel1BackendController,
 )
 from qubex.backend.quel3 import Quel3BackendController
 
@@ -66,113 +68,49 @@ class MeasurementScheduleRunner:
         clock_health_checks : bool | None, optional
             Whether to enable additional clock-health I/O in parallel mode.
         """
-        backend_kind = cls._resolve_backend_kind(backend_controller)
-        constraint_profile = cls._resolve_constraint_profile(backend_controller)
-        return cls(
-            measurement_backend_adapter=cls._create_backend_adapter(
+        if isinstance(backend_controller, Quel3BackendController):
+            constraint_profile = MeasurementConstraintProfile.quel3(
+                backend_controller.sampling_period
+            )
+            measurement_backend_adapter = Quel3MeasurementBackendAdapter(
                 backend_controller=backend_controller,
                 experiment_system=experiment_system,
                 constraint_profile=constraint_profile,
-                backend_kind=backend_kind,
-            ),
+            )
+        elif isinstance(backend_controller, Quel1BackendController):
+            constraint_profile = MeasurementConstraintProfile.quel1(
+                backend_controller.sampling_period
+            )
+            measurement_backend_adapter = Quel1MeasurementBackendAdapter(
+                backend_controller=backend_controller,
+                experiment_system=experiment_system,
+                constraint_profile=constraint_profile,
+            )
+        else:
+            raise TypeError(
+                "Unsupported backend controller for measurement adapter selection."
+            )
+
+        return cls(
+            measurement_backend_adapter=measurement_backend_adapter,
             backend_controller=backend_controller,
             constraint_profile=constraint_profile,
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,
         )
 
-    @staticmethod
-    def _create_backend_adapter(
+    def _build_execution_request(
+        self,
         *,
-        backend_controller: BackendController,
-        experiment_system: ExperimentSystem,
-        constraint_profile: MeasurementConstraintProfile,
-        backend_kind: str,
-    ) -> MeasurementBackendAdapter:
-        """Create backend adapter with optional backend-specific factory hook."""
-        factory = getattr(
-            backend_controller,
-            "create_measurement_backend_adapter",
-            None,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> BackendExecutionRequest:
+        """Validate schedule and convert it into a backend execution request."""
+        self._measurement_backend_adapter.validate_schedule(schedule)
+        return self._measurement_backend_adapter.build_execution_request(
+            schedule=schedule,
+            config=config,
         )
-        if isinstance(factory, Callable):
-            return factory(
-                experiment_system=experiment_system,
-                constraint_profile=constraint_profile,
-            )
-        if backend_kind == "quel3":
-            return Quel3MeasurementBackendAdapter(
-                backend_controller=cast(Quel3BackendController, backend_controller),
-                experiment_system=experiment_system,
-                constraint_profile=constraint_profile,
-            )
-        return Quel1MeasurementBackendAdapter(
-            backend_controller=cast(Any, backend_controller),
-            experiment_system=experiment_system,
-            constraint_profile=constraint_profile,
-        )
-
-    @staticmethod
-    def _resolve_sampling_period_ns(
-        backend_controller: BackendController,
-    ) -> float:
-        """Resolve sampling period (ns) from backend-controller contract."""
-        return backend_controller.sampling_period
-
-    @classmethod
-    def _resolve_constraint_profile(
-        cls,
-        backend_controller: BackendController,
-    ) -> MeasurementConstraintProfile:
-        """Resolve backend constraint profile from controller capability hints."""
-        profile = getattr(backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None)
-        if isinstance(profile, MeasurementConstraintProfile):
-            return profile
-
-        sampling_period = cls._resolve_sampling_period_ns(backend_controller)
-        mode = getattr(backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "quel1")
-        if mode == "quel3":
-            return MeasurementConstraintProfile.quel3(sampling_period)
-        return MeasurementConstraintProfile.quel1(sampling_period)
-
-    @staticmethod
-    def _resolve_backend_kind(backend_controller: BackendController) -> str:
-        """Resolve backend kind hint used for default adapter selection."""
-        backend_kind = getattr(backend_controller, "MEASUREMENT_BACKEND_KIND", None)
-        if backend_kind in {"quel1", "quel3"}:
-            return backend_kind
-        return "quel1"
-
-    @staticmethod
-    def _resolve_avg_sample_stride(
-        backend_controller: BackendController,
-        constraint_profile: MeasurementConstraintProfile | None,
-    ) -> int:
-        """Resolve AVG-mode time-stride multiplier from backend capability hints."""
-        backend_stride = getattr(
-            backend_controller,
-            "MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE",
-            None,
-        )
-        if isinstance(backend_stride, int) and backend_stride > 0:
-            return backend_stride
-        if (
-            isinstance(constraint_profile, MeasurementConstraintProfile)
-            and constraint_profile.word_length_samples is not None
-            and constraint_profile.word_length_samples > 0
-        ):
-            return int(constraint_profile.word_length_samples)
-        return 4
-
-    @staticmethod
-    def _resolve_device_config(
-        backend_controller: BackendController,
-    ) -> dict[str, Any]:
-        """Resolve backend device config if supported by the controller."""
-        box_config = getattr(backend_controller, "box_config", None)
-        if isinstance(box_config, dict):
-            return box_config
-        return {}
 
     def _build_result(
         self,
@@ -184,17 +122,36 @@ class MeasurementScheduleRunner:
         if isinstance(backend_result, MeasurementResult):
             return backend_result
 
-        device_config = self._resolve_device_config(self._backend_controller)
-        sampling_period_ns = self._resolve_sampling_period_ns(self._backend_controller)
-        avg_sample_stride = self._resolve_avg_sample_stride(
+        box_config = getattr(self._backend_controller, "box_config", None)
+        if isinstance(box_config, Mapping):
+            device_config: dict[str, Any] = dict(box_config)
+        else:
+            device_config = {}
+
+        backend_stride = getattr(
             self._backend_controller,
-            self._constraint_profile,
+            "MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE",
+            None,
         )
+        if isinstance(backend_stride, int) and backend_stride > 0:
+            avg_sample_stride = backend_stride
+        else:
+            word_length_samples = (
+                self._constraint_profile.word_length_samples
+                if isinstance(self._constraint_profile, MeasurementConstraintProfile)
+                else None
+            )
+            avg_sample_stride = (
+                int(word_length_samples)
+                if isinstance(word_length_samples, int) and word_length_samples > 0
+                else 4
+            )
+
         return self._measurement_backend_adapter.build_measurement_result(
             backend_result=backend_result,
             measurement_config=config,
             device_config=device_config,
-            sampling_period_ns=sampling_period_ns,
+            sampling_period_ns=self._backend_controller.sampling_period,
             avg_sample_stride=avg_sample_stride,
         )
 
@@ -219,24 +176,23 @@ class MeasurementScheduleRunner:
         MeasurementResult
             The measurement result.
         """
-        self._measurement_backend_adapter.validate_schedule(schedule)
-        request = self._measurement_backend_adapter.build_execution_request(
-            schedule=schedule,
-            config=config,
-        )
-        if self._execution_mode is None and self._clock_health_checks is None:
+        request = self._build_execution_request(schedule=schedule, config=config)
+        options: dict[str, object] = {}
+        if self._execution_mode is not None:
+            options["execution_mode"] = self._execution_mode
+        if self._clock_health_checks is not None:
+            options["clock_health_checks"] = self._clock_health_checks
+        if not options:
             backend_result = self._backend_controller.execute(request=request)
         else:
             backend_result = cast(Any, self._backend_controller).execute(
                 request=request,
-                execution_mode=self._execution_mode,
-                clock_health_checks=self._clock_health_checks,
+                **options,
             )
-        result = self._build_result(
+        return self._build_result(
             backend_result=backend_result,
             config=config,
         )
-        return result
 
     async def execute_async(
         self,
@@ -259,23 +215,22 @@ class MeasurementScheduleRunner:
         MeasurementResult
             The measurement result.
         """
-        self._measurement_backend_adapter.validate_schedule(schedule)
-        request = self._measurement_backend_adapter.build_execution_request(
-            schedule=schedule,
-            config=config,
-        )
-        if self._execution_mode is None and self._clock_health_checks is None:
+        request = self._build_execution_request(schedule=schedule, config=config)
+        options: dict[str, object] = {}
+        if self._execution_mode is not None:
+            options["execution_mode"] = self._execution_mode
+        if self._clock_health_checks is not None:
+            options["clock_health_checks"] = self._clock_health_checks
+        if not options:
             backend_result = await self._backend_controller.execute_async(
                 request=request
             )
         else:
             backend_result = await cast(Any, self._backend_controller).execute_async(
                 request=request,
-                execution_mode=self._execution_mode,
-                clock_health_checks=self._clock_health_checks,
+                **options,
             )
-        result = self._build_result(
+        return self._build_result(
             backend_result=backend_result,
             config=config,
         )
-        return result

@@ -214,6 +214,7 @@ Calendar note:
 - 2026-02-24: Updated sequencer capture-window key generation/lookup to `{target}:{capture_index}` in both export and result-fetch paths.
 - 2026-02-24: Updated QuEL-3 adapter contract to require explicit alias mapping (`instrument_alias_map`) at payload-build time.
 - 2026-02-24: Removed `MeasurementResultFactory` and moved backend-result vocabulary conversion responsibility fully into measurement adapters (`build_measurement_result`).
+- 2026-02-24: Removed `instrument_aliases`/`output_target_labels` from `Quel3ExecutionPayload`; payload/result in backend path are now alias-based, and alias<->target conversion is handled in adapter layer.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.

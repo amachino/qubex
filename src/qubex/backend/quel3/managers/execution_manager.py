@@ -20,7 +20,6 @@ from qubex.backend.quel3.quel3_backend_result import Quel3BackendResult
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
 
-ExecutionMode = Literal["serial", "parallel"]
 _T = TypeVar("_T")
 
 

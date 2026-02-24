@@ -19,7 +19,9 @@ from qubex.backend import (
 )
 from qubex.backend.quel1 import (
     ExecutionMode,
+    Quel1BackendController,
 )
+from qubex.backend.quel3 import Quel3BackendController
 from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_constraint_profile import (
@@ -142,17 +144,15 @@ class MeasurementExecutionService:
 
     @property
     def constraint_profile(self) -> MeasurementConstraintProfile:
-        """Resolve backend constraint profile from backend-controller hints."""
-        profile = getattr(
-            self.backend_controller, "MEASUREMENT_CONSTRAINT_PROFILE", None
-        )
-        mode = getattr(self.backend_controller, "MEASUREMENT_CONSTRAINT_MODE", "quel1")
+        """Resolve backend constraint profile from backend-controller type."""
         sampling_period = self.backend_controller.sampling_period
-        if isinstance(profile, MeasurementConstraintProfile):
-            return profile
-        if mode == "quel3":
+        if isinstance(self.backend_controller, Quel3BackendController):
             return MeasurementConstraintProfile.quel3(sampling_period)
-        return MeasurementConstraintProfile.quel1(sampling_period)
+        if isinstance(self.backend_controller, Quel1BackendController):
+            return MeasurementConstraintProfile.quel1(sampling_period)
+        raise TypeError(
+            "Unsupported backend controller for constraint profile selection."
+        )
 
     @property
     def measurement_schedule_runner(self) -> MeasurementScheduleRunner:

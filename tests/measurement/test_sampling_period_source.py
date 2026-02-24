@@ -9,9 +9,10 @@ from qubex.measurement.measurement_constraint_profile import (
 
 
 def _make_measurement_with_backend(
+    monkeypatch,
     *,
     sampling_period: float,
-    constraint_mode: str | None = None,
+    backend_kind: str = "quel1",
 ) -> Measurement:
     measurement = Measurement(
         chip_id="TEST",
@@ -20,10 +21,30 @@ def _make_measurement_with_backend(
         connect_devices=False,
     )
 
-    backend_attrs: dict[str, object] = {"sampling_period": sampling_period}
-    if constraint_mode is not None:
-        backend_attrs["MEASUREMENT_CONSTRAINT_MODE"] = constraint_mode
-    backend_controller = type("_BC", (), backend_attrs)()
+    if backend_kind == "quel3":
+        _Quel3Controller = type(
+            "_Quel3Controller",
+            (),
+            {"sampling_period": sampling_period},
+        )
+
+        monkeypatch.setattr(
+            "qubex.measurement.services.measurement_execution_service.Quel3BackendController",
+            _Quel3Controller,
+        )
+        backend_controller = _Quel3Controller()
+    else:
+        _Quel1Controller = type(
+            "_Quel1Controller",
+            (),
+            {"sampling_period": sampling_period},
+        )
+
+        monkeypatch.setattr(
+            "qubex.measurement.services.measurement_execution_service.Quel1BackendController",
+            _Quel1Controller,
+        )
+        backend_controller = _Quel1Controller()
     experiment_system = type(
         "_ES",
         (),
@@ -55,25 +76,34 @@ def _make_measurement_with_backend(
     return measurement
 
 
-def test_sampling_period_uses_backend_controller_default() -> None:
+def test_sampling_period_uses_backend_controller_default(monkeypatch) -> None:
     """Given backend dt, when resolving sampling period, backend dt is returned."""
-    measurement = _make_measurement_with_backend(sampling_period=4.0)
+    measurement = _make_measurement_with_backend(
+        monkeypatch,
+        sampling_period=4.0,
+    )
 
     assert measurement.sampling_period == 4.0
 
 
-def test_schedule_builder_is_initialized_with_resolved_sampling_period() -> None:
+def test_schedule_builder_is_initialized_with_resolved_sampling_period(
+    monkeypatch,
+) -> None:
     """Given backend dt, when creating schedule builder, then builder carries the resolved period."""
-    measurement = _make_measurement_with_backend(sampling_period=8.0)
+    measurement = _make_measurement_with_backend(
+        monkeypatch,
+        sampling_period=8.0,
+    )
 
     assert measurement.schedule_builder.sampling_period == 8.0
 
 
-def test_constraint_profile_uses_quel3_mode_hint() -> None:
-    """Given quel3 mode hint, when resolving profile, then quel3 constraints are returned."""
+def test_constraint_profile_uses_quel3_backend_type(monkeypatch) -> None:
+    """Given quel3 backend type, when resolving profile, then quel3 constraints are returned."""
     measurement = _make_measurement_with_backend(
+        monkeypatch,
         sampling_period=0.4,
-        constraint_mode="quel3",
+        backend_kind="quel3",
     )
 
     profile = measurement.constraint_profile

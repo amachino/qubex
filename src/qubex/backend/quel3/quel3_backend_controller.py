@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
 
 from qubex.backend.backend_controller import (
     BackendController,
@@ -34,8 +33,6 @@ class Quel3BackendController(BackendController):
     contract.
     """
 
-    MEASUREMENT_BACKEND_KIND: Literal["quel3"] = "quel3"
-    MEASUREMENT_CONSTRAINT_MODE: Literal["quel3"] = "quel3"
     MEASUREMENT_RESULT_AVG_SAMPLE_STRIDE: int = 4
 
     def __init__(

@@ -176,11 +176,7 @@ class SystemManager:
         backend_kind : BackendKind
             Backend family. One session uses either QuEL-1 or QuEL-3.
         """
-        if (
-            backend_kind == self._backend_kind
-            and getattr(self._backend_controller, "MEASUREMENT_BACKEND_KIND", None)
-            == backend_kind
-        ):
+        if backend_kind == self._backend_kind:
             return
         self._backend_kind = backend_kind
         self._backend_controller = self._create_backend_controller(backend_kind)

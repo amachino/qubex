@@ -6,6 +6,7 @@ import asyncio
 from typing import Any, ClassVar, cast
 
 import numpy as np
+import pytest
 from qxpulse import PulseSchedule
 
 from qubex.backend import BackendExecutionRequest
@@ -605,8 +606,15 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
     )
+    class _Quel1Controller:
+        sampling_period: ClassVar[float] = 4.0
 
-    backend_controller = type("_BC", (), {"sampling_period": 4.0})()
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendController",
+        _Quel1Controller,
+    )
+
+    backend_controller = _Quel1Controller()
     experiment_system = object()
 
     runner = MeasurementScheduleRunner.create_default(
@@ -622,8 +630,10 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
     assert profile.enforce_block_alignment is True
 
 
-def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
-    """Given quel3 mode hint, when creating default runner, then adapter receives quel3 profile."""
+def test_create_default_ignores_constraint_mode_hint_for_quel1(
+    monkeypatch,
+) -> None:
+    """Given quel1 backend type, when creating default runner, then quel1 constraints are used."""
     called: dict[str, object] = {}
 
     class _Adapter:
@@ -636,15 +646,16 @@ def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
     )
+    class _Quel1Controller:
+        sampling_period: ClassVar[float] = 0.4
+        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
 
-    backend_controller = type(
-        "_BC",
-        (),
-        {
-            "sampling_period": 0.4,
-            "MEASUREMENT_CONSTRAINT_MODE": "quel3",
-        },
-    )()
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_runner.Quel1BackendController",
+        _Quel1Controller,
+    )
+
+    backend_controller = _Quel1Controller()
     experiment_system = object()
 
     runner = MeasurementScheduleRunner.create_default(
@@ -655,111 +666,25 @@ def test_create_default_uses_quel3_constraint_mode(monkeypatch) -> None:
     assert isinstance(runner, MeasurementScheduleRunner)
     profile = cast(MeasurementConstraintProfile, called["adapter_constraint_profile"])
     assert profile.sampling_period_ns == 0.4
-    assert profile.enforce_block_alignment is False
-    assert profile.require_workaround_capture is False
+    assert profile.enforce_block_alignment is True
+    assert profile.require_workaround_capture is True
 
 
-def test_create_default_prefers_backend_custom_adapter_factory(monkeypatch) -> None:
-    """Given backend custom adapter factory, when creating default runner, then custom adapter is used."""
-    called: dict[str, object] = {}
+def test_create_default_raises_for_unsupported_backend_controller() -> None:
+    """Given unsupported backend controller, when creating default runner, then it raises TypeError."""
+    backend_controller = type("_UnsupportedController", (), {"sampling_period": 0.4})()
 
-    class _Adapter:
-        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
-            _ = schedule
-
-        def build_execution_request(
-            self,
-            *,
-            schedule: MeasurementSchedule,
-            config: MeasurementConfig,
-        ) -> BackendExecutionRequest:
-            called["request_schedule"] = schedule
-            called["request_config"] = config
-            return BackendExecutionRequest(payload=object())
-
-        def build_measurement_result(
-            self,
-            *,
-            backend_result: object,
-            measurement_config: MeasurementConfig,
-            device_config: dict[str, object],
-            sampling_period_ns: float,
-            avg_sample_stride: int,
-        ) -> MeasurementResult:
-            called["result_kwargs"] = {
-                "backend_result": backend_result,
-                "measurement_config": measurement_config,
-                "device_config": device_config,
-                "sampling_period_ns": sampling_period_ns,
-                "avg_sample_stride": avg_sample_stride,
-            }
-            return MeasurementResult(
-                mode="avg",
-                data={"Q00": [np.array([1.0 + 0.0j])]},
-                device_config={"kind": "quel3"},
-                measurement_config={"mode": "avg"},
-            )
-
-    def _unexpected_adapter(**kwargs: object) -> object:
-        raise AssertionError(
-            "Quel1MeasurementBackendAdapter fallback should not be used."
+    with pytest.raises(TypeError, match="Unsupported backend controller"):
+        _ = MeasurementScheduleRunner.create_default(
+            backend_controller=cast(Any, backend_controller),
+            experiment_system=cast(Any, object()),
         )
 
-    monkeypatch.setattr(
-        "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
-        _unexpected_adapter,
-    )
 
-    class _Controller:
-        box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
-        sampling_period: ClassVar[float] = 0.4
-        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
-
-        def create_measurement_backend_adapter(
-            self,
-            *,
-            experiment_system: object,
-            constraint_profile: MeasurementConstraintProfile,
-        ) -> _Adapter:
-            called["experiment_system"] = experiment_system
-            called["constraint_profile"] = constraint_profile
-            return _Adapter()
-
-        def execute(
-            self,
-            *,
-            request: BackendExecutionRequest,
-            execution_mode: str | None = None,
-            clock_health_checks: bool | None = None,
-        ) -> Quel1BackendResult:
-            called["execute_request"] = request
-            called["execution_mode"] = execution_mode
-            called["clock_health_checks"] = clock_health_checks
-            return Quel1BackendResult(status={}, data={}, config={})
-
-    backend_controller = _Controller()
-    experiment_system = object()
-    runner = MeasurementScheduleRunner.create_default(
-        backend_controller=cast(Any, backend_controller),
-        experiment_system=cast(Any, experiment_system),
-        execution_mode="parallel",
-        clock_health_checks=True,
-    )
-    result = runner.execute(schedule=_make_schedule(), config=_make_config())
-
-    assert isinstance(runner, MeasurementScheduleRunner)
-    assert called["experiment_system"] is experiment_system
-    assert isinstance(called["constraint_profile"], MeasurementConstraintProfile)
-    assert isinstance(called["execute_request"], BackendExecutionRequest)
-    assert called["execution_mode"] == "parallel"
-    assert called["clock_health_checks"] is True
-    assert result.device_config == {"kind": "quel3"}
-
-
-def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
+def test_create_default_uses_quel3_adapter_when_backend_controller_is_quel3(
     monkeypatch,
 ) -> None:
-    """Given quel3 backend kind hint, when creating default runner, then Quel3 adapter is selected."""
+    """Given quel3 backend controller, when creating default runner, then Quel3 adapter is selected."""
     called: dict[str, object] = {}
 
     class _Quel3Adapter:
@@ -785,16 +710,15 @@ def test_create_default_uses_quel3_adapter_when_backend_kind_is_quel3(
         "qubex.measurement.measurement_schedule_runner.Quel3MeasurementBackendAdapter",
         _Quel3Adapter,
     )
+    class _Quel3Controller:
+        sampling_period: ClassVar[float] = 0.4
 
-    backend_controller = type(
-        "_BC",
-        (),
-        {
-            "sampling_period": 0.4,
-            "MEASUREMENT_CONSTRAINT_MODE": "quel3",
-            "MEASUREMENT_BACKEND_KIND": "quel3",
-        },
-    )()
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_runner.Quel3BackendController",
+        _Quel3Controller,
+    )
+
+    backend_controller = _Quel3Controller()
     experiment_system = object()
 
     runner = MeasurementScheduleRunner.create_default(

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from qubex.backend.control_system import PortType
+from qubex.backend.quel3 import Quel3BackendController
 from qubex.backend.system_manager import BackendSettings, SystemManager
 
 
@@ -656,10 +657,10 @@ def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
 
 
 def test_create_backend_controller_supports_quel3() -> None:
-    """Given Quel3 kind, when creating backend controller, then Quel3 measurement hint is exposed."""
+    """Given Quel3 kind, when creating backend controller, then Quel3 controller is returned."""
     controller = SystemManager._create_backend_controller("quel3")  # noqa: SLF001
 
-    assert getattr(controller, "MEASUREMENT_BACKEND_KIND", None) == "quel3"
+    assert isinstance(controller, Quel3BackendController)
 
 
 def test_load_passes_backend_kind_to_selector(

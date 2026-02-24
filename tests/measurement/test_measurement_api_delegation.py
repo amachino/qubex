@@ -479,10 +479,10 @@ def test_run_measurement_async_delegates_to_executor(
     assert result is expected
 
 
-def test_run_measurement_uses_backend_custom_factories(
+def test_run_measurement_selects_quel3_adapter_from_controller_type(
     monkeypatch,
 ) -> None:
-    """Given backend factory hooks, when executing a schedule, then Measurement uses the custom path."""
+    """Given quel3 backend controller type, when executing a schedule, then Quel3 adapter is selected."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -507,15 +507,16 @@ def test_run_measurement_uses_backend_custom_factories(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _unexpected_adapter,
     )
-
-    class _CustomBackendExecutor:
-        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendResult:
-            called["request"] = request
-            return Quel1BackendResult(status={}, data={}, config={})
-
-    class _CustomAdapter:
-        sampling_period = 0.4
-        constraint_profile = None
+    class _Quel3Adapter:
+        def __init__(
+            self,
+            *,
+            experiment_system: object,
+            constraint_profile: object,
+            **_: object,
+        ) -> None:
+            called["experiment_system"] = experiment_system
+            called["constraint_profile"] = constraint_profile
 
         def validate_schedule(self, schedule: MeasurementSchedule) -> None:
             called["validated_schedule"] = schedule
@@ -553,20 +554,13 @@ def test_run_measurement_uses_backend_custom_factories(
                 measurement_config={"mode": "avg"},
             )
 
-    class _BackendController:
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_runner.Quel3MeasurementBackendAdapter",
+        _Quel3Adapter,
+    )
+    class _Quel3Controller:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         sampling_period: ClassVar[float] = 0.4
-        MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
-
-        def create_measurement_backend_adapter(
-            self,
-            *,
-            experiment_system: object,
-            constraint_profile: object,
-        ) -> _CustomAdapter:
-            called["experiment_system"] = experiment_system
-            called["constraint_profile"] = constraint_profile
-            return _CustomAdapter()
 
         def execute(
             self,
@@ -575,15 +569,20 @@ def test_run_measurement_uses_backend_custom_factories(
             execution_mode: str | None = None,
             clock_health_checks: bool | None = None,
         ) -> Quel1BackendResult:
+            called["request"] = request
             called["execution_mode"] = execution_mode
             called["clock_health_checks"] = clock_health_checks
-            executor = _CustomBackendExecutor()
-            return executor.execute(request=request)
+            return Quel1BackendResult(status={}, data={}, config={})
+
+    monkeypatch.setattr(
+        "qubex.measurement.measurement_schedule_runner.Quel3BackendController",
+        _Quel3Controller,
+    )
 
     experiment_system = object()
     _bind_runtime(
         measurement,
-        backend_controller=_BackendController(),
+        backend_controller=_Quel3Controller(),
         experiment_system=experiment_system,
     )
 
@@ -593,6 +592,8 @@ def test_run_measurement_uses_backend_custom_factories(
     assert called["request_schedule"] is schedule
     assert called["request_config"] is config
     assert called["experiment_system"] is experiment_system
+    constraint_profile = cast(Any, called["constraint_profile"])
+    assert constraint_profile.enforce_block_alignment is False
     assert result.device_config == {"kind": "quel3"}
 
 
