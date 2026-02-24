@@ -1452,68 +1452,6 @@ class Experiment:
             plot=plot,
         )
 
-    async def execute_async(
-        self,
-        schedule: PulseSchedule,
-        *,
-        frequencies: dict[str, float] | None = None,
-        mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
-        readout_drag_coeff: float | None = None,
-        readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool | None = None,
-        add_pump_pulses: bool | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
-        reset_awg_and_capunits: bool | None = None,
-        plot: bool | None = None,
-    ) -> MultipleMeasureResult:
-        """
-        Execute the given schedule asynchronously.
-
-        Parameters
-        ----------
-        schedule : PulseSchedule
-            Schedule to execute.
-
-        Returns
-        -------
-        MultipleMeasureResult
-            Result of the experiment.
-        """
-        return await self.measurement_service.execute_async(
-            schedule,
-            frequencies=frequencies,
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            readout_amplitudes=readout_amplitudes,
-            readout_duration=readout_duration,
-            readout_pre_margin=readout_pre_margin,
-            readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
-            readout_drag_coeff=readout_drag_coeff,
-            readout_ramp_type=readout_ramp_type,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-            reset_awg_and_capunits=reset_awg_and_capunits,
-            plot=plot,
-        )
-
     def measure(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
@@ -1599,68 +1537,6 @@ class Experiment:
         ... )
         """
         return self.measurement_service.measure(
-            sequence=sequence,
-            frequencies=frequencies,
-            initial_states=initial_states,
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            readout_amplitudes=readout_amplitudes,
-            readout_duration=readout_duration,
-            readout_pre_margin=readout_pre_margin,
-            readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
-            readout_drag_coeff=readout_drag_coeff,
-            readout_ramp_type=readout_ramp_type,
-            add_pump_pulses=add_pump_pulses,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-            reset_awg_and_capunits=reset_awg_and_capunits,
-            plot=plot,
-        )
-
-    async def measure_async(
-        self,
-        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
-        *,
-        frequencies: dict[str, float] | None = None,
-        initial_states: dict[str, str] | None = None,
-        mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
-        readout_drag_coeff: float | None = None,
-        readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
-        reset_awg_and_capunits: bool | None = None,
-        plot: bool | None = None,
-    ) -> MeasureResult:
-        """
-        Measure the signals asynchronously using the given sequence.
-
-        Parameters
-        ----------
-        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
-            Sequence of the experiment.
-
-        Returns
-        -------
-        MeasureResult
-            Result of the experiment.
-        """
-        return await self.measurement_service.measure_async(
             sequence=sequence,
             frequencies=frequencies,
             initial_states=initial_states,

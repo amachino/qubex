@@ -128,18 +128,10 @@ class Quel3BackendController(BackendController):
         """Return backend sampling period in ns."""
         return self._runtime_context.sampling_period
 
-    def execute(
-        self,
-        *,
-        request: BackendExecutionRequest,
-    ) -> BackendExecutionResult:
-        """Execute a backend request using QuEL-3 execution defaults."""
-        return self._execution_manager.execute(request=request)
-
-    async def execute_async(
+    async def execute(
         self,
         *,
         request: BackendExecutionRequest,
     ) -> BackendExecutionResult:
         """Execute a backend request asynchronously using QuEL-3 defaults."""
-        return await self._execution_manager.execute_async(request=request)
+        return await self._execution_manager.execute(request=request)

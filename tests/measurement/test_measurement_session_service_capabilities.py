@@ -19,7 +19,7 @@ class _BackendWithoutOptionalCapabilities:
         self.connect_calls: list[tuple[list[str] | str | None, bool | None]] = []
         self.disconnect_calls = 0
 
-    def execute(self, *, request: object) -> object:
+    async def execute(self, *, request: object) -> object:
         _ = request
         raise AssertionError("execute is not used in these tests.")
 

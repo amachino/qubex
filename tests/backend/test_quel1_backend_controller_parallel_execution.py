@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 
 import pytest
@@ -52,23 +53,25 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
         staticmethod(_fake_execute_parallel),
     )
 
-    result = execution_manager.execute(
-        request=BackendExecutionRequest(
-            payload=Quel1ExecutionPayload(
-                gen_sampled_sequence={"Q00": object()},
-                cap_sampled_sequence={"RQ00": object()},
-                resource_map={"Q00": [{}]},
-                interval=128,
-                repeats=16,
-                integral_mode="integral",
-                dsp_demodulation=True,
-                enable_sum=False,
-                enable_classification=False,
-                line_param0=(1.0, 0.0, 0.0),
-                line_param1=(0.0, 1.0, 0.0),
+    result = asyncio.run(
+        execution_manager.execute(
+            request=BackendExecutionRequest(
+                payload=Quel1ExecutionPayload(
+                    gen_sampled_sequence={"Q00": object()},
+                    cap_sampled_sequence={"RQ00": object()},
+                    resource_map={"Q00": [{}]},
+                    interval=128,
+                    repeats=16,
+                    integral_mode="integral",
+                    dsp_demodulation=True,
+                    enable_sum=False,
+                    enable_classification=False,
+                    line_param0=(1.0, 0.0, 0.0),
+                    line_param1=(0.0, 1.0, 0.0),
+                ),
             ),
-        ),
-        execution_mode="parallel",
+            execution_mode="parallel",
+        )
     )
 
     assert isinstance(result, Quel1BackendResult)

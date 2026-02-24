@@ -107,7 +107,9 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
 
-        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendResult:
+        async def execute(
+            self, *, request: BackendExecutionRequest
+        ) -> Quel1BackendResult:
             called["execute_request"] = request
             return backend_result
 
@@ -118,7 +120,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
 
     config = _make_config()
     schedule = _make_schedule()
-    result = runner.execute(schedule=schedule, config=config)
+    result = asyncio.run(runner.execute(schedule=schedule, config=config))
 
     assert called["validated"] is schedule
     assert called["request_schedule"] is schedule
@@ -174,7 +176,7 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
         sampling_period: ClassVar[float] = 2.0
 
-        def execute(
+        async def execute(
             self,
             *,
             request: BackendExecutionRequest,
@@ -192,150 +194,21 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
         execution_mode="serial",
         clock_health_checks=True,
     )
-    _ = runner.execute(schedule=_make_schedule(), config=_make_config())
+    _ = asyncio.run(runner.execute(schedule=_make_schedule(), config=_make_config()))
 
     assert called["request"] is base_request
     assert called["execution_mode"] == "serial"
     assert called["clock_health_checks"] is True
 
 
-def test_execute_async_validates_builds_calls_backend_and_creates_result() -> None:
-    """Given runner inputs, when execute_async is called, then it validates, runs async backend controller, and builds result."""
-    called: dict[str, object] = {}
-    request = BackendExecutionRequest(payload=object())
-    backend_result = Quel1BackendResult(status={}, data={}, config={})
-    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
-
-    class _Adapter:
-        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
-            called["validated"] = schedule
-
-        def build_execution_request(
-            self,
-            *,
-            schedule: MeasurementSchedule,
-            config: MeasurementConfig,
-        ) -> BackendExecutionRequest:
-            called["request_schedule"] = schedule
-            called["request_config"] = config
-            return request
-
-        def build_measurement_result(
-            self,
-            *,
-            backend_result: object,
-            measurement_config: MeasurementConfig,
-            device_config: dict[str, object],
-            sampling_period_ns: float,
-            avg_sample_stride: int,
-        ) -> MeasurementResult:
-            called["result_kwargs"] = {
-                "backend_result": backend_result,
-                "measurement_config": measurement_config,
-                "device_config": device_config,
-                "sampling_period_ns": sampling_period_ns,
-                "avg_sample_stride": avg_sample_stride,
-            }
-            return expected
-
-    class _BackendController:
-        box_config: ClassVar[dict[str, int]] = {"shots": 2}
-        sampling_period: ClassVar[float] = 2.0
-
-        async def execute_async(
-            self, *, request: BackendExecutionRequest
-        ) -> Quel1BackendResult:
-            called["execute_request"] = request
-            return backend_result
-
+def test_execute_async_entrypoint_is_removed() -> None:
+    """Given schedule runner, execute_async entrypoint is not exposed."""
     runner = MeasurementScheduleRunner(
-        measurement_backend_adapter=cast(Any, _Adapter()),
-        backend_controller=cast(Any, _BackendController()),
+        measurement_backend_adapter=cast(Any, object()),
+        backend_controller=cast(Any, object()),
     )
 
-    config = _make_config()
-    schedule = _make_schedule()
-    result = asyncio.run(runner.execute_async(schedule=schedule, config=config))
-
-    assert called["validated"] is schedule
-    assert called["request_schedule"] is schedule
-    assert called["request_config"] is config
-    assert called["execute_request"] is request
-    result_kwargs = cast(dict[str, object], called["result_kwargs"])
-    assert result_kwargs["backend_result"] is backend_result
-    assert result_kwargs["measurement_config"] is config
-    assert result_kwargs["device_config"] == {"shots": 2}
-    assert result_kwargs["sampling_period_ns"] == 2.0
-    assert result_kwargs["avg_sample_stride"] == 4
-    assert result is expected
-
-
-def test_execute_async_forwards_execution_options_to_backend_controller() -> None:
-    """Given execution options, when execute_async is called, then backend controller receives options."""
-    called: dict[str, object] = {}
-    base_request = BackendExecutionRequest(payload=object())
-    backend_result = Quel1BackendResult(status={}, data={}, config={})
-    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
-
-    class _Adapter:
-        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
-            _ = schedule
-
-        def build_execution_request(
-            self,
-            *,
-            schedule: MeasurementSchedule,
-            config: MeasurementConfig,
-        ) -> BackendExecutionRequest:
-            _ = schedule
-            _ = config
-            return base_request
-
-        def build_measurement_result(
-            self,
-            *,
-            backend_result: object,
-            measurement_config: MeasurementConfig,
-            device_config: dict[str, object],
-            sampling_period_ns: float,
-            avg_sample_stride: int,
-        ) -> MeasurementResult:
-            _ = backend_result
-            _ = measurement_config
-            _ = device_config
-            _ = sampling_period_ns
-            _ = avg_sample_stride
-            return expected
-
-    class _BackendController:
-        box_config: ClassVar[dict[str, int]] = {"shots": 2}
-        sampling_period: ClassVar[float] = 2.0
-
-        async def execute_async(
-            self,
-            *,
-            request: BackendExecutionRequest,
-            execution_mode: str | None = None,
-            clock_health_checks: bool | None = None,
-        ) -> Quel1BackendResult:
-            called["request"] = request
-            called["execution_mode"] = execution_mode
-            called["clock_health_checks"] = clock_health_checks
-            return backend_result
-
-    runner = MeasurementScheduleRunner(
-        measurement_backend_adapter=cast(Any, _Adapter()),
-        backend_controller=cast(Any, _BackendController()),
-        execution_mode="serial",
-        clock_health_checks=True,
-    )
-    _ = asyncio.run(
-        runner.execute_async(schedule=_make_schedule(), config=_make_config())
-    )
-
-    assert called["request"] is base_request
-    assert called["execution_mode"] == "serial"
-    assert called["clock_health_checks"] is True
+    assert not hasattr(runner, "execute_async")
 
 
 def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
@@ -380,7 +253,9 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
     class _BackendController:
         sampling_period: ClassVar[float] = 2.0
 
-        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendResult:
+        async def execute(
+            self, *, request: BackendExecutionRequest
+        ) -> Quel1BackendResult:
             _ = request
             return backend_result
 
@@ -389,7 +264,9 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
         backend_controller=cast(Any, _BackendController()),
     )
 
-    result = runner.execute(schedule=_make_schedule(), config=_make_config())
+    result = asyncio.run(
+        runner.execute(schedule=_make_schedule(), config=_make_config())
+    )
 
     result_kwargs = cast(dict[str, object], called["result_kwargs"])
     assert result_kwargs["device_config"] == {}
@@ -425,7 +302,9 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
     class _BackendController:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
 
-        def execute(self, *, request: BackendExecutionRequest) -> MeasurementResult:
+        async def execute(
+            self, *, request: BackendExecutionRequest
+        ) -> MeasurementResult:
             _ = request
             return expected
 
@@ -433,7 +312,9 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
         measurement_backend_adapter=cast(Any, _Adapter()),
         backend_controller=cast(Any, _BackendController()),
     )
-    result = runner.execute(schedule=_make_schedule(), config=_make_config())
+    result = asyncio.run(
+        runner.execute(schedule=_make_schedule(), config=_make_config())
+    )
 
     assert result is expected
 
@@ -484,80 +365,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         sampling_period: ClassVar[float] = 0.4
 
-        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendResult:
-            called["execute_request"] = request
-            return backend_result
-
-    runner = MeasurementScheduleRunner(
-        measurement_backend_adapter=cast(Any, _Adapter()),
-        backend_controller=cast(Any, _BackendController()),
-    )
-
-    config = _make_config()
-    schedule = _make_schedule()
-    result = runner.execute(schedule=schedule, config=config)
-
-    assert called["validated"] is schedule
-    assert called["request_schedule"] is schedule
-    assert called["request_config"] is config
-    assert called["execute_request"] is request
-    assert called["builder_backend_result"] is backend_result
-    assert called["builder_measurement_config"] is config
-    assert called["builder_device_config"] == {"kind": "quel3"}
-    assert called["builder_sampling_period_ns"] == 0.4
-    assert called["builder_avg_sample_stride"] == 4
-    assert result is expected
-
-
-def test_execute_async_prefers_adapter_measurement_result_builder_when_available() -> (
-    None
-):
-    """Given adapter result builder, when execute_async is called, then runner uses adapter conversion."""
-    called: dict[str, object] = {}
-    request = BackendExecutionRequest(payload=object())
-    backend_result = Quel1BackendResult(status={}, data={}, config={})
-    expected = MeasurementResult(
-        mode="avg",
-        data={"Q00": [np.array([3.0 + 0.0j])]},
-        device_config={"kind": "adapter"},
-        measurement_config={"mode": "avg"},
-    )
-
-    class _Adapter:
-        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
-            called["validated"] = schedule
-
-        def build_execution_request(
-            self,
-            *,
-            schedule: MeasurementSchedule,
-            config: MeasurementConfig,
-        ) -> BackendExecutionRequest:
-            called["request_schedule"] = schedule
-            called["request_config"] = config
-            return request
-
-        def build_measurement_result(
-            self,
-            *,
-            backend_result: object,
-            measurement_config: MeasurementConfig,
-            device_config: dict[str, object],
-            sampling_period_ns: float,
-            avg_sample_stride: int,
-        ) -> MeasurementResult:
-            called["builder_backend_result"] = backend_result
-            called["builder_measurement_config"] = measurement_config
-            called["builder_device_config"] = device_config
-            called["builder_sampling_period_ns"] = sampling_period_ns
-            called["builder_avg_sample_stride"] = avg_sample_stride
-            return expected
-
-    class _BackendController:
-        box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
-        sampling_period: ClassVar[float] = 0.4
-
-        async def execute_async(
+        async def execute(
             self, *, request: BackendExecutionRequest
         ) -> Quel1BackendResult:
             called["execute_request"] = request
@@ -570,7 +378,7 @@ def test_execute_async_prefers_adapter_measurement_result_builder_when_available
 
     config = _make_config()
     schedule = _make_schedule()
-    result = asyncio.run(runner.execute_async(schedule=schedule, config=config))
+    result = asyncio.run(runner.execute(schedule=schedule, config=config))
 
     assert called["validated"] is schedule
     assert called["request_schedule"] is schedule
@@ -606,6 +414,7 @@ def test_create_default_passes_backend_constraint_profile_to_adapter(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
     )
+
     class _Quel1Controller:
         sampling_period: ClassVar[float] = 4.0
 
@@ -646,6 +455,7 @@ def test_create_default_ignores_constraint_mode_hint_for_quel1(
         "qubex.measurement.measurement_schedule_runner.Quel1MeasurementBackendAdapter",
         _Adapter,
     )
+
     class _Quel1Controller:
         sampling_period: ClassVar[float] = 0.4
         MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
@@ -710,6 +520,7 @@ def test_create_default_uses_quel3_adapter_when_backend_controller_is_quel3(
         "qubex.measurement.measurement_schedule_runner.Quel3MeasurementBackendAdapter",
         _Quel3Adapter,
     )
+
     class _Quel3Controller:
         sampling_period: ClassVar[float] = 0.4
 

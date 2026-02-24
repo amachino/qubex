@@ -155,7 +155,7 @@ class MeasurementScheduleRunner:
             avg_sample_stride=avg_sample_stride,
         )
 
-    def execute(
+    async def execute(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -183,50 +183,9 @@ class MeasurementScheduleRunner:
         if self._clock_health_checks is not None:
             options["clock_health_checks"] = self._clock_health_checks
         if not options:
-            backend_result = self._backend_controller.execute(request=request)
+            backend_result = await self._backend_controller.execute(request=request)
         else:
-            backend_result = cast(Any, self._backend_controller).execute(
-                request=request,
-                **options,
-            )
-        return self._build_result(
-            backend_result=backend_result,
-            config=config,
-        )
-
-    async def execute_async(
-        self,
-        *,
-        schedule: MeasurementSchedule,
-        config: MeasurementConfig,
-    ) -> MeasurementResult:
-        """
-        Execute a measurement schedule asynchronously with the given configuration.
-
-        Parameters
-        ----------
-        schedule : MeasurementSchedule
-            The measurement schedule.
-        config : MeasurementConfig
-            The measurement configuration.
-
-        Returns
-        -------
-        MeasurementResult
-            The measurement result.
-        """
-        request = self._build_execution_request(schedule=schedule, config=config)
-        options: dict[str, object] = {}
-        if self._execution_mode is not None:
-            options["execution_mode"] = self._execution_mode
-        if self._clock_health_checks is not None:
-            options["clock_health_checks"] = self._clock_health_checks
-        if not options:
-            backend_result = await self._backend_controller.execute_async(
-                request=request
-            )
-        else:
-            backend_result = await cast(Any, self._backend_controller).execute_async(
+            backend_result = await cast(Any, self._backend_controller).execute(
                 request=request,
                 **options,
             )

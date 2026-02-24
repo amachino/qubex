@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import sys
-import threading
 from collections import defaultdict
-from collections.abc import Coroutine, Iterable
+from collections.abc import Iterable
 from pathlib import Path
 from types import ModuleType, TracebackType
-from typing import Literal, Protocol, TypeVar
+from typing import Literal, Protocol
 
 import numpy as np
 import numpy.typing as npt
@@ -19,32 +17,6 @@ from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.quel3_backend_result import Quel3BackendResult
 from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
 from qubex.backend.quel3.quel3_runtime_context import Quel3RuntimeContextReader
-
-_T = TypeVar("_T")
-
-
-def _run_coroutine(coroutine: Coroutine[object, object, _T]) -> _T:
-    """Run an async workflow from a synchronous manager entrypoint."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coroutine)
-
-    result_holder: dict[str, _T] = {}
-    error_holder: dict[str, BaseException] = {}
-
-    def _runner() -> None:
-        try:
-            result_holder["value"] = asyncio.run(coroutine)
-        except BaseException as exc:
-            error_holder["error"] = exc
-
-    thread = threading.Thread(target=_runner, daemon=True)
-    thread.start()
-    thread.join()
-    if "error" in error_holder:
-        raise error_holder["error"]
-    return result_holder["value"]
 
 
 def _append_local_quelware_paths() -> None:
@@ -320,18 +292,7 @@ class Quel3ExecutionManager:
         self._runtime_context = runtime_context
         self._sequencer_builder = Quel3SequencerBuilder()
 
-    def execute(self, *, request: object) -> Quel3BackendResult:
-        """
-        Execute a QuEL-3 backend request.
-
-        Parameters
-        ----------
-        request : object
-            Backend execution request with `payload`.
-        """
-        return _run_coroutine(self.execute_async(request=request))
-
-    async def execute_async(self, *, request: object) -> Quel3BackendResult:
+    async def execute(self, *, request: object) -> Quel3BackendResult:
         """
         Execute a QuEL-3 backend request asynchronously.
 
@@ -345,9 +306,9 @@ class Quel3ExecutionManager:
             raise TypeError(
                 "Quel3ExecutionManager expects request payload to be `Quel3ExecutionPayload`."
             )
-        return await self._execute_measurement_async(payload)
+        return await self._execute(payload)
 
-    async def _execute_measurement_async(
+    async def _execute(
         self,
         payload: Quel3ExecutionPayload,
     ) -> Quel3BackendResult:
@@ -504,9 +465,7 @@ class Quel3ExecutionManager:
             for window in timeline.capture_windows:
                 samples = shot_samples.get(alias, {}).get(window.name, [])
                 if len(samples) == 0:
-                    measurement_data[alias].append(
-                        np.array([], dtype=np.complex128)
-                    )
+                    measurement_data[alias].append(np.array([], dtype=np.complex128))
                     continue
                 if payload.mode == "avg":
                     values = np.stack(samples, axis=0)

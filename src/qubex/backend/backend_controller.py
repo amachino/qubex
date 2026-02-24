@@ -29,7 +29,7 @@ class BackendController(Protocol):
 
     This protocol defines the minimum API that both QuEL-1 and QuEL-3
     controllers must provide to the measurement layer:
-    `hash`, `is_connected`, `sampling_period`, `execute`, `connect`,
+    `hash`, `is_connected`, `sampling_period`, async `execute`, `connect`,
     and `disconnect`.
     """
 
@@ -48,11 +48,7 @@ class BackendController(Protocol):
         """Return backend sampling period in ns."""
         ...
 
-    def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
-        """Execute prepared backend request payload."""
-        ...
-
-    async def execute_async(
+    async def execute(
         self,
         *,
         request: BackendExecutionRequest,
