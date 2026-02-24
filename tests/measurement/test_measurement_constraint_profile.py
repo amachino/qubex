@@ -7,12 +7,12 @@ from typing import cast
 
 from qxpulse import PulseSchedule, Rect
 
-from qubex.backend import ControlParams, Target
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
+from qubex.system import ControlParams, Target
 
 
 def _make_builder(

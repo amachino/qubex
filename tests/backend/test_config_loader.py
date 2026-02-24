@@ -1,4 +1,4 @@
-"""Tests for backend config loader."""
+"""Tests for system config loader."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from qubex.backend.config_loader import ConfigLoader
-from qubex.backend.experiment_system import DEFAULT_PUMP_FREQUENCY
+from qubex.system.config_loader import ConfigLoader
+from qubex.system.experiment_system import DEFAULT_PUMP_FREQUENCY
 
 
 def _write_yaml(path: Path, data: dict) -> None:
@@ -273,7 +273,7 @@ def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture)
         },
     )
 
-    caplog.set_level(logging.WARNING, logger="qubex.backend.config_loader")
+    caplog.set_level(logging.WARNING, logger="qubex.system.config_loader")
 
     _ = ConfigLoader(
         chip_id=chip_id,

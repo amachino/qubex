@@ -7,13 +7,13 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from qubex.backend import ExperimentSystem
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_defaults import (
     DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
 )
 from qubex.measurement.models import MeasurementConfig
+from qubex.system import ExperimentSystem
 
 
 def test_model_requires_all_fields() -> None:

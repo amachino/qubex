@@ -10,7 +10,6 @@ from qxpulse import Blank, Pulse, PulseArray
 
 from qubex.backend import (
     BackendExecutionRequest,
-    ExperimentSystem,
 )
 from qubex.backend.quel3 import (
     Quel3BackendController,
@@ -27,6 +26,7 @@ from qubex.measurement.measurement_constraint_profile import (
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.system import ExperimentSystem
 
 
 class Quel3MeasurementBackendAdapter:

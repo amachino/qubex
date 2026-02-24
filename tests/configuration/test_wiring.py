@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qubex.configuration.wiring import (
+from qubex.system.wiring import (
     normalize_wiring_v2_rows,
     split_box_port_specifier,
 )

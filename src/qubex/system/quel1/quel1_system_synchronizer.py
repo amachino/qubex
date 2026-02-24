@@ -6,16 +6,16 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard, cast
 
-from qubex.backend.control_system import PortType
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
+from qubex.system.control_system import PortType
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from qubex.backend.control_system import Box, CapPort, GenPort
-    from qubex.backend.experiment_system import ExperimentSystem
     from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
+    from qubex.system.control_system import Box, CapPort, GenPort
+    from qubex.system.experiment_system import ExperimentSystem
 
 
 class Quel1SystemSynchronizer:

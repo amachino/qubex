@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from qubex.backend import ExperimentSystem
+from qubex.system import ExperimentSystem
 from qubex.typing import MeasurementMode
 
 from .measurement_defaults import (

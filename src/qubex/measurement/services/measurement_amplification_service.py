@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 
-from qubex.backend import ControlParams, ExperimentSystem
 from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.measurement.measurement_context import MeasurementContext
+from qubex.system import ControlParams, ExperimentSystem
 
 
 class MeasurementAmplificationService:

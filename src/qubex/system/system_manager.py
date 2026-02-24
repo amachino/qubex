@@ -14,22 +14,21 @@ from typing import Any, cast
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
 
-from qubex.configuration import ConfigLoader
-from qubex.configuration.config_loader import ConfigLoader as ConfigurationConfigLoader
+from qubex.backend.backend_controller import (
+    BackendKind,
+    SystemBackendController,
+)
+from qubex.backend.quel1 import Quel1BackendController
+from qubex.backend.quel3 import Quel3BackendController
 from qubex.constants import (
     DEFAULT_RAWDATA_DIR,
 )
 from qubex.typing import ConfigurationMode
 
-from .backend_controller import (
-    BackendKind,
-    SystemBackendController,
-)
+from .config_loader import ConfigLoader, ConfigLoader as ConfigurationConfigLoader
 from .control_system import Box
 from .experiment_system import ExperimentSystem
-from .quel1 import Quel1BackendController
 from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
-from .quel3 import Quel3BackendController
 from .quel3.quel3_system_synchronizer import Quel3SystemSynchronizer
 from .system_synchronizer import SystemSynchronizer
 

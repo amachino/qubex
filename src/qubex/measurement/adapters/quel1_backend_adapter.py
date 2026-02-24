@@ -9,8 +9,6 @@ import numpy as np
 
 from qubex.backend import (
     BackendExecutionRequest,
-    ExperimentSystem,
-    TargetRegistry,
 )
 from qubex.backend.quel1 import (
     Quel1BackendController,
@@ -24,6 +22,7 @@ from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.system import ExperimentSystem, TargetRegistry
 
 if TYPE_CHECKING:
     import numpy.typing as npt

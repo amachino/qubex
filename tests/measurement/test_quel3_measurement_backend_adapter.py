@@ -8,7 +8,6 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from qubex.backend import TargetRegistry
 from qubex.backend.quel3 import (
     Quel3BackendController,
     Quel3BackendExecutionResult,
@@ -27,6 +26,7 @@ from qubex.measurement.models import (
 )
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.pulse import Arbitrary, PulseArray
+from qubex.system import TargetRegistry
 
 
 @dataclass

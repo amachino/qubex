@@ -6,9 +6,9 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from qubex.backend.control_system import Box
-    from qubex.backend.experiment_system import ExperimentSystem
     from qubex.backend.quel3.quel3_backend_controller import Quel3BackendController
+    from qubex.system.control_system import Box
+    from qubex.system.experiment_system import ExperimentSystem
 
 
 class Quel3SystemSynchronizer:

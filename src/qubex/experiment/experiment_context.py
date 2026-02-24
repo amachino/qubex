@@ -18,26 +18,9 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from qubex.backend import (
-    Box,
-    Chip,
-    ConfigLoader,
-    ControlParams,
-    ControlSystem,
-    ExperimentSystem,
-    MixingUtil,
-    Mux,
-    QuantumSystem,
-    Qubit,
-    Resonator,
-    SystemManager,
-    Target,
-    TargetType,
-)
 from qubex.backend.backend_controller import (
     SystemBackendController,
 )
-from qubex.backend.control_system import GenPort
 from qubex.measurement import (
     Measurement,
     StateClassifier,
@@ -46,6 +29,23 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
+)
+from qubex.system import (
+    Box,
+    Chip,
+    ConfigLoader,
+    ControlParams,
+    ControlSystem,
+    ExperimentSystem,
+    GenPort,
+    MixingUtil,
+    Mux,
+    QuantumSystem,
+    Qubit,
+    Resonator,
+    SystemManager,
+    Target,
+    TargetType,
 )
 from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version

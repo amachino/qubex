@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from qxpulse import Blank, FlatTop, PulseArray, RampType
 
-from qubex.backend import ControlParams, Mux, TargetRegistry
+from qubex.system import ControlParams, Mux, TargetRegistry
 
 from .measurement_defaults import (
     DEFAULT_READOUT_DRAG_COEFF,

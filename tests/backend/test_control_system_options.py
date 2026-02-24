@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qubex.backend.control_system import Box
+from qubex.system.control_system import Box
 
 
 def _control_channel_counts(box: Box) -> list[int]:

@@ -6,15 +6,15 @@ from dataclasses import dataclass
 
 import pytest
 
-from qubex.backend import Mux, Qubit, Resonator, Target, TargetRegistry, TargetType
-from qubex.backend.control_system import (
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.system import Mux, Qubit, Resonator, Target, TargetRegistry, TargetType
+from qubex.system.control_system import (
     CapChannel,
     CapPort,
     GenChannel,
     GenPort,
     PortType,
 )
-from qubex.experiment.experiment_context import ExperimentContext
 
 
 class _BackendControllerStub:

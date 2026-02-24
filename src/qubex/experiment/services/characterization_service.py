@@ -27,10 +27,6 @@ from typing_extensions import deprecated
 
 import qubex.visualization as viz
 from qubex.analysis import fitting
-from qubex.backend import MixingUtil
-from qubex.backend.experiment_system import (
-    CNCO_CENTER_CTRL,
-)
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
@@ -51,6 +47,10 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
+from qubex.system import MixingUtil
+from qubex.system.experiment_system import (
+    CNCO_CENTER_CTRL,
+)
 from qubex.typing import TargetMap
 from qubex.visualization import COLORS
 

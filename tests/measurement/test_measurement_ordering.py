@@ -7,13 +7,13 @@ from typing import Any, cast
 
 from qxpulse import FlatTop, PulseSchedule
 
-from qubex.backend import ControlParams, Target
 from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.system import ControlParams, Target
 
 
 def test_schedule_builder_keeps_readout_target_order(monkeypatch) -> None:

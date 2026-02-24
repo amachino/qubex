@@ -7,12 +7,7 @@ from collections.abc import Mapping
 
 from qxpulse import PulseSchedule, RampType
 
-from qubex.backend import (
-    ControlParams,
-    Mux,
-    Target,
-    TargetRegistry,
-)
+from qubex.system import ControlParams, Mux, Target, TargetRegistry
 
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_pulse_factory import MeasurementPulseFactory

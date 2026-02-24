@@ -6,16 +6,16 @@ from typing import Literal, cast
 
 import pytest
 
-from qubex.backend import Qubit, Resonator, Target, TargetType
-from qubex.backend.control_system import (
+from qubex.system import Qubit, Resonator, Target, TargetType
+from qubex.system.control_system import (
     CapChannel,
     CapPort,
     GenChannel,
     GenPort,
     PortType,
 )
-from qubex.backend.target import CapTarget
-from qubex.backend.target_registry import TargetRegistry
+from qubex.system.target import CapTarget
+from qubex.system.target_registry import TargetRegistry
 
 
 def _make_qubit(label: str) -> Qubit:

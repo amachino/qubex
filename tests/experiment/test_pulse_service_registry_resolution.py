@@ -5,11 +5,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-from qubex.backend import TargetType
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.services import pulse_service as pulse_service_module
 from qubex.experiment.services.pulse_service import PulseService
 from qubex.pulse import Arbitrary
+from qubex.system import TargetType
 
 
 def _make_rabi_param(target: str, frequency: float) -> RabiParam:

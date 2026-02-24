@@ -7,13 +7,13 @@ from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
-    ExperimentSystem,
 )
 from qubex.backend.quel1 import (
     ExecutionMode,
     Quel1BackendController,
 )
 from qubex.backend.quel3 import Quel3BackendController
+from qubex.system import ExperimentSystem
 
 from .adapters import (
     MeasurementBackendAdapter,

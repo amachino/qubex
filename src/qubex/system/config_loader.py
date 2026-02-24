@@ -12,10 +12,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import yaml
 from typing_extensions import deprecated
 
-from qubex.configuration.wiring import (
-    normalize_wiring_v2_rows,
-    split_box_port_specifier,
-)
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
@@ -26,18 +22,22 @@ from qubex.constants import (
     WIRING_FILE,
     WIRING_V2_FILE,
 )
+from qubex.system.wiring import (
+    normalize_wiring_v2_rows,
+    split_box_port_specifier,
+)
 from qubex.typing import ConfigurationMode
 
-logger = logging.getLogger("qubex.backend.config_loader")
+logger = logging.getLogger("qubex.system.config_loader")
 
 if TYPE_CHECKING:
-    from qubex.backend.control_system import ControlSystem
-    from qubex.backend.experiment_system import (
+    from qubex.system.control_system import ControlSystem
+    from qubex.system.experiment_system import (
         ControlParams,
         ExperimentSystem,
         WiringInfo,
     )
-    from qubex.backend.quantum_system import QuantumSystem
+    from qubex.system.quantum_system import QuantumSystem
 
 PARAMS_MAP = {
     "qubit_frequency": ("qubit_frequency", "props"),
@@ -125,7 +125,7 @@ class ConfigLoader:
 
     Examples
     --------
-    >>> from qubex.configuration import ConfigLoader
+    >>> from qubex.system import ConfigLoader
     >>> cfg = ConfigLoader(chip_id="64Q")
     >>> system = cfg.get_experiment_system()
     """
@@ -724,7 +724,7 @@ class ConfigLoader:
             return legacy_data
 
     def _load_quantum_system(self) -> QuantumSystem | None:
-        from qubex.backend.quantum_system import Chip, QuantumSystem
+        from qubex.system.quantum_system import Chip, QuantumSystem
 
         chip_id = self._chip_id
         chip_info = self._chip_dict.get(chip_id)
@@ -755,7 +755,7 @@ class ConfigLoader:
         return QuantumSystem(chip=chip)
 
     def _load_control_system(self) -> ControlSystem | None:
-        from qubex.backend.control_system import Box, ControlSystem
+        from qubex.system.control_system import Box, ControlSystem
 
         chip_id = self._chip_id
         box_ports = defaultdict(list)
@@ -793,7 +793,7 @@ class ConfigLoader:
         )
 
     def _load_wiring_info(self) -> WiringInfo | None:
-        from qubex.backend.experiment_system import WiringInfo
+        from qubex.system.experiment_system import WiringInfo
 
         wirings = self._wiring_rows
         if wirings is None:
@@ -893,7 +893,7 @@ class ConfigLoader:
         )
 
     def _load_control_params(self) -> ControlParams | None:
-        from qubex.backend.experiment_system import ControlParams
+        from qubex.system.experiment_system import ControlParams
 
         # Build control params primarily from per-file param names when present;
         # fall back to monolithic params.yaml where needed. Do not require the
@@ -918,7 +918,7 @@ class ConfigLoader:
         targets_to_exclude: list[str] | None = None,
         configuration_mode: ConfigurationMode = "ge-cr-cr",
     ) -> ExperimentSystem | None:
-        from qubex.backend.experiment_system import ExperimentSystem
+        from qubex.system.experiment_system import ExperimentSystem
 
         if (
             self._quantum_system is None

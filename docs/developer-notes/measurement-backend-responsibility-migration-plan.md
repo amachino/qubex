@@ -257,4 +257,4 @@ Migrate the current implementation to the target architecture defined in `measur
 - `SystemManager` remains focused on state synchronization and is not the owner of backend operation implementations.
 - Compatibility APIs are preserved and full quality gates pass.
 - Shared system synchronization behavior is represented by
-  `src/qubex/backend/system_synchronizer.py` `SystemSynchronizer` protocol.
+  `src/qubex/system/system_synchronizer.py` `SystemSynchronizer` protocol.

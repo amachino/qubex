@@ -10,7 +10,7 @@ from typing import NoReturn
 
 import numpy as np
 
-from qubex.backend.lattice_graph import LatticeGraph
+from qubex.system.lattice_graph import LatticeGraph
 
 logger = logging.getLogger(__name__)
 

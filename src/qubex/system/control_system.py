@@ -10,9 +10,7 @@ from typing import Final, Literal
 from pydantic import Field
 from typing_extensions import deprecated
 
-from qubex.core import MutableModel
-
-from .quel1.quel1_backend_constants import (
+from qubex.backend.quel1.quel1_backend_constants import (
     CNCO_CENTER_READ,
     CNCO_CENTER_READ_R8,
     DEFAULT_CLOCK_MASTER_ADDRESS,
@@ -24,6 +22,7 @@ from .quel1.quel1_backend_constants import (
     DEFAULT_NWAIT,
     DEFAULT_VATT,
 )
+from qubex.core import MutableModel
 
 
 class BoxType(Enum):

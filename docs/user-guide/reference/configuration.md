@@ -152,7 +152,7 @@ Supported units include `Hz`, `kHz`, `MHz`, `GHz`, `s`, `ms`, `us`, `ns`. Values
 ## Loading configuration programmatically
 
 ```python
-from qubex.configuration import ConfigLoader
+from qubex.system import ConfigLoader
 
 cfg = ConfigLoader(
     chip_id="64Q",
@@ -162,8 +162,6 @@ cfg = ConfigLoader(
 
 system = cfg.get_experiment_system()
 ```
-
-`from qubex.backend import ConfigLoader` also remains available for compatibility.
 
 If you want deferred loading:
 

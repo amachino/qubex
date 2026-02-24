@@ -15,9 +15,9 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from qubex.backend import LatticeGraph, PortType, SystemManager
-from qubex.backend.control_system import CapPort, GenPort
 from qubex.diagnostics import ChipInspector
+from qubex.system import LatticeGraph, PortType, SystemManager
+from qubex.system.control_system import CapPort, GenPort
 
 if TYPE_CHECKING:
     from qubex.backend.quel1.quel1_backend_controller import Quel1Box

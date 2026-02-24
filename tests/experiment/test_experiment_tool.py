@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from qubex.backend.control_system import PortType
 from qubex.experiment import experiment_tool
+from qubex.system.control_system import PortType
 
 
 @dataclass(frozen=True)

@@ -10,18 +10,7 @@ from typing import Final, Literal
 import numpy as np
 from typing_extensions import TypedDict
 
-from qubex.core import MutableModel
-from qubex.typing import ConfigurationMode
-
-from .control_system import (
-    Box,
-    CapPort,
-    ControlSystem,
-    GenPort,
-    PortType,
-)
-from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .quel1.quel1_backend_constants import (
+from qubex.backend.quel1.quel1_backend_constants import (
     AWG_MAX,
     CNCO_CENTER_CTRL,
     CNCO_CENTER_READ,
@@ -42,6 +31,17 @@ from .quel1.quel1_backend_constants import (
     LO_STEP,
     NCO_STEP,
 )
+from qubex.core import MutableModel
+from qubex.typing import ConfigurationMode
+
+from .control_system import (
+    Box,
+    CapPort,
+    ControlSystem,
+    GenPort,
+    PortType,
+)
+from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 from .target import CapTarget, Target
 from .target_registry import TargetRegistry
 

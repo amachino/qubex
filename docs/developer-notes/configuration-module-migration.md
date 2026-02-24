@@ -3,7 +3,7 @@
 ## Goal
 
 Reduce `qubex.backend` responsibility and move configuration concerns into
-`qubex.configuration` while keeping runtime behavior stable for v1.5.0 work.
+`qubex.system` while keeping runtime behavior stable for v1.5.0 work.
 
 ## Problem statement
 
@@ -16,13 +16,14 @@ Reduce `qubex.backend` responsibility and move configuration concerns into
 
 ## Target package split
 
-- `qubex.configuration`
+- `qubex.system`
   - YAML schema handling and normalization
   - loader orchestration APIs
+  - runtime/domain models (`QuantumSystem`, `ControlSystem`, `ExperimentSystem`)
+  - `SystemManager` and system synchronizers
 - `qubex.backend`
-  - hardware/runtime control (`SystemManager`, backend controllers, executors)
-- domain model layer (existing `backend` models for now)
-  - `Chip`, `ControlSystem`, `WiringInfo`, `ExperimentSystem`
+  - hardware runtime control (backend controllers, executors)
+  - low-level hardware helpers (`dc_voltage_controller`, `parallel_box_executor`)
 
 ## Migration principles
 
@@ -35,17 +36,17 @@ Reduce `qubex.backend` responsibility and move configuration concerns into
 
 ### Phase 1 (completed)
 
-- Added `qubex.configuration` package.
+- Added `qubex.system.wiring` module.
 - Moved wiring normalization utilities to:
-  - `src/qubex/configuration/wiring.py`
+  - `src/qubex/system/wiring.py`
 - `ConfigLoader` now delegates wiring-v2 normalization to configuration module.
 - Added focused tests for configuration wiring helpers.
 
 ### Phase 2 (in progress)
 
-- Moved `ConfigLoader` implementation to `qubex.configuration.config_loader`.
-- Kept `qubex.backend.config_loader` as compatibility shim during v1.5.0 pre-release.
-- Updated internal imports (`SystemManager`, diagnostics) to configuration namespace.
+- Moved `ConfigLoader` implementation to `qubex.system.config_loader`.
+- Removed compatibility shims under `qubex.backend` and `qubex.configuration`.
+- Updated internal imports (`SystemManager`, diagnostics) to system namespace.
 - Added import-compatibility tests for `ConfigLoader` exports.
 
 ### Phase 3 (in progress)

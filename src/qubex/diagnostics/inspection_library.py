@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from qubex.backend.lattice_graph import LatticeGraph
+from qubex.system.lattice_graph import LatticeGraph
 
 from .inspection import Inspection
 

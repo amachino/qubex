@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from qubex.backend.backend_controller import SystemBackendController
-    from qubex.backend.control_system import Box
-    from qubex.backend.experiment_system import ExperimentSystem
+    from qubex.system.control_system import Box
+    from qubex.system.experiment_system import ExperimentSystem
 
 
 class SystemSynchronizer(Protocol):

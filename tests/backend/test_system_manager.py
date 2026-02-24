@@ -10,9 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from qubex.backend.control_system import PortType
 from qubex.backend.quel3 import Quel3BackendController
-from qubex.backend.system_manager import BackendSettings, SystemManager
+from qubex.system.control_system import PortType
+from qubex.system.system_manager import BackendSettings, SystemManager
 
 
 @dataclass(frozen=True)
@@ -640,7 +640,7 @@ def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
             hash=0,
         ),
     )
-    monkeypatch.setattr("qubex.backend.system_manager.Confirm.ask", lambda _: False)
+    monkeypatch.setattr("qubex.system.system_manager.Confirm.ask", lambda _: False)
 
     called_sync_hardware = False
 
@@ -687,7 +687,7 @@ def test_load_passes_backend_kind_to_selector(
     def _fake_sync() -> None:
         called.append("sync")
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
     monkeypatch.setattr(
         manager, "_sync_experiment_system_to_backend_controller", _fake_sync
@@ -728,7 +728,7 @@ def test_load_prefers_wiring_v2_for_quel3_when_available(
         def get_experiment_system(self) -> object:
             return SimpleNamespace(hash=hash("TEST"))
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
 
     manager.load(
         chip_id="TEST",
@@ -763,7 +763,7 @@ def test_load_falls_back_to_legacy_wiring_for_quel3_when_v2_is_missing(
         def get_experiment_system(self) -> object:
             return SimpleNamespace(hash=hash("TEST"))
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
 
     manager.load(
         chip_id="TEST",
@@ -811,7 +811,7 @@ def test_load_resolves_backend_kind_from_chip_config(
         selected.append(kind)
         manager.__dict__["_backend_kind"] = kind
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
 
     manager.load(
@@ -864,7 +864,7 @@ def test_load_resolves_backend_kind_from_system_config(
         selected.append(kind)
         manager.__dict__["_backend_kind"] = kind
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
 
     manager.load(
@@ -913,7 +913,7 @@ def test_load_explicit_backend_kind_overrides_chip_config(
         selected.append(kind)
         manager.__dict__["_backend_kind"] = kind
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
 
     manager.load(
@@ -962,7 +962,7 @@ def test_load_explicit_backend_kind_overrides_system_config(
         selected.append(kind)
         manager.__dict__["_backend_kind"] = kind
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
 
     manager.load(
@@ -1006,7 +1006,7 @@ def test_load_defaults_to_quel1_when_chip_backend_kind_is_missing(
         selected.append(kind)
         manager.__dict__["_backend_kind"] = kind
 
-    monkeypatch.setattr("qubex.backend.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
 
     manager.load(

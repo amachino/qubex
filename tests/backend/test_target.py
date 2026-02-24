@@ -6,8 +6,8 @@ from typing import Literal
 
 import pytest
 
-from qubex.backend import Mux, Qubit, Resonator, Target, TargetType
-from qubex.backend.control_system import GenChannel, GenPort, PortType
+from qubex.system import Mux, Qubit, Resonator, Target, TargetType
+from qubex.system.control_system import GenChannel, GenPort, PortType
 
 
 def _make_gen_channel(*, sideband: Literal["U", "L"]) -> GenChannel:

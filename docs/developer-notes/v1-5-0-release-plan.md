@@ -193,8 +193,8 @@ Calendar note:
 - 2026-02-17: Implemented initial QuEL-3 backend execution path through `BackendController.execute(request)` that invokes quelware fixed-timeline execution and returns canonical `MeasurementResult` (with clear runtime error when quelware dependency is unavailable).
 - 2026-02-18: Added `ConfigLoader` support for `wiring.v2.yaml` (`schema_version: 2`) including physical-id maps (`control`/`readout`) and port-label normalization (`p2tx`, `p0p1trx`) into runtime wiring rows.
 - 2026-02-18: `SystemManager.load(..., backend_kind="quel3")` now prefers `wiring.v2.yaml` when present and falls back to legacy `wiring.yaml`.
-- 2026-02-18: Started configuration-layer modularization by adding `qubex.configuration.wiring` and delegating wiring-v2 normalization from `ConfigLoader`.
-- 2026-02-18: Moved `ConfigLoader` implementation to `qubex.configuration.config_loader`; kept `qubex.backend.config_loader` as compatibility shim and added import-compatibility tests.
+- 2026-02-18: Started configuration-layer modularization by adding `qubex.system.wiring` and delegating wiring-v2 normalization from `ConfigLoader`.
+- 2026-02-18: Moved `ConfigLoader` implementation to `qubex.system.config_loader`; removed `backend` compatibility shims and aligned import tests to the `system` namespace.
 - 2026-02-18: Added explicit `ConfigLoader.load()` lifecycle with `autoload` transition option; `SystemManager.load()` now uses explicit loader lifecycle (`autoload=False` + `load()`).
 - 2026-02-18: `SystemManager.load(chip_id=...)` now resolves backend family from `chip.yaml` (`backend`) when argument is omitted, with precedence `explicit argument > chip.yaml > quel1 default`.
 - 2026-02-18: Documented draft split of `chip.yaml`/`system.yaml` responsibilities (`topology.type` in `chip.yaml`, backend-specific runtime sections in `system.yaml`) in developer notes.
