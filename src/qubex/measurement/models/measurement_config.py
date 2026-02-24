@@ -12,7 +12,6 @@ class MeasurementConfig(Model):
     mode: MeasurementMode
     shots: int
     interval: float
-    frequencies: dict[str, float]
     enable_dsp_demodulation: bool
     enable_dsp_sum: bool
     enable_dsp_classification: bool

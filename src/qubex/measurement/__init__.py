@@ -29,8 +29,9 @@ from .models import (
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
-    SweepMeasurementConfig,
     SweepMeasurementResult,
+    SweepPoint,
+    SweepPointResult,
 )
 from .services import (
     MeasurementAmplificationService,
@@ -67,8 +68,9 @@ __all__ = [
     "StateClassifierGMM",
     "StateClassifierKMeans",
     "SweepMeasurementBuilder",
-    "SweepMeasurementConfig",
     "SweepMeasurementResult",
+    "SweepPoint",
+    "SweepPointResult",
     "make_measurement_schedule_figure",
     "make_sequencer_timeline_figure",
     "plot_measurement_schedule",

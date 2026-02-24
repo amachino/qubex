@@ -18,7 +18,8 @@ from qubex.measurement.measurement_result_converter import MeasurementResultConv
 from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementSchedule,
-    SweepMeasurementConfig,
+    SweepMeasurementResult,
+    SweepPoint,
 )
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
@@ -38,7 +39,6 @@ def _make_config() -> MeasurementConfig:
         mode="avg",
         shots=2,
         interval=100.0,
-        frequencies={},
         enable_dsp_demodulation=True,
         enable_dsp_sum=False,
         enable_dsp_classification=False,
@@ -524,17 +524,168 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
     assert result.device_config == {"kind": "quel3"}
 
 
-def test_run_sweep_measurement_raises_not_implemented() -> None:
-    """Given sweep measurement call, when invoked, then NotImplementedError is raised."""
+def test_run_sweep_measurement_delegates_to_execution_service() -> None:
+    """Given sweep measurement inputs, when invoked, then it delegates to execution service."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
         load_configs=False,
         connect_devices=False,
     )
+    config = _make_config()
+    sweep_points = [
+        SweepPoint(parameters={"amp": 0.1}),
+        SweepPoint(parameters={"amp": 0.2}),
+    ]
+    expected = SweepMeasurementResult(results=[])
+    called: dict[str, Any] = {}
 
-    with pytest.raises(NotImplementedError, match="run_sweep_measurement"):
-        asyncio.run(measurement.run_sweep_measurement(config=SweepMeasurementConfig()))
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        del point
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule(["RQ00"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_sweep_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: Any,
+        sweep_points: Any,
+        config: MeasurementConfig,
+    ) -> SweepMeasurementResult:
+        called["schedule"] = schedule
+        called["sweep_points"] = sweep_points
+        called["config"] = config
+        return expected
+
+    measurement.execution_service.run_sweep_measurement = MethodType(
+        fake_run_sweep_measurement,
+        measurement.execution_service,
+    )
+
+    result = asyncio.run(
+        measurement.run_sweep_measurement(
+            schedule=schedule,
+            sweep_points=sweep_points,
+            config=config,
+        )
+    )
+
+    assert called["schedule"] is schedule
+    assert called["sweep_points"] is sweep_points
+    assert called["config"] is config
+    assert result is expected
+
+
+def test_run_sweep_measurement_runs_points_and_returns_indexed_results() -> None:
+    """Given sweep points, when execution succeeds, then pointwise indexed results are returned."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+    sweep_points = [
+        SweepPoint(parameters={"step": 0}),
+        SweepPoint(parameters={"step": 1}),
+    ]
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        step = int(point.parameters["step"])
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self
+        step = int(schedule.pulse_schedule.labels[0][-1])
+        return MeasurementResult(
+            mode=config.mode,
+            data={"Q00": [np.array([step + 1.0 + 0.0j])]},
+            measurement_config=config.to_dict(),
+        )
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_sweep_measurement(
+            schedule=schedule,
+            sweep_points=sweep_points,
+            config=config,
+        )
+    )
+
+    assert [item.index for item in result.results] == [0, 1]
+    assert [item.point for item in result.results] == sweep_points
+    assert np.array_equal(
+        result.results[0].result.data["Q00"][0], np.array([1.0 + 0.0j])
+    )
+    assert np.array_equal(
+        result.results[1].result.data["Q00"][0], np.array([2.0 + 0.0j])
+    )
+
+
+def test_run_sweep_measurement_stops_immediately_on_error() -> None:
+    """Given pointwise execution error, when running sweep, then it fails fast."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+    sweep_points = [
+        SweepPoint(parameters={"step": 0}),
+        SweepPoint(parameters={"step": 1}),
+        SweepPoint(parameters={"step": 2}),
+    ]
+    called: dict[str, int] = {"count": 0}
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        step = int(point.parameters["step"])
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self, schedule, config
+        called["count"] += 1
+        if called["count"] == 2:
+            raise RuntimeError("boom")
+        return MeasurementResult(mode="avg", data={"Q00": [np.array([0.0 + 0.0j])]})
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(
+            execution_service.run_sweep_measurement(
+                schedule=schedule,
+                sweep_points=sweep_points,
+                config=config,
+            )
+        )
+
+    assert called["count"] == 2
 
 
 def test_execute_async_entrypoint_is_removed() -> None:

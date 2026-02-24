@@ -42,7 +42,6 @@ class MeasurementConfigFactory:
         mode: MeasurementMode = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        frequencies: dict[str, float] | None = None,
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
@@ -59,10 +58,6 @@ class MeasurementConfigFactory:
             interval=_or_default(
                 interval,
                 DEFAULT_INTERVAL,
-            ),
-            frequencies=_or_default(
-                frequencies,
-                {},
             ),
             enable_dsp_demodulation=_or_default(
                 enable_dsp_demodulation,

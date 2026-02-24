@@ -212,7 +212,6 @@ def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
         mode="avg",
         shots=1,
         interval=100.0,
-        frequencies={},
         enable_dsp_demodulation=True,
         enable_dsp_sum=False,
         enable_dsp_classification=False,

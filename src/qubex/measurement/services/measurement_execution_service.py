@@ -6,7 +6,7 @@ import asyncio
 import contextvars
 import logging
 import threading
-from collections.abc import Collection, Coroutine, Mapping
+from collections.abc import Callable, Collection, Coroutine, Mapping, Sequence
 from typing import TypeVar
 
 import numpy as np
@@ -37,8 +37,11 @@ from qubex.measurement.models.measure_result import (
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
-from qubex.measurement.models.sweep_measurement_config import SweepMeasurementConfig
-from qubex.measurement.models.sweep_measurement_result import SweepMeasurementResult
+from qubex.measurement.models.sweep_measurement_result import (
+    SweepMeasurementResult,
+    SweepPoint,
+    SweepPointResult,
+)
 from qubex.measurement.services.measurement_session_service import (
     MeasurementSessionService,
 )
@@ -308,11 +311,42 @@ class MeasurementExecutionService:
     async def run_sweep_measurement(
         self,
         *,
-        config: SweepMeasurementConfig,
+        schedule: Callable[[SweepPoint], MeasurementSchedule],
+        sweep_points: Sequence[SweepPoint],
+        config: MeasurementConfig,
     ) -> SweepMeasurementResult:
-        """Run sweep measurement (skeleton)."""
-        del config
-        raise NotImplementedError("run_sweep_measurement is not implemented yet.")
+        """
+        Run sweep measurement pointwise.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepPoint], MeasurementSchedule]
+            Callback that builds one measurement schedule per sweep point.
+        sweep_points : Sequence[SweepPoint]
+            Ordered sweep points to execute.
+        config : MeasurementConfig
+            Shared measurement configuration for all points.
+
+        Returns
+        -------
+        SweepMeasurementResult
+            Sweep result list in the same order as input points.
+        """
+        results: list[SweepPointResult] = []
+        for index, point in enumerate(sweep_points):
+            measurement_schedule = schedule(point)
+            point_result = await self.run_measurement(
+                schedule=measurement_schedule,
+                config=config,
+            )
+            results.append(
+                SweepPointResult(
+                    index=index,
+                    point=point,
+                    result=point_result,
+                )
+            )
+        return SweepMeasurementResult(results=results)
 
     def measure_noise(
         self,
@@ -570,7 +604,6 @@ class MeasurementExecutionService:
         mode: MeasurementMode = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        frequencies: dict[str, float] | None = None,
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
@@ -588,8 +621,6 @@ class MeasurementExecutionService:
             The number of shots, by default None.
         interval : float | None, optional
             The interval in ns, by default None.
-        frequencies : dict[str, float] | None, optional
-            The target frequencies in Hz, by default None.
         enable_dsp_demodulation : bool | None, optional
             Whether to enable DSP demodulation, by default None.
         enable_dsp_sum : bool | None, optional
@@ -610,7 +641,6 @@ class MeasurementExecutionService:
             mode=mode,
             shots=shots,
             interval=interval,
-            frequencies=frequencies,
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,

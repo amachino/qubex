@@ -34,7 +34,6 @@ def _make_config() -> MeasurementConfig:
         mode="avg",
         shots=2,
         interval=100.0,
-        frequencies={},
         enable_dsp_demodulation=True,
         enable_dsp_sum=False,
         enable_dsp_classification=False,

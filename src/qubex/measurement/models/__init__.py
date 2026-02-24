@@ -12,8 +12,11 @@ from .measurement_config import MeasurementConfig
 from .measurement_record import MeasurementRecord
 from .measurement_result import MeasurementResult
 from .measurement_schedule import MeasurementSchedule
-from .sweep_measurement_config import SweepMeasurementConfig
-from .sweep_measurement_result import SweepMeasurementResult
+from .sweep_measurement_result import (
+    SweepMeasurementResult,
+    SweepPoint,
+    SweepPointResult,
+)
 
 __all__ = [
     "MeasureData",
@@ -24,6 +27,7 @@ __all__ = [
     "MeasurementResult",
     "MeasurementSchedule",
     "MultipleMeasureResult",
-    "SweepMeasurementConfig",
     "SweepMeasurementResult",
+    "SweepPoint",
+    "SweepPointResult",
 ]

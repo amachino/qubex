@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
@@ -42,8 +42,7 @@ from .models.measure_result import (
     MultipleMeasureResult,
 )
 from .models.measurement_schedule import MeasurementSchedule
-from .models.sweep_measurement_config import SweepMeasurementConfig
-from .models.sweep_measurement_result import SweepMeasurementResult
+from .models.sweep_measurement_result import SweepMeasurementResult, SweepPoint
 from .services import (
     MeasurementAmplificationService,
     MeasurementClassificationService,
@@ -585,10 +584,14 @@ class Measurement:
     async def run_sweep_measurement(
         self,
         *,
-        config: SweepMeasurementConfig,
+        schedule: Callable[[SweepPoint], MeasurementSchedule],
+        sweep_points: Sequence[SweepPoint],
+        config: MeasurementConfig,
     ) -> SweepMeasurementResult:
-        """Run sweep measurement (skeleton)."""
+        """Run sweep measurement pointwise."""
         return await self.execution_service.run_sweep_measurement(
+            schedule=schedule,
+            sweep_points=sweep_points,
             config=config,
         )
 
@@ -820,7 +823,6 @@ class Measurement:
         mode: MeasurementMode = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        frequencies: dict[str, float] | None = None,
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
@@ -838,8 +840,6 @@ class Measurement:
             The number of shots, by default None.
         interval : float | None, optional
             The interval in ns, by default None.
-        frequencies : dict[str, float] | None, optional
-            The target frequencies in Hz, by default None.
         enable_dsp_demodulation : bool | None, optional
             Whether to enable DSP demodulation, by default None.
         enable_dsp_sum : bool | None, optional
@@ -860,7 +860,6 @@ class Measurement:
             mode=mode,
             shots=shots,
             interval=interval,
-            frequencies=frequencies,
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
