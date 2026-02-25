@@ -24,6 +24,11 @@ Related policy:
   - `ttl_ms=4000`
   - `tentative_ttl_ms=1000`
 - Target-to-instrument resolution is performed by runtime-side logic.
+- QuEL-3 system synchronizer is currently a no-op:
+  - no backend-settings snapshot pull path is implemented yet
+- `quelware-client` exposes `PORT`/`INSTRUMENT` resources and currently
+  represents readout paths as transceiver-style resources in examples
+  (`...:p0p1trx`).
 
 ## Decision log
 
@@ -114,6 +119,57 @@ Status legend:
   - For v1.5.0 scope, a standalone labels YAML is not required.
   - Runtime target resolution should prefer registry metadata, not label string parsing.
 
+### D9. QuEL-3 readout `tx/rx/trx` handling in ExperimentSystem
+
+- Status: `DECIDED`
+- Question: How should Qubex handle quelware transceiver-style readout resources?
+- Decision:
+  - Keep `ExperimentSystem` logical model unchanged:
+    - readout output (`read_out`) and input (`read_in`) remain explicit wiring roles.
+  - In QuEL-3 runtime resolution, allow both roles to resolve to one transceiver
+    resource/alias when wiring and instrument metadata are consistent.
+  - For measurement execution payload, one readout alias may carry both:
+    - waveform events (`tx` side)
+    - capture windows (`rx` side)
+  - Fail-fast rules:
+    - unresolved alias/resource: fail
+    - ambiguous candidates: fail
+    - resolved resource role incompatible with requested operation: fail
+
+### D10. `dump_box`-equivalent backend settings visibility
+
+- Status: `PENDING`
+- Question: Is there a QuEL-3 API equivalent to QuEL-1 `dump_box` for LO/NCO-like runtime settings?
+- Current state:
+  - QuEL-1 has `dump_box`-based synchronization and cache update.
+  - QuEL-3 path does not expose equivalent settings in Qubex today.
+  - Current `quelware-client` surface visible from this workspace includes:
+    - `list_resource_infos`
+    - `get_port_info`
+    - `get_instrument_info`
+    - execution/result APIs
+  - No confirmed API currently returns QuEL-1-style per-port runtime settings
+    (LO/CNCO/FNCO/VATT/FSC) as a pull snapshot.
+- Interim policy for beta:
+  - Treat QuEL-3 backend settings pull/sync as unsupported capability.
+  - Ensure QuEL-1-only introspection utilities fail clearly on QuEL-3.
+
+### D11. `system` package common vs backend-specific boundary
+
+- Status: `DECIDED`
+- Question: Which parts should stay shared, and which must split by backend?
+- Decision:
+  - Shared (`system` common):
+    - quantum/chip topology and target registry
+    - wiring loading and normalization
+    - session-level backend-kind selection and orchestration entrypoint
+  - Backend-specific:
+    - hardware synchronization implementation
+    - backend-settings snapshot schema and application logic
+    - low-level runtime configuration/introspection semantics
+- Reference:
+  - `system-package-quel1-quel3-boundary.md`
+
 ## Proposed minimum beta contract
 
 - Single source policy for endpoint/port/wait and session TTL is documented.
@@ -122,13 +178,18 @@ Status legend:
 - Missing alias/resource behavior is fail-fast.
 - `single`/`avg` result semantics are explicitly documented.
 - Cross-unit synchronized trigger behavior is required and validated.
+- `tx/rx/trx` handling is deterministic:
+  - logical readout `read_out`/`read_in` may converge to one transceiver alias in QuEL-3 runtime.
+- Unsupported QuEL-3 settings introspection capability is explicit and non-silent.
 
 ## Test implications
 
 - Unit tests:
   - config resolution precedence
   - alias/resource mapping resolution
+  - readout `tx/rx/trx` convergence rules
   - error paths (missing mapping, invalid config)
 - Integration tests:
   - one minimal QuEL-3 measurement scenario with explicit config
-  - one negative scenario (missing alias/resource)
+  - one negative scenario (missing/ambiguous alias/resource)
+  - one scenario where readout out/in resolve to one transceiver alias

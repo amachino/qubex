@@ -368,7 +368,7 @@ class Quel3ExecutionManager:
             if missing_aliases:
                 available = sorted(alias_to_id.keys())
                 raise ValueError(
-                    f"Quelware aliases are missing: {missing_aliases}. available={available}"
+                    f"quelware aliases are missing: {missing_aliases}. available={available}"
                 )
 
             alias = aliases[0]

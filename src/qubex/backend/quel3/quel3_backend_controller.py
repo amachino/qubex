@@ -42,9 +42,9 @@ class Quel3BackendController(BackendController):
         Parameters
         ----------
         quelware_endpoint : str | None, optional
-            Quelware API endpoint. Defaults to "localhost".
+            quelware API endpoint. Defaults to "localhost".
         quelware_port : int | None, optional
-            Quelware API port. Defaults to 50051.
+            quelware API port. Defaults to 50051.
         """
         self._sampling_period = self.SAMPLING_PERIOD_NS
         endpoint = quelware_endpoint if quelware_endpoint is not None else "localhost"
