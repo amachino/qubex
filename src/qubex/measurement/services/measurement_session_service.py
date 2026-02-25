@@ -180,7 +180,8 @@ class MeasurementSessionService:
             if not all(status.values())
         }
         raise ConnectionError(
-            f"Skipping pull because linkup failed for boxes: {failed_links}"
+            f"Linkup failed for the following boxes: {failed_links}. "
+            "Try relinkup_boxes(...) and retry."
         )
 
     def check_clock_status(self, box_list: list[str]) -> dict:

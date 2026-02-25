@@ -269,7 +269,10 @@ class Quel1ConnectionManager:
         if noise_threshold is None:
             noise_threshold = RELAXED_NOISE_THRESHOLD
         if not all(box.link_status().values()):
-            raise ConnectionError(f"Box {box_name} has down links before linkup.")
+            raise ConnectionError(
+                f"Linkup failed for box '{box_name}'. "
+                f"Try relinkup('{box_name}') and retry."
+            )
         box.reconnect(background_noise_threshold=noise_threshold, **kwargs)
         status = box.link_status()
         if not all(status.values()):
