@@ -7,10 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 if TYPE_CHECKING:
     from qubex.backend.quel1.compat.qubecalib_protocols import (
+        Quel1BoxCommonProtocol as Quel1Box,
+        Quel1SystemProtocol as Quel1System,
         SkewRuntimeProtocol,
     )
 
@@ -63,11 +66,16 @@ class Quel1SkewManager:
         estimate: bool = True,
     ) -> tuple[SkewRuntimeProtocol, Any]:
         """Run skew measurement workflow and return skew runtime and plot figure."""
+        resolved_box_names = list(dict.fromkeys(box_names))
+        system = self._build_skew_system(
+            box_names=resolved_box_names,
+            clockmaster_ip=clockmaster_ip,
+        )
         skew = self._runtime_context.driver.Skew.from_yaml(
             str(skew_yaml_path),
             box_yaml=str(box_yaml_path),
             clockmaster_ip=clockmaster_ip,
-            boxes=box_names,
+            system=system,
         )
         skew.system.resync()
         skew.measure()
@@ -75,3 +83,34 @@ class Quel1SkewManager:
             skew.estimate()
         fig = skew.plot()
         return skew, fig
+
+    def _build_skew_system(
+        self,
+        *,
+        box_names: list[str],
+        clockmaster_ip: str,
+    ) -> Quel1System:
+        """Build a temporary `Quel1System` for skew measurement without db reconnect path."""
+        driver = self._runtime_context.driver
+        existing_boxes: dict[str, Quel1Box] = {}
+        if self._runtime_context.is_connected:
+            connected_system = self._runtime_context.quel1system
+            clockmaster = connected_system._clockmaster  # noqa: SLF001
+            existing_boxes = dict(connected_system.boxes)
+        else:
+            clockmaster = driver.QuBEMasterClient(clockmaster_ip)
+
+        db = self._runtime_context.qubecalib.system_config_database
+        named_boxes = []
+        for box_name in box_names:
+            self._runtime_context.validate_box_availability(box_name)
+            box = existing_boxes.get(box_name)
+            if box is None:
+                box = db.create_box(box_name, reconnect=False)
+                box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+            named_boxes.append(driver.NamedBox(name=box_name, box=box))
+        return driver.Quel1System.create(
+            clockmaster=clockmaster,
+            boxes=named_boxes,
+            update_copnfig_cache=False,
+        )

@@ -863,9 +863,12 @@ class SkewProtocol(Protocol):
         cls,
         path: str,
         *,
-        box_yaml: str,
-        clockmaster_ip: str,
-        boxes: Sequence[str],
+        box_yaml: str | None = None,
+        sysdb: SystemConfigDatabaseProtocol | None = None,
+        system: Quel1SystemProtocol | None = None,
+        boxes: Sequence[str] | None = None,
+        ignore_boxes: Sequence[str] | None = None,
+        clockmaster_ip: str | None = None,
     ) -> SkewRuntimeProtocol:
         """Create skew Any from YAML and connectivity settings."""
         ...
