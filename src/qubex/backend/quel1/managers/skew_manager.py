@@ -113,5 +113,5 @@ class Quel1SkewManager:
         return driver.Quel1System.create(
             clockmaster=clockmaster,
             boxes=named_boxes,
-            update_copnfig_cache=False,
+            update_copnfig_cache=True,
         )

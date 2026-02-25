@@ -203,6 +203,7 @@ def test_run_skew_measurement_reuses_connected_boxes_without_reconnect() -> None
     assert [named.name for named in create_call["boxes"]] == ["A", "B"]
     assert create_call["boxes"][0].box is connected_system.boxes["A"]
     assert create_call["boxes"][1].box is connected_system.boxes["B"]
+    assert create_call["update_copnfig_cache"] is True
 
 
 def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect() -> (
@@ -240,6 +241,7 @@ def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect(
     assert [named.name for named in create_call["boxes"]] == ["A", "R"]
     assert create_call["boxes"][0].box is connected_system.boxes["A"]
     assert create_call["boxes"][1].box is sysdb.created_boxes["R"]
+    assert create_call["update_copnfig_cache"] is True
 
 
 def test_run_skew_measurement_creates_all_boxes_with_relaxed_reconnect_when_disconnected() -> (
@@ -275,6 +277,8 @@ def test_run_skew_measurement_creates_all_boxes_with_relaxed_reconnect_when_disc
     from_yaml_call = _FakeSkewClass.from_yaml_calls[-1]
     assert from_yaml_call["boxes"] == []
     assert "system" in from_yaml_call
+    create_call = _FakeQuel1SystemClass.create_calls[-1]
+    assert create_call["update_copnfig_cache"] is True
 
 
 def test_run_skew_measurement_passes_empty_boxes_when_system_is_provided() -> None:
