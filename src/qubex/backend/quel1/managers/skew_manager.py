@@ -76,6 +76,7 @@ class Quel1SkewManager:
             box_yaml=str(box_yaml_path),
             clockmaster_ip=clockmaster_ip,
             system=system,
+            boxes=[],
         )
         skew.system.resync()
         skew.measure()

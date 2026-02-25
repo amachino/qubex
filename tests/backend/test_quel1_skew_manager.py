@@ -273,5 +273,29 @@ def test_run_skew_measurement_creates_all_boxes_with_relaxed_reconnect_when_disc
     ]
     assert _FakeQuBEMasterClient.create_calls == ["192.0.2.1"]
     from_yaml_call = _FakeSkewClass.from_yaml_calls[-1]
-    assert "boxes" not in from_yaml_call
+    assert from_yaml_call["boxes"] == []
     assert "system" in from_yaml_call
+
+
+def test_run_skew_measurement_passes_empty_boxes_when_system_is_provided() -> None:
+    """Given prebuilt system is provided, when measuring skew, then manager passes explicit empty boxes list."""
+    _reset_fakes()
+    sysdb = _FakeSysDb()
+    runtime_context = _FakeRuntimeContext(
+        available_boxes=["A"],
+        is_connected=False,
+        connected_system=None,
+        sysdb=sysdb,
+    )
+    manager = Quel1SkewManager(runtime_context=cast(Any, runtime_context))
+
+    manager.run_skew_measurement(
+        skew_yaml_path="skew.yaml",
+        box_yaml_path="box.yaml",
+        clockmaster_ip="192.0.2.1",
+        box_names=["A"],
+        estimate=False,
+    )
+
+    from_yaml_call = _FakeSkewClass.from_yaml_calls[-1]
+    assert from_yaml_call["boxes"] == []
