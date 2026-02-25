@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextvars
 import logging
 import threading
-from collections.abc import Callable, Collection, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from typing import TypeVar
 
 import numpy as np
@@ -20,6 +18,7 @@ from qubex.backend.quel1 import (
     Quel1BackendController,
 )
 from qubex.backend.quel3 import Quel3BackendController
+from qubex.core.async_bridge import AsyncBridge
 from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_constraint_profile import (
@@ -57,40 +56,31 @@ from qubex.typing import IQArray, MeasurementMode, TargetMap
 
 logger = logging.getLogger(__name__)
 
-_R = TypeVar("_R")
+R = TypeVar("R")
 _SYNC_BRIDGE_TIMEOUT_SECONDS = 300.0
+_MEASUREMENT_ASYNC_BRIDGE_LOCK = threading.Lock()
+_MEASUREMENT_ASYNC_BRIDGE: AsyncBridge | None = None
 
 
-def _run_async(coroutine: Coroutine[object, object, _R]) -> _R:
-    """Run one coroutine from synchronous measurement APIs."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coroutine)
+def _get_measurement_async_bridge() -> AsyncBridge:
+    """Return module-level async bridge singleton for measurement APIs."""
+    global _MEASUREMENT_ASYNC_BRIDGE
+    with _MEASUREMENT_ASYNC_BRIDGE_LOCK:
+        if _MEASUREMENT_ASYNC_BRIDGE is None:
+            _MEASUREMENT_ASYNC_BRIDGE = AsyncBridge(
+                default_timeout=_SYNC_BRIDGE_TIMEOUT_SECONDS,
+                thread_name="qubex-measurement-async-bridge",
+            )
+        return _MEASUREMENT_ASYNC_BRIDGE
 
-    context = contextvars.copy_context()
-    result_holder: dict[str, _R] = {}
-    error_holder: dict[str, Exception] = {}
-    done = threading.Event()
 
-    def _runner() -> None:
-        try:
-            result_holder["value"] = context.run(asyncio.run, coroutine)
-        except Exception as exc:  # pragma: no cover - passthrough guard
-            error_holder["error"] = exc
-        finally:
-            done.set()
-
-    thread = threading.Thread(target=_runner, daemon=True)
-    thread.start()
-    if not done.wait(timeout=_SYNC_BRIDGE_TIMEOUT_SECONDS):
-        raise TimeoutError(
-            "Timed out while waiting for asynchronous measurement execution."
-        )
-
-    if "error" in error_holder:
-        raise error_holder["error"]
-    return result_holder["value"]
+def _run_async(
+    factory: Callable[[], Awaitable[R]],
+    *,
+    timeout: float = _SYNC_BRIDGE_TIMEOUT_SECONDS,
+) -> R:
+    """Run one awaitable factory from synchronous measurement APIs."""
+    return _get_measurement_async_bridge().run(factory, timeout=timeout)
 
 
 class MeasurementExecutionService:
@@ -582,7 +572,7 @@ class MeasurementExecutionService:
         )
 
         result = _run_async(
-            self.run_measurement(
+            lambda: self.run_measurement(
                 schedule=measurement_schedule,
                 config=run_config,
             )

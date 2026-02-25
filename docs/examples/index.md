@@ -47,6 +47,7 @@ This section links to the rendered Jupyter notebooks shipped with the documentat
 
 ## Core
 
+- [Async bridge](core/async_bridge.ipynb)
 - [Data model](core/data_model.ipynb)
 - [Expression](core/expression.ipynb)
 - [Model](core/model.ipynb)

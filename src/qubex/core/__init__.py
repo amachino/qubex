@@ -17,7 +17,10 @@ from qxcore import (
     units,
 )
 
+from .async_bridge import AsyncBridge
+
 __all__ = [
+    "AsyncBridge",
     "DataModel",
     "Expression",
     "Frequency",
