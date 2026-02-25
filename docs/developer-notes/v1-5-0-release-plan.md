@@ -7,9 +7,9 @@
 
 ## Dependency status
 
-- `quelware-client` is not yet complete for final QuEL-3 execution-path decisions.
-- QuEL-3 beta decision items `DF-01` and `DF-02` are fixed.
-- QuEL-3 decision items `DF-03` and `DF-04` remain deferred and are resumed after dependency completion.
+- `quelware-client` API baseline in this workspace is confirmed (`InstrumentResolver`, `Sequencer`, `Session.trigger(instrument_ids=...)`).
+- QuEL-3 beta decision items `DF-01` to `DF-04` are fixed as of `2026-02-25`.
+- Remaining QuEL-3 beta risk is implementation completion and hardware validation, not upstream decision ambiguity.
 
 ## Scope
 
@@ -29,10 +29,13 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 
 | Priority | Task | Due | Dependency | Status |
 | --- | --- | --- | --- | --- |
-| P0 | Define QuEL-3 integration design (adapter boundary, lifecycle, error model) | TBD (after `quelware-client` completion) | `quelware-client` completion | PROPOSED / ON_HOLD |
-| P0 | Implement QuEL-3 adapter with `quelware-client` | TBD (after `quelware-client` completion) | `quelware-client` completion | ON_HOLD (skeleton exists; implementation intentionally paused) |
+| P0 | Finalize QuEL-3 integration design (resolver boundary, lifecycle, error model) | 2026-02-27 | Fixed beta contract decisions | IN_PROGRESS |
+| P0 | Replace legacy `InstrumentMapper` integration with `InstrumentResolver` path | 2026-02-27 | Current `quelware-client` API (`main`) | TODO |
+| P0 | Implement target-to-instrument auto resolution from wiring/port with fail-fast errors | 2026-02-28 | wiring.v2 policy + resource/instrument info contracts | TODO |
+| P0 | Implement multi-instrument, cross-unit synchronized trigger execution path | 2026-02-28 | Resolver integration + session orchestration | TODO |
+| P0 | Align capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`) | 2026-02-28 | quelware directive support (`SetCaptureMode`) | TODO |
 | P0 | Prepare compatibility contract tests at `Measurement` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
-| P0 | Implement synchronized measurement protocol execution path | TBD (after `quelware-client` completion) | `quelware-client` completion + task primitives baseline | PROPOSED / ON_HOLD |
+| P0 | Implement synchronized measurement protocol execution path (SP-BETA-001) | 2026-02-28 | Multi-instrument and cross-unit trigger support | TODO |
 | P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | IN_PROGRESS (measurement result time-axis path migrated) |
 | P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
 | P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-08 | Async primitives | TODO |
@@ -47,26 +50,18 @@ Calendar note:
 
 - `2026-02-29` does not exist; end-of-February deadlines are normalized to `2026-02-28`.
 
-## Execution order (as of 2026-02-18, dependency-adjusted)
+## Execution order (as of 2026-02-25, decision-fixed)
 
-1. Wave A (current): non-QuEL-3 freeze and test scope lock
-   - Lock compatibility and delegation contract scope.
-   - Define synchronized scenario and beta release-note template.
-   - Lock DF-01/DF-02 and keep DF-03/DF-04 deferred until dependency completion.
-2. Wave B (next): non-QuEL-3 beta-blocking implementation
-   - Close remaining fixed `2 ns` assumptions in runtime and experiment paths.
-   - Implement task-based async measurement primitives.
-   - Add sweep measurement API and execution flow in measurement layer.
-3. Wave C (after Wave B): beta gate for non-QuEL-3 scope
+1. Wave A (current): QuEL-3 beta-blocking implementation
+   - Migrate execution integration from `InstrumentMapper` to `InstrumentResolver`.
+   - Implement target-to-instrument auto resolution from wiring/port with fail-fast behavior.
+   - Remove single-alias limitation and support multi-instrument, cross-unit synchronized trigger execution.
+   - Align `Measurement` mode mapping with quelware capture modes.
+2. Wave B (next): beta gate and validation evidence
    - Run required checks: `uv run ruff check`, `uv run ruff format`, `uv run pyright`, `uv run pytest`.
-   - Run hardware gate scenarios for QuEL-1.
+   - Run hardware gate scenarios for QuEL-1 and QuEL-3 (including `SP-BETA-001`).
    - Publish beta release notes + known limitations + migration notes.
-4. Wave Q (triggered when `quelware-client` is ready): QuEL-3 track resume
-   - Re-open and finalize DF-03/DF-04.
-   - Apply DF-01/DF-02 decisions in QuEL-3 runtime paths.
-   - Implement synchronized execution path and QuEL-3 runtime integration.
-   - Run QuEL-3 hardware gates.
-5. Wave D (2026-03-01 to 2026-03-25): GA hardening and release
+3. Wave C (2026-03-01 to 2026-03-25): GA hardening and release
    - Triage beta feedback and close critical/high issues.
    - Finalize sweep/async docs and compatibility notes.
    - Finalize GA release notes and MkDocs guides.
@@ -77,6 +72,10 @@ Calendar note:
 - Existing controller regression tests all pass
 - QuEL-3 is API-compatible at measurement facade level (`Measurement`)
 - `Experiment` core flows remain operational through delegation
+- QuEL-3 integration uses `InstrumentResolver`-based runtime resolution compatible with current `quelware-client`
+- Target-to-instrument alias resolution follows wiring/port policy and fails fast on unresolved/ambiguous mapping
+- Multi-instrument and cross-unit synchronized trigger execution is validated on hardware
+- Capture-mode contract is preserved (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`, waveform inspection uses `AVERAGED_WAVEFORM`)
 - No blocking fixed `2 ns` assumptions remain in QuEL-3 code path
 - Core synchronized protocol path is executable
 - `mock_mode=True` compatibility path is covered by tests and remains operational
@@ -136,15 +135,19 @@ Calendar note:
 - [x] `mock_mode=True` is mandatory for v1.5.0 beta compatibility
 - [x] Canonical sampling period source of truth: backend/controller `dt`
 
-## Current sprint checklist (2026-02-18 to 2026-02-21)
+## Current sprint checklist (2026-02-25 to 2026-02-28)
 
-- [ ] Finalize QuEL-3 integration interface based on current `quelware-client` source (`quel3-adapter-interface-draft.md`) after dependency completion.
+- [x] Finalize QuEL-3 integration interface based on current `quelware-client` source (`quel3-adapter-interface-draft.md`) with `InstrumentResolver` baseline.
 - [x] Freeze DF-01/DF-02 decisions in `quel3-adapter-interface-draft.md` (alias mapping and capture key policy).
-- [ ] Finalize deferred DF-03/DF-04 decisions (trigger model and result-mode contract) after dependency completion.
+- [x] Finalize DF-03/DF-04 decisions (multi-instrument/cross-unit synchronized trigger and capture-mode contract).
 - [x] Define minimal synchronized protocol scenario for beta sign-off (`v1-5-0-synchronized-protocol-scenario.md`).
 - [x] Lock `Measurement` and `Experiment` delegation smoke test scope for beta (`v1-5-0-contract-test-scope.md`).
 - [x] Draft beta release notes template and known limitation section (`v1-5-0-beta-release-notes-template.md`).
 - [x] Document shared pulse factory design for backend-derived sampling-period ownership across `Experiment` and `Measurement` (`v1-5-0-shared-pulse-factory-design.md`).
+- [ ] Implement resolver-based alias auto-resolution path (`wiring/port` aligned) with fail-fast errors.
+- [ ] Remove single-alias restriction in QuEL-3 execution path and validate cross-unit synchronized trigger.
+- [ ] Switch QuEL-3 capture flow to quelware capture-mode contract (`VALUES_PER_LOOP`/`AVERAGED_VALUE`).
+- [ ] Run QuEL-3 hardware validation (`HV-001` to `HV-007`) and attach evidence.
 - [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
 
 ## Sampling-period audit (2026-02-17)
@@ -216,6 +219,12 @@ Calendar note:
 - 2026-02-24: Updated QuEL-3 adapter contract to require explicit alias mapping (`instrument_alias_map`) at payload-build time.
 - 2026-02-24: Removed `MeasurementResultFactory` and moved backend-result vocabulary conversion responsibility fully into measurement adapters (`build_measurement_result`).
 - 2026-02-24: Removed `instrument_aliases`/`output_target_labels` from `Quel3ExecutionPayload`; payload/result in backend path are now alias-based, and alias<->target conversion is handled in adapter layer.
+- 2026-02-25: Fixed beta contract requirement: QuEL-3 hardware gate includes multi-instrument and cross-unit synchronized trigger execution.
+- 2026-02-25: Adopted `InstrumentResolver` as the integration baseline (replacing legacy `InstrumentMapper`) based on current `quelware-client` examples.
+- 2026-02-25: Fixed alias mapping policy to runtime auto-resolution from wiring/port; unresolved/ambiguous resolution must fail fast.
+- 2026-02-25: Fixed capture-mode contract for QuEL-3 path: `avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`, waveform inspection uses `AVERAGED_WAVEFORM`.
+- 2026-02-25: Runtime connection defaults are provisionally aligned to `quelware-client` defaults (`endpoint=localhost`, `port=50051`, `trigger_wait=1000000`, `ttl_ms=4000`, `tentative_ttl_ms=1000`).
+- 2026-02-25: Superseded prior provisional notes that required explicit `instrument_alias_map` or deferred DF-03/DF-04; resolver-based auto-resolution and DF-03/DF-04 are now fixed beta contract decisions.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.

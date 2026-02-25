@@ -20,6 +20,9 @@ Related policy:
   - endpoint: `localhost`
   - port: `50051`
   - trigger wait: `1000000`
+- Session defaults (provisional, aligned with `quelware-client`):
+  - `ttl_ms=4000`
+  - `tentative_ttl_ms=1000`
 - Target-to-instrument resolution is performed by runtime-side logic.
 
 ## Decision log
@@ -68,39 +71,38 @@ Status legend:
 
 ### D4. Session resource selection
 
-- Status: `PENDING`
-- Question: Which resources should be opened in one session?
-- Candidate options:
-  1. Only resources needed by the request payload
-  2. All configured QuEL-3 resources
-  3. Configurable policy (default: needed-only)
+- Status: `DECIDED`
+- Decision:
+  - Open only resources required by the request payload.
+  - The selected resource set may span multiple units, and cross-unit synchronized trigger is required for beta gate scenarios.
 
 ### D5. Timing and trigger policy
 
-- Status: `PENDING`
-- Question: How should trigger wait and timing policy be configured?
-- Candidate options:
-  1. `system.yaml` default (`wait`) + optional per-session override
-  2. Per-target configurable
-  3. Auto-tuned by observed hardware response
+- Status: `IN_PROGRESS`
+- Current policy:
+  - Use `quelware-client` defaults as provisional runtime values for beta:
+    - endpoint=`localhost`
+    - port=`50051`
+    - trigger wait=`1000000`
+    - `ttl_ms=4000`, `tentative_ttl_ms=1000`
+- Target policy:
+  - Move to config-file-first (`system.yaml`) with optional overrides in a later update.
 
 ### D6. Result semantics for `single` and `avg`
 
-- Status: `PENDING`
-- Question: Which averaging semantics should be canonical for QuEL-3?
-- Candidate options:
-  1. Controller returns already averaged data for `avg`
-  2. Controller returns per-shot, upper layer averages
-  3. Configurable mode
+- Status: `DECIDED`
+- Decision:
+  - Canonical mode mapping follows quelware capture modes:
+    - `single` -> `CaptureMode.VALUES_PER_LOOP`
+    - `avg` -> `CaptureMode.AVERAGED_VALUE`
+    - waveform inspection flows (for example `check_waveform`) -> `CaptureMode.AVERAGED_WAVEFORM`
 
 ### D7. Failure and fallback policy
 
-- Status: `PENDING`
-- Question: What should happen when an alias/resource is missing?
-- Candidate options:
-  1. Fail-fast with explicit error (recommended)
-  2. Skip target and continue
-  3. Fallback to target label guessing
+- Status: `DECIDED`
+- Decision:
+  - Unresolved or ambiguous alias/resource resolution must fail fast with explicit error.
+  - Skip-and-continue behavior and target-label guessing are not allowed in beta contract.
 
 ### D8. Physical identifier base and label layer
 
@@ -119,6 +121,7 @@ Status legend:
 - Session resource selection policy is deterministic.
 - Missing alias/resource behavior is fail-fast.
 - `single`/`avg` result semantics are explicitly documented.
+- Cross-unit synchronized trigger behavior is required and validated.
 
 ## Test implications
 

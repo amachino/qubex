@@ -22,6 +22,10 @@ Freeze the minimum compatibility test scope required for v1.5.0 beta sign-off.
 | QuEL-3 adapter payload conversion and alias resolution | covered | `tests/measurement/test_quel3_measurement_backend_adapter.py` |
 | QuEL-3 controller-to-manager execution contract | covered | `tests/backend/test_quel3_backend_controller.py` |
 | Sampling-period source contract (`dt`) | covered | `tests/measurement/test_sampling_period_source.py` |
+| QuEL-3 integration compatibility with current `quelware-client` resolver API (`InstrumentResolver`) | gap | TODO (new regression test for resolver-path import/usage) |
+| Target-to-alias auto-resolution by wiring/port with fail-fast errors on unresolved/ambiguous cases | gap | TODO (new adapter/manager contract tests) |
+| Multi-instrument synchronized trigger including cross-unit execution | gap | TODO (new backend execution tests + hardware gate evidence) |
+| Capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`, waveform inspection=`AVERAGED_WAVEFORM`) | gap | TODO (new execution/result contract tests) |
 
 ## Experiment delegation smoke matrix
 
@@ -37,3 +41,4 @@ Freeze the minimum compatibility test scope required for v1.5.0 beta sign-off.
 
 1. All currently covered items stay green.
 2. Any compatibility-surface change must include this scope update in the same PR.
+3. All `gap` items above are required to be moved to `covered` before beta sign-off.
