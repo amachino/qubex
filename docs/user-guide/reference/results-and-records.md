@@ -4,11 +4,11 @@ Qubex returns structured result objects that support plotting and persistence.
 
 ## Measurement results
 
-- **`MeasureResult`**: High-level result returned by `Experiment.measure()` and `Measurement.measure()`.
+- **`MeasureResult`**: Primary result type returned by `Experiment.measure()`.
   - Contains per-target data with helpers like `plot()`, `plot_fft()`, and classification utilities.
   - Can be saved via `result.save()`.
 
-- **`MeasurementResult`**: Canonical serializable result for lower-level measurement workflows. Saved to NetCDF with `save()`.
+- **`MeasurementResult`**: Canonical serializable result for lower-level `Measurement` workflows (advanced usage). Saved to NetCDF with `save()`.
 
 ### Save and load a measurement record
 

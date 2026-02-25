@@ -258,7 +258,7 @@ class CliffordGenerator:
         ----------
         n : int
             The number of random Clifford operators to return.
-        interlieve : dict[str, tuple[complex, str]]
+        interleave : Clifford | dict[str, tuple[complex, str]]
             The interleaved gate to apply after each Clifford operator.
         type : Literal["1Q", "1Q1Q", "2Q"] = "1Q"
             The type of Clifford operators to generate.

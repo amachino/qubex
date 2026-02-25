@@ -56,9 +56,13 @@ schedule = qx.PulseSchedule()
 with schedule as s:
     s.add(target, exp.hpi_pulse[target])  # X90
     s.barrier()
-    s.call(exp.measurement())             # readout
 
-custom_result = exp.measure_schedule(schedule, mode="avg", shots=1024)
+custom_result = exp.execute(
+    schedule=schedule,
+    mode="avg",
+    shots=1024,
+    add_last_measurement=True,  # append readout automatically
+)
 custom_result.plot()
 ```
 

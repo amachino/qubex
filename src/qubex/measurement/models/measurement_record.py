@@ -45,7 +45,7 @@ class MeasurementRecord(Generic[T]):
 
         Parameters
         ----------
-        datadata_dir: Path | str | None
+        data_dir : Path | str | None
             Path to the directory where the record will be saved.
         """
         if data_dir is None:

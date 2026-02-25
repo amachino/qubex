@@ -102,7 +102,7 @@ class ExperimentUtil:
         ----------
         frequency_range : ArrayLike
             Frequency range to split in GHz.
-        ubrange_width : float, optional
+        subrange_width : float, optional
             Width of the sub-ranges. Defaults to 0.3 GHz.
 
         Returns

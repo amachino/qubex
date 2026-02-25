@@ -1,6 +1,7 @@
 # Configuration
 
-Qubex uses YAML files to describe chip topology, wiring, and control parameters. These files are loaded by `ConfigLoader` and cached in `SystemManager`.
+Qubex uses YAML files to describe chip topology, wiring, and control parameters.
+These files are loaded automatically when you create an `Experiment`.
 
 ## Directory layout
 
@@ -17,6 +18,8 @@ Qubex uses YAML files to describe chip topology, wiring, and control parameters.
 ```
 
 By default, `<base>` is `/home/shared/qubex-config`. You can override paths using `config_dir` and `params_dir`.
+
+Most experiment users do not need to interact with internal loader classes directly.
 
 ## Config files
 
@@ -54,25 +57,29 @@ quel1:
 
 ### Backend selection precedence
 
-When `SystemManager.load(..., backend_kind=...)` omits `backend_kind`, Qubex resolves backend family in this order:
+When backend family is not explicitly fixed, Qubex resolves it in this order:
 
-1. explicit `backend_kind` argument
+1. explicit backend override from session options
 2. `system.yaml` top-level `backend`
 3. `chip.yaml` chip entry `backend` (legacy fallback)
 4. default `quel1`
 
 `backend` must be either `quel1` or `quel3`.
 
-### Current `system.yaml` runtime behavior (v1.5.0 pre-release)
+### Current `system.yaml` runtime behavior (v1.5.0 beta)
 
 - `backend` and `chip_id` are used by loader/runtime selection.
-- `quel1.clock_master` is used by `ConfigLoader` and overrides legacy `chip.yaml` `clock_master`.
+- `quel1.clock_master` overrides legacy `chip.yaml` `clock_master`.
 - QuEL-3 endpoint/port/trigger runtime values currently use controller defaults:
   - endpoint: `localhost`
   - port: `50051`
   - trigger wait: `1000000`
 - QuEL-3 schedule default sampling period is `0.4 ns` (2.5 GS/s).
   (`quel3:` section in YAML remains reserved for future runtime binding.)
+
+> [!IMPORTANT]
+> QuEL-3 behavior in v1.5.0 is beta and may change across pre-GA updates.
+> Validate on your target hardware and pin your revision for production use.
 
 ```yaml
 # box.yaml
@@ -149,26 +156,17 @@ Supported units include `Hz`, `kHz`, `MHz`, `GHz`, `s`, `ms`, `us`, `ns`. Values
 - `t1`, `t2_star`, `t2_echo`
 - `average_readout_fidelity`, `x90_gate_fidelity`, `x180_gate_fidelity`
 
-## Loading configuration programmatically
+## Loading configuration in `Experiment`
 
 ```python
-from qubex.system import ConfigLoader
+import qubex as qx
 
-cfg = ConfigLoader(
+exp = qx.Experiment(
     chip_id="64Q",
     config_dir="/path/to/config",
     params_dir="/path/to/params",
 )
-
-system = cfg.get_experiment_system()
-```
-
-If you want deferred loading:
-
-```python
-cfg = ConfigLoader(chip_id="64Q", autoload=False)
-cfg.load()
-system = cfg.get_experiment_system()
+exp.connect()
 ```
 
 ## Example files in repository

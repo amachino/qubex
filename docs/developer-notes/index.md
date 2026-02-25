@@ -7,6 +7,7 @@ Manage development notes and operational documents.
 - [v1.5.0 Pulse Lazy Sampling Notes](v1-5-0-pulse-lazy-sampling-notes.md)
 - [v1.5.0 PulseSchedule Per-Channel Sampling-Period Design Draft](v1-5-0-pulse-schedule-channel-sampling-period-design.md)
 - [v1.5.0 QuEL-3 Waveform Registration Plan](v1-5-0-quel3-waveform-registration-plan.md)
+- [v1.5.0 Experiment Async Measurement API Plan](v1-5-0-experiment-async-api-plan.md)
 - [Pulse ABC Migration Plan](pulse-abc-migration-plan.md)
 - [Pulse Copy Depth Policy](pulse-copy-depth-policy.md)
 - [v1.5.0 Execution Payload Layering](v1-5-0-execution-payload-layering.md)

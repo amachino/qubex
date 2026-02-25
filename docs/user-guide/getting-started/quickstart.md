@@ -8,6 +8,9 @@ This quickstart shows a minimal measurement using the high-level `Experiment` AP
 > - Default location: `/home/shared/qubex-config/<chip_id>/`.
 > - Custom locations can be passed via `config_dir` and `params_dir` when creating an `Experiment` object.
 > See [Configuration](../reference/configuration.md) for details.
+> [!IMPORTANT]
+> QuEL-3 support in v1.5.0 is in beta.
+> Use release notes and developer notes to track behavior changes before production rollout.
 
 ## 1. Create an experiment
 
@@ -62,5 +65,6 @@ print(loaded.data)
 ## Next steps
 
 - Learn how configuration and targets are modeled: [Concepts](../concepts/overview.md)
-- Execute measurements with lower-level control: [Basic measurement](../how-to/basic-measurement.md)
+- Continue with high-level experiment workflows: [Tutorials](../tutorials/index.md)
+- Use lower-level APIs only when needed: [Basic measurement (Measurement API, advanced)](../how-to/basic-measurement.md)
 - Explore notebooks: [Examples](../../examples/index.md)

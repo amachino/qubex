@@ -1,6 +1,8 @@
-# Basic measurement
+# Basic measurement (Measurement API, advanced)
 
-This guide walks through a simple measurement workflow using `Measurement`.
+This guide walks through a simple workflow using the lower-level `Measurement` API.
+
+For most workflows, prefer the high-level `Experiment` APIs.
 
 ## Goal
 

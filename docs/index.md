@@ -2,6 +2,9 @@
 
 Qubex brings pulse-level workflows into a single framework for configuring heterogeneous devices, building and running arbitrary pulse sequences, applying standard characterization, calibration, and benchmarking routines, and iterating offline with a Pulse-level simulator.
 
+The recommended user workflow is `Experiment`-first.
+Lower-level `Measurement` APIs are available for advanced control.
+
 ## Key features
 
 - **End-to-end workflow**: Go from setup to execution to analysis in a single, consistent flow.

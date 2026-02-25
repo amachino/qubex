@@ -22,6 +22,7 @@
 - Remove assumptions tied to fixed 2 ns sampling period; support backend-defined sampling period
 - Enable end-to-end experiment protocols including synchronized measurements
 - Provide task-based, async-friendly new measurement primitive methods
+- Add async-first `Experiment` measurement APIs (`run_measurement`, `run_sweep_measurement`) while keeping legacy synchronous compatibility APIs
 - Add sweep measurement support in `measurement` layer
 
 ## Prioritized TODO
@@ -44,6 +45,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | P0 | Track and close blocking clarifications with quelware team (alias uniqueness, trigger guarantees, settings introspection path) | 2026-02-28 | Coordination with quelware team | TODO |
 | P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | IN_PROGRESS (measurement result time-axis path migrated) |
 | P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
+| P1 | Add async-first `Experiment` measurement APIs (`run_measurement`, `run_sweep_measurement`) and keep legacy wrappers (`measure`, `execute`, `sweep_parameter`, `sweep_measurement`) | 2026-03-08 | Measurement async primitives + API design freeze | TODO |
 | P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-08 | Async primitives | TODO |
 | P1 | Publish beta release notes and migration notes | 2026-02-28 | Major features for beta fixed | TODO |
 | P1 | GA hardening: bug fixes from beta feedback | 2026-03-20 | Beta feedback | TODO |
@@ -114,6 +116,9 @@ Calendar note:
 - Keep delegation behavior operational for core flows:
   - `connect`, `disconnect`, `reload`, `run`
   - `execute`, `measure`, `measure_state`, `measure_idle_states`
+- Add async-first execution APIs in v1.5.0:
+  - `run_measurement`, `run_sweep_measurement`
+  - Keep synchronous APIs as legacy compatibility surface during v1.5.x
 
 ### Measurement facade level (must keep compatible for QuEL-3)
 
@@ -248,6 +253,7 @@ Calendar note:
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.
+- 2026-02-25: Added `v1-5-0-experiment-async-api-plan.md` to track planned async-first `Experiment` APIs (`run_measurement`, `run_sweep_measurement`) and legacy compatibility policy for `measure`/`execute`/`sweep_parameter`/`sweep_measurement`.
 
 ## Commit plan
 

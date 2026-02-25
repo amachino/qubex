@@ -1,6 +1,8 @@
-# Run a pulse schedule
+# Run a pulse schedule (Measurement API, advanced)
 
-This guide shows how to build a `qxpulse.PulseSchedule` and execute it with `Measurement`.
+This guide shows how to build a `qxpulse.PulseSchedule` and execute it with the lower-level `Measurement` API.
+
+For most workflows, use `Experiment.execute()` and related high-level APIs.
 
 ## Build a schedule
 
@@ -44,7 +46,6 @@ measurement_schedule = session.build_measurement_schedule(pulse_schedule=schedul
 config = session.create_measurement_config(
     mode="single",
     shots=1024,
-    frequencies={"Q00": 5.0},
     enable_dsp_demodulation=True,
     enable_dsp_sum=True,
     enable_dsp_classification=False,
@@ -52,7 +53,7 @@ config = session.create_measurement_config(
     line_param1=(0.0, 1.0, 0.0),
 )
 
-result = session.run_measurement(
+result = await session.run_measurement(
     schedule=measurement_schedule,
     config=config,
 )
