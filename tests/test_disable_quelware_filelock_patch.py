@@ -103,13 +103,19 @@ class _FakeSyncAsyncCoapClientWithDummyLock(_FakeAbstractSyncAsyncCoapClient):
 def test_apply_patch_does_not_fail_when_quelware_missing(monkeypatch) -> None:
     """Given missing quelware modules, when patch applies, then no exception is raised."""
     monkeypatch.setattr(patch, "_is_quelware_0_10_or_later", lambda: True)
+    import_calls: list[str] = []
 
     def _raise_import_error(name: str):
+        import_calls.append(name)
         raise ImportError(name)
 
     monkeypatch.setattr(patch.importlib, "import_module", _raise_import_error)
 
     patch.apply_quelware_filelock_patch()
+    assert import_calls == [
+        "quel_ic_config.exstickge_sock_client",
+        "quel_ic_config.exstickge_coap_client",
+    ]
 
 
 def test_apply_patch_skips_for_quelware_0_8(monkeypatch) -> None:

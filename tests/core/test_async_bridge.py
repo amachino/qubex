@@ -102,9 +102,10 @@ def test_startup_timeout_requests_stop_and_closes_loop() -> None:
     """Given delayed startup, when startup times out, then bridge requests stop."""
     original_new_event_loop = asyncio.new_event_loop
     thread_name = f"timeout-bridge-{time.monotonic_ns()}"
+    startup_gate = threading.Event()
 
     def delayed_new_event_loop() -> asyncio.AbstractEventLoop:
-        time.sleep(0.05)
+        startup_gate.wait(timeout=0.05)
         return original_new_event_loop()
 
     with pytest.MonkeyPatch.context() as monkeypatch:
@@ -112,14 +113,16 @@ def test_startup_timeout_requests_stop_and_closes_loop() -> None:
         with pytest.raises(RuntimeError, match="Failed to start AsyncBridge"):
             AsyncBridge(startup_timeout=0.01, thread_name=thread_name)
 
-    deadline = time.monotonic() + 1.0
-    while time.monotonic() < deadline:
-        if not any(
-            thread.name == thread_name and thread.is_alive()
+    lingering_thread = next(
+        (
+            thread
             for thread in threading.enumerate()
-        ):
-            break
-        time.sleep(0.01)
+            if thread.name == thread_name and thread.is_alive()
+        ),
+        None,
+    )
+    if lingering_thread is not None:
+        lingering_thread.join(timeout=1.0)
 
     assert not any(
         thread.name == thread_name and thread.is_alive()

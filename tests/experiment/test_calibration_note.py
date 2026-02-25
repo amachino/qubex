@@ -1,6 +1,5 @@
 """Tests for calibration note helpers."""
 
-import time
 from datetime import datetime, timedelta
 
 import pytest
@@ -225,9 +224,9 @@ def test_timestamp(tmp_path):
         },
     )
     param = note.get_rabi_param("Q00") or {}
-    timestamp = param.get("timestamp")
-    assert timestamp is not None
-    time.sleep(1)
+    timestamp_text = param.get("timestamp")
+    assert timestamp_text is not None
+    timestamp = datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S")
     note.update_rabi_param(
         "Q00",
         {
@@ -241,11 +240,15 @@ def test_timestamp(tmp_path):
             "distance": 1.0,
             "r2": 1.0,
             "reference_phase": 0.0,
+            "timestamp": datetime.strftime(
+                timestamp + timedelta(seconds=1), "%Y-%m-%d %H:%M:%S"
+            ),
         },
     )
     updated_param = note.get_rabi_param("Q00") or {}
-    updated_timestamp = updated_param.get("timestamp")
-    assert updated_timestamp is not None
+    updated_timestamp_text = updated_param.get("timestamp")
+    assert updated_timestamp_text is not None
+    updated_timestamp = datetime.strptime(updated_timestamp_text, "%Y-%m-%d %H:%M:%S")
     assert updated_timestamp > timestamp
 
 

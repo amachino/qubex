@@ -78,7 +78,8 @@ def test_validate_measurement_schedule_accepts_device_constraints() -> None:
         backend_controller=object(),  # type: ignore[arg-type]
         experiment_system=object(),  # type: ignore[arg-type]
     )
-    adapter.validate_schedule(schedule)
+    result = adapter.validate_schedule(schedule)
+    assert result is None
 
 
 def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture() -> (
@@ -146,4 +147,5 @@ def test_validate_measurement_schedule_accepts_relaxed_profile() -> None:
         constraint_profile=MeasurementConstraintProfile.quel3(2.0),
     )
 
-    adapter.validate_schedule(schedule)
+    result = adapter.validate_schedule(schedule)
+    assert result is None

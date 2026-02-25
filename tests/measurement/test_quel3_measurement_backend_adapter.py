@@ -130,7 +130,8 @@ def test_quel3_adapter_accepts_relaxed_schedule() -> None:
         experiment_system=cast(Any, _FakeExperimentSystem()),
     )
 
-    adapter.validate_schedule(schedule)
+    result = adapter.validate_schedule(schedule)
+    assert result is None
 
 
 def test_quel3_adapter_rejects_capture_outside_pulse_duration() -> None:

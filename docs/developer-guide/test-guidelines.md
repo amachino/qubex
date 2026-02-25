@@ -7,7 +7,6 @@ This project uses **pytest**. Tests are required for all code changes and new fe
 - Run tests: `make test`
 - Full quality gate: `make check`
 - Optional coverage: `make coverage`
-- Verify test collection: `uv run pytest --collect-only -q tests`
 
 ## Principles
 
@@ -20,7 +19,7 @@ This project uses **pytest**. Tests are required for all code changes and new fe
 ## Structure & naming
 
 - Place tests under `tests/` and mirror the `src/` layout where appropriate.
-- File names: `test_*.py` (required; non-matching names may not be collected)
+- File names: `test_*.py`
 - Function names: `test_*`
 - Class names (if used): `Test*`
 - One behavior per test; keep assertions focused and readable.

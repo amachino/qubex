@@ -254,8 +254,12 @@ def test_relinkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> No
     class _FakeBox:
         boxtype = "quel1-a"
 
+        def __init__(self) -> None:
+            self.relinkup_count = 0
+
         def relinkup(self, **kwargs: object) -> None:
             _ = kwargs
+            self.relinkup_count += 1
 
         def reconnect(self, **kwargs: object) -> None:
             _ = kwargs
@@ -283,3 +287,4 @@ def test_relinkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> No
     )
 
     controller.relinkup("A")
+    assert fake_box.relinkup_count == 1

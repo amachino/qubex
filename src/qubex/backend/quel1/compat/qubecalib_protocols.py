@@ -633,6 +633,10 @@ class Quel1SystemProtocol(Protocol):
         """Create a system from pre-constructed clockmaster/box objects."""
         ...
 
+    def resync(self, *box_names: str) -> Any:
+        """Resynchronize clocks for the selected boxes."""
+        ...
+
 
 class QuelDriverClassesProtocol(Protocol):
     """Protocol for driver-loader class bundle consumed by qubex."""
@@ -870,7 +874,7 @@ class SkewProtocol(Protocol):
 class SkewRuntimeProtocol(Protocol):
     """Protocol for skew runtime Any returned from `Skew.from_yaml`."""
 
-    system: SkewSystemProtocol
+    system: Quel1SystemProtocol
 
     def measure(self) -> None:
         """Run skew measurement."""
@@ -882,14 +886,6 @@ class SkewRuntimeProtocol(Protocol):
 
     def plot(self) -> Any:
         """Return plotly figure Any."""
-        ...
-
-
-class SkewSystemProtocol(Protocol):
-    """Protocol for skew-associated system Any."""
-
-    def resync(self) -> None:
-        """Resynchronize device clocks."""
         ...
 
 

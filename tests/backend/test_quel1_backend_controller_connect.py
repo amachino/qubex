@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
@@ -32,8 +31,7 @@ class _FakeBox:
         self.reconnect_count = 0
 
     def reconnect(self) -> None:
-        """Increment reconnect count after a tiny delay."""
-        time.sleep(0.005)
+        """Increment reconnect count."""
         self.reconnect_count += 1
 
 

@@ -468,10 +468,11 @@ def test_sync_experiment_system_to_hardware_skips_without_system_synchronizer(
     """Given no system synchronizer, when syncing hardware, then SystemManager returns safely."""
     manager = SystemManager.shared()
     monkeypatch.setattr(manager, "_system_synchronizer", None)
-    manager._sync_experiment_system_to_hardware(  # noqa: SLF001
+    result = manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=[FakeBox(id="A", ports=())],  # type: ignore[arg-type]
         parallel=True,
     )
+    assert result is None
 
 
 def test_sync_experiment_system_to_backend_controller_delegates_to_system_synchronizer(
