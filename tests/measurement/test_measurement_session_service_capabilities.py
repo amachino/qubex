@@ -35,6 +35,17 @@ class _BackendWithoutOptionalCapabilities:
         self.disconnect_calls += 1
 
 
+class _BackendWithLinkCapability(_BackendWithoutOptionalCapabilities):
+    def __init__(self, *, link_status_by_box: dict[str, dict[int, bool]]) -> None:
+        super().__init__()
+        self._link_status_by_box = link_status_by_box
+        self.link_status_calls: list[str] = []
+
+    def link_status(self, box_name: str) -> dict[int, bool]:
+        self.link_status_calls.append(box_name)
+        return self._link_status_by_box[box_name]
+
+
 class _SystemManagerStub:
     def __init__(self) -> None:
         self.pull_calls: list[tuple[list[str], bool | None]] = []
@@ -95,6 +106,39 @@ def test_connect_skips_resync_when_backend_does_not_support_it(tmp_path: Path) -
 
     assert backend.connect_calls == [(["A"], None)]
     assert system_manager.pull_calls == [(["A"], None)]
+
+
+def test_connect_runs_pull_when_all_links_are_up(tmp_path: Path) -> None:
+    """Given backend with healthy links, when connect runs, then pull still executes."""
+    backend = _BackendWithLinkCapability(link_status_by_box={"A": {0: True}})
+    service, system_manager = _make_session_service(
+        backend_controller=backend,
+        tmp_path=tmp_path,
+        box_ids=["A"],
+    )
+
+    service.connect(sync_clocks=False)
+
+    assert backend.connect_calls == [(["A"], None)]
+    assert backend.link_status_calls == ["A"]
+    assert system_manager.pull_calls == [(["A"], None)]
+
+
+def test_connect_raises_without_pull_when_some_links_are_down(tmp_path: Path) -> None:
+    """Given backend with down links, when connect runs, then pull is skipped with error."""
+    backend = _BackendWithLinkCapability(link_status_by_box={"A": {0: False}})
+    service, system_manager = _make_session_service(
+        backend_controller=backend,
+        tmp_path=tmp_path,
+        box_ids=["A"],
+    )
+
+    with pytest.raises(ConnectionError, match="linkup"):
+        service.connect(sync_clocks=False)
+
+    assert backend.connect_calls == [(["A"], None)]
+    assert backend.link_status_calls == ["A"]
+    assert system_manager.pull_calls == []
 
 
 def test_check_link_status_raises_not_implemented_without_link_capability(

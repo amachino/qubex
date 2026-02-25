@@ -123,6 +123,7 @@ class MeasurementSessionService:
             return
         backend_controller = self.backend_controller
         backend_controller.connect(box_ids, parallel=parallel)
+        self._validate_post_connect_link_status(box_ids)
         self.system_manager.pull(box_ids, parallel=parallel)
         if sync_clocks:
             resync_clocks = getattr(backend_controller, "resync_clocks", None)
@@ -158,6 +159,29 @@ class MeasurementSessionService:
             "status": is_linkedup,
             "links": link_statuses,
         }
+
+    def _validate_post_connect_link_status(self, box_list: list[str]) -> None:
+        """Raise `ConnectionError` when post-connect link checks report failures."""
+        try:
+            link_status = self.check_link_status(box_list)
+        except NotImplementedError:
+            logger.info(
+                "Skipping post-connect link validation because this backend does not support link status checks."
+            )
+            return
+        if cast(bool, link_status["status"]):
+            return
+        failed_links = {
+            box_name: status
+            for box_name, status in cast(
+                dict[str, dict[int, bool]],
+                link_status["links"],
+            ).items()
+            if not all(status.values())
+        }
+        raise ConnectionError(
+            f"Skipping pull because linkup failed for boxes: {failed_links}"
+        )
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """Check clock synchronization status for the provided box list."""
