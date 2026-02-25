@@ -38,6 +38,7 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | P0 | Implement QuEL-3 `tx/rx/trx` convergence rule (`read_out`/`read_in` -> one transceiver alias/resource when consistent) | 2026-02-28 | wiring.v2 + resolver + adapter payload semantics | TODO |
 | P0 | Remove adapter limitation that rejects multiple logical targets per one alias | 2026-02-28 | `trx` convergence rule and synchronized trigger flow | TODO |
 | P0 | Add capability-gated behavior for QuEL-1-only settings introspection paths (`dump_box`-dependent utilities) on QuEL-3 | 2026-02-28 | `system` package boundary decision | TODO |
+| P0 | Define and implement QuEL-3 frequency-sweep contract for `CharacterizationService` (`scan_qubit_frequencies`, `scan_resonator_frequencies`, `measure_electrical_delay`) without QuEL-1-only LO/CNCO reset assumptions | 2026-02-28 | QuEL-3 tuning/introspection API contract + capability profile | TODO |
 | P0 | Prepare compatibility contract tests at `Measurement` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
 | P0 | Implement synchronized measurement protocol execution path (SP-BETA-001) | 2026-02-28 | Multi-instrument and cross-unit trigger support | TODO |
 | P0 | Track and close blocking clarifications with quelware team (alias uniqueness, trigger guarantees, settings introspection path) | 2026-02-28 | Coordination with quelware team | TODO |
@@ -63,6 +64,7 @@ Calendar note:
    - Implement `tx/rx/trx` convergence policy and remove one-alias-per-target restriction.
    - Remove single-alias limitation and support multi-instrument, cross-unit synchronized trigger execution.
    - Align `Measurement` mode mapping with quelware capture modes.
+   - Finalize QuEL-3 frequency-sweep strategy for `CharacterizationService` and remove direct QuEL-1 LO/CNCO/reset assumptions from QuEL-3 path.
    - Apply capability gating for QuEL-1-only settings introspection paths on QuEL-3.
 2. Wave B (next): beta gate and validation evidence
    - Close blocking clarification items with quelware team.
@@ -86,6 +88,7 @@ Calendar note:
 - Multi-instrument and cross-unit synchronized trigger execution is validated on hardware
 - Capture-mode contract is preserved (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`, waveform inspection uses `AVERAGED_WAVEFORM`)
 - QuEL-1-only settings introspection paths are capability-gated and fail clearly on QuEL-3 (no silent fallback).
+- Qubit-frequency identification flow is validated on QuEL-3 with documented sweep semantics (including out-of-range fail-fast behavior).
 - No blocking fixed `2 ns` assumptions remain in QuEL-3 code path
 - Core synchronized protocol path is executable
 - `mock_mode=True` compatibility path is covered by tests and remains operational
@@ -160,6 +163,7 @@ Calendar note:
 - [ ] Implement `tx/rx/trx` convergence path in adapter/execution flow.
 - [ ] Switch QuEL-3 capture flow to quelware capture-mode contract (`VALUES_PER_LOOP`/`AVERAGED_VALUE`).
 - [ ] Add capability-gated unsupported errors for QuEL-1-only settings introspection utilities on QuEL-3.
+- [ ] Define and implement QuEL-3 frequency-sweep strategy for `CharacterizationService` (LO/CNCO retune policy + unsupported fallback).
 - [ ] Close blocking clarification items with quelware side and reflect answers in adapter/config docs.
 - [ ] Run QuEL-3 hardware validation (`HV-001` to `HV-007`) and attach evidence.
 - [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
@@ -240,6 +244,7 @@ Calendar note:
 - 2026-02-25: Runtime connection defaults are provisionally aligned to `quelware-client` defaults (`endpoint=localhost`, `port=50051`, `trigger_wait=1000000`, `ttl_ms=4000`, `tentative_ttl_ms=1000`).
 - 2026-02-25: Superseded prior provisional notes that required explicit `instrument_alias_map` or deferred DF-03/DF-04; resolver-based auto-resolution and DF-03/DF-04 are now fixed beta contract decisions.
 - 2026-02-25: Added QuEL-3 `tx/rx/trx` handling decision and `system` package boundary note (`quel1`/`quel3` common-vs-split).
+- 2026-02-25: Added demo-readiness gap note for QuEL-3 `CharacterizationService` frequency identification path (`LO/CNCO`-retune assumptions) and linked required contract work.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.

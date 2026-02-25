@@ -170,6 +170,29 @@ Status legend:
 - Reference:
   - `system-package-quel1-quel3-boundary.md`
 
+### D12. `CharacterizationService` frequency-sweep semantics on QuEL-3
+
+- Status: `PENDING`
+- Question: How should qubit/resonator frequency scans work on QuEL-3 where
+  QuEL-1-style LO/CNCO cache operations are unavailable?
+- Current state:
+  - `CharacterizationService.scan_qubit_frequencies()` and
+    `scan_resonator_frequencies()` currently call
+    `SystemManager.modified_backend_settings(...)` for subrange retuning.
+  - `CharacterizationService.measure_electrical_delay()` also relies on the
+    same backend-settings path for far-detuned starts.
+  - QuEL-3 path currently treats backend-settings pull/sync and AWG/CAP reset
+    as unsupported capabilities.
+- Required beta policy:
+  - QuEL-3 path must not rely on QuEL-1-only backend-settings cache operations.
+  - Frequency sweep contract must be explicit:
+    - either use an official quelware coarse-tuning API, or
+    - constrain sweeps to a fixed coarse setting and sweep only supported fine
+      range.
+  - When requested range exceeds supported range, fail fast with a clear error
+    and suggested valid range.
+  - Capability and behavior differences must be visible in docs and tests.
+
 ## Proposed minimum beta contract
 
 - Single source policy for endpoint/port/wait and session TTL is documented.

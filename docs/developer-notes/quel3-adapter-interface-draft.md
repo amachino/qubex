@@ -105,6 +105,7 @@ Dependency note:
 - `window_name` is treated as metadata/display only and is not part of the contract key.
 - Adapter/payload path must allow one alias to carry both waveform events and capture windows when resolved role is transceiver.
 - Any utility path that assumes QuEL-1 `dump_box` snapshots must be capability-gated on QuEL-3 and fail with explicit unsupported errors.
+- `CharacterizationService` spectroscopy flows that currently retune LO/CNCO through QuEL-1-specific backend-settings APIs must be split to a QuEL-3-capability path before demo/GA gates.
 
 ## Follow-up questions (post-beta candidate)
 

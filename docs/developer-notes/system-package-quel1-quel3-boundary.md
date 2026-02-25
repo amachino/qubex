@@ -28,6 +28,7 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 - hardware synchronization implementation (`Quel1SystemSynchronizer`, `Quel3SystemSynchronizer`)
 - backend-settings snapshot acquisition and schema
 - low-level hardware introspection API mapping (QuEL-1 `dump_box` style)
+- coarse tuning strategy for spectroscopy (`LO/CNCO` retune semantics)
 - clock/trigger/device-control semantics not representable in shared contract
 - operational tools that depend on QuEL-1-only APIs (`experiment_tool.dump_box`, etc.)
 
@@ -40,6 +41,9 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
    vocabulary, but allow QuEL-3 runtime convergence to one `trx` alias/resource.
 4. Avoid adding QuEL-3-specific hardware details into common model classes unless
    they are backend-agnostic abstractions.
+5. Refactor `CharacterizationService` frequency-sweep path to use backend
+   capabilities/strategy; do not hard-require QuEL-1-only LO/CNCO cache APIs on
+   QuEL-3.
 
 ## Post-beta refactor candidates
 
