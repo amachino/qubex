@@ -14,7 +14,9 @@ This project uses **pytest**. Tests are required for all code changes and new fe
 - **Regression tests**: every bug fix must add a test that fails before the fix.
 - **Behavior‑focused**: test observable behavior, not internal implementation details.
 - **Small & fast**: keep unit tests quick and deterministic.
-- **Lightweight BDD**: use a 1‑line spec docstring and clear test names.
+- **Docstring readability first**: use a 1-line spec docstring that is natural and easy to scan.
+- **Style is flexible**: `Given/when/then` is recommended for scenario-style tests, but not required.
+- **Local consistency**: keep docstring style consistent within the same file/module.
 
 ## Structure & naming
 
@@ -36,7 +38,7 @@ Structure each test clearly:
 
 ```python
 def test_example():
-    """Given X, when Y, then Z."""
+    """Given valid input, when compute is called, then the expected value is returned."""
     # Arrange
     obj = make_example()
 
@@ -45,6 +47,13 @@ def test_example():
 
     # Assert
     assert result == 42
+```
+
+Both of these docstring styles are acceptable:
+
+```python
+"""Given labels added in insertion order, when building PulseSchedule, then label order is preserved."""
+"""PulseSchedule should preserve label insertion order."""
 ```
 
 ## Assertions & numeric tolerances
@@ -115,7 +124,7 @@ Pytest runs with `--import-mode=importlib`. Avoid sys.path hacks and rely on pac
 
 ```python
 def test_behavior_name():
-    """Given X, when Y, then Z."""
+    """One-line behavior spec."""
     # Arrange
 
     # Act

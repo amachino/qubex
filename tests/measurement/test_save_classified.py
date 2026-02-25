@@ -25,7 +25,7 @@ def test_save_classified_json(measure_result: MeasureResult, tmp_path: Path):
 
 
 def test_save_classified_no_memory(measure_result: MeasureResult, tmp_path: Path):
-    """Save classified data without memory payload."""
+    """MeasureResult should save classified data without memory payload."""
     out = tmp_path / "classified.json"
     path = measure_result.save_classified(
         out, format="json", include_memory=False, compress=False
@@ -36,7 +36,7 @@ def test_save_classified_no_memory(measure_result: MeasureResult, tmp_path: Path
 
 
 def test_save_classified_npz(measure_result: MeasureResult, tmp_path: Path):
-    """Save classified data as NPZ and validate metadata."""
+    """MeasureResult should save classified data as NPZ with metadata."""
     out = tmp_path / "classified"
     path = measure_result.save_classified(out, format="npz")
     data = np.load(path, allow_pickle=True)
@@ -47,7 +47,7 @@ def test_save_classified_npz(measure_result: MeasureResult, tmp_path: Path):
 
 
 def test_save_classified_threshold(measure_result: MeasureResult, tmp_path: Path):
-    """Save classified data with a threshold and validate counts."""
+    """MeasureResult should apply threshold when saving classified data."""
     out = tmp_path / "threshold.json.gz"
     path = measure_result.save_classified(out, format="json", threshold=0.9)
     with gzip.open(path, "rt", encoding="utf-8") as f:
@@ -58,7 +58,7 @@ def test_save_classified_threshold(measure_result: MeasureResult, tmp_path: Path
 
 
 def test_save_classified_overwrite_false(measure_result: MeasureResult, tmp_path: Path):
-    """Raise when overwriting is disabled and file exists."""
+    """MeasureResult should raise when overwrite is disabled and file exists."""
     out = tmp_path / "dup.json.gz"
     measure_result.save_classified(out, format="json")
     with pytest.raises(ValueError, match=r"File already exists:"):

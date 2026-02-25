@@ -15,7 +15,7 @@ from qxpulse.pulse import Pulse
 
 
 def test_sin_pow_integral_derivative_matches():
-    """Given n, when differentiating the integral, then sin^n is recovered."""
+    """Given n, differentiating the integral recovers sin^n."""
     x = np.linspace(0.1, np.pi - 0.1, 200)
     integral = sin_pow_integral(x, n=5)
     derivative = np.gradient(integral, x, edge_order=2)

@@ -202,7 +202,7 @@ def test_get_sampled_sequences():
 
 
 def test_sequence_accessors_warn_on_deprecated_duration_and_align_options():
-    """Given duration and align options, when sequence accessors are called, then deprecation warnings are emitted."""
+    """Sequence accessors should emit deprecation warnings for duration and align options."""
     with PulseSchedule() as ps:
         ps.add("Q00", Arbitrary([1, 0, 1j]))
         ps.add("Q01", Arbitrary([1j, 0, 1]))
@@ -230,7 +230,7 @@ def test_sequence_accessors_warn_on_deprecated_duration_and_align_options():
 
 
 def test_sampled_sequence_accessors_support_copy_options():
-    """Given sampled sequence accessors, when copy option is used, then copy semantics are applied."""
+    """Sampled sequence accessors should honor copy options."""
     with PulseSchedule() as ps:
         ps.add("Q00", Arbitrary([1, 0, 1j]))
         ps.add("Q01", Arbitrary([1j, 0, 1]))
@@ -247,7 +247,7 @@ def test_sampled_sequence_accessors_support_copy_options():
 
 
 def test_sequence_accessors_warn_on_deprecated_align_option():
-    """Given align option only, when sequence accessors are called, then deprecation warning is emitted."""
+    """Sequence accessors should emit a deprecation warning for align option."""
     with PulseSchedule() as ps:
         ps.add("Q00", Arbitrary([1, 0, 1j]))
 

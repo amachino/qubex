@@ -151,7 +151,7 @@ def test_convert_to_box_setting_dict_keeps_box_in_rebuilt_driver_ids() -> None:
 
 
 def test_convert_to_box_setting_dict_supports_single_style_ids_without_box() -> None:
-    """Given single-style IDs, conversion rebuilds settings without requiring a box field."""
+    """Given single-style IDs, when converting settings by box, then settings are rebuilt without requiring a box field."""
     settings = [
         _RunitConfig(runit=_RunitRef(box="B0", port="P0", runit=1), cprm="CP"),
         _AwgConfig(awg=_AwgRef(box="B0", port="P1", channel=2), wseq="WQ"),
@@ -188,7 +188,7 @@ def test_convert_to_box_setting_dict_supports_single_style_ids_without_box() -> 
 
 
 def test_convert_to_box_setting_dict_ignores_unknown_settings() -> None:
-    """Given unknown settings, conversion skips entries outside expected shape."""
+    """Given unknown settings, when converting settings by box, then unknown entries are skipped."""
     settings = [
         _UnknownSetting(payload="noop"),
         _RunitConfig(runit=_RunitRef(box="B0", port="P0", runit=1), cprm="CP"),
@@ -210,7 +210,7 @@ def test_convert_to_box_setting_dict_ignores_unknown_settings() -> None:
 def test_build_parallel_multi_action_uses_driver_single_setting_classes(
     monkeypatch,
 ) -> None:
-    """Given split common/single classes, parallel build passes driver Single* setting classes to SingleAction."""
+    """Given split common/single classes, when building parallel multi action, then driver Single* setting classes are passed to SingleAction."""
 
     @dataclass(frozen=True)
     class _CommonRunitId:
@@ -290,7 +290,7 @@ def test_build_parallel_multi_action_uses_driver_single_setting_classes(
 def test_build_parallel_multi_action_single_box_path_uses_action_builder(
     monkeypatch,
 ) -> None:
-    """Given one box, builder path uses action_builder and still returns capture map."""
+    """Given one box, when building parallel multi action, then action_builder path is used and capture map is returned."""
 
     @dataclass(frozen=True)
     class _CommonRunitId:

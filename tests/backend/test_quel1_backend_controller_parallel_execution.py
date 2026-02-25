@@ -22,7 +22,7 @@ from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 
 
 def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> None:
-    """Given parallel mode, manager delegates to engine and wraps result."""
+    """Given parallel mode, when executing through execution manager, then engine result is wrapped in backend result."""
 
     class _Sequencer:
         interval = 256
@@ -107,7 +107,7 @@ def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> Non
 
 
 def test_initialize_awg_and_capunits_parallel_deduplicates_boxes(monkeypatch) -> None:
-    """Given duplicate boxes, each box is initialized only once."""
+    """Given duplicate boxes, when initializing AWG/CAP units in parallel, then each box is initialized once."""
     controller = Quel1BackendController()
     controller._connection_manager.set_quel1system(cast(Any, object()))
     called: list[str] = []
@@ -128,7 +128,7 @@ def test_initialize_awg_and_capunits_parallel_deduplicates_boxes(monkeypatch) ->
 
 
 def test_initialize_awg_and_capunits_raises_when_not_connected() -> None:
-    """Given disconnected controller, initialize_awg_and_capunits raises before box access."""
+    """Given disconnected controller, when initializing AWG/CAP units, then ValueError is raised before box access."""
     controller = Quel1BackendController()
 
     with pytest.raises(ValueError, match="Boxes not connected"):
@@ -156,7 +156,7 @@ def test_linkup_boxes_parallel_collects_successes(monkeypatch) -> None:
 
 
 def test_linkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
-    """Given duplicate box names, parallel linkup calls each box only once."""
+    """Given duplicate box names, when linking up in parallel, then each box is linked once."""
     controller = Quel1BackendController()
     called: list[str] = []
 
@@ -191,7 +191,7 @@ def test_relinkup_boxes_parallel_calls_each_box(monkeypatch) -> None:
 
 
 def test_relinkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
-    """Given duplicate box names, parallel relinkup calls each box only once."""
+    """Given duplicate box names, when relinking up in parallel, then each box is relinked once."""
     controller = Quel1BackendController()
     called: list[str] = []
 
@@ -208,7 +208,7 @@ def test_relinkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
 
 
 def test_linkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None:
-    """Given pooled box, linkup reuses it and does not create another proxy."""
+    """Given pooled box, when linking up, then the existing box is reused and no new proxy is created."""
 
     class _FakeBox:
         boxtype = "quel1-a"
@@ -249,7 +249,7 @@ def test_linkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None
 
 
 def test_relinkup_uses_existing_pooled_box_without_recreating(monkeypatch) -> None:
-    """Given pooled box, relinkup reuses it and does not create another proxy."""
+    """Given pooled box, when relinking up, then the existing box is reused and no new proxy is created."""
 
     class _FakeBox:
         boxtype = "quel1-a"

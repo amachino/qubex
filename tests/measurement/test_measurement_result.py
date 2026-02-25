@@ -52,7 +52,7 @@ def test_measure_result_mitigated_counts(measure_result: MeasureResult):
 
 
 def test_measure_data_times_use_runtime_sampling_period_in_single_mode() -> None:
-    """Given single-mode data with custom dt, when reading times, then dt is used directly."""
+    """MeasureData should use runtime sampling period directly in single mode."""
     data = MeasureData(
         target="Q00",
         mode=MeasureMode.SINGLE,
@@ -64,7 +64,7 @@ def test_measure_data_times_use_runtime_sampling_period_in_single_mode() -> None
 
 
 def test_measure_data_times_use_runtime_sampling_period_in_avg_mode() -> None:
-    """Given avg-mode data with custom dt, when reading times, then dt is used directly."""
+    """MeasureData should use runtime sampling period directly in avg mode."""
     data = MeasureData(
         target="Q00",
         mode=MeasureMode.AVG,

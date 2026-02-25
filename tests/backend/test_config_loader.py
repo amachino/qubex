@@ -108,7 +108,7 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
 
 
 def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
-    """ConfigLoader should build ExperimentSystem and convert units correctly."""
+    """Given ConfigLoader, when building ExperimentSystem, then units are converted correctly."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
@@ -157,7 +157,7 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
 
 
 def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
-    """ConfigLoader should load control params and pass through JPA params."""
+    """Given ConfigLoader, when loading control params, then JPA params are passed through."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
@@ -190,7 +190,7 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
-    """ConfigLoader should warn when deprecated arguments are used."""
+    """Given deprecated arguments, when calling get_experiment_system, then ConfigLoader emits a warning."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     loader = ConfigLoader(
         chip_id=chip_id,
@@ -209,7 +209,7 @@ def test_get_experiment_system_deprecation_warning(tmp_path: Path):
 
 
 def test_merge_per_file_over_legacy(tmp_path: Path):
-    """ConfigLoader should merge per-file params over legacy params."""
+    """Given per-file and legacy params, when loading params, then per-file values override legacy values."""
     # Arrange: start from minimal files, then add per-file readout_amplitude only for Q1
     # and set legacy props.yaml to provide qubit_frequency for Q2.
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
@@ -261,7 +261,7 @@ def test_merge_per_file_over_legacy(tmp_path: Path):
 
 
 def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture):
-    """ConfigLoader should log a warning when legacy params are overridden."""
+    """Given per-file overrides, when loading params, then ConfigLoader logs an override warning."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     # Per-file readout_amplitude overrides legacy value for Q0 (legacy is 0.02)
@@ -287,7 +287,7 @@ def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture)
 
 
 def test_load_param_data_applies_default_when_requested(tmp_path: Path) -> None:
-    """Default values from per-file params only apply when requested."""
+    """Given per-file default values, when defaults are requested, then default values are applied."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
@@ -304,7 +304,7 @@ def test_load_param_data_applies_default_when_requested(tmp_path: Path) -> None:
 
 
 def test_load_param_data_requires_structured_yaml(tmp_path: Path) -> None:
-    """Per-file params must define meta/data mappings."""
+    """Given malformed per-file params, when loading params, then ValueError is raised."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     _write_yaml(params_dir / "control_amplitude.yaml", {"unexpected": 1})
@@ -368,7 +368,7 @@ def test_control_system_box_options_loaded_from_box_yaml(tmp_path: Path) -> None
 
 
 def test_control_system_clock_master_prefers_system_yaml(tmp_path: Path) -> None:
-    """Given system.yaml quel1 clock master, control system uses it over chip.yaml value."""
+    """Given system.yaml and chip.yaml clock-master values, when loading control system config, then system.yaml value is used."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
         config_dir / "system.yaml",
@@ -532,7 +532,7 @@ def test_wiring_v2_rejects_unknown_port_specifier(tmp_path: Path) -> None:
 def test_resolve_backend_kind_prefers_system_yaml_over_chip_yaml(
     tmp_path: Path,
 ) -> None:
-    """Given backend in system.yaml and chip.yaml, backend resolves from system.yaml."""
+    """Given backend in system.yaml and chip.yaml, when resolving backend kind, then system.yaml value is selected."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True)
@@ -556,7 +556,7 @@ def test_resolve_backend_kind_prefers_system_yaml_over_chip_yaml(
 def test_resolve_backend_kind_defaults_to_quel1_when_not_configured(
     tmp_path: Path,
 ) -> None:
-    """Given no backend config, backend resolves to quel1."""
+    """Given no backend config, when resolving backend kind, then quel1 is selected."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True)
@@ -575,7 +575,7 @@ def test_resolve_backend_kind_defaults_to_quel1_when_not_configured(
 def test_resolve_backend_kind_raises_for_unknown_backend_value(
     tmp_path: Path,
 ) -> None:
-    """Given unknown backend in system.yaml, backend resolution raises ValueError."""
+    """Given unknown backend in system.yaml, when resolving backend kind, then ValueError is raised."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True)
@@ -597,7 +597,7 @@ def test_resolve_backend_kind_raises_for_unknown_backend_value(
 def test_resolve_wiring_file_prefers_v2_for_quel3_when_available(
     tmp_path: Path,
 ) -> None:
-    """Given quel3 backend and wiring.v2.yaml, wiring file resolves to v2."""
+    """Given quel3 backend and wiring.v2.yaml, when resolving wiring file, then wiring.v2.yaml is selected."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True)
@@ -615,7 +615,7 @@ def test_resolve_wiring_file_prefers_v2_for_quel3_when_available(
 def test_resolve_wiring_file_falls_back_to_legacy_for_quel3(
     tmp_path: Path,
 ) -> None:
-    """Given quel3 backend without wiring.v2.yaml, wiring file resolves to legacy."""
+    """Given quel3 backend without wiring.v2.yaml, when resolving wiring file, then wiring.yaml is selected."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True)

@@ -133,7 +133,7 @@ def test_qubecalib_instance_exposes_methods_required_by_qubex() -> None:
 
 
 def test_system_config_database_and_sysdb_contract_required_by_qubex() -> None:
-    """Given qubex DB access patterns, system DB exposes the legacy private contract."""
+    """Given qubex DB access patterns, when inspecting system DB, then the legacy private contract is available."""
     qc = QubeCalib()
     db = qc.system_config_database
 
@@ -154,7 +154,7 @@ def test_system_config_database_and_sysdb_contract_required_by_qubex() -> None:
 
 
 def test_boxpool_contract_required_by_qubex() -> None:
-    """Given qubex runtime access patterns, BoxPool exposes required private fields."""
+    """Given qubex runtime access patterns, when creating BoxPool, then required private fields are available."""
     boxpool = BoxPool()
 
     assert hasattr(boxpool, "_boxes")

@@ -152,7 +152,7 @@ def test_save_sanitizes_nonfinite_values(tmp_path):
 
 
 def test_str_and_repr_are_sanitized(tmp_path):
-    """Ensure string representations sanitize non-finite values."""
+    """ExperimentNote string representations should sanitize non-finite values."""
     p = tmp_path / "note2.json"
     en = ExperimentNote(file_path=p)
     en.clear()

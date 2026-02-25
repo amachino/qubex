@@ -175,7 +175,7 @@ def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
 
 
 def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
-    """Given execute method, check_waveform explicitly disables backend DSP sum."""
+    """Given execute-based waveform inspection, when check_waveform is called, then backend DSP summation is disabled."""
     service, _ = _make_service()
     captured: dict[str, object] = {}
 

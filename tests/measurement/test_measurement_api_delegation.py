@@ -665,7 +665,7 @@ def test_run_sweep_measurement_stops_immediately_on_error() -> None:
 
 
 def test_disconnect_delegates_to_session_service() -> None:
-    """Given connected session service, disconnect delegates to session service."""
+    """Given connected session service, when disconnect is called, then disconnect is delegated to the session service."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],

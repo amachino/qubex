@@ -53,13 +53,13 @@ def _override_driver_classes(
 
 
 def test_constructor_rejects_config_path_argument() -> None:
-    """Given legacy config_path kwarg, constructor raises TypeError."""
+    """Given legacy config_path kwarg, when constructing Quel1BackendController, then TypeError is raised."""
     with pytest.raises(TypeError, match="config_path"):
         cast(Any, Quel1BackendController)(config_path="dummy")
 
 
 def test_constructor_allows_runtime_context_injection() -> None:
-    """Given injected runtime context, default managers share the same context."""
+    """Given injected runtime context, when constructing Quel1BackendController, then default managers share that context."""
     runtime_context = cast(Any, object())
 
     controller = cast(Any, Quel1BackendController)(runtime_context=runtime_context)
@@ -73,7 +73,7 @@ def test_constructor_allows_runtime_context_injection() -> None:
 
 
 def test_constructor_allows_manager_injection() -> None:
-    """Given injected managers, constructor uses provided manager instances."""
+    """Given injected managers, when constructing Quel1BackendController, then the provided manager instances are used."""
     runtime_context = cast(Any, object())
     connection_manager = cast(Any, object())
     clock_manager = cast(Any, object())

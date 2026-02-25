@@ -41,7 +41,7 @@ def test_backend_modules_expose_decimation_factor_constants() -> None:
 
 
 def test_backend_quel3_module_hides_module_level_decimation_constant() -> None:
-    """Given backend.quel3 module, module-level decimation constant is not re-exported."""
+    """Given backend.quel3 module, when checking exported symbols, then module-level decimation constant is not re-exported."""
     import qubex.backend.quel3 as quel3
 
     assert not hasattr(quel3, "CAPTURE_DECIMATION_FACTOR")

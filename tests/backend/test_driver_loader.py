@@ -249,7 +249,7 @@ def test_load_quel1_driver_defaults_to_qxdriver_when_quelware_missing(
 def test_load_quel1_driver_qubecalib_resolves_clockmaster_from_qubecalib_module(
     monkeypatch,
 ) -> None:
-    """Given missing clockmaster_compat, loader resolves clock symbols from qubecalib package paths."""
+    """Given missing clockmaster_compat, when loading qubecalib driver symbols, then clock symbols resolve from qubecalib module paths."""
     mapping = _build_fake_driver_modules("qubecalib")
     del mapping["qubecalib.clockmaster_compat"]
 
@@ -270,7 +270,7 @@ def test_load_quel1_driver_qubecalib_resolves_clockmaster_from_qubecalib_module(
 
 
 def test_load_quel1_driver_does_not_fall_back_to_quel_clock_master(monkeypatch) -> None:
-    """Given no package clock symbols, direct quel_clock_master fallback is not used."""
+    """Given no package clock symbols, when loading qubecalib driver symbols, then direct quel_clock_master fallback is not used."""
     mapping = _build_fake_driver_modules("qubecalib")
     del mapping["qubecalib.clockmaster_compat"]
     legacy = cast(Any, mapping["qubecalib.qubecalib"])
@@ -305,7 +305,7 @@ def test_load_quel1_driver_does_not_fall_back_to_quel_clock_master(monkeypatch) 
 def test_load_quel1_driver_resolves_quel1box_symbol(
     monkeypatch,
 ) -> None:
-    """Given qubecalib box symbol, loader maps Quel1Box."""
+    """Given qubecalib box symbol, when loading driver symbols, then Quel1Box resolves from the exported box class."""
     mapping = _build_fake_driver_modules("qubecalib")
 
     def _fake_import(name: str) -> ModuleType:

@@ -261,7 +261,7 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
 
 
 def test_quel3_adapter_uses_adapter_alias_map() -> None:
-    """Given adapter alias map, when building request, fixed timeline keys use aliases."""
+    """Given adapter alias map, when building request, then fixed timeline keys use aliases."""
     target = "RQ00"
     alias = "alias-RQ00"
     schedule = MeasurementSchedule.model_construct(
@@ -299,7 +299,7 @@ def test_quel3_adapter_uses_adapter_alias_map() -> None:
 
 
 def test_quel3_adapter_rejects_multiple_targets_for_same_alias() -> None:
-    """Given duplicated alias mapping, building payload raises ValueError."""
+    """Given duplicated alias mapping, when building payload, then ValueError is raised."""
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
             duration=1.2,
@@ -328,7 +328,7 @@ def test_quel3_adapter_rejects_multiple_targets_for_same_alias() -> None:
 
 
 def test_quel3_adapter_uses_registry_for_result_target_labels() -> None:
-    """Given target registry, backend-result alias labels are converted to registry output labels."""
+    """Given target registry, when building measurement result, then backend alias labels are converted to registry output labels."""
     target = "raw-readout-target"
     alias = "alias-raw"
     schedule = MeasurementSchedule.model_construct(
@@ -424,7 +424,7 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
 
 
 def test_quel3_adapter_requires_explicit_alias_mapping_for_execution_payload() -> None:
-    """Given missing alias mapping, building payload raises configuration error."""
+    """Given missing alias mapping, when building payload, then a configuration error is raised."""
     target = "RQ00"
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(

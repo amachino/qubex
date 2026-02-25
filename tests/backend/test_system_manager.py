@@ -125,7 +125,7 @@ class FakeExperimentSystemForBackendSettings:
 
 
 def test_backend_settings_hash_is_order_independent() -> None:
-    """Given same nested content, hash is identical regardless of key insertion order."""
+    """Given the same nested content, when hashing backend settings, then hash is independent of key insertion order."""
     settings_a = BackendSettings(
         {
             "A": {"ports": {1: {"v": 1}, 2: {"v": 2}}},
@@ -503,7 +503,7 @@ def test_sync_experiment_system_to_backend_controller_delegates_to_system_synchr
 def test_modified_backend_settings_initializes_shared_read_box_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given shared read/cap box, modified backend settings initializes AWG/CAP once."""
+    """Given a shared read/cap box, when applying modified backend settings, then AWG/CAP initialization runs once."""
     manager = SystemManager.shared()
 
     @dataclass
@@ -781,7 +781,7 @@ def test_load_resolves_backend_kind_from_chip_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given chip backend in chip.yaml, load uses it when backend_kind argument is omitted."""
+    """Given chip backend in chip.yaml, when load is called without backend_kind, then backend kind is resolved from chip.yaml."""
     manager = SystemManager.shared()
     captured: dict[str, object] = {}
     selected: list[str] = []
@@ -830,7 +830,7 @@ def test_load_resolves_backend_kind_from_system_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given system backend in system.yaml, load uses it when backend_kind argument is omitted."""
+    """Given system backend in system.yaml, when load is called without backend_kind, then backend kind is resolved from system.yaml."""
     manager = SystemManager.shared()
     captured: dict[str, object] = {}
     selected: list[str] = []
@@ -883,7 +883,7 @@ def test_load_explicit_backend_kind_overrides_chip_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given explicit backend_kind, load prefers the argument over chip.yaml backend."""
+    """Given explicit backend_kind, when load is called, then explicit value overrides chip.yaml backend."""
     manager = SystemManager.shared()
     captured: dict[str, object] = {}
     selected: list[str] = []
@@ -933,7 +933,7 @@ def test_load_explicit_backend_kind_overrides_system_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given explicit backend_kind, load prefers the argument over system.yaml backend."""
+    """Given explicit backend_kind, when load is called, then explicit value overrides system.yaml backend."""
     manager = SystemManager.shared()
     selected: list[str] = []
     config_dir = tmp_path / "config"
@@ -981,7 +981,7 @@ def test_load_defaults_to_quel1_when_chip_backend_kind_is_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given chip backend is absent, load defaults backend selection to quel1."""
+    """Given missing chip backend, when load is called without backend_kind, then backend defaults to quel1."""
     manager = SystemManager.shared()
     selected: list[str] = []
     config_dir = tmp_path / "config"
@@ -1023,7 +1023,7 @@ def test_load_defaults_to_quel1_when_chip_backend_kind_is_missing(
 def test_load_raises_for_unknown_backend_kind_in_chip_config(
     tmp_path: Path,
 ) -> None:
-    """Given unknown backend in chip.yaml, load raises ValueError."""
+    """Given unknown backend in chip.yaml, when load is called, then ValueError is raised."""
     manager = SystemManager.shared()
     config_dir = tmp_path / "config"
     params_dir = tmp_path / "params"
@@ -1046,7 +1046,7 @@ def test_load_raises_for_unknown_backend_kind_in_chip_config(
 def test_load_raises_for_unknown_backend_kind_in_system_config(
     tmp_path: Path,
 ) -> None:
-    """Given unknown backend in system.yaml, load raises ValueError."""
+    """Given unknown backend in system.yaml, when load is called, then ValueError is raised."""
     manager = SystemManager.shared()
     config_dir = tmp_path / "config"
     params_dir = tmp_path / "params"

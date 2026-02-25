@@ -77,7 +77,7 @@ def _make_measurement_with_backend(
 
 
 def test_sampling_period_uses_backend_controller_default(monkeypatch) -> None:
-    """Given backend dt, when resolving sampling period, backend dt is returned."""
+    """Given backend dt, when resolving sampling period, then backend dt is returned."""
     measurement = _make_measurement_with_backend(
         monkeypatch,
         sampling_period=4.0,
