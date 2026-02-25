@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
@@ -278,9 +279,15 @@ class Quel1ConfigurationManager:
         self._runtime_context.validate_box_availability(box_name)
         if not self._runtime_context.is_connected:
             db = self._runtime_context.qubecalib.system_config_database
-            return db.create_box(box_name, reconnect=reconnect)
+            box = db.create_box(box_name, reconnect=False)
+            if reconnect:
+                box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+            return box
         boxpool = self._runtime_context.boxpool
         if box_name in boxpool._boxes:
             return boxpool._boxes[box_name][0]
         db = self._runtime_context.qubecalib.system_config_database
-        return db.create_box(box_name, reconnect=reconnect)
+        box = db.create_box(box_name, reconnect=False)
+        if reconnect:
+            box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+        return box

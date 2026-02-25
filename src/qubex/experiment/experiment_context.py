@@ -208,8 +208,8 @@ class ExperimentContext:
             file_path=calib_note_path,
         )
         self._load_skew_file()
-        self.print_environment(verbose=False)
         self._load_classifiers()
+        self.print_environment(verbose=False)
 
     def _load_classifiers(self):
         for qubit in self.qubit_labels:

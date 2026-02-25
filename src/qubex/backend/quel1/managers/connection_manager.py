@@ -13,7 +13,10 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
-from qubex.backend.quel1.quel1_backend_constants import DEFAULT_EXECUTION_MODE
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_EXECUTION_MODE,
+    RELAXED_NOISE_THRESHOLD,
+)
 from qubex.backend.quel1.quel1_runtime_context import (
     Quel1RuntimeContext,
 )
@@ -29,7 +32,6 @@ if TYPE_CHECKING:
         Quel1SystemProtocol as Quel1System,
     )
 
-_RELAXED_NOISE_THRESHOLD = 10000
 _MAX_BOX_PARALLEL_WORKERS = 32
 _DEFAULT_PARALLEL_MODE = DEFAULT_EXECUTION_MODE == "parallel"
 _QUEL1SE_R8_AWG_OPTIONS = {
@@ -265,7 +267,7 @@ class Quel1ConnectionManager:
         self._runtime_context.validate_box_availability(box_name)
         box = self._get_existing_or_create_box(box_name=box_name, reconnect=False)
         if noise_threshold is None:
-            noise_threshold = _RELAXED_NOISE_THRESHOLD
+            noise_threshold = RELAXED_NOISE_THRESHOLD
         if not all(box.link_status().values()):
             raise ConnectionError(f"Box {box_name} has down links before linkup.")
         box.reconnect(background_noise_threshold=noise_threshold, **kwargs)
@@ -326,7 +328,7 @@ class Quel1ConnectionManager:
         """Relink one box."""
         self._runtime_context.validate_box_availability(box_name)
         if noise_threshold is None:
-            noise_threshold = _RELAXED_NOISE_THRESHOLD
+            noise_threshold = RELAXED_NOISE_THRESHOLD
         box = self._get_existing_or_create_box(box_name=box_name, reconnect=False)
         config_options = self._resolve_config_options(
             box_name=box_name, boxtype=box.boxtype
@@ -387,10 +389,13 @@ class Quel1ConnectionManager:
         box_name: str,
         reconnect: bool = True,
     ) -> Quel1Box:
-        """Create one box from system configuration."""
+        """Create one box from system configuration and reconnect when requested."""
         self._runtime_context.validate_box_availability(box_name)
         db = self._runtime_context.qubecalib.system_config_database
-        return db.create_box(box_name, reconnect=reconnect)
+        box = db.create_box(box_name, reconnect=False)
+        if reconnect:
+            box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+        return box
 
     def get_existing_or_create_box(
         self,

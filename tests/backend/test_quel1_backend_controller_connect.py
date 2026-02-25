@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 
+from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
 
@@ -29,10 +30,16 @@ class _FakeBox:
     def __init__(self, name: str) -> None:
         self.name = name
         self.reconnect_count = 0
+        self.reconnect_calls: list[dict[str, Any]] = []
 
-    def reconnect(self) -> None:
-        """Increment reconnect count."""
+    def reconnect(self, **kwargs: Any) -> None:
+        """Increment reconnect count and record keyword arguments."""
+        self.reconnect_calls.append(kwargs)
         self.reconnect_count += 1
+
+    def dump_box(self) -> dict[str, str]:
+        """Return a minimal box dump payload."""
+        return {"box": self.name}
 
 
 class _FakeBoxPool:
@@ -70,11 +77,14 @@ class _FakeSysDb:
         }
         self.create_quel1system_calls: list[tuple[str, ...]] = []
         self.create_box_calls: list[tuple[str, bool]] = []
+        self.created_boxes: list[_FakeBox] = []
 
     def create_box(self, box_name: str, reconnect: bool = True) -> _FakeBox:
         """Create a fake box and record call arguments."""
         self.create_box_calls.append((box_name, reconnect))
-        return _FakeBox(box_name)
+        box = _FakeBox(box_name)
+        self.created_boxes.append(box)
+        return box
 
     def create_quel1system(self, *box_names: str) -> str:
         """Record and return a fake system marker."""
@@ -212,6 +222,41 @@ def test_get_box_returns_existing_box_without_reconnect(monkeypatch) -> None:
 
     assert box is boxpool._boxes["A"][0]
     assert boxpool._boxes["A"][0].reconnect_count == reconnect_count_before
+
+
+def test_get_box_creates_box_without_reconnect(monkeypatch) -> None:
+    """Given missing pooled box, get_box creates box with reconnect disabled then reconnects explicitly."""
+    controller = _make_controller()
+    controller._connection_manager.set_boxpool(cast(Any, _FakeBoxPool()))
+    monkeypatch.setattr(
+        controller._runtime_context, "validate_box_availability", lambda _: None
+    )
+
+    box = controller.get_box("B")
+
+    qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
+    assert cast(Any, box).name == "B"
+    assert qubecalib.sysdb.create_box_calls[-1] == ("B", False)
+    assert qubecalib.sysdb.created_boxes[-1].reconnect_calls == [
+        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+    ]
+
+
+def test_dump_box_creates_box_without_reconnect_when_disconnected(monkeypatch) -> None:
+    """Given disconnected runtime, dump_box creates box with reconnect disabled then reconnects explicitly."""
+    controller = _make_controller()
+    monkeypatch.setattr(
+        controller._runtime_context, "validate_box_availability", lambda _: None
+    )
+
+    dumped = controller.dump_box("A")
+
+    qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
+    assert dumped == {"box": "A"}
+    assert qubecalib.sysdb.create_box_calls[-1] == ("A", False)
+    assert qubecalib.sysdb.created_boxes[-1].reconnect_calls == [
+        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+    ]
 
 
 def test_connect_skips_reconnect_when_already_connected(monkeypatch) -> None:
