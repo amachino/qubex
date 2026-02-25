@@ -8,6 +8,8 @@ import threading
 from types import SimpleNamespace
 from typing import ClassVar
 
+import pytest
+
 from qubex.patches.quel_ic_config import suppress_duplicated_proxy_patch as patch
 
 
@@ -15,18 +17,23 @@ class _FakeLockKeeper:
     _clients: ClassVar[set[_FakeLockKeeper]] = set()
     _clients_lock = threading.RLock()
 
-    def __init__(self, *, target: tuple[str, int]) -> None:
+    def __init__(self, *, target: tuple[str, int], alive: bool = True) -> None:
         self._target = target
         self._locked = True
+        self._alive = alive
         self.deactivate_calls = 0
 
     @property
     def has_lock(self) -> bool:
         return self._locked
 
+    def is_alive(self) -> bool:
+        return self._alive
+
     def deactivate(self, timeout: float = 0.0) -> bool:
         _ = timeout
         self.deactivate_calls += 1
+        self._alive = False
         self._locked = False
         return True
 
@@ -38,17 +45,22 @@ class _FakeSyncAsyncCoapClient:
     _clients: ClassVar[set[_FakeSyncAsyncCoapClient]] = set()
     _create_lock = threading.Lock()
 
-    def __init__(self, *, target: tuple[str, int]) -> None:
+    def __init__(self, *, target: tuple[str, int], alive: bool = True) -> None:
         self._target = target
         self._locked = True
+        self._alive = alive
         self.cleanup_calls = 0
 
     @property
     def has_lock(self) -> bool:
         return self._locked
 
+    def is_alive(self) -> bool:
+        return self._alive
+
     def _cleanup(self) -> None:
         self.cleanup_calls += 1
+        self._alive = False
         self._locked = False
 
     def _register_self(self) -> None:
@@ -90,8 +102,8 @@ def test_apply_patch_skips_for_quelware_0_8(monkeypatch) -> None:
     assert import_calls == []
 
 
-def test_apply_patch_releases_existing_proxy_before_registering(monkeypatch) -> None:
-    """Given duplicated proxies, when registering, then stale proxy is released and no RuntimeError is raised."""
+def test_apply_patch_releases_stale_proxy_before_registering(monkeypatch) -> None:
+    """Given stale duplicated proxies, when registering, then stale proxy is released."""
     _FakeLockKeeper._clients = set()
     _FakeSyncAsyncCoapClient._clients = set()
 
@@ -110,7 +122,7 @@ def test_apply_patch_releases_existing_proxy_before_registering(monkeypatch) -> 
 
     patch.apply_quelware_duplicated_proxy_patch()
 
-    existing_sock_proxy = _FakeLockKeeper(target=("10.5.0.2", 16384))
+    existing_sock_proxy = _FakeLockKeeper(target=("10.5.0.2", 16384), alive=False)
     existing_sock_proxy._register_self()
     new_sock_proxy = _FakeLockKeeper(target=("10.5.0.2", 16384))
     new_sock_proxy._register_self()
@@ -119,7 +131,9 @@ def test_apply_patch_releases_existing_proxy_before_registering(monkeypatch) -> 
     assert existing_sock_proxy not in _FakeLockKeeper._clients
     assert new_sock_proxy in _FakeLockKeeper._clients
 
-    existing_coap_proxy = _FakeSyncAsyncCoapClient(target=("10.5.0.2", 5683))
+    existing_coap_proxy = _FakeSyncAsyncCoapClient(
+        target=("10.5.0.2", 5683), alive=False
+    )
     existing_coap_proxy._register_self()
     new_coap_proxy = _FakeSyncAsyncCoapClient(target=("10.5.0.2", 5683))
     new_coap_proxy._register_self()
@@ -127,3 +141,46 @@ def test_apply_patch_releases_existing_proxy_before_registering(monkeypatch) -> 
     assert existing_coap_proxy.cleanup_calls == 1
     assert existing_coap_proxy not in _FakeSyncAsyncCoapClient._clients
     assert new_coap_proxy in _FakeSyncAsyncCoapClient._clients
+
+
+def test_apply_patch_keeps_active_duplicate_proxy_and_raises(monkeypatch) -> None:
+    """Given active duplicated proxies, when registering, then RuntimeError is raised."""
+    _FakeLockKeeper._clients = set()
+    _FakeSyncAsyncCoapClient._clients = set()
+
+    sock_mod = SimpleNamespace(AbstractLockKeeper=_FakeLockKeeper)
+    coap_mod = SimpleNamespace(AbstractSyncAsyncCoapClient=_FakeSyncAsyncCoapClient)
+    monkeypatch.setattr(patch, "_is_quelware_0_10_or_later", lambda: True)
+
+    def _import_module(name: str):
+        if name == "quel_ic_config.exstickge_sock_client":
+            return sock_mod
+        if name == "quel_ic_config.exstickge_coap_client":
+            return coap_mod
+        raise ImportError(name)
+
+    monkeypatch.setattr(patch.importlib, "import_module", _import_module)
+
+    patch.apply_quelware_duplicated_proxy_patch()
+
+    existing_sock_proxy = _FakeLockKeeper(target=("10.5.0.2", 16384), alive=True)
+    existing_sock_proxy._register_self()
+    new_sock_proxy = _FakeLockKeeper(target=("10.5.0.2", 16384), alive=True)
+    with pytest.raises(RuntimeError, match="duplicated proxy object"):
+        new_sock_proxy._register_self()
+
+    assert existing_sock_proxy.deactivate_calls == 0
+    assert existing_sock_proxy in _FakeLockKeeper._clients
+    assert new_sock_proxy not in _FakeLockKeeper._clients
+
+    existing_coap_proxy = _FakeSyncAsyncCoapClient(
+        target=("10.5.0.2", 5683), alive=True
+    )
+    existing_coap_proxy._register_self()
+    new_coap_proxy = _FakeSyncAsyncCoapClient(target=("10.5.0.2", 5683), alive=True)
+    with pytest.raises(RuntimeError, match="duplicated proxy object"):
+        new_coap_proxy._register_self()
+
+    assert existing_coap_proxy.cleanup_calls == 0
+    assert existing_coap_proxy in _FakeSyncAsyncCoapClient._clients
+    assert new_coap_proxy not in _FakeSyncAsyncCoapClient._clients

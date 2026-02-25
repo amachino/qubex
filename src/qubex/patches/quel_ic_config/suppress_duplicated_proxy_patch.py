@@ -43,6 +43,18 @@ def _proxy_has_lock(proxy: Any) -> bool:
         return False
 
 
+def _proxy_is_active(proxy: Any) -> bool:
+    """Return whether one proxy appears to be actively running."""
+    is_alive = getattr(proxy, "is_alive", None)
+    if not callable(is_alive):
+        # Be conservative when liveness cannot be determined.
+        return True
+    try:
+        return bool(is_alive())
+    except Exception:
+        return True
+
+
 def _collect_duplicate_proxies(*, proxies: Any, current: Any) -> list[Any]:
     """Collect locked proxies targeting the same host except the current one."""
     target_address = _get_target_address(current)
@@ -97,6 +109,24 @@ def _release_stale_coap_proxy(proxy: Any) -> None:
         proxy._locked = False
 
 
+def _collect_active_duplicate_proxies(*, proxies: Any, current: Any) -> list[Any]:
+    """Collect locked and active duplicates for one proxy."""
+    return [
+        proxy
+        for proxy in _collect_duplicate_proxies(proxies=proxies, current=current)
+        if _proxy_is_active(proxy)
+    ]
+
+
+def _collect_stale_duplicate_proxies(*, proxies: Any, current: Any) -> list[Any]:
+    """Collect locked but inactive duplicates for one proxy."""
+    return [
+        proxy
+        for proxy in _collect_duplicate_proxies(proxies=proxies, current=current)
+        if not _proxy_is_active(proxy)
+    ]
+
+
 def _patch_sock_register_self(sock_module: Any) -> None:
     """Patch socket lock keeper duplicate-registration handling."""
     lock_keeper_cls = getattr(sock_module, "AbstractLockKeeper", None)
@@ -112,12 +142,12 @@ def _patch_sock_register_self(sock_module: Any) -> None:
             )
 
         with lock_keeper_cls._clients_lock:
-            duplicated = _collect_duplicate_proxies(
+            stale_duplicated = _collect_stale_duplicate_proxies(
                 proxies=lock_keeper_cls._clients,
                 current=self,
             )
 
-        for proxy in duplicated:
+        for proxy in stale_duplicated:
             logger.warning(
                 "Detected stale duplicated proxy object for %s; releasing it.",
                 self._target[0],
@@ -125,8 +155,14 @@ def _patch_sock_register_self(sock_module: Any) -> None:
             _release_stale_lockkeeper_proxy(proxy)
 
         with lock_keeper_cls._clients_lock:
-            for proxy in duplicated:
+            for proxy in stale_duplicated:
                 lock_keeper_cls._clients.discard(proxy)
+            active_duplicated = _collect_active_duplicate_proxies(
+                proxies=lock_keeper_cls._clients,
+                current=self,
+            )
+            if active_duplicated:
+                raise RuntimeError(f"duplicated proxy object for {self._target[0]}")
             lock_keeper_cls._clients.add(self)
 
     lock_keeper_cls._register_self = _register_self
@@ -143,12 +179,12 @@ def _patch_coap_register_self(coap_module: Any) -> None:
 
     def _register_self(self) -> None:
         with coap_client_cls._create_lock:
-            duplicated = _collect_duplicate_proxies(
+            stale_duplicated = _collect_stale_duplicate_proxies(
                 proxies=coap_client_cls._clients,
                 current=self,
             )
 
-        for proxy in duplicated:
+        for proxy in stale_duplicated:
             logger.warning(
                 "Detected stale duplicated proxy object for %s; releasing it.",
                 self._target[0],
@@ -156,8 +192,14 @@ def _patch_coap_register_self(coap_module: Any) -> None:
             _release_stale_coap_proxy(proxy)
 
         with coap_client_cls._create_lock:
-            for proxy in duplicated:
+            for proxy in stale_duplicated:
                 coap_client_cls._clients.discard(proxy)
+            active_duplicated = _collect_active_duplicate_proxies(
+                proxies=coap_client_cls._clients,
+                current=self,
+            )
+            if active_duplicated:
+                raise RuntimeError(f"duplicated proxy object for {self._target[0]}")
             coap_client_cls._clients.add(self)
 
     coap_client_cls._register_self = _register_self
