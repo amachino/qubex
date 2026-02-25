@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
+
+import pytest
 
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
@@ -59,6 +62,15 @@ def _make_controller() -> Quel1BackendController:
     return controller
 
 
+def _write_skew_yaml(tmp_path: Path, *, wait: int) -> Path:
+    path = tmp_path / "skew.yaml"
+    path.write_text(
+        f"box_setting:\n  Q00:\n    slot: 0\n    wait: {wait}\ntime_to_start: 0\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_define_helpers_delegate_to_qubecalib() -> None:
     """Given helper methods, when called, then qubecalib methods receive the same kwargs."""
     controller = _make_controller()
@@ -109,14 +121,28 @@ def test_define_helpers_delegate_to_qubecalib() -> None:
     ]
 
 
-def test_load_skew_yaml_delegates_to_sysdb() -> None:
+def test_load_skew_yaml_delegates_to_sysdb(tmp_path: Path) -> None:
     """Given a path, when loading skew yaml, then sysdb.load_skew_yaml is called once."""
     controller = _make_controller()
+    path = _write_skew_yaml(tmp_path, wait=0)
 
-    controller.load_skew_yaml("skew.yaml")
+    controller.load_skew_yaml(path)
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
-    assert qubecalib.sysdb.load_skew_yaml_calls == ["skew.yaml"]
+    assert qubecalib.sysdb.load_skew_yaml_calls == [str(path)]
+
+
+@pytest.mark.parametrize("wait", [-1, 128])
+def test_load_skew_yaml_rejects_wait_out_of_range(tmp_path: Path, wait: int) -> None:
+    """Given out-of-range wait, when loading skew yaml, then ValueError is raised before delegation."""
+    controller = _make_controller()
+    path = _write_skew_yaml(tmp_path, wait=wait)
+
+    with pytest.raises(ValueError, match="wait must satisfy 0 <= wait < 128"):
+        controller.load_skew_yaml(path)
+
+    qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
+    assert qubecalib.sysdb.load_skew_yaml_calls == []
 
 
 def test_add_channel_target_relation_is_idempotent() -> None:

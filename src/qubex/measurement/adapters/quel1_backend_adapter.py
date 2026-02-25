@@ -196,9 +196,10 @@ class Quel1MeasurementBackendAdapter:
                 * block_duration
             )
             # Compatibility guard:
-            # legacy measurement flow added one extra block margin on the
-            # waveform-path for interval<=0, which avoided negative trailing
-            # chunk blanks after converter-side packing/alignment adjustments.
+            # Keep one extra block for interval<=0 because skew.yaml wait
+            # (and port_wait) is applied later as leading waveform padding in
+            # qubecalib; without this margin, converter-side packing/alignment
+            # can make trailing chunk blank words negative.
             # Remove this workaround once qubecalib compatibility is no longer
             # required in the QuEL-1 measurement path.
             if config.interval <= 0:
