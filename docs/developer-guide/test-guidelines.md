@@ -103,6 +103,9 @@ pytest.skip("requires hardware")
 - Prefer testing via public APIs and observable behavior.
 - Avoid coupling tests to private members (`_internal`) unless validating a required compatibility contract.
 - If a private contract must be tested, keep scope narrow and document why public API cannot cover it.
+- Avoid adding tests that only assert symbol absence/presence via `hasattr`.
+- Add `hasattr`-based checks only when API surface itself is an explicit compatibility contract.
+- When API-surface checks are required, keep them minimal and pair them with behavior tests for user-visible outcomes.
 
 ## Import behavior
 

@@ -197,31 +197,6 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
     assert called["clock_health_checks"] is True
 
 
-def test_execute_async_entrypoint_is_removed() -> None:
-    """Given schedule runner, execute_async entrypoint is not exposed."""
-    runner = MeasurementScheduleRunner(
-        measurement_backend_adapter=cast(Any, object()),
-        backend_controller=cast(Any, object()),
-    )
-
-    assert not hasattr(runner, "execute_async")
-
-
-def test_build_execution_request_entrypoint_is_removed() -> None:
-    """Given schedule runner, _build_execution_request helper is not exposed."""
-    runner = MeasurementScheduleRunner(
-        measurement_backend_adapter=cast(Any, object()),
-        backend_controller=cast(Any, object()),
-    )
-
-    assert not hasattr(runner, "_build_execution_request")
-
-
-def test_create_default_entrypoint_is_removed() -> None:
-    """Given schedule runner class, create_default entrypoint is not exposed."""
-    assert not hasattr(MeasurementScheduleRunner, "create_default")
-
-
 def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
     """Given backend without box config capability, when execute runs, then adapter result builder receives an empty config."""
     called: dict[str, object] = {}

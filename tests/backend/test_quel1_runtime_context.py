@@ -34,11 +34,6 @@ class _FailingQubeCalibDriver:
         raise RuntimeError("failed to import qubecalib")
 
 
-def test_runtime_context_hides_create_factory() -> None:
-    """Given runtime context class, legacy create factory is not exposed."""
-    assert not hasattr(Quel1RuntimeContext, "create")
-
-
 def test_runtime_context_constructor_loads_driver_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -65,20 +65,6 @@ def test_quel3_controller_is_not_quel1_subclass() -> None:
     assert not isinstance(Quel3BackendController(), Quel1BackendController)
 
 
-def test_quel3_controller_does_not_expose_box_config_capability() -> None:
-    """Given QuEL-3 controller, box-config optional capability is absent."""
-    assert not hasattr(Quel3BackendController(), "box_config")
-
-
-def test_quel3_controller_does_not_expose_alias_mapping_capability() -> None:
-    """Given QuEL-3 controller, target-to-alias mapping capability is absent."""
-    controller = Quel3BackendController()
-
-    assert not hasattr(controller, "instrument_alias_map")
-    assert not hasattr(controller, "set_instrument_alias_map")
-    assert not hasattr(controller, "update_instrument_alias_map")
-
-
 def test_quel3_constructor_rejects_config_path_argument() -> None:
     """Given legacy config_path kwarg, constructor raises TypeError."""
     with pytest.raises(TypeError, match="config_path"):
@@ -105,13 +91,6 @@ def test_execute_rejects_non_quel3_payload() -> None:
         asyncio.run(
             controller.execute(request=BackendExecutionRequest(payload=object()))
         )
-
-
-def test_execute_async_entrypoint_is_removed() -> None:
-    """Given QuEL-3 controller, execute_async entrypoint is not exposed."""
-    controller = Quel3BackendController()
-
-    assert not hasattr(controller, "execute_async")
 
 
 def test_execute_surfaces_missing_quelware_dependency(

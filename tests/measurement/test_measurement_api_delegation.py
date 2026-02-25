@@ -193,18 +193,6 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
-def test_measure_async_entrypoint_is_removed() -> None:
-    """Given measurement facade, measure_async entrypoint is not exposed."""
-    measurement = Measurement(
-        chip_id="TEST",
-        qubits=["Q00"],
-        load_configs=False,
-        connect_devices=False,
-    )
-
-    assert not hasattr(measurement, "measure_async")
-
-
 def test_measure_initializes_optional_flags_with_measure_defaults() -> None:
     """Given None optional flags, when measure is called, then it applies measure defaults."""
     measurement = Measurement(
@@ -391,18 +379,6 @@ def test_run_measurement_delegates_to_executor(
     assert called["schedule"] is schedule
     assert called["config"] is config
     assert result is expected
-
-
-def test_run_measurement_async_entrypoint_is_removed() -> None:
-    """Given measurement facade, run_measurement_async entrypoint is not exposed."""
-    measurement = Measurement(
-        chip_id="TEST",
-        qubits=["Q00"],
-        load_configs=False,
-        connect_devices=False,
-    )
-
-    assert not hasattr(measurement, "run_measurement_async")
 
 
 def test_run_measurement_selects_quel3_adapter_from_controller_type(
@@ -686,18 +662,6 @@ def test_run_sweep_measurement_stops_immediately_on_error() -> None:
         )
 
     assert called["count"] == 2
-
-
-def test_execute_async_entrypoint_is_removed() -> None:
-    """Given measurement facade, execute_async entrypoint is not exposed."""
-    measurement = Measurement(
-        chip_id="TEST",
-        qubits=["Q00"],
-        load_configs=False,
-        connect_devices=False,
-    )
-
-    assert not hasattr(measurement, "execute_async")
 
 
 def test_disconnect_delegates_to_session_service() -> None:

@@ -447,18 +447,6 @@ def test_measure_idle_states_delegates_to_measurement_service() -> None:
     ]
 
 
-def test_execute_async_entrypoint_is_removed() -> None:
-    """Given experiment facade, execute_async entrypoint is not exposed."""
-    exp = object.__new__(Experiment)
-    assert not hasattr(exp, "execute_async")
-
-
-def test_measure_async_entrypoint_is_removed() -> None:
-    """Given experiment facade, measure_async entrypoint is not exposed."""
-    exp = object.__new__(Experiment)
-    assert not hasattr(exp, "measure_async")
-
-
 def test_register_custom_target_delegates_to_context() -> None:
     """Given custom-target args, when called, then it delegates to experiment context."""
     exp = object.__new__(Experiment)
