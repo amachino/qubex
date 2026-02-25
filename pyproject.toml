@@ -40,7 +40,7 @@ dependencies = [
 
 [project.optional-dependencies]
 backend = [
-    "qxdriver-quel @ git+https://github.com/amachino/qxdriver-quel.git@qubex-quelware-v0.10",
+    "qxdriver-quel1 @ git+https://github.com/amachino/qxdriver-quel1.git@qubex-quelware-v0.10",
     "quelware-client @ git+https://github.com/quel-inc/quelware-client.git@main#subdirectory=quelware-client",
 ]
 
@@ -76,7 +76,7 @@ cache-dir = ".cache/uv"
 
 [tool.uv.sources]
 quelware_client = { workspace = true }
-qxdriver_quel = { workspace = true }
+qxdriver_quel1 = { workspace = true }
 qxcore = { workspace = true }
 qxfitting = { workspace = true }
 qxpulse = { workspace = true }
@@ -88,7 +88,7 @@ qxvisualizer = { workspace = true }
 members = [
     "packages/quelware-client/quelware-client",
     "packages/qxcore",
-    "packages/qxdriver-quel",
+    "packages/qxdriver-quel1",
     "packages/qxfitting",
     "packages/qxpulse",
     "packages/qxschema",

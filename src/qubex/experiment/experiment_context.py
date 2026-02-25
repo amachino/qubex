@@ -304,7 +304,7 @@ class ExperimentContext:
         logger.info(f"qubex: {get_version('qubex')}")
         if verbose:
             logger.info(f"  qxcore: {get_version('qxcore')}")
-            logger.info(f"  qxdriver-quel: {get_version('qxdriver-quel')}")
+            logger.info(f"  qxdriver-quel1: {get_version('qxdriver-quel1')}")
             logger.info(f"  qxpulse: {get_version('qxpulse')}")
             logger.info(f"  qxschema: {get_version('qxschema')}")
             logger.info(f"  qxsimulator: {get_version('qxsimulator')}")

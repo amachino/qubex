@@ -17,7 +17,7 @@ members = [
     "qubex",
     "quelware-client",
     "qxcore",
-    "qxdriver-quel",
+    "qxdriver-quel1",
     "qxfitting",
     "qxpulse",
     "qxschema",
@@ -3299,7 +3299,7 @@ dependencies = [
 [package.optional-dependencies]
 backend = [
     { name = "quelware-client" },
-    { name = "qxdriver-quel" },
+    { name = "qxdriver-quel1" },
 ]
 
 [package.dev-dependencies]
@@ -3339,7 +3339,7 @@ requires-dist = [
     { name = "qctrl-visualizer", specifier = ">=8.0" },
     { name = "quelware-client", marker = "extra == 'backend'", editable = "packages/quelware-client/quelware-client" },
     { name = "qxcore", editable = "packages/qxcore" },
-    { name = "qxdriver-quel", marker = "extra == 'backend'", editable = "packages/qxdriver-quel" },
+    { name = "qxdriver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
     { name = "qxfitting", editable = "packages/qxfitting" },
     { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "qxschema", editable = "packages/qxschema" },
@@ -3525,8 +3525,8 @@ requires-dist = [
 ]
 
 [[package]]
-name = "qxdriver-quel"
-source = { editable = "packages/qxdriver-quel" }
+name = "qxdriver-quel1"
+source = { editable = "packages/qxdriver-quel1" }
 dependencies = [
     { name = "numpy" },
     { name = "plotly" },
