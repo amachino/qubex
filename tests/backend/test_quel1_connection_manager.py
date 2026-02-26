@@ -110,8 +110,10 @@ def test_connect_stores_connected_runtime_state() -> None:
 def test_connect_skips_when_already_connected() -> None:
     """Given connected state, when connect is called again, then create pipeline is skipped."""
     manager = _make_manager()
+    boxpool = _FakeBoxPool()
+    boxpool._boxes["A"] = (object(), object())
     manager.set_connected_state(
-        boxpool=_FakeBoxPool(),  # type: ignore[arg-type]
+        boxpool=boxpool,  # type: ignore[arg-type]
         quel1system=_FakeQuel1System(),  # type: ignore[arg-type]
         cap_resource_map={},
         gen_resource_map={},
@@ -136,6 +138,52 @@ def test_connect_skips_when_already_connected() -> None:
     )
 
     assert called is False
+
+
+def test_connect_reconnects_when_requested_boxes_are_missing() -> None:
+    """Given connected subset, when connect requests missing boxes, then it reconnects."""
+    manager = _make_manager()
+    existing_boxpool = _FakeBoxPool()
+    existing_boxpool._boxes["A"] = (object(), object())
+    manager.set_connected_state(
+        boxpool=existing_boxpool,  # type: ignore[arg-type]
+        quel1system=_FakeQuel1System(),  # type: ignore[arg-type]
+        cap_resource_map={},
+        gen_resource_map={},
+    )
+    events: list[str] = []
+    rebuilt_boxpool = _FakeBoxPool()
+    rebuilt_quel1system = _FakeQuel1System()
+
+    def _disconnect() -> None:
+        events.append("disconnect")
+        manager.clear_connected_state()
+
+    def _create_boxpool(box_names: list[str], *, parallel: bool) -> BoxPoolProtocol:
+        events.append(f"create_boxpool:{box_names}:{parallel}")
+        return rebuilt_boxpool  # type: ignore[return-value]
+
+    def _create_quel1system_from_boxpool(box_names: list[str]) -> Quel1SystemProtocol:
+        _ = box_names
+        events.append("create_quel1system")
+        return rebuilt_quel1system  # type: ignore[return-value]
+
+    manager.disconnect = _disconnect  # type: ignore[method-assign]
+    manager._create_boxpool = _create_boxpool  # type: ignore[method-assign]
+    manager._create_quel1system_from_boxpool = (  # type: ignore[method-assign]
+        _create_quel1system_from_boxpool
+    )
+    manager._create_resource_map = lambda _kind: {}  # type: ignore[method-assign]
+
+    manager.connect(
+        box_names=["A", "B"],
+        parallel=False,
+    )
+
+    assert events[0] == "disconnect"
+    assert events[1] == "create_boxpool:['A', 'B']:False"
+    assert events[2] == "create_quel1system"
+    assert manager.boxpool is rebuilt_boxpool
 
 
 def test_disconnect_clears_connected_runtime_state() -> None:

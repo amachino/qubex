@@ -263,7 +263,14 @@ def test_connect_skips_reconnect_when_already_connected(monkeypatch) -> None:
     """Given existing connection, connect skips creating a new boxpool."""
     controller = _make_controller()
     existing_system = object()
-    controller._connection_manager.set_quel1system(cast(Any, existing_system))
+    existing_boxpool = _FakeBoxPool()
+    existing_boxpool._boxes["A"] = (_FakeBox("A"), object())
+    controller._connection_manager.set_connected_state(
+        boxpool=cast(Any, existing_boxpool),
+        quel1system=cast(Any, existing_system),
+        cap_resource_map={},
+        gen_resource_map={},
+    )
 
     def _raise_if_called(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("connect path should be skipped when already connected")

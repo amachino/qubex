@@ -199,11 +199,15 @@ class Quel1ConnectionManager:
         """Resolve and create connected runtime state for requested boxes."""
         if parallel is None:
             parallel = _DEFAULT_PARALLEL_MODE
-        if self.is_connected:
-            logger.info("Already connected. Skipping backend reconnect.")
-            return
-
         resolved_box_names = self._resolve_box_names(box_names)
+        if self.is_connected:
+            connected_box_names = self._connected_box_names()
+            requested_box_names = set(resolved_box_names)
+            if requested_box_names.issubset(connected_box_names):
+                logger.info("Already connected. Skipping backend reconnect.")
+                return
+            self.disconnect()
+
         boxpool = self.create_boxpool(resolved_box_names, parallel=parallel)
         self.set_connected_state(
             boxpool=boxpool,
@@ -428,6 +432,19 @@ class Quel1ConnectionManager:
         if isinstance(box_names, str):
             return [box_names]
         return list(box_names)
+
+    def _connected_box_names(self) -> set[str]:
+        """Return currently connected box names from the active boxpool."""
+        if not self.is_connected:
+            return set()
+        try:
+            boxpool = self.boxpool
+        except ValueError:
+            return set()
+        pooled_boxes = getattr(boxpool, "_boxes", {})
+        if not isinstance(pooled_boxes, Mapping):
+            return set()
+        return set(pooled_boxes.keys())
 
     def _create_boxpool(self, box_names: list[str], *, parallel: bool) -> BoxPool:
         """Create a box pool and reconnect boxes."""
