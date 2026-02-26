@@ -96,38 +96,38 @@ class Measurement:
         _clock_health_checks: bool | None = None,
     ):
         """
-        Initialize the Measurement facade.
+        Initialize a measurement facade with optional session bootstrap.
 
         Parameters
         ----------
         chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        qubits : Sequence[str]
-            The list of qubit labels.
-        config_dir : Path | str, optional
-            The configuration directory.
-        params_dir : Path | str, optional
-            The parameters directory.
+            Chip identifier used to resolve configuration resources.
+        qubits : Collection[str]
+            Qubit labels managed by this measurement instance.
+        config_dir : Path | str | None, optional
+            Base directory that contains system configuration files.
+        params_dir : Path | str | None, optional
+            Base directory that contains control parameter files.
         load_configs : bool | None, optional
-            Whether to load configurations. If `None`, `DEFAULT_LOAD_CONFIGS`
-            is used.
+            Whether to call `load` during initialization. If `None`,
+            `DEFAULT_LOAD_CONFIGS` is used.
         connect_devices : bool | None, optional
-            Whether to connect devices. If `None`,
+            Whether to call `connect` during initialization. If `None`,
             `DEFAULT_CONNECT_DEVICES` is used.
         configuration_mode : ConfigurationMode | None, optional
-            Configuration mode. If `None`, `DEFAULT_CONFIGURATION_MODE`
-            is used.
+            Configuration variant passed to `load`. If `None`,
+            `DEFAULT_CONFIGURATION_MODE` is used.
         backend_kind : BackendKind | None, optional
-            Backend family used for this experiment session.
+            Backend family to initialize through configuration loading.
         _execution_mode : ExecutionMode | None, optional
-            Private backend execution mode override used by schedule executor.
+            Internal execution mode override forwarded to the execution service.
         _clock_health_checks : bool | None, optional
-            Private flag to enable clock-health checks in parallel execution.
+            Internal flag for backend clock-health checks in parallel execution.
 
         Examples
         --------
         >>> from qubex.measurement import Measurement
-        >>> measurement = Measurement(
+        >>> session = Measurement(
         ...     chip_id="64Q",
         ...     qubits=["Q00", "Q01"],
         ... )
@@ -180,18 +180,23 @@ class Measurement:
         backend_kind: BackendKind | None = None,
     ) -> None:
         """
-        Load the measurement settings.
+        Load configuration resources into the current session.
 
         Parameters
         ----------
         config_dir : Path | str | None
-            The configuration directory.
+            Directory that contains system configuration files.
         params_dir : Path | str | None
-            The parameters directory.
-        configuration_mode : ConfigurationMode, optional
-            The configuration mode, by default "ge-cr-cr".
+            Directory that contains control parameter files.
+        configuration_mode : ConfigurationMode | None, optional
+            Configuration variant. If `None`, backend defaults are used.
         backend_kind : BackendKind | None, optional
-            Backend family used for this experiment session.
+            Backend family used when creating the backend controller.
+
+        Notes
+        -----
+        This method updates `config_loader`, `experiment_system`, and backend
+        runtime dependencies.
         """
         self.session_service.load(
             chip_id=self._chip_id,
@@ -208,14 +213,19 @@ class Measurement:
         parallel: bool | None = None,
     ) -> None:
         """
-        Connect to the devices.
+        Connect backend resources for the active session.
 
         Parameters
         ----------
         sync_clocks : bool | None, optional
-            Whether to resync clocks, by default True.
+            Whether to synchronize hardware clocks before measurement.
         parallel : bool | None, optional
-            Whether to fetch backend settings in parallel.
+            Whether backend setup steps should run in parallel where supported.
+
+        Notes
+        -----
+        This method performs hardware-side connection and may take noticeable
+        time depending on backend state.
         """
         self.session_service.connect(sync_clocks=sync_clocks, parallel=parallel)
 
@@ -224,7 +234,20 @@ class Measurement:
         *,
         configuration_mode: ConfigurationMode | None = None,
     ) -> None:
-        """Reload the measuremnt settings."""
+        """
+        Reload configuration and reconnect backend resources.
+
+        Parameters
+        ----------
+        configuration_mode : ConfigurationMode | None, optional
+            Configuration variant passed to `load`. If `None`, the previously
+            configured variant is reused by the loader/service.
+
+        Notes
+        -----
+        This method calls `load` using the current loader paths and then
+        reconnects hardware resources via `connect`.
+        """
         self.load(
             config_dir=self.config_loader.config_path,
             params_dir=self.config_loader.params_path,
@@ -360,38 +383,45 @@ class Measurement:
 
     def get_awg_frequency(self, target: str) -> float:
         """
-        Get the AWG frequency for the target.
+        Return the AWG frequency for one target.
 
         Parameters
         ----------
         target : str
-            The target label.
+            Target label.
 
         Returns
         -------
         float
-            The AWG frequency in Hz.
+            AWG frequency in Hz.
         """
         return self.experiment_system.get_awg_frequency(target)
 
     def get_diff_frequency(self, target: str) -> float:
         """
-        Get the difference frequency for the target.
+        Return the intermediate (difference) frequency for one target.
 
         Parameters
         ----------
         target : str
-            The target label.
+            Target label.
 
         Returns
         -------
         float
-            The difference frequency in Hz.
+            Difference frequency in Hz.
         """
         return self.experiment_system.get_diff_frequency(target)
 
     def update_classifiers(self, classifiers: TargetMap[StateClassifier]) -> None:
-        """Update the state classifiers."""
+        """
+        Replace registered state classifiers.
+
+        Parameters
+        ----------
+        classifiers : TargetMap[StateClassifier]
+            Classifiers indexed by target label.
+        """
         self.classification_service.update_classifiers(classifiers)
 
     def get_confusion_matrix(
@@ -399,17 +429,17 @@ class Measurement:
         targets: Collection[str],
     ) -> npt.NDArray:
         """
-        Return the combined confusion matrix for targets.
+        Return a combined confusion matrix for the given targets.
 
         Parameters
         ----------
         targets : Collection[str]
-            Target labels to include.
+            Target labels included in Kronecker-product order.
 
         Returns
         -------
         npt.NDArray
-            Kronecker-product confusion matrix.
+            Combined confusion matrix.
         """
         return self.classification_service.get_confusion_matrix(targets)
 
@@ -418,102 +448,115 @@ class Measurement:
         targets: Collection[str],
     ) -> npt.NDArray:
         """
-        Return the inverse combined confusion matrix.
+        Return the inverse of the combined confusion matrix.
 
         Parameters
         ----------
         targets : Collection[str]
-            Target labels to include.
+            Target labels included in Kronecker-product order.
 
         Returns
         -------
         npt.NDArray
-            Inverse confusion matrix.
+            Inverse combined confusion matrix.
         """
         return self.classification_service.get_inverse_confusion_matrix(targets)
 
     def is_connected(self) -> bool:
         """
-        Check if the measurement system is connected to the devices.
+        Return whether backend resources are connected.
 
         Returns
         -------
         bool
-            True if connected, False otherwise.
+            `True` if connected, otherwise `False`.
         """
         return self.session_service.is_connected()
 
     def disconnect(self) -> None:
-        """Disconnect backend resources held by the measurement backend."""
+        """
+        Disconnect backend resources held by the measurement session.
+
+        Notes
+        -----
+        This method forwards directly to the session lifecycle service and
+        resets runtime connectivity state.
+        """
         self.session_service.disconnect()
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """
-        Check the link status of the boxes.
+        Return link status for the specified backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
 
         Returns
         -------
         dict
-            The link status of the boxes.
+            Backend-specific link status payload keyed by box identifier.
 
         Examples
         --------
-        >>> cli.check_link_status(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.check_link_status(["Q73A", "U10B"])
         """
         return self.session_service.check_link_status(box_list)
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """
-        Check the clock status of the boxes.
+        Return clock status for the specified backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
 
         Returns
         -------
         dict
-            The clock status of the boxes.
+            Backend-specific clock status payload keyed by box identifier.
 
         Examples
         --------
-        >>> cli.check_clock_status(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.check_clock_status(["Q73A", "U10B"])
         """
         return self.session_service.check_clock_status(box_list)
 
     def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """
-        Link up the boxes and synchronize the clocks.
+        Run link-up and clock synchronization for backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
+        noise_threshold : int | None, optional
+            Optional threshold used by backend-specific link quality checks.
 
         Examples
         --------
-        >>> cli.linkup(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.linkup(["Q73A", "U10B"])
         """
         self.session_service.linkup(box_list, noise_threshold=noise_threshold)
 
     def relinkup(self, box_list: list[str]) -> None:
         """
-        Relink up the boxes and synchronize the clocks.
+        Re-run link-up for already configured backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
 
         Examples
         --------
-        >>> cli.relinkup(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.relinkup(["Q73A", "U10B"])
         """
         self.session_service.relinkup(box_list)
 
@@ -523,20 +566,32 @@ class Measurement:
         target_frequencies: dict[str, float],
     ) -> Iterator[None]:
         """
-        Temporarily modify the target frequencies.
+        Temporarily override target frequencies within a context block.
 
         Parameters
         ----------
         target_frequencies : dict[str, float]
-            The target frequencies to be modified.
+            Frequency overrides in Hz keyed by target label.
+
+        Yields
+        ------
+        None
+            Context where overridden frequencies are active.
+
+        Notes
+        -----
+        Original frequencies are restored when exiting the context manager.
 
         Examples
         --------
-        >>> with cli.modified_frequencies({"Q00": 5.0}):
-        ...     result = cli.measure({
-        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
-        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
-        ...     })
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> with session.modified_frequencies({"Q00": 5.0e9}):
+        ...     _ = session.measure(
+        ...         {
+        ...             "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...             "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...         }
+        ...     )
         """
         with self.session_service.modified_frequencies(target_frequencies):
             yield
@@ -544,20 +599,32 @@ class Measurement:
     @contextmanager
     def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:
         """
-        Temporarily apply DC voltages to the specified targets.
+        Temporarily apply DC voltages to selected targets.
 
         Parameters
         ----------
-        targets : Collection[str]
-            The list of target names.
+        targets : str | Collection[str]
+            Target label or target labels for temporary DC bias application.
+
+        Yields
+        ------
+        None
+            Context where DC voltages are applied.
+
+        Notes
+        -----
+        DC voltages are removed automatically when exiting the context manager.
 
         Examples
         --------
-        >>> with cli.apply_dc_voltages(["Q00", "Q01"]):
-        ...     result = cli.measure({
-        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
-        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
-        ...     })
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> with session.apply_dc_voltages(["Q00", "Q01"]):
+        ...     _ = session.measure(
+        ...         {
+        ...             "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...             "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...         }
+        ...     )
         """
         with self.amplification_service.apply_dc_voltages(targets):
             yield
@@ -569,19 +636,19 @@ class Measurement:
         config: MeasurementConfig,
     ) -> MeasurementResult:
         """
-        Run the measurement with the given schedule and configuration.
+        Execute one prepared measurement schedule.
 
         Parameters
         ----------
         schedule : MeasurementSchedule
-            The measurement schedule.
+            Measurement schedule that includes readout instructions.
         config : MeasurementConfig
-            The measurement configuration.
+            Runtime acquisition configuration.
 
         Returns
         -------
         MeasurementResult
-            The measurement result.
+            Serialized measurement result container.
         """
         return await self.execution_service.run_measurement(
             schedule=schedule,
@@ -595,7 +662,24 @@ class Measurement:
         sweep_points: Sequence[SweepPoint],
         config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
-        """Run sweep measurement pointwise."""
+        """
+        Execute a pointwise sweep over explicit sweep points.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepPoint], MeasurementSchedule]
+            Factory that builds one schedule from one sweep point.
+        sweep_points : Sequence[SweepPoint]
+            Explicit sweep points evaluated in sequence.
+        config : MeasurementConfig | None, optional
+            Runtime acquisition configuration. If `None`, defaults from
+            `measurement_config_factory` are used.
+
+        Returns
+        -------
+        SweepMeasurementResult
+            Sweep result with one flattened entry per sweep point.
+        """
         return await self.execution_service.run_sweep_measurement(
             schedule,
             sweep_points=sweep_points,
@@ -610,7 +694,28 @@ class Measurement:
         sweep_axes: SweepAxes | None = None,
         config: MeasurementConfig | None = None,
     ) -> NDSweepMeasurementResult:
-        """Run N-dimensional Cartesian-product sweep measurement pointwise."""
+        """
+        Execute an N-dimensional Cartesian-product sweep.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepPoint], MeasurementSchedule]
+            Factory that builds one schedule from one expanded sweep point.
+        sweep_points : dict[SweepKey, Sequence[SweepValue]]
+            Sweep axes and candidate values for each axis.
+        sweep_axes : SweepAxes | None, optional
+            Axis order used for Cartesian expansion and index mapping. If
+            `None`, dictionary insertion order is used.
+        config : MeasurementConfig | None, optional
+            Runtime acquisition configuration. If `None`, defaults from
+            `measurement_config_factory` are used.
+
+        Returns
+        -------
+        NDSweepMeasurementResult
+            N-dimensional sweep result stored as flattened point results with
+            shape metadata.
+        """
         return await self.execution_service.run_ndsweep_measurement(
             schedule,
             sweep_points=sweep_points,
@@ -625,23 +730,24 @@ class Measurement:
         duration: float,
     ) -> MeasureResult:
         """
-        Measure the readout noise.
+        Measure readout noise with no control waveform drive.
 
         Parameters
         ----------
         targets : Collection[str]
-            The list of target names.
-        duration : float, optional
-            The duration in ns.
+            Target labels to capture.
+        duration : float
+            Capture duration in ns.
 
         Returns
         -------
         MeasureResult
-            The measurement results.
+            Noise measurement result.
 
         Examples
         --------
-        >>> result = cli.measure_noise()
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> result = session.measure_noise(["Q00", "Q01"], duration=2048.0)
         """
         return self.execution_service.measure_noise(
             targets=targets,
@@ -671,33 +777,33 @@ class Measurement:
         **deprecated_options: Any,
     ) -> MeasureResult:
         """
-        Measure with the given control waveforms.
+        Execute one measurement from target waveform mappings.
 
         Parameters
         ----------
         waveforms : Mapping[str, IQArray]
-            The control waveforms for each target.
-            Waveforms are complex I/Q arrays sampled at `self.sampling_period` ns.
+            Control waveforms keyed by target label. Each waveform is a complex
+            I/Q array sampled at `sampling_period` ns.
         n_shots : int | None, optional
             Number of shots.
         shot_interval_ns : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
-            Whether to average shots on hardware.
-        readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit.
-        readout_duration : float, optional
-            The readout duration in ns.
-        readout_pre_margin : float, optional
-            The readout pre-margin in ns.
-        readout_post_margin : float, optional
-            The readout post-margin in ns.
-        readout_ramp_time : float, optional
-            The readout ramp time in ns.
-        readout_drag_coeff : float, optional
-            The readout drag coefficient.
-        readout_ramp_type : RampType, optional
-            The readout ramp type.
+            Whether shot averaging is applied in hardware.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitude overrides keyed by target label.
+        readout_duration : float | None, optional
+            Readout capture duration in ns.
+        readout_pre_margin : float | None, optional
+            Margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp duration in ns.
+        readout_drag_coeff : float | None, optional
+            Drag coefficient for ramp shaping.
+        readout_ramp_type : RampType | None, optional
+            Ramp shape type.
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
         time_integration : bool | None, optional
@@ -708,18 +814,29 @@ class Measurement:
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 1.
+        plot : bool, optional
+            Whether to plot readout waveforms and/or results.
+        **deprecated_options : Any
+            Deprecated option aliases kept for backward compatibility.
 
         Returns
         -------
         MeasureResult
-            The measurement results.
+            Single measurement result.
+
+        Notes
+        -----
+        Deprecated options are normalized by the execution service.
 
         Examples
         --------
-        >>> result = cli.measure({
-        ...     "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
-        ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
-        ... })
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> result = session.measure(
+        ...     {
+        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...     }
+        ... )
         """
         return self.execution_service.measure(
             waveforms=waveforms,
@@ -767,32 +884,32 @@ class Measurement:
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
         """
-        Measure with the given control waveforms.
+        Execute measurement for a pulse schedule or waveform mapping.
 
         Parameters
         ----------
         schedule : PulseSchedule | TargetMap[IQArray]
-            The pulse schedule or control waveforms.
+            Pulse schedule or waveform mapping to execute.
         n_shots : int | None, optional
             Number of shots.
         shot_interval_ns : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
-            Whether to average shots on hardware.
-        readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit.
-        readout_duration : float, optional
-            The readout duration in ns.
-        readout_pre_margin : float, optional
-            The readout pre-margin in ns.
-        readout_post_margin : float, optional
-            The readout post-margin in ns.
-        readout_ramp_time : float, optional
-            The readout ramp time in ns.
-        readout_drag_coeff : float, optional
-            The readout drag coefficient.
-        readout_ramp_type : RampType, optional
-            The readout ramp type.
+            Whether shot averaging is applied in hardware.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitude overrides keyed by target label.
+        readout_duration : float | None, optional
+            Readout capture duration in ns.
+        readout_pre_margin : float | None, optional
+            Margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp duration in ns.
+        readout_drag_coeff : float | None, optional
+            Drag coefficient for ramp shaping.
+        readout_ramp_type : RampType | None, optional
+            Ramp shape type.
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
@@ -806,12 +923,30 @@ class Measurement:
         classification_line_param1 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 1.
         plot : bool, optional
-            Whether to plot the results, by default False.
+            Whether to plot readout waveforms and/or results.
+        save_result : bool, optional
+            Whether to save execution outputs into the session result cache.
+        **deprecated_options : Any
+            Deprecated option aliases kept for backward compatibility.
 
         Returns
         -------
         MultipleMeasureResult
-            The measurement results.
+            Measurement results for all captured readout windows.
+
+        Notes
+        -----
+        Deprecated options are normalized by the execution service.
+
+        Examples
+        --------
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> result = session.execute(
+        ...     {
+        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...     }
+        ... )
         """
         return self.execution_service.execute(
             schedule=schedule,
@@ -846,7 +981,7 @@ class Measurement:
         state_classification: bool | None = None,
     ) -> MeasurementConfig:
         """
-        Create a `MeasurementConfig` from optional runtime overrides.
+        Create a measurement config from optional runtime overrides.
 
         Parameters
         ----------
@@ -864,7 +999,15 @@ class Measurement:
         Returns
         -------
         MeasurementConfig
-            The created measurement configuration.
+            Measurement configuration with merged defaults and overrides.
+
+        Examples
+        --------
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> config = session.create_measurement_config(
+        ...     n_shots=1024,
+        ...     shot_interval_ns=2048.0,
+        ... )
         """
         return self.execution_service.create_measurement_config(
             n_shots=n_shots,
@@ -889,7 +1032,44 @@ class Measurement:
         final_measurement: bool = False,
         plot: bool = False,
     ) -> MeasurementSchedule:
-        """Build a `MeasurementSchedule` from a pulse schedule and options."""
+        """
+        Build a measurement schedule from a pulse schedule and readout options.
+
+        Parameters
+        ----------
+        pulse_schedule : PulseSchedule
+            Pulse schedule to augment with readout instructions.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitude overrides keyed by target label.
+        readout_duration : float | None, optional
+            Readout capture duration in ns.
+        readout_pre_margin : float | None, optional
+            Margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp duration in ns.
+        readout_ramp_type : RampType | None, optional
+            Ramp shape type.
+        readout_drag_coeff : float | None, optional
+            Drag coefficient for ramp shaping.
+        readout_amplification : bool, optional
+            Whether to insert readout amplification pulses.
+        final_measurement : bool, optional
+            Whether to append a final measurement at schedule tail.
+        plot : bool, optional
+            Whether to plot the generated schedule.
+
+        Returns
+        -------
+        MeasurementSchedule
+            Built measurement schedule ready for execution.
+
+        Examples
+        --------
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> schedule = session.build_measurement_schedule(pulse_schedule)
+        """
         return self.execution_service.build_measurement_schedule(
             pulse_schedule=pulse_schedule,
             readout_amplitudes=readout_amplitudes,
