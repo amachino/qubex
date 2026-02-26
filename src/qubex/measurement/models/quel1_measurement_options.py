@@ -6,7 +6,8 @@ from qubex.core import Model
 
 
 class Quel1MeasurementOptions(Model):
-    """Optional QuEL-1 DSP line parameters for state classification."""
+    """Optional QuEL-1 DSP options for QuEL-1 execution."""
 
-    line_param0: tuple[float, float, float] | None = None
-    line_param1: tuple[float, float, float] | None = None
+    demodulation: bool | None = None
+    classification_line_param0: tuple[float, float, float] | None = None
+    classification_line_param1: tuple[float, float, float] | None = None

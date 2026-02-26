@@ -20,6 +20,7 @@ from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementSchedule,
     NDSweepMeasurementResult,
+    Quel1MeasurementOptions,
     SweepMeasurementResult,
     SweepPoint,
     SweepValue,
@@ -343,8 +344,9 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
-        _ = (self, schedule, config)
+        _ = (self, schedule, config, quel1_options)
         assert read_in_port.rfswitch == "loop"
         assert read_out_port.rfswitch == "block"
         assert monitor_in_port.rfswitch == "loop"
@@ -487,8 +489,9 @@ def test_temporary_loopback_rfswitches_restores_ports_on_error() -> None:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
-        _ = (self, schedule, config)
+        _ = (self, schedule, config, quel1_options)
         raise RuntimeError("test-error")
 
     execution_service.build_measurement_schedule = MethodType(
@@ -623,8 +626,9 @@ def test_capture_loopback_skips_ports_without_rfswitch() -> None:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
-        _ = (self, schedule, config)
+        _ = (self, schedule, config, quel1_options)
         assert read_in_port.rfswitch == "open"
         assert read_out_port.rfswitch == "pass"
         return MeasurementResult(
@@ -771,8 +775,9 @@ def test_capture_loopback_initializes_awg_and_capunits_when_supported() -> None:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
-        _ = (self, schedule, config)
+        _ = (self, schedule, config, quel1_options)
         assert backend_controller.init_calls == [["B0"]]
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
@@ -940,8 +945,9 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
-        _ = (self, schedule, config)
+        _ = (self, schedule, config, quel1_options)
         call_count["run"] += 1
         if call_count["run"] < 3:
             raise E7awgCaptureDataError()
@@ -967,6 +973,125 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
     assert capture_target_calls[0] == ["RQ00", "B0.MNTR0.IN"]
     assert capture_target_calls[1] == ["RQ00", "B0.MNTR0.IN"]
     assert capture_target_calls[2] == ["RQ00"]
+
+
+def test_capture_loopback_runs_without_dsp_demodulation() -> None:
+    """Given loopback capture execution, when run_measurement is called, then QuEL-1 DSP demodulation is disabled."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    read_out_port = SimpleNamespace(
+        id="B0.READ_OUT",
+        box_id="B0",
+        number=1,
+        type=PortType.READ_OUT,
+        rfswitch="pass",
+    )
+    read_in_port = SimpleNamespace(
+        id="B0.READ_IN",
+        box_id="B0",
+        number=2,
+        type=PortType.READ_IN,
+        rfswitch="open",
+    )
+    box = SimpleNamespace(id="B0", ports=[read_out_port, read_in_port])
+
+    class _ControlSystemStub:
+        def __init__(self) -> None:
+            self.boxes = [box]
+            self._port_by_id = {port.id: port for port in box.ports}
+
+        def get_port_by_id(self, port_id: str) -> Any:
+            return self._port_by_id[port_id]
+
+        def get_box(self, box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+    class _BackendControllerStub:
+        def initialize_awg_and_capunits(self, box_ids: list[str]) -> None:
+            _ = box_ids
+
+    schedule_target = SimpleNamespace(
+        label="Q00",
+        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+    )
+    read_in_target = SimpleNamespace(
+        label="RQ00",
+        channel=SimpleNamespace(port=read_in_port),
+    )
+
+    def _get_cap_target(label: str) -> Any:
+        if label == "RQ00":
+            return SimpleNamespace(channel=SimpleNamespace(port=read_in_port))
+        raise KeyError(label)
+
+    def _resolve_qubit_label(label: str) -> str:
+        if label == "RQ00":
+            return "Q00"
+        raise ValueError(label)
+
+    experiment_system = SimpleNamespace(
+        control_system=_ControlSystemStub(),
+        targets=[schedule_target],
+        read_in_targets=[read_in_target],
+        resolve_qubit_label=_resolve_qubit_label,
+        get_cap_target=_get_cap_target,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=_BackendControllerStub(),
+        experiment_system=experiment_system,
+    )
+
+    execution_service = measurement.execution_service
+
+    def _build(
+        self: MeasurementExecutionService,
+        pulse_schedule: PulseSchedule,
+        **kwargs: Any,
+    ) -> MeasurementSchedule:
+        _ = (self, pulse_schedule, kwargs)
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule(["Q00"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    called: dict[str, object] = {}
+
+    async def _run(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        _ = (self, schedule, config)
+        called["quel1_options"] = quel1_options
+        return MeasurementResult(
+            data={"Q00": [np.array([1.0 + 0.0j])]},
+            measurement_config=_make_config(),
+            sampling_period_ns=2.0,
+        )
+
+    execution_service.build_measurement_schedule = MethodType(
+        _build,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        _run,
+        execution_service,
+    )
+
+    _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+
+    options = cast(Quel1MeasurementOptions | None, called["quel1_options"])
+    assert options is not None
+    assert options.demodulation is False
 
 
 def test_measure_delegates_to_execute_and_returns_first_capture() -> None:

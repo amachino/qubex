@@ -1119,8 +1119,8 @@ class MeasurementExecutionService:
             )
         else:
             quel1_options = Quel1MeasurementOptions(
-                line_param0=classification_line_param0,
-                line_param1=classification_line_param1,
+                classification_line_param0=classification_line_param0,
+                classification_line_param1=classification_line_param1,
             )
             result = _run_async(
                 lambda: self.run_measurement(
@@ -1192,6 +1192,7 @@ class MeasurementExecutionService:
                     lambda: self.run_measurement(
                         schedule=measurement_schedule,
                         config=measurement_config,
+                        quel1_options=Quel1MeasurementOptions(demodulation=False),
                     )
                 )
 

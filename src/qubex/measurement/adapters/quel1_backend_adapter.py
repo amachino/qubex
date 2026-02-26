@@ -229,6 +229,11 @@ class Quel1MeasurementBackendAdapter:
             dict.fromkeys([*gen_sampled_sequence.keys(), *cap_sampled_sequence.keys()])
         )
         resource_map = self._backend_controller.get_resource_map(targets)
+        dsp_demodulation = (
+            True
+            if quel1_options is None or quel1_options.demodulation is None
+            else quel1_options.demodulation
+        )
 
         payload = Quel1ExecutionPayload(
             gen_sampled_sequence=gen_sampled_sequence,
@@ -237,11 +242,19 @@ class Quel1MeasurementBackendAdapter:
             interval=interval,
             repeats=config.n_shots,
             integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=True,
+            dsp_demodulation=dsp_demodulation,
             enable_sum=config.time_integration,
             enable_classification=config.state_classification,
-            line_param0=None if quel1_options is None else quel1_options.line_param0,
-            line_param1=None if quel1_options is None else quel1_options.line_param1,
+            line_param0=(
+                None
+                if quel1_options is None
+                else quel1_options.classification_line_param0
+            ),
+            line_param1=(
+                None
+                if quel1_options is None
+                else quel1_options.classification_line_param1
+            ),
         )
         return BackendExecutionRequest(
             payload=payload,
