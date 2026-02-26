@@ -10,6 +10,7 @@ from typing import Any, Final, Literal, TypedDict, TypeGuard
 import numpy as np
 import tunits
 from netCDF4 import Dataset
+from pydantic import BaseModel
 
 from .constants import (
     DATA_TYPE_KEY,
@@ -245,6 +246,12 @@ def _encode_value(
             "units": units,
         }
         return {_VARIABLE_REF_KEY: ref}
+    if isinstance(value, BaseModel):
+        return _encode_value(
+            value.model_dump(mode="python"),
+            arrays,
+            path=path,
+        )
     if isinstance(value, dict):
         return {
             k: _encode_value(v, arrays, path=(*path, str(k))) for k, v in value.items()

@@ -6,12 +6,22 @@ import numpy as np
 import tunits
 from netCDF4 import Dataset
 
-from qubex.core import DataModel, ValueArray
+from qubex.core import DataModel, Model, ValueArray
 
 
 class _DemoDataModel(DataModel):
     values: np.ndarray
     delay: ValueArray
+
+
+class _DemoConfig(Model):
+    shots: int
+    thresholds: np.ndarray
+
+
+class _DemoDataModelWithNestedConfig(DataModel):
+    values: np.ndarray
+    config: _DemoConfig
 
 
 def test_netcdf_roundtrip_handles_int64_arrays(tmp_path) -> None:
@@ -46,3 +56,20 @@ def test_netcdf_writes_complex_variable_with_netcdf4_type(tmp_path) -> None:
         assert "arr_imag_0" not in ds.variables
 
     assert np.array_equal(restored.values, original.values)
+
+
+def test_netcdf_roundtrip_handles_nested_model_fields(tmp_path) -> None:
+    """Given nested model fields, when round-tripped via NetCDF, then model values are preserved."""
+    original = _DemoDataModelWithNestedConfig(
+        values=np.array([1.0 + 0.0j], dtype=np.complex128),
+        config=_DemoConfig(
+            shots=128, thresholds=np.array([0.1, 0.2], dtype=np.float64)
+        ),
+    )
+
+    path = original.save_netcdf(tmp_path / "nested-model.nc")
+    restored = _DemoDataModelWithNestedConfig.load_netcdf(path)
+
+    assert np.array_equal(restored.values, original.values)
+    assert restored.config.shots == original.config.shots
+    assert np.array_equal(restored.config.thresholds, original.config.thresholds)
