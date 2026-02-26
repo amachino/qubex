@@ -117,12 +117,12 @@ only part of it in `SweepMeasurementBuilder`.
 
 ## 4) `SweepMeasurementResult` baseline
 
-- No qubex runtime path consumes this model today.
-- Current presence is compatibility export only (`qubex.schema` / `qxschema` tests).
-- Freeze decision: do not build internal logic on this type until qubex-side
-  sweep-result requirements are defined.
+- `measurement` layer runtime now consumes this model in
+  `run_sweep_measurement(...)`.
+- Internal result shape is intentionally decoupled from external `qxschema`
+  result shape.
 
-## Decision update (2026-02-24)
+## Decision update (2026-02-26)
 
 The following sweep-API contract was accepted for the minimal v1 implementation:
 
@@ -131,8 +131,11 @@ The following sweep-API contract was accepted for the minimal v1 implementation:
 - `run_sweep_measurement(...)` reuses `MeasurementConfig` directly.
 - A dedicated `SweepMeasurementConfig` is not introduced in v1.
 - New minimal internal result model is introduced:
-  - `SweepPointResult(index, point, result)`
-  - `SweepMeasurementResult(results: list[SweepPointResult])`
+  - `SweepMeasurementResult(sweep_values, config, results)`
+- 1D sweep API contract is:
+  - `schedule: Callable[[SweepValue], MeasurementSchedule]`
+  - `sweep_values: Sequence[SweepValue]`
+  - `config: MeasurementConfig | None = None`
 - Execution policy is fixed to:
   - pointwise dispatch
   - fail-fast error handling

@@ -3,7 +3,7 @@
 ## Status
 
 - State: `ACCEPTED`
-- Last updated: `2026-02-24`
+- Last updated: `2026-02-26`
 - Scope: internal `measurement` layer sweep API (minimal, no hardware batch sweep)
 
 ## Goal
@@ -30,19 +30,20 @@ use the same request/response contract.
 ```python
 async def run_sweep_measurement(
     self,
+    schedule: Callable[[SweepValue], MeasurementSchedule],
     *,
-    schedule: Callable[[SweepPoint], MeasurementSchedule],
-    sweep_points: Sequence[SweepPoint],
-    config: MeasurementConfig,
+    sweep_values: Sequence[SweepValue],
+    config: MeasurementConfig | None = None,
 ) -> SweepMeasurementResult:
     ...
 ```
 
 ### Parameter semantics
 
-- `schedule`: callback that builds one `MeasurementSchedule` for one `SweepPoint`.
-- `sweep_points`: ordered sweep point list to execute.
+- `schedule`: callback that builds one `MeasurementSchedule` for one sweep value.
+- `sweep_values`: ordered sweep value list to execute.
 - `config`: shared `MeasurementConfig` used for all points.
+- if `config is None`, runtime resolves default configuration using standard measurement-config creation path.
 
 ## Model contract
 
@@ -62,41 +63,31 @@ async def run_sweep_measurement(
 - `line_param0: tuple[float, float, float]`
 - `line_param1: tuple[float, float, float]`
 
-### SweepPoint
+### SweepValue
 
 ```python
-class SweepPoint(Model):
-    """One sweep point."""
-
-    parameters: dict[str, Value | int | float | str]
+SweepValue = Value | int | float | str
 ```
 
 Notes:
 
-- parameter values are not restricted to `float`.
+- sweep values are not restricted to `float`.
 - value interpretation is delegated to the `schedule` callback.
 
 ### SweepMeasurementResult
 
 ```python
-class SweepPointResult(DataModel):
-    """Result for one sweep point."""
-
-    index: int
-    point: SweepPoint
-    result: MeasurementResult
-
-
 class SweepMeasurementResult(DataModel):
     """Sweep measurement result (minimal)."""
 
-    results: list[SweepPointResult]
+    sweep_values: list[SweepValue]
+    config: MeasurementConfig
+    results: list[MeasurementResult]
 ```
 
 Result ordering rules:
 
-- `results[i]` corresponds to `sweep_points[i]`.
-- `SweepPointResult.index` equals the original point index.
+- `results[i]` corresponds to `sweep_values[i]`.
 
 ## Execution behavior
 

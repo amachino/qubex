@@ -18,17 +18,9 @@ SweepAxes = tuple[SweepKey, ...]
 class SweepMeasurementResult(DataModel):
     """Sweep measurement result."""
 
-    sweep_points: list[SweepPoint] = Field(default_factory=list)
+    sweep_values: list[SweepValue] = Field(default_factory=list)
     config: MeasurementConfig
     results: list[MeasurementResult] = Field(default_factory=list)
-
-    def get(self, index: int) -> MeasurementResult:
-        """Return one point result by flat index."""
-        return self.results[index]
-
-    def get_sweep_point(self, index: int) -> SweepPoint:
-        """Return one input sweep point by flat index."""
-        return self.sweep_points[index]
 
 
 class NDSweepMeasurementResult(DataModel):
@@ -40,36 +32,29 @@ class NDSweepMeasurementResult(DataModel):
     config: MeasurementConfig
     results: list[MeasurementResult] = Field(default_factory=list)
 
-    def get(self, index: int | tuple[int, ...]) -> MeasurementResult:
-        """Return one point result by flat index or ndindex."""
-        return self.results[self._to_flat_index(index)]
+    def get(self, ndindex: tuple[int, ...]) -> MeasurementResult:
+        """Return one point result by ndindex."""
+        return self.results[self._to_flat_index(ndindex)]
 
-    def get_sweep_point(self, index: int | tuple[int, ...]) -> SweepPoint:
-        """Return one resolved sweep point by flat index or ndindex."""
-        ndindex = self._to_ndindex(index)
+    def get_sweep_point(self, ndindex: tuple[int, ...]) -> SweepPoint:
+        """Return one resolved sweep point by ndindex."""
+        _ = self._to_flat_index(ndindex)
         return {
             axis: self.sweep_points[axis][axis_index]
             for axis, axis_index in zip(self.sweep_axes, ndindex, strict=True)
         }
 
-    def _to_flat_index(self, index: int | tuple[int, ...]) -> int:
-        """Normalize flat index or ndindex to flat index."""
-        if isinstance(index, int):
-            if not (0 <= index < len(self.results)):
-                raise IndexError(
-                    f"Flat index {index} is out of range for {len(self.results)} results."
-                )
-            return index
-
-        if len(index) != len(self.shape):
+    def _to_flat_index(self, ndindex: tuple[int, ...]) -> int:
+        """Normalize ndindex to flat index."""
+        if len(ndindex) != len(self.shape):
             raise ValueError(
-                f"ndindex dimension {len(index)} does not match shape dimension {len(self.shape)}."
+                f"ndindex dimension {len(ndindex)} does not match shape dimension {len(self.shape)}."
             )
         if len(self.shape) == 0:
             return 0
 
         flat_index = 0
-        for axis_index, axis_size in zip(index, self.shape, strict=True):
+        for axis_index, axis_size in zip(ndindex, self.shape, strict=True):
             if not (0 <= axis_index < axis_size):
                 raise IndexError(
                     f"ndindex element {axis_index} is out of bounds for axis size {axis_size}."
@@ -81,21 +66,3 @@ class NDSweepMeasurementResult(DataModel):
                 f"Flattened index {flat_index} is out of range for {len(self.results)} results."
             )
         return flat_index
-
-    def _to_ndindex(self, index: int | tuple[int, ...]) -> tuple[int, ...]:
-        """Normalize flat index or ndindex to ndindex."""
-        if isinstance(index, tuple):
-            _ = self._to_flat_index(index)
-            return index
-
-        flat_index = self._to_flat_index(index)
-        if len(self.shape) == 0:
-            return ()
-
-        remaining = flat_index
-        ndindex = [0] * len(self.shape)
-        for pos in range(len(self.shape) - 1, -1, -1):
-            axis_size = self.shape[pos]
-            remaining, axis_index = divmod(remaining, axis_size)
-            ndindex[pos] = axis_index
-        return tuple(ndindex)

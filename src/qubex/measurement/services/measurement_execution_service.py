@@ -641,9 +641,9 @@ class MeasurementExecutionService:
 
     async def run_sweep_measurement(
         self,
-        schedule: Callable[[SweepPoint], MeasurementSchedule],
+        schedule: Callable[[SweepValue], MeasurementSchedule],
         *,
-        sweep_points: Sequence[SweepPoint],
+        sweep_values: Sequence[SweepValue],
         config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
         """
@@ -651,30 +651,30 @@ class MeasurementExecutionService:
 
         Parameters
         ----------
-        schedule : Callable[[SweepPoint], MeasurementSchedule]
-            Callback that builds one measurement schedule per sweep point.
-        sweep_points : Sequence[SweepPoint]
-            Ordered sweep points to execute.
+        schedule : Callable[[SweepValue], MeasurementSchedule]
+            Callback that builds one measurement schedule per sweep value.
+        sweep_values : Sequence[SweepValue]
+            Ordered sweep values to execute.
         config : MeasurementConfig | None, optional
             Shared measurement configuration for all points.
 
         Returns
         -------
         SweepMeasurementResult
-            Sweep result list in the same order as input points.
+            Sweep result list in the same order as input values.
         """
         resolved_config = self.create_measurement_config() if config is None else config
-        normalized_points = [dict(point) for point in sweep_points]
+        normalized_values = [*sweep_values]
         results: list[MeasurementResult] = []
-        for point in normalized_points:
-            measurement_schedule = schedule(dict(point))
+        for sweep_value in normalized_values:
+            measurement_schedule = schedule(sweep_value)
             result = await self.run_measurement(
                 schedule=measurement_schedule,
                 config=resolved_config,
             )
             results.append(result)
         return SweepMeasurementResult(
-            sweep_points=normalized_points,
+            sweep_values=normalized_values,
             config=resolved_config,
             results=results,
         )

@@ -667,20 +667,20 @@ class Measurement:
 
     async def run_sweep_measurement(
         self,
-        schedule: Callable[[SweepPoint], MeasurementSchedule],
+        schedule: Callable[[SweepValue], MeasurementSchedule],
         *,
-        sweep_points: Sequence[SweepPoint],
+        sweep_values: Sequence[SweepValue],
         config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
         """
-        Execute a pointwise sweep over explicit sweep points.
+        Execute a pointwise sweep over explicit sweep values.
 
         Parameters
         ----------
-        schedule : Callable[[SweepPoint], MeasurementSchedule]
-            Factory that builds one schedule from one sweep point.
-        sweep_points : Sequence[SweepPoint]
-            Explicit sweep points evaluated in sequence.
+        schedule : Callable[[SweepValue], MeasurementSchedule]
+            Factory that builds one schedule from one sweep value.
+        sweep_values : Sequence[SweepValue]
+            Explicit sweep values evaluated in sequence.
         config : MeasurementConfig | None, optional
             Runtime acquisition configuration. If `None`, defaults from
             `measurement_config_factory` are used.
@@ -688,11 +688,11 @@ class Measurement:
         Returns
         -------
         SweepMeasurementResult
-            Sweep result with one flattened entry per sweep point.
+            Sweep result with one flattened entry per sweep value.
         """
         return await self.execution_service.run_sweep_measurement(
             schedule,
-            sweep_points=sweep_points,
+            sweep_values=sweep_values,
             config=config,
         )
 
