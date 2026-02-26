@@ -2,33 +2,9 @@
 
 This page defines typing conventions used in Qubex code.
 
-## TypeVar naming
+## Naming
 
-Use the following naming policy for `TypeVar`.
-
-- Generic type variables: `T`
-- Mapping-related type variables: `K`, `V`
-- Domain-specific type variables: `<Name>T` (for example, `OptionT`)
-- Variance suffixes: `_co` and `_contra`
-
-## Examples
-
-```python
-from typing import TypeVar
-
-T = TypeVar("T")
-K = TypeVar("K")
-V = TypeVar("V")
-OptionT = TypeVar("OptionT")
-ResultT_co = TypeVar("ResultT_co", covariant=True)
-ConsumerT_contra = TypeVar("ConsumerT_contra", contravariant=True)
-```
-
-## Additional rules
-
-- Define type variables explicitly in the local module.
-- Do not rely on implicit shared names such as `typing_extensions.T` or `typing.T`.
-- Keep naming style consistent within a module.
+See [Naming guidelines](naming-guidelines.md#typevar-naming) for `TypeVar` naming and declaration rules.
 
 ## Compatibility note
 
