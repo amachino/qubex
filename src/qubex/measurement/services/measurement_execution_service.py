@@ -631,18 +631,11 @@ class MeasurementExecutionService:
             Measurement result.
 
         """
-        if quel1_options is None:
-            result = await self.measurement_schedule_runner.execute(
-                schedule=schedule,
-                config=config,
-            )
-        else:
-            result = await self.measurement_schedule_runner.execute(
-                schedule=schedule,
-                config=config,
-                quel1_options=quel1_options,
-            )
-        return result
+        return await self.measurement_schedule_runner.execute(
+            schedule=schedule,
+            config=config,
+            quel1_options=quel1_options,
+        )
 
     async def run_sweep_measurement(
         self,

@@ -1273,7 +1273,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
 def test_run_measurement_delegates_to_executor(
     monkeypatch,
 ) -> None:
-    """Given schedule execution inputs, when method is called, then it delegates to executor."""
+    """Given schedule execution inputs, when method is called, then it delegates to executor with explicit options."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1294,14 +1294,11 @@ def test_run_measurement_delegates_to_executor(
     called: dict[str, Any] = {}
 
     class _Executor:
-        async def execute(
-            self,
-            *,
-            schedule: MeasurementSchedule,
-            config: MeasurementConfig,
-        ) -> MeasurementResult:
-            called["schedule"] = schedule
-            called["config"] = config
+        async def execute(self, **kwargs: Any) -> MeasurementResult:
+            called["schedule"] = kwargs["schedule"]
+            called["config"] = kwargs["config"]
+            called["has_quel1_options"] = "quel1_options" in kwargs
+            called["quel1_options"] = kwargs.get("quel1_options")
             return expected
 
     experiment_system = type("_ES", (), {})()
@@ -1321,6 +1318,8 @@ def test_run_measurement_delegates_to_executor(
 
     assert called["schedule"] is schedule
     assert called["config"] is config
+    assert called["has_quel1_options"] is True
+    assert called["quel1_options"] is None
     assert result is expected
 
 
