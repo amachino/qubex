@@ -72,10 +72,52 @@ class MeasurementScheduleBuilder:
         """Return the backend constraint profile used by this builder."""
         return self._constraint_profile
 
+    @staticmethod
+    def _copy_channel_frequencies(
+        *,
+        source: PulseSchedule,
+        destination: PulseSchedule,
+    ) -> None:
+        """Copy channel frequency metadata from one schedule to another."""
+        destination_labels = set(destination.labels)
+        destination.set_frequencies(
+            {
+                label: frequency
+                for label, frequency in source.get_frequencies().items()
+                if label in destination_labels
+            }
+        )
+
+    @staticmethod
+    def _apply_frequency_overrides(
+        *,
+        schedule: PulseSchedule,
+        frequencies: dict[str, float] | None,
+    ) -> None:
+        """Apply validated frequency overrides to schedule channels."""
+        if frequencies is None:
+            return
+
+        known_labels = set(schedule.labels)
+        unknown_labels = sorted(set(frequencies) - known_labels)
+        if unknown_labels:
+            joined = ", ".join(f"`{label}`" for label in unknown_labels)
+            raise ValueError(f"Unknown frequency override target(s): {joined}.")
+
+        resolved: dict[str, float] = {}
+        for label, frequency in frequencies.items():
+            value = float(frequency)
+            if not math.isfinite(value):
+                raise ValueError(f"Frequency override for `{label}` must be finite.")
+            resolved[label] = value
+
+        schedule.set_frequencies(resolved)
+
     def build(
         self,
         *,
         schedule: PulseSchedule,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -125,6 +167,7 @@ class MeasurementScheduleBuilder:
             )
             with PulseSchedule(schedule.labels + readout_targets) as ps:
                 ps.call(schedule)
+                self._copy_channel_frequencies(source=schedule, destination=ps)
                 ps.barrier()
                 for target in readout_targets:
                     ps.add(
@@ -182,6 +225,10 @@ class MeasurementScheduleBuilder:
                     muxes.append(mux)
             with PulseSchedule() as ps_with_pumps:
                 ps_with_pumps.call(schedule)
+                self._copy_channel_frequencies(
+                    source=schedule,
+                    destination=ps_with_pumps,
+                )
                 for mux in muxes:
                     pump_amplitude = self._control_params.get_pump_amplitude(mux.index)
                     ps_with_pumps.add(
@@ -198,6 +245,8 @@ class MeasurementScheduleBuilder:
             if not ps_with_pumps.is_valid():
                 raise ValueError("Invalid pulse schedule with pump pulses.")
             schedule = ps_with_pumps
+
+        self._apply_frequency_overrides(schedule=schedule, frequencies=frequencies)
 
         if plot:
             schedule.plot()

@@ -174,6 +174,77 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     assert called["run_config"].shot_averaging is True
 
 
+def test_execute_forwards_frequency_overrides_to_schedule_builder() -> None:
+    """Given execute frequency overrides, when execute is called, then schedule build receives frequencies."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    pulse_schedule = PulseSchedule(["Q00"])
+    built_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["Q00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    multiple = _make_multiple_result()
+    called: dict[str, Any] = {}
+
+    def fake_build(
+        self: MeasurementExecutionService,
+        *,
+        pulse_schedule: PulseSchedule,
+        **kwargs: object,
+    ) -> MeasurementSchedule:
+        called["build_schedule"] = pulse_schedule
+        called["build_kwargs"] = kwargs
+        return built_schedule
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        _ = (schedule, config)
+        return MeasurementResultConverter.from_multiple(
+            multiple,
+            measurement_config=_make_config(),
+        )
+
+    execution_service = measurement.execution_service
+    execution_service.build_measurement_schedule = MethodType(
+        fake_build, execution_service
+    )
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 1}})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+        rawdata_dir=None,
+    )
+
+    _ = measurement.execute(
+        schedule=pulse_schedule,
+        frequencies={"Q00": 5.12},
+        save_result=False,
+    )
+
+    assert called["build_schedule"] is pulse_schedule
+    assert called["build_kwargs"]["frequencies"] == {"Q00": 5.12}
+
+
 def test_capture_loopback_delegates_to_execution_service() -> None:
     """Given loopback capture inputs, when capture_loopback is called, then it delegates to execution service."""
     measurement = Measurement(

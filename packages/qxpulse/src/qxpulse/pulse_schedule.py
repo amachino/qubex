@@ -822,6 +822,40 @@ class PulseSchedule:
         """
         return self._channels[label].frequency
 
+    def set_frequency(
+        self,
+        label: str,
+        frequency: float | None,
+    ) -> None:
+        """
+        Set frequency metadata for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+        frequency : float | None
+            Frequency metadata value.
+        """
+        if label not in self._channels:
+            raise KeyError(label)
+        self._channels[label].frequency = frequency
+
+    def set_frequencies(
+        self,
+        frequencies: Mapping[str, float | None],
+    ) -> None:
+        """
+        Set frequency metadata for multiple channels.
+
+        Parameters
+        ----------
+        frequencies : Mapping[str, float | None]
+            Frequency metadata keyed by channel label.
+        """
+        for label, frequency in frequencies.items():
+            self.set_frequency(label, frequency)
+
     def get_frequencies(
         self,
     ) -> dict[str, float | None]:

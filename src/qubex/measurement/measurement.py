@@ -771,6 +771,7 @@ class Measurement:
         n_shots: int | None = None,
         shot_interval_ns: float | None = None,
         shot_averaging: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -800,6 +801,8 @@ class Measurement:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float] | None, optional
             Readout amplitude overrides keyed by target label.
         readout_duration : float | None, optional
@@ -853,6 +856,7 @@ class Measurement:
             n_shots=n_shots,
             shot_interval_ns=shot_interval_ns,
             shot_averaging=shot_averaging,
+            frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -876,6 +880,7 @@ class Measurement:
         n_shots: int | None = None,
         shot_interval_ns: float | None = None,
         shot_averaging: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -906,6 +911,8 @@ class Measurement:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float] | None, optional
             Readout amplitude overrides keyed by target label.
         readout_duration : float | None, optional
@@ -963,6 +970,7 @@ class Measurement:
             n_shots=n_shots,
             shot_interval_ns=shot_interval_ns,
             shot_averaging=shot_averaging,
+            frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -1057,6 +1065,7 @@ class Measurement:
         self,
         pulse_schedule: PulseSchedule,
         *,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1077,6 +1086,8 @@ class Measurement:
         ----------
         pulse_schedule : PulseSchedule
             Pulse schedule to augment with readout instructions.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float] | None, optional
             Readout amplitude overrides keyed by target label.
         readout_duration : float | None, optional
@@ -1114,6 +1125,7 @@ class Measurement:
         """
         return self.execution_service.build_measurement_schedule(
             pulse_schedule=pulse_schedule,
+            frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,

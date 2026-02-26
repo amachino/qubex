@@ -440,7 +440,15 @@ class Quel1MeasurementBackendAdapter:
             if target not in sampled_sequences:
                 continue
             seq = sampled_sequences[target]
-            omega = 2 * np.pi * self._experiment_system.get_diff_frequency(target)
+            schedule_frequency = self._resolve_schedule_frequency(
+                pulse_schedule=pulse_schedule,
+                target=target,
+            )
+            diff_frequency = self._resolve_diff_frequency(
+                target=target,
+                schedule_frequency=schedule_frequency,
+            )
+            omega = 2 * np.pi * diff_frequency
             delay = capture_delay_sample[target]
             for rng in ranges:
                 offset = (rng.start + delay) * sampling_period
@@ -457,9 +465,16 @@ class Quel1MeasurementBackendAdapter:
                 sideband = "U"
             if sideband != "L":
                 waveform = np.conj(waveform)
+            schedule_frequency = self._resolve_schedule_frequency(
+                pulse_schedule=pulse_schedule,
+                target=target,
+            )
             gen_sequences[target] = self._create_gen_sampled_sequence(
                 target_name=target,
-                modulation_frequency=self._resolve_modulation_frequency(target=target),
+                modulation_frequency=self._resolve_modulation_frequency(
+                    target=target,
+                    schedule_frequency=schedule_frequency,
+                ),
                 real=np.real(waveform),
                 imag=np.imag(waveform),
             )
@@ -469,6 +484,10 @@ class Quel1MeasurementBackendAdapter:
             sorted_captures = sorted(captures, key=lambda c: c.start_time)
             if not sorted_captures:
                 continue
+            schedule_frequency = self._resolve_schedule_frequency(
+                pulse_schedule=pulse_schedule,
+                target=target,
+            )
 
             capture_slots: list[tuple[int, int]] = []
             for idx, current_capture in enumerate(sorted_captures):
@@ -489,7 +508,10 @@ class Quel1MeasurementBackendAdapter:
 
             cap_sequences[target] = self._create_cap_sampled_sequence(
                 target_name=target,
-                modulation_frequency=self._resolve_modulation_frequency(target=target),
+                modulation_frequency=self._resolve_modulation_frequency(
+                    target=target,
+                    schedule_frequency=schedule_frequency,
+                ),
                 capture_delay=(
                     0
                     if capture_is_entire_schedule.get(target, False)
@@ -573,11 +595,59 @@ class Quel1MeasurementBackendAdapter:
         self,
         *,
         target: str,
+        schedule_frequency: float | None = None,
     ) -> float:
         """Resolve modulation frequency for generation or capture sequence."""
+        if schedule_frequency is not None:
+            nco_frequency = self._resolve_nco_frequency(target=target)
+            if nco_frequency is None:
+                return schedule_frequency
+            sideband: str | None = None
+            try:
+                sideband = self._experiment_system.get_target(target).sideband
+            except KeyError:
+                sideband = None
+            if sideband == "L":
+                return nco_frequency - schedule_frequency
+            return schedule_frequency - nco_frequency
+
         try:
             return float(self._experiment_system.get_awg_frequency(target))
         except (KeyError, ValueError):
+            pass
+
+        nco_frequency = self._resolve_nco_frequency(target=target)
+        if nco_frequency is not None:
+            return nco_frequency
+        return 0.0
+
+    def _resolve_diff_frequency(
+        self,
+        *,
+        target: str,
+        schedule_frequency: float | None = None,
+    ) -> float:
+        """Resolve difference frequency for readout phase compensation."""
+        if schedule_frequency is not None:
+            nco_frequency = self._resolve_nco_frequency(target=target)
+            if nco_frequency is None:
+                return schedule_frequency
+            return schedule_frequency - nco_frequency
+
+        try:
+            return float(self._experiment_system.get_diff_frequency(target))
+        except (KeyError, ValueError):
+            return 0.0
+
+    def _resolve_nco_frequency(
+        self,
+        *,
+        target: str,
+    ) -> float | None:
+        """Resolve NCO frequency from experiment system metadata."""
+        try:
+            return float(self._experiment_system.get_nco_frequency(target))
+        except (AttributeError, KeyError, ValueError):
             pass
 
         control_system = getattr(self._experiment_system, "control_system", None)
@@ -585,13 +655,31 @@ class Quel1MeasurementBackendAdapter:
             try:
                 port = control_system.get_port_by_id(target)
             except KeyError:
-                return 0.0
+                return None
             channels = getattr(port, "channels", ())
             if channels:
                 fnco_freq = getattr(channels[0], "fnco_freq", None)
                 if isinstance(fnco_freq, (int, float)):
                     return float(fnco_freq)
-        return 0.0
+        return None
+
+    @staticmethod
+    def _resolve_schedule_frequency(
+        *,
+        pulse_schedule: object,
+        target: str,
+    ) -> float | None:
+        """Resolve channel frequency metadata from pulse schedule when available."""
+        get_frequency = getattr(pulse_schedule, "get_frequency", None)
+        if not callable(get_frequency):
+            return None
+        try:
+            frequency = get_frequency(target)
+        except KeyError:
+            return None
+        if isinstance(frequency, (int, float)):
+            return float(frequency)
+        return None
 
     def _create_gen_sampled_sequence(
         self,

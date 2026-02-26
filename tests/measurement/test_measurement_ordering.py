@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from qxpulse import FlatTop, PulseSchedule
 
 from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
@@ -188,6 +189,109 @@ def test_schedule_builder_accepts_qubit_keyed_readout_amplitudes(monkeypatch) ->
     assert captured["amplitude"] == 0.37
 
 
+def test_schedule_builder_applies_frequency_overrides_to_existing_channels() -> None:
+    """Given frequency overrides, when building without final measurement, then channel frequencies are updated."""
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParams,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
+        ),
+        pulse_factory=cast(
+            MeasurementPulseFactory,
+            SimpleNamespace(
+                readout_pulse=lambda **_: FlatTop(duration=16, amplitude=0.1, tau=4)
+            ),
+        ),
+        targets=cast(
+            dict[str, Target],
+            {
+                "Q00": SimpleNamespace(is_pump=False, is_read=False),
+                "RQ00": SimpleNamespace(is_pump=False, is_read=True),
+            },
+        ),
+        mux_dict={},
+    )
+
+    with PulseSchedule(["Q00", "RQ00"]) as schedule:
+        pass
+
+    result = builder.build(
+        schedule=schedule,
+        frequencies={"Q00": 5.1, "RQ00": 9.8},
+    )
+
+    assert result.pulse_schedule.get_frequency("Q00") == 5.1
+    assert result.pulse_schedule.get_frequency("RQ00") == 9.8
+
+
+def test_schedule_builder_keeps_frequency_overrides_after_final_measurement() -> None:
+    """Given frequency overrides, when appending final measurement, then added readout channels keep frequencies."""
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParams,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
+        ),
+        pulse_factory=cast(
+            MeasurementPulseFactory,
+            SimpleNamespace(
+                readout_pulse=lambda **_: FlatTop(duration=16, amplitude=0.1, tau=4)
+            ),
+        ),
+        targets=cast(
+            dict[str, Target],
+            {
+                "Q00": SimpleNamespace(is_pump=False, is_read=False),
+            },
+        ),
+        mux_dict={},
+    )
+
+    with PulseSchedule(["Q00"]) as schedule:
+        pass
+
+    result = builder.build(
+        schedule=schedule,
+        final_measurement=True,
+        frequencies={"Q00": 5.2, "RQ00": 9.9},
+    )
+
+    assert result.pulse_schedule.get_frequency("Q00") == 5.2
+    assert result.pulse_schedule.get_frequency("RQ00") == 9.9
+
+
+def test_schedule_builder_rejects_unknown_frequency_override_targets() -> None:
+    """Given unknown frequency labels, when building, then frequency overrides are rejected."""
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParams,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
+        ),
+        pulse_factory=cast(
+            MeasurementPulseFactory,
+            SimpleNamespace(
+                readout_pulse=lambda **_: FlatTop(duration=16, amplitude=0.1, tau=4)
+            ),
+        ),
+        targets=cast(
+            dict[str, Target],
+            {
+                "Q00": SimpleNamespace(is_pump=False, is_read=False),
+            },
+        ),
+        mux_dict={},
+    )
+
+    with PulseSchedule(["Q00"]) as schedule:
+        pass
+
+    with pytest.raises(ValueError, match="Unknown frequency override target"):
+        builder.build(
+            schedule=schedule,
+            final_measurement=True,
+            frequencies={"Q99": 5.4},
+        )
+
+
 def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
     """Given gen and cap targets, when building request, then target merge order is deterministic."""
 
@@ -197,7 +301,7 @@ def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
 
         def get_resource_map(self, targets: list[str]) -> dict[str, Any]:
             self.targets = targets
-            return {}
+            return {target: {} for target in targets}
 
     backend_controller = _BackendController()
     adapter = cast(

@@ -157,21 +157,23 @@ class MeasurementExecutionService:
     @property
     def pulse_factory(self) -> MeasurementPulseFactory:
         """Return a pulse factory bound to current system state."""
+        target_registry = getattr(self.experiment_system, "target_registry", None)
         return MeasurementPulseFactory(
             control_params=self.control_params,
             mux_dict=self.mux_dict,
-            target_registry=self.experiment_system.target_registry,
+            target_registry=target_registry,
         )
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
         """Return a schedule builder bound to current system state."""
+        target_registry = getattr(self.experiment_system, "target_registry", None)
         return MeasurementScheduleBuilder(
             control_params=self.control_params,
             pulse_factory=self.pulse_factory,
             targets=self.targets,
             mux_dict=self.mux_dict,
-            target_registry=self.experiment_system.target_registry,
+            target_registry=target_registry,
             constraint_profile=self.constraint_profile,
         )
 
@@ -783,6 +785,7 @@ class MeasurementExecutionService:
         n_shots: int | None = None,
         shot_interval_ns: float | None = None,
         shot_averaging: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -812,6 +815,8 @@ class MeasurementExecutionService:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether to average shots on hardware.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each qubit.
 
@@ -855,6 +860,7 @@ class MeasurementExecutionService:
             n_shots=n_shots,
             shot_interval_ns=shot_interval_ns,
             shot_averaging=shot_averaging,
+            frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -885,6 +891,7 @@ class MeasurementExecutionService:
         n_shots: int | None = None,
         shot_interval_ns: float | None = None,
         shot_averaging: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -916,6 +923,8 @@ class MeasurementExecutionService:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether to average shots on hardware.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each qubit.
 
@@ -1091,6 +1100,7 @@ class MeasurementExecutionService:
 
         measurement_schedule = self.build_measurement_schedule(
             pulse_schedule=schedule,
+            frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -1258,6 +1268,7 @@ class MeasurementExecutionService:
         self,
         pulse_schedule: PulseSchedule,
         *,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1274,6 +1285,7 @@ class MeasurementExecutionService:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
         measurement_schedule = self.schedule_builder.build(
             schedule=pulse_schedule,
+            frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
