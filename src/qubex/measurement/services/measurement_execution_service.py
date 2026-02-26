@@ -468,11 +468,22 @@ class MeasurementExecutionService:
                 "Active backend does not support RF-switch configuration."
             )
 
-        config_port(
-            box_name=port.box_id,
-            port=port.number,
-            rfswitch=rfswitch,
-        )
+        try:
+            config_port(
+                box_name=port.box_id,
+                port=port.number,
+                rfswitch=rfswitch,
+            )
+        except Exception as exc:
+            if type(exc).__name__ == "NoRfSwitchError":
+                logger.warning(
+                    "Skip RF-switch update for %s on %s because the port has no RF switch.",
+                    port.id,
+                    port.box_id,
+                )
+                return
+            raise
+
         self.experiment_system.control_system.set_port_params(
             box_id=port.box_id,
             port_number=port.number,

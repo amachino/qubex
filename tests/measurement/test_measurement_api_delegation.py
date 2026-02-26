@@ -506,6 +506,149 @@ def test_temporary_loopback_rfswitches_restores_ports_on_error() -> None:
     assert read_out_port.rfswitch == "pass"
 
 
+def test_capture_loopback_skips_ports_without_rfswitch() -> None:
+    """Given no-rfswitch ports, when capture_loopback is called, then measurement still runs."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    read_out_port = SimpleNamespace(
+        id="B0.READ_OUT",
+        box_id="B0",
+        number=1,
+        type=PortType.READ_OUT,
+        rfswitch="pass",
+    )
+    read_in_port = SimpleNamespace(
+        id="B0.READ_IN",
+        box_id="B0",
+        number=2,
+        type=PortType.READ_IN,
+        rfswitch="open",
+    )
+    box = SimpleNamespace(id="B0", ports=[read_out_port, read_in_port])
+
+    class NoRfSwitchError(Exception):
+        pass
+
+    class _ControlSystemStub:
+        def __init__(self) -> None:
+            self.boxes = [box]
+            self._port_by_id = {port.id: port for port in box.ports}
+
+        def get_port_by_id(self, port_id: str) -> Any:
+            return self._port_by_id[port_id]
+
+        def get_box(self, box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+        def set_port_params(
+            self,
+            box_id: str,
+            port_number: int,
+            *,
+            rfswitch: str | None = None,
+        ) -> None:
+            _ = (box_id, port_number, rfswitch)
+
+    class _BackendControllerStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int, str | None]] = []
+
+        def config_port(
+            self,
+            box_name: str,
+            *,
+            port: int,
+            rfswitch: str | None = None,
+        ) -> None:
+            self.calls.append((box_name, port, rfswitch))
+            raise NoRfSwitchError()
+
+    control_system = _ControlSystemStub()
+    backend_controller = _BackendControllerStub()
+    schedule_target = SimpleNamespace(
+        label="Q00",
+        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+    )
+    read_in_target = SimpleNamespace(
+        label="RQ00",
+        channel=SimpleNamespace(port=read_in_port),
+    )
+
+    def _get_cap_target(label: str) -> Any:
+        if label == "RQ00":
+            return SimpleNamespace(channel=SimpleNamespace(port=read_in_port))
+        raise KeyError(label)
+
+    def _resolve_qubit_label(label: str) -> str:
+        if label == "RQ00":
+            return "Q00"
+        raise ValueError(label)
+
+    experiment_system = SimpleNamespace(
+        control_system=control_system,
+        targets=[schedule_target],
+        read_in_targets=[read_in_target],
+        resolve_qubit_label=_resolve_qubit_label,
+        get_cap_target=_get_cap_target,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+    )
+
+    execution_service = measurement.execution_service
+    built_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["Q00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+
+    def _build(
+        self: MeasurementExecutionService,
+        pulse_schedule: PulseSchedule,
+        **kwargs: Any,
+    ) -> MeasurementSchedule:
+        _ = (self, pulse_schedule, kwargs)
+        return built_schedule
+
+    async def _run(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        _ = (self, schedule, config)
+        assert read_in_port.rfswitch == "open"
+        assert read_out_port.rfswitch == "pass"
+        return MeasurementResult(
+            data={"Q00": [np.array([1.0 + 0.0j])]},
+            measurement_config=_make_config(),
+            sampling_period_ns=2.0,
+        )
+
+    execution_service.build_measurement_schedule = MethodType(
+        _build,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        _run,
+        execution_service,
+    )
+
+    result = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+
+    assert "Q00" in result.data
+    assert read_in_port.rfswitch == "open"
+    assert read_out_port.rfswitch == "pass"
+    assert len(backend_controller.calls) == 2
+
+
 def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     """Given measure inputs, when measure is called, then it delegates to execute and flattens first capture."""
     measurement = Measurement(
