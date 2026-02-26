@@ -758,7 +758,8 @@ class PulseSchedule:
         dict[str, list[range]]
             Pulse index ranges for each channel in sample units.
         """
-        labels = labels or self.labels
+        if labels is None:
+            labels = self.labels
         ranges: dict[str, list[range]] = {label: [] for label in labels}
         for label in labels:
             current_offset = 0
@@ -788,7 +789,8 @@ class PulseSchedule:
         dict[str, list[range]]
             Blank index ranges for each channel in sample units.
         """
-        labels = labels or self.labels
+        if labels is None:
+            labels = self.labels
         ranges: dict[str, list[range]] = {label: [] for label in labels}
         for label in labels:
             current_offset = 0

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import qubex as qx
-from qubex.pulse import Arbitrary, PulseSchedule
+from qubex.pulse import Arbitrary, Blank, PulseSchedule
 
 dt = qx.pulse.get_sampling_period()
 
@@ -280,6 +280,16 @@ def test_get_pulse_ranges():
     ranges_read = ps.get_pulse_ranges(["RQ01", "RQ02"])
     assert ranges_read["RQ01"] == pytest.approx([range(6, 9), range(12, 15)])
     assert ranges_read["RQ02"] == pytest.approx([range(6, 9), range(12, 15)])
+
+
+def test_get_pulse_and_blank_ranges_respect_empty_labels() -> None:
+    """Given empty labels, when getting ranges, then both methods return empty mappings."""
+    with PulseSchedule() as ps:
+        ps.add("Q01", Arbitrary([1, 1, 1]))
+        ps.add("Q01", Blank(2))
+
+    assert ps.get_pulse_ranges([]) == {}
+    assert ps.get_blank_ranges([]) == {}
 
 
 def test_usecase():
