@@ -468,3 +468,76 @@ def test_create_sampled_sequences_skips_readout_phase_shift_when_capture_targets
 
     assert set(gen_sequences.keys()) == {"Q08"}
     assert set(cap_sequences.keys()) == {"RQ08", "B0.MNTR0.IN"}
+
+
+def test_build_execution_request_resolves_read_in_port_id_for_resource_map() -> None:
+    """Given loopback capture with READ_IN port IDs, building request should resolve resource-map lookup to read-in target labels."""
+
+    class _BackendControllerStub:
+        def __init__(self) -> None:
+            self.targets: list[str] = []
+
+        def get_resource_map(self, targets: list[str]) -> dict[str, list[dict[str, str]]]:
+            self.targets = list(targets)
+            return {target: [{"resolved_target": target}] for target in targets}
+
+    backend = _BackendControllerStub()
+    read_in_target = SimpleNamespace(
+        label="RQ00",
+        channel=SimpleNamespace(port=SimpleNamespace(id="B0.READ0.IN")),
+    )
+
+    class _ExperimentSystemStub:
+        def __init__(self) -> None:
+            self.read_in_targets = [read_in_target]
+
+        @staticmethod
+        def get_target(target: str) -> SimpleNamespace:
+            if target == "Q00":
+                return SimpleNamespace(sideband="U")
+            raise KeyError(target)
+
+        @staticmethod
+        def get_cap_target(target: str) -> SimpleNamespace:
+            if target == "RQ00":
+                return read_in_target
+            raise KeyError(target)
+
+    adapter = cast(
+        Any,
+        Quel1MeasurementBackendAdapter(
+            backend_controller=cast(Any, backend),
+            experiment_system=cast(Any, _ExperimentSystemStub()),
+        ),
+    )
+
+    def _sampled_sequences(
+        self: Quel1MeasurementBackendAdapter,
+        *,
+        schedule: MeasurementSchedule,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        _ = (self, schedule)
+        return {}, {"B0.READ0.IN": object(), "B0.MNTR0.IN": object()}
+
+    adapter._create_sampled_sequences = MethodType(  # noqa: SLF001
+        _sampled_sequences,
+        adapter,
+    )
+
+    with PulseSchedule(["Q00"]) as pulse_schedule:
+        pulse_schedule.add("Q00", Blank(128.0))
+
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+
+    request = adapter.build_execution_request(
+        schedule=schedule,
+        config=_make_config(mode="single", shots=1),
+    )
+
+    payload = request.payload
+    assert backend.targets == ["RQ00", "B0.MNTR0.IN"]
+    assert payload.resource_map["B0.READ0.IN"][0]["resolved_target"] == "RQ00"
+    assert payload.resource_map["B0.MNTR0.IN"][0]["resolved_target"] == "B0.MNTR0.IN"

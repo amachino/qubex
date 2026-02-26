@@ -228,7 +228,19 @@ class Quel1MeasurementBackendAdapter:
         targets = list(
             dict.fromkeys([*gen_sampled_sequence.keys(), *cap_sampled_sequence.keys()])
         )
-        resource_map = self._backend_controller.get_resource_map(targets)
+        resource_lookup_target_by_target = {
+            target: self._resolve_resource_lookup_target(target) for target in targets
+        }
+        resource_lookup_targets = list(
+            dict.fromkeys(resource_lookup_target_by_target.values())
+        )
+        resource_map_by_lookup_target = self._backend_controller.get_resource_map(
+            resource_lookup_targets
+        )
+        resource_map = {
+            target: resource_map_by_lookup_target[lookup_target]
+            for target, lookup_target in resource_lookup_target_by_target.items()
+        }
         dsp_demodulation = (
             True
             if quel1_options is None or quel1_options.demodulation is None
@@ -341,6 +353,39 @@ class Quel1MeasurementBackendAdapter:
             measurement_config=measurement_config,
             sampling_period_ns=sampling_period_ns,
         )
+
+    def _resolve_resource_lookup_target(self, target: str) -> str:
+        """Resolve target name used to look up QuEL system resource-map entries."""
+        try:
+            _ = self._experiment_system.get_target(target)
+        except AttributeError:
+            pass
+        except KeyError:
+            pass
+        else:
+            return target
+        try:
+            _ = self._experiment_system.get_cap_target(target)
+        except AttributeError:
+            pass
+        except KeyError:
+            pass
+        else:
+            return target
+
+        try:
+            read_in_targets = self._experiment_system.read_in_targets
+        except AttributeError:
+            read_in_targets = ()
+
+        for cap_target in read_in_targets:
+            try:
+                port_id = cap_target.channel.port.id
+            except AttributeError:
+                continue
+            if port_id == target:
+                return str(cap_target.label)
+        return target
 
     def _create_sampled_sequences(
         self,

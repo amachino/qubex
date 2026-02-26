@@ -219,14 +219,14 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         connect_devices=False,
     )
     read_out_port = SimpleNamespace(
-        id="B0.READ_OUT",
+        id="B0.READ0.OUT",
         box_id="B0",
         number=1,
         type=PortType.READ_OUT,
         rfswitch="pass",
     )
     read_in_port = SimpleNamespace(
-        id="B0.READ_IN",
+        id="B0.READ0.IN",
         box_id="B0",
         number=2,
         type=PortType.READ_IN,
@@ -330,13 +330,15 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         pulse_schedule=PulseSchedule(["Q00"]),
         capture_schedule=CaptureSchedule(captures=[]),
     )
+    captured_build_kwargs: dict[str, Any] = {}
 
     def _build(
         self: MeasurementExecutionService,
         pulse_schedule: PulseSchedule,
         **kwargs: Any,
     ) -> MeasurementSchedule:
-        _ = (self, pulse_schedule, kwargs)
+        _ = (self, pulse_schedule)
+        captured_build_kwargs.update(kwargs)
         return built_schedule
 
     async def _run(
@@ -372,6 +374,7 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
     assert read_out_port.rfswitch == "pass"
     assert monitor_in_port.rfswitch == "open"
     assert monitor_out_port.rfswitch == "pass"
+    assert captured_build_kwargs["capture_targets"] == ["B0.READ0.IN", "B0.MNTR0.IN"]
     assert len(backend_controller.calls) == 6
     assert all(call[1] != 3 for call in backend_controller.calls)
 
@@ -385,14 +388,14 @@ def test_temporary_loopback_rfswitches_restores_ports_on_error() -> None:
         connect_devices=False,
     )
     read_out_port = SimpleNamespace(
-        id="B0.READ_OUT",
+        id="B0.READ0.OUT",
         box_id="B0",
         number=1,
         type=PortType.READ_OUT,
         rfswitch="pass",
     )
     read_in_port = SimpleNamespace(
-        id="B0.READ_IN",
+        id="B0.READ0.IN",
         box_id="B0",
         number=2,
         type=PortType.READ_IN,
@@ -519,14 +522,14 @@ def test_capture_loopback_skips_ports_without_rfswitch() -> None:
         connect_devices=False,
     )
     read_out_port = SimpleNamespace(
-        id="B0.READ_OUT",
+        id="B0.READ0.OUT",
         box_id="B0",
         number=1,
         type=PortType.READ_OUT,
         rfswitch="pass",
     )
     read_in_port = SimpleNamespace(
-        id="B0.READ_IN",
+        id="B0.READ0.IN",
         box_id="B0",
         number=2,
         type=PortType.READ_IN,
@@ -663,14 +666,14 @@ def test_capture_loopback_initializes_awg_and_capunits_when_supported() -> None:
         connect_devices=False,
     )
     read_out_port = SimpleNamespace(
-        id="B0.READ_OUT",
+        id="B0.READ0.OUT",
         box_id="B0",
         number=1,
         type=PortType.READ_OUT,
         rfswitch="pass",
     )
     read_in_port = SimpleNamespace(
-        id="B0.READ_IN",
+        id="B0.READ0.IN",
         box_id="B0",
         number=2,
         type=PortType.READ_IN,
@@ -808,14 +811,14 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
         connect_devices=False,
     )
     read_out_port = SimpleNamespace(
-        id="B0.READ_OUT",
+        id="B0.READ0.OUT",
         box_id="B0",
         number=1,
         type=PortType.READ_OUT,
         rfswitch="pass",
     )
     read_in_port = SimpleNamespace(
-        id="B0.READ_IN",
+        id="B0.READ0.IN",
         box_id="B0",
         number=2,
         type=PortType.READ_IN,
@@ -970,9 +973,9 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
 
     assert "Q00" in result.data
     assert call_count["run"] == 3
-    assert capture_target_calls[0] == ["RQ00", "B0.MNTR0.IN"]
-    assert capture_target_calls[1] == ["RQ00", "B0.MNTR0.IN"]
-    assert capture_target_calls[2] == ["RQ00"]
+    assert capture_target_calls[0] == ["B0.READ0.IN", "B0.MNTR0.IN"]
+    assert capture_target_calls[1] == ["B0.READ0.IN", "B0.MNTR0.IN"]
+    assert capture_target_calls[2] == ["B0.READ0.IN"]
 
 
 def test_capture_loopback_runs_without_dsp_demodulation() -> None:
@@ -984,14 +987,14 @@ def test_capture_loopback_runs_without_dsp_demodulation() -> None:
         connect_devices=False,
     )
     read_out_port = SimpleNamespace(
-        id="B0.READ_OUT",
+        id="B0.READ0.OUT",
         box_id="B0",
         number=1,
         type=PortType.READ_OUT,
         rfswitch="pass",
     )
     read_in_port = SimpleNamespace(
-        id="B0.READ_IN",
+        id="B0.READ0.IN",
         box_id="B0",
         number=2,
         type=PortType.READ_IN,

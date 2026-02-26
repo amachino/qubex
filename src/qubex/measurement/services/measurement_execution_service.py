@@ -157,23 +157,21 @@ class MeasurementExecutionService:
     @property
     def pulse_factory(self) -> MeasurementPulseFactory:
         """Return a pulse factory bound to current system state."""
-        target_registry = getattr(self.experiment_system, "target_registry", None)
         return MeasurementPulseFactory(
             control_params=self.control_params,
             mux_dict=self.mux_dict,
-            target_registry=target_registry,
+            target_registry=self.experiment_system.target_registry,
         )
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
         """Return a schedule builder bound to current system state."""
-        target_registry = getattr(self.experiment_system, "target_registry", None)
         return MeasurementScheduleBuilder(
             control_params=self.control_params,
             pulse_factory=self.pulse_factory,
             targets=self.targets,
             mux_dict=self.mux_dict,
-            target_registry=target_registry,
+            target_registry=self.experiment_system.target_registry,
             constraint_profile=self.constraint_profile,
         )
 
@@ -335,46 +333,48 @@ class MeasurementExecutionService:
         schedule: PulseSchedule,
     ) -> list[str]:
         """Resolve read-in and monitor capture targets for loopback acquisition."""
-        target_registry = getattr(self.experiment_system, "target_registry", None)
-        resolve_qubit_label = getattr(target_registry, "resolve_qubit_label", None)
-
         active_qubits: list[str] = []
         active_boxes: list[str] = []
         for label in schedule.labels:
             target = self.targets.get(label)
             if target is not None:
                 active_boxes.append(str(target.channel.port.box_id))
-            if callable(resolve_qubit_label):
-                try:
-                    qubit_label = resolve_qubit_label(label, allow_legacy=True)
-                except TypeError:
-                    try:
-                        qubit_label = resolve_qubit_label(label)
-                    except ValueError:
-                        continue
-                except ValueError:
-                    continue
-                active_qubits.append(str(qubit_label))
+            try:
+                qubit_label = self.experiment_system.resolve_qubit_label(label)
+            except ValueError:
+                continue
+            active_qubits.append(str(qubit_label))
 
-        read_in_label_by_qubit: dict[str, str] = {}
+        def _resolve_read_in_capture_target(target: Any) -> str:
+            """Prefer READ_IN port ID so loopback labels match monitor port labels."""
+            channel = getattr(target, "channel", None)
+            port = None if channel is None else getattr(channel, "port", None)
+            port_id = None if port is None else getattr(port, "id", None)
+            if isinstance(port_id, str) and port_id:
+                return port_id
+            return str(target.label)
+
+        read_in_target_by_qubit: dict[str, str] = {}
         for target in self.experiment_system.read_in_targets:
             try:
                 qubit_label = self.experiment_system.resolve_qubit_label(target.label)
             except ValueError:
                 continue
-            if qubit_label not in read_in_label_by_qubit:
-                read_in_label_by_qubit[qubit_label] = target.label
+            if qubit_label not in read_in_target_by_qubit:
+                read_in_target_by_qubit[qubit_label] = _resolve_read_in_capture_target(
+                    target
+                )
 
         read_capture_targets = [
-            read_in_label_by_qubit[qubit]
+            read_in_target_by_qubit[qubit]
             for qubit in dict.fromkeys(active_qubits)
-            if qubit in read_in_label_by_qubit
+            if qubit in read_in_target_by_qubit
         ]
 
         active_box_set = set(active_boxes)
         if not read_capture_targets and active_box_set:
             read_capture_targets.extend(
-                target.label
+                _resolve_read_in_capture_target(target)
                 for target in self.experiment_system.read_in_targets
                 if target.channel.port.box_id in active_box_set
             )
