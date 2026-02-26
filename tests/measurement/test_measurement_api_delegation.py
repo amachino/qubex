@@ -348,7 +348,7 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         assert read_in_port.rfswitch == "loop"
         assert read_out_port.rfswitch == "block"
         assert monitor_in_port.rfswitch == "loop"
-        assert monitor_out_port.rfswitch == "block"
+        assert monitor_out_port.rfswitch == "pass"
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
@@ -370,7 +370,8 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
     assert read_out_port.rfswitch == "pass"
     assert monitor_in_port.rfswitch == "open"
     assert monitor_out_port.rfswitch == "pass"
-    assert len(backend_controller.calls) == 8
+    assert len(backend_controller.calls) == 6
+    assert all(call[1] != 3 for call in backend_controller.calls)
 
 
 def test_temporary_loopback_rfswitches_restores_ports_on_error() -> None:

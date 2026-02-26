@@ -414,6 +414,16 @@ class MeasurementExecutionService:
         """Return whether an exception indicates broken captured data."""
         return type(exc).__name__ == "E7awgCaptureDataError"
 
+    @staticmethod
+    def _is_rfswitch_unsupported_error(exc: Exception) -> bool:
+        """Return whether an exception indicates RF-switch is unsupported."""
+        if type(exc).__name__ == "NoRfSwitchError":
+            return True
+        if isinstance(exc, ValueError):
+            message = str(exc).lower()
+            return "invalid port of" in message or "no switch available" in message
+        return False
+
     def _resolve_loopback_box_ids(
         self,
         *,
@@ -502,22 +512,6 @@ class MeasurementExecutionService:
                         updates[box_port.id] = "block"
             elif port.type == PortType.MNTR_IN:
                 updates[port.id] = "loop"
-                monitor_out_id = (
-                    f"{port.id.removesuffix('.IN')}.OUT"
-                    if port.id.endswith(".IN")
-                    else None
-                )
-                if monitor_out_id is not None:
-                    try:
-                        monitor_out_port = control_system.get_port_by_id(monitor_out_id)
-                    except KeyError:
-                        monitor_out_port = None
-                    if monitor_out_port is not None:
-                        updates[monitor_out_port.id] = "block"
-                        continue
-                for box_port in control_system.get_box(port.box_id).ports:
-                    if box_port.type == PortType.MNTR_OUT:
-                        updates[box_port.id] = "block"
 
         return updates
 
@@ -541,9 +535,9 @@ class MeasurementExecutionService:
                 rfswitch=rfswitch,
             )
         except Exception as exc:
-            if type(exc).__name__ == "NoRfSwitchError":
+            if self._is_rfswitch_unsupported_error(exc):
                 logger.warning(
-                    "Skip RF-switch update for %s on %s because the port has no RF switch.",
+                    "Skip RF-switch update for %s on %s because the port does not support RF switch configuration.",
                     port.id,
                     port.box_id,
                 )
@@ -1218,9 +1212,8 @@ class MeasurementExecutionService:
                     capture_targets=capture_targets,
                     port_type=PortType.READ_IN,
                 )
-                if (
-                    not read_in_only_targets
-                    or read_in_only_targets == list(capture_targets)
+                if not read_in_only_targets or read_in_only_targets == list(
+                    capture_targets
                 ):
                     raise
                 logger.warning(
