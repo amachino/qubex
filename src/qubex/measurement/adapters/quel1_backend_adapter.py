@@ -290,10 +290,9 @@ class Quel1MeasurementBackendAdapter:
             raise ValueError(f"Invalid measure mode: {measure_mode}")
 
         return MeasurementResult(
-            mode=measure_mode,
             data=measure_data,
             device_config=device_config,
-            measurement_config=measurement_config.to_dict(),
+            measurement_config=measurement_config,
             sampling_period_ns=sampling_period_ns,
         )
 

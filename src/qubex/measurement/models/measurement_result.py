@@ -10,16 +10,16 @@ import numpy as np
 
 from qubex.constants import DEFAULT_RAWDATA_DIR
 from qubex.core import DataModel
-from qubex.typing import MeasurementMode
+
+from .measurement_config import MeasurementConfig
 
 
 class MeasurementResult(DataModel):
     """Canonical serializable result of a measurement run."""
 
-    mode: MeasurementMode
     data: dict[str, list[np.ndarray]]
+    measurement_config: MeasurementConfig
     device_config: dict[str, Any] | None = None
-    measurement_config: dict[str, Any] | None = None
     sampling_period_ns: float | None = None
 
     def save(

@@ -7,15 +7,17 @@ import json
 import numpy as np
 import pytest
 from netCDF4 import Dataset
+from pydantic import ValidationError
 
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
-from qubex.measurement.models import MeasurementResult
+from qubex.measurement.models import MeasurementConfig, MeasurementResult
 from qubex.measurement.models.measure_result import (
     MeasureData,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
 )
+from qubex.typing import MeasurementMode
 
 
 def _make_multiple_measure_result() -> MultipleMeasureResult:
@@ -38,10 +40,27 @@ def _make_multiple_measure_result() -> MultipleMeasureResult:
     )
 
 
+def _make_config(*, mode: MeasurementMode = "avg", shots: int = 2) -> MeasurementConfig:
+    return MeasurementConfig(
+        mode=mode,
+        shots=shots,
+        interval=100.0,
+        enable_dsp_demodulation=True,
+        enable_dsp_sum=False,
+        enable_dsp_classification=False,
+        line_param0=(1.0, 0.0, 0.0),
+        line_param1=(0.0, 1.0, 0.0),
+    )
+
+
 def test_to_multiple_measure_result_returns_wrapped_result() -> None:
     """Given legacy multiple result, when converting round-trip, then mode and config are preserved."""
     multiple = _make_multiple_measure_result()
-    result = MeasurementResultConverter.from_multiple(multiple)
+    config = _make_config()
+    result = MeasurementResultConverter.from_multiple(
+        multiple,
+        measurement_config=config,
+    )
     restored = MeasurementResultConverter.to_multiple_measure_result(
         result,
         config=multiple.config,
@@ -50,14 +69,18 @@ def test_to_multiple_measure_result_returns_wrapped_result() -> None:
     assert restored.mode == multiple.mode
     assert restored.config == multiple.config
     assert result.device_config == multiple.config
+    assert result.measurement_config == config
     assert np.array_equal(restored.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
-    assert result.mode == "avg"
+    assert result.measurement_config.mode == "avg"
 
 
 def test_to_measure_result_selects_requested_index() -> None:
     """Given wrapped multiple result, when converting with an index, then selected capture is returned."""
     multiple = _make_multiple_measure_result()
-    result = MeasurementResultConverter.from_multiple(multiple)
+    result = MeasurementResultConverter.from_multiple(
+        multiple,
+        measurement_config=_make_config(),
+    )
 
     single: MeasureResult = MeasurementResultConverter.to_measure_result(
         result,
@@ -72,7 +95,10 @@ def test_to_measure_result_selects_requested_index() -> None:
 
 def test_to_measure_result_raises_for_invalid_index() -> None:
     """Given wrapped multiple result, when index is out of range, then IndexError is raised."""
-    result = MeasurementResultConverter.from_multiple(_make_multiple_measure_result())
+    result = MeasurementResultConverter.from_multiple(
+        _make_multiple_measure_result(),
+        measurement_config=_make_config(),
+    )
 
     with pytest.raises(IndexError):
         MeasurementResultConverter.to_measure_result(result, index=10)
@@ -81,10 +107,9 @@ def test_to_measure_result_raises_for_invalid_index() -> None:
 def test_to_measure_result_propagates_sampling_period() -> None:
     """Given canonical result with sampling period, when converting, then legacy data keeps it."""
     result = MeasurementResult(
-        mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
         device_config={"shots": 2},
-        measurement_config={"mode": "avg", "shots": 2},
+        measurement_config=_make_config(mode="avg", shots=2),
         sampling_period_ns=0.8,
     )
 
@@ -97,10 +122,9 @@ def test_to_measure_result_propagates_sampling_period() -> None:
 def test_json_roundtrip_preserves_raw_arrays() -> None:
     """Given serialized measurement result, when deserializing, then raw arrays are preserved."""
     original = MeasurementResult(
-        mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
         device_config={"shots": 2},
-        measurement_config={"mode": "avg", "shots": 2},
+        measurement_config=_make_config(mode="avg", shots=2),
     )
     serialized = original.to_dict()
 
@@ -108,7 +132,6 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
 
     assert serialized["__meta__"]["format"] == "qxdata"
     assert serialized["__meta__"]["version"] == 1
-    assert restored.mode == original.mode
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
     assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
@@ -117,20 +140,18 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
 def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
     """Given NetCDF save/load, when round-tripping, then raw data and metadata are preserved."""
     original = MeasurementResult(
-        mode="single",
         data={
             "Q00": [np.array([[1.0 + 2.0j], [3.0 + 4.0j]])],
             "Q01": [np.array([5.0 + 6.0j]), np.array([7.0 + 8.0j])],
         },
         device_config={"shots": 2},
-        measurement_config={"mode": "single", "shots": 2},
+        measurement_config=_make_config(mode="single", shots=2),
     )
     path = tmp_path / "measurement_result.nc"
 
     saved = original.save_netcdf(path)
     restored = MeasurementResult.load_netcdf(saved)
 
-    assert restored.mode == original.mode
     assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
@@ -141,8 +162,8 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
 def test_save_writes_netcdf_file(tmp_path) -> None:
     """Given save(), when called, then it writes a readable NetCDF file."""
     result = MeasurementResult(
-        mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j])]},
+        measurement_config=_make_config(mode="avg", shots=2),
     )
 
     path = result.save(tmp_path, file_name="result.nc")
@@ -152,22 +173,17 @@ def test_save_writes_netcdf_file(tmp_path) -> None:
     assert np.array_equal(restored.data["Q00"][0], np.array([1.0 + 0.0j]))
 
 
-def test_measurement_result_defaults_configs_to_none() -> None:
-    """Given canonical result without config payloads, then config fields default to None."""
-    result = MeasurementResult(
-        mode="avg",
-        data={"Q00": [np.array([1.0 + 0.0j])]},
-    )
-
-    assert result.device_config is None
-    assert result.measurement_config is None
+def test_measurement_result_requires_measurement_config() -> None:
+    """Given missing measurement config, result construction raises validation error."""
+    with pytest.raises(ValidationError):
+        _ = MeasurementResult.model_validate({"data": {"Q00": [np.array([1.0 + 0.0j])]}})
 
 
 def test_converter_falls_back_to_empty_config_when_missing() -> None:
     """Given canonical result without device config, converter returns legacy results with empty config."""
     result = MeasurementResult(
-        mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
+        measurement_config=_make_config(mode="avg", shots=2),
     )
 
     multiple = MeasurementResultConverter.to_multiple_measure_result(result)
@@ -180,10 +196,9 @@ def test_converter_falls_back_to_empty_config_when_missing() -> None:
 def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
     """Given NetCDF save, when opening the file, then codec metadata attributes are present."""
     result = MeasurementResult(
-        mode="single",
         data={"Q00": [np.array([1.0 + 2.0j])]},
         device_config={"backend": "quel"},
-        measurement_config={"mode": "single", "shots": 1},
+        measurement_config=_make_config(mode="single", shots=1),
     )
     path = result.save_netcdf(tmp_path / "metadata.nc")
 

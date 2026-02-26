@@ -27,12 +27,17 @@ from qubex.measurement.models.measure_result import (
     MeasureMode,
     MultipleMeasureResult,
 )
+from qubex.typing import MeasurementMode
 
 
-def _make_config() -> MeasurementConfig:
+def _make_config(
+    *,
+    mode: MeasurementMode = "avg",
+    shots: int = 2,
+) -> MeasurementConfig:
     return MeasurementConfig(
-        mode="avg",
-        shots=2,
+        mode=mode,
+        shots=shots,
         interval=100.0,
         enable_dsp_demodulation=True,
         enable_dsp_sum=False,
@@ -68,7 +73,10 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
-    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+    expected = MeasurementResultConverter.from_multiple(
+        _make_multiple_result(),
+        measurement_config=_make_config(),
+    )
 
     class _Adapter:
         def validate_schedule(self, schedule: MeasurementSchedule) -> None:
@@ -137,7 +145,10 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
     called: dict[str, object] = {}
     base_request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
-    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+    expected = MeasurementResultConverter.from_multiple(
+        _make_multiple_result(),
+        measurement_config=_make_config(),
+    )
 
     class _Adapter:
         def validate_schedule(self, schedule: MeasurementSchedule) -> None:
@@ -202,7 +213,10 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
-    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+    expected = MeasurementResultConverter.from_multiple(
+        _make_multiple_result(),
+        measurement_config=_make_config(),
+    )
 
     class _Adapter:
         def validate_schedule(self, schedule: MeasurementSchedule) -> None:
@@ -263,7 +277,10 @@ def test_execute_prefers_backend_capture_decimation_hint() -> None:
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
-    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+    expected = MeasurementResultConverter.from_multiple(
+        _make_multiple_result(),
+        measurement_config=_make_config(),
+    )
 
     class _Adapter:
         def validate_schedule(self, schedule: MeasurementSchedule) -> None:
@@ -319,10 +336,9 @@ def test_execute_prefers_backend_capture_decimation_hint() -> None:
 def test_execute_returns_backend_measurement_result_directly() -> None:
     """Given backend returns canonical result, when executing, then result factory is not called."""
     expected = MeasurementResult(
-        mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j])]},
+        measurement_config=_make_config(mode="avg"),
         device_config={"kind": "quel3"},
-        measurement_config={"mode": "avg"},
     )
 
     class _Adapter:
@@ -368,10 +384,9 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
     expected = MeasurementResult(
-        mode="avg",
         data={"Q00": [np.array([2.0 + 0.0j])]},
+        measurement_config=_make_config(mode="avg"),
         device_config={"kind": "adapter"},
-        measurement_config={"mode": "avg"},
     )
 
     class _Adapter:

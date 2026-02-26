@@ -172,10 +172,9 @@ class Quel3MeasurementBackendAdapter:
             output_target = self._output_target_labels_by_alias.get(alias, alias)
             converted_data.setdefault(output_target, []).extend(values)
         return MeasurementResult(
-            mode=backend_result.mode,
             data=converted_data,
             device_config={},
-            measurement_config=measurement_config.to_dict(),
+            measurement_config=measurement_config,
             sampling_period_ns=(
                 backend_result.sampling_period_ns
                 if backend_result.sampling_period_ns is not None

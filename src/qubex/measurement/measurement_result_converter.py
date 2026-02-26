@@ -16,6 +16,7 @@ from .models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
+from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
 
 
@@ -36,7 +37,11 @@ class MeasurementResultConverter:
         return SAMPLING_PERIOD
 
     @staticmethod
-    def from_multiple(multiple: MultipleMeasureResult) -> MeasurementResult:
+    def from_multiple(
+        multiple: MultipleMeasureResult,
+        *,
+        measurement_config: MeasurementConfig,
+    ) -> MeasurementResult:
         """
         Create a canonical result from legacy multi-capture data.
 
@@ -44,6 +49,8 @@ class MeasurementResultConverter:
         ----------
         multiple : MultipleMeasureResult
             Legacy multi-capture result.
+        measurement_config : MeasurementConfig
+            Measurement configuration attached to the canonical result.
 
         Returns
         -------
@@ -57,8 +64,8 @@ class MeasurementResultConverter:
         first_data = next(iter(multiple.data.values()), [])
         first_capture = first_data[0] if first_data else None
         return MeasurementResult(
-            mode=multiple.mode.value,
             data=data,
+            measurement_config=measurement_config,
             device_config=multiple.config,
             sampling_period_ns=(
                 first_capture.sampling_period_ns
@@ -92,7 +99,7 @@ class MeasurementResultConverter:
         MultipleMeasureResult
             Legacy multi-capture result.
         """
-        mode = MeasureMode(result.mode)
+        mode = MeasureMode(result.measurement_config.mode)
         if config is None:
             resolved_config: dict[str, Any] = (
                 {} if result.device_config is None else result.device_config
@@ -158,7 +165,7 @@ class MeasurementResultConverter:
         IndexError
             If `index` is out of range for any target.
         """
-        mode = MeasureMode(result.mode)
+        mode = MeasureMode(result.measurement_config.mode)
         classifier_map = {} if classifiers is None else classifiers
         resolved_sampling_period = (
             MeasurementResultConverter._resolve_sampling_period_ns(

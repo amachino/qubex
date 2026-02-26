@@ -108,9 +108,11 @@ Notes:
 
 ## Config payload policy
 
-- `SweepMeasurementResult.config` / `NDSweepMeasurementResult.config` is canonical.
-- per-point `MeasurementResult` config payload should be omitted for sweep APIs to reduce JSON size.
-- standalone `run_measurement` remains free to include self-contained config payload.
+- `MeasurementResult.measurement_config` is mandatory.
+- `MeasurementResult.mode` is removed; callers should use
+  `MeasurementResult.measurement_config.mode`.
+- `SweepMeasurementResult.config` / `NDSweepMeasurementResult.config` is retained as
+  shared sweep-level metadata.
 
 ## Helper methods
 

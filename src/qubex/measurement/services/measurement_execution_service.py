@@ -334,13 +334,7 @@ class MeasurementExecutionService:
                 schedule=measurement_schedule,
                 config=resolved_config,
             )
-            results.append(
-                MeasurementResult(
-                    mode=result.mode,
-                    data=result.data,
-                    sampling_period_ns=result.sampling_period_ns,
-                )
-            )
+            results.append(result)
         return SweepMeasurementResult(
             sweep_points=normalized_points,
             config=resolved_config,
@@ -405,13 +399,7 @@ class MeasurementExecutionService:
                 schedule=measurement_schedule,
                 config=resolved_config,
             )
-            results.append(
-                MeasurementResult(
-                    mode=result.mode,
-                    data=result.data,
-                    sampling_period_ns=result.sampling_period_ns,
-                )
-            )
+            results.append(result)
 
         return NDSweepMeasurementResult(
             sweep_points=normalized_axes_points,

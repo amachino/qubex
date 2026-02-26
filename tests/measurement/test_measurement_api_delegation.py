@@ -34,13 +34,17 @@ from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.services.measurement_execution_service import (
     MeasurementExecutionService,
 )
-from qubex.typing import TargetMap
+from qubex.typing import MeasurementMode, TargetMap
 
 
-def _make_config() -> MeasurementConfig:
+def _make_config(
+    *,
+    mode: MeasurementMode = "avg",
+    shots: int = 2,
+) -> MeasurementConfig:
     return MeasurementConfig(
-        mode="avg",
-        shots=2,
+        mode=mode,
+        shots=shots,
         interval=100.0,
         enable_dsp_demodulation=True,
         enable_dsp_sum=False,
@@ -129,7 +133,10 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     ) -> MeasurementResult:
         called["run_schedule"] = schedule
         called["run_config"] = config
-        return MeasurementResultConverter.from_multiple(multiple)
+        return MeasurementResultConverter.from_multiple(
+            multiple,
+            measurement_config=_make_config(),
+        )
 
     execution_service = measurement.execution_service
     execution_service.build_measurement_schedule = MethodType(
@@ -293,7 +300,10 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
         config: MeasurementConfig,
     ) -> MeasurementResult:
         called["config"] = config
-        return MeasurementResultConverter.from_multiple(multiple)
+        return MeasurementResultConverter.from_multiple(
+            multiple,
+            measurement_config=_make_config(),
+        )
 
     execution_service = measurement.execution_service
     execution_service.build_measurement_schedule = MethodType(
@@ -350,7 +360,10 @@ def test_run_measurement_delegates_to_executor(
         capture_schedule=CaptureSchedule(captures=[]),
     )
     config = _make_config()
-    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
+    expected = MeasurementResultConverter.from_multiple(
+        _make_multiple_result(),
+        measurement_config=_make_config(),
+    )
     called: dict[str, Any] = {}
 
     class _Executor:
@@ -452,10 +465,9 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
                 "sampling_period_ns": sampling_period_ns,
             }
             return MeasurementResult(
-                mode="avg",
                 data={"Q00": [np.array([1.0 + 0.0j])]},
+                measurement_config=_make_config(mode="avg"),
                 device_config={"kind": "quel3"},
-                measurement_config={"mode": "avg"},
             )
 
     monkeypatch.setattr(
@@ -589,9 +601,8 @@ def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
         del self
         step = int(schedule.pulse_schedule.labels[0][-1])
         return MeasurementResult(
-            mode=config.mode,
             data={"Q00": [np.array([step + 1.0 + 0.0j])]},
-            measurement_config=config.to_dict(),
+            measurement_config=config,
         )
 
     execution_service.run_measurement = MethodType(
@@ -612,8 +623,8 @@ def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
     assert np.array_equal(result.results[1].data["Q00"][0], np.array([2.0 + 0.0j]))
     assert result.get(1) is result.results[1]
     assert result.get_sweep_point(1) == {"step": 1}
-    assert result.results[0].measurement_config is None
-    assert result.results[1].measurement_config is None
+    assert result.results[0].measurement_config == config
+    assert result.results[1].measurement_config == config
 
 
 def test_run_sweep_measurement_resolves_default_config() -> None:
@@ -653,7 +664,8 @@ def test_run_sweep_measurement_resolves_default_config() -> None:
         del self, schedule
         called["config"] = config
         return MeasurementResult(
-            mode=config.mode, data={"Q00": [np.array([0.0 + 0.0j])]}
+            data={"Q00": [np.array([0.0 + 0.0j])]},
+            measurement_config=config,
         )
 
     execution_service.create_measurement_config = MethodType(  # type: ignore[method-assign]
@@ -710,7 +722,10 @@ def test_run_sweep_measurement_stops_immediately_on_error() -> None:
         called["count"] += 1
         if called["count"] == 2:
             raise RuntimeError("boom")
-        return MeasurementResult(mode="avg", data={"Q00": [np.array([0.0 + 0.0j])]})
+        return MeasurementResult(
+            data={"Q00": [np.array([0.0 + 0.0j])]},
+            measurement_config=_make_config(mode="avg"),
+        )
 
     execution_service.run_measurement = MethodType(
         fake_run_measurement, execution_service
@@ -828,9 +843,8 @@ def test_run_ndsweep_measurement_runs_cartesian_order_and_helpers() -> None:
         del self
         step = int(schedule.pulse_schedule.labels[0][-1])
         return MeasurementResult(
-            mode=config.mode,
             data={"Q00": [np.array([step + 1.0 + 0.0j])]},
-            measurement_config=config.to_dict(),
+            measurement_config=config,
         )
 
     execution_service.run_measurement = MethodType(
@@ -861,7 +875,7 @@ def test_run_ndsweep_measurement_runs_cartesian_order_and_helpers() -> None:
     assert result.get(5) is result.results[5]
     assert result.get_sweep_point((1, 0)) == {"amp": 0.2, "step": 0}
     assert result.get_sweep_point(4) == {"amp": 0.2, "step": 1}
-    assert all(item.measurement_config is None for item in result.results)
+    assert all(item.measurement_config == config for item in result.results)
 
 
 def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
@@ -890,7 +904,10 @@ def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
         config: MeasurementConfig,
     ) -> MeasurementResult:
         del self, schedule, config
-        return MeasurementResult(mode="avg", data={"Q00": [np.array([0.0 + 0.0j])]})
+        return MeasurementResult(
+            data={"Q00": [np.array([0.0 + 0.0j])]},
+            measurement_config=_make_config(mode="avg"),
+        )
 
     execution_service.run_measurement = MethodType(
         fake_run_measurement, execution_service

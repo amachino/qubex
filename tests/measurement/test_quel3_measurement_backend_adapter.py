@@ -27,6 +27,7 @@ from qubex.measurement.models import (
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.pulse import Arbitrary, PulseArray
 from qubex.system import TargetRegistry
+from qubex.typing import MeasurementMode
 
 
 @dataclass
@@ -74,10 +75,14 @@ def _make_backend_controller() -> Quel3BackendController:
     return Quel3BackendController()
 
 
-def _make_config() -> MeasurementConfig:
+def _make_config(
+    *,
+    mode: MeasurementMode = "avg",
+    shots: int = 16,
+) -> MeasurementConfig:
     return MeasurementConfig(
-        mode="avg",
-        shots=16,
+        mode=mode,
+        shots=shots,
         interval=100.0,
         enable_dsp_demodulation=True,
         enable_dsp_sum=False,
@@ -459,10 +464,9 @@ def test_quel3_adapter_requires_explicit_alias_mapping_for_execution_payload() -
 def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> None:
     """Given canonical result input, when adapter builds result, then it raises TypeError."""
     unexpected = MeasurementResult(
-        mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j], dtype=np.complex128)]},
+        measurement_config=_make_config(mode="avg"),
         device_config={"kind": "quel3"},
-        measurement_config={"mode": "avg"},
     )
     adapter = Quel3MeasurementBackendAdapter(
         backend_controller=_make_backend_controller(),
@@ -525,9 +529,9 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     )
 
     assert isinstance(result, MeasurementResult)
-    assert result.mode == "avg"
+    assert result.measurement_config.mode == "avg"
     assert result.device_config == {}
-    assert result.measurement_config == config.to_dict()
+    assert result.measurement_config == config
     assert result.sampling_period_ns == pytest.approx(0.4)
     assert np.array_equal(
         result.data["Q00"][0],
