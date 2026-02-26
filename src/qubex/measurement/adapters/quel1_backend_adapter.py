@@ -354,11 +354,26 @@ class Quel1MeasurementBackendAdapter:
             raise ValueError(
                 "word_length_samples is required for backend execution request."
             )
+        capture_is_entire_schedule: dict[str, bool] = {}
         for target in capture_targets:
-            capture_delay_sample[target] = self._resolve_capture_delay_samples(
-                target=target,
-                word_length=word_length,
+            captures = sorted(
+                capture_schedule.channels.get(target, []),
+                key=lambda c: c.start_time,
             )
+            is_entire_schedule = self._is_entire_schedule_capture(
+                captures=captures,
+                schedule_duration=pulse_schedule.duration,
+            )
+            capture_is_entire_schedule[target] = is_entire_schedule
+            if is_entire_schedule:
+                # Full-span capture windows are already defined in absolute
+                # schedule coordinates, so capture-delay offsets are not applied.
+                capture_delay_sample[target] = 0
+            else:
+                capture_delay_sample[target] = self._resolve_capture_delay_samples(
+                    target=target,
+                    word_length=word_length,
+                )
 
         sampled_sequences = pulse_schedule.get_sampled_sequences()
         for target, ranges in readout_ranges.items():
@@ -417,7 +432,11 @@ class Quel1MeasurementBackendAdapter:
             cap_sequences[target] = self._create_cap_sampled_sequence(
                 target_name=target,
                 modulation_frequency=self._resolve_modulation_frequency(target=target),
-                capture_delay=capture_delay_sample.get(target, 0),
+                capture_delay=(
+                    0
+                    if capture_is_entire_schedule.get(target, False)
+                    else capture_delay_sample.get(target, 0)
+                ),
                 capture_slots=capture_slots,
             )
 

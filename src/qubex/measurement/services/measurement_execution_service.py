@@ -393,6 +393,51 @@ class MeasurementExecutionService:
 
         return list(dict.fromkeys([*read_capture_targets, *monitor_capture_targets]))
 
+    def _resolve_loopback_box_ids(
+        self,
+        *,
+        schedule: PulseSchedule,
+        capture_targets: Sequence[str],
+    ) -> list[str]:
+        """Resolve box IDs involved in loopback capture execution."""
+        box_ids: list[str] = []
+
+        for label in schedule.labels:
+            target = self.targets.get(label)
+            if target is None:
+                continue
+            box_ids.append(str(target.channel.port.box_id))
+
+        for target in capture_targets:
+            port = self._resolve_loopback_capture_port(target_or_port_id=target)
+            if port is None:
+                continue
+            box_ids.append(str(port.box_id))
+
+        if not box_ids:
+            box_ids.extend(self.context.box_ids)
+
+        return list(dict.fromkeys(box_ids))
+
+    def _initialize_loopback_capture_units(
+        self,
+        *,
+        box_ids: Sequence[str],
+    ) -> None:
+        """Initialize AWG/CAP units for loopback capture when supported."""
+        initialize_awg_and_capunits = getattr(
+            self.backend_controller,
+            "initialize_awg_and_capunits",
+            None,
+        )
+        if not callable(initialize_awg_and_capunits):
+            return
+
+        resolved_box_ids = list(dict.fromkeys(box_ids))
+        if not resolved_box_ids:
+            return
+        initialize_awg_and_capunits(resolved_box_ids)
+
     def _resolve_loopback_capture_port(
         self,
         *,
@@ -1105,6 +1150,10 @@ class MeasurementExecutionService:
             schedule = PulseSchedule.from_waveforms(schedule)
 
         capture_targets = self._resolve_loopback_capture_targets(schedule=schedule)
+        loopback_box_ids = self._resolve_loopback_box_ids(
+            schedule=schedule,
+            capture_targets=capture_targets,
+        )
         measurement_schedule = self.build_measurement_schedule(
             pulse_schedule=schedule,
             capture_placement="entire_schedule",
@@ -1119,6 +1168,7 @@ class MeasurementExecutionService:
             time_integration=False,
             state_classification=False,
         )
+        self._initialize_loopback_capture_units(box_ids=loopback_box_ids)
         with self._temporary_loopback_rfswitches(capture_targets=capture_targets):
             result = _run_async(
                 lambda: self.run_measurement(

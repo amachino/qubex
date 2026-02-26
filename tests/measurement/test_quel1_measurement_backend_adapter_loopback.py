@@ -268,3 +268,107 @@ def test_create_sampled_sequences_accepts_monitor_capture_targets() -> None:
 
     assert set(gen_sequences.keys()) == {"Q00"}
     assert set(cap_sequences.keys()) == {"Q00", "B0.MNTR0.IN"}
+
+
+def test_create_sampled_sequences_uses_zero_delay_for_entire_schedule() -> None:
+    """Given full-span captures, when building sampled sequences, then capture delay is zero."""
+    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+
+    class _ExperimentSystemStub:
+        control_params = SimpleNamespace(capture_delay_word={0: 1})
+
+        @staticmethod
+        def resolve_qubit_label(label: str) -> str:
+            if label == "Q00":
+                return "Q00"
+            raise ValueError(label)
+
+        @staticmethod
+        def get_mux_by_qubit(qubit: str) -> SimpleNamespace:
+            assert qubit == "Q00"
+            return SimpleNamespace(index=0)
+
+        @staticmethod
+        def get_diff_frequency(target: str) -> float:
+            _ = target
+            return 0.0
+
+        @staticmethod
+        def get_target(target: str) -> SimpleNamespace:
+            if target == "Q00":
+                return SimpleNamespace(sideband="U")
+            raise KeyError(target)
+
+        @staticmethod
+        def get_awg_frequency(target: str) -> float:
+            if target == "Q00":
+                return 100e6
+            raise KeyError(target)
+
+        control_system = SimpleNamespace(
+            get_port_by_id=lambda _label: SimpleNamespace(
+                channels=(SimpleNamespace(ndelay=2),)
+            )
+        )
+
+    adapter = cast(
+        Any,
+        Quel1MeasurementBackendAdapter(
+            backend_controller=cast(Any, object()),
+            experiment_system=cast(Any, _ExperimentSystemStub()),
+            constraint_profile=profile,
+        ),
+    )
+
+    def _gen(
+        self: Quel1MeasurementBackendAdapter,
+        *,
+        target_name: str,
+        real: Any,
+        imag: Any,
+        modulation_frequency: float,
+    ) -> dict[str, object]:
+        _ = (self, target_name, real, imag, modulation_frequency)
+        return {}
+
+    def _cap(
+        self: Quel1MeasurementBackendAdapter,
+        *,
+        target_name: str,
+        modulation_frequency: float,
+        capture_delay: int,
+        capture_slots: list[tuple[int, int]],
+    ) -> dict[str, object]:
+        _ = (self, target_name, modulation_frequency, capture_slots)
+        return {"capture_delay": capture_delay}
+
+    adapter._create_gen_sampled_sequence = MethodType(_gen, adapter)  # noqa: SLF001
+    adapter._create_cap_sampled_sequence = MethodType(_cap, adapter)  # noqa: SLF001
+
+    with PulseSchedule(["Q00"]) as pulse_schedule:
+        pulse_schedule.add("Q00", Blank(128))
+
+    capture_start = profile.extra_capture_duration_ns
+    measurement_schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=["Q00"],
+                    start_time=0.0,
+                    duration=profile.workaround_capture_duration_ns,
+                ),
+                Capture(
+                    channels=["Q00"],
+                    start_time=capture_start,
+                    duration=pulse_schedule.duration - capture_start,
+                ),
+            ]
+        ),
+    )
+
+    _, cap_sequences = adapter._create_sampled_sequences(  # noqa: SLF001
+        schedule=measurement_schedule
+    )
+
+    assert cap_sequences["Q00"]["capture_delay"] == 0
