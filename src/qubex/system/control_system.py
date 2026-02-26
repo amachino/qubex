@@ -999,7 +999,7 @@ class ControlSystem:
         elif isinstance(port, CapPort):
             if rfswitch is not None:
                 port.rfswitch = rfswitch  # type: ignore
-            if lo_freq is not None:
+            if not isinstance(lo_freq, self.NotGivenType):
                 port.lo_freq = lo_freq  # type: ignore
             if cnco_freq is not None:
                 port.cnco_freq = cnco_freq

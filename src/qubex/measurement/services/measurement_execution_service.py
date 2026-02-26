@@ -393,6 +393,27 @@ class MeasurementExecutionService:
 
         return list(dict.fromkeys([*read_capture_targets, *monitor_capture_targets]))
 
+    def _filter_loopback_capture_targets(
+        self,
+        *,
+        capture_targets: Sequence[str],
+        port_type: PortType,
+    ) -> list[str]:
+        """Filter loopback capture targets by resolved port type."""
+        filtered: list[str] = []
+        for target in capture_targets:
+            port = self._resolve_loopback_capture_port(target_or_port_id=target)
+            if port is None:
+                continue
+            if port.type == port_type:
+                filtered.append(target)
+        return list(dict.fromkeys(filtered))
+
+    @staticmethod
+    def _is_e7awg_capture_data_error(exc: Exception) -> bool:
+        """Return whether an exception indicates broken captured data."""
+        return type(exc).__name__ == "E7awgCaptureDataError"
+
     def _resolve_loopback_box_ids(
         self,
         *,
@@ -1149,35 +1170,63 @@ class MeasurementExecutionService:
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
 
-        capture_targets = self._resolve_loopback_capture_targets(schedule=schedule)
-        loopback_box_ids = self._resolve_loopback_box_ids(
-            schedule=schedule,
-            capture_targets=capture_targets,
-        )
-        measurement_schedule = self.build_measurement_schedule(
-            pulse_schedule=schedule,
-            capture_placement="entire_schedule",
-            capture_targets=capture_targets,
-            final_measurement=False,
-            readout_amplification=False,
-            plot=False,
-        )
+        base_schedule = schedule.copy()
+        capture_targets = self._resolve_loopback_capture_targets(schedule=base_schedule)
         measurement_config = self.measurement_config_factory.create(
             n_shots=n_shots,
             shot_averaging=True,
             time_integration=False,
             state_classification=False,
         )
-        self._initialize_loopback_capture_units(box_ids=loopback_box_ids)
-        with self._temporary_loopback_rfswitches(capture_targets=capture_targets):
-            result = _run_async(
-                lambda: self.run_measurement(
-                    schedule=measurement_schedule,
-                    config=measurement_config,
-                )
-            )
 
-        return result
+        def _run_once(targets: Sequence[str]) -> MeasurementResult:
+            measurement_schedule = self.build_measurement_schedule(
+                pulse_schedule=base_schedule.copy(),
+                capture_placement="entire_schedule",
+                capture_targets=list(targets),
+                final_measurement=False,
+                readout_amplification=False,
+                plot=False,
+            )
+            loopback_box_ids = self._resolve_loopback_box_ids(
+                schedule=base_schedule,
+                capture_targets=targets,
+            )
+            self._initialize_loopback_capture_units(box_ids=loopback_box_ids)
+            with self._temporary_loopback_rfswitches(capture_targets=targets):
+                return _run_async(
+                    lambda: self.run_measurement(
+                        schedule=measurement_schedule,
+                        config=measurement_config,
+                    )
+                )
+
+        try:
+            return _run_once(capture_targets)
+        except Exception as exc:
+            if not self._is_e7awg_capture_data_error(exc):
+                raise
+            logger.warning(
+                "Loopback capture failed with broken-data error; retrying once after capture-unit initialization."
+            )
+            try:
+                return _run_once(capture_targets)
+            except Exception as retry_exc:
+                if not self._is_e7awg_capture_data_error(retry_exc):
+                    raise
+                read_in_only_targets = self._filter_loopback_capture_targets(
+                    capture_targets=capture_targets,
+                    port_type=PortType.READ_IN,
+                )
+                if (
+                    not read_in_only_targets
+                    or read_in_only_targets == list(capture_targets)
+                ):
+                    raise
+                logger.warning(
+                    "Loopback capture still failed; retrying with READ_IN targets only."
+                )
+                return _run_once(read_in_only_targets)
 
     def create_measurement_config(
         self,
