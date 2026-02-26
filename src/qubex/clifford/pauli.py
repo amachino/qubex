@@ -40,9 +40,11 @@ class Pauli:
     Attributes
     ----------
     coefficient : complex
-        The coefficient of the Pauli operator. Must be one of ±1, ±i.
+        Coefficient of the Pauli operator. Must be one of ±1, ±i.
+
     operator : str
-        The type of the Pauli operator. Must be one of the single- or two-qubit combinations from 'I', 'X', 'Y', 'Z'.
+        Type of the Pauli operator. Must be one of the single- or two-qubit combinations from 'I', 'X', 'Y', 'Z'.
+
         Valid operators include 'I', 'X', 'Y', 'Z' for single qubit and combinations like 'IX', 'XY', 'ZZ' for two qubits.
     """
 

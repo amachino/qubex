@@ -29,15 +29,19 @@ class ExperimentRecord(Generic[T]):
     Attributes
     ----------
     data : T
-        The data to be saved in the record.
+        Data to be saved in the record.
+
     name : str
-        The name of the experiment.
+        Name of the experiment.
+
     description : str, optional
         A description of the experiment.
     created_at : str
-        The date and time when the record was created.
+        Date and time when the record was created.
+
     file_name : str
-        The path to the file where the record is saved.
+        Path to the file where the record is saved.
+
 
     Methods
     -------
@@ -66,7 +70,7 @@ class ExperimentRecord(Generic[T]):
 
         Notes
         -----
-        The method creates a unique filename for the record based on the
+        This method creates a unique filename for the record based on the
         current date and the experiment's name to avoid overwriting.
         """
         if data_path is None:
@@ -117,7 +121,8 @@ class ExperimentRecord(Generic[T]):
         Returns
         -------
         ExperimentRecord
-            The newly created and saved ExperimentRecord instance.
+            Newly created and saved ExperimentRecord instance.
+
         """
         if description is None:
             description = ""
@@ -140,7 +145,8 @@ class ExperimentRecord(Generic[T]):
         Returns
         -------
         ExperimentRecord
-            The loaded ExperimentRecord instance.
+            Loaded ExperimentRecord instance.
+
 
         Raises
         ------

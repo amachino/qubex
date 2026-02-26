@@ -382,7 +382,7 @@ class SystemManager:
         """
         Pull selected hardware boxes into software-managed state.
 
-        The method fetches raw backend settings from hardware for `box_ids`,
+        This method fetches raw backend settings from hardware for `box_ids`,
         merges them into cached settings, then applies the same subset to:
 
         - backend controller cache

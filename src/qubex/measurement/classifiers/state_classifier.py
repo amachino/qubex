@@ -30,7 +30,8 @@ class StateClassifier(ABC):
         Parameters
         ----------
         path : Path | str
-            The path to save the model.
+            Path to save the model.
+
         """
         with open(path, "wb") as file:
             pickle.dump(self, file, protocol=pickle.HIGHEST_PROTOCOL)
@@ -43,7 +44,8 @@ class StateClassifier(ABC):
         Parameters
         ----------
         path : Path | str
-            The path to load the model.
+            Path to load the model.
+
 
         Returns
         -------
@@ -106,11 +108,13 @@ class StateClassifier(ABC):
         data : dict[int, NDArray]
             A dictionary of state labels and complex data.
         phase : float, optional
-            The phase offset to apply to the data, by default 0.0.
+            Phase offset to apply to the data, by default 0.0.
+
         n_init : int, optional
             Number of time the k-means algorithm will be run with different center seeds, by default 10.
         random_state : int, optional
-            The random state for the model, by default 42.
+            Random state for the model, by default 42.
+
 
         Returns
         -------
@@ -200,7 +204,8 @@ class StateClassifier(ABC):
         labels : NDArray
             An array of predicted state labels.
         n_samples : int, optional
-            The number of samples to plot, by default 1000.
+            Number of samples to plot, by default 1000.
+
         """
         raise NotImplementedError
 
@@ -216,13 +221,16 @@ class StateClassifier(ABC):
         Parameters
         ----------
         data : NDArray
-            The mixed gaussian data to estimate the weights.
+            Mixed gaussian data to estimate the weights.
+
         max_iter : int, optional
-            The maximum number of iterations, by default 100.
+            Maximum number of iterations, by default 100.
+
 
         Returns
         -------
         NDArray
-            The estimated weights of the mixed gaussian data.
+            Estimated weights of the mixed gaussian data.
+
         """
         raise NotImplementedError

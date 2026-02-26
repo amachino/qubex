@@ -95,7 +95,8 @@ class ConfigLoader:
     Parameters
     ----------
     chip_id : str
-        The quantum chip identifier (e.g., "64Q"). All configuration is loaded
+        Quantum chip identifier (e.g., "64Q"). All configuration is loaded
+
         for this specific chip.
     config_dir : Path | str | None, optional
         Directory containing configuration files (`chip.yaml`, `box.yaml`,
@@ -409,11 +410,12 @@ class ConfigLoader:
         Returns
         -------
         ExperimentSystem
-            The ExperimentSystem for this loader's chip.
+            ExperimentSystem for this loader's chip.
+
 
         Notes
         -----
-        The `chip_id` parameter is kept for backward compatibility and will be
+        `chip_id` is kept for backward compatibility and will be
         removed in a future minor release.
 
         Examples
@@ -538,7 +540,7 @@ class ConfigLoader:
 
         Notes
         -----
-        The on-disk format is preserved ("meta"/"data" keys). Downstream consumers
+        On-disk format is preserved ("meta"/"data" keys). Downstream consumers
         should typically use the returned["data"]. The "meta" is returned for
         tooling/annotation but not merged into data.
         """

@@ -848,16 +848,20 @@ class ExperimentSystem:
         Parameters
         ----------
         mux : Mux
-            The readout mux.
+            Readout mux.
+
         ssb : Literal["U", "L"], optional
-            The sideband, by default "U".
+            Sideband, by default "U".
+
         cnco_center : int, optional
-            The center frequency of the CNCO, by default CNCO_CETNER_READ.
+            Center frequency of the CNCO, by default CNCO_CETNER_READ.
+
 
         Returns
         -------
         dict[str, int]
-            The dictionary containing the lo, cnco, and fnco values.
+            Dictionary containing the lo, cnco, and fnco values.
+
         """
         resonators = [
             resonator
@@ -899,20 +903,26 @@ class ExperimentSystem:
         Parameters
         ----------
         mode : ConfigurationMode
-            The mode to configure the control qubit.
+            Mode to configure the control qubit.
+
         qubit : Qubit
-            The control qubit.
+            Control qubit.
+
         n_channels : int
-            The number of channels.
+            Number of channels.
+
         ssb : Literal["U", "L"], optional
-            The sideband, by default "L".
+            Sideband, by default "L".
+
         cnco_center : int, optional
-            The center frequency of the CNCO, by default CNCO_CENTER_CTRL.
+            Center frequency of the CNCO, by default CNCO_CENTER_CTRL.
+
 
         Returns
         -------
         dict[str, int]
-            The dictionary containing the lo, cnco, and fnco values.
+            Dictionary containing the lo, cnco, and fnco values.
+
         """
         if n_channels == 1:
             f_target = qubit.frequency * 1e9

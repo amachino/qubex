@@ -83,7 +83,8 @@ class RabiParam:
         Parameters
         ----------
         new_reference_phase : float
-            The new reference phase in radians.
+            New reference phase in radians.
+
         """
         if self.reference_phase is None:
             self.reference_phase = new_reference_phase

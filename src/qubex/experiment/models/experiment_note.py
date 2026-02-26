@@ -44,7 +44,8 @@ class ExperimentNote:
         Returns
         -------
         Path
-            The file path of the ExperimentNote.
+            File path of the ExperimentNote.
+
         """
         return self._file_path
 
@@ -57,9 +58,11 @@ class ExperimentNote:
         Parameters
         ----------
         key : str
-            The key to put.
+            Key to put.
+
         value : Any
-            The value to put.
+            Value to put.
+
 
         Raises
         ------
@@ -91,12 +94,14 @@ class ExperimentNote:
         Parameters
         ----------
         key : str
-            The key to get.
+            Key to get.
+
 
         Returns
         -------
         Any
-            The value associated with the key, or None if the key is not found.
+            Value associated with the key, or None if the key is not found.
+
         """
         if key not in self._dict:
             return None
@@ -109,7 +114,8 @@ class ExperimentNote:
         Parameters
         ----------
         key : str
-            The key to remove.
+            Key to remove.
+
         """
         removed_value = self._dict.pop(key, None)
         if removed_value is not None:
@@ -129,7 +135,8 @@ class ExperimentNote:
         Parameters
         ----------
         file_path : Path or str, optional
-            The path to save the JSON file. Defaults to the path specified in the constructor.
+            Path to save the JSON file. Defaults to the path specified in the constructor.
+
         """
         try:
             target_path = file_path or self._file_path
@@ -167,7 +174,8 @@ class ExperimentNote:
         Parameters
         ----------
         file_path : Path or str, optional
-            The path to load the JSON file. Defaults to the path specified in the constructor.
+            Path to load the JSON file. Defaults to the path specified in the constructor.
+
         """
         file_path = file_path or self._file_path
         file_path = Path(file_path)
@@ -192,7 +200,8 @@ class ExperimentNote:
         Parameters
         ----------
         file_path : Path or str, optional
-            The path to delete the JSON file. Defaults to the path specified in the constructor.
+            Path to delete the JSON file. Defaults to the path specified in the constructor.
+
         """
         self.clear()
 
@@ -212,7 +221,8 @@ class ExperimentNote:
         Returns
         -------
         str
-            The JSON representation of the ExperimentNote.
+            JSON representation of the ExperimentNote.
+
         """
         # Use sanitized JSON to avoid returning NaN/Infinity in string form
         return json.dumps(self._sanitize_for_json(self._dict))
@@ -224,7 +234,8 @@ class ExperimentNote:
         Returns
         -------
         str
-            The JSON representation of the ExperimentNote.
+            JSON representation of the ExperimentNote.
+
         """
         # Use sanitized JSON to avoid returning NaN/Infinity in string form
         return json.dumps(self._sanitize_for_json(self._dict), indent=4)
@@ -236,7 +247,8 @@ class ExperimentNote:
         Parameters
         ----------
         value : Any
-            The value to check.
+            Value to check.
+
 
         Returns
         -------
@@ -257,9 +269,11 @@ class ExperimentNote:
         Parameters
         ----------
         old_dict : dict
-            The dictionary to update.
+            Dictionary to update.
+
         new_dict : dict
-            The dictionary with updated values.
+            Dictionary with updated values.
+
         """
         for key, value in new_dict.items():
             if (
@@ -295,7 +309,8 @@ class ExperimentNote:
         """
         Recursively replace non-finite float values with None.
 
-        The resulting structure conforms to RFC 8259 (no NaN/Infinity values).
+        Resulting structure conforms to RFC 8259 (no NaN/Infinity values).
+
 
         Returns a sanitized copy of the object (dicts/lists are recreated).
         """
@@ -328,14 +343,17 @@ class ExperimentNote:
         Parameters
         ----------
         d : dict
-            The dictionary to sort.
+            Dictionary to sort.
+
         depth : int, optional
-            The depth to sort to.
+            Depth to sort to.
+
 
         Returns
         -------
         dict
-            The sorted dictionary.
+            Sorted dictionary.
+
         """
         if isinstance(d, dict):
             if depth is not None and current_depth >= depth:

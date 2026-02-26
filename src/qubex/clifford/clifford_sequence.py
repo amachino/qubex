@@ -12,9 +12,11 @@ class CliffordSequence:
     Attributes
     ----------
     sequence : list[Clifford]
-        The sequence of Clifford operators.
+        Sequence of Clifford operators.
+
     clifford : Clifford
-        The cumulative Clifford operator of the sequence.
+        Cumulative Clifford operator of the sequence.
+
     """
 
     def __init__(
@@ -66,12 +68,14 @@ class CliffordSequence:
         Parameters
         ----------
         clifford : Clifford
-            The Clifford operator to count.
+            Clifford operator to count.
+
 
         Returns
         -------
         int
-            The number of occurrences of the input Clifford operator in the sequence.
+            Number of occurrences of the input Clifford operator in the sequence.
+
         """
         return self.sequence.count(clifford)
 
@@ -85,12 +89,14 @@ class CliffordSequence:
         Parameters
         ----------
         other : Clifford | CliffordSequence
-            The Clifford transformation to compose with the current sequence.
+            Clifford transformation to compose with the current sequence.
+
 
         Returns
         -------
         CliffordSequence
-            The resulting Clifford sequence after composing the input transformation.
+            Resulting Clifford sequence after composing the input transformation.
+
         """
         if isinstance(other, CliffordSequence):
             composed_sequence = self.sequence + other.sequence

@@ -241,7 +241,8 @@ class Quel1BackendController(BackendController):
         Returns
         -------
         Quel1Box
-            The linked up box object.
+            Linked up box object.
+
 
         Raises
         ------
@@ -719,7 +720,8 @@ class Quel1BackendController(BackendController):
         Parameters
         ----------
         sequencer : Sequencer
-            The sequencer to add to the queue.
+            Sequencer to add to the queue.
+
         """
         self._configuration_manager.add_sequencer(sequencer=sequencer)
 

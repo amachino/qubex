@@ -22,12 +22,14 @@ def _get_editable_source_dir(package_name: str) -> Path | None:
     Parameters
     ----------
     package_name : str
-        The name of the package to check.
+        Name of the package to check.
+
 
     Returns
     -------
     Path | None
-        The editable source directory when installed in editable mode.
+        Editable source directory when installed in editable mode.
+
     """
     try:
         dist = importlib.metadata.distribution(package_name)
@@ -100,7 +102,8 @@ def get_version(package_name: str | None = None) -> str:
     Parameters
     ----------
     package_name : str | None
-        The package name. If None, defaults to `qubex`.
+        Package name. If None, defaults to `qubex`.
+
 
     Returns
     -------

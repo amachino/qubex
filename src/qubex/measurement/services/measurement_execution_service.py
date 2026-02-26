@@ -294,12 +294,14 @@ class MeasurementExecutionService:
         Parameters
         ----------
         target : str
-            The target label.
+            Target label.
+
 
         Returns
         -------
         float
-            The AWG frequency in Hz.
+            AWG frequency in Hz.
+
         """
         return self.experiment_system.get_awg_frequency(target)
 
@@ -310,12 +312,14 @@ class MeasurementExecutionService:
         Parameters
         ----------
         target : str
-            The target label.
+            Target label.
+
 
         Returns
         -------
         float
-            The difference frequency in Hz.
+            Difference frequency in Hz.
+
         """
         return self.experiment_system.get_diff_frequency(target)
 
@@ -332,14 +336,17 @@ class MeasurementExecutionService:
         Parameters
         ----------
         schedule : MeasurementSchedule
-            The measurement schedule.
+            Measurement schedule.
+
         config : MeasurementConfig
-            The measurement configuration.
+            Measurement configuration.
+
 
         Returns
         -------
         MeasurementResult
-            The measurement result.
+            Measurement result.
+
         """
         if quel1_options is None:
             result = await self.measurement_schedule_runner.execute(
@@ -481,7 +488,8 @@ class MeasurementExecutionService:
         Returns
         -------
         MeasureResult
-            The measurement results.
+            Measurement results.
+
         """
         return self.measure(
             waveforms={target: np.zeros(0) for target in targets},
@@ -520,7 +528,8 @@ class MeasurementExecutionService:
         Parameters
         ----------
         waveforms : Mapping[str, IQArray]
-            The control waveforms for each target.
+            Control waveforms for each target.
+
         n_shots : int | None, optional
             Number of shots.
         shot_interval_ns : float | None, optional
@@ -528,19 +537,26 @@ class MeasurementExecutionService:
         shot_averaging : bool | None, optional
             Whether to average shots on hardware.
         readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit.
+            Readout amplitude for each qubit.
+
         readout_duration : float, optional
-            The readout duration in ns.
+            Readout duration in ns.
+
         readout_pre_margin : float, optional
-            The readout pre-margin in ns.
+            Readout pre-margin in ns.
+
         readout_post_margin : float, optional
-            The readout post-margin in ns.
+            Readout post-margin in ns.
+
         readout_ramp_time : float, optional
-            The readout ramp time in ns.
+            Readout ramp time in ns.
+
         readout_drag_coeff : float, optional
-            The readout drag coefficient.
+            Readout drag coefficient.
+
         readout_ramp_type : RampType, optional
-            The readout ramp type.
+            Readout ramp type.
+
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
         time_integration : bool | None, optional
@@ -555,7 +571,8 @@ class MeasurementExecutionService:
         Returns
         -------
         MeasureResult
-            The measurement results.
+            Measurement results.
+
         """
         result = self.execute(
             schedule=waveforms,
@@ -615,7 +632,8 @@ class MeasurementExecutionService:
         Parameters
         ----------
         schedule : PulseSchedule | TargetMap[IQArray]
-            The pulse schedule or control waveforms.
+            Pulse schedule or control waveforms.
+
         n_shots : int | None, optional
             Number of shots.
         shot_interval_ns : float | None, optional
@@ -623,19 +641,26 @@ class MeasurementExecutionService:
         shot_averaging : bool | None, optional
             Whether to average shots on hardware.
         readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit.
+            Readout amplitude for each qubit.
+
         readout_duration : float, optional
-            The readout duration in ns.
+            Readout duration in ns.
+
         readout_pre_margin : float, optional
-            The readout pre-margin in ns.
+            Readout pre-margin in ns.
+
         readout_post_margin : float, optional
-            The readout post-margin in ns.
+            Readout post-margin in ns.
+
         readout_ramp_time : float, optional
-            The readout ramp time in ns.
+            Readout ramp time in ns.
+
         readout_drag_coeff : float, optional
-            The readout drag coefficient.
+            Readout drag coefficient.
+
         readout_ramp_type : RampType, optional
-            The readout ramp type.
+            Readout ramp type.
+
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
@@ -654,7 +679,8 @@ class MeasurementExecutionService:
         Returns
         -------
         MultipleMeasureResult
-            The measurement results.
+            Measurement results.
+
         """
         legacy_options: dict[str, Any] = dict(deprecated_options)
         legacy_keys = {
@@ -859,7 +885,8 @@ class MeasurementExecutionService:
         Returns
         -------
         MeasurementConfig
-            The created measurement configuration.
+            Created measurement configuration.
+
         """
         return self.measurement_config_factory.create(
             n_shots=n_shots,

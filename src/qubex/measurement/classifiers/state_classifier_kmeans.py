@@ -27,13 +27,16 @@ class StateClassifierKMeans(StateClassifier):
     dataset : dict[int, NDArray]
         A dictionary of state labels and preprocessed data.
     model : KMeans
-        The fitted k-means model.
+        Fitted k-means model.
+
     label_map : dict[int, int]
         A mapping from k-means cluster labels to state labels.
     confusion_matrix : NDArray
-        The confusion matrix of the classifier.
+        Confusion matrix of the classifier.
+
     centers : dict[int, complex]
-        The center of each state.
+        Center of each state.
+
     """
 
     dataset: dict[int, NDArray]
@@ -95,11 +98,13 @@ class StateClassifierKMeans(StateClassifier):
         data : dict[int, NDArray[np.complexfloating[Any, Any]]]
             A dictionary of state labels and complex data.
         phase : float, optional
-            The phase to apply to the data, by default 0.0.
+            Phase to apply to the data, by default 0.0.
+
         n_init : int, optional
             Number of time the k-means algorithm will be run with different center seeds, by default 10.
         random_state : int, optional
-            The random state for the model, by default 42.
+            Random state for the model, by default 42.
+
 
         Returns
         -------
@@ -161,9 +166,11 @@ class StateClassifierKMeans(StateClassifier):
         Parameters
         ----------
         model : KMeans
-            The fitted k-means model.
+            Fitted k-means model.
+
         dataset : dict[int, NDArray]
-            The preprocessed dataset.
+            Preprocessed dataset.
+
 
         Returns
         -------
@@ -193,9 +200,11 @@ class StateClassifierKMeans(StateClassifier):
         Parameters
         ----------
         model : KMeans
-            The fitted k-means model.
+            Fitted k-means model.
+
         dataset : dict[int, NDArray]
-            The preprocessed dataset.
+            Preprocessed dataset.
+
         label_map : dict[int, int]
             A mapping from k-means cluster labels to state labels.
 
@@ -308,7 +317,8 @@ class StateClassifierKMeans(StateClassifier):
         labels : NDArray
             An array of predicted state labels.
         n_samples : int, optional
-            The number of samples to plot, by default 1000.
+            Number of samples to plot, by default 1000.
+
         """
         if len(data) > n_samples:
             data = data[:n_samples]
@@ -395,13 +405,16 @@ class StateClassifierKMeans(StateClassifier):
         Parameters
         ----------
         data : NDArray
-            The mixed gaussian data to estimate the weights.
+            Mixed gaussian data to estimate the weights.
+
         max_iter : int, optional
-            The maximum number of iterations, by default 100.
+            Maximum number of iterations, by default 100.
+
 
         Returns
         -------
         NDArray
-            The estimated weights of the mixed gaussian data.
+            Estimated weights of the mixed gaussian data.
+
         """
         raise NotImplementedError

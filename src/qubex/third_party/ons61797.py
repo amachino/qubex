@@ -34,26 +34,34 @@ class ONS61797:
     Parameters
     ----------
     port : str, optional
-        The serial port to connect to the instrument, by default None.
+        Serial port to connect to the instrument, by default None.
+
     ip_address : str, optional
-        The IP address to connect to the instrument, by default None.
+        IP address to connect to the instrument, by default None.
+
 
     Attributes
     ----------
     instrument : serial.Serial or socket.socket
-        The instrument connection object.
+        Instrument connection object.
+
     port : str
-        The serial port used for communication.
+        Serial port used for communication.
+
     baudrate : int
-        The baudrate for serial communication, default is 115200.
+        Baudrate for serial communication, default is 115200.
+
     ip_address : str
-        The IP address for socket communication.
+        IP address for socket communication.
+
     line_feed_code : str
-        The line feed character used in communication.
+        Line feed character used in communication.
+
     time_out : float
         Timeout value for communication, default is 10.0 seconds.
     time_interval : float
-        The time interval between sending a command and reading a response, default is 0.1 seconds.
+        Time interval between sending a command and reading a response, default is 0.1 seconds.
+
     """
 
     def __init__(self, port: str | None = None, ip_address: str | None = None):
@@ -63,9 +71,11 @@ class ONS61797:
         Parameters
         ----------
         port : str, optional
-            The serial port to connect to the instrument, by default None.
+            Serial port to connect to the instrument, by default None.
+
         ip_address : str, optional
-            The IP address to connect to the instrument, by default None.
+            IP address to connect to the instrument, by default None.
+
         """
         self.instrument: socket.socket | serial.Serial | None = None
         self.port = port
@@ -88,9 +98,11 @@ class ONS61797:
         Parameters
         ----------
         port : str, optional
-            The serial port to connect to the instrument, by default None.
+            Serial port to connect to the instrument, by default None.
+
         ip_address : str, optional
-            The IP address to connect to the instrument, by default None.
+            IP address to connect to the instrument, by default None.
+
 
         Raises
         ------
@@ -131,7 +143,8 @@ class ONS61797:
         Parameters
         ----------
         cmd : str
-            The command to send to the instrument.
+            Command to send to the instrument.
+
         """
         cmd = f"{cmd}{self.line_feed_code}"
         if self.kind == "serial":
@@ -151,7 +164,8 @@ class ONS61797:
         Returns
         -------
         str
-            The response from the instrument.
+            Response from the instrument.
+
         """
         if self.kind == "serial":
             if isinstance(self.instrument, serial.Serial):
@@ -182,12 +196,14 @@ class ONS61797:
         Parameters
         ----------
         cmd : str
-            The command to send.
+            Command to send.
+
 
         Returns
         -------
         str
-            The response from the instrument.
+            Response from the instrument.
+
         """
         self.write(cmd)
         time.sleep(self.time_interval)
@@ -200,7 +216,8 @@ class ONS61797:
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
         """
         cmd = f"OUT {channel},1"
         self.write(cmd=cmd)
@@ -212,7 +229,8 @@ class ONS61797:
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
         """
         cmd = f"OUT {channel},0"
         self.write(cmd=cmd)
@@ -224,12 +242,14 @@ class ONS61797:
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
 
         Returns
         -------
         int
-            The state of the output channel (0: off, 1: on).
+            State of the output channel (0: off, 1: on).
+
         """
         cmd = f"OUT? {channel}"
         return int(self.query(cmd=cmd))
@@ -241,9 +261,11 @@ class ONS61797:
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
         voltage : float
-            The voltage to set.
+            Voltage to set.
+
         """
         cmd = f"VLT {channel},{voltage:.4f}"
         self.write(cmd=cmd)
@@ -255,12 +277,14 @@ class ONS61797:
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
 
         Returns
         -------
         float
-            The output voltage.
+            Output voltage.
+
         """
         cmd = f"VLT? {channel}"
         return float(self.query(cmd=cmd))
@@ -272,7 +296,8 @@ class ONS61797:
         Returns
         -------
         str
-            The device information string.
+            Device information string.
+
         """
         cmd = "*IDN?"
         return self.query(cmd=cmd)
@@ -289,7 +314,8 @@ class ONS61797:
         Parameters
         ----------
         ip_address : str
-            The new IP address.
+            New IP address.
+
         """
         cmd = f"IPA {ip_address}"
         self.write(cmd=cmd)
@@ -301,7 +327,8 @@ class ONS61797:
         Returns
         -------
         str
-            The IP address.
+            IP address.
+
         """
         cmd = "IPA?"
         return str(self.query(cmd=cmd))
@@ -313,7 +340,8 @@ class ONS61797:
         Parameters
         ----------
         subnet_mask : str
-            The new subnet mask.
+            New subnet mask.
+
         """
         cmd = f"SBM {subnet_mask}"
         self.write(cmd=cmd)
@@ -325,7 +353,8 @@ class ONS61797:
         Returns
         -------
         str
-            The subnet mask.
+            Subnet mask.
+
         """
         cmd = "SBM?"
         return str(self.query(cmd=cmd))
@@ -337,7 +366,8 @@ class ONS61797:
         Parameters
         ----------
         default_gateway : str
-            The new default gateway.
+            New default gateway.
+
         """
         cmd = f"DGW {default_gateway}"
         self.write(cmd=cmd)
@@ -349,7 +379,8 @@ class ONS61797:
         Returns
         -------
         str
-            The default gateway.
+            Default gateway.
+
         """
         cmd = "DGW?"
         return str(self.query(cmd=cmd))

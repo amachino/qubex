@@ -130,14 +130,17 @@ class MeasurementScheduleRunner:
         Parameters
         ----------
         schedule : MeasurementSchedule
-            The measurement schedule.
+            Measurement schedule.
+
         config : MeasurementConfig
-            The measurement configuration.
+            Measurement configuration.
+
 
         Returns
         -------
         MeasurementResult
-            The measurement result.
+            Measurement result.
+
         """
         self._measurement_backend_adapter.validate_schedule(schedule)
         if quel1_options is None:

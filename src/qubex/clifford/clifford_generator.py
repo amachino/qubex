@@ -140,7 +140,8 @@ class CliffordGenerator:
         Parameters
         ----------
         index : int
-            The index of the Clifford operator.
+            Index of the Clifford operator.
+
         type : Literal["1Q", "1Q1Q", "2Q"], optional
             Clifford operator type.
 
@@ -163,11 +164,13 @@ class CliffordGenerator:
         Parameters
         ----------
         n : int
-            The number of random Clifford operators to return.
+            Number of random Clifford operators to return.
+
         type : Literal["1Q", "1Q1Q", "2Q"], optional
             Clifford operator type.
         seed : int, optional
-            The seed for the random number generator.
+            Seed for the random number generator.
+
 
         Returns
         -------
@@ -189,14 +192,16 @@ class CliffordGenerator:
         Parameters
         ----------
         clifford_sequence : CliffordSequence
-            The Clifford operator.
+            Clifford operator.
+
         type : Literal["1Q", "1Q1Q", "2Q"], optional
             Clifford operator type.
 
         Returns
         -------
         CliffordSequence
-            The inverse of the Clifford operator.
+            Inverse of the Clifford operator.
+
         """
         clifford = clifford_sequence.clifford
         clifford_dict = self.get_cliffords(type)
@@ -217,11 +222,14 @@ class CliffordGenerator:
         Parameters
         ----------
         n : int
-            The number of random Clifford operators to return.
+            Number of random Clifford operators to return.
+
         type : Literal["1Q", "1Q1Q", "2Q"] = "1Q"
-            The type of Clifford operators to generate.
+            Type of Clifford operators to generate.
+
         seed : int, optional
-            The seed for the random number generator.
+            Seed for the random number generator.
+
 
         Returns
         -------
@@ -257,13 +265,17 @@ class CliffordGenerator:
         Parameters
         ----------
         n : int
-            The number of random Clifford operators to return.
+            Number of random Clifford operators to return.
+
         interleave : Clifford | dict[str, tuple[complex, str]]
-            The interleaved gate to apply after each Clifford operator.
+            Interleaved gate to apply after each Clifford operator.
+
         type : Literal["1Q", "1Q1Q", "2Q"] = "1Q"
-            The type of Clifford operators to generate.
+            Type of Clifford operators to generate.
+
         seed : int, optional
-            The seed for the random number generator.
+            Seed for the random number generator.
+
 
         Returns
         -------
@@ -306,7 +318,8 @@ class CliffordGenerator:
         Parameters
         ----------
         max_gates : int
-            The maximum number of gates in the Clifford sequences.
+            Maximum number of gates in the Clifford sequences.
+
 
         Returns
         -------
@@ -423,7 +436,8 @@ class CliffordGenerator:
         Parameters
         ----------
         two_qubit_gate : Clifford, optional
-            The two-qubit gate to use in the Clifford sequences.
+            Two-qubit gate to use in the Clifford sequences.
+
 
         Returns
         -------

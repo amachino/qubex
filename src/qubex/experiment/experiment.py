@@ -237,12 +237,14 @@ class Experiment:
         Parameters
         ----------
         task : ExperimentTask[T]
-            The experiment task to run.
+            Experiment task to run.
+
 
         Returns
         -------
         T
-            The experiment result.
+            Experiment result.
+
         """
         return task.execute(self)
 

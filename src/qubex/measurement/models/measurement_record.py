@@ -27,9 +27,11 @@ class MeasurementRecord(Generic[T]):
     Attributes
     ----------
     data : T
-        The data to be saved in the record.
+        Data to be saved in the record.
+
     created_at : str
-        The date and time when the record was created.
+        Date and time when the record was created.
+
     """
 
     data: T
@@ -84,7 +86,8 @@ class MeasurementRecord(Generic[T]):
         Returns
         -------
         MeasurementRecord
-            The newly created and saved MeasurementRecord instance.
+            Newly created and saved MeasurementRecord instance.
+
         """
         record = MeasurementRecord(data=data)
         record.save(data_dir=data_dir)
@@ -108,7 +111,8 @@ class MeasurementRecord(Generic[T]):
         Returns
         -------
         MeasurementRecord
-            The loaded MeasurementRecord instance.
+            Loaded MeasurementRecord instance.
+
 
         Raises
         ------

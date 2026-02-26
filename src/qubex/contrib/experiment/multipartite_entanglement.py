@@ -1895,14 +1895,17 @@ def partial_transpose(rho: NDArray, subsystem: int | None = None) -> NDArray:
     Parameters
     ----------
     rho : NDArray
-        The 2-qubit density matrix, reshaped as a 4x4 array.
+        2-qubit density matrix, reshaped as a 4x4 array.
+
     subsystem : int
-        The subsystem to transpose (0 for first qubit, 1 for second qubit).
+        Subsystem to transpose (0 for first qubit, 1 for second qubit).
+
 
     Returns
     -------
     NDArray
-        The partially transposed density matrix, reshaped as a 4x4 array.
+        Partially transposed density matrix, reshaped as a 4x4 array.
+
     """
     if subsystem is None:
         subsystem = 1
