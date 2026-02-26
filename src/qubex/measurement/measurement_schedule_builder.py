@@ -125,13 +125,22 @@ class MeasurementScheduleBuilder:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
-        capture_placement: CapturePlacement = "pulse_aligned",
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        capture_placement: CapturePlacement | None = None,
         capture_targets: list[str] | None = None,
-        plot: bool = False,
+        plot: bool | None = None,
     ) -> MeasurementSchedule:
         """Build an execution-ready measurement schedule from user inputs."""
+        if readout_amplification is None:
+            readout_amplification = False
+        if final_measurement is None:
+            final_measurement = False
+        if capture_placement is None:
+            capture_placement = "pulse_aligned"
+        if plot is None:
+            plot = False
+
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
 

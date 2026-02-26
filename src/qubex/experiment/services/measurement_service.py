@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections import defaultdict
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from itertools import product
 from pathlib import Path
 from typing import Literal
@@ -53,12 +53,19 @@ from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
 from qubex.measurement import (
     MeasurementResult,
+    MeasurementSchedule,
     MeasureResult,
     MultipleMeasureResult,
+    NDSweepMeasurementResult,
     StateClassifier,
     StateClassifierGMM,
     StateClassifierKMeans,
+    SweepAxes,
+    SweepMeasurementResult,
+    SweepPoint,
+    SweepValue,
 )
+from qubex.measurement.measurement_schedule_builder import CapturePlacement
 from qubex.system import TargetRegistry
 from qubex.typing import (
     IQArray,
@@ -111,6 +118,192 @@ class MeasurementService:
                 fallback_registry.resolve_qubit_label(label, allow_legacy=True)
                 for label in labels
             ]
+        )
+
+    def build_measurement_schedule(
+        self,
+        pulse_schedule: PulseSchedule,
+        *,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        capture_placement: CapturePlacement | None = None,
+        capture_targets: list[str] | None = None,
+        plot: bool | None = None,
+    ) -> MeasurementSchedule:
+        """Build a measurement schedule through the measurement facade."""
+        return self.ctx.measurement.build_measurement_schedule(
+            pulse_schedule=pulse_schedule,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            capture_placement=capture_placement,
+            capture_targets=capture_targets,
+            plot=plot,
+        )
+
+    async def run_measurement(
+        self,
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
+    ) -> MeasurementResult:
+        """Run one async measurement by delegating to the measurement layer."""
+        measurement_schedule = self.ctx.measurement.build_measurement_schedule(
+            pulse_schedule=schedule,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+        )
+        config = self.ctx.measurement.create_measurement_config(
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
+        )
+        return await self.ctx.measurement.run_measurement(
+            schedule=measurement_schedule,
+            config=config,
+        )
+
+    async def run_sweep_measurement(
+        self,
+        schedule: Callable[[SweepValue], PulseSchedule],
+        *,
+        sweep_values: Sequence[SweepValue],
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
+    ) -> SweepMeasurementResult:
+        """Run async sweep measurement by delegating to the measurement layer."""
+        config = self.ctx.measurement.create_measurement_config(
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
+        )
+
+        def wrapped_schedule(value: SweepValue) -> MeasurementSchedule:
+            return self.ctx.measurement.build_measurement_schedule(
+                pulse_schedule=schedule(value),
+                frequencies=frequencies,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                readout_ramp_time=readout_ramp_time,
+                readout_ramp_type=readout_ramp_type,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_amplification=readout_amplification,
+                final_measurement=final_measurement,
+            )
+
+        return await self.ctx.measurement.run_sweep_measurement(
+            wrapped_schedule,
+            sweep_values=sweep_values,
+            config=config,
+        )
+
+    async def run_ndsweep_measurement(
+        self,
+        schedule: Callable[[SweepPoint], PulseSchedule],
+        *,
+        sweep_points: dict[str, Sequence[SweepValue]],
+        sweep_axes: SweepAxes | None = None,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
+    ) -> NDSweepMeasurementResult:
+        """Run async N-dimensional sweep measurement by delegating to the measurement layer."""
+        config = self.ctx.measurement.create_measurement_config(
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
+        )
+
+        def wrapped_schedule(point: SweepPoint) -> MeasurementSchedule:
+            return self.ctx.measurement.build_measurement_schedule(
+                pulse_schedule=schedule(point),
+                frequencies=frequencies,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                readout_ramp_time=readout_ramp_time,
+                readout_ramp_type=readout_ramp_type,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_amplification=readout_amplification,
+                final_measurement=final_measurement,
+            )
+
+        return await self.ctx.measurement.run_ndsweep_measurement(
+            wrapped_schedule,
+            sweep_points=sweep_points,
+            sweep_axes=sweep_axes,
+            config=config,
         )
 
     def check_noise(

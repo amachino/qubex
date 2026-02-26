@@ -1276,11 +1276,11 @@ class MeasurementExecutionService:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
-        capture_placement: CapturePlacement = "pulse_aligned",
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        capture_placement: CapturePlacement | None = None,
         capture_targets: list[str] | None = None,
-        plot: bool = False,
+        plot: bool | None = None,
     ) -> MeasurementSchedule:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
         measurement_schedule = self.schedule_builder.build(

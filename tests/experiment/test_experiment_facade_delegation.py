@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 
 from qubex.experiment.experiment import Experiment
@@ -50,6 +51,24 @@ class _MeasurementServiceStub:
     def capture_loopback(self, schedule: object, **kwargs: Any) -> str:
         self.calls.append(("capture_loopback", {"schedule": schedule, **kwargs}))
         return "capture_loopback_result"
+
+    def build_measurement_schedule(self, pulse_schedule: object, **kwargs: Any) -> str:
+        self.calls.append(
+            ("build_measurement_schedule", {"pulse_schedule": pulse_schedule, **kwargs})
+        )
+        return "build_measurement_schedule_result"
+
+    async def run_measurement(self, schedule: object, **kwargs: Any) -> str:
+        self.calls.append(("run_measurement", {"schedule": schedule, **kwargs}))
+        return "run_measurement_result"
+
+    async def run_sweep_measurement(self, schedule: object, **kwargs: Any) -> str:
+        self.calls.append(("run_sweep_measurement", {"schedule": schedule, **kwargs}))
+        return "run_sweep_measurement_result"
+
+    async def run_ndsweep_measurement(self, schedule: object, **kwargs: Any) -> str:
+        self.calls.append(("run_ndsweep_measurement", {"schedule": schedule, **kwargs}))
+        return "run_ndsweep_measurement_result"
 
 
 class _ExperimentContextStub:
@@ -357,6 +376,179 @@ def test_capture_loopback_delegates_to_measurement_service() -> None:
             {
                 "schedule": schedule,
                 "n_shots": 128,
+            },
+        )
+    ]
+
+
+def test_build_measurement_schedule_delegates_to_measurement_service() -> None:
+    """Given schedule-build arguments, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    pulse_schedule = cast(Any, object())
+
+    result = exp.build_measurement_schedule(
+        pulse_schedule,
+        frequencies={"Q00": 5.1},
+        readout_amplification=True,
+        final_measurement=False,
+        capture_placement="pulse_aligned",
+        plot=False,
+    )
+
+    assert result == "build_measurement_schedule_result"
+    assert measurement_stub.calls == [
+        (
+            "build_measurement_schedule",
+            {
+                "pulse_schedule": pulse_schedule,
+                "frequencies": {"Q00": 5.1},
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramp_time": None,
+                "readout_ramp_type": None,
+                "readout_drag_coeff": None,
+                "readout_amplification": True,
+                "final_measurement": False,
+                "capture_placement": "pulse_aligned",
+                "capture_targets": None,
+                "plot": False,
+            },
+        )
+    ]
+
+
+def test_run_measurement_delegates_to_measurement_service() -> None:
+    """Given async run_measurement args, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    schedule = cast(Any, object())
+
+    result = asyncio.run(
+        exp.run_measurement(
+            schedule,
+            frequencies={"Q00": 5.2},
+            final_measurement=True,
+            n_shots=256,
+        )
+    )
+
+    assert result == "run_measurement_result"
+    assert measurement_stub.calls == [
+        (
+            "run_measurement",
+            {
+                "schedule": schedule,
+                "frequencies": {"Q00": 5.2},
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramp_time": None,
+                "readout_ramp_type": None,
+                "readout_drag_coeff": None,
+                "readout_amplification": False,
+                "final_measurement": True,
+                "n_shots": 256,
+                "shot_interval_ns": None,
+                "shot_averaging": None,
+                "time_integration": None,
+                "state_classification": None,
+            },
+        )
+    ]
+
+
+def test_run_sweep_measurement_delegates_to_measurement_service() -> None:
+    """Given async run_sweep args, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sweep_values = [0.1, 0.2]
+    schedule = cast(Any, object())
+
+    result = asyncio.run(
+        exp.run_sweep_measurement(
+            schedule,
+            sweep_values=sweep_values,
+            final_measurement=True,
+            shot_averaging=False,
+        )
+    )
+
+    assert result == "run_sweep_measurement_result"
+    assert measurement_stub.calls == [
+        (
+            "run_sweep_measurement",
+            {
+                "schedule": schedule,
+                "sweep_values": sweep_values,
+                "frequencies": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramp_time": None,
+                "readout_ramp_type": None,
+                "readout_drag_coeff": None,
+                "readout_amplification": False,
+                "final_measurement": True,
+                "n_shots": None,
+                "shot_interval_ns": None,
+                "shot_averaging": False,
+                "time_integration": None,
+                "state_classification": None,
+            },
+        )
+    ]
+
+
+def test_run_ndsweep_measurement_delegates_to_measurement_service() -> None:
+    """Given async run_ndsweep args, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sweep_points = {"x": [0.1, 0.2], "y": [1, 2]}
+    sweep_axes = ("x", "y")
+    schedule = cast(Any, object())
+
+    result = asyncio.run(
+        exp.run_ndsweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            sweep_axes=sweep_axes,
+            readout_amplification=True,
+            state_classification=True,
+        )
+    )
+
+    assert result == "run_ndsweep_measurement_result"
+    assert measurement_stub.calls == [
+        (
+            "run_ndsweep_measurement",
+            {
+                "schedule": schedule,
+                "sweep_points": sweep_points,
+                "sweep_axes": sweep_axes,
+                "frequencies": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramp_time": None,
+                "readout_ramp_type": None,
+                "readout_drag_coeff": None,
+                "readout_amplification": True,
+                "final_measurement": False,
+                "n_shots": None,
+                "shot_interval_ns": None,
+                "shot_averaging": None,
+                "time_integration": None,
+                "state_classification": True,
             },
         )
     ]

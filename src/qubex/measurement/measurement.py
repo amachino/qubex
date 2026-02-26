@@ -641,8 +641,8 @@ class Measurement:
 
     async def run_measurement(
         self,
-        *,
         schedule: MeasurementSchedule,
+        *,
         config: MeasurementConfig,
     ) -> MeasurementResult:
         """
@@ -669,8 +669,8 @@ class Measurement:
         self,
         schedule: Callable[[SweepValue], MeasurementSchedule],
         *,
+        config: MeasurementConfig,
         sweep_values: Sequence[SweepValue],
-        config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
         """
         Execute a pointwise sweep over explicit sweep values.
@@ -679,11 +679,10 @@ class Measurement:
         ----------
         schedule : Callable[[SweepValue], MeasurementSchedule]
             Factory that builds one schedule from one sweep value.
+        config : MeasurementConfig
+            Runtime acquisition configuration.
         sweep_values : Sequence[SweepValue]
             Explicit sweep values evaluated in sequence.
-        config : MeasurementConfig | None, optional
-            Runtime acquisition configuration. If `None`, defaults from
-            `measurement_config_factory` are used.
 
         Returns
         -------
@@ -692,17 +691,17 @@ class Measurement:
         """
         return await self.execution_service.run_sweep_measurement(
             schedule,
-            sweep_values=sweep_values,
             config=config,
+            sweep_values=sweep_values,
         )
 
     async def run_ndsweep_measurement(
         self,
         schedule: Callable[[SweepPoint], MeasurementSchedule],
         *,
+        config: MeasurementConfig,
         sweep_points: dict[SweepKey, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
-        config: MeasurementConfig | None = None,
     ) -> NDSweepMeasurementResult:
         """
         Execute an N-dimensional Cartesian-product sweep.
@@ -711,14 +710,13 @@ class Measurement:
         ----------
         schedule : Callable[[SweepPoint], MeasurementSchedule]
             Factory that builds one schedule from one expanded sweep point.
+        config : MeasurementConfig
+            Runtime acquisition configuration.
         sweep_points : dict[SweepKey, Sequence[SweepValue]]
             Sweep axes and candidate values for each axis.
         sweep_axes : SweepAxes | None, optional
             Axis order used for Cartesian expansion and index mapping. If
             `None`, dictionary insertion order is used.
-        config : MeasurementConfig | None, optional
-            Runtime acquisition configuration. If `None`, defaults from
-            `measurement_config_factory` are used.
 
         Returns
         -------
@@ -728,9 +726,9 @@ class Measurement:
         """
         return await self.execution_service.run_ndsweep_measurement(
             schedule,
+            config=config,
             sweep_points=sweep_points,
             sweep_axes=sweep_axes,
-            config=config,
         )
 
     def measure_noise(
@@ -1073,11 +1071,11 @@ class Measurement:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
-        capture_placement: CapturePlacement = "pulse_aligned",
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        capture_placement: CapturePlacement | None = None,
         capture_targets: list[str] | None = None,
-        plot: bool = False,
+        plot: bool | None = None,
     ) -> MeasurementSchedule:
         """
         Build a measurement schedule from a pulse schedule and readout options.
@@ -1102,15 +1100,15 @@ class Measurement:
             Ramp shape type.
         readout_drag_coeff : float | None, optional
             Drag coefficient for ramp shaping.
-        readout_amplification : bool, optional
+        readout_amplification : bool | None, optional
             Whether to insert readout amplification pulses.
-        final_measurement : bool, optional
+        final_measurement : bool | None, optional
             Whether to append a final measurement at schedule tail.
-        capture_placement : CapturePlacement, optional
+        capture_placement : CapturePlacement | None, optional
             Capture-window placement (`pulse_aligned` or `entire_schedule`).
         capture_targets : list[str] | None, optional
             Explicit capture-channel labels for `entire_schedule` placement.
-        plot : bool, optional
+        plot : bool | None, optional
             Whether to plot the generated schedule.
 
         Returns

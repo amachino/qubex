@@ -189,6 +189,59 @@ def test_schedule_builder_accepts_qubit_keyed_readout_amplitudes(monkeypatch) ->
     assert captured["amplitude"] == 0.37
 
 
+def test_schedule_builder_resolves_none_options_in_build(monkeypatch) -> None:
+    """Given None build options, when building, then builder applies internal defaults."""
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParams,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
+        ),
+        pulse_factory=cast(MeasurementPulseFactory, SimpleNamespace()),
+        targets=cast(
+            dict[str, Target],
+            {
+                "RQ00": SimpleNamespace(is_pump=False, is_read=True),
+            },
+        ),
+        mux_dict={},
+    )
+
+    captured: dict[str, Any] = {}
+
+    def _capture(
+        self: MeasurementScheduleBuilder,
+        *,
+        schedule: PulseSchedule,
+        readout_targets: list[str],
+        capture_targets: list[str],
+        capture_placement: str,
+    ) -> CaptureSchedule:
+        _ = (self, schedule, capture_targets)
+        captured["readout_targets"] = readout_targets
+        captured["capture_placement"] = capture_placement
+        return CaptureSchedule(captures=[])
+
+    monkeypatch.setattr(
+        builder,
+        "_build_capture_schedule",
+        MethodType(_capture, builder),
+    )
+
+    with PulseSchedule(["RQ00"]) as schedule:
+        pass
+
+    builder.build(
+        schedule=schedule,
+        readout_amplification=None,
+        final_measurement=None,
+        capture_placement=None,
+        plot=None,
+    )
+
+    assert captured["readout_targets"] == ["RQ00"]
+    assert captured["capture_placement"] == "pulse_aligned"
+
+
 def test_schedule_builder_applies_frequency_overrides_to_existing_channels() -> None:
     """Given frequency overrides, when building without final measurement, then channel frequencies are updated."""
     builder = MeasurementScheduleBuilder(

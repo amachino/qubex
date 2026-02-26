@@ -7,7 +7,7 @@ It manages which methods act as the public interface for conducting experiments.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, TypeVar
@@ -29,10 +29,17 @@ from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (
     Measurement,
     MeasurementResult,
+    MeasurementSchedule,
     MeasureResult,
     MultipleMeasureResult,
+    NDSweepMeasurementResult,
     StateClassifier,
+    SweepAxes,
+    SweepMeasurementResult,
+    SweepPoint,
+    SweepValue,
 )
+from qubex.measurement.measurement_schedule_builder import CapturePlacement
 from qubex.system import (
     Box,
     Chip,
@@ -1202,6 +1209,370 @@ class Experiment:
 
     # region measurement_service methods
     # measurement_service methods
+
+    def build_measurement_schedule(
+        self,
+        pulse_schedule: PulseSchedule,
+        *,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        capture_placement: CapturePlacement | None = None,
+        capture_targets: list[str] | None = None,
+        plot: bool | None = None,
+    ) -> MeasurementSchedule:
+        """
+        Build a measurement schedule with optional readout/capture overrides.
+
+        Parameters
+        ----------
+        pulse_schedule : PulseSchedule
+            Base pulse schedule before measurement readout/capture augmentation.
+        frequencies : dict[str, float] | None, optional
+            Temporary frequency overrides keyed by target label.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitudes keyed by readout or qubit label.
+        readout_duration : float | None, optional
+            Readout duration in ns.
+        readout_pre_margin : float | None, optional
+            Pre-margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Post-margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp time in ns.
+        readout_ramp_type : RampType | None, optional
+            Ramp waveform type.
+        readout_drag_coeff : float | None, optional
+            DRAG coefficient for readout pulse shaping.
+        readout_amplification : bool | None, optional
+            Whether to insert pump/readout amplification pulses.
+            If `None`, service default is used.
+        final_measurement : bool | None, optional
+            Whether to append final readout pulses at the schedule tail.
+            If `None`, service default is used.
+        capture_placement : CapturePlacement | None, optional
+            Capture-window placement strategy.
+            If `None`, service default is used.
+        capture_targets : list[str] | None, optional
+            Explicit capture targets for `entire_schedule` placement.
+        plot : bool | None, optional
+            Whether to plot the generated pulse schedule.
+            If `None`, service default is used.
+
+        Returns
+        -------
+        MeasurementSchedule
+            Execution-ready measurement schedule.
+
+        Examples
+        --------
+        >>> schedule = ex.build_measurement_schedule(
+        ...     pulse_schedule=ps,
+        ...     final_measurement=True,
+        ... )
+        """
+        return self.measurement_service.build_measurement_schedule(
+            pulse_schedule=pulse_schedule,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            capture_placement=capture_placement,
+            capture_targets=capture_targets,
+            plot=plot,
+        )
+
+    async def run_measurement(
+        self,
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
+    ) -> MeasurementResult:
+        """
+        Run one async measurement from a pulse schedule.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            Input pulse schedule.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval_ns : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether shot averaging is applied in hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+        frequencies : dict[str, float] | None, optional
+            Temporary frequency overrides keyed by target label.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitudes keyed by readout or qubit label.
+        readout_duration : float | None, optional
+            Readout duration in ns.
+        readout_pre_margin : float | None, optional
+            Pre-margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Post-margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp time in ns.
+        readout_ramp_type : RampType | None, optional
+            Ramp waveform type.
+        readout_drag_coeff : float | None, optional
+            DRAG coefficient for readout pulse shaping.
+        readout_amplification : bool, optional
+            Whether to insert pump/readout amplification pulses.
+        final_measurement : bool, optional
+            Whether to append final readout pulses at schedule tail.
+
+        Returns
+        -------
+        MeasurementResult
+            Single-run measurement result.
+
+        Examples
+        --------
+        >>> result = await ex.run_measurement(ps)
+        """
+        return await self.measurement_service.run_measurement(
+            schedule=schedule,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
+        )
+
+    async def run_sweep_measurement(
+        self,
+        schedule: Callable[[SweepValue], PulseSchedule],
+        *,
+        sweep_values: Sequence[SweepValue],
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
+    ) -> SweepMeasurementResult:
+        """
+        Run an async 1D sweep measurement over explicit sweep values.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepValue], PulseSchedule]
+            Callback that builds one pulse schedule per sweep value.
+        sweep_values : Sequence[SweepValue]
+            Ordered sweep values.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval_ns : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether shot averaging is applied in hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+        frequencies : dict[str, float] | None, optional
+            Temporary frequency overrides keyed by target label.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitudes keyed by readout or qubit label.
+        readout_duration : float | None, optional
+            Readout duration in ns.
+        readout_pre_margin : float | None, optional
+            Pre-margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Post-margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp time in ns.
+        readout_ramp_type : RampType | None, optional
+            Ramp waveform type.
+        readout_drag_coeff : float | None, optional
+            DRAG coefficient for readout pulse shaping.
+        readout_amplification : bool, optional
+            Whether to insert pump/readout amplification pulses.
+        final_measurement : bool, optional
+            Whether to append final readout pulses at schedule tail.
+
+        Returns
+        -------
+        SweepMeasurementResult
+            Sweep result aligned with input `sweep_values` order.
+
+        Examples
+        --------
+        >>> def make_schedule(value):
+        ...     return ps
+        >>> sweep = await ex.run_sweep_measurement(
+        ...     schedule=make_schedule,
+        ...     sweep_values=[0.1, 0.2],
+        ... )
+        """
+        return await self.measurement_service.run_sweep_measurement(
+            schedule=schedule,
+            sweep_values=sweep_values,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
+        )
+
+    async def run_ndsweep_measurement(
+        self,
+        schedule: Callable[[SweepPoint], PulseSchedule],
+        *,
+        sweep_points: dict[str, Sequence[SweepValue]],
+        sweep_axes: SweepAxes | None = None,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
+    ) -> NDSweepMeasurementResult:
+        """
+        Run an async N-dimensional Cartesian sweep measurement.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepPoint], PulseSchedule]
+            Callback that builds one pulse schedule per resolved sweep point.
+        sweep_points : dict[str, Sequence[SweepValue]]
+            Axis-value table (`axis -> ordered values`).
+        sweep_axes : SweepAxes | None, optional
+            Axis order for Cartesian expansion.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval_ns : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether shot averaging is applied in hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+        frequencies : dict[str, float] | None, optional
+            Temporary frequency overrides keyed by target label.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitudes keyed by readout or qubit label.
+        readout_duration : float | None, optional
+            Readout duration in ns.
+        readout_pre_margin : float | None, optional
+            Pre-margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Post-margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp time in ns.
+        readout_ramp_type : RampType | None, optional
+            Ramp waveform type.
+        readout_drag_coeff : float | None, optional
+            DRAG coefficient for readout pulse shaping.
+        readout_amplification : bool, optional
+            Whether to insert pump/readout amplification pulses.
+        final_measurement : bool, optional
+            Whether to append final readout pulses at schedule tail.
+
+        Returns
+        -------
+        NDSweepMeasurementResult
+            N-dimensional sweep result in C-order flattening.
+
+        Examples
+        --------
+        >>> nd = await ex.run_ndsweep_measurement(
+        ...     schedule=make_nd_schedule,
+        ...     sweep_points={"x": [0, 1], "y": [10, 20]},
+        ...     sweep_axes=("x", "y"),
+        ... )
+        """
+        return await self.measurement_service.run_ndsweep_measurement(
+            schedule=schedule,
+            sweep_points=sweep_points,
+            sweep_axes=sweep_axes,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
+        )
 
     def check_noise(
         self,
