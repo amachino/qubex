@@ -19,6 +19,7 @@ This section links to the rendered Jupyter notebooks shipped with the documentat
 
 - [Measurement config](measurement/measurement_config.ipynb)
 - [Measurement session](measurement/measurement_client.ipynb)
+- [Loopback capture](measurement/capture_loopback.ipynb)
 - [Measurement sweep builder](measurement/sweep_measurement_builder.ipynb)
 - [QuEL-3 sequencer builder flow](measurement/quel3_sequencer_builder_flow.ipynb)
 
