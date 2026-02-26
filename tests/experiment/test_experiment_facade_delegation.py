@@ -348,10 +348,7 @@ def test_capture_loopback_delegates_to_measurement_service() -> None:
     exp.__dict__["_measurement_service"] = measurement_stub
     schedule = cast(Any, object())
 
-    result = exp.capture_loopback(
-        schedule,
-        n_shots=128,
-    )
+    result = exp.capture_loopback(schedule, n_shots=128)
 
     assert result == "capture_loopback_result"
     assert measurement_stub.calls == [

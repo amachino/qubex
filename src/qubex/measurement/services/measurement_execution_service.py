@@ -1168,7 +1168,7 @@ class MeasurementExecutionService:
         capture_targets = self._resolve_loopback_capture_targets(schedule=base_schedule)
         measurement_config = self.measurement_config_factory.create(
             n_shots=n_shots,
-            shot_averaging=True,
+            shot_averaging=False,
             time_integration=False,
             state_classification=False,
         )

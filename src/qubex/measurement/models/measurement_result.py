@@ -26,27 +26,36 @@ class MeasurementResult(DataModel):
     def plot(self) -> None:
         """Plot measurement data for each capture."""
         sampling_period = float(self.sampling_period_ns)
+        shot_averaging = bool(self.measurement_config.shot_averaging)
+        time_integration = bool(self.measurement_config.time_integration)
 
         for target, captures in self.data.items():
             for capture_index, raw in enumerate(captures):
                 title = f"{target} : data[{capture_index}]"
-                if self.measurement_config.shot_averaging:
+                if time_integration:
+                    shots = np.asarray(raw)
+                    kerneled = np.atleast_1d(
+                        shots if shots.ndim <= 1 else np.sum(shots, axis=1)
+                    )
+                    iq_data = {target: kerneled}
+                    viz.scatter_iq_data(
+                        data=iq_data,
+                        title=title,
+                        save_image=False,
+                    )
+                else:
                     waveform = np.asarray(raw)
+                    if not shot_averaging and waveform.ndim >= 2:
+                        # Loopback path keeps per-shot waveforms; average in software
+                        # before plotting when hardware shot averaging is disabled.
+                        waveform = np.mean(waveform, axis=0)
+                    waveform = np.squeeze(waveform)
                     viz.plot_waveform(
                         data=waveform,
                         sampling_period=sampling_period,
                         title=title,
                         xlabel="Capture time (ns)",
                         ylabel="Signal (arb. units)",
-                        save_image=False,
-                    )
-                else:
-                    shots = np.asarray(raw)
-                    kerneled = shots if shots.ndim <= 1 else np.sum(shots, axis=1)
-                    iq_data = {target: kerneled}
-                    viz.scatter_iq_data(
-                        data=iq_data,
-                        title=title,
                         save_image=False,
                     )
 

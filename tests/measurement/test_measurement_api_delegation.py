@@ -504,7 +504,7 @@ def test_temporary_loopback_rfswitches_restores_ports_on_error() -> None:
     )
 
     with pytest.raises(RuntimeError, match="test-error"):
-        _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+        _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]))
 
     assert read_in_port.rfswitch == "open"
     assert read_out_port.rfswitch == "pass"
@@ -646,7 +646,7 @@ def test_capture_loopback_skips_ports_without_rfswitch() -> None:
         execution_service,
     )
 
-    result = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+    result = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]))
 
     assert "Q00" in result.data
     assert read_in_port.rfswitch == "open"
@@ -966,7 +966,7 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
         execution_service,
     )
 
-    result = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+    result = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]))
 
     assert "Q00" in result.data
     assert call_count["run"] == 3
@@ -1070,7 +1070,8 @@ def test_capture_loopback_runs_without_dsp_demodulation() -> None:
         config: MeasurementConfig,
         quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
-        _ = (self, schedule, config)
+        called["config"] = config
+        _ = (self, schedule)
         called["quel1_options"] = quel1_options
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
@@ -1090,6 +1091,9 @@ def test_capture_loopback_runs_without_dsp_demodulation() -> None:
     _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
 
     options = cast(Quel1MeasurementOptions | None, called["quel1_options"])
+    config = cast(MeasurementConfig, called["config"])
+    assert config.shot_averaging is False
+    assert config.n_shots == 16
     assert options is not None
     assert options.demodulation is False
 

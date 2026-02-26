@@ -254,7 +254,7 @@ def test_plot_calls_waveform_plot_for_avg_mode(monkeypatch) -> None:
 
 
 def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
-    """Given SINGLE canonical data, plot should call IQ scatter with kerneled values."""
+    """Given time-integrated canonical data, plot should call IQ scatter with kerneled values."""
     result = MeasurementResult(
         data={
             "Q00": [
@@ -266,7 +266,13 @@ def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
                 )
             ]
         },
-        measurement_config=_make_config(mode="single", shots=2),
+        measurement_config=MeasurementConfig(
+            n_shots=2,
+            shot_interval_ns=100.0,
+            shot_averaging=False,
+            time_integration=True,
+            state_classification=False,
+        ),
         sampling_period_ns=2.0,
     )
     called: dict[str, object] = {}
@@ -297,6 +303,158 @@ def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
     plotted = called["data"]
     assert isinstance(plotted, dict)
     assert np.array_equal(plotted["Q00"], np.array([4.0 + 6.0j, 12.0 + 14.0j]))
+
+
+def test_plot_calls_waveform_for_single_mode_loopback_shape(monkeypatch) -> None:
+    """Given SINGLE one-shot waveform-like data, plot should call waveform plotting."""
+    result = MeasurementResult(
+        data={"Q00": [np.array([[1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]])]},
+        measurement_config=_make_config(mode="single", shots=1),
+        sampling_period_ns=2.0,
+    )
+    called: dict[str, object] = {}
+
+    def _plot_waveform(
+        *,
+        data: np.ndarray,
+        sampling_period: float,
+        title: str,
+        xlabel: str,
+        ylabel: str,
+        save_image: bool,
+    ) -> None:
+        called["data"] = data
+        called["sampling_period"] = sampling_period
+        called["title"] = title
+        called["xlabel"] = xlabel
+        called["ylabel"] = ylabel
+        called["save_image"] = save_image
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.plot_waveform",
+        _plot_waveform,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    result.plot()
+
+    waveform = called["data"]
+    assert isinstance(waveform, np.ndarray)
+    assert np.array_equal(waveform, np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]))
+    assert called["sampling_period"] == 2.0
+    assert called["title"] == "Q00 : data[0]"
+    assert called["xlabel"] == "Capture time (ns)"
+    assert called["ylabel"] == "Signal (arb. units)"
+    assert called["save_image"] is False
+
+
+def test_plot_calls_waveform_with_software_shot_average_when_not_integrated(
+    monkeypatch,
+) -> None:
+    """Given non-averaged non-integrated data, plot should average shots in software then plot waveform."""
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                np.array(
+                    [
+                        [1.0 + 0.0j, 3.0 + 0.0j, 5.0 + 0.0j],
+                        [3.0 + 0.0j, 5.0 + 0.0j, 7.0 + 0.0j],
+                    ]
+                )
+            ]
+        },
+        measurement_config=MeasurementConfig(
+            n_shots=2,
+            shot_interval_ns=100.0,
+            shot_averaging=False,
+            time_integration=False,
+            state_classification=False,
+        ),
+        sampling_period_ns=2.0,
+    )
+    called: dict[str, object] = {}
+
+    def _plot_waveform(
+        *,
+        data: np.ndarray,
+        sampling_period: float,
+        title: str,
+        xlabel: str,
+        ylabel: str,
+        save_image: bool,
+    ) -> None:
+        called["data"] = data
+        called["sampling_period"] = sampling_period
+        called["title"] = title
+        called["xlabel"] = xlabel
+        called["ylabel"] = ylabel
+        called["save_image"] = save_image
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.plot_waveform",
+        _plot_waveform,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    result.plot()
+
+    waveform = called["data"]
+    assert isinstance(waveform, np.ndarray)
+    assert np.array_equal(waveform, np.array([2.0 + 0.0j, 4.0 + 0.0j, 6.0 + 0.0j]))
+    assert called["sampling_period"] == 2.0
+    assert called["title"] == "Q00 : data[0]"
+    assert called["xlabel"] == "Capture time (ns)"
+    assert called["ylabel"] == "Signal (arb. units)"
+    assert called["save_image"] is False
+
+
+def test_plot_calls_iq_scatter_for_averaged_integrated_mode(monkeypatch) -> None:
+    """Given averaged integrated data, plot should call IQ scatter."""
+    result = MeasurementResult(
+        data={"Q00": [np.array([1.0 + 2.0j, 3.0 + 4.0j])]},
+        measurement_config=MeasurementConfig(
+            n_shots=2,
+            shot_interval_ns=100.0,
+            shot_averaging=True,
+            time_integration=True,
+            state_classification=False,
+        ),
+        sampling_period_ns=2.0,
+    )
+    called: dict[str, object] = {}
+
+    def _scatter_iq_data(
+        *,
+        data: dict[str, np.ndarray],
+        title: str,
+        save_image: bool,
+    ) -> None:
+        called["data"] = data
+        called["title"] = title
+        called["save_image"] = save_image
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        _scatter_iq_data,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.plot_waveform",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    result.plot()
+
+    assert called["title"] == "Q00 : data[0]"
+    assert called["save_image"] is False
+    plotted = called["data"]
+    assert isinstance(plotted, dict)
+    assert np.array_equal(plotted["Q00"], np.array([1.0 + 2.0j, 3.0 + 4.0j]))
 
 
 def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
