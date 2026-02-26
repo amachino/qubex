@@ -6,33 +6,33 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TypeVar
 
-_T = TypeVar("_T")
-_K = TypeVar("_K")
-_R = TypeVar("_R")
+T = TypeVar("T")
+K = TypeVar("K")
+V = TypeVar("V")
 
 DEFAULT_MAX_WORKERS = 32
 
 
 def run_parallel_each(
-    items: Sequence[_T],
-    worker: Callable[[_T], object],
+    items: Sequence[T],
+    worker: Callable[[T], object],
     *,
     max_workers: int | None = None,
-    on_error: Callable[[_T, BaseException], None] | None = None,
+    on_error: Callable[[T, BaseException], None] | None = None,
 ) -> None:
     """
     Execute `worker` for each item in parallel.
 
     Parameters
     ----------
-    items : Sequence[_T]
+    items : Sequence[T]
         Items to process.
-    worker : Callable[[_T], object]
+    worker : Callable[[T], object]
         Worker function called once per item.
     max_workers : int | None, optional
         Maximum number of worker threads. If `None`, uses
         `DEFAULT_MAX_WORKERS`.
-    on_error : Callable[[_T, BaseException], None] | None, optional
+    on_error : Callable[[T, BaseException], None] | None, optional
         Optional per-item error handler. If omitted, exceptions are re-raised.
     """
     if not items:
@@ -54,37 +54,37 @@ def run_parallel_each(
 
 
 def run_parallel_map(
-    items: Sequence[_T],
-    worker: Callable[[_T], _R],
+    items: Sequence[T],
+    worker: Callable[[T], V],
     *,
-    key: Callable[[_T], _K],
+    key: Callable[[T], K],
     max_workers: int | None = None,
     as_completed_order: bool = False,
-    on_error: Callable[[_T, BaseException], _R] | None = None,
-) -> dict[_K, _R]:
+    on_error: Callable[[T, BaseException], V] | None = None,
+) -> dict[K, V]:
     """
     Execute `worker` for each item in parallel and collect results by key.
 
     Parameters
     ----------
-    items : Sequence[_T]
+    items : Sequence[T]
         Items to process.
-    worker : Callable[[_T], _R]
+    worker : Callable[[T], V]
         Worker function called once per item.
-    key : Callable[[_T], _K]
+    key : Callable[[T], K]
         Function to derive output key from an item.
     max_workers : int | None, optional
         Maximum number of worker threads. If `None`, uses
         `DEFAULT_MAX_WORKERS`.
     as_completed_order : bool, optional
         If `True`, consume futures in completion order.
-    on_error : Callable[[_T, BaseException], _R] | None, optional
+    on_error : Callable[[T, BaseException], V] | None, optional
         Optional per-item fallback result provider on errors. If omitted,
         exceptions are re-raised.
 
     Returns
     -------
-    dict[_K, _R]
+    dict[K, V]
         Mapping from item key to worker result.
     """
     if not items:
@@ -100,7 +100,7 @@ def run_parallel_map(
             if as_completed_order
             else tuple(future_to_item.keys())
         )
-        results: dict[_K, _R] = {}
+        results: dict[K, V] = {}
         for future in futures:
             item = future_to_item[future]
             try:

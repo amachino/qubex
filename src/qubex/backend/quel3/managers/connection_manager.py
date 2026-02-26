@@ -11,7 +11,7 @@ from pathlib import Path
 from types import ModuleType, TracebackType
 from typing import Protocol, TypeVar
 
-_T = TypeVar("_T")
+T = TypeVar("T")
 
 
 class _QuelwareClient(Protocol):
@@ -47,14 +47,14 @@ class _QuelwareClientFactory(Protocol):
         ...
 
 
-def _run_coroutine(coroutine: Coroutine[object, object, _T]) -> _T:
+def _run_coroutine(coroutine: Coroutine[object, object, T]) -> T:
     """Run an async workflow from a synchronous manager entrypoint."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coroutine)
 
-    result_holder: dict[str, _T] = {}
+    result_holder: dict[str, T] = {}
     error_holder: dict[str, BaseException] = {}
 
     def _runner() -> None:

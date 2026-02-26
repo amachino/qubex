@@ -15,7 +15,7 @@ if TYPE_CHECKING:
         QuelDriverClassesProtocol,
     )
 
-_TConnectedResource = TypeVar("_TConnectedResource")
+ConnectedResourceT = TypeVar("ConnectedResourceT")
 
 
 NOT_CONNECTED_ERROR_MESSAGE = "Boxes not connected. Call connect() method first."
@@ -241,8 +241,8 @@ class Quel1RuntimeContext:
 
     @staticmethod
     def _require_connected_resource(
-        resource: _TConnectedResource | None,
-    ) -> _TConnectedResource:
+        resource: ConnectedResourceT | None,
+    ) -> ConnectedResourceT:
         """Return connected resource or raise a consistent error."""
         if resource is None:
             raise ValueError(NOT_CONNECTED_ERROR_MESSAGE)

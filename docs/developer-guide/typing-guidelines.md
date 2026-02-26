@@ -2,37 +2,36 @@
 
 This page defines typing conventions used in Qubex code.
 
-## Generic type parameter names
+## TypeVar naming
 
-- Prefer short canonical names for generic type parameters: `T`, `U`, `K`, `V`.
-- Use descriptive names only when a single-letter name would harm readability.
-- Avoid suffix-only names such as `SequencerT` in new code.
+Use the following naming policy for `TypeVar`.
 
-### Preferred pattern with `TypeVar`
+- Generic type variables: `T`
+- Mapping-related type variables: `K`, `V`
+- Domain-specific type variables: `<Name>T` (for example, `OptionT`)
+- Variance suffixes: `_co` and `_contra`
+
+## Examples
 
 ```python
 from typing import TypeVar
 
 T = TypeVar("T")
+K = TypeVar("K")
+V = TypeVar("V")
+OptionT = TypeVar("OptionT")
+ResultT_co = TypeVar("ResultT_co", covariant=True)
+ConsumerT_contra = TypeVar("ConsumerT_contra", contravariant=True)
 ```
 
-### Preferred pattern with Python 3.12 type parameters
+## Additional rules
 
-```python
-def max[T](args: Iterable[T]) -> T:
-    ...
-
-
-class list[T]:
-    def __getitem__(self, index: int, /) -> T:
-        ...
-
-    def append(self, element: T) -> None:
-        ...
-```
+- Define type variables explicitly in the local module.
+- Do not rely on implicit shared names such as `typing_extensions.T` or `typing.T`.
+- Keep naming style consistent within a module.
 
 ## Compatibility note
 
 Qubex currently supports Python `>=3.10`.
-When writing runtime code that must remain compatible with Python 3.10 and 3.11, use `TypeVar`.
-The naming convention above still applies.
+When writing runtime code that must remain compatible with Python 3.10 and 3.11,
+use `TypeVar`.

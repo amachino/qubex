@@ -61,8 +61,9 @@ from qubex.typing import IQArray, TargetMap
 
 logger = logging.getLogger(__name__)
 
-R = TypeVar("R")
-TOption = TypeVar("TOption")
+T = TypeVar("T")
+OptionT = TypeVar("OptionT")
+
 _SYNC_BRIDGE_TIMEOUT_SECONDS = 300.0
 _MEASUREMENT_ASYNC_BRIDGE_LOCK = threading.Lock()
 _MEASUREMENT_ASYNC_BRIDGE: AsyncBridge | None = None
@@ -81,10 +82,10 @@ def _get_measurement_async_bridge() -> AsyncBridge:
 
 
 def _run_async(
-    factory: Callable[[], Awaitable[R]],
+    factory: Callable[[], Awaitable[T]],
     *,
     timeout: float = _SYNC_BRIDGE_TIMEOUT_SECONDS,
-) -> R:
+) -> T:
     """Run one awaitable factory from synchronous APIs."""
     return _get_measurement_async_bridge().run(factory, timeout=timeout)
 
@@ -268,11 +269,11 @@ class MeasurementExecutionService:
     def _resolve_deprecated_alias(
         cls,
         *,
-        new_value: TOption | None,
-        old_value: TOption | None,
+        new_value: OptionT | None,
+        old_value: OptionT | None,
         old_name: str,
         new_name: str,
-    ) -> TOption | None:
+    ) -> OptionT | None:
         """Resolve an old/new alias pair and validate conflicts."""
         if old_value is None:
             return new_value

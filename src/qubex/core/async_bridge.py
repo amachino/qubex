@@ -9,19 +9,19 @@ import threading
 from collections.abc import Awaitable, Callable
 from typing import Final, TypeVar
 
-R = TypeVar("R")
+T = TypeVar("T")
 
 DEFAULT_TIMEOUT_SECONDS: Final[float] = 300.0
 DEFAULT_STARTUP_TIMEOUT_SECONDS: Final[float] = 5.0
 THREAD_JOIN_TIMEOUT_SECONDS: Final[float] = 1.0
 
 
-async def _invoke_factory(factory: Callable[[], Awaitable[R]]) -> R:
+async def _invoke_factory(factory: Callable[[], Awaitable[T]]) -> T:
     """Invoke one awaitable factory as a coroutine."""
     return await factory()
 
 
-async def _await_result(awaitable: Awaitable[R]) -> R:
+async def _await_result(awaitable: Awaitable[T]) -> T:
     """Await a generic awaitable in direct-run mode."""
     return await awaitable
 
@@ -86,23 +86,23 @@ class AsyncBridge:
 
     def run(
         self,
-        factory: Callable[[], Awaitable[R]],
+        factory: Callable[[], Awaitable[T]],
         *,
         timeout: float | None = None,
-    ) -> R:
+    ) -> T:
         """
         Run one awaitable factory from synchronous code.
 
         Parameters
         ----------
-        factory : Callable[[], Awaitable[R]]
+        factory : Callable[[], Awaitable[T]]
             Awaitable factory to execute.
         timeout : float | None, optional
             Timeout in seconds for bridge execution when a loop is already active.
 
         Returns
         -------
-        R
+        T
             Resolved value from the awaitable factory.
 
         Examples
@@ -169,18 +169,18 @@ class AsyncBridge:
     def _submit(
         self,
         *,
-        factory: Callable[[], Awaitable[R]],
+        factory: Callable[[], Awaitable[T]],
         context: contextvars.Context,
-    ) -> concurrent.futures.Future[R]:
+    ) -> concurrent.futures.Future[T]:
         """Submit one awaitable factory to the dedicated bridge loop."""
         loop = self._loop
         if loop is None or loop.is_closed():
             raise RuntimeError("AsyncBridge event loop is unavailable.")
 
-        bridge_future: concurrent.futures.Future[R] = concurrent.futures.Future()
-        task_holder: dict[str, asyncio.Task[R]] = {}
+        bridge_future: concurrent.futures.Future[T] = concurrent.futures.Future()
+        task_holder: dict[str, asyncio.Task[T]] = {}
 
-        def _on_task_done(task: asyncio.Task[R]) -> None:
+        def _on_task_done(task: asyncio.Task[T]) -> None:
             if bridge_future.done():
                 return
             if task.cancelled():
@@ -214,7 +214,7 @@ class AsyncBridge:
             if task is not None and not task.done():
                 task.cancel()
 
-        def _on_bridge_done(future: concurrent.futures.Future[R]) -> None:
+        def _on_bridge_done(future: concurrent.futures.Future[T]) -> None:
             if not future.cancelled():
                 return
             if loop.is_closed():  # pragma: no cover - defensive guard
