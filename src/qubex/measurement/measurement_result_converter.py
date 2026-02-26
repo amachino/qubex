@@ -37,9 +37,7 @@ class MeasurementResultConverter:
         """Resolve sampling period for legacy result models."""
         if explicit is not None:
             return explicit
-        if result.sampling_period_ns is not None:
-            return float(result.sampling_period_ns)
-        return SAMPLING_PERIOD
+        return float(result.sampling_period_ns)
 
     @staticmethod
     def from_multiple(
@@ -75,7 +73,7 @@ class MeasurementResultConverter:
             sampling_period_ns=(
                 first_capture.sampling_period_ns
                 if isinstance(first_capture, MeasureData)
-                else None
+                else SAMPLING_PERIOD
             ),
         )
 

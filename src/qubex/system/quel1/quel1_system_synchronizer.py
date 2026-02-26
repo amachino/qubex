@@ -83,6 +83,12 @@ class Quel1SystemSynchronizer:
                         channel_name=port.channels[0].id,
                         target_name=port.id,
                     )
+                if port_type in ("MNTR_OUT", "MNTR_IN"):
+                    self._backend_controller.define_target(
+                        target_name=port.id,
+                        channel_name=port.channels[0].id,
+                        target_frequency=0.0,
+                    )
 
         for target in experiment_system.all_targets:
             self._backend_controller.define_target(
@@ -364,4 +370,4 @@ class Quel1SystemSynchronizer:
     @staticmethod
     def _is_capture_port(port: GenPort | CapPort) -> TypeGuard[CapPort]:
         """Return whether one port should be configured through capture path."""
-        return port.type.value == "READ_IN"
+        return port.type.value in ("READ_IN", "MNTR_IN")

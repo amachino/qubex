@@ -52,6 +52,7 @@ from qubex.experiment.models.experiment_result import (
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
 from qubex.measurement import (
+    MeasurementResult,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
@@ -223,6 +224,18 @@ class MeasurementService:
         if plot:
             result.plot()
         return result
+
+    def capture_loopback(
+        self,
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+    ) -> MeasurementResult:
+        """Capture full-span loopback data for the specified pulse schedule."""
+        return self.ctx.measurement.capture_loopback(
+            schedule=schedule,
+            n_shots=n_shots,
+        )
 
     def measure(
         self,

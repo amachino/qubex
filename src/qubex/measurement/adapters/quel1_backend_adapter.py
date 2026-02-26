@@ -72,7 +72,11 @@ class Quel1MeasurementBackendAdapter:
         if len(channel_captures) == 0:
             raise ValueError("Capture schedule must not be empty.")
 
-        readout_ranges = pulse_schedule.get_pulse_ranges(list(channel_captures.keys()))
+        range_targets = self._resolve_pulse_range_targets(
+            pulse_schedule=pulse_schedule,
+            capture_targets=list(channel_captures),
+        )
+        readout_ranges = pulse_schedule.get_pulse_ranges(range_targets)
         for channel, captures in channel_captures.items():
             sorted_captures = sorted(captures, key=lambda c: c.start_time)
             if not sorted_captures:
@@ -122,6 +126,12 @@ class Quel1MeasurementBackendAdapter:
                     raise ValueError(
                         f"Capture duration must be a multiple of {word_duration} ns."
                     )
+
+            if self._is_entire_schedule_capture(
+                captures=sorted_captures,
+                schedule_duration=pulse_schedule.duration,
+            ):
+                continue
 
             ranges = readout_ranges.get(channel, [])
             expected_capture_count = len(ranges) + (
@@ -243,7 +253,7 @@ class Quel1MeasurementBackendAdapter:
         backend_result: object,
         measurement_config: MeasurementConfig,
         device_config: dict,
-        sampling_period_ns: float | None,
+        sampling_period_ns: float,
     ) -> MeasurementResult:
         """Build canonical result from a QuEL-1 backend result payload."""
         if not isinstance(backend_result, Quel1BackendExecutionResult):
@@ -252,12 +262,19 @@ class Quel1MeasurementBackendAdapter:
             )
 
         shot_averaging = measurement_config.shot_averaging
-        label_slice = slice(1, None)  # remove the resonator prefix "R"
+        skip_extra_capture = self._constraint_profile.require_workaround_capture
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
+        target_registry = getattr(self._experiment_system, "target_registry", None)
 
         iq_data: dict[str, list[npt.ArrayLike]] = {}
         for target, iqs in sorted(backend_result.data.items()):
-            sideband = self._experiment_system.get_target(target).sideband
+            sideband = "U"
+            try:
+                sideband_candidate = self._experiment_system.get_target(target).sideband
+                if sideband_candidate in ("U", "L"):
+                    sideband = sideband_candidate
+            except KeyError:
+                sideband = "U"
             if sideband == "L":
                 iq_data[target] = [np.conjugate(iq) for iq in iqs]
             else:
@@ -266,20 +283,36 @@ class Quel1MeasurementBackendAdapter:
         measure_data: dict[str, list[np.ndarray]] = {}
         if not shot_averaging:
             for target, iqs in iq_data.items():
-                qubit = target[label_slice]
+                if target_registry is not None and hasattr(
+                    target_registry,
+                    "measurement_output_label",
+                ):
+                    qubit = str(target_registry.measurement_output_label(target))
+                elif target.startswith("R"):
+                    qubit = target[1:]
+                else:
+                    qubit = target
                 values: list[np.ndarray] = []
                 for index, iq in enumerate(iqs):
-                    if index == 0:
+                    if skip_extra_capture and index == 0:
                         # skip the first extra capture
                         continue
                     values.append(np.asarray(iq, dtype=np.complex128) * norm_factor)
                 measure_data[qubit] = values
         else:
             for target, iqs in iq_data.items():
-                qubit = target[label_slice]
+                if target_registry is not None and hasattr(
+                    target_registry,
+                    "measurement_output_label",
+                ):
+                    qubit = str(target_registry.measurement_output_label(target))
+                elif target.startswith("R"):
+                    qubit = target[1:]
+                else:
+                    qubit = target
                 values = []
                 for index, iq in enumerate(iqs):
-                    if index == 0:
+                    if skip_extra_capture and index == 0:
                         # skip the first extra capture
                         continue
                     values.append(
@@ -307,10 +340,12 @@ class Quel1MeasurementBackendAdapter:
         """Create sampled sequences from measurement schedule."""
         pulse_schedule = schedule.pulse_schedule
         capture_schedule = schedule.capture_schedule
-        capture_delays = self._experiment_system.control_params.capture_delay_word
-
-        readout_targets = list(capture_schedule.channels.keys())
-        readout_ranges = pulse_schedule.get_pulse_ranges(readout_targets)
+        capture_targets = list(capture_schedule.channels.keys())
+        pulse_range_targets = self._resolve_pulse_range_targets(
+            pulse_schedule=pulse_schedule,
+            capture_targets=capture_targets,
+        )
+        readout_ranges = pulse_schedule.get_pulse_ranges(pulse_range_targets)
 
         capture_delay_sample: dict[str, int] = {}
         word_length = self._constraint_profile.word_length_samples
@@ -319,37 +354,17 @@ class Quel1MeasurementBackendAdapter:
             raise ValueError(
                 "word_length_samples is required for backend execution request."
             )
-        for target in readout_targets:
-            target_registry = getattr(self._experiment_system, "target_registry", None)
-            fallback_registry = TargetRegistry()
-            resolve_qubit_label = getattr(
-                self._experiment_system,
-                "resolve_qubit_label",
-                None,
+        for target in capture_targets:
+            capture_delay_sample[target] = self._resolve_capture_delay_samples(
+                target=target,
+                word_length=word_length,
             )
-            if callable(resolve_qubit_label):
-                qubit_label = str(resolve_qubit_label(target))
-            elif target_registry is not None and hasattr(
-                target_registry,
-                "resolve_qubit_label",
-            ):
-                resolver = target_registry.resolve_qubit_label
-                try:
-                    qubit_label = str(resolver(target, allow_legacy=True))
-                except TypeError:
-                    qubit_label = str(resolver(target))
-            else:
-                qubit_label = fallback_registry.resolve_qubit_label(
-                    target,
-                    allow_legacy=True,
-                )
-            mux = self._experiment_system.get_mux_by_qubit(qubit_label)
-            capture_delay_word = capture_delays.get(mux.index, 0)
-            capture_delay_sample[target] = capture_delay_word * word_length
 
         sampled_sequences = pulse_schedule.get_sampled_sequences()
         for target, ranges in readout_ranges.items():
             if not ranges:
+                continue
+            if target not in sampled_sequences:
                 continue
             seq = sampled_sequences[target]
             omega = 2 * np.pi * self._experiment_system.get_diff_frequency(target)
@@ -360,11 +375,18 @@ class Quel1MeasurementBackendAdapter:
 
         gen_sequences: dict[str, GenSampledSequenceProtocol] = {}
         for target, waveform in sampled_sequences.items():
-            if self._experiment_system.get_target(target).sideband != "L":
+            sideband = "U"
+            try:
+                sideband_candidate = self._experiment_system.get_target(target).sideband
+                if sideband_candidate in ("U", "L"):
+                    sideband = sideband_candidate
+            except KeyError:
+                sideband = "U"
+            if sideband != "L":
                 waveform = np.conj(waveform)
             gen_sequences[target] = self._create_gen_sampled_sequence(
                 target_name=target,
-                modulation_frequency=self._experiment_system.get_awg_frequency(target),
+                modulation_frequency=self._resolve_modulation_frequency(target=target),
                 real=np.real(waveform),
                 imag=np.imag(waveform),
             )
@@ -394,12 +416,105 @@ class Quel1MeasurementBackendAdapter:
 
             cap_sequences[target] = self._create_cap_sampled_sequence(
                 target_name=target,
-                modulation_frequency=self._experiment_system.get_awg_frequency(target),
-                capture_delay=capture_delay_sample[target],
+                modulation_frequency=self._resolve_modulation_frequency(target=target),
+                capture_delay=capture_delay_sample.get(target, 0),
                 capture_slots=capture_slots,
             )
 
         return gen_sequences, cap_sequences
+
+    def _resolve_capture_delay_samples(
+        self,
+        *,
+        target: str,
+        word_length: int,
+    ) -> int:
+        """Resolve capture delay in samples for one capture target."""
+        capture_delays = self._experiment_system.control_params.capture_delay_word
+        target_registry = getattr(self._experiment_system, "target_registry", None)
+        fallback_registry = TargetRegistry()
+        resolve_qubit_label = getattr(
+            self._experiment_system,
+            "resolve_qubit_label",
+            None,
+        )
+
+        qubit_label: str | None = None
+        if callable(resolve_qubit_label):
+            try:
+                qubit_label = str(resolve_qubit_label(target))
+            except ValueError:
+                qubit_label = None
+        elif target_registry is not None and hasattr(
+            target_registry,
+            "resolve_qubit_label",
+        ):
+            resolver = target_registry.resolve_qubit_label
+            try:
+                qubit_label = str(resolver(target, allow_legacy=True))
+            except TypeError:
+                try:
+                    qubit_label = str(resolver(target))
+                except ValueError:
+                    qubit_label = None
+            except ValueError:
+                qubit_label = None
+        else:
+            try:
+                qubit_label = str(
+                    fallback_registry.resolve_qubit_label(
+                        target,
+                        allow_legacy=True,
+                    )
+                )
+            except ValueError:
+                qubit_label = None
+
+        if qubit_label is not None:
+            try:
+                mux = self._experiment_system.get_mux_by_qubit(qubit_label)
+            except (KeyError, ValueError):
+                mux = None
+            if mux is not None:
+                capture_delay_word = capture_delays.get(mux.index, 0)
+                return capture_delay_word * word_length
+
+        control_system = getattr(self._experiment_system, "control_system", None)
+        if control_system is not None and hasattr(control_system, "get_port_by_id"):
+            try:
+                port = control_system.get_port_by_id(target)
+            except KeyError:
+                return 0
+            channels = getattr(port, "channels", ())
+            if channels:
+                ndelay = getattr(channels[0], "ndelay", None)
+                if isinstance(ndelay, int):
+                    return ndelay * word_length
+        return 0
+
+    def _resolve_modulation_frequency(
+        self,
+        *,
+        target: str,
+    ) -> float:
+        """Resolve modulation frequency for generation or capture sequence."""
+        try:
+            return float(self._experiment_system.get_awg_frequency(target))
+        except (KeyError, ValueError):
+            pass
+
+        control_system = getattr(self._experiment_system, "control_system", None)
+        if control_system is not None and hasattr(control_system, "get_port_by_id"):
+            try:
+                port = control_system.get_port_by_id(target)
+            except KeyError:
+                return 0.0
+            channels = getattr(port, "channels", ())
+            if channels:
+                fnco_freq = getattr(channels[0], "fnco_freq", None)
+                if isinstance(fnco_freq, (int, float)):
+                    return float(fnco_freq)
+        return 0.0
 
     def _create_gen_sampled_sequence(
         self,
@@ -466,6 +581,59 @@ class Quel1MeasurementBackendAdapter:
             modulation_frequency=modulation_frequency,
             sub_sequences=[cap_sub_sequence],
         )
+
+    def _is_entire_schedule_capture(
+        self,
+        *,
+        captures: list,
+        schedule_duration: float,
+    ) -> bool:
+        """Return whether captures represent one full-span capture over schedule."""
+        profile = self._constraint_profile
+        if profile.require_workaround_capture:
+            if len(captures) != 2:
+                return False
+            first_capture, second_capture = captures
+            capture_start = profile.extra_capture_duration_ns
+            capture_duration = max(0.0, schedule_duration - capture_start)
+            return bool(
+                np.isclose(first_capture.start_time, 0.0)
+                and np.isclose(
+                    first_capture.duration,
+                    profile.workaround_capture_duration_ns,
+                )
+                and np.isclose(second_capture.start_time, capture_start)
+                and np.isclose(second_capture.duration, capture_duration)
+            )
+        if len(captures) != 1:
+            return False
+        capture = captures[0]
+        return bool(
+            np.isclose(capture.start_time, 0.0)
+            and np.isclose(capture.duration, schedule_duration)
+        )
+
+    @staticmethod
+    def _resolve_pulse_range_targets(
+        *,
+        pulse_schedule: object,
+        capture_targets: list[str],
+    ) -> list[str]:
+        """Resolve capture targets that also exist in pulse-range labels."""
+        pulse_labels = getattr(pulse_schedule, "labels", None)
+        label_set: set[str] = set()
+        if isinstance(pulse_labels, list):
+            label_set = {str(label) for label in pulse_labels}
+        else:
+            get_pulse_ranges = getattr(pulse_schedule, "get_pulse_ranges", None)
+            if callable(get_pulse_ranges):
+                try:
+                    ranges = get_pulse_ranges()
+                except TypeError:
+                    ranges = None
+                if isinstance(ranges, dict):
+                    label_set = {str(label) for label in ranges}
+        return [target for target in capture_targets if target in label_set]
 
     @staticmethod
     def _is_multiple(

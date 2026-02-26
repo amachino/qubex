@@ -336,6 +336,7 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
         data={"Q00": [np.array([1.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg"),
         device_config={"kind": "quel3"},
+        sampling_period_ns=0.4,
     )
 
     class _Adapter:
@@ -384,6 +385,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
         data={"Q00": [np.array([2.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg"),
         device_config={"kind": "adapter"},
+        sampling_period_ns=0.4,
     )
 
     class _Adapter:

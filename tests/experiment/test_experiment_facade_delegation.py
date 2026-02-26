@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from qubex.experiment.experiment import Experiment
 
@@ -46,6 +46,10 @@ class _MeasurementServiceStub:
     def measure(self, sequence: object, **kwargs: Any) -> str:
         self.calls.append(("measure", {"sequence": sequence, **kwargs}))
         return "measure_result"
+
+    def capture_loopback(self, schedule: object, **kwargs: Any) -> str:
+        self.calls.append(("capture_loopback", {"schedule": schedule, **kwargs}))
+        return "capture_loopback_result"
 
 
 class _ExperimentContextStub:
@@ -335,6 +339,30 @@ def test_reload_delegates_to_session_service() -> None:
     exp.reload()
 
     assert session_stub.calls == [("reload", {})]
+
+
+def test_capture_loopback_delegates_to_measurement_service() -> None:
+    """Given loopback capture arguments, when called, then it delegates to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    schedule = cast(Any, object())
+
+    result = exp.capture_loopback(
+        schedule,
+        n_shots=128,
+    )
+
+    assert result == "capture_loopback_result"
+    assert measurement_stub.calls == [
+        (
+            "capture_loopback",
+            {
+                "schedule": schedule,
+                "n_shots": 128,
+            },
+        )
+    ]
 
 
 def test_configure_delegates_to_session_service() -> None:

@@ -464,6 +464,7 @@ def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> 
         data={"Q00": [np.array([1.0 + 0.0j], dtype=np.complex128)]},
         measurement_config=_make_config(mode="avg"),
         device_config={"kind": "quel3"},
+        sampling_period_ns=0.4,
     )
     adapter = Quel3MeasurementBackendAdapter(
         backend_controller=_make_backend_controller(),

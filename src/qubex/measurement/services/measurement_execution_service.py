@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import threading
 import warnings
-from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
-from typing import Any, TypeVar
+from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from typing import Any, Literal, TypeVar, cast
 
 import numpy as np
 from qxpulse import PulseSchedule, RampType
@@ -28,7 +29,10 @@ from qubex.measurement.measurement_constraint_profile import (
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
-from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
+from qubex.measurement.measurement_schedule_builder import (
+    CapturePlacement,
+    MeasurementScheduleBuilder,
+)
 from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models.measure_result import (
     MeasureResult,
@@ -54,6 +58,7 @@ from qubex.system import (
     ControlParams,
     ExperimentSystem,
     Mux,
+    PortType,
     SystemManager,
     Target,
 )
@@ -63,6 +68,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 OptionT = TypeVar("OptionT")
+RFSwitchState = Literal["pass", "block", "open", "loop"]
 
 _SYNC_BRIDGE_TIMEOUT_SECONDS = 300.0
 _MEASUREMENT_ASYNC_BRIDGE_LOCK = threading.Lock()
@@ -322,6 +328,212 @@ class MeasurementExecutionService:
 
         """
         return self.experiment_system.get_diff_frequency(target)
+
+    def _resolve_loopback_capture_targets(
+        self,
+        *,
+        schedule: PulseSchedule,
+    ) -> list[str]:
+        """Resolve read-in and monitor capture targets for loopback acquisition."""
+        target_registry = getattr(self.experiment_system, "target_registry", None)
+        resolve_qubit_label = getattr(target_registry, "resolve_qubit_label", None)
+
+        active_qubits: list[str] = []
+        active_boxes: list[str] = []
+        for label in schedule.labels:
+            target = self.targets.get(label)
+            if target is not None:
+                active_boxes.append(str(target.channel.port.box_id))
+            if callable(resolve_qubit_label):
+                try:
+                    qubit_label = resolve_qubit_label(label, allow_legacy=True)
+                except TypeError:
+                    try:
+                        qubit_label = resolve_qubit_label(label)
+                    except ValueError:
+                        continue
+                except ValueError:
+                    continue
+                active_qubits.append(str(qubit_label))
+
+        read_in_label_by_qubit: dict[str, str] = {}
+        for target in self.experiment_system.read_in_targets:
+            try:
+                qubit_label = self.experiment_system.resolve_qubit_label(target.label)
+            except ValueError:
+                continue
+            if qubit_label not in read_in_label_by_qubit:
+                read_in_label_by_qubit[qubit_label] = target.label
+
+        read_capture_targets = [
+            read_in_label_by_qubit[qubit]
+            for qubit in dict.fromkeys(active_qubits)
+            if qubit in read_in_label_by_qubit
+        ]
+
+        active_box_set = set(active_boxes)
+        if not read_capture_targets and active_box_set:
+            read_capture_targets.extend(
+                target.label
+                for target in self.experiment_system.read_in_targets
+                if target.channel.port.box_id in active_box_set
+            )
+        if not active_box_set:
+            active_box_set = {
+                box.id for box in self.experiment_system.control_system.boxes
+            }
+
+        monitor_capture_targets: list[str] = []
+        for box in self.experiment_system.control_system.boxes:
+            if box.id not in active_box_set:
+                continue
+            monitor_capture_targets.extend(
+                port.id for port in box.ports if port.type == PortType.MNTR_IN
+            )
+
+        return list(dict.fromkeys([*read_capture_targets, *monitor_capture_targets]))
+
+    def _resolve_loopback_capture_port(
+        self,
+        *,
+        target_or_port_id: str,
+    ) -> Any | None:
+        """Resolve one loopback capture port from target label or port ID."""
+        control_system = self.experiment_system.control_system
+        try:
+            return control_system.get_port_by_id(target_or_port_id)
+        except KeyError:
+            pass
+
+        get_cap_target = getattr(self.experiment_system, "get_cap_target", None)
+        if not callable(get_cap_target):
+            return None
+        try:
+            cap_target = get_cap_target(target_or_port_id)
+        except KeyError:
+            return None
+        channel = getattr(cap_target, "channel", None)
+        return None if channel is None else getattr(channel, "port", None)
+
+    def _resolve_loopback_rfswitch_updates(
+        self,
+        *,
+        capture_targets: Sequence[str],
+    ) -> dict[str, RFSwitchState]:
+        """Build loopback RF-switch overrides keyed by port ID."""
+        control_system = self.experiment_system.control_system
+        updates: dict[str, RFSwitchState] = {}
+
+        for capture_target in capture_targets:
+            port = self._resolve_loopback_capture_port(target_or_port_id=capture_target)
+            if port is None:
+                continue
+
+            if port.type == PortType.READ_IN:
+                updates[port.id] = "loop"
+                for box_port in control_system.get_box(port.box_id).ports:
+                    if box_port.type == PortType.READ_OUT:
+                        updates[box_port.id] = "block"
+            elif port.type == PortType.MNTR_IN:
+                updates[port.id] = "loop"
+                monitor_out_id = (
+                    f"{port.id.removesuffix('.IN')}.OUT"
+                    if port.id.endswith(".IN")
+                    else None
+                )
+                if monitor_out_id is not None:
+                    try:
+                        monitor_out_port = control_system.get_port_by_id(monitor_out_id)
+                    except KeyError:
+                        monitor_out_port = None
+                    if monitor_out_port is not None:
+                        updates[monitor_out_port.id] = "block"
+                        continue
+                for box_port in control_system.get_box(port.box_id).ports:
+                    if box_port.type == PortType.MNTR_OUT:
+                        updates[box_port.id] = "block"
+
+        return updates
+
+    def _set_port_rfswitch(
+        self,
+        *,
+        port: Any,
+        rfswitch: RFSwitchState,
+    ) -> None:
+        """Set one port RF switch on hardware and in experiment model."""
+        config_port = getattr(self.backend_controller, "config_port", None)
+        if not callable(config_port):
+            raise NotImplementedError(
+                "Active backend does not support RF-switch configuration."
+            )
+
+        config_port(
+            box_name=port.box_id,
+            port=port.number,
+            rfswitch=rfswitch,
+        )
+        self.experiment_system.control_system.set_port_params(
+            box_id=port.box_id,
+            port_number=port.number,
+            rfswitch=rfswitch,
+        )
+
+    @contextmanager
+    def _temporary_loopback_rfswitches(
+        self,
+        *,
+        capture_targets: Sequence[str],
+    ) -> Iterator[None]:
+        """Temporarily configure RF switches for loopback capture and restore them."""
+        config_port = getattr(self.backend_controller, "config_port", None)
+        if not callable(config_port):
+            yield
+            return
+
+        updates = self._resolve_loopback_rfswitch_updates(
+            capture_targets=capture_targets
+        )
+        if not updates:
+            yield
+            return
+
+        control_system = self.experiment_system.control_system
+        original_rfswitches: dict[str, RFSwitchState] = {}
+        for port_id in sorted(updates):
+            try:
+                port = control_system.get_port_by_id(port_id)
+            except KeyError:
+                continue
+            original_rfswitches[port_id] = cast(RFSwitchState, str(port.rfswitch))
+
+        try:
+            for port_id in sorted(updates):
+                try:
+                    port = control_system.get_port_by_id(port_id)
+                except KeyError:
+                    continue
+                desired_rfswitch = updates[port_id]
+                if str(port.rfswitch) == desired_rfswitch:
+                    continue
+                self._set_port_rfswitch(
+                    port=port,
+                    rfswitch=desired_rfswitch,
+                )
+            yield
+        finally:
+            for port_id in sorted(original_rfswitches):
+                try:
+                    port = control_system.get_port_by_id(port_id)
+                except KeyError:
+                    continue
+                restore_rfswitch = original_rfswitches[port_id]
+                if str(port.rfswitch) == restore_rfswitch:
+                    continue
+                self._set_port_rfswitch(
+                    port=port,
+                    rfswitch=restore_rfswitch,
+                )
 
     async def run_measurement(
         self,
@@ -857,6 +1069,55 @@ class MeasurementExecutionService:
             classifiers=self.classifiers,
         )
 
+    def capture_loopback(
+        self,
+        schedule: PulseSchedule | TargetMap[IQArray],
+        *,
+        n_shots: int | None = None,
+    ) -> MeasurementResult:
+        """
+        Capture full-span loopback data on read-in and monitor input channels.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule | TargetMap[IQArray]
+            Pulse schedule or control waveforms to execute.
+        n_shots : int | None, optional
+            Number of shots.
+
+        Returns
+        -------
+        MeasurementResult
+            Measurement result for loopback capture windows.
+        """
+        if not isinstance(schedule, PulseSchedule):
+            schedule = PulseSchedule.from_waveforms(schedule)
+
+        capture_targets = self._resolve_loopback_capture_targets(schedule=schedule)
+        measurement_schedule = self.build_measurement_schedule(
+            pulse_schedule=schedule,
+            capture_placement="entire_schedule",
+            capture_targets=capture_targets,
+            final_measurement=False,
+            readout_amplification=False,
+            plot=False,
+        )
+        measurement_config = self.measurement_config_factory.create(
+            n_shots=n_shots,
+            shot_averaging=True,
+            time_integration=False,
+            state_classification=False,
+        )
+        with self._temporary_loopback_rfswitches(capture_targets=capture_targets):
+            result = _run_async(
+                lambda: self.run_measurement(
+                    schedule=measurement_schedule,
+                    config=measurement_config,
+                )
+            )
+
+        return result
+
     def create_measurement_config(
         self,
         *,
@@ -909,6 +1170,8 @@ class MeasurementExecutionService:
         readout_drag_coeff: float | None = None,
         readout_amplification: bool = False,
         final_measurement: bool = False,
+        capture_placement: CapturePlacement = "pulse_aligned",
+        capture_targets: list[str] | None = None,
         plot: bool = False,
     ) -> MeasurementSchedule:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
@@ -923,6 +1186,8 @@ class MeasurementExecutionService:
             readout_drag_coeff=readout_drag_coeff,
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
+            capture_placement=capture_placement,
+            capture_targets=capture_targets,
             plot=plot,
         )
         return measurement_schedule

@@ -46,7 +46,10 @@ def test_schedule_builder_keeps_readout_target_order(monkeypatch) -> None:
         *,
         schedule: PulseSchedule,
         readout_targets: list[str],
+        capture_targets: list[str],
+        capture_placement: str,
     ) -> CaptureSchedule:
+        _ = (capture_targets, capture_placement)
         captured["readout_targets"] = readout_targets
         return CaptureSchedule(captures=[])
 
@@ -107,7 +110,10 @@ def test_schedule_builder_uses_registry_for_readout_label_order(
         *,
         schedule: PulseSchedule,
         readout_targets: list[str],
+        capture_targets: list[str],
+        capture_placement: str,
     ) -> CaptureSchedule:
+        _ = (capture_targets, capture_placement)
         captured["readout_targets"] = readout_targets
         return CaptureSchedule(captures=[])
 
@@ -152,13 +158,21 @@ def test_schedule_builder_accepts_qubit_keyed_readout_amplitudes(monkeypatch) ->
         mux_dict={},
     )
 
+    def _capture_noop(
+        self: MeasurementScheduleBuilder,
+        *,
+        schedule: PulseSchedule,
+        readout_targets: list[str],
+        capture_targets: list[str],
+        capture_placement: str,
+    ) -> CaptureSchedule:
+        _ = (schedule, readout_targets, capture_targets, capture_placement)
+        return CaptureSchedule(captures=[])
+
     monkeypatch.setattr(
         builder,
         "_build_capture_schedule",
-        MethodType(
-            lambda self, *, schedule, readout_targets: CaptureSchedule(captures=[]),
-            builder,
-        ),
+        MethodType(_capture_noop, builder),
     )
 
     with PulseSchedule(["Q00"]) as schedule:

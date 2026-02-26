@@ -164,7 +164,7 @@ class Quel3MeasurementBackendAdapter:
         backend_result: Quel3BackendExecutionResult,
         measurement_config: MeasurementConfig,
         device_config: dict,
-        sampling_period_ns: float | None,
+        sampling_period_ns: float,
     ) -> MeasurementResult:
         """Build canonical result from QuEL-3 backend result payload."""
         _ = device_config

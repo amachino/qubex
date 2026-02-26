@@ -28,6 +28,7 @@ from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (
     Measurement,
+    MeasurementResult,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
@@ -1452,6 +1453,32 @@ class Experiment:
             line_param1=line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
+        )
+
+    def capture_loopback(
+        self,
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+    ) -> MeasurementResult:
+        """
+        Capture full-span loopback data on read-in and monitor input channels.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            Schedule to execute.
+        n_shots : int | None, optional
+            Number of shots.
+
+        Returns
+        -------
+        MeasurementResult
+            Loopback capture result.
+        """
+        return self.measurement_service.capture_loopback(
+            schedule,
+            n_shots=n_shots,
         )
 
     def measure(

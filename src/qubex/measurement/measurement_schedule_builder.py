@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from typing import Literal
 
 from qxpulse import PulseSchedule, RampType
 
@@ -13,6 +14,8 @@ from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .models.capture_schedule import Capture, CaptureSchedule
 from .models.measurement_schedule import MeasurementSchedule
+
+CapturePlacement = Literal["pulse_aligned", "entire_schedule"]
 
 
 class MeasurementScheduleBuilder:
@@ -82,6 +85,8 @@ class MeasurementScheduleBuilder:
         readout_drag_coeff: float | None = None,
         readout_amplification: bool = False,
         final_measurement: bool = False,
+        capture_placement: CapturePlacement = "pulse_aligned",
+        capture_targets: list[str] | None = None,
         plot: bool = False,
     ) -> MeasurementSchedule:
         """Build an execution-ready measurement schedule from user inputs."""
@@ -141,8 +146,15 @@ class MeasurementScheduleBuilder:
                 label for label in schedule.labels if self._targets[label].is_read
             ]
 
-        if not readout_targets:
+        if capture_targets is None:
+            capture_targets = list(readout_targets)
+
+        if capture_placement == "pulse_aligned" and not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
+        if capture_placement == "entire_schedule" and not capture_targets:
+            raise ValueError(
+                "No capture targets specified for entire-schedule capture placement."
+            )
 
         if self.constraint_profile.require_workaround_capture:
             schedule.pad(
@@ -193,6 +205,8 @@ class MeasurementScheduleBuilder:
         capture_schedule = self._build_capture_schedule(
             schedule=schedule,
             readout_targets=readout_targets,
+            capture_targets=capture_targets,
+            capture_placement=capture_placement,
         )
 
         return MeasurementSchedule(
@@ -205,11 +219,39 @@ class MeasurementScheduleBuilder:
         *,
         schedule: PulseSchedule,
         readout_targets: list[str],
+        capture_targets: list[str],
+        capture_placement: CapturePlacement,
     ) -> CaptureSchedule:
-        """Build a capture schedule aligned to readout windows and workaround capture."""
+        """Build a capture schedule for pulse-aligned or entire-schedule placement."""
         captures: list[Capture] = []
-        readout_ranges = schedule.get_pulse_ranges(readout_targets)
         workaround_duration = self.constraint_profile.workaround_capture_duration_ns
+
+        if capture_placement == "entire_schedule":
+            full_capture_start = 0.0
+            full_capture_duration = schedule.duration
+            if self.constraint_profile.require_workaround_capture:
+                full_capture_start = self.constraint_profile.extra_capture_duration_ns
+                full_capture_duration = max(0.0, schedule.duration - full_capture_start)
+            for target in capture_targets:
+                if self.constraint_profile.require_workaround_capture:
+                    captures.append(
+                        Capture(
+                            channels=[target],
+                            start_time=0.0,
+                            duration=workaround_duration,
+                        )
+                    )
+                if full_capture_duration > 0.0:
+                    captures.append(
+                        Capture(
+                            channels=[target],
+                            start_time=full_capture_start,
+                            duration=full_capture_duration,
+                        )
+                    )
+            return CaptureSchedule(captures=captures)
+
+        readout_ranges = schedule.get_pulse_ranges(readout_targets)
 
         for target in readout_targets:
             ranges = readout_ranges.get(target, [])

@@ -122,6 +122,7 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
         device_config={"shots": 2},
         measurement_config=_make_config(mode="avg", shots=2),
+        sampling_period_ns=2.0,
     )
     serialized = original.to_dict()
 
@@ -143,6 +144,7 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
         },
         device_config={"shots": 2},
         measurement_config=_make_config(mode="single", shots=2),
+        sampling_period_ns=2.0,
     )
     path = tmp_path / "measurement_result.nc"
 
@@ -161,6 +163,7 @@ def test_save_writes_netcdf_file(tmp_path) -> None:
     result = MeasurementResult(
         data={"Q00": [np.array([1.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg", shots=2),
+        sampling_period_ns=2.0,
     )
 
     path = result.save(tmp_path, file_name="result.nc")
@@ -178,11 +181,23 @@ def test_measurement_result_requires_measurement_config() -> None:
         )
 
 
+def test_measurement_result_requires_sampling_period() -> None:
+    """Given missing sampling period, result construction raises validation error."""
+    with pytest.raises(ValidationError):
+        _ = MeasurementResult.model_validate(
+            {
+                "data": {"Q00": [np.array([1.0 + 0.0j])]},
+                "measurement_config": _make_config(mode="avg", shots=1),
+            }
+        )
+
+
 def test_converter_falls_back_to_empty_config_when_missing() -> None:
     """Given canonical result without device config, converter returns legacy results with empty config."""
     result = MeasurementResult(
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg", shots=2),
+        sampling_period_ns=2.0,
     )
 
     multiple = MeasurementResultConverter.to_multiple_measure_result(result)
@@ -192,12 +207,105 @@ def test_converter_falls_back_to_empty_config_when_missing() -> None:
     assert single.config == {}
 
 
+def test_plot_calls_waveform_plot_for_avg_mode(monkeypatch) -> None:
+    """Given AVG canonical data, plot should call waveform plotting per capture."""
+    result = MeasurementResult(
+        data={"Q00": [np.array([1.0 + 0.0j, 2.0 + 0.0j])]},
+        measurement_config=_make_config(mode="avg", shots=1),
+        sampling_period_ns=0.8,
+    )
+    called: dict[str, object] = {}
+
+    def _plot_waveform(
+        *,
+        data: np.ndarray,
+        sampling_period: float,
+        title: str,
+        xlabel: str,
+        ylabel: str,
+        save_image: bool,
+    ) -> None:
+        called["data"] = data
+        called["sampling_period"] = sampling_period
+        called["title"] = title
+        called["xlabel"] = xlabel
+        called["ylabel"] = ylabel
+        called["save_image"] = save_image
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.plot_waveform",
+        _plot_waveform,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    result.plot()
+
+    waveform = called["data"]
+    assert isinstance(waveform, np.ndarray)
+    assert np.array_equal(waveform, np.array([1.0 + 0.0j, 2.0 + 0.0j]))
+    assert called["sampling_period"] == 0.8
+    assert called["title"] == "Q00 : data[0]"
+    assert called["xlabel"] == "Capture time (ns)"
+    assert called["ylabel"] == "Signal (arb. units)"
+    assert called["save_image"] is False
+
+
+def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
+    """Given SINGLE canonical data, plot should call IQ scatter with kerneled values."""
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                np.array(
+                    [
+                        [1.0 + 2.0j, 3.0 + 4.0j],
+                        [5.0 + 6.0j, 7.0 + 8.0j],
+                    ]
+                )
+            ]
+        },
+        measurement_config=_make_config(mode="single", shots=2),
+        sampling_period_ns=2.0,
+    )
+    called: dict[str, object] = {}
+
+    def _scatter_iq_data(
+        *,
+        data: dict[str, np.ndarray],
+        title: str,
+        save_image: bool,
+    ) -> None:
+        called["data"] = data
+        called["title"] = title
+        called["save_image"] = save_image
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        _scatter_iq_data,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.plot_waveform",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    result.plot()
+
+    assert called["title"] == "Q00 : data[0]"
+    assert called["save_image"] is False
+    plotted = called["data"]
+    assert isinstance(plotted, dict)
+    assert np.array_equal(plotted["Q00"], np.array([4.0 + 6.0j, 12.0 + 14.0j]))
+
+
 def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
     """Given NetCDF save, when opening the file, then codec metadata attributes are present."""
     result = MeasurementResult(
         data={"Q00": [np.array([1.0 + 2.0j])]},
         device_config={"backend": "quel"},
         measurement_config=_make_config(mode="single", shots=1),
+        sampling_period_ns=2.0,
     )
     path = result.save_netcdf(tmp_path / "metadata.nc")
 

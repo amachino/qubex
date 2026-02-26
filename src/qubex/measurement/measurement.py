@@ -35,7 +35,10 @@ from .classifiers.state_classifier import StateClassifier
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_context import MeasurementContext
 from .measurement_pulse_factory import MeasurementPulseFactory
-from .measurement_schedule_builder import MeasurementScheduleBuilder
+from .measurement_schedule_builder import (
+    CapturePlacement,
+    MeasurementScheduleBuilder,
+)
 from .measurement_schedule_runner import MeasurementScheduleRunner
 from .models.measure_result import (
     MeasureResult,
@@ -971,6 +974,32 @@ class Measurement:
             **deprecated_options,
         )
 
+    def capture_loopback(
+        self,
+        schedule: PulseSchedule | TargetMap[IQArray],
+        *,
+        n_shots: int | None = None,
+    ) -> MeasurementResult:
+        """
+        Capture full-span loopback data from read-in and monitor channels.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule | TargetMap[IQArray]
+            Pulse schedule or waveform mapping to execute.
+        n_shots : int | None, optional
+            Number of shots.
+
+        Returns
+        -------
+        MeasurementResult
+            Measurement result for loopback capture windows.
+        """
+        return self.execution_service.capture_loopback(
+            schedule=schedule,
+            n_shots=n_shots,
+        )
+
     def create_measurement_config(
         self,
         *,
@@ -1030,6 +1059,8 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_amplification: bool = False,
         final_measurement: bool = False,
+        capture_placement: CapturePlacement = "pulse_aligned",
+        capture_targets: list[str] | None = None,
         plot: bool = False,
     ) -> MeasurementSchedule:
         """
@@ -1057,6 +1088,10 @@ class Measurement:
             Whether to insert readout amplification pulses.
         final_measurement : bool, optional
             Whether to append a final measurement at schedule tail.
+        capture_placement : CapturePlacement, optional
+            Capture-window placement (`pulse_aligned` or `entire_schedule`).
+        capture_targets : list[str] | None, optional
+            Explicit capture-channel labels for `entire_schedule` placement.
         plot : bool, optional
             Whether to plot the generated schedule.
 
@@ -1081,5 +1116,7 @@ class Measurement:
             readout_drag_coeff=readout_drag_coeff,
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
+            capture_placement=capture_placement,
+            capture_targets=capture_targets,
             plot=plot,
         )
