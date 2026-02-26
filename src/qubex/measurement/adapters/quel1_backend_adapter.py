@@ -22,6 +22,7 @@ from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.system import ExperimentSystem, TargetRegistry
 
 if TYPE_CHECKING:
@@ -184,15 +185,16 @@ class Quel1MeasurementBackendAdapter:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> BackendExecutionRequest:
         """Build a QuEL backend execution request from measurement inputs."""
         profile = self._constraint_profile
         block_duration = profile.block_duration_ns
-        measure_mode = MeasureMode(config.mode)
+        measure_mode = MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
         base_duration = schedule.pulse_schedule.duration
         if profile.enforce_block_alignment and block_duration is not None:
             interval = int(
-                math.ceil((base_duration + config.interval) / block_duration)
+                math.ceil((base_duration + config.shot_interval_ns) / block_duration)
                 * block_duration
             )
             # Compatibility guard:
@@ -202,14 +204,14 @@ class Quel1MeasurementBackendAdapter:
             # can make trailing chunk blank words negative.
             # Remove this workaround once qubecalib compatibility is no longer
             # required in the QuEL-1 measurement path.
-            if config.interval <= 0:
+            if config.shot_interval_ns <= 0:
                 minimum_interval = int(
                     math.ceil((base_duration + block_duration) / block_duration)
                     * block_duration
                 )
                 interval = max(interval, minimum_interval)
         else:
-            interval = math.ceil(base_duration + config.interval)
+            interval = math.ceil(base_duration + config.shot_interval_ns)
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
         )
@@ -223,13 +225,13 @@ class Quel1MeasurementBackendAdapter:
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map=resource_map,
             interval=interval,
-            repeats=config.shots,
+            repeats=config.n_shots,
             integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=config.enable_dsp_demodulation,
-            enable_sum=config.enable_dsp_sum,
-            enable_classification=config.enable_dsp_classification,
-            line_param0=config.line_param0,
-            line_param1=config.line_param1,
+            dsp_demodulation=True,
+            enable_sum=config.time_integration,
+            enable_classification=config.state_classification,
+            line_param0=None if quel1_options is None else quel1_options.line_param0,
+            line_param1=None if quel1_options is None else quel1_options.line_param1,
         )
         return BackendExecutionRequest(
             payload=payload,
@@ -249,7 +251,7 @@ class Quel1MeasurementBackendAdapter:
                 "QuEL-1 adapter expects backend_result to be `Quel1BackendExecutionResult`."
             )
 
-        measure_mode = measurement_config.mode
+        shot_averaging = measurement_config.shot_averaging
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
 
@@ -262,7 +264,7 @@ class Quel1MeasurementBackendAdapter:
                 iq_data[target] = iqs
 
         measure_data: dict[str, list[np.ndarray]] = {}
-        if measure_mode == "single":
+        if not shot_averaging:
             for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 values: list[np.ndarray] = []
@@ -272,7 +274,7 @@ class Quel1MeasurementBackendAdapter:
                         continue
                     values.append(np.asarray(iq, dtype=np.complex128) * norm_factor)
                 measure_data[qubit] = values
-        elif measure_mode == "avg":
+        else:
             for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 values = []
@@ -283,11 +285,9 @@ class Quel1MeasurementBackendAdapter:
                     values.append(
                         np.asarray(iq, dtype=np.complex128).squeeze()
                         * norm_factor
-                        / measurement_config.shots
+                        / measurement_config.n_shots
                     )
                 measure_data[qubit] = values
-        else:
-            raise ValueError(f"Invalid measure mode: {measure_mode}")
 
         return MeasurementResult(
             data=measure_data,

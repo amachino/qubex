@@ -209,14 +209,11 @@ def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
     )
 
     config = MeasurementConfig(
-        mode="avg",
-        shots=1,
-        interval=100.0,
-        enable_dsp_demodulation=True,
-        enable_dsp_sum=False,
-        enable_dsp_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
+        n_shots=1,
+        shot_interval_ns=100.0,
+        shot_averaging=True,
+        time_integration=False,
+        state_classification=False,
     )
 
     schedule = MeasurementSchedule(

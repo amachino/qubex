@@ -81,14 +81,11 @@ def _make_config(
     shots: int = 16,
 ) -> MeasurementConfig:
     return MeasurementConfig(
-        mode=mode,
-        shots=shots,
-        interval=100.0,
-        enable_dsp_demodulation=True,
-        enable_dsp_sum=False,
-        enable_dsp_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
+        n_shots=shots,
+        shot_interval_ns=100.0,
+        shot_averaging=(mode == "avg"),
+        time_integration=False,
+        state_classification=False,
     )
 
 
@@ -529,7 +526,7 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     )
 
     assert isinstance(result, MeasurementResult)
-    assert result.measurement_config.mode == "avg"
+    assert result.measurement_config.shot_averaging is True
     assert result.device_config == {}
     assert result.measurement_config == config
     assert result.sampling_period_ns == pytest.approx(0.4)

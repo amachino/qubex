@@ -843,36 +843,27 @@ class Measurement:
     def create_measurement_config(
         self,
         *,
-        mode: MeasurementMode = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
     ) -> MeasurementConfig:
         """
         Create a `MeasurementConfig` from optional runtime overrides.
 
         Parameters
         ----------
-        mode : MeasurementMode, optional
-            The measurement mode, by default "avg".
-        shots : int | None, optional
-            The number of shots, by default None.
-        interval : float | None, optional
-            The interval in ns, by default None.
-        enable_dsp_demodulation : bool | None, optional
-            Whether to enable DSP demodulation, by default None.
-        enable_dsp_sum : bool | None, optional
-            Whether to enable DSP summation, by default None.
-        enable_dsp_classification : bool | None, optional
-            Whether to enable DSP classification, by default None.
-        line_param0 : tuple[float, float, float] | None, optional
-            The DSP line parameter 0, by default None.
-        line_param1 : tuple[float, float, float] | None, optional
-            The DSP line parameter 1, by default None.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval_ns : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether to average shots on hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
 
         Returns
         -------
@@ -880,14 +871,11 @@ class Measurement:
             The created measurement configuration.
         """
         return self.execution_service.create_measurement_config(
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
         )
 
     def build_measurement_schedule(

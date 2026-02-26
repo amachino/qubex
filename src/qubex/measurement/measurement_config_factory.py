@@ -5,16 +5,13 @@ from __future__ import annotations
 from typing import TypeVar
 
 from qubex.system import ExperimentSystem
-from qubex.typing import MeasurementMode
 
 from .measurement_defaults import (
-    DEFAULT_ENABLE_DSP_CLASSIFICATION,
-    DEFAULT_ENABLE_DSP_DEMODULATION,
-    DEFAULT_ENABLE_DSP_SUM,
     DEFAULT_INTERVAL,
-    DEFAULT_LINE_PARAM0,
-    DEFAULT_LINE_PARAM1,
+    DEFAULT_SHOT_AVERAGING,
     DEFAULT_SHOTS,
+    DEFAULT_STATE_CLASSIFICATION,
+    DEFAULT_TIME_INTEGRATION,
 )
 from .models.measurement_config import MeasurementConfig
 
@@ -39,44 +36,32 @@ class MeasurementConfigFactory:
     def create(
         self,
         *,
-        mode: MeasurementMode = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
     ) -> MeasurementConfig:
         """Create `MeasurementConfig` from optional runtime overrides."""
         return MeasurementConfig(
-            mode=mode,
-            shots=_or_default(
-                shots,
+            n_shots=_or_default(
+                n_shots,
                 DEFAULT_SHOTS,
             ),
-            interval=_or_default(
-                interval,
+            shot_interval_ns=_or_default(
+                shot_interval_ns,
                 DEFAULT_INTERVAL,
             ),
-            enable_dsp_demodulation=_or_default(
-                enable_dsp_demodulation,
-                DEFAULT_ENABLE_DSP_DEMODULATION,
+            shot_averaging=_or_default(
+                shot_averaging,
+                DEFAULT_SHOT_AVERAGING,
             ),
-            enable_dsp_sum=_or_default(
-                enable_dsp_sum,
-                DEFAULT_ENABLE_DSP_SUM,
+            time_integration=_or_default(
+                time_integration,
+                DEFAULT_TIME_INTEGRATION,
             ),
-            enable_dsp_classification=_or_default(
-                enable_dsp_classification,
-                DEFAULT_ENABLE_DSP_CLASSIFICATION,
-            ),
-            line_param0=_or_default(
-                line_param0,
-                DEFAULT_LINE_PARAM0,
-            ),
-            line_param1=_or_default(
-                line_param1,
-                DEFAULT_LINE_PARAM1,
+            state_classification=_or_default(
+                state_classification,
+                DEFAULT_STATE_CLASSIFICATION,
             ),
         )

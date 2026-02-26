@@ -24,6 +24,11 @@ class MeasurementResultConverter:
     """Convert `MeasurementResult` to and from legacy result classes."""
 
     @staticmethod
+    def _resolve_measure_mode(config: MeasurementConfig) -> MeasureMode:
+        """Resolve legacy measure mode from canonical measurement config."""
+        return MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
+
+    @staticmethod
     def _resolve_sampling_period_ns(
         *,
         explicit: float | None,
@@ -99,7 +104,9 @@ class MeasurementResultConverter:
         MultipleMeasureResult
             Legacy multi-capture result.
         """
-        mode = MeasureMode(result.measurement_config.mode)
+        mode = MeasurementResultConverter._resolve_measure_mode(
+            result.measurement_config
+        )
         if config is None:
             resolved_config: dict[str, Any] = (
                 {} if result.device_config is None else result.device_config
@@ -165,7 +172,9 @@ class MeasurementResultConverter:
         IndexError
             If `index` is out of range for any target.
         """
-        mode = MeasureMode(result.measurement_config.mode)
+        mode = MeasurementResultConverter._resolve_measure_mode(
+            result.measurement_config
+        )
         classifier_map = {} if classifiers is None else classifiers
         resolved_sampling_period = (
             MeasurementResultConverter._resolve_sampling_period_ns(

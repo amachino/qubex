@@ -36,6 +36,7 @@ from qubex.measurement.models.measure_result import (
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.measurement.models.sweep_measurement_result import (
     NDSweepMeasurementResult,
     SweepAxes,
@@ -279,6 +280,7 @@ class MeasurementExecutionService:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
         """
         Run measurement with the given schedule and configuration.
@@ -295,10 +297,17 @@ class MeasurementExecutionService:
         MeasurementResult
             The measurement result.
         """
-        result = await self.measurement_schedule_runner.execute(
-            schedule=schedule,
-            config=config,
-        )
+        if quel1_options is None:
+            result = await self.measurement_schedule_runner.execute(
+                schedule=schedule,
+                config=config,
+            )
+        else:
+            result = await self.measurement_schedule_runner.execute(
+                schedule=schedule,
+                config=config,
+                quel1_options=quel1_options,
+            )
         return result
 
     async def run_sweep_measurement(
@@ -509,6 +518,11 @@ class MeasurementExecutionService:
             add_pump_pulses = False
         if enable_dsp_demodulation is None:
             enable_dsp_demodulation = True
+        if enable_dsp_demodulation is False:
+            raise ValueError(
+                "enable_dsp_demodulation is deprecated and always enabled; "
+                "remove this argument or pass None."
+            )
         if enable_dsp_classification is None:
             enable_dsp_classification = False
 
@@ -611,6 +625,11 @@ class MeasurementExecutionService:
             add_pump_pulses = False
         if enable_dsp_demodulation is None:
             enable_dsp_demodulation = True
+        if enable_dsp_demodulation is False:
+            raise ValueError(
+                "enable_dsp_demodulation is deprecated and always enabled; "
+                "remove this argument or pass None."
+            )
         if enable_dsp_classification is None:
             enable_dsp_classification = False
 
@@ -618,14 +637,11 @@ class MeasurementExecutionService:
             schedule = PulseSchedule.from_waveforms(schedule)
 
         run_config = self.measurement_config_factory.create(
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            n_shots=shots,
+            shot_interval_ns=interval,
+            shot_averaging=(mode == "avg"),
+            time_integration=enable_dsp_sum,
+            state_classification=enable_dsp_classification,
         )
 
         measurement_schedule = self.build_measurement_schedule(
@@ -642,12 +658,25 @@ class MeasurementExecutionService:
             plot=plot,
         )
 
-        result = _run_async(
-            lambda: self.run_measurement(
-                schedule=measurement_schedule,
-                config=run_config,
+        if line_param0 is None and line_param1 is None:
+            result = _run_async(
+                lambda: self.run_measurement(
+                    schedule=measurement_schedule,
+                    config=run_config,
+                )
             )
-        )
+        else:
+            quel1_options = Quel1MeasurementOptions(
+                line_param0=line_param0,
+                line_param1=line_param1,
+            )
+            result = _run_async(
+                lambda: self.run_measurement(
+                    schedule=measurement_schedule,
+                    config=run_config,
+                    quel1_options=quel1_options,
+                )
+            )
 
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None and save_result:
@@ -662,53 +691,40 @@ class MeasurementExecutionService:
     def create_measurement_config(
         self,
         *,
-        mode: MeasurementMode = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
     ) -> MeasurementConfig:
         """
         Create a `MeasurementConfig` from optional runtime overrides.
 
         Parameters
         ----------
-        mode : MeasurementMode, optional
-            The measurement mode, by default "avg".
-        shots : int | None, optional
-            The number of shots, by default None.
-        interval : float | None, optional
-            The interval in ns, by default None.
-        enable_dsp_demodulation : bool | None, optional
-            Whether to enable DSP demodulation, by default None.
-        enable_dsp_sum : bool | None, optional
-            Whether to enable DSP summation, by default None.
-        enable_dsp_classification : bool | None, optional
-            Whether to enable DSP classification, by default None.
-        line_param0 : tuple[float, float, float] | None, optional
-            The DSP line parameter 0, by default None.
-        line_param1 : tuple[float, float, float] | None, optional
-            The DSP line parameter 1, by default None.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval_ns : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether to average shots on hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
 
         Returns
         -------
         MeasurementConfig
             The created measurement configuration.
         """
-        measurement_config = self.measurement_config_factory.create(
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+        return self.measurement_config_factory.create(
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
         )
-        return measurement_config
 
     def build_measurement_schedule(
         self,

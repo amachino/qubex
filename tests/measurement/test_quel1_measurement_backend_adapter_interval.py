@@ -23,14 +23,11 @@ class _BackendControllerStub:
 
 def _make_config(interval: float) -> MeasurementConfig:
     return MeasurementConfig(
-        mode="avg",
-        shots=1,
-        interval=interval,
-        enable_dsp_demodulation=True,
-        enable_dsp_sum=False,
-        enable_dsp_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
+        n_shots=1,
+        shot_interval_ns=interval,
+        shot_averaging=True,
+        time_integration=False,
+        state_classification=False,
     )
 
 

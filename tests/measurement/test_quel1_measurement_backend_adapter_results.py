@@ -29,14 +29,11 @@ class _ExperimentSystemStub:
 
 def _make_config(*, mode: MeasurementMode, shots: int) -> MeasurementConfig:
     return MeasurementConfig(
-        mode=mode,
-        shots=shots,
-        interval=100.0,
-        enable_dsp_demodulation=True,
-        enable_dsp_sum=False,
-        enable_dsp_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
+        n_shots=shots,
+        shot_interval_ns=100.0,
+        shot_averaging=(mode == "avg"),
+        time_integration=False,
+        state_classification=False,
     )
 
 
@@ -68,7 +65,7 @@ def test_build_measurement_result_converts_single_mode_to_qubit_labels() -> None
         sampling_period_ns=2.0,
     )
 
-    assert result.measurement_config.mode == "single"
+    assert result.measurement_config.shot_averaging is False
     assert result.device_config == {"kind": "quel1"}
     assert result.sampling_period_ns == 2.0
     assert set(result.data.keys()) == {"Q00"}
@@ -107,7 +104,7 @@ def test_build_measurement_result_converts_avg_mode_with_shot_scaling() -> None:
         sampling_period_ns=2.0,
     )
 
-    assert result.measurement_config.mode == "avg"
+    assert result.measurement_config.shot_averaging is True
     assert set(result.data.keys()) == {"Q00"}
     assert len(result.data["Q00"]) == 1
     assert_allclose(

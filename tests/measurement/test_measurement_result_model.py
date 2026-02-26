@@ -42,14 +42,11 @@ def _make_multiple_measure_result() -> MultipleMeasureResult:
 
 def _make_config(*, mode: MeasurementMode = "avg", shots: int = 2) -> MeasurementConfig:
     return MeasurementConfig(
-        mode=mode,
-        shots=shots,
-        interval=100.0,
-        enable_dsp_demodulation=True,
-        enable_dsp_sum=False,
-        enable_dsp_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
+        n_shots=shots,
+        shot_interval_ns=100.0,
+        shot_averaging=(mode == "avg"),
+        time_integration=False,
+        state_classification=False,
     )
 
 
@@ -71,7 +68,7 @@ def test_to_multiple_measure_result_returns_wrapped_result() -> None:
     assert result.device_config == multiple.config
     assert result.measurement_config == config
     assert np.array_equal(restored.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
-    assert result.measurement_config.mode == "avg"
+    assert result.measurement_config.shot_averaging is True
 
 
 def test_to_measure_result_selects_requested_index() -> None:
@@ -176,7 +173,9 @@ def test_save_writes_netcdf_file(tmp_path) -> None:
 def test_measurement_result_requires_measurement_config() -> None:
     """Given missing measurement config, result construction raises validation error."""
     with pytest.raises(ValidationError):
-        _ = MeasurementResult.model_validate({"data": {"Q00": [np.array([1.0 + 0.0j])]}})
+        _ = MeasurementResult.model_validate(
+            {"data": {"Q00": [np.array([1.0 + 0.0j])]}}
+        )
 
 
 def test_converter_falls_back_to_empty_config_when_missing() -> None:

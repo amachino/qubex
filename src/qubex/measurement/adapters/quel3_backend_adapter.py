@@ -26,6 +26,7 @@ from qubex.measurement.measurement_constraint_profile import (
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.system import ExperimentSystem
 
 
@@ -89,8 +90,10 @@ class Quel3MeasurementBackendAdapter:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> BackendExecutionRequest:
         """Build backend execution request as Quel3 fixed-timeline payload."""
+        _ = quel1_options
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
         waveform_library: dict[str, Quel3Waveform] = {}
@@ -145,13 +148,13 @@ class Quel3MeasurementBackendAdapter:
                 )
 
         self._output_target_labels_by_alias = output_target_labels_by_alias
-        interval_ns = math.ceil(pulse_schedule.duration + config.interval)
+        interval_ns = math.ceil(pulse_schedule.duration + config.shot_interval_ns)
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,
             fixed_timelines=fixed_timelines,
             interval_ns=interval_ns,
-            repeats=config.shots,
-            mode=config.mode,
+            repeats=config.n_shots,
+            mode="avg" if config.shot_averaging else "single",
         )
         return BackendExecutionRequest(payload=payload)
 

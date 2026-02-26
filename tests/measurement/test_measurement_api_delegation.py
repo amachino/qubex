@@ -43,14 +43,11 @@ def _make_config(
     shots: int = 2,
 ) -> MeasurementConfig:
     return MeasurementConfig(
-        mode=mode,
-        shots=shots,
-        interval=100.0,
-        enable_dsp_demodulation=True,
-        enable_dsp_sum=False,
-        enable_dsp_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
+        n_shots=shots,
+        shot_interval_ns=100.0,
+        shot_averaging=(mode == "avg"),
+        time_integration=False,
+        state_classification=False,
     )
 
 
@@ -172,7 +169,7 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     assert called["build_schedule"] is pulse_schedule
     assert called["run_schedule"] is built_schedule
     assert called["build_kwargs"]["add_last_measurement"] is True
-    assert called["run_config"].mode == "avg"
+    assert called["run_config"].shot_averaging is True
 
 
 def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
@@ -338,9 +335,8 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
 
     assert called["build_kwargs"]["add_pump_pulses"] is False
     config = called["config"]
-    assert config.enable_dsp_demodulation is True
-    assert config.enable_dsp_sum is True
-    assert config.enable_dsp_classification is False
+    assert config.time_integration is True
+    assert config.state_classification is False
 
 
 def test_run_measurement_delegates_to_executor(

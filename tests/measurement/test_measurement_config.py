@@ -19,7 +19,14 @@ from qubex.system import ExperimentSystem
 def test_model_requires_all_fields() -> None:
     """Given missing fields, when creating config directly, then validation fails."""
     with pytest.raises(ValidationError):
-        MeasurementConfig.model_validate({"mode": "avg", "shots": 1, "interval": 100.0})
+        MeasurementConfig.model_validate(
+            {
+                "n_shots": 1,
+                "shot_interval_ns": 100.0,
+                "shot_averaging": True,
+                "time_integration": False,
+            }
+        )
 
 
 def test_factory_applies_context_defaults() -> None:
@@ -39,14 +46,15 @@ def test_factory_applies_context_defaults() -> None:
     )
     config = factory.create()
 
-    assert config.mode == "avg"
-    assert config.shots == DEFAULT_SHOTS
-    assert config.interval == DEFAULT_INTERVAL
-    assert config.enable_dsp_demodulation is True
+    assert config.n_shots == DEFAULT_SHOTS
+    assert config.shot_interval_ns == DEFAULT_INTERVAL
+    assert config.shot_averaging is True
+    assert config.time_integration is False
+    assert config.state_classification is False
 
 
-def test_factory_maps_dsp_and_line_params() -> None:
-    """Given dsp args, when factory builds config, then DSP and line params are set in dsp config."""
+def test_factory_maps_boolean_overrides() -> None:
+    """Given boolean overrides, when factory builds config, then values are set in config."""
     experiment_system = type(
         "_ES",
         (),
@@ -59,18 +67,14 @@ def test_factory_maps_dsp_and_line_params() -> None:
         experiment_system=cast(ExperimentSystem, experiment_system)
     )
     config = factory.create(
-        enable_dsp_demodulation=False,
-        enable_dsp_sum=True,
-        enable_dsp_classification=True,
-        line_param0=(1.0, 2.0, 3.0),
-        line_param1=(4.0, 5.0, 6.0),
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
     )
 
-    assert config.enable_dsp_demodulation is False
-    assert config.enable_dsp_sum is True
-    assert config.enable_dsp_classification is True
-    assert config.line_param0 == (1.0, 2.0, 3.0)
-    assert config.line_param1 == (4.0, 5.0, 6.0)
+    assert config.shot_averaging is False
+    assert config.time_integration is True
+    assert config.state_classification is True
 
 
 def test_factory_rejects_frequency_overrides() -> None:

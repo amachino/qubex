@@ -8,6 +8,7 @@ from qubex.backend import BackendExecutionRequest
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
+from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 
 from .quel1_backend_adapter import Quel1MeasurementBackendAdapter
 from .quel3_backend_adapter import Quel3MeasurementBackendAdapter
@@ -25,6 +26,7 @@ class MeasurementBackendAdapter(Protocol):
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> BackendExecutionRequest:
         """Build backend execution request from measurement schedule/config."""
         ...

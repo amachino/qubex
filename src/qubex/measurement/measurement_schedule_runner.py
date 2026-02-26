@@ -24,6 +24,7 @@ from .measurement_constraint_profile import MeasurementConstraintProfile
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
 from .models.measurement_schedule import MeasurementSchedule
+from .models.quel1_measurement_options import Quel1MeasurementOptions
 
 
 class MeasurementScheduleRunner:
@@ -106,7 +107,7 @@ class MeasurementScheduleRunner:
             )
 
         sampling_period_ns = self._backend_controller.sampling_period
-        if config.mode == "avg":
+        if config.shot_averaging:
             sampling_period_ns = sampling_period_ns * capture_decimation_factor
 
         return self._measurement_backend_adapter.build_measurement_result(
@@ -121,6 +122,7 @@ class MeasurementScheduleRunner:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
         """
         Execute a measurement schedule with the given configuration.
@@ -138,10 +140,17 @@ class MeasurementScheduleRunner:
             The measurement result.
         """
         self._measurement_backend_adapter.validate_schedule(schedule)
-        request = self._measurement_backend_adapter.build_execution_request(
-            schedule=schedule,
-            config=config,
-        )
+        if quel1_options is None:
+            request = self._measurement_backend_adapter.build_execution_request(
+                schedule=schedule,
+                config=config,
+            )
+        else:
+            request = self._measurement_backend_adapter.build_execution_request(
+                schedule=schedule,
+                config=config,
+                quel1_options=quel1_options,
+            )
         options: dict[str, object] = {}
         if self._execution_mode is not None:
             options["execution_mode"] = self._execution_mode
