@@ -121,7 +121,7 @@ def test_run_measurement_builds_schedule_and_delegates() -> None:
     assert len(calls["create_config"]) == 1
     assert calls["create_config"][0] == {
         "n_shots": 256,
-        "shot_interval_ns": None,
+        "shot_interval": None,
         "shot_averaging": None,
         "time_integration": None,
         "state_classification": None,
@@ -156,7 +156,7 @@ def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     assert len(calls["create_config"]) == 1
     assert calls["create_config"][0] == {
         "n_shots": None,
-        "shot_interval_ns": None,
+        "shot_interval": None,
         "shot_averaging": False,
         "time_integration": None,
         "state_classification": None,
@@ -192,7 +192,7 @@ def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None
     assert len(calls["create_config"]) == 1
     assert calls["create_config"][0] == {
         "n_shots": None,
-        "shot_interval_ns": None,
+        "shot_interval": None,
         "shot_averaging": None,
         "time_integration": None,
         "state_classification": True,

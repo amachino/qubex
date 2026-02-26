@@ -1300,7 +1300,7 @@ class Experiment:
         schedule: PulseSchedule,
         *,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -1324,7 +1324,7 @@ class Experiment:
             Input pulse schedule.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval_ns : float | None, optional
+        shot_interval : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
@@ -1375,7 +1375,7 @@ class Experiment:
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
@@ -1387,7 +1387,7 @@ class Experiment:
         *,
         sweep_values: Sequence[SweepValue],
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -1413,7 +1413,7 @@ class Experiment:
             Ordered sweep values.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval_ns : float | None, optional
+        shot_interval : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
@@ -1470,7 +1470,7 @@ class Experiment:
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
@@ -1483,7 +1483,7 @@ class Experiment:
         sweep_points: dict[str, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -1511,7 +1511,7 @@ class Experiment:
             Axis order for Cartesian expansion.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval_ns : float | None, optional
+        shot_interval : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
@@ -1568,7 +1568,7 @@ class Experiment:
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,

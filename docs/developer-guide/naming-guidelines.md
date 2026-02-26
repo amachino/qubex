@@ -11,7 +11,6 @@ This page defines naming conventions used in Qubex code.
 ## Constants
 
 - Use `UPPER_SNAKE_CASE` for constants.
-- Include unit suffixes where useful (for example, `_NS`, `_SAMPLES`, `_GHZ`).
 
 ## Count values
 

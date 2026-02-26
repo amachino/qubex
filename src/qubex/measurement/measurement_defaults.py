@@ -7,11 +7,11 @@ from typing import Final
 from qxpulse import RampType
 
 DEFAULT_N_SHOTS: Final[int] = 1024
-DEFAULT_SHOT_INTERVAL_NS: Final[float] = 150.0 * 1024.0  # ns
+DEFAULT_SHOT_INTERVAL: Final[float] = 150.0 * 1024.0  # ns
 
 # Backward compatibility aliases.
 DEFAULT_SHOTS: Final[int] = DEFAULT_N_SHOTS
-DEFAULT_INTERVAL: Final[float] = DEFAULT_SHOT_INTERVAL_NS
+DEFAULT_INTERVAL: Final[float] = DEFAULT_SHOT_INTERVAL
 
 DEFAULT_READOUT_DURATION: Final[float] = 384.0  # ns
 DEFAULT_READOUT_RAMP_TIME: Final[float] = 32.0  # ns
@@ -35,7 +35,7 @@ __all__ = [
     "DEFAULT_READOUT_RAMP_TYPE",
     "DEFAULT_SHOTS",
     "DEFAULT_SHOT_AVERAGING",
-    "DEFAULT_SHOT_INTERVAL_NS",
+    "DEFAULT_SHOT_INTERVAL",
     "DEFAULT_STATE_CLASSIFICATION",
     "DEFAULT_TIME_INTEGRATION",
 ]

@@ -25,7 +25,7 @@ class _BackendControllerStub:
 def _make_config(interval: float) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=1,
-        shot_interval_ns=interval,
+        shot_interval=interval,
         shot_averaging=True,
         time_integration=False,
         state_classification=False,

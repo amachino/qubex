@@ -43,7 +43,7 @@ def _make_multiple_measure_result() -> MultipleMeasureResult:
 def _make_config(*, mode: MeasurementMode = "avg", shots: int = 2) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
-        shot_interval_ns=100.0,
+        shot_interval=100.0,
         shot_averaging=(mode == "avg"),
         time_integration=False,
         state_classification=False,
@@ -268,7 +268,7 @@ def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
         },
         measurement_config=MeasurementConfig(
             n_shots=2,
-            shot_interval_ns=100.0,
+            shot_interval=100.0,
             shot_averaging=False,
             time_integration=True,
             state_classification=False,
@@ -368,7 +368,7 @@ def test_plot_calls_waveform_with_software_shot_average_when_not_integrated(
         },
         measurement_config=MeasurementConfig(
             n_shots=2,
-            shot_interval_ns=100.0,
+            shot_interval=100.0,
             shot_averaging=False,
             time_integration=False,
             state_classification=False,
@@ -420,7 +420,7 @@ def test_plot_calls_iq_scatter_for_averaged_integrated_mode(monkeypatch) -> None
         data={"Q00": [np.array([1.0 + 2.0j, 3.0 + 4.0j])]},
         measurement_config=MeasurementConfig(
             n_shots=2,
-            shot_interval_ns=100.0,
+            shot_interval=100.0,
             shot_averaging=True,
             time_integration=True,
             state_classification=False,

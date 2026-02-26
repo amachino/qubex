@@ -51,7 +51,7 @@ class _FakePulseSchedule:
 def _make_config(*, mode: MeasurementMode, shots: int) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
-        shot_interval_ns=100.0,
+        shot_interval=100.0,
         shot_averaging=(mode == "avg"),
         time_integration=False,
         state_classification=False,

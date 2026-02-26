@@ -11,7 +11,7 @@ from qubex.measurement.measurement_config_factory import MeasurementConfigFactor
 from qubex.measurement.measurement_defaults import (
     DEFAULT_INTERVAL,
     DEFAULT_N_SHOTS,
-    DEFAULT_SHOT_INTERVAL_NS,
+    DEFAULT_SHOT_INTERVAL,
     DEFAULT_SHOTS,
 )
 from qubex.measurement.models import MeasurementConfig
@@ -24,7 +24,7 @@ def test_model_requires_all_fields() -> None:
         MeasurementConfig.model_validate(
             {
                 "n_shots": 1,
-                "shot_interval_ns": 100.0,
+                "shot_interval": 100.0,
                 "shot_averaging": True,
                 "time_integration": False,
             }
@@ -49,7 +49,7 @@ def test_factory_applies_context_defaults() -> None:
     config = factory.create()
 
     assert config.n_shots == DEFAULT_N_SHOTS
-    assert config.shot_interval_ns == DEFAULT_SHOT_INTERVAL_NS
+    assert config.shot_interval == DEFAULT_SHOT_INTERVAL
     assert config.shot_averaging is True
     assert config.time_integration is False
     assert config.state_classification is False
@@ -58,7 +58,7 @@ def test_factory_applies_context_defaults() -> None:
 def test_legacy_default_aliases_match_renamed_constants() -> None:
     """Given legacy aliases, when imported, then they match renamed defaults."""
     assert DEFAULT_SHOTS == DEFAULT_N_SHOTS
-    assert DEFAULT_INTERVAL == DEFAULT_SHOT_INTERVAL_NS
+    assert DEFAULT_INTERVAL == DEFAULT_SHOT_INTERVAL
 
 
 def test_factory_maps_boolean_overrides() -> None:

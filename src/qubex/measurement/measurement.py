@@ -767,7 +767,7 @@ class Measurement:
         waveforms: Mapping[str, IQArray],
         *,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -795,7 +795,7 @@ class Measurement:
             I/Q array sampled at `sampling_period` ns.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval_ns : float | None, optional
+        shot_interval : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
@@ -852,7 +852,7 @@ class Measurement:
         return self.execution_service.measure(
             waveforms=waveforms,
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
@@ -876,7 +876,7 @@ class Measurement:
         schedule: PulseSchedule | TargetMap[IQArray],
         *,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -905,7 +905,7 @@ class Measurement:
             Pulse schedule or waveform mapping to execute.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval_ns : float | None, optional
+        shot_interval : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
@@ -966,7 +966,7 @@ class Measurement:
         return self.execution_service.execute(
             schedule=schedule,
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
@@ -1017,7 +1017,7 @@ class Measurement:
         self,
         *,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -1029,7 +1029,7 @@ class Measurement:
         ----------
         n_shots : int | None, optional
             Number of shots.
-        shot_interval_ns : float | None, optional
+        shot_interval : float | None, optional
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether to average shots on hardware.
@@ -1048,12 +1048,12 @@ class Measurement:
         >>> # `session` is an initialized `Measurement` instance.
         >>> config = session.create_measurement_config(
         ...     n_shots=1024,
-        ...     shot_interval_ns=2048.0,
+        ...     shot_interval=2048.0,
         ... )
         """
         return self.execution_service.create_measurement_config(
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,

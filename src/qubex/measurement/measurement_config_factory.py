@@ -9,7 +9,7 @@ from qubex.system import ExperimentSystem
 from .measurement_defaults import (
     DEFAULT_N_SHOTS,
     DEFAULT_SHOT_AVERAGING,
-    DEFAULT_SHOT_INTERVAL_NS,
+    DEFAULT_SHOT_INTERVAL,
     DEFAULT_STATE_CLASSIFICATION,
     DEFAULT_TIME_INTEGRATION,
 )
@@ -37,7 +37,7 @@ class MeasurementConfigFactory:
         self,
         *,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -48,9 +48,9 @@ class MeasurementConfigFactory:
                 n_shots,
                 DEFAULT_N_SHOTS,
             ),
-            shot_interval_ns=_or_default(
-                shot_interval_ns,
-                DEFAULT_SHOT_INTERVAL_NS,
+            shot_interval=_or_default(
+                shot_interval,
+                DEFAULT_SHOT_INTERVAL,
             ),
             shot_averaging=_or_default(
                 shot_averaging,

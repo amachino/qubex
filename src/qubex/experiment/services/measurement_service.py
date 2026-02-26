@@ -161,7 +161,7 @@ class MeasurementService:
         schedule: PulseSchedule,
         *,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -192,7 +192,7 @@ class MeasurementService:
         )
         config = self.ctx.measurement.create_measurement_config(
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
@@ -208,7 +208,7 @@ class MeasurementService:
         *,
         sweep_values: Sequence[SweepValue],
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -226,7 +226,7 @@ class MeasurementService:
         """Run async sweep measurement by delegating to the measurement layer."""
         config = self.ctx.measurement.create_measurement_config(
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
@@ -260,7 +260,7 @@ class MeasurementService:
         sweep_points: dict[str, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
         n_shots: int | None = None,
-        shot_interval_ns: float | None = None,
+        shot_interval: float | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
@@ -278,7 +278,7 @@ class MeasurementService:
         """Run async N-dimensional sweep measurement by delegating to the measurement layer."""
         config = self.ctx.measurement.create_measurement_config(
             n_shots=n_shots,
-            shot_interval_ns=shot_interval_ns,
+            shot_interval=shot_interval,
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,

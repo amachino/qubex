@@ -204,7 +204,7 @@ class Quel1MeasurementBackendAdapter:
         base_duration = schedule.pulse_schedule.duration
         if profile.enforce_block_alignment and block_duration is not None:
             interval = int(
-                math.ceil((base_duration + config.shot_interval_ns) / block_duration)
+                math.ceil((base_duration + config.shot_interval) / block_duration)
                 * block_duration
             )
             # Compatibility guard:
@@ -214,14 +214,14 @@ class Quel1MeasurementBackendAdapter:
             # can make trailing chunk blank words negative.
             # Remove this workaround once qubecalib compatibility is no longer
             # required in the QuEL-1 measurement path.
-            if config.shot_interval_ns <= 0:
+            if config.shot_interval <= 0:
                 minimum_interval = int(
                     math.ceil((base_duration + block_duration) / block_duration)
                     * block_duration
                 )
                 interval = max(interval, minimum_interval)
         else:
-            interval = math.ceil(base_duration + config.shot_interval_ns)
+            interval = math.ceil(base_duration + config.shot_interval)
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
         )

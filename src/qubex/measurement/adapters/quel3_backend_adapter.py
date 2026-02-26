@@ -148,7 +148,7 @@ class Quel3MeasurementBackendAdapter:
                 )
 
         self._output_target_labels_by_alias = output_target_labels_by_alias
-        interval_ns = math.ceil(pulse_schedule.duration + config.shot_interval_ns)
+        interval_ns = math.ceil(pulse_schedule.duration + config.shot_interval)
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,
             fixed_timelines=fixed_timelines,

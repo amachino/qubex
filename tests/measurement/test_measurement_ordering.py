@@ -381,7 +381,7 @@ def test_backend_adapter_keeps_target_merge_order(monkeypatch) -> None:
 
     config = MeasurementConfig(
         n_shots=1,
-        shot_interval_ns=100.0,
+        shot_interval=100.0,
         shot_averaging=True,
         time_integration=False,
         state_classification=False,

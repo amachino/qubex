@@ -9,7 +9,7 @@ class MeasurementConfig(Model):
     """Measurement configuration model."""
 
     n_shots: int
-    shot_interval_ns: float
+    shot_interval: float
     shot_averaging: bool
     time_integration: bool
     state_classification: bool
