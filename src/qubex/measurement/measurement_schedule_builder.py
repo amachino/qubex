@@ -77,11 +77,11 @@ class MeasurementScheduleBuilder:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
         plot: bool = False,
     ) -> MeasurementSchedule:
         """Build an execution-ready measurement schedule from user inputs."""
@@ -97,7 +97,7 @@ class MeasurementScheduleBuilder:
                 for label, amplitude in readout_amplitudes.items()
             }
 
-        if add_last_measurement:
+        if final_measurement:
             sequence_duration = schedule.duration
             word_duration = self.constraint_profile.word_duration_ns
             if (
@@ -128,7 +128,7 @@ class MeasurementScheduleBuilder:
                             target=target,
                             duration=readout_duration,
                             amplitude=readout_amplitudes.get(target),
-                            ramptime=readout_ramptime,
+                            ramptime=readout_ramp_time,
                             type=readout_ramp_type,
                             drag_coeff=readout_drag_coeff,
                             pre_margin=readout_pre_margin,
@@ -161,7 +161,7 @@ class MeasurementScheduleBuilder:
             )
             schedule.pad(total_duration=sequence_duration, pad_side="right")
 
-        if add_pump_pulses:
+        if readout_amplification:
             muxes = []
             for target in readout_targets:
                 qubit_label = self._resolve_qubit_label(target)
@@ -178,7 +178,7 @@ class MeasurementScheduleBuilder:
                             mux_index=mux.index,
                             duration=schedule.duration,
                             amplitude=pump_amplitude,
-                            ramptime=readout_ramptime,
+                            ramptime=readout_ramp_time,
                             type=readout_ramp_type,
                         ),
                     )

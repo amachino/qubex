@@ -59,7 +59,7 @@ def test_schedule_builder_keeps_readout_target_order(monkeypatch) -> None:
     with PulseSchedule(["Q01", "Q00", "Q01"]) as schedule:
         pass
 
-    builder.build(schedule=schedule, add_last_measurement=True)
+    builder.build(schedule=schedule, final_measurement=True)
 
     assert captured["readout_targets"] == ["RQ01", "RQ00"]
 
@@ -120,7 +120,7 @@ def test_schedule_builder_uses_registry_for_readout_label_order(
     with PulseSchedule(["custom-1", "custom-0", "custom-1"]) as schedule:
         pass
 
-    builder.build(schedule=schedule, add_last_measurement=True)
+    builder.build(schedule=schedule, final_measurement=True)
 
     assert captured["readout_targets"] == ["RQ01", "RQ00"]
 
@@ -166,7 +166,7 @@ def test_schedule_builder_accepts_qubit_keyed_readout_amplitudes(monkeypatch) ->
 
     builder.build(
         schedule=schedule,
-        add_last_measurement=True,
+        final_measurement=True,
         readout_amplitudes={"Q00": 0.37},
     )
 

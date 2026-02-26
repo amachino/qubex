@@ -199,8 +199,8 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
     assert captured["enable_dsp_sum"] is False
 
 
-def test_check_noise_forces_dsp_sum_disabled() -> None:
-    """Given waveform-noise inspection, when check_noise is called, then DSP summation is disabled."""
+def test_check_noise_delegates_without_optional_noise_flags() -> None:
+    """Given waveform-noise inspection, when check_noise is called, then it delegates with required args only."""
     service, captured = _make_service()
 
     service.check_noise(targets=["custom-target"], duration=512, plot=False)
@@ -209,7 +209,6 @@ def test_check_noise_forces_dsp_sum_disabled() -> None:
         {
             "targets": ["custom-target"],
             "duration": 512,
-            "enable_dsp_sum": False,
         }
     ]
 

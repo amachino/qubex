@@ -160,7 +160,7 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
 
     result = measurement.execute(
         schedule=pulse_schedule,
-        add_last_measurement=True,
+        final_measurement=True,
         save_result=False,
     )
 
@@ -168,7 +168,7 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     assert np.array_equal(result.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
     assert called["build_schedule"] is pulse_schedule
     assert called["run_schedule"] is built_schedule
-    assert called["build_kwargs"]["add_last_measurement"] is True
+    assert called["build_kwargs"]["final_measurement"] is True
     assert called["run_config"].shot_averaging is True
 
 
@@ -196,12 +196,12 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
 
     result = measurement.measure(waveforms={"Q00": np.array([0.0 + 0.0j])})
 
-    assert called["kwargs"]["add_last_measurement"] is True
+    assert called["kwargs"]["final_measurement"] is True
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
-def test_measure_initializes_optional_flags_with_measure_defaults() -> None:
-    """Given None optional flags, when measure is called, then it applies measure defaults."""
+def test_measure_accepts_deprecated_alias_options() -> None:
+    """Given deprecated alias options, when measure is called, then it forwards them for compatibility."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -230,14 +230,14 @@ def test_measure_initializes_optional_flags_with_measure_defaults() -> None:
     )
 
     kwargs = called["kwargs"]
-    assert kwargs["add_pump_pulses"] is False
-    assert kwargs["enable_dsp_demodulation"] is True
-    assert kwargs["enable_dsp_sum"] is True
-    assert kwargs["enable_dsp_classification"] is False
+    assert kwargs["final_measurement"] is True
+    assert kwargs["add_pump_pulses"] is None
+    assert kwargs["enable_dsp_demodulation"] is None
+    assert kwargs["enable_dsp_classification"] is None
 
 
 def test_measure_noise_disables_dsp_sum_by_default() -> None:
-    """Given noise measurement inputs, when measure_noise is called, then DSP summation is disabled by default."""
+    """Given noise measurement inputs, when measure_noise is called, then time integration is disabled by default."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -260,7 +260,9 @@ def test_measure_noise_disables_dsp_sum_by_default() -> None:
 
     assert result is expected
     kwargs = called["kwargs"]
-    assert kwargs["enable_dsp_sum"] is False
+    assert kwargs["time_integration"] is False
+    assert kwargs["shot_averaging"] is True
+    assert kwargs["n_shots"] == 1
     assert kwargs["readout_duration"] == 1024.0
     assert kwargs["readout_amplitudes"] == {"Q00": 0}
 
@@ -333,7 +335,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
         save_result=False,
     )
 
-    assert called["build_kwargs"]["add_pump_pulses"] is False
+    assert called["build_kwargs"]["readout_amplification"] is False
     config = called["config"]
     assert config.time_integration is True
     assert config.state_classification is False

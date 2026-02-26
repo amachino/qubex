@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import numpy.typing as npt
 from qxpulse import PulseSchedule, RampType
@@ -29,7 +29,7 @@ from qubex.system import (
     SystemManager,
     Target,
 )
-from qubex.typing import ConfigurationMode, IQArray, MeasurementMode, TargetMap
+from qubex.typing import ConfigurationMode, IQArray, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
 from .measurement_constraint_profile import MeasurementConstraintProfile
@@ -234,112 +234,112 @@ class Measurement:
 
     @property
     def qubits(self) -> list[str]:
-        """Get the list of qubit labels."""
+        """Return the configured qubit labels."""
         return self._qubits
 
     @property
     def box_ids(self) -> list[str]:
-        """Get the list of box IDs."""
+        """Return backend box identifiers for the active session."""
         return self.context.box_ids
 
     @property
     def mux_dict(self) -> dict[str, Mux]:
-        """Get a dictionary of Mux objects indexed by qubit labels."""
+        """Return MUX objects indexed by qubit label."""
         return self.context.mux_dict
 
     @property
     def system_manager(self) -> SystemManager:
-        """Get the state manager."""
+        """Return the shared system manager."""
         return self._system_manager
 
     @property
     def context(self) -> MeasurementContext:
-        """Return measurement context accessor."""
+        """Return the measurement context."""
         return self._context
 
     @property
     def session_service(self) -> MeasurementSessionService:
-        """Return session lifecycle service."""
+        """Return the session lifecycle service."""
         return self._session_service
 
     @property
     def execution_service(self) -> MeasurementExecutionService:
-        """Return measurement execution service."""
+        """Return the measurement execution service."""
         return self._execution_service
 
     @property
     def classification_service(self) -> MeasurementClassificationService:
-        """Return classification service."""
+        """Return the classification service."""
         return self._classification_service
 
     @property
     def amplification_service(self) -> MeasurementAmplificationService:
-        """Return amplification service."""
+        """Return the readout amplification service."""
         return self._amplification_service
 
     @property
     def pulse_factory(self) -> MeasurementPulseFactory:
-        """Create a pulse factory from current system state."""
+        """Return a pulse factory bound to current system state."""
         return self.execution_service.pulse_factory
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
-        """Create a measurement schedule builder from current system state."""
+        """Return a schedule builder bound to current system state."""
         return self.execution_service.schedule_builder
 
     @property
     def measurement_config_factory(self) -> MeasurementConfigFactory:
-        """Create a measurement config factory from current system state."""
+        """Return a measurement-config factory bound to current defaults."""
         return self.execution_service.measurement_config_factory
 
     @property
     def config_loader(self) -> ConfigLoader:
-        """Get the configuration loader."""
+        """Return the configuration loader."""
         return self.context.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
-        """Get the experiment system."""
+        """Return the active experiment system."""
         return self.context.experiment_system
 
     @property
     def backend_controller(self) -> BackendController:
-        """Get the backend controller."""
+        """Return the active backend controller."""
         return self.context.backend_controller
 
     @property
     def sampling_period(self) -> float:
-        """Resolve sampling period (ns) from backend-controller contract."""
+        """Return sampling period in ns."""
         return self.execution_service.sampling_period
 
     @property
     def constraint_profile(self) -> MeasurementConstraintProfile:
-        """Resolve backend constraint profile from backend-controller hints."""
+        """Return backend timing and alignment constraints."""
         return self.execution_service.constraint_profile
 
     @property
     def measurement_schedule_runner(self) -> MeasurementScheduleRunner:
-        """Return executor implementation used by schedule execution APIs."""
+        """Return the schedule-execution runner."""
         return self.execution_service.measurement_schedule_runner
 
     @property
     def control_params(self) -> ControlParams:
-        """Get the control parameters."""
+        """Return active control parameters."""
         return self.experiment_system.control_params
 
     @property
     def chip_id(self) -> str:
-        """Get the chip ID."""
+        """Return the active chip identifier."""
         return self.experiment_system.chip.id
 
     @property
     def targets(self) -> dict[str, Target]:
-        """Get the targets."""
+        """Return available targets indexed by label."""
         return {target.label: target for target in self.experiment_system.targets}
 
     @property
     def nco_frequencies(self) -> dict[str, float]:
-        """Get the NCO frequencies."""
+        """Return NCO frequencies indexed by target label."""
         return {
             target.label: self.experiment_system.get_nco_frequency(target.label)
             for target in self.experiment_system.targets
@@ -347,7 +347,7 @@ class Measurement:
 
     @property
     def awg_frequencies(self) -> dict[str, float]:
-        """Get the AWG frequencies."""
+        """Return AWG frequencies indexed by target label."""
         return {
             target.label: self.experiment_system.get_awg_frequency(target.label)
             for target in self.experiment_system.targets
@@ -355,7 +355,7 @@ class Measurement:
 
     @property
     def classifiers(self) -> TargetMap[StateClassifier]:
-        """Get the state classifiers."""
+        """Return currently registered state classifiers."""
         return self.classification_service.classifiers
 
     def get_awg_frequency(self, target: str) -> float:
@@ -623,7 +623,6 @@ class Measurement:
         targets: Collection[str],
         *,
         duration: float,
-        enable_dsp_sum: bool = False,
     ) -> MeasureResult:
         """
         Measure the readout noise.
@@ -634,9 +633,6 @@ class Measurement:
             The list of target names.
         duration : float, optional
             The duration in ns.
-        enable_dsp_sum : bool, optional
-            Whether to enable DSP summation. Defaults to `False` so raw
-            waveform samples are available for noise inspection.
 
         Returns
         -------
@@ -650,30 +646,29 @@ class Measurement:
         return self.execution_service.measure_noise(
             targets=targets,
             duration=duration,
-            enable_dsp_sum=enable_dsp_sum,
         )
 
     def measure(
         self,
         waveforms: Mapping[str, IQArray],
         *,
-        mode: MeasurementMode = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool = True,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        readout_amplification: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        classification_line_param0: tuple[float, float, float] | None = None,
+        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
+        **deprecated_options: Any,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -683,14 +678,12 @@ class Measurement:
         waveforms : Mapping[str, IQArray]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays sampled at `self.sampling_period` ns.
-        mode : MeasurementMode, optional
-            The measurement mode, by default "single".
-            - "single": Measure once.
-            - "avg": Measure multiple times and average the results.
-        shots : int, optional
-            The number of shots.
-        interval : float, optional
-            The interval in ns.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval_ns : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether to average shots on hardware.
         readout_amplitudes : dict[str, float], optional
             The readout amplitude for each qubit.
         readout_duration : float, optional
@@ -699,21 +692,22 @@ class Measurement:
             The readout pre-margin in ns.
         readout_post_margin : float, optional
             The readout post-margin in ns.
-        readout_ramptime : float, optional
+        readout_ramp_time : float, optional
             The readout ramp time in ns.
         readout_drag_coeff : float, optional
             The readout drag coefficient.
         readout_ramp_type : RampType, optional
             The readout ramp type.
-        add_pump_pulses : bool | None, optional
-            Whether to add pump pulses. If `None`, defaults to `False`.
-        enable_dsp_demodulation : bool | None, optional
-            Whether to enable DSP demodulation. If `None`, defaults to `True`.
-        enable_dsp_sum : bool, optional
-            Whether to enable DSP summation. Defaults to `True`.
-        enable_dsp_classification : bool | None, optional
-            Whether to enable DSP classification. If `None`, defaults to
-            `False`.
+        readout_amplification : bool | None, optional
+            Whether to apply readout amplification pulses.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+        classification_line_param0 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 0.
+        classification_line_param1 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 1.
 
         Returns
         -------
@@ -729,48 +723,48 @@ class Measurement:
         """
         return self.execution_service.measure(
             waveforms=waveforms,
-            mode=mode,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
+            readout_ramp_time=readout_ramp_time,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            add_pump_pulses=add_pump_pulses,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            readout_amplification=readout_amplification,
+            time_integration=time_integration,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
             plot=plot,
+            **deprecated_options,
         )
 
     def execute(
         self,
         schedule: PulseSchedule | TargetMap[IQArray],
         *,
-        mode: MeasurementMode = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval_ns: float | None = None,
+        shot_averaging: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool = True,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        classification_line_param0: tuple[float, float, float] | None = None,
+        classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
         save_result: bool = True,
+        **deprecated_options: Any,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -779,14 +773,12 @@ class Measurement:
         ----------
         schedule : PulseSchedule | TargetMap[IQArray]
             The pulse schedule or control waveforms.
-        mode : MeasurementMode, optional
-            The measurement mode, by default "single".
-            - "single": Measure once.
-            - "avg": Measure multiple times and average the results.
-        shots : int, optional
-            The number of shots.
-        interval : float, optional
-            The interval in ns.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval_ns : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether to average shots on hardware.
         readout_amplitudes : dict[str, float], optional
             The readout amplitude for each qubit.
         readout_duration : float, optional
@@ -795,20 +787,24 @@ class Measurement:
             The readout pre-margin in ns.
         readout_post_margin : float, optional
             The readout post-margin in ns.
-        readout_ramptime : float, optional
+        readout_ramp_time : float, optional
             The readout ramp time in ns.
         readout_drag_coeff : float, optional
             The readout drag coefficient.
         readout_ramp_type : RampType, optional
             The readout ramp type.
-        add_last_measurement : bool, optional
-            Whether to add the last measurement, by default False.
-        add_pump_pulses : bool, optional
-            Whether to add pump pulses, by default False.
-        enable_dsp_sum : bool, optional
-            Whether to enable DSP summation, by default True.
-        enable_dsp_classification : bool, optional
-            Whether to enable DSP classification, by default False.
+        readout_amplification : bool | None, optional
+            Whether to apply readout amplification pulses.
+        final_measurement : bool | None, optional
+            Whether to append a final readout measurement.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+        classification_line_param0 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 0.
+        classification_line_param1 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 1.
         plot : bool, optional
             Whether to plot the results, by default False.
 
@@ -819,25 +815,25 @@ class Measurement:
         """
         return self.execution_service.execute(
             schedule=schedule,
-            mode=mode,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval_ns=shot_interval_ns,
+            shot_averaging=shot_averaging,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
+            readout_ramp_time=readout_ramp_time,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
-            enable_dsp_demodulation=enable_dsp_demodulation,
-            enable_dsp_sum=enable_dsp_sum,
-            enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            time_integration=time_integration,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
             plot=plot,
             save_result=save_result,
+            **deprecated_options,
         )
 
     def create_measurement_config(
@@ -886,11 +882,11 @@ class Measurement:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
+        readout_amplification: bool = False,
+        final_measurement: bool = False,
         plot: bool = False,
     ) -> MeasurementSchedule:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
@@ -900,10 +896,10 @@ class Measurement:
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
+            readout_ramp_time=readout_ramp_time,
             readout_ramp_type=readout_ramp_type,
             readout_drag_coeff=readout_drag_coeff,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
             plot=plot,
         )
