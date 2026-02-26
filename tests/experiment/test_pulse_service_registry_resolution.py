@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
+
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.services import pulse_service as pulse_service_module
 from qubex.experiment.services.pulse_service import PulseService
@@ -156,3 +158,92 @@ def test_ef_rabi_params_resolves_ge_labels_via_target_registry() -> None:
     ef_params = service.ef_rabi_params
 
     assert list(ef_params.keys()) == ["Q17"]
+
+
+def test_readout_accepts_renamed_ramp_parameters() -> None:
+    """Given renamed ramp args, when readout is called, then pulse factory gets renamed args."""
+    captured: dict[str, object] = {}
+    expected = object()
+
+    def _readout_pulse(**kwargs: object) -> object:
+        captured["kwargs"] = kwargs
+        return expected
+
+    ctx = SimpleNamespace(
+        readout_duration=384.0,
+        readout_pre_margin=32.0,
+        readout_post_margin=128.0,
+        measurement=SimpleNamespace(
+            pulse_factory=SimpleNamespace(readout_pulse=_readout_pulse)
+        ),
+    )
+    service = PulseService(experiment_context=cast(Any, ctx))
+
+    result = service.readout(
+        "RQ00",
+        ramp_time=16.0,
+        ramp_type="Bump",
+    )
+
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert result is expected
+    assert kwargs["target"] == "RQ00"
+    assert kwargs["ramp_time"] == 16.0
+    assert kwargs["ramp_type"] == "Bump"
+
+
+def test_readout_forwards_legacy_ramp_aliases() -> None:
+    """Given legacy ramp args, when readout is called, then legacy args are forwarded to pulse factory."""
+    captured: dict[str, object] = {}
+    expected = object()
+
+    def _readout_pulse(**kwargs: object) -> object:
+        captured["kwargs"] = kwargs
+        return expected
+
+    ctx = SimpleNamespace(
+        readout_duration=384.0,
+        readout_pre_margin=32.0,
+        readout_post_margin=128.0,
+        measurement=SimpleNamespace(
+            pulse_factory=SimpleNamespace(readout_pulse=_readout_pulse)
+        ),
+    )
+    service = PulseService(experiment_context=cast(Any, ctx))
+
+    result = service.readout(
+        "RQ00",
+        ramptime=20.0,
+        type="RaisedCosine",
+    )
+
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert result is expected
+    assert kwargs["ramptime"] == 20.0
+    assert kwargs["type"] == "RaisedCosine"
+
+
+def test_readout_rejects_conflicting_ramp_aliases() -> None:
+    """Given conflicting args, when readout is called, then pulse-factory error is propagated."""
+
+    def _readout_pulse(**kwargs: object) -> object:
+        if kwargs.get("ramp_time") is not None and kwargs.get("ramptime") is not None:
+            raise ValueError("`ramptime` conflicts with `ramp_time`.")
+        return object()
+
+    ctx = SimpleNamespace(
+        readout_duration=384.0,
+        readout_pre_margin=32.0,
+        readout_post_margin=128.0,
+        measurement=SimpleNamespace(
+            pulse_factory=SimpleNamespace(readout_pulse=_readout_pulse)
+        ),
+    )
+    service = PulseService(experiment_context=cast(Any, ctx))
+
+    with pytest.raises(ValueError, match="ramptime"):
+        service.readout(
+            "RQ00",
+            ramp_time=16.0,
+            ramptime=20.0,
+        )

@@ -128,11 +128,11 @@ class MeasurementScheduleBuilder:
                             target=target,
                             duration=readout_duration,
                             amplitude=readout_amplitudes.get(target),
-                            ramptime=readout_ramp_time,
-                            type=readout_ramp_type,
-                            drag_coeff=readout_drag_coeff,
                             pre_margin=readout_pre_margin,
                             post_margin=readout_post_margin,
+                            ramp_time=readout_ramp_time,
+                            ramp_type=readout_ramp_type,
+                            drag_coeff=readout_drag_coeff,
                         ),
                     )
             schedule = ps
@@ -178,8 +178,8 @@ class MeasurementScheduleBuilder:
                             mux_index=mux.index,
                             duration=schedule.duration,
                             amplitude=pump_amplitude,
-                            ramptime=readout_ramp_time,
-                            type=readout_ramp_type,
+                            ramp_time=readout_ramp_time,
+                            ramp_type=readout_ramp_type,
                         ),
                     )
 

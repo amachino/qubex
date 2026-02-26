@@ -45,6 +45,79 @@ def test_readout_pulse_uses_defaults_from_control_params() -> None:
     assert pulse.waveforms[1].tau == DEFAULT_READOUT_RAMP_TIME
 
 
+def test_readout_pulse_accepts_renamed_ramp_parameters() -> None:
+    """Given renamed ramp args, when readout pulse is built, then they are applied."""
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(
+            get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
+        ),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+    )
+
+    pulse = factory.readout_pulse(
+        target="RQ00",
+        ramp_time=16.0,
+        ramp_type="Bump",
+    )
+
+    assert isinstance(pulse.waveforms[1], FlatTop)
+    assert pulse.waveforms[1].tau == 16.0
+    assert pulse.waveforms[1].type == "Bump"
+
+
+def test_readout_pulse_accepts_legacy_ramp_aliases_with_warning() -> None:
+    """Given legacy ramp args, when readout pulse is built, then deprecation warning is emitted."""
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(
+            get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
+        ),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+    )
+
+    with pytest.warns(DeprecationWarning, match="ramptime"):
+        pulse = factory.readout_pulse(
+            target="RQ00",
+            ramptime=20.0,
+            type="RaisedCosine",
+        )
+
+    assert isinstance(pulse.waveforms[1], FlatTop)
+    assert pulse.waveforms[1].tau == 20.0
+    assert pulse.waveforms[1].type == "RaisedCosine"
+
+
+def test_readout_pulse_rejects_conflicting_ramp_aliases() -> None:
+    """Given legacy and renamed ramp args, when values conflict, then ValueError is raised."""
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(
+            get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
+        ),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+    )
+
+    with (
+        pytest.warns(DeprecationWarning, match="ramptime"),
+        pytest.raises(ValueError, match="ramptime"),
+    ):
+        factory.readout_pulse(
+            target="RQ00",
+            ramp_time=16.0,
+            ramptime=20.0,
+        )
+
+
 def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
     """Given mux mapping, when pump pulse is built, then pump amplitude uses mux index."""
     mux = cast(Mux, SimpleNamespace(index=2, label="MX2"))
@@ -63,6 +136,73 @@ def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
     assert pulse.duration == DEFAULT_READOUT_DURATION
     assert pulse.amplitude == pytest.approx(0.3)
     assert pulse.tau == DEFAULT_READOUT_RAMP_TIME
+
+
+def test_pump_pulse_accepts_renamed_ramp_parameters() -> None:
+    """Given renamed ramp args, when pump pulse is built, then they are applied."""
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+    )
+
+    pulse = factory.pump_pulse(
+        mux_index=2,
+        ramp_time=16.0,
+        ramp_type="Bump",
+    )
+
+    assert isinstance(pulse, FlatTop)
+    assert pulse.tau == 16.0
+    assert pulse.type == "Bump"
+
+
+def test_pump_pulse_accepts_legacy_ramp_aliases_with_warning() -> None:
+    """Given legacy ramp args, when pump pulse is built, then deprecation warning is emitted."""
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+    )
+
+    with pytest.warns(DeprecationWarning, match="ramptime"):
+        pulse = factory.pump_pulse(
+            mux_index=2,
+            ramptime=20.0,
+            type="RaisedCosine",
+        )
+
+    assert isinstance(pulse, FlatTop)
+    assert pulse.tau == 20.0
+    assert pulse.type == "RaisedCosine"
+
+
+def test_pump_pulse_rejects_conflicting_ramp_aliases() -> None:
+    """Given legacy and renamed ramp args, when values conflict, then ValueError is raised."""
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+    )
+
+    with (
+        pytest.warns(DeprecationWarning, match="ramptime"),
+        pytest.raises(ValueError, match="ramptime"),
+    ):
+        factory.pump_pulse(
+            mux_index=2,
+            ramp_time=16.0,
+            ramptime=20.0,
+        )
 
 
 def test_readout_pulse_uses_target_registry_when_label_is_custom() -> None:

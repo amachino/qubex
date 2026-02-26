@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
+from typing import Any
 
 from qxpulse import Blank, FlatTop, PulseArray, RampType
 
@@ -50,17 +52,50 @@ class MeasurementPulseFactory:
         except TypeError:
             return str(resolver(target))
 
+    @staticmethod
+    def _warn_deprecated_alias(
+        *,
+        old_name: str,
+        new_name: str,
+    ) -> None:
+        """Emit a deprecation warning for an old option name."""
+        warnings.warn(
+            f"`{old_name}` is deprecated; use `{new_name}`.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    @classmethod
+    def _resolve_deprecated_alias(
+        cls,
+        *,
+        new_value: Any,
+        old_value: Any,
+        old_name: str,
+        new_name: str,
+    ) -> Any:
+        """Resolve old/new alias values and reject conflicting inputs."""
+        if old_value is None:
+            return new_value
+        cls._warn_deprecated_alias(old_name=old_name, new_name=new_name)
+        if new_value is not None and new_value != old_value:
+            raise ValueError(
+                f"`{old_name}` conflicts with `{new_name}`. Provide only `{new_name}`."
+            )
+        return old_value if new_value is None else new_value
+
     def readout_pulse(
         self,
         target: str,
         *,
         duration: float | None = None,
         amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
-        drag_coeff: float | None = None,
         pre_margin: float | None = None,
         post_margin: float | None = None,
+        ramp_time: float | None = None,
+        ramp_type: RampType | None = None,
+        drag_coeff: float | None = None,
+        **deprecated_options: Any,
     ) -> PulseArray:
         """
         Build a readout pulse for a target.
@@ -73,43 +108,61 @@ class MeasurementPulseFactory:
             Readout duration in ns.
         amplitude : float | None, optional
             Readout amplitude.
-        ramptime : float | None, optional
-            Ramp time for the envelope.
-        type : RampType | None, optional
-            Ramp type name.
-        drag_coeff : float | None, optional
-            DRAG coefficient.
         pre_margin : float | None, optional
             Pre-readout margin.
         post_margin : float | None, optional
             Post-readout margin.
+        ramp_time : float | None, optional
+            Ramp time for the envelope.
+        ramp_type : RampType | None, optional
+            Ramp type name.
+        drag_coeff : float | None, optional
+            DRAG coefficient.
 
         Returns
         -------
         PulseArray
             Readout pulse array with margins.
         """
+        legacy_ramp_time = deprecated_options.pop("ramptime", None)
+        legacy_ramp_type = deprecated_options.pop("type", None)
+        if deprecated_options:
+            unexpected_args = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword argument(s): {unexpected_args}.")
+        ramp_time = self._resolve_deprecated_alias(
+            new_value=ramp_time,
+            old_value=legacy_ramp_time,
+            old_name="ramptime",
+            new_name="ramp_time",
+        )
+        ramp_type = self._resolve_deprecated_alias(
+            new_value=ramp_type,
+            old_value=legacy_ramp_type,
+            old_name="type",
+            new_name="ramp_type",
+        )
+
         qubit = self._resolve_qubit_label(target)
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self._control_params.get_readout_amplitude(qubit)
-        if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMP_TIME
-        if type is None:
-            type = DEFAULT_READOUT_RAMP_TYPE
-        if drag_coeff is None:
-            drag_coeff = DEFAULT_READOUT_DRAG_COEFF
         if pre_margin is None:
             pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if post_margin is None:
             post_margin = DEFAULT_READOUT_POST_MARGIN
+        if ramp_time is None:
+            ramp_time = DEFAULT_READOUT_RAMP_TIME
+        if ramp_type is None:
+            ramp_type = DEFAULT_READOUT_RAMP_TYPE
+        if drag_coeff is None:
+            drag_coeff = DEFAULT_READOUT_DRAG_COEFF
         pulse = FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=ramptime,
+            tau=ramp_time,
             beta=drag_coeff,
-            type=type,
+            type=ramp_type,
         )
         return PulseArray(
             [
@@ -126,8 +179,9 @@ class MeasurementPulseFactory:
         mux_index: int,
         duration: float | None = None,
         amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
+        ramp_time: float | None = None,
+        ramp_type: RampType | None = None,
+        **deprecated_options: Any,
     ) -> FlatTop:
         """
         Build a pump pulse for a mux.
@@ -140,9 +194,9 @@ class MeasurementPulseFactory:
             Pump duration in ns.
         amplitude : float | None, optional
             Pump amplitude.
-        ramptime : float | None, optional
+        ramp_time : float | None, optional
             Ramp time for the envelope.
-        type : RampType | None, optional
+        ramp_type : RampType | None, optional
             Ramp type name.
 
         Returns
@@ -150,17 +204,35 @@ class MeasurementPulseFactory:
         FlatTop
             Pump pulse.
         """
+        legacy_ramp_time = deprecated_options.pop("ramptime", None)
+        legacy_ramp_type = deprecated_options.pop("type", None)
+        if deprecated_options:
+            unexpected_args = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword argument(s): {unexpected_args}.")
+        ramp_time = self._resolve_deprecated_alias(
+            new_value=ramp_time,
+            old_value=legacy_ramp_time,
+            old_name="ramptime",
+            new_name="ramp_time",
+        )
+        ramp_type = self._resolve_deprecated_alias(
+            new_value=ramp_type,
+            old_value=legacy_ramp_type,
+            old_name="type",
+            new_name="ramp_type",
+        )
+
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self._control_params.get_pump_amplitude(mux_index)
-        if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMP_TIME
-        if type is None:
-            type = DEFAULT_READOUT_RAMP_TYPE
+        if ramp_time is None:
+            ramp_time = DEFAULT_READOUT_RAMP_TIME
+        if ramp_type is None:
+            ramp_type = DEFAULT_READOUT_RAMP_TYPE
         return FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=ramptime,
-            type=type,
+            tau=ramp_time,
+            type=ramp_type,
         )

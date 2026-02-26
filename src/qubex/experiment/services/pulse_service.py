@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from qxpulse import (
@@ -115,10 +115,6 @@ class PulseService:
         rabi_params = self.rabi_params
         if len(rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
-        if targets is not None:
-            for target in targets:
-                if target not in rabi_params:
-                    raise ValueError(f"Rabi parameters for {target} are not stored.")
         if targets is not None:
             for target in targets:
                 if target not in rabi_params:
@@ -505,11 +501,12 @@ class PulseService:
         *,
         duration: float | None = None,
         amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
-        drag_coeff: float | None = None,
         pre_margin: float | None = None,
         post_margin: float | None = None,
+        ramp_time: float | None = None,
+        ramp_type: RampType | None = None,
+        drag_coeff: float | None = None,
+        **deprecated_options: Any,
     ) -> Waveform:
         """Return a readout pulse for the target."""
         if duration is None:
@@ -523,11 +520,12 @@ class PulseService:
             target=target,
             duration=duration,
             amplitude=amplitude,
-            ramptime=ramptime,
-            type=type,
-            drag_coeff=drag_coeff,
             pre_margin=pre_margin,
             post_margin=post_margin,
+            ramp_time=ramp_time,
+            ramp_type=ramp_type,
+            drag_coeff=drag_coeff,
+            **deprecated_options,
         )
 
     def zx90(
