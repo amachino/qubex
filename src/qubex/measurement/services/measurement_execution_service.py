@@ -37,9 +37,12 @@ from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.measurement.models.sweep_measurement_result import (
+    NDSweepMeasurementResult,
+    SweepAxes,
+    SweepKey,
     SweepMeasurementResult,
     SweepPoint,
-    SweepPointResult,
+    SweepValue,
 )
 from qubex.measurement.services.measurement_session_service import (
     MeasurementSessionService,
@@ -300,10 +303,10 @@ class MeasurementExecutionService:
 
     async def run_sweep_measurement(
         self,
-        *,
         schedule: Callable[[SweepPoint], MeasurementSchedule],
+        *,
         sweep_points: Sequence[SweepPoint],
-        config: MeasurementConfig,
+        config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
         """
         Run sweep measurement pointwise.
@@ -314,7 +317,7 @@ class MeasurementExecutionService:
             Callback that builds one measurement schedule per sweep point.
         sweep_points : Sequence[SweepPoint]
             Ordered sweep points to execute.
-        config : MeasurementConfig
+        config : MeasurementConfig | None, optional
             Shared measurement configuration for all points.
 
         Returns
@@ -322,21 +325,101 @@ class MeasurementExecutionService:
         SweepMeasurementResult
             Sweep result list in the same order as input points.
         """
-        results: list[SweepPointResult] = []
-        for index, point in enumerate(sweep_points):
-            measurement_schedule = schedule(point)
-            point_result = await self.run_measurement(
+        resolved_config = self.create_measurement_config() if config is None else config
+        normalized_points = [dict(point) for point in sweep_points]
+        results: list[MeasurementResult] = []
+        for point in normalized_points:
+            measurement_schedule = schedule(dict(point))
+            result = await self.run_measurement(
                 schedule=measurement_schedule,
-                config=config,
+                config=resolved_config,
             )
             results.append(
-                SweepPointResult(
-                    index=index,
-                    point=point,
-                    result=point_result,
+                MeasurementResult(
+                    mode=result.mode,
+                    data=result.data,
+                    sampling_period_ns=result.sampling_period_ns,
                 )
             )
-        return SweepMeasurementResult(results=results)
+        return SweepMeasurementResult(
+            sweep_points=normalized_points,
+            config=resolved_config,
+            results=results,
+        )
+
+    async def run_ndsweep_measurement(
+        self,
+        schedule: Callable[[SweepPoint], MeasurementSchedule],
+        *,
+        sweep_points: dict[SweepKey, Sequence[SweepValue]],
+        sweep_axes: SweepAxes | None = None,
+        config: MeasurementConfig | None = None,
+    ) -> NDSweepMeasurementResult:
+        """
+        Run N-dimensional Cartesian-product sweep measurement pointwise.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepPoint], MeasurementSchedule]
+            Callback that builds one measurement schedule per resolved sweep point.
+        sweep_points : dict[SweepKey, Sequence[SweepValue]]
+            Axis-value table (`axis key -> ordered values`).
+        sweep_axes : SweepAxes | None, optional
+            Axis order for Cartesian product. If omitted, insertion order of
+            `sweep_points` is used.
+        config : MeasurementConfig | None, optional
+            Shared measurement configuration for all points.
+
+        Returns
+        -------
+        NDSweepMeasurementResult
+            Cartesian sweep result with C-order flattening (last axis varies fastest).
+
+        Raises
+        ------
+        ValueError
+            If `sweep_axes` does not match `sweep_points` keys exactly.
+        """
+        resolved_config = self.create_measurement_config() if config is None else config
+        resolved_axes = (
+            tuple(sweep_points.keys()) if sweep_axes is None else tuple(sweep_axes)
+        )
+        if len(set(resolved_axes)) != len(resolved_axes):
+            raise ValueError("sweep_axes must not contain duplicate keys.")
+        if set(resolved_axes) != set(sweep_points.keys()):
+            raise ValueError(
+                "sweep_axes must contain each sweep_points key exactly once."
+            )
+
+        normalized_axes_points = {axis: [*sweep_points[axis]] for axis in resolved_axes}
+        shape = tuple(len(normalized_axes_points[axis]) for axis in resolved_axes)
+
+        results: list[MeasurementResult] = []
+        for ndindex in np.ndindex(shape):
+            point: SweepPoint = {
+                axis: normalized_axes_points[axis][axis_index]
+                for axis, axis_index in zip(resolved_axes, ndindex, strict=True)
+            }
+            measurement_schedule = schedule(point)
+            result = await self.run_measurement(
+                schedule=measurement_schedule,
+                config=resolved_config,
+            )
+            results.append(
+                MeasurementResult(
+                    mode=result.mode,
+                    data=result.data,
+                    sampling_period_ns=result.sampling_period_ns,
+                )
+            )
+
+        return NDSweepMeasurementResult(
+            sweep_points=normalized_axes_points,
+            sweep_axes=resolved_axes,
+            shape=shape,
+            config=resolved_config,
+            results=results,
+        )
 
     def measure_noise(
         self,

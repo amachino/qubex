@@ -42,7 +42,14 @@ from .models.measure_result import (
     MultipleMeasureResult,
 )
 from .models.measurement_schedule import MeasurementSchedule
-from .models.sweep_measurement_result import SweepMeasurementResult, SweepPoint
+from .models.sweep_measurement_result import (
+    NDSweepMeasurementResult,
+    SweepAxes,
+    SweepKey,
+    SweepMeasurementResult,
+    SweepPoint,
+    SweepValue,
+)
 from .services import (
     MeasurementAmplificationService,
     MeasurementClassificationService,
@@ -583,15 +590,31 @@ class Measurement:
 
     async def run_sweep_measurement(
         self,
-        *,
         schedule: Callable[[SweepPoint], MeasurementSchedule],
+        *,
         sweep_points: Sequence[SweepPoint],
-        config: MeasurementConfig,
+        config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
         """Run sweep measurement pointwise."""
         return await self.execution_service.run_sweep_measurement(
-            schedule=schedule,
+            schedule,
             sweep_points=sweep_points,
+            config=config,
+        )
+
+    async def run_ndsweep_measurement(
+        self,
+        schedule: Callable[[SweepPoint], MeasurementSchedule],
+        *,
+        sweep_points: dict[SweepKey, Sequence[SweepValue]],
+        sweep_axes: SweepAxes | None = None,
+        config: MeasurementConfig | None = None,
+    ) -> NDSweepMeasurementResult:
+        """Run N-dimensional Cartesian-product sweep measurement pointwise."""
+        return await self.execution_service.run_ndsweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            sweep_axes=sweep_axes,
             config=config,
         )
 

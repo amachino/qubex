@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from contextlib import contextmanager
 from types import MethodType
 from typing import Any, ClassVar, cast
@@ -18,8 +19,10 @@ from qubex.measurement.measurement_result_converter import MeasurementResultConv
 from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementSchedule,
+    NDSweepMeasurementResult,
     SweepMeasurementResult,
     SweepPoint,
+    SweepValue,
 )
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
@@ -509,11 +512,15 @@ def test_run_sweep_measurement_delegates_to_execution_service() -> None:
         connect_devices=False,
     )
     config = _make_config()
-    sweep_points = [
-        SweepPoint(parameters={"amp": 0.1}),
-        SweepPoint(parameters={"amp": 0.2}),
+    sweep_points: list[SweepPoint] = [
+        {"amp": 0.1},
+        {"amp": 0.2},
     ]
-    expected = SweepMeasurementResult(results=[])
+    expected = SweepMeasurementResult(
+        sweep_points=sweep_points,
+        config=config,
+        results=[],
+    )
     called: dict[str, Any] = {}
 
     def schedule(point: SweepPoint) -> MeasurementSchedule:
@@ -525,10 +532,10 @@ def test_run_sweep_measurement_delegates_to_execution_service() -> None:
 
     async def fake_run_sweep_measurement(
         self: MeasurementExecutionService,
-        *,
         schedule: Any,
+        *,
         sweep_points: Any,
-        config: MeasurementConfig,
+        config: MeasurementConfig | None,
     ) -> SweepMeasurementResult:
         called["schedule"] = schedule
         called["sweep_points"] = sweep_points
@@ -542,7 +549,7 @@ def test_run_sweep_measurement_delegates_to_execution_service() -> None:
 
     result = asyncio.run(
         measurement.run_sweep_measurement(
-            schedule=schedule,
+            schedule,
             sweep_points=sweep_points,
             config=config,
         )
@@ -554,8 +561,8 @@ def test_run_sweep_measurement_delegates_to_execution_service() -> None:
     assert result is expected
 
 
-def test_run_sweep_measurement_runs_points_and_returns_indexed_results() -> None:
-    """Given sweep points, when execution succeeds, then pointwise indexed results are returned."""
+def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
+    """Given sweep points, when execution succeeds, then pointwise results are returned."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -564,13 +571,10 @@ def test_run_sweep_measurement_runs_points_and_returns_indexed_results() -> None
     )
     execution_service = measurement.execution_service
     config = _make_config()
-    sweep_points = [
-        SweepPoint(parameters={"step": 0}),
-        SweepPoint(parameters={"step": 1}),
-    ]
+    sweep_points: list[SweepPoint] = [{"step": 0}, {"step": 1}]
 
     def schedule(point: SweepPoint) -> MeasurementSchedule:
-        step = int(point.parameters["step"])
+        step = int(point["step"])
         return MeasurementSchedule(
             pulse_schedule=PulseSchedule([f"RQ0{step}"]),
             capture_schedule=CaptureSchedule(captures=[]),
@@ -596,20 +600,80 @@ def test_run_sweep_measurement_runs_points_and_returns_indexed_results() -> None
 
     result = asyncio.run(
         execution_service.run_sweep_measurement(
-            schedule=schedule,
+            schedule,
             sweep_points=sweep_points,
             config=config,
         )
     )
 
-    assert [item.index for item in result.results] == [0, 1]
-    assert [item.point for item in result.results] == sweep_points
-    assert np.array_equal(
-        result.results[0].result.data["Q00"][0], np.array([1.0 + 0.0j])
+    assert result.sweep_points == sweep_points
+    assert result.config == config
+    assert np.array_equal(result.results[0].data["Q00"][0], np.array([1.0 + 0.0j]))
+    assert np.array_equal(result.results[1].data["Q00"][0], np.array([2.0 + 0.0j]))
+    assert result.get(1) is result.results[1]
+    assert result.get_sweep_point(1) == {"step": 1}
+    assert result.results[0].measurement_config is None
+    assert result.results[1].measurement_config is None
+
+
+def test_run_sweep_measurement_resolves_default_config() -> None:
+    """Given omitted sweep config, when running, then default config is resolved once and reused."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
     )
-    assert np.array_equal(
-        result.results[1].result.data["Q00"][0], np.array([2.0 + 0.0j])
+    execution_service = measurement.execution_service
+    default_config = _make_config()
+    sweep_points: list[SweepPoint] = [{"step": 0}]
+    called: dict[str, object] = {}
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        del point
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule(["RQ00"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    def fake_create_measurement_config(
+        self: MeasurementExecutionService,
+        **_: object,
+    ) -> MeasurementConfig:
+        del self
+        called["create_called"] = True
+        return default_config
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self, schedule
+        called["config"] = config
+        return MeasurementResult(
+            mode=config.mode, data={"Q00": [np.array([0.0 + 0.0j])]}
+        )
+
+    execution_service.create_measurement_config = MethodType(  # type: ignore[method-assign]
+        fake_create_measurement_config, execution_service
     )
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_sweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            config=None,
+        )
+    )
+
+    assert called["create_called"] is True
+    assert called["config"] is default_config
+    assert result.config is default_config
 
 
 def test_run_sweep_measurement_stops_immediately_on_error() -> None:
@@ -622,15 +686,15 @@ def test_run_sweep_measurement_stops_immediately_on_error() -> None:
     )
     execution_service = measurement.execution_service
     config = _make_config()
-    sweep_points = [
-        SweepPoint(parameters={"step": 0}),
-        SweepPoint(parameters={"step": 1}),
-        SweepPoint(parameters={"step": 2}),
+    sweep_points: list[SweepPoint] = [
+        {"step": 0},
+        {"step": 1},
+        {"step": 2},
     ]
     called: dict[str, int] = {"count": 0}
 
     def schedule(point: SweepPoint) -> MeasurementSchedule:
-        step = int(point.parameters["step"])
+        step = int(point["step"])
         return MeasurementSchedule(
             pulse_schedule=PulseSchedule([f"RQ0{step}"]),
             capture_schedule=CaptureSchedule(captures=[]),
@@ -655,13 +719,193 @@ def test_run_sweep_measurement_stops_immediately_on_error() -> None:
     with pytest.raises(RuntimeError, match="boom"):
         asyncio.run(
             execution_service.run_sweep_measurement(
-                schedule=schedule,
+                schedule,
                 sweep_points=sweep_points,
                 config=config,
             )
         )
 
     assert called["count"] == 2
+
+
+def test_run_ndsweep_measurement_delegates_to_execution_service() -> None:
+    """Given ndsweep measurement inputs, when invoked, then it delegates to execution service."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    config = _make_config()
+    sweep_points: dict[str, Sequence[SweepValue]] = {
+        "amp": [0.1, 0.2],
+        "step": [0, 1],
+    }
+    sweep_axes = ("amp", "step")
+    expected = NDSweepMeasurementResult(
+        sweep_points={"amp": [0.1, 0.2], "step": [0, 1]},
+        sweep_axes=sweep_axes,
+        shape=(2, 2),
+        config=config,
+        results=[],
+    )
+    called: dict[str, object] = {}
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        del point
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule(["RQ00"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_ndsweep_measurement(
+        self: MeasurementExecutionService,
+        schedule: Any,
+        *,
+        sweep_points: Any,
+        sweep_axes: Any,
+        config: MeasurementConfig | None,
+    ) -> NDSweepMeasurementResult:
+        del self
+        called["schedule"] = schedule
+        called["sweep_points"] = sweep_points
+        called["sweep_axes"] = sweep_axes
+        called["config"] = config
+        return expected
+
+    measurement.execution_service.run_ndsweep_measurement = MethodType(
+        fake_run_ndsweep_measurement,
+        measurement.execution_service,
+    )
+
+    result = asyncio.run(
+        measurement.run_ndsweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            sweep_axes=sweep_axes,
+            config=config,
+        )
+    )
+
+    assert called["schedule"] is schedule
+    assert called["sweep_points"] is sweep_points
+    assert called["sweep_axes"] == sweep_axes
+    assert called["config"] is config
+    assert result is expected
+
+
+def test_run_ndsweep_measurement_runs_cartesian_order_and_helpers() -> None:
+    """Given ndsweep inputs, when execution succeeds, then C-order Cartesian results and helper accessors work."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+    sweep_points: dict[str, Sequence[SweepValue]] = {
+        "amp": [0.1, 0.2],
+        "step": [0, 1, 2],
+    }
+    sweep_axes = ("amp", "step")
+    scheduled_points: list[SweepPoint] = []
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        scheduled_points.append(point)
+        step = int(point["step"])
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self
+        step = int(schedule.pulse_schedule.labels[0][-1])
+        return MeasurementResult(
+            mode=config.mode,
+            data={"Q00": [np.array([step + 1.0 + 0.0j])]},
+            measurement_config=config.to_dict(),
+        )
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_ndsweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            sweep_axes=sweep_axes,
+            config=config,
+        )
+    )
+
+    assert result.shape == (2, 3)
+    assert result.sweep_axes == sweep_axes
+    assert len(result.results) == 6
+    assert scheduled_points == [
+        {"amp": 0.1, "step": 0},
+        {"amp": 0.1, "step": 1},
+        {"amp": 0.1, "step": 2},
+        {"amp": 0.2, "step": 0},
+        {"amp": 0.2, "step": 1},
+        {"amp": 0.2, "step": 2},
+    ]
+    assert np.array_equal(result.get((1, 2)).data["Q00"][0], np.array([3.0 + 0.0j]))
+    assert result.get(5) is result.results[5]
+    assert result.get_sweep_point((1, 0)) == {"amp": 0.2, "step": 0}
+    assert result.get_sweep_point(4) == {"amp": 0.2, "step": 1}
+    assert all(item.measurement_config is None for item in result.results)
+
+
+def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
+    """Given omitted ndsweep axes, when running, then dict insertion order is used."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+    sweep_points: dict[str, Sequence[SweepValue]] = {"z": [10, 20], "x": [1]}
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        del point
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule(["RQ00"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self, schedule, config
+        return MeasurementResult(mode="avg", data={"Q00": [np.array([0.0 + 0.0j])]})
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_ndsweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            config=config,
+        )
+    )
+
+    assert result.sweep_axes == ("z", "x")
+    assert result.shape == (2, 1)
 
 
 def test_disconnect_delegates_to_session_service() -> None:

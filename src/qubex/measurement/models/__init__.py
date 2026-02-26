@@ -13,9 +13,12 @@ from .measurement_record import MeasurementRecord
 from .measurement_result import MeasurementResult
 from .measurement_schedule import MeasurementSchedule
 from .sweep_measurement_result import (
+    NDSweepMeasurementResult,
+    SweepAxes,
+    SweepKey,
     SweepMeasurementResult,
     SweepPoint,
-    SweepPointResult,
+    SweepValue,
 )
 
 __all__ = [
@@ -27,7 +30,10 @@ __all__ = [
     "MeasurementResult",
     "MeasurementSchedule",
     "MultipleMeasureResult",
+    "NDSweepMeasurementResult",
+    "SweepAxes",
+    "SweepKey",
     "SweepMeasurementResult",
     "SweepPoint",
-    "SweepPointResult",
+    "SweepValue",
 ]
