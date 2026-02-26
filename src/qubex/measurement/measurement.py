@@ -10,6 +10,7 @@ from typing import Any, Final
 
 import numpy.typing as npt
 from qxpulse import PulseSchedule, RampType
+from typing_extensions import deprecated
 
 from qubex.backend import (
     BackendController,
@@ -259,6 +260,12 @@ class Measurement:
         self.connect()
 
     @property
+    def qubit_labels(self) -> list[str]:
+        """Return the configured qubit labels."""
+        return self._qubits
+
+    @property
+    @deprecated("Use `qubit_labels` instead.")
     def qubits(self) -> list[str]:
         """Return the configured qubit labels."""
         return self._qubits
