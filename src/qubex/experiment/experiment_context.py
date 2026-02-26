@@ -407,6 +407,16 @@ class ExperimentContext:
         return self._qubits
 
     @property
+    def resonator_labels(self) -> list[str]:
+        """Return the list of active resonator labels."""
+        resonators = self.resonators
+        return [
+            resonators[qubit].label
+            for qubit in self.qubit_labels
+            if qubit in resonators
+        ]
+
+    @property
     def mux_labels(self) -> list[str]:
         """Return the list of mux labels for the active qubits."""
         mux_set = set()

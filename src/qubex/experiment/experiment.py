@@ -364,6 +364,11 @@ class Experiment:
         return self.ctx.qubit_labels
 
     @property
+    def resonator_labels(self) -> list[str]:
+        """Return the list of active resonator labels."""
+        return self.ctx.resonator_labels
+
+    @property
     def mux_labels(self) -> list[str]:
         """Return mux labels for active qubits."""
         return self.ctx.mux_labels
