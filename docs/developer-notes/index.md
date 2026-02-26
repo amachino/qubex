@@ -21,6 +21,7 @@ Manage development notes and operational documents.
 - [System Package QuEL-1/QuEL-3 Boundary](system-package-quel1-quel3-boundary.md)
 - [qubex Measurement Model Baseline (Pre-qxschema)](qubex-measurement-model-baseline.md)
 - [run_sweep_measurement Minimal Spec](run-sweep-measurement-minimal-spec.md)
+- [Sweep / NDSweep Measurement API Spec](sweep-ndsweep-measurement-spec.md)
 - [qxschema Measurement Protocol Design](qxschema-measurement-protocol-design.md)
 - [System Configuration Schema](system-configuration-schema-draft.md)
 - [Configuration Module Migration Plan](configuration-module-migration.md)

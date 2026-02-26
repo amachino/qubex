@@ -83,7 +83,7 @@ class MeasurementResultConverter:
         result : MeasurementResult
             Canonical result.
         config : dict[str, Any] | None, optional
-            Legacy config payload. Falls back to `result.device_config`.
+            Legacy config payload. Falls back to `result.device_config` or `{}`.
         classifiers : dict[str, StateClassifier] | None, optional
             Optional legacy classifiers keyed by target.
 
@@ -93,9 +93,12 @@ class MeasurementResultConverter:
             Legacy multi-capture result.
         """
         mode = MeasureMode(result.mode)
-        resolved_config: dict[str, Any] = (
-            result.device_config if config is None else config
-        )
+        if config is None:
+            resolved_config: dict[str, Any] = (
+                {} if result.device_config is None else result.device_config
+            )
+        else:
+            resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
         resolved_sampling_period = (
             MeasurementResultConverter._resolve_sampling_period_ns(
@@ -141,7 +144,7 @@ class MeasurementResultConverter:
         index : int, optional
             Capture index in each target's result list.
         config : dict[str, Any] | None, optional
-            Legacy config payload. Falls back to `result.device_config`.
+            Legacy config payload. Falls back to `result.device_config` or `{}`.
         classifiers : dict[str, StateClassifier] | None, optional
             Optional legacy classifiers keyed by target.
 
@@ -177,8 +180,15 @@ class MeasurementResultConverter:
                 sampling_period_ns=resolved_sampling_period,
             )
 
+        if config is None:
+            resolved_config: dict[str, Any] = (
+                {} if result.device_config is None else result.device_config
+            )
+        else:
+            resolved_config = config
+
         return MeasureResult(
             mode=mode,
             data=single_data,
-            config=result.device_config if config is None else config,
+            config=resolved_config,
         )

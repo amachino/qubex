@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from pydantic import Field
 
 from qubex.constants import DEFAULT_RAWDATA_DIR
 from qubex.core import DataModel
@@ -19,8 +18,8 @@ class MeasurementResult(DataModel):
 
     mode: MeasurementMode
     data: dict[str, list[np.ndarray]]
-    device_config: dict[str, Any] = Field(default_factory=dict)
-    measurement_config: dict[str, Any] = Field(default_factory=dict)
+    device_config: dict[str, Any] | None = None
+    measurement_config: dict[str, Any] | None = None
     sampling_period_ns: float | None = None
 
     def save(

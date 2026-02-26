@@ -152,6 +152,31 @@ def test_save_writes_netcdf_file(tmp_path) -> None:
     assert np.array_equal(restored.data["Q00"][0], np.array([1.0 + 0.0j]))
 
 
+def test_measurement_result_defaults_configs_to_none() -> None:
+    """Given canonical result without config payloads, then config fields default to None."""
+    result = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([1.0 + 0.0j])]},
+    )
+
+    assert result.device_config is None
+    assert result.measurement_config is None
+
+
+def test_converter_falls_back_to_empty_config_when_missing() -> None:
+    """Given canonical result without device config, converter returns legacy results with empty config."""
+    result = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
+    )
+
+    multiple = MeasurementResultConverter.to_multiple_measure_result(result)
+    single = MeasurementResultConverter.to_measure_result(result)
+
+    assert multiple.config == {}
+    assert single.config == {}
+
+
 def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
     """Given NetCDF save, when opening the file, then codec metadata attributes are present."""
     result = MeasurementResult(
