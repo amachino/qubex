@@ -13,8 +13,8 @@ from .measurement_defaults import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
+    DEFAULT_READOUT_RAMP_TIME,
     DEFAULT_READOUT_RAMP_TYPE,
-    DEFAULT_READOUT_RAMPTIME,
 )
 
 
@@ -95,7 +95,7 @@ class MeasurementPulseFactory:
         if amplitude is None:
             amplitude = self._control_params.get_readout_amplitude(qubit)
         if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMPTIME
+            ramptime = DEFAULT_READOUT_RAMP_TIME
         if type is None:
             type = DEFAULT_READOUT_RAMP_TYPE
         if drag_coeff is None:
@@ -155,7 +155,7 @@ class MeasurementPulseFactory:
         if amplitude is None:
             amplitude = self._control_params.get_pump_amplitude(mux_index)
         if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMPTIME
+            ramptime = DEFAULT_READOUT_RAMP_TIME
         if type is None:
             type = DEFAULT_READOUT_RAMP_TYPE
         return FlatTop(

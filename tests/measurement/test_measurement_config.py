@@ -10,6 +10,8 @@ from pydantic import ValidationError
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_defaults import (
     DEFAULT_INTERVAL,
+    DEFAULT_N_SHOTS,
+    DEFAULT_SHOT_INTERVAL_NS,
     DEFAULT_SHOTS,
 )
 from qubex.measurement.models import MeasurementConfig
@@ -46,11 +48,17 @@ def test_factory_applies_context_defaults() -> None:
     )
     config = factory.create()
 
-    assert config.n_shots == DEFAULT_SHOTS
-    assert config.shot_interval_ns == DEFAULT_INTERVAL
+    assert config.n_shots == DEFAULT_N_SHOTS
+    assert config.shot_interval_ns == DEFAULT_SHOT_INTERVAL_NS
     assert config.shot_averaging is True
     assert config.time_integration is False
     assert config.state_classification is False
+
+
+def test_legacy_default_aliases_match_renamed_constants() -> None:
+    """Given legacy aliases, when imported, then they match renamed defaults."""
+    assert DEFAULT_SHOTS == DEFAULT_N_SHOTS
+    assert DEFAULT_INTERVAL == DEFAULT_SHOT_INTERVAL_NS
 
 
 def test_factory_maps_boolean_overrides() -> None:

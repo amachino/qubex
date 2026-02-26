@@ -13,7 +13,7 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
-    DEFAULT_READOUT_RAMPTIME,
+    DEFAULT_READOUT_RAMP_TIME,
 )
 from qubex.system import ControlParams, Mux
 
@@ -42,7 +42,7 @@ def test_readout_pulse_uses_defaults_from_control_params() -> None:
         == DEFAULT_READOUT_DURATION + DEFAULT_READOUT_POST_MARGIN
     )
     assert pulse.waveforms[1].amplitude == 0.25
-    assert pulse.waveforms[1].tau == DEFAULT_READOUT_RAMPTIME
+    assert pulse.waveforms[1].tau == DEFAULT_READOUT_RAMP_TIME
 
 
 def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
@@ -62,7 +62,7 @@ def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
     assert isinstance(pulse, FlatTop)
     assert pulse.duration == DEFAULT_READOUT_DURATION
     assert pulse.amplitude == pytest.approx(0.3)
-    assert pulse.tau == DEFAULT_READOUT_RAMPTIME
+    assert pulse.tau == DEFAULT_READOUT_RAMP_TIME
 
 
 def test_readout_pulse_uses_target_registry_when_label_is_custom() -> None:

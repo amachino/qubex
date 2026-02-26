@@ -7,9 +7,9 @@ from typing import TypeVar
 from qubex.system import ExperimentSystem
 
 from .measurement_defaults import (
-    DEFAULT_INTERVAL,
+    DEFAULT_N_SHOTS,
     DEFAULT_SHOT_AVERAGING,
-    DEFAULT_SHOTS,
+    DEFAULT_SHOT_INTERVAL_NS,
     DEFAULT_STATE_CLASSIFICATION,
     DEFAULT_TIME_INTEGRATION,
 )
@@ -46,11 +46,11 @@ class MeasurementConfigFactory:
         return MeasurementConfig(
             n_shots=_or_default(
                 n_shots,
-                DEFAULT_SHOTS,
+                DEFAULT_N_SHOTS,
             ),
             shot_interval_ns=_or_default(
                 shot_interval_ns,
-                DEFAULT_INTERVAL,
+                DEFAULT_SHOT_INTERVAL_NS,
             ),
             shot_averaging=_or_default(
                 shot_averaging,
