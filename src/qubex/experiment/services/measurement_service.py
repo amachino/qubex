@@ -253,7 +253,7 @@ class MeasurementService:
         self,
         schedule: Callable[[SweepValue], PulseSchedule],
         *,
-        sweep_values: Sequence[SweepValue],
+        sweep_values: ArrayLike,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         shot_averaging: bool | None = None,

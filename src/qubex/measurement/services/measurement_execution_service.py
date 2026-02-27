@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
 
 import numpy as np
+from numpy.typing import ArrayLike
 from qxpulse import PulseSchedule, RampType
 
 from qubex.backend import (
@@ -629,7 +630,7 @@ class MeasurementExecutionService:
         self,
         schedule: Callable[[SweepValue], MeasurementSchedule],
         *,
-        sweep_values: Sequence[SweepValue],
+        sweep_values: ArrayLike,
         config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
         """
@@ -639,7 +640,7 @@ class MeasurementExecutionService:
         ----------
         schedule : Callable[[SweepValue], MeasurementSchedule]
             Callback that builds one measurement schedule per sweep value.
-        sweep_values : Sequence[SweepValue]
+        sweep_values : ArrayLike
             Ordered sweep values to execute.
         config : MeasurementConfig | None, optional
             Shared measurement configuration for all points.
@@ -650,7 +651,7 @@ class MeasurementExecutionService:
             Sweep result list in the same order as input values.
         """
         resolved_config = self.create_measurement_config() if config is None else config
-        normalized_values = [*sweep_values]
+        normalized_values = cast(list[SweepValue], np.asarray(sweep_values).tolist())
         results: list[MeasurementResult] = []
         for sweep_value in normalized_values:
             measurement_schedule = schedule(sweep_value)
