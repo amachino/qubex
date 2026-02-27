@@ -21,13 +21,13 @@ class MeasurementResult(DataModel):
     data: dict[str, list[np.ndarray]]
     measurement_config: MeasurementConfig
     device_config: dict[str, Any] | None = None
-    sampling_period_ns: float
+    sampling_period: float
 
     def plot(self) -> None:
         """Plot measurement data for each capture."""
-        sampling_period = float(self.sampling_period_ns)
-        shot_averaging = bool(self.measurement_config.shot_averaging)
-        time_integration = bool(self.measurement_config.time_integration)
+        sampling_period = self.sampling_period
+        shot_averaging = self.measurement_config.shot_averaging
+        time_integration = self.measurement_config.time_integration
 
         for target, captures in self.data.items():
             for capture_index, raw in enumerate(captures):

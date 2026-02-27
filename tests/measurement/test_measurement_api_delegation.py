@@ -257,7 +257,7 @@ def test_capture_loopback_delegates_to_execution_service() -> None:
     loopback_result = MeasurementResult(
         data={"Q00": [np.array([1.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg", shots=128),
-        sampling_period_ns=2.0,
+        sampling_period=2.0,
     )
     called: dict[str, object] = {}
 
@@ -427,7 +427,7 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.build_measurement_schedule = MethodType(
@@ -708,7 +708,7 @@ def test_capture_loopback_skips_ports_without_rfswitch() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.build_measurement_schedule = MethodType(
@@ -856,7 +856,7 @@ def test_capture_loopback_initializes_awg_and_capunits_when_supported() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.build_measurement_schedule = MethodType(
@@ -1028,7 +1028,7 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.build_measurement_schedule = MethodType(
@@ -1150,7 +1150,7 @@ def test_capture_loopback_runs_without_dsp_demodulation() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.build_measurement_schedule = MethodType(
@@ -1295,7 +1295,7 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=measurement_config,
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service = measurement.execution_service
@@ -1532,19 +1532,19 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
             backend_result: object,
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
-            sampling_period_ns: float,
+            sampling_period: float,
         ) -> MeasurementResult:
             called["result_kwargs"] = {
                 "backend_result": backend_result,
                 "measurement_config": measurement_config,
                 "device_config": device_config,
-                "sampling_period_ns": sampling_period_ns,
+                "sampling_period": sampling_period,
             }
             return MeasurementResult(
                 data={"Q00": [np.array([1.0 + 0.0j])]},
                 measurement_config=_make_config(mode="avg"),
                 device_config={"kind": "quel3"},
-                sampling_period_ns=0.4,
+                sampling_period=0.4,
             )
 
     monkeypatch.setattr(
@@ -1677,7 +1677,7 @@ def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([step + 1.0 + 0.0j])]},
             measurement_config=config,
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.run_measurement = MethodType(
@@ -1739,7 +1739,7 @@ def test_run_sweep_measurement_resolves_default_config() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([0.0 + 0.0j])]},
             measurement_config=config,
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.create_measurement_config = MethodType(  # type: ignore[method-assign]
@@ -1795,7 +1795,7 @@ def test_run_sweep_measurement_stops_immediately_on_error() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([0.0 + 0.0j])]},
             measurement_config=_make_config(mode="avg"),
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.run_measurement = MethodType(
@@ -1916,7 +1916,7 @@ def test_run_ndsweep_measurement_runs_cartesian_order_and_helpers() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([step + 1.0 + 0.0j])]},
             measurement_config=config,
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.run_measurement = MethodType(
@@ -1983,7 +1983,7 @@ def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
         return MeasurementResult(
             data={"Q00": [np.array([0.0 + 0.0j])]},
             measurement_config=_make_config(mode="avg"),
-            sampling_period_ns=2.0,
+            sampling_period=2.0,
         )
 
     execution_service.run_measurement = MethodType(

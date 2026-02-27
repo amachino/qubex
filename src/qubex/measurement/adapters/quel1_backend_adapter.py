@@ -278,7 +278,7 @@ class Quel1MeasurementBackendAdapter:
         backend_result: object,
         measurement_config: MeasurementConfig,
         device_config: dict,
-        sampling_period_ns: float,
+        sampling_period: float,
     ) -> MeasurementResult:
         """Build canonical result from a QuEL-1 backend result payload."""
         if not isinstance(backend_result, Quel1BackendExecutionResult):
@@ -351,7 +351,7 @@ class Quel1MeasurementBackendAdapter:
             data=measure_data,
             device_config=device_config,
             measurement_config=measurement_config,
-            sampling_period_ns=sampling_period_ns,
+            sampling_period=sampling_period,
         )
 
     def _resolve_resource_lookup_target(self, target: str) -> str:

@@ -62,12 +62,12 @@ def test_build_measurement_result_converts_single_mode_to_qubit_labels() -> None
         backend_result=backend_result,
         measurement_config=_make_config(mode="single", shots=4),
         device_config={"kind": "quel1"},
-        sampling_period_ns=2.0,
+        sampling_period=2.0,
     )
 
     assert result.measurement_config.shot_averaging is False
     assert result.device_config == {"kind": "quel1"}
-    assert result.sampling_period_ns == 2.0
+    assert result.sampling_period == 2.0
     assert set(result.data.keys()) == {"Q00"}
     assert len(result.data["Q00"]) == 1
     assert_allclose(
@@ -101,7 +101,7 @@ def test_build_measurement_result_converts_avg_mode_with_shot_scaling() -> None:
         backend_result=backend_result,
         measurement_config=_make_config(mode="avg", shots=4),
         device_config={"kind": "quel1"},
-        sampling_period_ns=2.0,
+        sampling_period=2.0,
     )
 
     assert result.measurement_config.shot_averaging is True

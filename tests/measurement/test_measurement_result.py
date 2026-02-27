@@ -57,7 +57,7 @@ def test_measure_data_times_use_runtime_sampling_period_in_single_mode() -> None
         target="Q00",
         mode=MeasureMode.SINGLE,
         raw=np.array([[1.0 + 0.0j], [2.0 + 0.0j], [3.0 + 0.0j]]),
-        sampling_period_ns=0.4,
+        sampling_period=0.4,
     )
 
     assert np.array_equal(data.times, np.array([0.0, 0.4, 0.8]))
@@ -69,7 +69,7 @@ def test_measure_data_times_use_runtime_sampling_period_in_avg_mode() -> None:
         target="Q00",
         mode=MeasureMode.AVG,
         raw=np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]),
-        sampling_period_ns=0.8,
+        sampling_period=0.8,
     )
 
     assert np.array_equal(data.times, np.array([0.0, 0.8, 1.6]))

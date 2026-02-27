@@ -49,12 +49,12 @@ class MeasureData:
     mode: MeasureMode
     raw: NDArray
     classifier: StateClassifier | None = None
-    sampling_period_ns: float = SAMPLING_PERIOD
+    sampling_period: float = SAMPLING_PERIOD
 
     def __post_init__(self) -> None:
         """Validate sampling metadata values."""
-        if self.sampling_period_ns <= 0:
-            raise ValueError("sampling_period_ns must be positive.")
+        if self.sampling_period <= 0:
+            raise ValueError("sampling_period must be positive.")
 
     @cached_property
     def n_states(self) -> int:
@@ -96,7 +96,7 @@ class MeasureData:
     def times(self) -> NDArray[np.float64]:
         """Return capture times for the measurement mode."""
         if self.mode in (MeasureMode.SINGLE, MeasureMode.AVG):
-            return np.arange(self.length) * self.sampling_period_ns
+            return np.arange(self.length) * self.sampling_period
         raise ValueError(f"Invalid mode: {self.mode}")
 
     @cached_property
@@ -265,7 +265,7 @@ class MeasureData:
             if return_figure:
                 fig = viz.make_waveform_figure(
                     data=self.raw,
-                    sampling_period=self.sampling_period_ns,
+                    sampling_period=self.sampling_period,
                     title=plot_title,
                     xlabel="Capture time (ns)",
                     ylabel="Signal (arb. units)",
@@ -278,7 +278,7 @@ class MeasureData:
                 return fig
             viz.plot_waveform(
                 data=self.raw,
-                sampling_period=self.sampling_period_ns,
+                sampling_period=self.sampling_period,
                 title=plot_title,
                 xlabel="Capture time (ns)",
                 ylabel="Signal (arb. units)",

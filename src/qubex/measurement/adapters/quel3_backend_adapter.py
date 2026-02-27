@@ -180,7 +180,7 @@ class Quel3MeasurementBackendAdapter:
         backend_result: Quel3BackendExecutionResult,
         measurement_config: MeasurementConfig,
         device_config: dict,
-        sampling_period_ns: float,
+        sampling_period: float,
     ) -> MeasurementResult:
         """Build canonical result from QuEL-3 backend result payload."""
         _ = device_config
@@ -208,7 +208,7 @@ class Quel3MeasurementBackendAdapter:
                 converted_data.setdefault(output_target, []).append(capture_value)
         backend_sampling_period = backend_result.config.get("sampling_period_ns")
         if backend_sampling_period is None:
-            resolved_sampling_period = sampling_period_ns
+            resolved_sampling_period = sampling_period
         elif isinstance(backend_sampling_period, (int, float)):
             resolved_sampling_period = float(backend_sampling_period)
         else:
@@ -219,7 +219,7 @@ class Quel3MeasurementBackendAdapter:
             data=converted_data,
             device_config={},
             measurement_config=measurement_config,
-            sampling_period_ns=resolved_sampling_period,
+            sampling_period=resolved_sampling_period,
         )
 
     @staticmethod

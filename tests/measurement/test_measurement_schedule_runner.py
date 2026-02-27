@@ -95,13 +95,13 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
             backend_result: object,
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
-            sampling_period_ns: float,
+            sampling_period: float,
         ) -> MeasurementResult:
             called["result_kwargs"] = {
                 "backend_result": backend_result,
                 "measurement_config": measurement_config,
                 "device_config": device_config,
-                "sampling_period_ns": sampling_period_ns,
+                "sampling_period": sampling_period,
             }
             return expected
 
@@ -133,7 +133,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
     assert result_kwargs["backend_result"] is backend_result
     assert result_kwargs["measurement_config"] is config
     assert result_kwargs["device_config"] == {"shots": 2}
-    assert result_kwargs["sampling_period_ns"] == 8.0
+    assert result_kwargs["sampling_period"] == 8.0
     assert result is expected
 
 
@@ -167,12 +167,12 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
             backend_result: object,
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
-            sampling_period_ns: float,
+            sampling_period: float,
         ) -> MeasurementResult:
             _ = backend_result
             _ = measurement_config
             _ = device_config
-            _ = sampling_period_ns
+            _ = sampling_period
             return expected
 
     class _BackendController:
@@ -235,13 +235,13 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
             backend_result: object,
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
-            sampling_period_ns: float,
+            sampling_period: float,
         ) -> MeasurementResult:
             called["result_kwargs"] = {
                 "backend_result": backend_result,
                 "measurement_config": measurement_config,
                 "device_config": device_config,
-                "sampling_period_ns": sampling_period_ns,
+                "sampling_period": sampling_period,
             }
             return expected
 
@@ -299,12 +299,12 @@ def test_execute_prefers_backend_capture_decimation_hint() -> None:
             backend_result: object,
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
-            sampling_period_ns: float,
+            sampling_period: float,
         ) -> MeasurementResult:
             _ = backend_result
             _ = measurement_config
             _ = device_config
-            called["sampling_period_ns"] = sampling_period_ns
+            called["sampling_period"] = sampling_period
             return expected
 
     class _BackendController:
@@ -326,7 +326,7 @@ def test_execute_prefers_backend_capture_decimation_hint() -> None:
         runner.execute(schedule=_make_schedule(), config=_make_config())
     )
 
-    assert called["sampling_period_ns"] == 16.0
+    assert called["sampling_period"] == 16.0
     assert result is expected
 
 
@@ -336,7 +336,7 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
         data={"Q00": [np.array([1.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg"),
         device_config={"kind": "quel3"},
-        sampling_period_ns=0.4,
+        sampling_period=0.4,
     )
 
     class _Adapter:
@@ -385,7 +385,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
         data={"Q00": [np.array([2.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg"),
         device_config={"kind": "adapter"},
-        sampling_period_ns=0.4,
+        sampling_period=0.4,
     )
 
     class _Adapter:
@@ -408,12 +408,12 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
             backend_result: object,
             measurement_config: MeasurementConfig,
             device_config: dict[str, object],
-            sampling_period_ns: float,
+            sampling_period: float,
         ) -> MeasurementResult:
             called["builder_backend_result"] = backend_result
             called["builder_measurement_config"] = measurement_config
             called["builder_device_config"] = device_config
-            called["builder_sampling_period_ns"] = sampling_period_ns
+            called["builder_sampling_period"] = sampling_period
             return expected
 
     class _BackendController:
@@ -443,7 +443,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
     assert called["builder_backend_result"] is backend_result
     assert called["builder_measurement_config"] is config
     assert called["builder_device_config"] == {"kind": "quel3"}
-    assert called["builder_sampling_period_ns"] == 1.6
+    assert called["builder_sampling_period"] == 1.6
     assert result is expected
 
 

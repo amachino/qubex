@@ -106,15 +106,15 @@ class MeasurementScheduleRunner:
                 "backend_controller.CAPTURE_DECIMATION_FACTOR must be a positive integer."
             )
 
-        sampling_period_ns = self._backend_controller.sampling_period
+        sampling_period = self._backend_controller.sampling_period
         if config.shot_averaging:
-            sampling_period_ns = sampling_period_ns * capture_decimation_factor
+            sampling_period = sampling_period * capture_decimation_factor
 
         return self._measurement_backend_adapter.build_measurement_result(
             backend_result=backend_result,
             measurement_config=config,
             device_config=device_config,
-            sampling_period_ns=sampling_period_ns,
+            sampling_period=sampling_period,
         )
 
     async def execute(

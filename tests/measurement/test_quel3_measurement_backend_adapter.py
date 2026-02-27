@@ -403,7 +403,7 @@ def test_quel3_adapter_uses_registry_for_result_target_labels() -> None:
         backend_result=backend_result,
         measurement_config=_make_config(),
         device_config={},
-        sampling_period_ns=0.4,
+        sampling_period=0.4,
     )
 
     assert set(result.data.keys()) == {"Q17"}
@@ -494,7 +494,7 @@ def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> 
         data={"Q00": [np.array([1.0 + 0.0j], dtype=np.complex128)]},
         measurement_config=_make_config(mode="avg"),
         device_config={"kind": "quel3"},
-        sampling_period_ns=0.4,
+        sampling_period=0.4,
     )
     adapter = Quel3MeasurementBackendAdapter(
         backend_controller=_make_backend_controller(),
@@ -507,7 +507,7 @@ def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> 
             backend_result=cast(Any, unexpected),
             measurement_config=_make_config(),
             device_config={"kind": "quel3"},
-            sampling_period_ns=0.4,
+            sampling_period=0.4,
         )
 
 
@@ -553,14 +553,14 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
         backend_result=backend_result,
         measurement_config=config,
         device_config={"unused": True},
-        sampling_period_ns=1.0,
+        sampling_period=1.0,
     )
 
     assert isinstance(result, MeasurementResult)
     assert result.measurement_config.shot_averaging is True
     assert result.device_config == {}
     assert result.measurement_config == config
-    assert result.sampling_period_ns == pytest.approx(0.4)
+    assert result.sampling_period == pytest.approx(0.4)
     assert np.array_equal(
         result.data["Q00"][0],
         np.array([2.0 + 0.0j], dtype=np.complex128),
@@ -580,7 +580,7 @@ def test_quel3_adapter_build_measurement_result_rejects_noncanonical_type() -> N
             backend_result=cast(Any, {"iq_result": {}}),
             measurement_config=_make_config(),
             device_config={},
-            sampling_period_ns=0.4,
+            sampling_period=0.4,
         )
 
 
@@ -640,7 +640,7 @@ def test_quel3_adapter_build_measurement_result_splits_shared_alias_targets() ->
         backend_result=backend_result,
         measurement_config=_make_config(),
         device_config={},
-        sampling_period_ns=0.4,
+        sampling_period=0.4,
     )
 
     assert np.array_equal(result.data["Q00"][0], np.array([1.0 + 0.0j]))

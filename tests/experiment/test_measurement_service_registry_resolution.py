@@ -232,7 +232,7 @@ def test_check_noise_uses_measurement_result_plot() -> None:
             time_integration=False,
             state_classification=False,
         ),
-        sampling_period_ns=2.0,
+        sampling_period=2.0,
     )
     service.ctx.measurement.measure_noise = lambda *_args, **_kwargs: expected
 

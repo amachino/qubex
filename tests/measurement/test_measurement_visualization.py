@@ -194,6 +194,64 @@ def test_plot_measurement_schedule_returns_none(monkeypatch) -> None:
     assert result is None
 
 
+def test_measurement_schedule_plot_delegates_to_schedule_visualizer(
+    monkeypatch,
+) -> None:
+    """Given MeasurementSchedule.plot, when called, then schedule visualizer receives forwarded options."""
+    with PulseSchedule(["Q00"]) as pulse_schedule:
+        pulse_schedule.add("Q00", Blank(duration=4.0, sampling_period=0.4))
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    called: dict[str, object] = {}
+
+    def _plot_measurement_schedule(
+        plot_schedule: MeasurementSchedule,
+        *,
+        show_physical_pulse: bool,
+        title: str,
+        width: int,
+        n_samples: int | None,
+        divide_by_two_pi: bool,
+        line_shape: str,
+        template: str,
+    ) -> None:
+        called["schedule"] = plot_schedule
+        called["show_physical_pulse"] = show_physical_pulse
+        called["title"] = title
+        called["width"] = width
+        called["n_samples"] = n_samples
+        called["divide_by_two_pi"] = divide_by_two_pi
+        called["line_shape"] = line_shape
+        called["template"] = template
+
+    monkeypatch.setattr(
+        "qubex.visualization.schedule_visualizer.plot_measurement_schedule",
+        _plot_measurement_schedule,
+    )
+
+    result = schedule.plot(
+        show_physical_pulse=True,
+        title="My Schedule",
+        width=1234,
+        n_samples=16,
+        divide_by_two_pi=True,
+        line_shape="linear",
+        template="plotly_white",
+    )
+
+    assert result is None
+    assert called["schedule"] is schedule
+    assert called["show_physical_pulse"] is True
+    assert called["title"] == "My Schedule"
+    assert called["width"] == 1234
+    assert called["n_samples"] == 16
+    assert called["divide_by_two_pi"] is True
+    assert called["line_shape"] == "linear"
+    assert called["template"] == "plotly_white"
+
+
 def test_plot_sequencer_timeline_returns_none(monkeypatch) -> None:
     """Given timeline plot API, when plotting, then None is returned."""
     sequencer = SimpleNamespace(

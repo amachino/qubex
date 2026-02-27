@@ -29,15 +29,15 @@ class MeasurementResultConverter:
         return MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
 
     @staticmethod
-    def _resolve_sampling_period_ns(
+    def _resolve_sampling_period(
         *,
-        explicit: float | None,
+        explicit_sampling_period: float | None,
         result: MeasurementResult,
     ) -> float:
         """Resolve sampling period for legacy result models."""
-        if explicit is not None:
-            return explicit
-        return float(result.sampling_period_ns)
+        if explicit_sampling_period is not None:
+            return explicit_sampling_period
+        return float(result.sampling_period)
 
     @staticmethod
     def from_multiple(
@@ -70,8 +70,8 @@ class MeasurementResultConverter:
             data=data,
             measurement_config=measurement_config,
             device_config=multiple.config,
-            sampling_period_ns=(
-                first_capture.sampling_period_ns
+            sampling_period=(
+                first_capture.sampling_period
                 if isinstance(first_capture, MeasureData)
                 else SAMPLING_PERIOD
             ),
@@ -83,7 +83,7 @@ class MeasurementResultConverter:
         *,
         config: dict[str, Any] | None = None,
         classifiers: Mapping[str, StateClassifier] | None = None,
-        sampling_period_ns: float | None = None,
+        sampling_period: float | None = None,
     ) -> MultipleMeasureResult:
         """
         Convert a canonical result to the legacy multi-capture model.
@@ -112,11 +112,9 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
-        resolved_sampling_period = (
-            MeasurementResultConverter._resolve_sampling_period_ns(
-                explicit=sampling_period_ns,
-                result=result,
-            )
+        resolved_sampling_period = MeasurementResultConverter._resolve_sampling_period(
+            explicit_sampling_period=sampling_period,
+            result=result,
         )
         legacy_data = {
             target: [
@@ -125,7 +123,7 @@ class MeasurementResultConverter:
                     mode=mode,
                     raw=np.asarray(raw),
                     classifier=classifier_map.get(target),
-                    sampling_period_ns=resolved_sampling_period,
+                    sampling_period=resolved_sampling_period,
                 )
                 for raw in captures
             ]
@@ -144,7 +142,7 @@ class MeasurementResultConverter:
         index: int = 0,
         config: dict[str, Any] | None = None,
         classifiers: Mapping[str, StateClassifier] | None = None,
-        sampling_period_ns: float | None = None,
+        sampling_period: float | None = None,
     ) -> MeasureResult:
         """
         Convert one capture index to a legacy per-target result.
@@ -174,11 +172,9 @@ class MeasurementResultConverter:
             result.measurement_config
         )
         classifier_map = {} if classifiers is None else classifiers
-        resolved_sampling_period = (
-            MeasurementResultConverter._resolve_sampling_period_ns(
-                explicit=sampling_period_ns,
-                result=result,
-            )
+        resolved_sampling_period = MeasurementResultConverter._resolve_sampling_period(
+            explicit_sampling_period=sampling_period,
+            result=result,
         )
         single_data: dict[str, MeasureData] = {}
         for target, captures in result.data.items():
@@ -191,7 +187,7 @@ class MeasurementResultConverter:
                 mode=mode,
                 raw=np.asarray(captures[index]),
                 classifier=classifier_map.get(target),
-                sampling_period_ns=resolved_sampling_period,
+                sampling_period=resolved_sampling_period,
             )
 
         if config is None:

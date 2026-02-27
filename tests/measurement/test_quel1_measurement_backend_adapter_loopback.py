@@ -152,7 +152,7 @@ def test_build_measurement_result_keeps_monitor_labels() -> None:
         backend_result=backend_result,
         measurement_config=_make_config(mode="single", shots=4),
         device_config={"kind": "quel1"},
-        sampling_period_ns=2.0,
+        sampling_period=2.0,
     )
 
     assert set(result.data.keys()) == {"Q00", "B0.MNTR0.IN"}
