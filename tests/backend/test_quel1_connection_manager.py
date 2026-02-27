@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -219,3 +220,54 @@ def test_disconnect_clears_connected_runtime_state() -> None:
         _ = manager.cap_resource_map
     with pytest.raises(ValueError, match="Boxes not connected"):
         _ = manager.gen_resource_map
+
+
+def test_linkup_reemits_capture_warning_with_box_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given quel_ic warning, when linkup runs, then manager re-emits warning with box id."""
+
+    class _FakeBox:
+        def link_status(self) -> dict[int, bool]:
+            return {0: True}
+
+        def reconnect(self, **_kwargs: Any) -> None:
+            logging.getLogger("quel_ic_config.linkupper").warning(
+                "failed establishment of capture link of fddc-#5 of mxfe-#0"
+            )
+            logging.getLogger("quel_ic_config.quel1_box_intrinsic").error(
+                "JESD204C tx-link of AD9082-#0 is not working properly, it must be linked up"
+            )
+
+    manager = _make_manager()
+    manager._runtime_context.validate_box_availability = (  # type: ignore[method-assign]
+        lambda _box_name: None
+    )
+    boxpool = _FakeBoxPool()
+    boxpool._boxes["B0"] = (_FakeBox(), object())
+    manager.set_connected_state(
+        boxpool=boxpool,  # type: ignore[arg-type]
+        quel1system=_FakeQuel1System(),  # type: ignore[arg-type]
+        cap_resource_map={},
+        gen_resource_map={},
+    )
+
+    with caplog.at_level(logging.WARNING):
+        manager.linkup(box_name="B0", noise_threshold=10_000)
+
+    assert any(
+        "B0 : failed establishment of capture link" in record.getMessage()
+        for record in caplog.records
+    )
+    assert any(
+        "B0 : JESD204C tx-link of AD9082-#0 is not working properly"
+        in record.getMessage()
+        for record in caplog.records
+    )
+    assert all(
+        not (
+            record.name.startswith("quel_ic_config")
+            and "failed establishment of capture link" in record.getMessage()
+        )
+        for record in caplog.records
+    )

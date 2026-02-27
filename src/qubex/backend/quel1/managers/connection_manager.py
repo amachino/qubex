@@ -5,8 +5,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -277,7 +278,12 @@ class Quel1ConnectionManager:
                 f"Linkup failed for box '{box_name}'. "
                 f"Try relinkup('{box_name}') and retry."
             )
-        box.reconnect(background_noise_threshold=noise_threshold, **kwargs)
+        with self._capture_quel_ic_linkup_messages() as linkup_messages:
+            box.reconnect(background_noise_threshold=noise_threshold, **kwargs)
+        self._reemit_box_scoped_linkup_messages(
+            box_name=box_name,
+            linkup_messages=linkup_messages,
+        )
         status = box.link_status()
         if not all(status.values()):
             logger.warning(f"Failed to linkup box {box_name}. Status: {status}")
@@ -708,6 +714,78 @@ class Quel1ConnectionManager:
     def _log_relinkup_error(box_name: str, exc: BaseException) -> None:
         """Log a relinkup error for one box."""
         logger.exception(f"{box_name:5} : Error during relinkup", exc_info=exc)
+
+    @contextmanager
+    def _capture_quel_ic_linkup_messages(
+        self,
+    ) -> Iterator[list[tuple[int, str]]]:
+        """Collect and suppress selected quel_ic_config linkup messages."""
+
+        class _CaptureLinkupLogFilter(logging.Filter):
+            def __init__(self) -> None:
+                super().__init__()
+                self.messages: list[tuple[int, str]] = []
+
+            def filter(self, record: logging.LogRecord) -> bool:
+                if record.levelno < logging.WARNING:
+                    return True
+                if not record.name.startswith("quel_ic_config"):
+                    return True
+                message = record.getMessage()
+                is_capture_link_failure = (
+                    "failed establishment of capture link" in message
+                )
+                is_jesd_tx_link_error = "JESD204C tx-link of AD9082" in message
+                if not (is_capture_link_failure or is_jesd_tx_link_error):
+                    return True
+                self.messages.append((record.levelno, message))
+                return False
+
+        capture_filter = _CaptureLinkupLogFilter()
+        root_logger = logging.getLogger()
+        target_loggers: list[logging.Logger] = [root_logger]
+        logger_dict = logging.Logger.manager.loggerDict
+        for logger_name in logger_dict:
+            if not logger_name.startswith("quel_ic_config"):
+                continue
+            maybe_logger = logging.getLogger(logger_name)
+            if isinstance(maybe_logger, logging.Logger):
+                target_loggers.append(maybe_logger)
+
+        explicit_target_loggers = (
+            logging.getLogger("quel_ic_config"),
+            logging.getLogger("quel_ic_config.linkupper"),
+            logging.getLogger("quel_ic_config.quel1_box_intrinsic"),
+        )
+        for explicit_logger in explicit_target_loggers:
+            if explicit_logger not in target_loggers:
+                target_loggers.append(explicit_logger)
+
+        filtered_handlers: list[logging.Handler] = []
+        filtered_loggers: list[logging.Logger] = []
+        for target_logger in target_loggers:
+            target_logger.addFilter(capture_filter)
+            filtered_loggers.append(target_logger)
+            for handler in target_logger.handlers:
+                handler.addFilter(capture_filter)
+                filtered_handlers.append(handler)
+        try:
+            yield capture_filter.messages
+        finally:
+            for handler in filtered_handlers:
+                handler.removeFilter(capture_filter)
+            for target_logger in filtered_loggers:
+                target_logger.removeFilter(capture_filter)
+
+    def _reemit_box_scoped_linkup_messages(
+        self,
+        *,
+        box_name: str,
+        linkup_messages: list[tuple[int, str]],
+    ) -> None:
+        """Re-emit captured linkup messages with explicit box-name context."""
+        for level, message in linkup_messages:
+            logger.log(level, "%s : %s", box_name, message)
 
     def _require_connected(self) -> None:
         """Raise a consistent error when runtime is not connected."""
