@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Collection
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -25,6 +25,8 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.pulse import Blank, PulseSchedule
 
+from ._deprecated_options import resolve_shot_options
+
 
 def simultaneous_coherence_measurement(
     exp: Experiment,
@@ -33,10 +35,11 @@ def simultaneous_coherence_measurement(
     time_range: ArrayLike | None = None,
     detuning: float | None = None,
     second_rotation_axis: Literal["X", "Y"] | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> dict[str, ExperimentResult]:
     """
     Run simultaneous T1, T2 echo, and Ramsey measurements.
@@ -53,9 +56,9 @@ def simultaneous_coherence_measurement(
         Ramsey detuning in GHz.
     second_rotation_axis
         Axis of the second Ramsey rotation.
-    shots
+    n_shots
         Number of shots per sweep point.
-    interval
+    shot_interval
         Measurement interval in seconds.
     plot
         Whether to render plots.
@@ -67,12 +70,18 @@ def simultaneous_coherence_measurement(
     dict[str, ExperimentResult]
         Experiment results keyed by mode: `T1`, `T2`, and `Ramsey`.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="simultaneous_coherence_measurement",
+    )
     if second_rotation_axis is None:
         second_rotation_axis = "Y"
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if save_image is None:
@@ -151,21 +160,21 @@ def simultaneous_coherence_measurement(
             measurements = {
                 "T1": exp.measurement_service.measure(
                     sequence=t1_schedules,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     plot=False,
                 ),
                 "T2": exp.measurement_service.measure(
                     sequence=t2_schedules,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     plot=False,
                 ),
                 "Ramsey": exp.measurement_service.measure(
                     sequence=ramsey_schedules,
                     frequencies=detuned_frequencies,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     plot=False,
                 ),
             }

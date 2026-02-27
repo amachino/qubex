@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Collection
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -23,6 +23,8 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.models import Result
 from qubex.pulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 from qubex.typing import TargetMap
+
+from ._deprecated_options import resolve_shot_options
 
 
 def purity_sequence_1q(
@@ -265,11 +267,12 @@ def pb_experiment_1q(
     interleaved_clifford: Clifford | None = None,
     interleaved_waveform: TargetMap[Waveform] | None = None,
     in_parallel: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     xaxis_type: Literal["linear", "log"] | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Run single-qubit purity benchmarking.
@@ -313,11 +316,17 @@ def pb_experiment_1q(
     if max_n_cliffords is None:
         max_n_cliffords = DEFAULT_MAX_N_CLIFFORDS_1Q
 
-    if shots is None:
-        shots = DEFAULT_SHOTS
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="pb_experiment_1q",
+    )
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
 
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
 
     if xaxis_type is None:
         xaxis_type = "linear"
@@ -383,8 +392,8 @@ def pb_experiment_1q(
                         seed=seed,
                     ),
                     mode="avg",
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     plot=False,
                 )
                 for target, data in result.data.items():
@@ -458,11 +467,12 @@ def pb_experiment_2q(
     interleaved_waveform: TargetMap[PulseSchedule] | None = None,
     in_parallel: bool | None = None,
     mitigate_readout: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     xaxis_type: Literal["linear", "log"] | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Run two-qubit purity benchmarking.
@@ -518,17 +528,17 @@ def pb_experiment_2q(
     if max_n_cliffords is None:
         max_n_cliffords = DEFAULT_MAX_N_CLIFFORDS_2Q
 
-    if shots is None:
-        shots = DEFAULT_SHOTS
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="pb_experiment_2q",
+    )
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
 
-    if interval is None:
-        interval = DEFAULT_INTERVAL
-
-    if shots is None:
-        shots = DEFAULT_SHOTS
-
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
 
     if xaxis_type is None:
         xaxis_type = "linear"
@@ -603,8 +613,8 @@ def pb_experiment_2q(
                         seed=seed,
                     ),
                     mode="single",
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     plot=False,
                 )
 
@@ -683,10 +693,11 @@ def ipb_experiment(
     x90: TargetMap[Waveform] | None = None,
     zx90: TargetMap[PulseSchedule] | None = None,
     in_parallel: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """Run interleaved purity benchmarking."""
     if isinstance(targets, str):
@@ -700,6 +711,12 @@ def ipb_experiment(
         plot = True
     if save_image is None:
         save_image = True
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="ipb_experiment",
+    )
 
     clifford_obj: Clifford
     if isinstance(interleaved_clifford, str):
@@ -724,8 +741,8 @@ def ipb_experiment(
             x90=x90,
             zx90=zx90,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=False,
             save_image=False,
         )
@@ -741,8 +758,8 @@ def ipb_experiment(
             interleaved_waveform=interleaved_waveform,  # type: ignore[arg-type]
             interleaved_clifford=clifford_obj,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=False,
             save_image=False,
         )
@@ -757,8 +774,8 @@ def ipb_experiment(
             max_n_cliffords=max_n_cliffords,
             x90=x90,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=False,
             save_image=False,
         )
@@ -773,8 +790,8 @@ def ipb_experiment(
             interleaved_waveform=interleaved_waveform,  # type: ignore[arg-type]
             interleaved_clifford=clifford_obj,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=False,
             save_image=False,
         )
@@ -898,10 +915,11 @@ def purity_benchmarking(
     zx90: TargetMap[PulseSchedule] | None = None,
     in_parallel: bool | None = None,
     xaxis_type: Literal["linear", "log"] | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """Dispatch purity benchmarking based on target type."""
     if isinstance(targets, str):
@@ -911,6 +929,12 @@ def purity_benchmarking(
 
     target_object = exp.ctx.experiment_system.get_target(targets[0])
     is_2q = target_object.is_cr
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="purity_benchmarking",
+    )
 
     if is_2q:
         return pb_experiment_2q(
@@ -923,8 +947,8 @@ def purity_benchmarking(
             x90=x90,
             zx90=zx90,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             xaxis_type=xaxis_type,
             plot=plot,
             save_image=save_image,
@@ -939,8 +963,8 @@ def purity_benchmarking(
         max_n_cliffords=max_n_cliffords,
         x90=x90,
         in_parallel=in_parallel,
-        shots=shots,
-        interval=interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
         xaxis_type=xaxis_type,
         plot=plot,
         save_image=save_image,
@@ -960,10 +984,11 @@ def interleaved_purity_benchmarking(
     x90: TargetMap[Waveform] | None = None,
     zx90: TargetMap[PulseSchedule] | None = None,
     in_parallel: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """Dispatch interleaved purity benchmarking."""
     if isinstance(targets, str):
@@ -973,6 +998,12 @@ def interleaved_purity_benchmarking(
 
     if in_parallel is None:
         in_parallel = False
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="interleaved_purity_benchmarking",
+    )
 
     if in_parallel:
         result = ipb_experiment(
@@ -987,8 +1018,8 @@ def interleaved_purity_benchmarking(
             x90=x90,
             zx90=zx90,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -1007,8 +1038,8 @@ def interleaved_purity_benchmarking(
                 x90=x90,
                 zx90=zx90,
                 in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 plot=plot,
                 save_image=save_image,
             )

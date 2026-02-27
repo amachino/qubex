@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import no_type_check
+from typing import Any, no_type_check
 
 import numpy as np
 import plotly.graph_objects as go
@@ -30,6 +30,8 @@ from qubex.pulse import (
 )
 from qubex.typing import TargetMap
 
+from ._deprecated_options import resolve_shot_options
+
 
 def measure_cr_crosstalk(
     exp: Experiment,
@@ -53,10 +55,11 @@ def measure_cr_crosstalk(
     x180: TargetMap[Waveform] | None = None,
     ramp_type: RampType | None = None,
     x180_margin: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     reset_awg_and_capunits: bool | None = None,
     plot: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Measure CR crosstalk dynamics for target and spectator qubits.
@@ -77,16 +80,23 @@ def measure_cr_crosstalk(
     Result
         Result containing Bloch trajectories and fitted rotations.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="measure_cr_crosstalk",
+    )
+
     if echo is None:
         echo = False
     if control_state is None:
         control_state = "0"
     if ramp_type is None:
         ramp_type = "RaisedCosine"
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if reset_awg_and_capunits is None:
         reset_awg_and_capunits = True
     if plot is None:
@@ -196,8 +206,8 @@ def measure_cr_crosstalk(
                 ),
                 x90=x90,
                 initial_state={control_qubit: control_state},
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=False,
                 plot=False,
             )
@@ -290,18 +300,26 @@ def cr_crosstalk_hamiltonian_tomography(
     ramp_type: RampType | None = None,
     x90: TargetMap[Waveform] | None = None,
     x180_margin: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     reset_awg_and_capunits: bool | None = None,
     plot: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """Perform CR crosstalk Hamiltonian tomography."""
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="cr_crosstalk_hamiltonian_tomography",
+    )
+
     if ramp_type is None:
         ramp_type = "RaisedCosine"
-    if shots is None:
-        shots = CALIBRATION_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = CALIBRATION_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if reset_awg_and_capunits is None:
         reset_awg_and_capunits = True
     if plot is None:
@@ -348,8 +366,8 @@ def cr_crosstalk_hamiltonian_tomography(
         x90=x90,
         ramp_type=ramp_type,
         x180_margin=x180_margin,
-        shots=shots,
-        interval=interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
         reset_awg_and_capunits=False,
         plot=False,
     )
@@ -374,8 +392,8 @@ def cr_crosstalk_hamiltonian_tomography(
         x90=x90,
         ramp_type=ramp_type,
         x180_margin=x180_margin,
-        shots=shots,
-        interval=interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
         reset_awg_and_capunits=False,
         plot=False,
     )

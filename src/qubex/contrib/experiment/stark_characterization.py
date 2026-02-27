@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -22,6 +22,8 @@ from qubex.experiment.models.experiment_result import (
     T1Data,
 )
 from qubex.pulse import FlatTop, PulseSchedule, VirtualZ
+
+from ._deprecated_options import resolve_shot_options
 
 
 def _normalize_targets(
@@ -81,11 +83,12 @@ def stark_t1_experiment(
     stark_amplitude: float | dict[str, float] | None = None,
     stark_ramptime: float | dict[str, float] | None = None,
     time_range: ArrayLike | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
     xaxis_type: Literal["linear", "log"] | None = None,
+    **deprecated_options: Any,
 ) -> ExperimentResult[T1Data]:
     """
     Run a Stark-driven T1 experiment.
@@ -104,9 +107,9 @@ def stark_t1_experiment(
         Stark-tone ramp time in ns for each target.
     time_range
         Sweep range for wait time in ns.
-    shots
+    n_shots
         Number of shots per sweep point.
-    interval
+    shot_interval
         Measurement interval in seconds.
     plot
         Whether to render plots.
@@ -120,10 +123,16 @@ def stark_t1_experiment(
     ExperimentResult[T1Data]
         Stark-driven T1 fitting results for each target.
     """
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="stark_t1_experiment",
+    )
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if save_image is None:
@@ -189,8 +198,8 @@ def stark_t1_experiment(
         sweep_result = exp.measurement_service.sweep_parameter(
             sequence=stark_t1_sequence,
             sweep_range=sweep_range,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             title="Stark-driven T1 decay",
             xlabel="Time (μs)",
@@ -234,11 +243,12 @@ def stark_ramsey_experiment(
     stark_ramptime: float | dict[str, float] | None = None,
     time_range: ArrayLike | None = None,
     second_rotation_axis: Literal["X", "Y"] | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     envelope_region: Literal["full", "flat"] | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> ExperimentResult[RamseyData]:
     """
     Run a Stark-driven Ramsey experiment.
@@ -259,9 +269,9 @@ def stark_ramsey_experiment(
         Sweep range for wait time in ns.
     second_rotation_axis
         Axis of the second Ramsey rotation.
-    shots
+    n_shots
         Number of shots per sweep point.
-    interval
+    shot_interval
         Measurement interval in seconds.
     envelope_region
         Stark envelope region mode.
@@ -277,10 +287,16 @@ def stark_ramsey_experiment(
     """
     if second_rotation_axis is None:
         second_rotation_axis = "Y"
-    if shots is None:
-        shots = CALIBRATION_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="stark_ramsey_experiment",
+    )
+    if n_shots is None:
+        n_shots = CALIBRATION_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if envelope_region is None:
         envelope_region = "full"
     if plot is None:
@@ -376,8 +392,8 @@ def stark_ramsey_experiment(
         sweep_result = exp.measurement_service.sweep_parameter(
             sequence=stark_ramsey_sequence,
             sweep_range=sweep_range,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
         )
 

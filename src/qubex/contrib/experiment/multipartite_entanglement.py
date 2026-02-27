@@ -8,6 +8,7 @@ from collections.abc import Collection
 from datetime import datetime
 from itertools import pairwise, product
 from pathlib import Path
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -37,6 +38,8 @@ from qubex.pulse import (
     VirtualZ,
 )
 from qubex.visualization import COLORS
+
+from ._deprecated_options import resolve_shot_options
 
 
 def create_entangle_sequence(
@@ -314,16 +317,23 @@ def measure_ghz_state(
     decouple_entangled_zz: bool | None = None,
     decouple_all_zz: bool | None = None,
     cpmg_duration_unit: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Measure the n-qubit GHZ state in the specified bases.
 
     Returns dict with 'raw', 'mitigated', 'result', 'figure'.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="measure_ghz_state",
+    )
     if optimize_sequence is None:
         optimize_sequence = True
     if as_late_as_possible is None:
@@ -334,10 +344,10 @@ def measure_ghz_state(
         decouple_entangled_zz = True
     if decouple_all_zz is None:
         decouple_all_zz = False
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if save_image is None:
@@ -390,8 +400,8 @@ def measure_ghz_state(
     result = exp.measure(
         ps,
         mode="single",
-        shots=shots,
-        interval=interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
     )
 
     basis_labels = result.get_basis_labels(qubits)
@@ -470,12 +480,13 @@ def ghz_state_tomography(
     decouple_entangled_zz: bool | None = None,
     decouple_all_zz: bool | None = None,
     cpmg_duration_unit: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     show_sequence: bool | None = None,
     save_image: bool | None = None,
     mle_fit: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Perform full state tomography on a n-qubit GHZ state.
@@ -493,9 +504,9 @@ def ghz_state_tomography(
         List of tuples representing the entanglement steps, e.g., [("Q00", "Q01"), ("Q01", "Q02")].
     readout_mitigation : bool
         Whether to apply readout error mitigation.
-    shots : int
+    n_shots : int
         Number of shots for each measurement.
-    interval : float
+    shot_interval : float
         Time interval between measurements.
     plot : bool
         Whether to plot the resulting density matrix.
@@ -514,6 +525,12 @@ def ghz_state_tomography(
         - "fidelity": Fidelity with the ideal GHZ state.
         - "figure": Plotly figure of the density matrix.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="ghz_state_tomography",
+    )
     if readout_mitigation is None:
         readout_mitigation = True
     if optimize_sequence is None:
@@ -526,10 +543,10 @@ def ghz_state_tomography(
         decouple_entangled_zz = True
     if decouple_all_zz is None:
         decouple_all_zz = False
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if show_sequence is None:
@@ -590,8 +607,8 @@ def ghz_state_tomography(
             decouple_entangled_zz=decouple_entangled_zz,
             decouple_all_zz=decouple_all_zz,
             cpmg_duration_unit=cpmg_duration_unit,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=False,
             save_image=False,
         )
@@ -779,8 +796,9 @@ def mqc_experiment(
     decouple_entangled_zz: bool | None = None,
     decouple_all_zz: bool | None = None,
     cpmg_duration_unit: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Run an MQC experiment over a phase sweep.
@@ -794,6 +812,12 @@ def mqc_experiment(
     show_sequence
         Whether to display the pulse sequence.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="mqc_experiment",
+    )
     if show_sequence is None:
         show_sequence = True
     if echo is None:
@@ -808,10 +832,10 @@ def mqc_experiment(
         decouple_entangled_zz = True
     if decouple_all_zz is None:
         decouple_all_zz = False
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     qubits: list[str] = []
     source_qubits: list[str] = []
     steps: list[tuple[str, str]] = []
@@ -869,8 +893,8 @@ def mqc_experiment(
         plot=False,
         enable_tqdm=True,
         sweep_range=phi_range,
-        shots=shots,
-        interval=interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
     )
 
     for qubit, data in result.data.items():
@@ -1022,8 +1046,9 @@ def parity_oscillation(
     decouple_all_zz: bool | None = None,
     cpmg_duration_unit: float | None = None,
     readout_mitigation: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Measure parity oscillations of an entangled state.
@@ -1037,6 +1062,12 @@ def parity_oscillation(
     readout_mitigation
         Whether to apply readout mitigation.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="parity_oscillation",
+    )
     if show_sequence is None:
         show_sequence = True
     if show_only_qubit_channels is None:
@@ -1053,10 +1084,10 @@ def parity_oscillation(
         decouple_all_zz = False
     if readout_mitigation is None:
         readout_mitigation = True
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if initialization_pulse is None:
         initialization_pulse = "Y90"
 
@@ -1135,8 +1166,8 @@ def parity_oscillation(
         res = exp.measure(
             sequence(phi),
             mode="single",
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
         )
         result.append(res)
         probs_raw = res.probabilities
@@ -1378,8 +1409,8 @@ def _measure_1d_cluster_state(
     decouple_entangled_zz: bool | None = None,
     decouple_all_zz: bool | None = None,
     cpmg_duration_unit: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     method: str | None = None,
     reset_awg_and_capunits: bool | None = None,
@@ -1410,10 +1441,10 @@ def _measure_1d_cluster_state(
         decouple_entangled_zz = False
     if decouple_all_zz is None:
         decouple_all_zz = False
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if method is None:
@@ -1513,8 +1544,8 @@ def _measure_1d_cluster_state(
                     with_readout_pulses=True,
                 ),
                 mode="single",
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=False,
             )
         else:
@@ -1532,8 +1563,8 @@ def _measure_1d_cluster_state(
                     with_readout_pulses=False,
                 ),
                 mode="single",
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=False,
             )
 
@@ -1737,11 +1768,12 @@ def measure_1d_cluster_state(
     decouple_entangled_zz: bool | None = None,
     decouple_all_zz: bool | None = None,
     cpmg_duration_unit: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     method: str | None = None,
     reset_awg_and_capunits: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Measure negativities for a 1D cluster state.
@@ -1755,6 +1787,12 @@ def measure_1d_cluster_state(
     method
         Measurement method to use.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="measure_1d_cluster_state",
+    )
     if mle_fit is None:
         mle_fit = True
     if optimize_sequence is None:
@@ -1767,10 +1805,10 @@ def measure_1d_cluster_state(
         decouple_entangled_zz = False
     if decouple_all_zz is None:
         decouple_all_zz = False
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if method is None:
@@ -1803,8 +1841,8 @@ def measure_1d_cluster_state(
             qubits,
             offset=offset,
             mle_fit=mle_fit,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=False,
             method=method,
             reset_awg_and_capunits=reset_awg_and_capunits,
@@ -2462,8 +2500,8 @@ def _measure_graph_state(
     target_edges: list[tuple[str, str]],
     mle_fit: bool | None = None,
     use_all_spectator_pattern: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     method: str | None = None,
     reset_awg_and_capunits: bool | None = None,
@@ -2486,10 +2524,10 @@ def _measure_graph_state(
         mle_fit = True
     if use_all_spectator_pattern is None:
         use_all_spectator_pattern = True
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if method is None:
@@ -2575,8 +2613,8 @@ def _measure_graph_state(
                     with_readout_pulses=True,
                 ),
                 mode="single",
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=False,
             )
         else:
@@ -2588,8 +2626,8 @@ def _measure_graph_state(
                     with_readout_pulses=False,
                 ),
                 mode="single",
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=False,
             )
 
@@ -2939,13 +2977,14 @@ def measure_graph_state(
     *,
     mle_fit: bool | None = None,
     use_all_spectator_pattern: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     method: str | None = None,
     reset_awg_and_capunits: bool | None = None,
     n_bootstrap: int | None = None,
     bootstrap_mle: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """
     Measure graph-state negativities for all edges.
@@ -2959,14 +2998,20 @@ def measure_graph_state(
     n_bootstrap
         Bootstrap sample count for error estimates.
     """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="measure_graph_state",
+    )
     if mle_fit is None:
         mle_fit = True
     if use_all_spectator_pattern is None:
         use_all_spectator_pattern = True
-    if shots is None:
-        shots = 3000
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = 3000
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if method is None:
@@ -3031,8 +3076,8 @@ def measure_graph_state(
             target_edges=target_edges,
             mle_fit=mle_fit,
             use_all_spectator_pattern=use_all_spectator_pattern,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=False,
             method=method,
             reset_awg_and_capunits=reset_awg_and_capunits,
@@ -3205,19 +3250,26 @@ def measure_bell_state_fidelities(
     *,
     unavailable_pairs: Collection[str | tuple[int | str, int | str]] | None = None,
     readout_mitigation: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_data: bool | None = None,
     save_path: Path | str | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """Measure Bell-state fidelities for target pairs."""
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="measure_bell_state_fidelities",
+    )
     if readout_mitigation is None:
         readout_mitigation = True
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = False
     if save_data is None:
@@ -3246,8 +3298,8 @@ def measure_bell_state_fidelities(
             result = exp.bell_state_tomography(
                 *pair,
                 readout_mitigation=readout_mitigation,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
             )
             fidelities[label] = result["fidelity"]
         except Exception as e:
@@ -3316,12 +3368,19 @@ def measure_bell_states(
     title: str | None = None,
     plot: bool | None = None,
     plot_round: bool | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     reset_awg_and_capunits: bool | None = None,
     reset_awg_and_capunits_each_time: bool | None = None,
+    **deprecated_options: Any,
 ) -> Result:
     """Measure Bell-state populations for target pairs."""
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="measure_bell_states",
+    )
     if control_basis is None:
         control_basis = "Z"
     if target_basis is None:
@@ -3338,10 +3397,10 @@ def measure_bell_states(
         plot = True
     if plot_round is None:
         plot_round = False
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if reset_awg_and_capunits is None:
         reset_awg_and_capunits = True
     if reset_awg_and_capunits_each_time is None:
@@ -3472,8 +3531,8 @@ def measure_bell_states(
             result = exp.measure(
                 ps,
                 mode="single",
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=reset_awg_and_capunits_each_time,
             )
 
@@ -3516,7 +3575,7 @@ def measure_bell_states(
             labels = [f"|{i}⟩" for i in ["00", "01", "10", "11"]]
             result = exp.measure_bell_state(
                 *edge,
-                shots=shots,
+                n_shots=n_shots,
                 plot=False,
                 save_image=False,
                 reset_awg_and_capunits=reset_awg_and_capunits_each_time,
@@ -3537,7 +3596,7 @@ def measure_bell_states(
                 marker_color=COLORS[0],
             )
 
-    fig_subtitle = f"{n_edges} pairs, {shots} shots"
+    fig_subtitle = f"{n_edges} pairs, {n_shots} shots"
     if in_parallel:
         fig_subtitle += ", run in parallel"
     else:
