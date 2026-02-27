@@ -739,7 +739,7 @@ class Measurement:
             sweep_axes=sweep_axes,
         )
 
-    def measure_noise(
+    async def measure_noise(
         self,
         targets: Collection[str],
         *,
@@ -763,9 +763,9 @@ class Measurement:
         Examples
         --------
         >>> # `session` is an initialized `Measurement` instance.
-        >>> result = session.measure_noise(["Q00", "Q01"], duration=2048.0)
+        >>> result = await session.measure_noise(["Q00", "Q01"], duration=2048.0)
         """
-        return self.execution_service.measure_noise(
+        return await self.execution_service.measure_noise(
             targets=targets,
             duration=duration,
         )
@@ -777,6 +777,8 @@ class Measurement:
         n_shots: int | None = None,
         shot_interval: float | None = None,
         shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -786,8 +788,6 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        time_integration: bool | None = None,
-        state_classification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
@@ -807,6 +807,10 @@ class Measurement:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float] | None, optional
@@ -825,10 +829,6 @@ class Measurement:
             Ramp shape type.
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
-        time_integration : bool | None, optional
-            Whether to integrate captured waveforms over time.
-        state_classification : bool | None, optional
-            Whether to enable state classification.
         classification_line_param0 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional
@@ -886,6 +886,8 @@ class Measurement:
         n_shots: int | None = None,
         shot_interval: float | None = None,
         shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -896,8 +898,6 @@ class Measurement:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        time_integration: bool | None = None,
-        state_classification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
@@ -917,6 +917,10 @@ class Measurement:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float] | None, optional
@@ -937,10 +941,6 @@ class Measurement:
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append a final readout measurement.
-        time_integration : bool | None, optional
-            Whether to integrate captured waveforms over time.
-        state_classification : bool | None, optional
-            Whether to enable state classification.
         classification_line_param0 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional

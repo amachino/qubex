@@ -49,7 +49,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
         ),
     )
 
-    def _measure_noise(
+    async def _measure_noise(
         targets: Any,
         duration: float,
         **kwargs: object,
@@ -204,16 +204,17 @@ def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
     service, _ = _make_service()
     captured: dict[str, object] = {}
 
-    def _measure(
+    async def _run_measurement(
         self: MeasurementService,
-        sequence: object,
+        schedule: object,
         **kwargs: object,
     ) -> _DummyResult:
+        captured["labels"] = list(cast(PulseSchedule, schedule).labels)
         captured["readout_amplitudes"] = kwargs["readout_amplitudes"]
         captured["time_integration"] = kwargs["time_integration"]
         return _DummyResult()
 
-    service.__dict__["measure"] = MethodType(_measure, service)
+    service.__dict__["run_measurement"] = MethodType(_run_measurement, service)
 
     with pytest.warns(DeprecationWarning, match="method=\\.\\.\\."):
         service.check_waveform(
@@ -223,6 +224,7 @@ def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
             plot=False,
         )
 
+    assert captured["labels"] == ["custom-target"]
     assert captured["readout_amplitudes"] == {"RQ17": 0.5}
     assert captured["time_integration"] is False
 
@@ -232,15 +234,16 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
     service, _ = _make_service()
     captured: dict[str, object] = {}
 
-    def _execute(
+    async def _run_measurement(
         self: MeasurementService,
-        sequence: object,
+        schedule: object,
         **kwargs: object,
     ) -> _DummyResult:
+        captured["labels"] = list(cast(PulseSchedule, schedule).labels)
         captured["time_integration"] = kwargs["time_integration"]
         return _DummyResult()
 
-    service.__dict__["execute"] = MethodType(_execute, service)
+    service.__dict__["run_measurement"] = MethodType(_run_measurement, service)
 
     with pytest.warns(DeprecationWarning, match="method=\\.\\.\\."):
         service.check_waveform(
@@ -249,6 +252,7 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
             plot=False,
         )
 
+    assert captured["labels"] == ["custom-target"]
     assert captured["time_integration"] is False
 
 
@@ -295,7 +299,11 @@ def test_check_noise_uses_measurement_result_plot() -> None:
         },
         measurement_config=measurement_config,
     )
-    service.ctx.measurement.measure_noise = lambda *_args, **_kwargs: expected
+
+    async def _measure_noise(*_args: object, **_kwargs: object) -> MeasurementResult:
+        return expected
+
+    service.ctx.measurement.measure_noise = _measure_noise
 
     result = service.check_noise(targets=["custom-target"], duration=512, plot=True)
 

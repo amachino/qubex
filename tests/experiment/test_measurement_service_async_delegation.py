@@ -104,7 +104,7 @@ def test_build_measurement_schedule_delegates_none_values() -> None:
 
 
 def test_run_measurement_builds_schedule_and_delegates() -> None:
-    """Given explicit final_measurement false, when running async measurement, then service always enables final measurement."""
+    """Given explicit final_measurement false, when running async measurement, then service preserves explicit value."""
     service, calls = _make_service()
     pulse_schedule = cast(Any, object())
 
@@ -129,14 +129,14 @@ def test_run_measurement_builds_schedule_and_delegates() -> None:
     built_kwargs = calls["build_schedule"][0]
     assert built_kwargs["pulse_schedule"] is pulse_schedule
     assert built_kwargs["frequencies"] == {"Q00": 5.1}
-    assert built_kwargs["final_measurement"] is True
+    assert built_kwargs["final_measurement"] is False
     called = calls["run_measurement"][0]
     assert cast(SimpleNamespace, called["schedule"]).tag == "built"
     assert cast(SimpleNamespace, called["config"]).tag == "config"
 
 
 def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
-    """Given explicit final_measurement false, when running async sweep, then service always enables final measurement."""
+    """Given explicit final_measurement false, when running async sweep, then service preserves explicit value."""
     service, calls = _make_service()
     sweep_values: list[SweepValue] = [1, 2]
 
@@ -169,11 +169,11 @@ def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     build_kwargs = calls["build_schedule"][0]
     assert build_kwargs["pulse_schedule"] == "pulse-1"
     assert build_kwargs["readout_amplification"] is True
-    assert build_kwargs["final_measurement"] is True
+    assert build_kwargs["final_measurement"] is False
 
 
 def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
-    """Given explicit final_measurement false, when running async ndsweep, then service always enables final measurement."""
+    """Given explicit final_measurement false, when running async ndsweep, then service preserves explicit value."""
     service, calls = _make_service()
     sweep_points: dict[str, Sequence[SweepValue]] = {"x": [1, 2], "y": [10]}
 
@@ -205,4 +205,4 @@ def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None
     assert cast(SimpleNamespace, called["built"]).source == "1-10"
     build_kwargs = calls["build_schedule"][0]
     assert build_kwargs["pulse_schedule"] == "1-10"
-    assert build_kwargs["final_measurement"] is True
+    assert build_kwargs["final_measurement"] is False

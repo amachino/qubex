@@ -1224,6 +1224,7 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     result = measurement.measure(waveforms={"Q00": np.array([0.0 + 0.0j])})
 
     assert called["kwargs"]["final_measurement"] is True
+    assert called["kwargs"]["time_integration"] is False
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
@@ -1252,13 +1253,16 @@ def test_measure_accepts_deprecated_alias_options() -> None:
     measurement.measure(
         waveforms={"Q00": np.array([0.0 + 0.0j])},
         add_pump_pulses=None,
+        enable_dsp_sum=None,
         enable_dsp_demodulation=None,
         enable_dsp_classification=None,
     )
 
     kwargs = called["kwargs"]
     assert kwargs["final_measurement"] is True
+    assert kwargs["time_integration"] is False
     assert kwargs["add_pump_pulses"] is None
+    assert kwargs["enable_dsp_sum"] is None
     assert kwargs["enable_dsp_demodulation"] is None
     assert kwargs["enable_dsp_classification"] is None
 
@@ -1354,7 +1358,7 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
         rawdata_dir=None,
     )
 
-    result = measurement.measure_noise(["Q00"], duration=1024.0)
+    result = asyncio.run(measurement.measure_noise(["Q00"], duration=1024.0))
 
     assert np.array_equal(result.data["Q00"][0], np.array([1.0 + 0.0j]))
     assert result.measurement_config is measurement_config

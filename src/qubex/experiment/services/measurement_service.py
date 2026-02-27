@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 import warnings
 from collections import defaultdict
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from itertools import product
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import numpy as np
 import plotly.graph_objects as go
@@ -34,6 +34,7 @@ from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
 )
+from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
@@ -80,6 +81,17 @@ from .pulse_service import PulseService
 logger = logging.getLogger(__name__)
 
 console = Console()
+T = TypeVar("T")
+
+
+def _run_async(
+    factory: Callable[[], Awaitable[T]],
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> T:
+    """Run one awaitable factory from synchronous experiment-service APIs."""
+    bridge = get_shared_async_bridge(key="experiment")
+    return bridge.run(factory, timeout=timeout)
 
 
 class MeasurementService:
@@ -209,6 +221,9 @@ class MeasurementService:
         final_measurement: bool | None = None,
     ) -> MeasurementResult:
         """Run one async measurement by delegating to the measurement layer."""
+        if final_measurement is None:
+            final_measurement = True
+
         measurement_schedule = self.ctx.measurement.build_measurement_schedule(
             pulse_schedule=schedule,
             frequencies=frequencies,
@@ -220,7 +235,7 @@ class MeasurementService:
             readout_ramp_type=readout_ramp_type,
             readout_drag_coeff=readout_drag_coeff,
             readout_amplification=readout_amplification,
-            final_measurement=True,
+            final_measurement=final_measurement,
         )
         config = self.ctx.measurement.create_measurement_config(
             n_shots=n_shots,
@@ -256,6 +271,9 @@ class MeasurementService:
         final_measurement: bool | None = None,
     ) -> SweepMeasurementResult:
         """Run async sweep measurement by delegating to the measurement layer."""
+        if final_measurement is None:
+            final_measurement = True
+
         config = self.ctx.measurement.create_measurement_config(
             n_shots=n_shots,
             shot_interval=shot_interval,
@@ -276,7 +294,7 @@ class MeasurementService:
                 readout_ramp_type=readout_ramp_type,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_amplification=readout_amplification,
-                final_measurement=True,
+                final_measurement=final_measurement,
             )
 
         return await self.ctx.measurement.run_sweep_measurement(
@@ -308,6 +326,9 @@ class MeasurementService:
         final_measurement: bool | None = None,
     ) -> NDSweepMeasurementResult:
         """Run async N-dimensional sweep measurement by delegating to the measurement layer."""
+        if final_measurement is None:
+            final_measurement = True
+
         config = self.ctx.measurement.create_measurement_config(
             n_shots=n_shots,
             shot_interval=shot_interval,
@@ -328,7 +349,7 @@ class MeasurementService:
                 readout_ramp_type=readout_ramp_type,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_amplification=readout_amplification,
-                final_measurement=True,
+                final_measurement=final_measurement,
             )
 
         return await self.ctx.measurement.run_ndsweep_measurement(
@@ -358,9 +379,11 @@ class MeasurementService:
         else:
             targets = list(targets)
 
-        result = self.ctx.measurement.measure_noise(
-            targets,
-            duration=duration,
+        result = _run_async(
+            lambda: self.ctx.measurement.measure_noise(
+                targets=targets,
+                duration=duration,
+            )
         )
         if plot:
             result.plot()
@@ -1355,7 +1378,7 @@ class MeasurementService:
         readout_amplification: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
-    ) -> MeasureResult | MultipleMeasureResult:
+    ) -> MeasurementResult:
         """
         Check the readout waveforms of the given targets.
 
@@ -1366,10 +1389,10 @@ class MeasurementService:
         method : Literal["measure", "execute"] | None, optional
             Deprecated selector for waveform-check execution path.
             Passing this argument emits `DeprecationWarning`.
-        shots : int, optional
+        n_shots : int | None, optional
             Number of shots.
-        interval : int, optional
-            Interval between shots.
+        shot_interval : float | None, optional
+            Interval between shots in ns.
         readout_amplitude : float, optional
             Amplitude of the readout pulse.
         readout_duration : float, optional
@@ -1385,7 +1408,7 @@ class MeasurementService:
 
         Returns
         -------
-        MeasureResult
+        MeasurementResult
             Result of the experiment.
 
         Examples
@@ -1398,7 +1421,29 @@ class MeasurementService:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        resolved_method = "measure" if method is None else method
+
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=None,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=None,
+        )
+        readout_amplification = self.resolve_deprecated_option(
+            value=readout_amplification,
+            deprecated_options=deprecated_options,
+            deprecated_name="add_pump_pulses",
+            replacement_name="readout_amplification",
+            default=False,
+        )
+
         if plot is None:
             plot = True
 
@@ -1421,22 +1466,9 @@ class MeasurementService:
             for target in targets:
                 ps.add(target, Blank(0))
 
-        if resolved_method == "measure":
-            result = self.measure(
-                ps,
-                n_shots=n_shots,
-                shot_interval=shot_interval,
-                readout_amplitudes=readout_amplitudes,
-                readout_duration=readout_duration,
-                readout_pre_margin=readout_pre_margin,
-                readout_post_margin=readout_post_margin,
-                readout_amplification=readout_amplification,
-                time_integration=False,
-                **deprecated_options,
-            )
-        else:
-            result = self.execute(
-                ps,
+        result = _run_async(
+            lambda: self.run_measurement(
+                schedule=ps,
                 n_shots=n_shots,
                 shot_interval=shot_interval,
                 readout_amplitudes=readout_amplitudes,
@@ -1446,8 +1478,8 @@ class MeasurementService:
                 readout_amplification=readout_amplification,
                 final_measurement=True,
                 time_integration=False,
-                **deprecated_options,
             )
+        )
         if plot:
             result.plot()
         return result

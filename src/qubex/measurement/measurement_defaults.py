@@ -21,7 +21,7 @@ DEFAULT_READOUT_DRAG_COEFF: Final[float] = 0.0
 DEFAULT_READOUT_RAMP_TYPE: Final[RampType] = "RaisedCosine"
 
 DEFAULT_SHOT_AVERAGING: Final[bool] = True
-DEFAULT_TIME_INTEGRATION: Final[bool] = False
+DEFAULT_TIME_INTEGRATION: Final[bool] = True
 DEFAULT_STATE_CLASSIFICATION: Final[bool] = False
 
 __all__ = [

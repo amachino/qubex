@@ -733,7 +733,7 @@ class MeasurementExecutionService:
             results=results,
         )
 
-    def measure_noise(
+    async def measure_noise(
         self,
         targets: Collection[str],
         *,
@@ -771,11 +771,9 @@ class MeasurementExecutionService:
             readout_amplification=False,
             final_measurement=True,
         )
-        return _run_async(
-            lambda: self.run_measurement(
-                schedule=measurement_schedule,
-                config=measurement_config,
-            )
+        return await self.run_measurement(
+            schedule=measurement_schedule,
+            config=measurement_config,
         )
 
     def measure(
@@ -785,6 +783,8 @@ class MeasurementExecutionService:
         n_shots: int | None = None,
         shot_interval: float | None = None,
         shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -794,8 +794,6 @@ class MeasurementExecutionService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        time_integration: bool | None = None,
-        state_classification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
@@ -815,6 +813,10 @@ class MeasurementExecutionService:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether to average shots on hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -840,10 +842,6 @@ class MeasurementExecutionService:
 
         readout_amplification : bool | None, optional
             Whether to apply readout amplification pulses.
-        time_integration : bool | None, optional
-            Whether to integrate captured waveforms over time.
-        state_classification : bool | None, optional
-            Whether to enable state classification.
         classification_line_param0 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional
@@ -855,11 +853,16 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
+        if time_integration is None and deprecated_options.get("enable_dsp_sum") is None:
+            time_integration = False
+
         result = self.execute(
             schedule=waveforms,
             n_shots=n_shots,
             shot_interval=shot_interval,
             shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
             frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
@@ -870,8 +873,6 @@ class MeasurementExecutionService:
             readout_ramp_type=readout_ramp_type,
             readout_amplification=readout_amplification,
             final_measurement=True,
-            time_integration=time_integration,
-            state_classification=state_classification,
             classification_line_param0=classification_line_param0,
             classification_line_param1=classification_line_param1,
             plot=plot,
@@ -891,6 +892,8 @@ class MeasurementExecutionService:
         n_shots: int | None = None,
         shot_interval: float | None = None,
         shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -901,8 +904,6 @@ class MeasurementExecutionService:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        time_integration: bool | None = None,
-        state_classification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
@@ -923,6 +924,10 @@ class MeasurementExecutionService:
             Interval between shots in ns.
         shot_averaging : bool | None, optional
             Whether to average shots on hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
         frequencies : dict[str, float] | None, optional
             Channel-frequency overrides keyed by schedule label.
         readout_amplitudes : dict[str, float], optional
@@ -950,10 +955,6 @@ class MeasurementExecutionService:
             Whether to apply readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append a final readout measurement.
-        time_integration : bool | None, optional
-            Whether to integrate captured waveforms over time.
-        state_classification : bool | None, optional
-            Whether to enable state classification.
         classification_line_param0 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional

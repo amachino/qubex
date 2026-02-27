@@ -1650,7 +1650,7 @@ class Experiment:
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
-    ) -> MeasureResult | MultipleMeasureResult:
+    ) -> MeasurementResult:
         """
         Check the readout waveforms of the given targets.
 
@@ -1680,7 +1680,7 @@ class Experiment:
 
         Returns
         -------
-        MeasureResult
+        MeasurementResult
             Result of the experiment.
 
         Examples

@@ -51,7 +51,7 @@ def test_factory_applies_context_defaults() -> None:
     assert config.n_shots == DEFAULT_N_SHOTS
     assert config.shot_interval == DEFAULT_SHOT_INTERVAL
     assert config.shot_averaging is True
-    assert config.time_integration is False
+    assert config.time_integration is True
     assert config.state_classification is False
 
 
