@@ -98,6 +98,58 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
     return cast(MeasurementService, service), captured
 
 
+def test_resolve_deprecated_option_uses_legacy_value_with_warning() -> None:
+    """Given a legacy option, when resolving, then it warns and returns the legacy value."""
+    deprecated_options: dict[str, Any] = {"shots": 123}
+
+    with pytest.warns(DeprecationWarning, match="`shots` is deprecated"):
+        resolved = MeasurementService.resolve_deprecated_option(
+            value=None,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=100,
+        )
+
+    assert resolved == 123
+    assert "shots" not in deprecated_options
+
+
+def test_resolve_deprecated_option_raises_on_conflict() -> None:
+    """Given conflicting legacy and canonical options, when resolving, then it raises a conflict error."""
+    deprecated_options: dict[str, Any] = {"interval": 120.0}
+
+    with (
+        pytest.warns(
+            DeprecationWarning,
+            match="`interval` is deprecated",
+        ),
+        pytest.raises(ValueError, match="conflicts with `shot_interval`"),
+    ):
+        MeasurementService.resolve_deprecated_option(
+            value=100.0,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=200.0,
+        )
+
+
+def test_resolve_deprecated_option_uses_default_without_legacy() -> None:
+    """Given no canonical or legacy value, when resolving, then it returns the provided default."""
+    deprecated_options: dict[str, Any] = {}
+
+    resolved = MeasurementService.resolve_deprecated_option(
+        value=None,
+        deprecated_options=deprecated_options,
+        deprecated_name="shots",
+        replacement_name="n_shots",
+        default=64,
+    )
+
+    assert resolved == 64
+
+
 def test_execute_resolves_qubits_via_target_registry_for_reset() -> None:
     """Given custom labels, when executing with reset, then qubits are resolved via target registry."""
     service, captured = _make_service()
@@ -158,7 +210,7 @@ def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
         **kwargs: object,
     ) -> _DummyResult:
         captured["readout_amplitudes"] = kwargs["readout_amplitudes"]
-        captured["enable_dsp_sum"] = kwargs["enable_dsp_sum"]
+        captured["time_integration"] = kwargs["time_integration"]
         return _DummyResult()
 
     service.__dict__["measure"] = MethodType(_measure, service)
@@ -172,7 +224,7 @@ def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
         )
 
     assert captured["readout_amplitudes"] == {"RQ17": 0.5}
-    assert captured["enable_dsp_sum"] is False
+    assert captured["time_integration"] is False
 
 
 def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
@@ -185,7 +237,7 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
         sequence: object,
         **kwargs: object,
     ) -> _DummyResult:
-        captured["enable_dsp_sum"] = kwargs["enable_dsp_sum"]
+        captured["time_integration"] = kwargs["time_integration"]
         return _DummyResult()
 
     service.__dict__["execute"] = MethodType(_execute, service)
@@ -197,7 +249,7 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
             plot=False,
         )
 
-    assert captured["enable_dsp_sum"] is False
+    assert captured["time_integration"] is False
 
 
 def test_check_noise_delegates_without_optional_noise_flags() -> None:

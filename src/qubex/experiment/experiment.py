@@ -1614,14 +1614,15 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         method: Literal["measure", "execute"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MeasureResult | MultipleMeasureResult:
         """
         Check the readout waveforms of the given targets.
@@ -1633,10 +1634,10 @@ class Experiment:
         method : Literal["measure", "execute"], optional
             Deprecated selector for waveform-check execution path.
             Passing this argument emits `DeprecationWarning`.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots.
-        interval : int, optional
-            Interval between shots.
+        shot_interval : float, optional
+            Interval between shots in ns.
         readout_amplitude : float, optional
             Amplitude of the readout pulse.
         readout_duration : float, optional
@@ -1662,14 +1663,15 @@ class Experiment:
         return self.measurement_service.check_waveform(
             targets=targets,
             method=method,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitude=readout_amplitude,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
+            **deprecated_options,
         )
 
     def check_rabi(
@@ -1677,11 +1679,12 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: int | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         store_params: bool | None = None,
         rabi_level: Literal["ge", "ef"] | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """
         Check the Rabi oscillation of the given targets.
@@ -1692,10 +1695,10 @@ class Experiment:
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        n_shots : int, optional
+            Number of shots. Defaults to `DEFAULT_SHOTS`.
+        shot_interval : float, optional
+            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
         store_params : bool, optional
             Whether to store the Rabi parameters. Defaults to False.
         rabi_level : Literal["ge", "ef"], optional
@@ -1715,11 +1718,12 @@ class Experiment:
         return self.measurement_service.check_rabi(
             targets=targets,
             time_range=time_range,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             store_params=store_params,
             rabi_level=rabi_level,
             plot=plot,
+            **deprecated_options,
         )
 
     def execute(
@@ -1728,8 +1732,8 @@ class Experiment:
         *,
         frequencies: dict[str, float] | None = None,
         mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1746,6 +1750,7 @@ class Experiment:
         line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MultipleMeasureResult:
         """
         Execute the given schedule.
@@ -1756,9 +1761,9 @@ class Experiment:
             Schedule to execute.
         mode : MeasurementMode, optional
             Measurement mode. Defaults to "avg".
-        shots : int, optional
-            Number of shots
-        interval : float, optional
+        n_shots : int, optional
+            Number of shots.
+        shot_interval : float, optional
             Interval between shots in ns.
         frequencies : Optional[dict[str, float]], optional
             Frequencies of the qubits.
@@ -1804,16 +1809,16 @@ class Experiment:
         >>> result = ex.execute(
         ...     schedule=ps,
         ...     mode="avg",
-        ...     shots=1024,
-        ...     interval=150 * 1024,
+        ...     n_shots=1024,
+        ...     shot_interval=150 * 1024,
         ... )
         """
         return self.measurement_service.execute(
             schedule,
             frequencies=frequencies,
             mode=mode,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -1830,6 +1835,7 @@ class Experiment:
             line_param1=line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
+            **deprecated_options,
         )
 
     def capture_loopback(
@@ -1865,8 +1871,8 @@ class Experiment:
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
         mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1882,6 +1888,7 @@ class Experiment:
         line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MeasureResult:
         """
         Measures the signals using the given sequence.
@@ -1896,9 +1903,9 @@ class Experiment:
             Initial states of the qubits.
         mode : MeasurementMode, optional
             Measurement mode. Defaults to "avg".
-        shots : int, optional
+        n_shots : int, optional
             Number of shots.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
@@ -1937,8 +1944,8 @@ class Experiment:
         >>> result = ex.measure(
         ...     sequence={"Q00": [0.1+0.0j, 0.3+0.0j, 0.1+0.0j]},
         ...     mode="avg",
-        ...     shots=1024,
-        ...     interval=150 * 1024,
+        ...     n_shots=1024,
+        ...     shot_interval=150 * 1024,
         ...     plot=True,
         ... )
         """
@@ -1947,8 +1954,8 @@ class Experiment:
             frequencies=frequencies,
             initial_states=initial_states,
             mode=mode,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -1964,6 +1971,7 @@ class Experiment:
             line_param1=line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
+            **deprecated_options,
         )
 
     def measure_state(
@@ -1973,14 +1981,15 @@ class Experiment:
         ],
         *,
         mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MeasureResult:
         """
         Measures the signals using the given states.
@@ -1991,9 +2000,9 @@ class Experiment:
             States to prepare.
         mode : MeasurementMode, optional
             Measurement mode. Defaults to "single".
-        shots : int, optional
+        n_shots : int, optional
             Number of shots.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
@@ -2018,36 +2027,38 @@ class Experiment:
         >>> result = ex.measure_state(
         ...     states={"Q00": "0", "Q01": "1"},
         ...     mode="single",
-        ...     shots=1024,
-        ...     interval=150 * 1024,
+        ...     n_shots=1024,
+        ...     shot_interval=150 * 1024,
         ...     plot=True,
         ... )
         """
         return self.measurement_service.measure_state(
             states=states,
             mode=mode,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
+            **deprecated_options,
         )
 
     def measure_idle_states(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Measures the idle states of the given targets.
@@ -2056,9 +2067,9 @@ class Experiment:
         ----------
         targets : Collection[str] | str | None, optional
             Targets to measure. Defaults to None (all targets).
-        shots : int, optional
+        n_shots : int, optional
             Number of shots.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
@@ -2084,23 +2095,25 @@ class Experiment:
         """
         return self.measurement_service.measure_idle_states(
             targets=targets,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
+            **deprecated_options,
         )
 
     def obtain_reference_points(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         store_reference_points: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Obtain the reference points for the given targets.
@@ -2109,9 +2122,9 @@ class Experiment:
         ----------
         targets : Collection[str] | str | None, optional
             Targets to obtain reference points for. Defaults to None (all targets).
-        shots : int, optional
+        n_shots : int, optional
             Number of shots.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots in ns.
         store_reference_points : bool, optional
             Whether to store the reference points. Defaults to True.
@@ -2127,9 +2140,10 @@ class Experiment:
         """
         return self.measurement_service.obtain_reference_points(
             targets=targets,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             store_reference_points=store_reference_points,
+            **deprecated_options,
         )
 
     def sweep_parameter(
@@ -2141,8 +2155,8 @@ class Experiment:
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
         rabi_level: Literal["ge", "ef"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -2154,6 +2168,7 @@ class Experiment:
         ylabel: str | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         yaxis_type: Literal["linear", "log"] | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[SweepData]:
         """
         Sweeps a parameter and measures the signals.
@@ -2172,9 +2187,9 @@ class Experiment:
             Initial states of the qubits.
         rabi_level : Literal["ge", "ef"], optional
             Rabi level to use. Defaults to "ge".
-        shots : int, optional
+        n_shots : int, optional
             Number of shots.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
@@ -2210,7 +2225,7 @@ class Experiment:
         ...     sequence=lambda x: {"Q00": Rect(duration=30, amplitude=x)},
         ...     sweep_range=np.arange(0, 101, 4),
         ...     repetitions=4,
-        ...     shots=1024,
+        ...     n_shots=1024,
         ...     plot=True,
         ... )
         """
@@ -2221,8 +2236,8 @@ class Experiment:
             frequencies=frequencies,
             initial_states=initial_states,
             rabi_level=rabi_level,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -2234,6 +2249,7 @@ class Experiment:
             ylabel=ylabel,
             xaxis_type=xaxis_type,
             yaxis_type=yaxis_type,
+            **deprecated_options,
         )
 
     def repeat_sequence(
@@ -2241,9 +2257,10 @@ class Experiment:
         sequence: TargetMap[Waveform] | PulseSchedule,
         *,
         repetitions: int | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[SweepData]:
         """
         Repeats the pulse sequence n times.
@@ -2254,9 +2271,9 @@ class Experiment:
             Pulse sequence to repeat.
         repetitions : int, optional
             Number of repetitions. Defaults to 20.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots in ns.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -2276,9 +2293,10 @@ class Experiment:
         return self.measurement_service.repeat_sequence(
             sequence=sequence,
             repetitions=repetitions,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
+            **deprecated_options,
         )
 
     def obtain_rabi_params(
@@ -2290,11 +2308,12 @@ class Experiment:
         frequencies: dict[str, float] | None = None,
         is_damped: bool | None = None,
         fit_threshold: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         store_params: bool | None = None,
         simultaneous: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """Obtain Rabi parameters for target qubits."""
         return self.measurement_service.obtain_rabi_params(
@@ -2304,11 +2323,12 @@ class Experiment:
             frequencies=frequencies,
             is_damped=is_damped,
             fit_threshold=fit_threshold,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             store_params=store_params,
             simultaneous=simultaneous,
+            **deprecated_options,
         )
 
     def obtain_ef_rabi_params(
@@ -2317,18 +2337,20 @@ class Experiment:
         *,
         time_range: ArrayLike | None = None,
         is_damped: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """Obtain EF Rabi parameters for target qubits."""
         return self.measurement_service.obtain_ef_rabi_params(
             targets=targets,
             time_range=time_range,
             is_damped=is_damped,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
+            **deprecated_options,
         )
 
     def rabi_experiment(
@@ -2341,10 +2363,11 @@ class Experiment:
         detuning: float | None = None,
         is_damped: bool | None = None,
         fit_threshold: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         store_params: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """Run a Rabi experiment for the specified amplitudes."""
         return self.measurement_service.rabi_experiment(
@@ -2355,10 +2378,11 @@ class Experiment:
             detuning=detuning,
             is_damped=is_damped,
             fit_threshold=fit_threshold,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             store_params=store_params,
+            **deprecated_options,
         )
 
     def ef_rabi_experiment(
@@ -2369,10 +2393,11 @@ class Experiment:
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
         is_damped: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         store_params: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """Run an EF Rabi experiment for the specified amplitudes."""
         return self.measurement_service.ef_rabi_experiment(
@@ -2381,10 +2406,11 @@ class Experiment:
             frequencies=frequencies,
             detuning=detuning,
             is_damped=is_damped,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             store_params=store_params,
+            **deprecated_options,
         )
 
     def measure_state_distribution(
@@ -2392,21 +2418,23 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> list[MeasureResult]:
         """Measure state distributions for the specified targets."""
         return self.measurement_service.measure_state_distribution(
             targets=targets,
             n_states=n_states,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
             plot=plot,
+            **deprecated_options,
         )
 
     def build_classifier(
@@ -2416,8 +2444,8 @@ class Experiment:
         n_states: Literal[2, 3] | None = None,
         save_classifier: bool | None = None,
         save_dir: Path | str | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -2425,6 +2453,7 @@ class Experiment:
         add_pump_pulses: bool | None = None,
         simultaneous: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """Build state classifiers from measurement data."""
         return self.measurement_service.build_classifier(
@@ -2432,8 +2461,8 @@ class Experiment:
             n_states=n_states,
             save_classifier=save_classifier,
             save_dir=save_dir,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -2441,6 +2470,7 @@ class Experiment:
             add_pump_pulses=add_pump_pulses,
             simultaneous=simultaneous,
             plot=plot,
+            **deprecated_options,
         )
 
     def state_tomography(
@@ -2449,12 +2479,13 @@ class Experiment:
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         method: Literal["measure", "execute"] | None = None,
         use_zvalues: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Conducts a state tomography experiment.
@@ -2467,10 +2498,10 @@ class Experiment:
             π/2 pulse.
         initial_state : TargetMap[str], optional
             Initial state of each target.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        n_shots : int, optional
+            Number of shots. Defaults to `DEFAULT_SHOTS`.
+        shot_interval : float, optional
+            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
         reset_awg_and_capunits : bool, optional
             Whether to reset the AWG and capture units before the experiment. Defaults to True.
         method : Literal["measure", "execute"], optional
@@ -2489,12 +2520,13 @@ class Experiment:
             sequence=sequence,
             x90=x90,
             initial_state=initial_state,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             method=method,
             use_zvalues=use_zvalues,
             plot=plot,
+            **deprecated_options,
         )
 
     def state_evolution_tomography(
@@ -2507,9 +2539,10 @@ class Experiment:
         ),
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Conducts a state evolution tomography experiment.
@@ -2522,10 +2555,10 @@ class Experiment:
             π/2 pulse.
         initial_state : TargetMap[str], optional
             Initial state of each target.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        n_shots : int, optional
+            Number of shots. Defaults to `DEFAULT_SHOTS`.
+        shot_interval : float, optional
+            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -2538,9 +2571,10 @@ class Experiment:
             sequences=sequences,
             x90=x90,
             initial_state=initial_state,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
+            **deprecated_options,
         )
 
     def pulse_tomography(
@@ -2550,10 +2584,11 @@ class Experiment:
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
         n_samples: int | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         method: Literal["measure", "execute"] | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Conducts a pulse tomography experiment.
@@ -2568,10 +2603,10 @@ class Experiment:
             Initial state of each target.
         n_samples : int, optional
             Number of samples. Defaults to 100.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        n_shots : int, optional
+            Number of shots. Defaults to `DEFAULT_SHOTS`.
+        shot_interval : float, optional
+            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
         method : Literal["measure", "execute"], optional
             Measurement method. Defaults to "measure".
         plot : bool, optional
@@ -2587,10 +2622,11 @@ class Experiment:
             x90=x90,
             initial_state=initial_state,
             n_samples=n_samples,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             method=method,
             plot=plot,
+            **deprecated_options,
         )
 
     def measure_population(
@@ -2598,8 +2634,9 @@ class Experiment:
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         fit_gmm: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the state populations of the target qubits.
@@ -2610,10 +2647,10 @@ class Experiment:
             Sequence to measure for each target.
         fit_gmm : bool, optional
             Whether to fit the data with a Gaussian mixture model. Defaults to False
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        n_shots : int, optional
+            Number of shots. Defaults to `DEFAULT_SHOTS`.
+        shot_interval : float, optional
+            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
 
         Returns
         -------
@@ -2631,8 +2668,9 @@ class Experiment:
         return self.measurement_service.measure_population(
             sequence=sequence,
             fit_gmm=fit_gmm,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            **deprecated_options,
         )
 
     def measure_population_dynamics(
@@ -2644,8 +2682,9 @@ class Experiment:
         xlabel: str | None = None,
         scatter_mode: str | None = None,
         show_error: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the population dynamics of the target qubits.
@@ -2660,10 +2699,10 @@ class Experiment:
             Whether to fit the data with a Gaussian mixture model. Defaults to False.
         xlabel : str, optional
             Label of the x-axis. Defaults to "Index".
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        n_shots : int, optional
+            Number of shots. Defaults to `DEFAULT_SHOTS`.
+        shot_interval : float, optional
+            Interval between shots in ns. Defaults to `DEFAULT_INTERVAL`.
 
         Returns
         -------
@@ -2685,8 +2724,9 @@ class Experiment:
             xlabel=xlabel,
             scatter_mode=scatter_mode,
             show_error=show_error,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            **deprecated_options,
         )
 
     def measure_bell_state(
@@ -2697,14 +2737,15 @@ class Experiment:
         control_basis: str | None = None,
         target_basis: str | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         plot_sequence: bool | None = None,
         plot_raw: bool | None = None,
         plot_mitigated: bool | None = None,
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """Measure a Bell state for a qubit pair."""
         return self.measurement_service.measure_bell_state(
@@ -2713,14 +2754,15 @@ class Experiment:
             control_basis=control_basis,
             target_basis=target_basis,
             zx90=zx90,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             plot_sequence=plot_sequence,
             plot_raw=plot_raw,
             plot_mitigated=plot_mitigated,
             save_image=save_image,
             reset_awg_and_capunits=reset_awg_and_capunits,
+            **deprecated_options,
         )
 
     def bell_state_tomography(
@@ -2730,11 +2772,12 @@ class Experiment:
         *,
         readout_mitigation: bool | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
         mle_fit: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """Perform Bell-state tomography for a qubit pair."""
         return self.measurement_service.bell_state_tomography(
@@ -2742,11 +2785,12 @@ class Experiment:
             target_qubit=target_qubit,
             readout_mitigation=readout_mitigation,
             zx90=zx90,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             save_image=save_image,
             mle_fit=mle_fit,
+            **deprecated_options,
         )
 
     @deprecated(

@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections.abc import Callable, Collection, Sequence
 from itertools import product
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
@@ -85,6 +85,8 @@ console = Console()
 class MeasurementService:
     """Service for running measurement routines."""
 
+    _MISSING = object()
+
     def __init__(
         self,
         *,
@@ -119,6 +121,36 @@ class MeasurementService:
                 for label in labels
             ]
         )
+
+    @classmethod
+    def resolve_deprecated_option(
+        cls,
+        *,
+        value: Any,
+        deprecated_options: dict[str, Any],
+        deprecated_name: str,
+        replacement_name: str,
+        default: Any = _MISSING,
+    ) -> Any:
+        """Resolve a deprecated option alias and return the normalized value."""
+        legacy_value = deprecated_options.pop(deprecated_name, cls._MISSING)
+        if legacy_value is not cls._MISSING and legacy_value is not None:
+            warnings.warn(
+                f"`{deprecated_name}` is deprecated; use `{replacement_name}`.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            if value is not None and value != legacy_value:
+                raise ValueError(
+                    f"`{deprecated_name}` conflicts with `{replacement_name}`. "
+                    f"Provide only `{replacement_name}`."
+                )
+            return legacy_value
+
+        if value is None and default is not cls._MISSING:
+            return default
+
+        return value
 
     def build_measurement_schedule(
         self,
@@ -338,51 +370,77 @@ class MeasurementService:
         self,
         schedule: PulseSchedule,
         *,
-        frequencies: dict[str, float] | None = None,
         mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool | None = None,
-        add_pump_pulses: bool | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        classification_line_param0: tuple[float, float, float] | None = None,
+        classification_line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MultipleMeasureResult:
-        """Execute a schedule and return multiple measurement results."""
-        if mode is None:
-            mode = "avg"
-        if add_last_measurement is None:
-            add_last_measurement = False
-        if add_pump_pulses is None:
-            add_pump_pulses = False
-        if enable_dsp_demodulation is None:
-            enable_dsp_demodulation = True
-        if enable_dsp_classification is None:
-            enable_dsp_classification = False
+        """
+        Execute a schedule and return multiple measurement results.
+
+        Parameters
+        ----------
+        mode
+            Measurement mode kept for experiment-layer compatibility.
+        n_shots
+            Number of shots.
+        shot_interval
+            Interval between shots in ns.
+        time_integration
+            Whether to integrate captured waveforms over time.
+        state_classification
+            Whether to enable state classification.
+        frequencies
+            Temporary frequency overrides keyed by target label.
+        readout_amplitudes
+            Readout amplitude overrides keyed by readout target.
+        readout_duration
+            Readout duration in ns.
+        readout_pre_margin
+            Pre-margin before readout in ns.
+        readout_post_margin
+            Post-margin after readout in ns.
+        readout_ramp_time
+            Readout ramp time in ns.
+        readout_drag_coeff
+            DRAG coefficient for readout waveform shaping.
+        readout_ramp_type
+            Ramp type for readout pulses.
+        readout_amplification
+            Whether to insert readout amplification pulses.
+        final_measurement
+            Whether to append final measurement windows.
+        classification_line_param0
+            Optional QuEL-1 classification line parameter 0.
+        classification_line_param1
+            Optional QuEL-1 classification line parameter 1.
+        reset_awg_and_capunits
+            Whether to reset AWGs/capture units before execution.
+        plot
+            Whether to plot the result.
+        **deprecated_options
+            Deprecated aliases forwarded to the measurement layer.
+        """
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = False
         if plot is None:
             plot = False
-
-        if readout_duration is None:
-            readout_duration = self.pulse.readout_duration
-        if readout_pre_margin is None:
-            readout_pre_margin = self.pulse.readout_pre_margin
-        if readout_post_margin is None:
-            readout_post_margin = self.pulse.readout_post_margin
-        if enable_dsp_sum is None:
-            enable_dsp_sum = mode == "single"
 
         if reset_awg_and_capunits:
             qubits = {
@@ -393,24 +451,24 @@ class MeasurementService:
         with self.ctx.modified_frequencies(frequencies):
             result = self.ctx.measurement.execute(
                 schedule=schedule,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+                time_integration=time_integration,
+                state_classification=state_classification,
                 mode=mode,
-                shots=shots,
-                interval=interval,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                readout_ramptime=readout_ramptime,
+                readout_ramp_time=readout_ramp_time,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
-                add_last_measurement=add_last_measurement,
-                add_pump_pulses=add_pump_pulses,
-                enable_dsp_demodulation=enable_dsp_demodulation,
-                enable_dsp_sum=enable_dsp_sum,
-                enable_dsp_classification=enable_dsp_classification,
-                line_param0=line_param0,
-                line_param1=line_param1,
+                readout_amplification=readout_amplification,
+                final_measurement=final_measurement,
+                classification_line_param0=classification_line_param0,
+                classification_line_param1=classification_line_param1,
                 plot=plot,
+                **deprecated_options,
             )
 
         if plot:
@@ -433,52 +491,79 @@ class MeasurementService:
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
         mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool | None = None,
-        enable_dsp_demodulation: bool | None = None,
-        enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        readout_amplification: bool | None = None,
+        classification_line_param0: tuple[float, float, float] | None = None,
+        classification_line_param1: tuple[float, float, float] | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MeasureResult:
-        """Measure a sequence or schedule and return results."""
-        if mode is None:
-            mode = "avg"
-        if add_pump_pulses is None:
-            add_pump_pulses = False
-        if enable_dsp_demodulation is None:
-            enable_dsp_demodulation = True
-        if enable_dsp_classification is None:
-            enable_dsp_classification = False
+        """
+        Measure a sequence or schedule and return results.
+
+        Parameters
+        ----------
+        initial_states
+            Optional initial states keyed by qubit label.
+        mode
+            Measurement mode kept for experiment-layer compatibility.
+        n_shots
+            Number of shots.
+        shot_interval
+            Interval between shots in ns.
+        time_integration
+            Whether to integrate captured waveforms over time.
+        state_classification
+            Whether to enable state classification.
+        frequencies
+            Temporary frequency overrides keyed by target label.
+        readout_amplitudes
+            Readout amplitude overrides keyed by readout target.
+        readout_duration
+            Readout duration in ns.
+        readout_pre_margin
+            Pre-margin before readout in ns.
+        readout_post_margin
+            Post-margin after readout in ns.
+        readout_ramp_time
+            Readout ramp time in ns.
+        readout_drag_coeff
+            DRAG coefficient for readout waveform shaping.
+        readout_ramp_type
+            Ramp type for readout pulses.
+        readout_amplification
+            Whether to insert readout amplification pulses.
+        classification_line_param0
+            Optional QuEL-1 classification line parameter 0.
+        classification_line_param1
+            Optional QuEL-1 classification line parameter 1.
+        reset_awg_and_capunits
+            Whether to reset AWGs/capture units before measurement.
+        plot
+            Whether to plot the result.
+        **deprecated_options
+            Deprecated aliases forwarded to the measurement layer.
+        """
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = False
         if plot is None:
             plot = False
 
-        if readout_duration is None:
-            readout_duration = self.pulse.readout_duration
-        if readout_pre_margin is None:
-            readout_pre_margin = self.pulse.readout_pre_margin
-        if readout_post_margin is None:
-            readout_post_margin = self.pulse.readout_post_margin
-
         waveforms: dict[str, NDArray[np.complex128]] = {}
-
-        if enable_dsp_sum is None:
-            enable_dsp_sum = mode == "single"
 
         if isinstance(sequence, PulseSchedule):
             if not sequence.is_valid():
@@ -535,22 +620,22 @@ class MeasurementService:
         with self.ctx.modified_frequencies(frequencies):
             result = self.ctx.measurement.measure(
                 waveforms=waveforms,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+                time_integration=time_integration,
+                state_classification=state_classification,
                 mode=mode,
-                shots=shots,
-                interval=interval,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                readout_ramptime=readout_ramptime,
+                readout_ramp_time=readout_ramp_time,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
-                add_pump_pulses=add_pump_pulses,
-                enable_dsp_demodulation=enable_dsp_demodulation,
-                enable_dsp_sum=enable_dsp_sum,
-                enable_dsp_classification=enable_dsp_classification,
-                line_param0=line_param0,
-                line_param1=line_param1,
+                readout_amplification=readout_amplification,
+                classification_line_param0=classification_line_param0,
+                classification_line_param1=classification_line_param1,
+                **deprecated_options,
             )
         if plot:
             result.plot()
@@ -563,20 +648,19 @@ class MeasurementService:
         ],
         *,
         mode: MeasurementMode | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool | None = None,
+        readout_amplification: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MeasureResult:
         """Prepare given states and measure readout results."""
         if mode is None:
             mode = "single"
-        if add_pump_pulses is None:
-            add_pump_pulses = False
         if plot is None:
             plot = False
 
@@ -604,32 +688,32 @@ class MeasurementService:
         return self.measure(
             sequence=ps,
             mode=mode,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            add_pump_pulses=add_pump_pulses,
+            readout_amplification=readout_amplification,
             plot=plot,
+            **deprecated_options,
         )
 
     def measure_idle_states(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool | None = None,
+        readout_amplification: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """Measure idle states for targets."""
-        if add_pump_pulses is None:
-            add_pump_pulses = False
         if plot is None:
             plot = True
 
@@ -643,14 +727,15 @@ class MeasurementService:
         result = self.measure_state(
             states=dict.fromkeys(targets, "g"),
             mode="single",
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            add_pump_pulses=add_pump_pulses,
+            readout_amplification=readout_amplification,
             plot=False,
+            **deprecated_options,
         )
         data = {target: result.data[target].kerneled for target in targets}
         counts = {
@@ -673,9 +758,10 @@ class MeasurementService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         store_reference_points: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """Obtain and optionally store reference IQ points."""
         if store_reference_points is None:
@@ -688,14 +774,20 @@ class MeasurementService:
         else:
             targets = list(targets)
 
-        if shots is None:
-            shots = 10000
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=10000,
+        )
 
         result = self.measure_state(
             dict.fromkeys(targets, "g"),
             mode="avg",
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            **deprecated_options,
         )
 
         iq = {
@@ -725,8 +817,8 @@ class MeasurementService:
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
         rabi_level: Literal["ge", "ef"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -738,6 +830,7 @@ class MeasurementService:
         ylabel: str | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         yaxis_type: Literal["linear", "log"] | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[SweepData]:
         """
         Sweep a parameter and measure results.
@@ -825,13 +918,14 @@ class MeasurementService:
                     seq,
                     initial_states=initial_states,
                     mode="avg",
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     readout_amplitudes=readout_amplitudes,
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
                     reset_awg_and_capunits=False,
+                    **deprecated_options,
                 )
                 for target in ordered_qubits:
                     if target in result.data:
@@ -880,19 +974,20 @@ class MeasurementService:
         *,
         sweep_range: ArrayLike,
         frequencies: dict[str, float] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_last_measurement: bool | None = None,
+        final_measurement: bool | None = None,
         plot: bool | None = None,
         title: str | None = None,
         xlabel: str | None = None,
         ylabel: str | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         yaxis_type: Literal["linear", "log"] | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[SweepData]:
         """
         Run a sweep measurement for the provided sequence.
@@ -903,12 +998,10 @@ class MeasurementService:
             Parametric pulse schedule to sweep.
         sweep_range
             Values to sweep over.
-        add_last_measurement
+        final_measurement
             Whether to append a measurement at the end.
         """
         # TODO: Support ParametricWaveformDict and replace the sweep_parameter method
-        if add_last_measurement is None:
-            add_last_measurement = True
         if plot is None:
             plot = True
         if title is None:
@@ -946,14 +1039,15 @@ class MeasurementService:
                 result = self.execute(
                     sequence(param),
                     mode="avg",
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     readout_amplitudes=readout_amplitudes,
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
                     reset_awg_and_capunits=False,
-                    add_last_measurement=add_last_measurement,
+                    final_measurement=final_measurement,
+                    **deprecated_options,
                 )
                 for target in ordered_targets:
                     if target in result.data:
@@ -1002,9 +1096,10 @@ class MeasurementService:
         *,
         initial_states: dict[str, str] | None = None,
         repetitions: int | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[SweepData]:
         """
         Measure repeated sequences across repetition counts.
@@ -1036,10 +1131,11 @@ class MeasurementService:
             sequence=repeated_sequence,
             sweep_range=np.arange(repetitions + 1),
             initial_states=initial_states,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
             xlabel="Number of repetitions",
+            **deprecated_options,
         )
 
         if plot:
@@ -1057,11 +1153,12 @@ class MeasurementService:
         frequencies: dict[str, float] | None = None,
         is_damped: bool | None = None,
         fit_threshold: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         store_params: bool | None = None,
         simultaneous: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """
         Estimate Rabi parameters for the specified targets.
@@ -1081,10 +1178,20 @@ class MeasurementService:
             is_damped = True
         if fit_threshold is None:
             fit_threshold = 0.5
-        if shots is None:
-            shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=CALIBRATION_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if plot is None:
             plot = True
         if store_params is None:
@@ -1116,10 +1223,11 @@ class MeasurementService:
                 frequencies=frequencies,
                 is_damped=is_damped,
                 fit_threshold=fit_threshold,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 plot=plot,
                 store_params=store_params,
+                **deprecated_options,
             )
         else:
             rabi_data = {}
@@ -1132,10 +1240,11 @@ class MeasurementService:
                     frequencies=frequencies,
                     is_damped=is_damped,
                     fit_threshold=fit_threshold,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     store_params=store_params,
                     plot=plot,
+                    **deprecated_options,
                 ).data[target]
                 rabi_data[target] = data
                 rabi_params[target] = data.rabi_param
@@ -1152,9 +1261,10 @@ class MeasurementService:
         time_range: ArrayLike | None = None,
         ramptime: float | None = None,
         is_damped: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """
         Estimate EF Rabi parameters for the specified targets.
@@ -1171,10 +1281,20 @@ class MeasurementService:
             time_range = DEFAULT_RABI_TIME_RANGE
         if is_damped is None:
             is_damped = True
-        if shots is None:
-            shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=CALIBRATION_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if plot is None:
             plot = True
 
@@ -1206,10 +1326,11 @@ class MeasurementService:
                 time_range=time_range,
                 ramptime=ramptime,
                 is_damped=is_damped,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 store_params=True,
                 plot=plot,
+                **deprecated_options,
             ).data[label]
             rabi_data[label] = data
             rabi_params[label] = data.rabi_param
@@ -1225,14 +1346,15 @@ class MeasurementService:
         targets: Collection[str] | str | None = None,
         *,
         method: Literal["measure", "execute"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool | None = None,
+        readout_amplification: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MeasureResult | MultipleMeasureResult:
         """
         Check the readout waveforms of the given targets.
@@ -1256,8 +1378,8 @@ class MeasurementService:
             Pre-margin of the readout pulse in ns.
         readout_post_margin : float, optional
             Post-margin of the readout pulse in ns.
-        add_pump_pulses : bool, optional
-            Whether to add pump pulses to the readout sequence. Defaults to False.
+        readout_amplification : bool, optional
+            Whether to add readout amplification pulses. Defaults to False.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1277,8 +1399,6 @@ class MeasurementService:
                 stacklevel=2,
             )
         resolved_method = "measure" if method is None else method
-        if add_pump_pulses is None:
-            add_pump_pulses = False
         if plot is None:
             plot = True
 
@@ -1304,27 +1424,29 @@ class MeasurementService:
         if resolved_method == "measure":
             result = self.measure(
                 ps,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                add_pump_pulses=add_pump_pulses,
-                enable_dsp_sum=False,
+                readout_amplification=readout_amplification,
+                time_integration=False,
+                **deprecated_options,
             )
         else:
             result = self.execute(
                 ps,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                add_pump_pulses=add_pump_pulses,
-                add_last_measurement=True,
-                enable_dsp_sum=False,
+                readout_amplification=readout_amplification,
+                final_measurement=True,
+                time_integration=False,
+                **deprecated_options,
             )
         if plot:
             result.plot()
@@ -1335,11 +1457,12 @@ class MeasurementService:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         store_params: bool | None = None,
         rabi_level: Literal["ge", "ef"] | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """
         Check the Rabi oscillation of the given targets.
@@ -1370,10 +1493,20 @@ class MeasurementService:
         """
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if store_params is None:
             store_params = False
         if rabi_level is None:
@@ -1395,19 +1528,21 @@ class MeasurementService:
             result = self.rabi_experiment(
                 amplitudes=amplitudes,
                 time_range=time_range,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 store_params=store_params,
                 plot=plot,
+                **deprecated_options,
             )
         elif rabi_level == "ef":
             result = self.ef_rabi_experiment(
                 amplitudes=amplitudes,
                 time_range=time_range,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 store_params=store_params,
                 plot=plot,
+                **deprecated_options,
             )
         return result
 
@@ -1421,10 +1556,11 @@ class MeasurementService:
         detuning: float | None = None,
         is_damped: bool | None = None,
         fit_threshold: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         store_params: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """
         Run a GE Rabi experiment and fit parameters.
@@ -1444,10 +1580,20 @@ class MeasurementService:
             is_damped = True
         if fit_threshold is None:
             fit_threshold = 0.5
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if plot is None:
             plot = True
         if store_params is None:
@@ -1465,9 +1611,13 @@ class MeasurementService:
         effective_time_range = time_range + ramptime
 
         # measure ground states as reference points
+        reference_options = dict(deprecated_options)
+        reference_options.pop("shots", None)
+        reference_options.pop("interval", None)
         reference_points = self.obtain_reference_points(
             targets,
-            shots=DEFAULT_SHOTS,
+            n_shots=DEFAULT_SHOTS,
+            **reference_options,
         )["iq"]
 
         # target frequencies
@@ -1501,9 +1651,10 @@ class MeasurementService:
             sequence=rabi_sequence,
             sweep_range=time_range,
             frequencies=frequencies,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
+            **deprecated_options,
         )
 
         # sweep data with the target labels
@@ -1570,10 +1721,11 @@ class MeasurementService:
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
         is_damped: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         store_params: bool | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[RabiData]:
         """
         Run an EF Rabi experiment and fit parameters.
@@ -1590,10 +1742,20 @@ class MeasurementService:
         # TODO: Integrate with rabi_experiment
         if is_damped is None:
             is_damped = True
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if plot is None:
             plot = True
         if store_params is None:
@@ -1650,9 +1812,10 @@ class MeasurementService:
             sequence=ef_rabi_sequence,
             sweep_range=time_range,
             frequencies=frequencies,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             plot=plot,
+            **deprecated_options,
         )
 
         # fit the Rabi oscillation
@@ -1710,14 +1873,15 @@ class MeasurementService:
         targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool | None = None,
+        readout_amplification: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> list[MeasureResult]:
         """
         Measure distributions for prepared basis states.
@@ -1733,8 +1897,6 @@ class MeasurementService:
         """
         if n_states is None:
             n_states = 2
-        if add_pump_pulses is None:
-            add_pump_pulses = False
         if plot is None:
             plot = True
         if targets is None:
@@ -1748,13 +1910,14 @@ class MeasurementService:
         result = {
             state: self.measure_state(
                 dict.fromkeys(targets, state),  # type: ignore
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                add_pump_pulses=add_pump_pulses,
+                readout_amplification=readout_amplification,
+                **deprecated_options,
             )
             for state in states
         }
@@ -1776,15 +1939,16 @@ class MeasurementService:
         n_states: Literal[2, 3] | None = None,
         save_classifier: bool | None = None,
         save_dir: Path | str | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool | None = None,
+        readout_amplification: bool | None = None,
         simultaneous: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Build state classifiers from measured distributions.
@@ -1800,8 +1964,6 @@ class MeasurementService:
         """
         if save_classifier is None:
             save_classifier = True
-        if add_pump_pulses is None:
-            add_pump_pulses = False
         if simultaneous is None:
             simultaneous = False
         if plot is None:
@@ -1819,14 +1981,15 @@ class MeasurementService:
                 n_states=n_states,
                 save_classifier=save_classifier,
                 save_dir=save_dir,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                add_pump_pulses=add_pump_pulses,
+                readout_amplification=readout_amplification,
                 plot=plot,
+                **deprecated_options,
             )
         else:
             fidelities = {}
@@ -1839,14 +2002,15 @@ class MeasurementService:
                     n_states=n_states,
                     save_classifier=save_classifier,
                     save_dir=save_dir,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     readout_amplitudes=readout_amplitudes,
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
-                    add_pump_pulses=add_pump_pulses,
+                    readout_amplification=readout_amplification,
                     plot=plot,
+                    **deprecated_options,
                 )
                 fidelities[target] = result["readout_fidelities"][target]
                 average_fidelities[target] = result["average_readout_fidelity"][target]
@@ -1869,19 +2033,18 @@ class MeasurementService:
         n_states: Literal[2, 3] | None = None,
         save_classifier: bool | None = None,
         save_dir: Path | str | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool | None = None,
+        readout_amplification: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         if save_classifier is None:
             save_classifier = True
-        if add_pump_pulses is None:
-            add_pump_pulses = False
         if plot is None:
             plot = True
         if targets is None:
@@ -1892,24 +2055,30 @@ class MeasurementService:
             targets = list(targets)
         if n_states is None:
             n_states = 2
-        if shots is None:
-            shots = 10000
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=10000,
+        )
 
         # Refresh |g> reference phases before training so GMM phase alignment
         # and stored state_params use a drift-updated baseline.
-        self.obtain_reference_points(targets)
+        self.obtain_reference_points(targets, **deprecated_options)
 
         results = self.measure_state_distribution(
             targets=targets,
             n_states=n_states,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
-            add_pump_pulses=add_pump_pulses,
+            readout_amplification=readout_amplification,
             plot=False,
+            **deprecated_options,
         )
 
         data = {
@@ -1970,7 +2139,7 @@ class MeasurementService:
 
             if plot:
                 print(f"{target}:")
-                print(f"  Total shots: {shots}")
+                print(f"  Total shots: {n_shots}")
                 for state in range(n_states):
                     print(
                         f"  |{state}⟩ → {classified[state]}, f_{state}: {fidelity[state] * 100:.2f}%"
@@ -2006,11 +2175,12 @@ class MeasurementService:
         *,
         target_state: str | None = None,
         waveform: Waveform | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         use_zvalues: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Measure fidelity of a prepared single-qubit state.
@@ -2026,10 +2196,20 @@ class MeasurementService:
         """
         if target_state is None:
             target_state = "+"
-        if shots is None:
-            shots = CALIBRATION_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=CALIBRATION_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if use_zvalues is None:
@@ -2040,20 +2220,22 @@ class MeasurementService:
             measure_result = self.state_tomography(
                 sequence={target: []},
                 initial_state={target: target_state},
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=reset_awg_and_capunits,
                 use_zvalues=use_zvalues,
                 plot=plot,
+                **deprecated_options,
             )
         else:
             measure_result = self.state_tomography(
                 sequence={target: waveform},
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=reset_awg_and_capunits,
                 use_zvalues=use_zvalues,
                 plot=plot,
+                **deprecated_options,
             )
 
         state_vector = measure_result.get(target)
@@ -2093,8 +2275,8 @@ class MeasurementService:
                 "target_state_vector": target_state_vector,
                 "target_state": target_state,
                 "target": target,
-                "shots": shots,
-                "interval": interval,
+                "shots": n_shots,
+                "interval": shot_interval,
             }
         )
 
@@ -2104,12 +2286,13 @@ class MeasurementService:
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         method: Literal["measure", "execute"] | None = None,
         use_zvalues: bool | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Perform single-qubit state tomography.
@@ -2123,10 +2306,20 @@ class MeasurementService:
         method
             Measurement method to use.
         """
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if method is None:
@@ -2187,11 +2380,12 @@ class MeasurementService:
             if method == "execute":
                 measure_result = self.execute(
                     ps,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     reset_awg_and_capunits=False,
-                    add_last_measurement=True,
+                    final_measurement=True,
                     plot=plot,
+                    **deprecated_options,
                 )
                 for qubit, data in measure_result.data.items():
                     rabi_param = self.pulse.rabi_params[qubit]
@@ -2206,10 +2400,11 @@ class MeasurementService:
             else:
                 measure_result = self.measure(
                     ps,
-                    shots=shots,
-                    interval=interval,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
                     reset_awg_and_capunits=False,
                     plot=plot,
+                    **deprecated_options,
                 )
                 for qubit, data in measure_result.data.items():
                     rabi_param = self.pulse.rabi_params[qubit]
@@ -2251,11 +2446,12 @@ class MeasurementService:
         ),
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         method: Literal["measure", "execute"] | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Perform tomography over a sequence of states.
@@ -2269,10 +2465,20 @@ class MeasurementService:
         method
             Measurement method to use.
         """
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
         if method is None:
@@ -2294,11 +2500,12 @@ class MeasurementService:
                 sequence=sequence,
                 x90=x90,
                 initial_state=initial_state,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 reset_awg_and_capunits=False,
                 method=method,
                 plot=False,
+                **deprecated_options,
             )
             for target, state_vector in state_vectors.items():
                 buffer[target].append(state_vector)
@@ -2367,10 +2574,11 @@ class MeasurementService:
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
         n_samples: int | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         method: Literal["measure", "execute"] | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Reconstruct state evolution across a pulse waveform.
@@ -2386,10 +2594,20 @@ class MeasurementService:
         """
         if n_samples is None:
             n_samples = 100
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if method is None:
             method = "measure"
         if plot is None:
@@ -2444,10 +2662,11 @@ class MeasurementService:
             sequences=sequences,
             x90=x90,
             initial_state=initial_state,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             method=method,
             plot=plot,
+            **deprecated_options,
         )
 
         if plot:
@@ -2466,8 +2685,9 @@ class MeasurementService:
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         fit_gmm: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measure population probabilities for each target.
@@ -2481,18 +2701,29 @@ class MeasurementService:
         """
         if fit_gmm is None:
             fit_gmm = False
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if self.ctx.classifiers is None:
             raise ValueError("Classifiers are not built. Run `build_classifier` first.")
 
         result = self.measure(
             sequence,
             mode="single",
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            **deprecated_options,
         )
         if fit_gmm:
             probabilities = {
@@ -2522,8 +2753,9 @@ class MeasurementService:
         xlabel: str | None = None,
         scatter_mode: str | None = None,
         show_error: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measure population dynamics over a parameter sweep.
@@ -2545,10 +2777,20 @@ class MeasurementService:
             scatter_mode = "lines+markers"
         if show_error is None:
             show_error = True
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if isinstance(params_list[0], int):
             x = params_list
         else:
@@ -2565,8 +2807,9 @@ class MeasurementService:
             prob_dict, err_dict = self.measure_population(
                 sequence=sequence(params),
                 fit_gmm=fit_gmm,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+                **deprecated_options,
             )
             for target, probs in prob_dict.items():
                 buffer_pops[target].append(probs)
@@ -2626,14 +2869,15 @@ class MeasurementService:
         control_basis: str | None = None,
         target_basis: str | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         plot_sequence: bool | None = None,
         plot_raw: bool | None = None,
         plot_mitigated: bool | None = None,
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Measure Bell-state probabilities in a specified basis.
@@ -2653,10 +2897,20 @@ class MeasurementService:
             control_basis = "Z"
         if target_basis is None:
             target_basis = "Z"
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if plot is None:
             plot = True
         if plot_sequence is None:
@@ -2703,9 +2957,10 @@ class MeasurementService:
         result = self.measure(
             ps,
             mode="single",
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
+            **deprecated_options,
         )
 
         basis_labels = result.get_basis_labels(pair)
@@ -2786,11 +3041,12 @@ class MeasurementService:
         *,
         readout_mitigation: bool | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
         mle_fit: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """
         Perform two-qubit state tomography for a Bell state.
@@ -2806,10 +3062,20 @@ class MeasurementService:
         """
         if readout_mitigation is None:
             readout_mitigation = True
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+        n_shots = self.resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+            default=DEFAULT_SHOTS,
+        )
+        shot_interval = self.resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+            default=DEFAULT_INTERVAL,
+        )
         if plot is None:
             plot = True
         if save_image is None:
@@ -2866,10 +3132,11 @@ class MeasurementService:
                 control_basis=control_basis,
                 target_basis=target_basis,
                 zx90=zx90,
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 plot=False,
                 save_image=False,
+                **deprecated_options,
             )
             basis = f"{control_basis}{target_basis}"
             if readout_mitigation:

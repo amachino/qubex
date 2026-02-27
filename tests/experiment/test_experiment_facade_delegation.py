@@ -72,6 +72,14 @@ class _MeasurementServiceStub:
         self.calls.append(("run_ndsweep_measurement", {"schedule": schedule, **kwargs}))
         return "run_ndsweep_measurement_result"
 
+    def sweep_parameter(self, **kwargs: Any) -> str:
+        self.calls.append(("sweep_parameter", kwargs))
+        return "sweep_parameter_result"
+
+    def state_tomography(self, **kwargs: Any) -> str:
+        self.calls.append(("state_tomography", kwargs))
+        return "state_tomography_result"
+
 
 class _ExperimentContextStub:
     def __init__(self) -> None:
@@ -383,6 +391,86 @@ def test_capture_loopback_delegates_to_measurement_service() -> None:
     ]
 
 
+def test_execute_delegates_new_shot_arguments_to_measurement_service() -> None:
+    """Given n_shots args, when execute is called, then it delegates canonical shot keys."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    schedule = cast(Any, object())
+
+    _ = exp.execute(schedule=schedule, n_shots=256, shot_interval=120.0)
+
+    assert measurement_stub.calls == [
+        (
+            "execute",
+            {
+                "schedule": schedule,
+                "frequencies": None,
+                "mode": None,
+                "n_shots": 256,
+                "shot_interval": 120.0,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramptime": None,
+                "readout_drag_coeff": None,
+                "readout_ramp_type": None,
+                "add_last_measurement": None,
+                "add_pump_pulses": None,
+                "enable_dsp_demodulation": None,
+                "enable_dsp_sum": None,
+                "enable_dsp_classification": None,
+                "line_param0": None,
+                "line_param1": None,
+                "reset_awg_and_capunits": None,
+                "plot": None,
+            },
+        )
+    ]
+
+
+def test_measure_delegates_legacy_shot_arguments_to_measurement_service() -> None:
+    """Given legacy shot kwargs, when measure is called, then deprecated keys are delegated."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sequence = cast(Any, {"Q00": [0.0 + 0.0j]})
+
+    _ = exp.measure(sequence=sequence, shots=64, interval=256.0)
+
+    assert measurement_stub.calls == [
+        (
+            "measure",
+            {
+                "sequence": sequence,
+                "frequencies": None,
+                "initial_states": None,
+                "mode": None,
+                "n_shots": None,
+                "shot_interval": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramptime": None,
+                "readout_drag_coeff": None,
+                "readout_ramp_type": None,
+                "add_pump_pulses": None,
+                "enable_dsp_demodulation": None,
+                "enable_dsp_sum": None,
+                "enable_dsp_classification": None,
+                "line_param0": None,
+                "line_param1": None,
+                "reset_awg_and_capunits": None,
+                "plot": None,
+                "shots": 64,
+                "interval": 256.0,
+            },
+        )
+    ]
+
+
 def test_build_measurement_schedule_delegates_to_measurement_service() -> None:
     """Given schedule-build arguments, when called, then it delegates to measurement service."""
     exp = object.__new__(Experiment)
@@ -582,7 +670,7 @@ def test_linkup_warns_deprecation_and_delegates_to_session_service() -> None:
     session_stub = _SessionServiceStub()
     exp.__dict__["_session_service"] = session_stub
 
-    with pytest.warns(DeprecationWarning, match="measurement\\.linkup"):
+    with pytest.warns(DeprecationWarning, match="measurement\\.linkup|connect\\(\\)"):
         exp.linkup(box_ids=["Q2A"], noise_threshold=100)
 
     assert session_stub.calls == [
@@ -654,6 +742,8 @@ def test_measure_idle_states_delegates_to_measurement_service() -> None:
             "measure_idle_states",
             {
                 "targets": ["Q00", "Q01"],
+                "n_shots": None,
+                "shot_interval": None,
                 "shots": 512,
                 "interval": 200.0,
                 "readout_amplitudes": {"Q00": 0.01, "Q01": 0.02},
@@ -662,6 +752,87 @@ def test_measure_idle_states_delegates_to_measurement_service() -> None:
                 "readout_post_margin": None,
                 "add_pump_pulses": False,
                 "plot": True,
+            },
+        )
+    ]
+
+
+def test_sweep_parameter_delegates_legacy_shot_arguments_to_measurement_service() -> (
+    None
+):
+    """Given legacy shot kwargs, when sweep_parameter is called, then deprecated keys are delegated."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sequence = cast(Any, lambda value: {"Q00": [value + 0.0j]})
+
+    _ = exp.sweep_parameter(
+        sequence=sequence,
+        sweep_range=[0.1, 0.2],
+        shots=32,
+        interval=44.0,
+    )
+
+    assert measurement_stub.calls == [
+        (
+            "sweep_parameter",
+            {
+                "sequence": sequence,
+                "sweep_range": [0.1, 0.2],
+                "repetitions": None,
+                "frequencies": None,
+                "initial_states": None,
+                "rabi_level": None,
+                "n_shots": None,
+                "shot_interval": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "plot": None,
+                "enable_tqdm": None,
+                "title": None,
+                "xlabel": None,
+                "ylabel": None,
+                "xaxis_type": None,
+                "yaxis_type": None,
+                "shots": 32,
+                "interval": 44.0,
+            },
+        )
+    ]
+
+
+def test_state_tomography_delegates_canonical_shot_arguments_to_measurement_service() -> (
+    None
+):
+    """Given canonical shot kwargs, when state_tomography is called, then canonical keys are delegated."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sequence = cast(Any, {"Q00": [0.0 + 0.0j]})
+
+    result = exp.state_tomography(
+        sequence=sequence,
+        n_shots=128,
+        shot_interval=64.0,
+        plot=False,
+    )
+
+    assert result == "state_tomography_result"
+    assert measurement_stub.calls == [
+        (
+            "state_tomography",
+            {
+                "sequence": sequence,
+                "x90": None,
+                "initial_state": None,
+                "n_shots": 128,
+                "shot_interval": 64.0,
+                "reset_awg_and_capunits": None,
+                "method": None,
+                "use_zvalues": None,
+                "plot": False,
             },
         )
     ]
