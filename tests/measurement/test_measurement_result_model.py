@@ -677,6 +677,67 @@ def test_plot_calls_waveform_plot_for_avg_mode(monkeypatch) -> None:
     assert called["save_image"] is False
 
 
+def test_capture_data_plot_return_figure_warns_deprecated(monkeypatch) -> None:
+    """Given return_figure usage, capture plot warns and still returns a figure."""
+    config = _make_config(mode="avg", shots=1)
+    capture = _make_capture(
+        target="Q00",
+        raw=np.array([1.0 + 0.0j, 2.0 + 0.0j]),
+        measurement_config=config,
+        sampling_period=0.8,
+    )
+    sentinel = object()
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.capture_data.viz.make_waveform_figure",
+        lambda **kwargs: sentinel,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.capture_data.viz.plot_waveform",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    with pytest.warns(DeprecationWarning, match="figure\\("):
+        figure = capture.plot(return_figure=True)
+
+    assert figure is sentinel
+
+
+def test_measurement_result_plot_return_figure_warns_deprecated(
+    monkeypatch,
+) -> None:
+    """Given return_figure usage, result plot warns and still returns figure list."""
+    config = _make_config(mode="avg", shots=1)
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([1.0 + 0.0j, 2.0 + 0.0j]),
+                    measurement_config=config,
+                    sampling_period=0.8,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+    sentinel = object()
+
+    def _make_waveform_figure(**kwargs: object) -> object:
+        assert kwargs["title"] == "Q00 : data[0]"
+        return sentinel
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measurement_result.viz.make_waveform_figure",
+        _make_waveform_figure,
+    )
+
+    with pytest.warns(DeprecationWarning, match="figure\\("):
+        figures = result.plot(return_figure=True)
+
+    assert figures == [sentinel]
+
+
 def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
     """Given time-integrated canonical data, plot should call IQ scatter with kerneled values."""
     config = MeasurementConfig(
@@ -907,46 +968,6 @@ def test_plot_calls_iq_scatter_for_averaged_integrated_mode(monkeypatch) -> None
     plotted = called["data"]
     assert isinstance(plotted, dict)
     assert np.array_equal(plotted["Q00"], np.array([1.0 + 2.0j, 3.0 + 4.0j]))
-
-
-def test_capture_data_plot_fft_skips_for_time_integrated_data(
-    monkeypatch,
-    caplog,
-) -> None:
-    """Given time-integrated capture, plot_fft should log info and skip plotting."""
-    config = MeasurementConfig(
-        n_shots=2,
-        shot_interval=100.0,
-        shot_averaging=False,
-        time_integration=True,
-        state_classification=False,
-    )
-    capture = _make_capture(
-        target="Q00",
-        raw=np.array(
-            [
-                [1.0 + 0.0j, 2.0 + 0.0j],
-                [3.0 + 0.0j, 4.0 + 0.0j],
-            ]
-        ),
-        measurement_config=config,
-        sampling_period=2.0,
-    )
-
-    monkeypatch.setattr(
-        "qubex.measurement.models.capture_data.viz.plot_fft",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
-    )
-    monkeypatch.setattr(
-        "qubex.measurement.models.capture_data.viz.make_fft_figure",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
-    )
-
-    with caplog.at_level("INFO"):
-        result = capture.plot_fft()
-
-    assert result is None
-    assert "not waveform data" in caplog.text
 
 
 def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:

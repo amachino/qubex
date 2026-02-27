@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from collections.abc import Collection, Mapping
 from functools import reduce
@@ -257,6 +258,58 @@ class MeasurementResult(DataModel):
         save_image: bool = False,
     ) -> Any:
         """Plot measurement data for each capture."""
+        if return_figure:
+            warnings.warn(
+                "`return_figure` is deprecated; use `figure()` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            figures = self.figure()
+            if save_image:
+                figure_index = 0
+                for captures in self.data.values():
+                    for capture in captures:
+                        figure_name = (
+                            "plot_state_distribution"
+                            if capture.config.time_integration
+                            else "plot_waveform"
+                        )
+                        viz.save_figure(figures[figure_index], name=figure_name)
+                        figure_index += 1
+            return figures
+
+        for target, captures in self.data.items():
+            for capture_index, capture in enumerate(captures):
+                title = f"{target} : data[{capture_index}]"
+                config = capture.config
+                if config.time_integration:
+                    shots = np.asarray(capture.raw)
+                    kerneled = np.atleast_1d(
+                        shots if shots.ndim <= 1 else np.sum(shots, axis=1)
+                    )
+                    viz.scatter_iq_data(
+                        data={target: kerneled},
+                        title=title,
+                        save_image=save_image,
+                    )
+                    continue
+
+                waveform = np.asarray(capture.raw)
+                if not config.shot_averaging and waveform.ndim >= 2:
+                    waveform = np.mean(waveform, axis=0)
+                waveform = np.squeeze(waveform)
+                viz.plot_waveform(
+                    data=waveform,
+                    sampling_period=capture.sampling_period,
+                    title=title,
+                    xlabel="Capture time (ns)",
+                    ylabel="Signal (arb. units)",
+                    save_image=save_image,
+                )
+        return None
+
+    def figure(self) -> list[Any]:
+        """Return figure objects for all capture entries without rendering."""
         figures: list[Any] = []
         for target, captures in self.data.items():
             for capture_index, capture in enumerate(captures):
@@ -267,50 +320,28 @@ class MeasurementResult(DataModel):
                     kerneled = np.atleast_1d(
                         shots if shots.ndim <= 1 else np.sum(shots, axis=1)
                     )
-                    data = {target: kerneled}
-                    if return_figure:
-                        figure = viz.make_iq_scatter_figure(
-                            data=data,
+                    figures.append(
+                        viz.make_iq_scatter_figure(
+                            data={target: kerneled},
                             title=title,
                         )
-                        if save_image:
-                            viz.save_figure(figure, name="plot_state_distribution")
-                        figures.append(figure)
-                    else:
-                        viz.scatter_iq_data(
-                            data=data,
-                            title=title,
-                            save_image=save_image,
-                        )
+                    )
                     continue
 
                 waveform = np.asarray(capture.raw)
                 if not config.shot_averaging and waveform.ndim >= 2:
                     waveform = np.mean(waveform, axis=0)
                 waveform = np.squeeze(waveform)
-                if return_figure:
-                    figure = viz.make_waveform_figure(
+                figures.append(
+                    viz.make_waveform_figure(
                         data=waveform,
                         sampling_period=capture.sampling_period,
                         title=title,
                         xlabel="Capture time (ns)",
                         ylabel="Signal (arb. units)",
                     )
-                    if save_image:
-                        viz.save_figure(figure, name="plot_waveform")
-                    figures.append(figure)
-                else:
-                    viz.plot_waveform(
-                        data=waveform,
-                        sampling_period=capture.sampling_period,
-                        title=title,
-                        xlabel="Capture time (ns)",
-                        ylabel="Signal (arb. units)",
-                        save_image=save_image,
-                    )
-        if return_figure:
-            return figures
-        return None
+                )
+        return figures
 
     def save(
         self,

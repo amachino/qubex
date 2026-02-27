@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import warnings
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -18,8 +18,6 @@ from qubex.measurement.classifiers.state_classifier import StateClassifier
 
 from .classifier_ref import ClassifierRef
 from .measurement_config import MeasurementConfig
-
-logger = logging.getLogger(__name__)
 
 
 def _format_raw_preview(raw: NDArray) -> str:
@@ -285,14 +283,25 @@ class CaptureData(DataModel):
         save_image: bool = False,
     ) -> Any:
         """Plot capture data according to measurement configuration."""
+        if return_figure:
+            warnings.warn(
+                "`return_figure` is deprecated; use `figure()` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            fig = self.figure(title=title)
+            if save_image:
+                figure_name = (
+                    "plot_state_distribution"
+                    if self.config.time_integration
+                    else "plot_waveform"
+                )
+                viz.save_figure(fig, name=figure_name)
+            return fig
+
         plot_title = title or f"Readout data : {self.target}"
         if self.config.time_integration:
             data = {self.target: np.atleast_1d(self.kerneled)}
-            if return_figure:
-                fig = viz.make_iq_scatter_figure(data=data, title=plot_title)
-                if save_image:
-                    viz.save_figure(fig, name="plot_state_distribution")
-                return fig
             viz.scatter_iq_data(data=data, title=plot_title, save_image=save_image)
             return None
 
@@ -300,17 +309,6 @@ class CaptureData(DataModel):
         if not self.config.shot_averaging and waveform.ndim >= 2:
             waveform = np.mean(waveform, axis=0)
         waveform = np.squeeze(waveform)
-        if return_figure:
-            fig = viz.make_waveform_figure(
-                data=waveform,
-                sampling_period=self.sampling_period,
-                title=plot_title,
-                xlabel="Capture time (ns)",
-                ylabel="Signal (arb. units)",
-            )
-            if save_image:
-                viz.save_figure(fig, name="plot_waveform")
-            return fig
         viz.plot_waveform(
             data=waveform,
             sampling_period=self.sampling_period,
@@ -321,47 +319,27 @@ class CaptureData(DataModel):
         )
         return None
 
-    def plot_fft(
+    def figure(
         self,
         title: str | None = None,
-        return_figure: bool = False,
-        save_image: bool = False,
     ) -> Any:
-        """Plot FFT of capture waveform data."""
-        plot_title = title or f"Fourier transform : {self.target}"
+        """Return a Plotly figure for capture data without rendering."""
+        plot_title = title or f"Readout data : {self.target}"
         if self.config.time_integration:
-            logger.info(
-                "Skipping FFT plot for %s: data is not waveform data.",
-                self.target,
-            )
-            return None
+            data = {self.target: np.atleast_1d(self.kerneled)}
+            return viz.make_iq_scatter_figure(data=data, title=plot_title)
+
         waveform = np.asarray(self.raw)
         if not self.config.shot_averaging and waveform.ndim >= 2:
             waveform = np.mean(waveform, axis=0)
         waveform = np.squeeze(waveform)
-        if np.asarray(waveform).ndim == 0:
-            waveform = np.atleast_1d(waveform)
-        times = np.arange(len(waveform)) * self.sampling_period
-        if return_figure:
-            fig = viz.make_fft_figure(
-                x=times * 1e-3,
-                y=waveform,
-                title=plot_title,
-                xlabel="Frequency (MHz)",
-                ylabel="Signal (arb. units)",
-            )
-            if save_image:
-                viz.save_figure(fig, name="plot_fft")
-            return fig
-        viz.plot_fft(
-            x=times * 1e-3,
-            y=waveform,
+        return viz.make_waveform_figure(
+            data=waveform,
+            sampling_period=self.sampling_period,
             title=plot_title,
-            xlabel="Frequency (MHz)",
+            xlabel="Capture time (ns)",
             ylabel="Signal (arb. units)",
-            save_image=save_image,
         )
-        return None
 
     def save(
         self,
