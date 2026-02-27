@@ -200,6 +200,52 @@ def test_check_link_status_uses_parallel_map_when_parallel_true(
     }
 
 
+def test_check_link_status_uses_parallel_map_when_parallel_is_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given unset parallel flag, when checking link status, then link checks run via parallel map."""
+    backend = _BackendWithLinkCapability(
+        link_status_by_box={
+            "A": {0: True},
+            "B": {0: True},
+        }
+    )
+    service, _ = _make_session_service(
+        backend_controller=backend,
+        tmp_path=tmp_path,
+        box_ids=["A", "B"],
+    )
+    captured_boxes: list[str] = []
+
+    def _fake_run_parallel_map(
+        items: Sequence[str],
+        worker: Callable[[str], dict[int, bool]],
+        *,
+        key: Callable[[str], str],
+        max_workers: int | None = None,
+        as_completed_order: bool = False,
+        on_error: Callable[[str, BaseException], dict[int, bool]] | None = None,
+    ) -> dict[str, dict[int, bool]]:
+        del max_workers, as_completed_order, on_error
+        captured_boxes.extend(items)
+        return {key(item): worker(item) for item in items}
+
+    monkeypatch.setattr(session_module, "run_parallel_map", _fake_run_parallel_map)
+
+    result = service.check_link_status(["A", "B"])
+
+    assert captured_boxes == ["A", "B"]
+    assert backend.link_status_calls == ["A", "B"]
+    assert result == {
+        "status": True,
+        "links": {
+            "A": {0: True},
+            "B": {0: True},
+        },
+    }
+
+
 def test_connect_forwards_parallel_flag_to_link_status_check(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

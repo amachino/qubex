@@ -508,7 +508,8 @@ class Measurement:
         box_list : list[str]
             Backend box identifiers.
         parallel : bool | None, optional
-            Whether to query each box in parallel where supported.
+            Whether to query each box in parallel where supported. If `None`,
+            the session-level default is used.
 
         Returns
         -------

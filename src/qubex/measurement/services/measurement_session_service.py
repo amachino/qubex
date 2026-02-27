@@ -157,8 +157,10 @@ class MeasurementSessionService:
         box_list : list[str]
             Box identifiers to validate.
         parallel : bool | None, optional
-            Whether to query boxes in parallel. If `None`, runs sequentially.
+            Whether to query boxes in parallel. If `None`, runs in parallel.
         """
+        if parallel is None:
+            parallel = True
         backend_controller = self.backend_controller
         link_status = cast(
             Callable[[str], dict[int, bool]] | None,
