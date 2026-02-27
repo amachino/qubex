@@ -494,7 +494,12 @@ class Measurement:
         """
         self.session_service.disconnect()
 
-    def check_link_status(self, box_list: list[str]) -> dict:
+    def check_link_status(
+        self,
+        box_list: list[str],
+        *,
+        parallel: bool | None = None,
+    ) -> dict:
         """
         Return link status for the specified backend boxes.
 
@@ -502,6 +507,8 @@ class Measurement:
         ----------
         box_list : list[str]
             Backend box identifiers.
+        parallel : bool | None, optional
+            Whether to query each box in parallel where supported.
 
         Returns
         -------
@@ -513,7 +520,7 @@ class Measurement:
         >>> # `session` is an initialized `Measurement` instance.
         >>> session.check_link_status(["Q73A", "U10B"])
         """
-        return self.session_service.check_link_status(box_list)
+        return self.session_service.check_link_status(box_list, parallel=parallel)
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """

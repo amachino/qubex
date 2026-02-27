@@ -11,7 +11,6 @@ from copy import deepcopy
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
 from qubex.backend.quel1.quel1_backend_constants import (
     DEFAULT_EXECUTION_MODE,
@@ -20,6 +19,7 @@ from qubex.backend.quel1.quel1_backend_constants import (
 from qubex.backend.quel1.quel1_runtime_context import (
     Quel1RuntimeContext,
 )
+from qubex.core.parallel_executor import run_parallel, run_parallel_map
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +254,7 @@ class Quel1ConnectionManager:
                 self._initialize_box_awg_and_capunits(box_name)
             return
 
-        run_parallel_each(
+        run_parallel(
             unique_box_names,
             self._initialize_box_awg_and_capunits,
             max_workers=_MAX_BOX_PARALLEL_WORKERS,
@@ -372,7 +372,7 @@ class Quel1ConnectionManager:
                 noise_threshold=noise_threshold,
             )
 
-        run_parallel_each(
+        run_parallel(
             unique_box_list,
             _relinkup_one,
             max_workers=_MAX_BOX_PARALLEL_WORKERS,

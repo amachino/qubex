@@ -18,6 +18,7 @@ from qxcore import (
 )
 
 from .async_bridge import AsyncBridge
+from .parallel_executor import run_parallel, run_parallel_map
 
 __all__ = [
     "AsyncBridge",
@@ -32,5 +33,7 @@ __all__ = [
     "Value",
     "ValueArray",
     "ValueArrayLike",
+    "run_parallel",
+    "run_parallel_map",
     "units",
 ]

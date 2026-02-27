@@ -1,4 +1,4 @@
-"""Helpers for box-level parallel execution with `ThreadPoolExecutor`."""
+"""Helpers for generic parallel execution with `ThreadPoolExecutor`."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ V = TypeVar("V")
 DEFAULT_MAX_WORKERS = 32
 
 
-def run_parallel_each(
+def run_parallel(
     items: Sequence[T],
     worker: Callable[[T], object],
     *,
@@ -43,7 +43,7 @@ def run_parallel_each(
     workers = min(resolved_max_workers, len(items))
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_item = {executor.submit(worker, item): item for item in items}
-        for future in future_to_item:
+        for future in as_completed(future_to_item):
             item = future_to_item[future]
             try:
                 future.result()

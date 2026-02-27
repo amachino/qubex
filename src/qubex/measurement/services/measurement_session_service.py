@@ -12,6 +12,7 @@ from qubex.backend import (
     BackendController,
     BackendKind,
 )
+from qubex.core.parallel_executor import run_parallel_map
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.system import ConfigLoader, ExperimentSystem, SystemManager
 from qubex.typing import ConfigurationMode
@@ -123,7 +124,7 @@ class MeasurementSessionService:
             return
         backend_controller = self.backend_controller
         backend_controller.connect(box_ids, parallel=parallel)
-        self._validate_post_connect_link_status(box_ids)
+        self._validate_post_connect_link_status(box_ids, parallel=parallel)
         self.system_manager.pull(box_ids, parallel=parallel)
         if sync_clocks:
             resync_clocks = getattr(backend_controller, "resync_clocks", None)
@@ -142,8 +143,22 @@ class MeasurementSessionService:
         """Disconnect backend resources held by the active controller."""
         self.backend_controller.disconnect()
 
-    def check_link_status(self, box_list: list[str]) -> dict:
-        """Check link status for the provided box list."""
+    def check_link_status(
+        self,
+        box_list: list[str],
+        *,
+        parallel: bool | None = None,
+    ) -> dict:
+        """
+        Check link status for the provided box list.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            Box identifiers to validate.
+        parallel : bool | None, optional
+            Whether to query boxes in parallel. If `None`, runs sequentially.
+        """
         backend_controller = self.backend_controller
         link_status = cast(
             Callable[[str], dict[int, bool]] | None,
@@ -153,17 +168,29 @@ class MeasurementSessionService:
             raise NotImplementedError(
                 "Active backend does not support link status checks."
             )
-        link_statuses = {box: link_status(box) for box in box_list}
+        if parallel:
+            link_statuses = run_parallel_map(
+                box_list,
+                link_status,
+                key=lambda box_name: box_name,
+            )
+        else:
+            link_statuses = {box: link_status(box) for box in box_list}
         is_linkedup = all(all(status.values()) for status in link_statuses.values())
         return {
             "status": is_linkedup,
             "links": link_statuses,
         }
 
-    def _validate_post_connect_link_status(self, box_list: list[str]) -> None:
+    def _validate_post_connect_link_status(
+        self,
+        box_list: list[str],
+        *,
+        parallel: bool | None = None,
+    ) -> None:
         """Raise `ConnectionError` when post-connect link checks report failures."""
         try:
-            link_status = self.check_link_status(box_list)
+            link_status = self.check_link_status(box_list, parallel=parallel)
         except NotImplementedError:
             logger.info(
                 "Skipping post-connect link validation because this backend does not support link status checks."

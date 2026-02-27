@@ -6,8 +6,8 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
-from qubex.backend.parallel_box_executor import run_parallel_each, run_parallel_map
 from qubex.backend.quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
+from qubex.core.parallel_executor import run_parallel, run_parallel_map
 from qubex.system.control_system import PortType
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ class Quel1SystemSynchronizer:
             for box in boxes:
                 self.sync_box_to_hardware(box)
             return
-        run_parallel_each(
+        run_parallel(
             boxes,
             self.sync_box_to_hardware,
             on_error=self._log_box_sync_error,
