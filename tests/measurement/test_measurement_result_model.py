@@ -380,6 +380,22 @@ def test_capture_data_rejects_non_averaged_shot_count_mismatch() -> None:
         )
 
 
+def test_capture_data_repr_summarizes_raw_array() -> None:
+    """CaptureData repr should summarize long raw arrays."""
+    config = _make_config(mode="avg", shots=1)
+    capture = _make_capture(
+        target="Q00",
+        raw=np.arange(1024, dtype=np.float64),
+        measurement_config=config,
+        sampling_period=0.4,
+    )
+
+    text = repr(capture)
+
+    assert "raw=array(shape=(1024,), [0." in text
+    assert "... (1024 elements)" in text
+
+
 def test_capture_data_classifier_uses_shared_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

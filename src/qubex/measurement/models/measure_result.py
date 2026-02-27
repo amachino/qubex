@@ -33,6 +33,19 @@ from .measurement_record import MeasurementRecord
 logger = logging.getLogger(__name__)
 
 
+def _format_raw_preview(raw: NDArray) -> str:
+    """Return compact repr text for a raw array."""
+    array = np.asarray(raw)
+    if array.ndim == 0:
+        return repr(array)
+    flat = array.reshape(-1)
+    preview = np.array2string(flat[:1], separator=", ")
+    if preview.startswith("[") and preview.endswith("]"):
+        if flat.size > 1:
+            preview = f"{preview[:-1]}, ... ({flat.size} elements)]"
+    return f"array(shape={array.shape}, {preview})"
+
+
 class MeasureMode(Enum):
     """Measurement mode for result processing."""
 
@@ -69,6 +82,22 @@ class MeasureData:
         """Validate sampling metadata values."""
         if self.sampling_period <= 0:
             raise ValueError("sampling_period must be positive.")
+
+    def __repr__(self) -> str:
+        """Return a compact representation for notebook-friendly display."""
+        classifier = (
+            "None"
+            if self.classifier is None
+            else f"<{self.classifier.__class__.__name__}>"
+        )
+        return (
+            "MeasureData("
+            f"target={self.target!r}, "
+            f"mode={self.mode!r}, "
+            f"raw={_format_raw_preview(self.raw)}, "
+            f"classifier={classifier}, "
+            f"sampling_period={self.sampling_period})"
+        )
 
     @cached_property
     def n_states(self) -> int:

@@ -22,6 +22,19 @@ from .measurement_config import MeasurementConfig
 logger = logging.getLogger(__name__)
 
 
+def _format_raw_preview(raw: NDArray) -> str:
+    """Return compact repr text for a raw array."""
+    array = np.asarray(raw)
+    if array.ndim == 0:
+        return repr(array)
+    flat = array.reshape(-1)
+    preview = np.array2string(flat[:1], separator=", ")
+    if preview.startswith("[") and preview.endswith("]"):
+        if flat.size > 1:
+            preview = f"{preview[:-1]}, ... ({flat.size} elements)]"
+    return f"array(shape={array.shape}, {preview})"
+
+
 class CaptureData(DataModel):
     """Serializable capture payload with per-target sampling metadata."""
 
@@ -65,6 +78,22 @@ class CaptureData(DataModel):
     def __array__(self, dtype: Any = None) -> NDArray:
         """Return raw capture array for NumPy interoperability."""
         return np.asarray(self.raw, dtype=dtype)
+
+    def __repr__(self) -> str:
+        """Return a compact representation for notebook-friendly display."""
+        classifier = (
+            "None"
+            if self.classifier_ref is None
+            else f"<{self.classifier_ref.__class__.__name__}>"
+        )
+        return (
+            "CaptureData("
+            f"target={self.target!r}, "
+            f"raw={_format_raw_preview(self.raw)}, "
+            f"config={self.config!r}, "
+            f"classifier_ref={classifier}, "
+            f"sampling_period={self.sampling_period})"
+        )
 
     def _require_classifier(
         self,

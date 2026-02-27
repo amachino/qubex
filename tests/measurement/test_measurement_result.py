@@ -128,3 +128,18 @@ def test_measure_data_plot_fft_skips_for_scalar_avg_data(
 
     assert result is None
     assert "not waveform data" in caplog.text
+
+
+def test_measure_data_repr_summarizes_raw_array() -> None:
+    """MeasureData repr should summarize long raw arrays."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.AVG,
+        raw=np.arange(1024, dtype=np.float64),
+        sampling_period=0.8,
+    )
+
+    text = repr(data)
+
+    assert "raw=array(shape=(1024,), [0." in text
+    assert "... (1024 elements)" in text
