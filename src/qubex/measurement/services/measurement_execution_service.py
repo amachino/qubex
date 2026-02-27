@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import warnings
 from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -20,7 +19,7 @@ from qubex.backend.quel1 import (
     Quel1BackendController,
 )
 from qubex.backend.quel3 import Quel3BackendController
-from qubex.core.async_bridge import AsyncBridge
+from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.measurement_constraint_profile import (
@@ -70,30 +69,15 @@ T = TypeVar("T")
 OptionT = TypeVar("OptionT")
 RFSwitchState = Literal["pass", "block", "open", "loop"]
 
-_SYNC_BRIDGE_TIMEOUT_SECONDS = 300.0
-_MEASUREMENT_ASYNC_BRIDGE_LOCK = threading.Lock()
-_MEASUREMENT_ASYNC_BRIDGE: AsyncBridge | None = None
-
-
-def _get_measurement_async_bridge() -> AsyncBridge:
-    """Return the module-level async bridge singleton."""
-    global _MEASUREMENT_ASYNC_BRIDGE
-    with _MEASUREMENT_ASYNC_BRIDGE_LOCK:
-        if _MEASUREMENT_ASYNC_BRIDGE is None:
-            _MEASUREMENT_ASYNC_BRIDGE = AsyncBridge(
-                default_timeout=_SYNC_BRIDGE_TIMEOUT_SECONDS,
-                thread_name="qubex-measurement-async-bridge",
-            )
-        return _MEASUREMENT_ASYNC_BRIDGE
-
 
 def _run_async(
     factory: Callable[[], Awaitable[T]],
     *,
-    timeout: float = _SYNC_BRIDGE_TIMEOUT_SECONDS,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> T:
     """Run one awaitable factory from synchronous APIs."""
-    return _get_measurement_async_bridge().run(factory, timeout=timeout)
+    bridge = get_shared_async_bridge(key="measurement")
+    return bridge.run(factory, timeout=timeout)
 
 
 class MeasurementExecutionService:

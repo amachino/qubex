@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 
 import numpy as np
 import numpy.typing as npt
@@ -44,6 +45,16 @@ class Quel3FixedTimeline:
     length_ns: float
 
 
+class Quel3CaptureMode(str, Enum):
+    """Capture mode values for QuEL-3 fixed-timeline execution."""
+
+    UNSPECIFIED = "UNSPECIFIED"
+    RAW_WAVEFORMS = "RAW_WAVEFORMS"
+    AVERAGED_WAVEFORM = "AVERAGED_WAVEFORM"
+    AVERAGED_VALUE = "AVERAGED_VALUE"
+    VALUES_PER_ITER = "VALUES_PER_ITER"
+
+
 @dataclass(frozen=True)
 class Quel3ExecutionPayload:
     """Execution payload for translating measurement requests to fixed timeline."""
@@ -52,4 +63,6 @@ class Quel3ExecutionPayload:
     fixed_timelines: dict[str, Quel3FixedTimeline]
     interval_ns: float
     repeats: int
-    mode: str
+    capture_mode: Quel3CaptureMode
+    instrument_bindings: dict[str, str] = field(default_factory=dict)
+    capture_port_bindings: dict[str, str] = field(default_factory=dict)

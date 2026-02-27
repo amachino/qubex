@@ -8,7 +8,8 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from qubex.backend.quel3.managers.sequencer_builder import Quel3SequencerBuilder
+from qubex.backend.quel3 import Quel3CaptureMode
+from qubex.backend.quel3.builders.sequencer_builder import Quel3SequencerBuilder
 from qubex.measurement.adapters import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
@@ -93,6 +94,14 @@ class _RecordingSequencer:
             )
         )
 
+    def export_set_fixed_timeline_directive(
+        self,
+        instrument_alias: str,
+        sampling_period_fs: int,
+    ) -> object:
+        del instrument_alias, sampling_period_fs
+        return object()
+
 
 def _make_payload(
     *,
@@ -104,7 +113,7 @@ def _make_payload(
         fixed_timelines=fixed_timelines,
         interval_ns=100.0,
         repeats=16,
-        mode="avg",
+        capture_mode=Quel3CaptureMode.AVERAGED_VALUE,
     )
 
 

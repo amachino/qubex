@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import numpy as np
@@ -17,6 +17,7 @@ from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import (
     Quel3BackendController,
     Quel3BackendExecutionResult,
+    Quel3CaptureMode,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
@@ -24,6 +25,38 @@ from qubex.backend.quel3 import (
     Quel3WaveformEvent,
 )
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
+
+
+@dataclass(frozen=True)
+class _FakeInstrumentDefinition:
+    role: str
+
+
+@dataclass(frozen=True)
+class _FakeInstrumentInfo:
+    port_id: str
+    definition: _FakeInstrumentDefinition
+
+
+class _FakeInstrumentResolver:
+    def __init__(
+        self,
+        *,
+        alias_to_info: dict[str, _FakeInstrumentInfo],
+    ) -> None:
+        self._alias_to_info = dict(alias_to_info)
+        self._alias_to_id = {alias: alias for alias in self._alias_to_info}
+
+    async def refresh(self, client: object) -> None:
+        del client
+
+    def resolve(self, aliases: list[str]) -> list[str]:
+        return aliases
+
+    def find_inst_info_by_alias(self, alias: str) -> _FakeInstrumentInfo:
+        if alias not in self._alias_to_info:
+            raise ValueError(alias)
+        return self._alias_to_info[alias]
 
 
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
@@ -50,7 +83,11 @@ def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPaylo
         fixed_timelines={"alias-rq00": timeline},
         interval_ns=100.0,
         repeats=repeats,
-        mode=mode,
+        capture_mode=(
+            Quel3CaptureMode.AVERAGED_VALUE
+            if mode == "avg"
+            else Quel3CaptureMode.VALUES_PER_ITER
+        ),
     )
 
 
@@ -135,13 +172,13 @@ def test_build_measurement_result_averages_shot_samples() -> None:
     )
 
     assert isinstance(result, Quel3BackendExecutionResult)
-    assert result.mode == "avg"
+    assert isinstance(result.status, dict)
     assert "alias-rq00" in result.data
     assert np.array_equal(
         result.data["alias-rq00"][0],
         np.array([2.0 + 2.0j, 4.0 + 4.0j], dtype=np.complex128),
     )
-    assert result.sampling_period_ns == 1.6
+    assert result.config["sampling_period_ns"] == pytest.approx(1.6)
 
 
 def test_build_measurement_result_keeps_backend_alias_labels() -> None:
@@ -226,19 +263,66 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     assert controller._connection_manager.quelware_port == 50051
 
 
-def test_execute_rejects_multiple_instrument_aliases() -> None:
-    """Given multiple instrument timelines, execute raises NotImplementedError."""
-    controller = Quel3BackendController()
+def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:
+    """Given shared alias bindings, resolved payload merges timelines per alias."""
     payload = _make_payload()
     payload = replace(
         payload,
         fixed_timelines={
-            "alias-0": payload.fixed_timelines["alias-rq00"],
-            "alias-1": payload.fixed_timelines["alias-rq00"],
+            "RQ00": payload.fixed_timelines["alias-rq00"],
+            "RQ01": payload.fixed_timelines["alias-rq00"],
+        },
+        instrument_bindings={
+            "RQ00": "alias:alias-shared",
+            "RQ01": "alias:alias-shared",
         },
     )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-shared": _FakeInstrumentInfo(
+                port_id="unit-a:p0trx",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
 
-    with pytest.raises(NotImplementedError, match="single instrument alias"):
-        asyncio.run(
-            controller.execute(request=BackendExecutionRequest(payload=payload))
+    resolved = Quel3ExecutionManager._resolve_payload(
+        payload=payload,
+        resolver=cast(Any, resolver),
+    )
+
+    assert set(resolved.fixed_timelines.keys()) == {"alias-shared"}
+    timeline = resolved.fixed_timelines["alias-shared"]
+    assert [window.name for window in timeline.capture_windows] == [
+        "alias-shared:0",
+        "alias-shared:1",
+    ]
+
+
+def test_resolve_payload_rejects_ambiguous_port_binding() -> None:
+    """Given ambiguous port binding, resolving payload fails fast."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={"RQ00": payload.fixed_timelines["alias-rq00"]},
+        instrument_bindings={"RQ00": "port:unit-a-0"},
+        capture_port_bindings={"RQ00": "unit-a-0"},
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-a": _FakeInstrumentInfo(
+                port_id="unit-a:p0trx",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            ),
+            "alias-b": _FakeInstrumentInfo(
+                port_id="unit-a:p0trx",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            ),
+        }
+    )
+
+    with pytest.raises(ValueError, match="Ambiguous instrument aliases"):
+        Quel3ExecutionManager._resolve_payload(
+            payload=payload,
+            resolver=cast(Any, resolver),
         )

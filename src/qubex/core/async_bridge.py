@@ -14,6 +14,10 @@ T = TypeVar("T")
 DEFAULT_TIMEOUT_SECONDS: Final[float] = 300.0
 DEFAULT_STARTUP_TIMEOUT_SECONDS: Final[float] = 5.0
 THREAD_JOIN_TIMEOUT_SECONDS: Final[float] = 1.0
+DEFAULT_SHARED_THREAD_PREFIX: Final[str] = "qx-async-bridge"
+
+_SHARED_BRIDGE_LOCK = threading.Lock()
+_SHARED_BRIDGES: dict[str, AsyncBridge] = {}
 
 
 async def _invoke_factory(factory: Callable[[], Awaitable[T]]) -> T:
@@ -281,3 +285,75 @@ class AsyncBridge:
     def __exit__(self, *_: object) -> None:
         """Close bridge when leaving context manager scope."""
         self.close()
+
+
+def get_shared_async_bridge(
+    *,
+    key: str,
+    default_timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    startup_timeout: float = DEFAULT_STARTUP_TIMEOUT_SECONDS,
+    thread_name: str | None = None,
+) -> AsyncBridge:
+    """
+    Return one process-wide shared async bridge for the given key.
+
+    Parameters
+    ----------
+    key : str
+        Stable key used to identify one shared bridge instance.
+    default_timeout : float, optional
+        Default timeout in seconds for bridge calls.
+    startup_timeout : float, optional
+        Startup timeout in seconds for newly created bridge loops.
+    thread_name : str | None, optional
+        Dedicated bridge thread name. Defaults to
+        ``f"{DEFAULT_SHARED_THREAD_PREFIX}-{key}"``.
+
+    Examples
+    --------
+    >>> from qubex.core.async_bridge import (
+    ...     close_shared_async_bridge,
+    ...     get_shared_async_bridge,
+    ... )
+    >>> async def _sample() -> int:
+    ...     return 1
+    >>> bridge = get_shared_async_bridge(key="measurement")
+    >>> result = bridge.run(lambda: _sample())
+    >>> result
+    1
+    >>> close_shared_async_bridge(key="measurement")
+    """
+    with _SHARED_BRIDGE_LOCK:
+        bridge = _SHARED_BRIDGES.get(key)
+        if bridge is None or bridge.closed:
+            resolved_thread_name = (
+                f"{DEFAULT_SHARED_THREAD_PREFIX}-{key}"
+                if thread_name is None
+                else thread_name
+            )
+            bridge = AsyncBridge(
+                default_timeout=default_timeout,
+                startup_timeout=startup_timeout,
+                thread_name=resolved_thread_name,
+            )
+            _SHARED_BRIDGES[key] = bridge
+        return bridge
+
+
+def close_shared_async_bridge(*, key: str) -> None:
+    """
+    Close one shared async bridge identified by key when it exists.
+
+    Examples
+    --------
+    >>> from qubex.core.async_bridge import (
+    ...     close_shared_async_bridge,
+    ...     get_shared_async_bridge,
+    ... )
+    >>> _ = get_shared_async_bridge(key="temporary")
+    >>> close_shared_async_bridge(key="temporary")
+    """
+    with _SHARED_BRIDGE_LOCK:
+        bridge = _SHARED_BRIDGES.pop(key, None)
+    if bridge is not None:
+        bridge.close()

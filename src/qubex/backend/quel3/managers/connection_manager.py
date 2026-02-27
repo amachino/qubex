@@ -2,95 +2,26 @@
 
 from __future__ import annotations
 
-import asyncio
-import importlib
-import sys
-import threading
-from collections.abc import Coroutine
-from pathlib import Path
-from types import ModuleType, TracebackType
-from typing import Protocol, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
+
+from qubex.backend.quel3.infra.quelware_imports import (
+    import_module_with_workspace_fallback,
+)
+from qubex.backend.quel3.interfaces import QuelwareClientFactory
+from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
 
 
-class _QuelwareClient(Protocol):
-    """Minimal quelware client protocol for connectivity checks."""
-
-    async def list_resource_infos(self) -> object:
-        """List available quelware resources."""
-        ...
-
-
-class _QuelwareClientContextManager(Protocol):
-    """Async context manager protocol for quelware clients."""
-
-    async def __aenter__(self) -> _QuelwareClient:
-        """Enter the async context and return a client."""
-        ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> bool | None:
-        """Exit the async context."""
-        ...
-
-
-class _QuelwareClientFactory(Protocol):
-    """Factory protocol for creating quelware client contexts."""
-
-    def __call__(self, endpoint: str, port: int) -> _QuelwareClientContextManager:
-        """Create one quelware client context manager."""
-        ...
-
-
-def _run_coroutine(coroutine: Coroutine[object, object, T]) -> T:
-    """Run an async workflow from a synchronous manager entrypoint."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coroutine)
-
-    result_holder: dict[str, T] = {}
-    error_holder: dict[str, BaseException] = {}
-
-    def _runner() -> None:
-        try:
-            result_holder["value"] = asyncio.run(coroutine)
-        except BaseException as exc:
-            error_holder["error"] = exc
-
-    thread = threading.Thread(target=_runner, daemon=True)
-    thread.start()
-    thread.join()
-    if "error" in error_holder:
-        raise error_holder["error"]
-    return result_holder["value"]
-
-
-def _append_local_quelware_paths() -> None:
-    """Append local quelware source paths when present in the workspace."""
-    root = Path(__file__).resolve().parents[5]
-    candidates = (
-        root / "packages" / "quelware-client" / "quelware-client" / "src",
-        root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
-    )
-    for path in candidates:
-        path_str = str(path)
-        if path.exists() and path_str not in sys.path:
-            sys.path.insert(0, path_str)
-
-
-def _import_module_with_workspace_fallback(module_name: str) -> ModuleType:
-    """Import one module, retrying after local quelware path injection."""
-    try:
-        return importlib.import_module(module_name)
-    except (ModuleNotFoundError, SyntaxError):
-        _append_local_quelware_paths()
-        return importlib.import_module(module_name)
+def _run_async(
+    factory: Callable[[], Awaitable[T]],
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> T:
+    """Run one awaitable factory from synchronous APIs."""
+    bridge = get_shared_async_bridge(key="quel3-connection")
+    return bridge.run(factory, timeout=timeout)
 
 
 class Quel3ConnectionManager:
@@ -136,7 +67,7 @@ class Quel3ConnectionManager:
         del box_names, parallel
         if self.is_connected:
             return
-        _run_coroutine(self._probe_quelware_connection())
+        _run_async(self._probe_quelware_connection)
         self._is_connected = True
 
     def disconnect(self) -> None:
@@ -159,7 +90,7 @@ class Quel3ConnectionManager:
             await client.list_resource_infos()
 
     @staticmethod
-    def load_quelware_client_factory() -> _QuelwareClientFactory:
+    def load_quelware_client_factory() -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        client_module = _import_module_with_workspace_fallback("quelware_client.client")
+        client_module = import_module_with_workspace_fallback("quelware_client.client")
         return client_module.create_quelware_client

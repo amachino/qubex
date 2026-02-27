@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
-
-from qubex.typing import MeasurementMode
 
 
 @dataclass
 class Quel3BackendExecutionResult:
     """Backend-level measurement result returned by QuEL-3 execution."""
 
-    mode: MeasurementMode
+    status: dict[str, Any]
     data: dict[str, list[np.ndarray]]
-    sampling_period_ns: float | None = None
+    config: dict[str, Any]

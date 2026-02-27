@@ -3,48 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, TypeVar
+from typing import TypeVar
 
-import numpy.typing as npt
+from qubex.backend.quel3.interfaces import SequencerProtocol
+from qubex.backend.quel3.models import Quel3ExecutionPayload
 
-from qubex.backend.quel3.quel3_execution_payload import Quel3ExecutionPayload
-
-
-class _SequencerProtocol(Protocol):
-    """Minimal protocol required by the sequencer builder."""
-
-    def register_waveform(
-        self,
-        name: str,
-        waveform: npt.ArrayLike,
-        sampling_period_ns: float | None = None,
-    ) -> None:
-        """Register one waveform in the sequencer library."""
-        ...
-
-    def add_event(
-        self,
-        instrument_alias: str,
-        waveform_name: str,
-        start_offset_ns: float,
-        gain: float = 1.0,
-        phase_offset_deg: float = 0.0,
-    ) -> None:
-        """Append one waveform event to the timeline."""
-        ...
-
-    def add_capture_window(
-        self,
-        instrument_alias: str,
-        window_name: str,
-        start_offset_ns: float,
-        length_ns: float,
-    ) -> None:
-        """Append one capture window to the timeline."""
-        ...
-
-
-T = TypeVar("T", bound=_SequencerProtocol)
+T = TypeVar("T", bound=SequencerProtocol)
 
 
 class Quel3SequencerBuilder:

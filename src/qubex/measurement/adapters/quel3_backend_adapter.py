@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from collections.abc import Mapping
 
 import numpy as np
@@ -14,6 +15,7 @@ from qubex.backend import (
 from qubex.backend.quel3 import (
     Quel3BackendController,
     Quel3BackendExecutionResult,
+    Quel3CaptureMode,
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
@@ -44,7 +46,8 @@ class Quel3MeasurementBackendAdapter:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
         self._instrument_alias_map = dict(instrument_alias_map or {})
-        self._output_target_labels_by_alias: dict[str, str] = {}
+        self._output_target_labels_by_target: dict[str, str] = {}
+        self._capture_targets_by_alias: dict[str, list[str]] = {}
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel3(
                 sampling_period_ns=backend_controller.sampling_period
@@ -100,20 +103,20 @@ class Quel3MeasurementBackendAdapter:
         waveform_name_by_shape_key: dict[str, str] = {}
         waveform_index = 0
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
-        output_target_labels_by_alias: dict[str, str] = {}
+        output_target_labels_by_target: dict[str, str] = {}
+        instrument_bindings: dict[str, str] = {}
+        capture_port_bindings: dict[str, str] = {}
         target_registry = self._experiment_system.target_registry
         alias_map = self._instrument_alias_map
 
         for target in pulse_schedule.labels:
-            alias = str(alias_map.get(target, "")).strip()
-            if len(alias) == 0:
-                raise ValueError(
-                    f"Instrument alias is not configured for target `{target}`."
-                )
-            if alias in fixed_timelines:
-                raise ValueError(
-                    f"Multiple targets mapped to one instrument alias are not supported: `{alias}`."
-                )
+            target_obj = self._experiment_system.get_target(target)
+            target_port_id = str(target_obj.channel.port.id)
+            configured_alias = str(alias_map.get(target, "")).strip()
+            if len(configured_alias) > 0:
+                instrument_bindings[target] = f"alias:{configured_alias}"
+            else:
+                instrument_bindings[target] = f"port:{target_port_id}"
 
             sequence = pulse_schedule.get_sequence(target, copy=False)
             events, waveform_index = self._create_waveform_events(
@@ -127,35 +130,48 @@ class Quel3MeasurementBackendAdapter:
             )
             capture_windows = tuple(
                 Quel3CaptureWindow(
-                    name=f"{alias}:{index}",
+                    name=f"{target}:{index}",
                     start_offset_ns=capture.start_time,
                     length_ns=capture.duration,
                 )
                 for index, capture in enumerate(captures)
             )
-            fixed_timelines[alias] = Quel3FixedTimeline(
+            fixed_timelines[target] = Quel3FixedTimeline(
                 events=events,
                 capture_windows=capture_windows,
                 length_ns=pulse_schedule.duration,
             )
+            if len(captures) > 0:
+                try:
+                    capture_port_bindings[target] = str(
+                        self._experiment_system.get_read_in_target(
+                            target
+                        ).channel.port.id
+                    )
+                except (KeyError, ValueError):
+                    capture_port_bindings[target] = target_port_id
             try:
-                output_target_labels_by_alias[alias] = str(
+                output_target_labels_by_target[target] = str(
                     self._experiment_system.resolve_qubit_label(target)
                 )
             except ValueError:
-                output_target_labels_by_alias[alias] = str(
+                output_target_labels_by_target[target] = str(
                     target_registry.measurement_output_label(target)
                 )
 
-        self._output_target_labels_by_alias = output_target_labels_by_alias
+        self._output_target_labels_by_target = output_target_labels_by_target
         interval_ns = math.ceil(pulse_schedule.duration + config.shot_interval)
+        capture_mode = self._resolve_capture_mode(config)
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,
             fixed_timelines=fixed_timelines,
             interval_ns=interval_ns,
             repeats=config.n_shots,
-            mode="avg" if config.shot_averaging else "single",
+            capture_mode=capture_mode,
+            instrument_bindings=instrument_bindings,
+            capture_port_bindings=capture_port_bindings,
         )
+        self._capture_targets_by_alias = self._build_capture_targets_by_alias(payload)
         return BackendExecutionRequest(payload=payload)
 
     def build_measurement_result(
@@ -172,18 +188,90 @@ class Quel3MeasurementBackendAdapter:
             raise TypeError("QuEL-3 backend must return `Quel3BackendExecutionResult`.")
         converted_data: dict[str, list[np.ndarray]] = {}
         for alias, values in backend_result.data.items():
-            output_target = self._output_target_labels_by_alias.get(alias, alias)
-            converted_data.setdefault(output_target, []).extend(values)
+            capture_targets = self._capture_targets_by_alias.get(alias)
+            if capture_targets is None:
+                output_target = self._output_target_labels_by_target.get(alias, alias)
+                converted_data.setdefault(output_target, []).extend(values)
+                continue
+            if len(capture_targets) != len(values):
+                raise ValueError(
+                    f"Capture target count mismatch for alias `{alias}`: "
+                    f"targets={len(capture_targets)} values={len(values)}."
+                )
+            for capture_target, capture_value in zip(
+                capture_targets, values, strict=True
+            ):
+                output_target = self._output_target_labels_by_target.get(
+                    capture_target,
+                    capture_target,
+                )
+                converted_data.setdefault(output_target, []).append(capture_value)
+        backend_sampling_period = backend_result.config.get("sampling_period_ns")
+        if backend_sampling_period is None:
+            resolved_sampling_period = sampling_period_ns
+        elif isinstance(backend_sampling_period, (int, float)):
+            resolved_sampling_period = float(backend_sampling_period)
+        else:
+            raise TypeError(
+                "QuEL-3 backend result config `sampling_period_ns` must be numeric."
+            )
         return MeasurementResult(
             data=converted_data,
             device_config={},
             measurement_config=measurement_config,
-            sampling_period_ns=(
-                backend_result.sampling_period_ns
-                if backend_result.sampling_period_ns is not None
-                else sampling_period_ns
-            ),
+            sampling_period_ns=resolved_sampling_period,
         )
+
+    @staticmethod
+    def _resolve_capture_mode(config: MeasurementConfig) -> Quel3CaptureMode:
+        """Resolve quelware-compatible capture mode from measurement config."""
+        if config.shot_averaging:
+            if config.time_integration:
+                return Quel3CaptureMode.AVERAGED_VALUE
+            return Quel3CaptureMode.AVERAGED_WAVEFORM
+        if config.time_integration:
+            return Quel3CaptureMode.VALUES_PER_ITER
+        return Quel3CaptureMode.RAW_WAVEFORMS
+
+    @staticmethod
+    def _build_capture_targets_by_alias(
+        payload: Quel3ExecutionPayload,
+    ) -> dict[str, list[str]]:
+        """Build alias-to-target capture mapping from the request payload."""
+        alias_to_entries: dict[str, list[tuple[float, float, int, str]]] = defaultdict(
+            list
+        )
+        sequence_index = 0
+        for target, timeline in payload.fixed_timelines.items():
+            binding = payload.instrument_bindings.get(target, f"alias:{target}")
+            if binding.startswith("alias:"):
+                alias = binding.removeprefix("alias:").strip() or target
+            else:
+                # Port-based bindings are resolved in backend runtime, so keep
+                # per-target mapping keys in adapter-side bookkeeping.
+                alias = target
+            for _event in timeline.events:
+                sequence_index += 1
+            for window in timeline.capture_windows:
+                alias_to_entries[alias].append(
+                    (
+                        window.start_offset_ns,
+                        window.length_ns,
+                        sequence_index,
+                        target,
+                    )
+                )
+                sequence_index += 1
+        return {
+            alias: [
+                target
+                for _start, _length, _order, target in sorted(
+                    entries,
+                    key=lambda item: (item[0], item[1], item[2]),
+                )
+            ]
+            for alias, entries in alias_to_entries.items()
+        }
 
     @classmethod
     def _create_waveform_events(
