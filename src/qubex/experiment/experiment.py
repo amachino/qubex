@@ -1340,8 +1340,8 @@ class Experiment:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
     ) -> MeasurementResult:
         """
         Run one async measurement from a pulse schedule.
@@ -1376,9 +1376,9 @@ class Experiment:
             Ramp waveform type.
         readout_drag_coeff : float | None, optional
             DRAG coefficient for readout pulse shaping.
-        readout_amplification : bool, optional
+        readout_amplification : bool | None, optional
             Whether to insert pump/readout amplification pulses.
-        final_measurement : bool, optional
+        final_measurement : bool | None, optional
             Whether to append final readout pulses at schedule tail.
 
         Returns
@@ -1427,8 +1427,8 @@ class Experiment:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
     ) -> SweepMeasurementResult:
         """
         Run an async 1D sweep measurement over explicit sweep values.
@@ -1465,9 +1465,9 @@ class Experiment:
             Ramp waveform type.
         readout_drag_coeff : float | None, optional
             DRAG coefficient for readout pulse shaping.
-        readout_amplification : bool, optional
+        readout_amplification : bool | None, optional
             Whether to insert pump/readout amplification pulses.
-        final_measurement : bool, optional
+        final_measurement : bool | None, optional
             Whether to append final readout pulses at schedule tail.
 
         Returns
@@ -1523,8 +1523,8 @@ class Experiment:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
     ) -> NDSweepMeasurementResult:
         """
         Run an async N-dimensional Cartesian sweep measurement.
@@ -1563,9 +1563,9 @@ class Experiment:
             Ramp waveform type.
         readout_drag_coeff : float | None, optional
             DRAG coefficient for readout pulse shaping.
-        readout_amplification : bool, optional
+        readout_amplification : bool | None, optional
             Whether to insert pump/readout amplification pulses.
-        final_measurement : bool, optional
+        final_measurement : bool | None, optional
             Whether to append final readout pulses at schedule tail.
 
         Returns

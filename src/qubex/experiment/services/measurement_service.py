@@ -205,8 +205,8 @@ class MeasurementService:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
     ) -> MeasurementResult:
         """Run one async measurement by delegating to the measurement layer."""
         measurement_schedule = self.ctx.measurement.build_measurement_schedule(
@@ -220,7 +220,7 @@ class MeasurementService:
             readout_ramp_type=readout_ramp_type,
             readout_drag_coeff=readout_drag_coeff,
             readout_amplification=readout_amplification,
-            final_measurement=final_measurement,
+            final_measurement=True,
         )
         config = self.ctx.measurement.create_measurement_config(
             n_shots=n_shots,
@@ -252,8 +252,8 @@ class MeasurementService:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
     ) -> SweepMeasurementResult:
         """Run async sweep measurement by delegating to the measurement layer."""
         config = self.ctx.measurement.create_measurement_config(
@@ -276,7 +276,7 @@ class MeasurementService:
                 readout_ramp_type=readout_ramp_type,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_amplification=readout_amplification,
-                final_measurement=final_measurement,
+                final_measurement=True,
             )
 
         return await self.ctx.measurement.run_sweep_measurement(
@@ -304,8 +304,8 @@ class MeasurementService:
         readout_ramp_time: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        readout_amplification: bool = False,
-        final_measurement: bool = False,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
     ) -> NDSweepMeasurementResult:
         """Run async N-dimensional sweep measurement by delegating to the measurement layer."""
         config = self.ctx.measurement.create_measurement_config(
@@ -328,7 +328,7 @@ class MeasurementService:
                 readout_ramp_type=readout_ramp_type,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_amplification=readout_amplification,
-                final_measurement=final_measurement,
+                final_measurement=True,
             )
 
         return await self.ctx.measurement.run_ndsweep_measurement(

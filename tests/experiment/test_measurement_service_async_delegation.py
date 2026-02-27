@@ -104,7 +104,7 @@ def test_build_measurement_schedule_delegates_none_values() -> None:
 
 
 def test_run_measurement_builds_schedule_and_delegates() -> None:
-    """Given readout overrides, when running async measurement, then service builds schedule and delegates."""
+    """Given explicit final_measurement false, when running async measurement, then service always enables final measurement."""
     service, calls = _make_service()
     pulse_schedule = cast(Any, object())
 
@@ -112,7 +112,7 @@ def test_run_measurement_builds_schedule_and_delegates() -> None:
         service.run_measurement(
             pulse_schedule,
             frequencies={"Q00": 5.1},
-            final_measurement=True,
+            final_measurement=False,
             n_shots=256,
         )
     )
@@ -136,7 +136,7 @@ def test_run_measurement_builds_schedule_and_delegates() -> None:
 
 
 def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
-    """Given sweep options, when running async sweep, then wrapped pulse schedule is built per point."""
+    """Given explicit final_measurement false, when running async sweep, then service always enables final measurement."""
     service, calls = _make_service()
     sweep_values: list[SweepValue] = [1, 2]
 
@@ -148,6 +148,7 @@ def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
             _schedule,
             sweep_values=sweep_values,
             readout_amplification=True,
+            final_measurement=False,
             shot_averaging=False,
         )
     )
@@ -168,10 +169,11 @@ def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     build_kwargs = calls["build_schedule"][0]
     assert build_kwargs["pulse_schedule"] == "pulse-1"
     assert build_kwargs["readout_amplification"] is True
+    assert build_kwargs["final_measurement"] is True
 
 
 def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
-    """Given ndsweep inputs, when running async ndsweep, then wrapped pulse schedule is built per point."""
+    """Given explicit final_measurement false, when running async ndsweep, then service always enables final measurement."""
     service, calls = _make_service()
     sweep_points: dict[str, Sequence[SweepValue]] = {"x": [1, 2], "y": [10]}
 
@@ -183,7 +185,7 @@ def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None
             _schedule,
             sweep_points=sweep_points,
             sweep_axes=("x", "y"),
-            final_measurement=True,
+            final_measurement=False,
             state_classification=True,
         )
     )
