@@ -126,6 +126,46 @@ def test_to_measure_result_raises_for_invalid_index() -> None:
         MeasurementResultConverter.to_measure_result(result, index=10)
 
 
+def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
+    """MeasurementResult repr should summarize targets, captures, and config flags."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=False,
+        state_classification=True,
+    )
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([[1.0 + 0.0j], [2.0 + 0.0j]]),
+                    measurement_config=config,
+                    sampling_period=0.4,
+                )
+            ],
+            "Q01": [
+                _make_capture(
+                    target="Q01",
+                    raw=np.array([[3.0 + 0.0j], [4.0 + 0.0j]]),
+                    measurement_config=config,
+                    sampling_period=0.4,
+                )
+            ],
+        },
+        measurement_config=config,
+    )
+
+    text = repr(result)
+
+    assert "targets=[Q00, Q01]" in text
+    assert "captures=2" in text
+    assert "shot_averaging=False" in text
+    assert "time_integration=False" in text
+    assert "state_classification=True" in text
+
+
 def test_to_measure_result_propagates_sampling_period() -> None:
     """Given canonical capture data with sampling period, conversion keeps per-capture period."""
     config = _make_config(mode="avg", shots=2)
@@ -392,8 +432,7 @@ def test_capture_data_repr_summarizes_raw_array() -> None:
 
     text = repr(capture)
 
-    assert "raw=array(shape=(1024,), [0." in text
-    assert "... (1024 elements)" in text
+    assert "raw=array([0., ...], shape=(1024,))" in text
 
 
 def test_capture_data_classifier_uses_shared_cache(
@@ -671,7 +710,7 @@ def test_plot_calls_waveform_plot_for_avg_mode(monkeypatch) -> None:
     assert isinstance(waveform, np.ndarray)
     assert np.array_equal(waveform, np.array([1.0 + 0.0j, 2.0 + 0.0j]))
     assert called["sampling_period"] == 0.8
-    assert called["title"] == "Q00 : data[0]"
+    assert called["title"] == "Readout waveform : Q00"
     assert called["xlabel"] == "Capture time (ns)"
     assert called["ylabel"] == "Signal (arb. units)"
     assert called["save_image"] is False
@@ -724,7 +763,7 @@ def test_measurement_result_plot_return_figure_warns_deprecated(
     sentinel = object()
 
     def _make_waveform_figure(**kwargs: object) -> object:
-        assert kwargs["title"] == "Q00 : data[0]"
+        assert kwargs["title"] == "Readout waveform : Q00"
         return sentinel
 
     monkeypatch.setattr(
@@ -736,6 +775,48 @@ def test_measurement_result_plot_return_figure_warns_deprecated(
         figures = result.plot(return_figure=True)
 
     assert figures == [sentinel]
+
+
+def test_capture_data_figure_uses_time_average_scatter_by_default(monkeypatch) -> None:
+    """Given non-averaged waveform shots, capture figure should use time-average scatter by default."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=False,
+        state_classification=False,
+    )
+    capture = _make_capture(
+        target="Q00",
+        raw=np.array(
+            [
+                [1.0 + 0.0j, 3.0 + 0.0j, 5.0 + 0.0j],
+                [3.0 + 0.0j, 5.0 + 0.0j, 7.0 + 0.0j],
+            ]
+        ),
+        measurement_config=config,
+        sampling_period=2.0,
+    )
+    called: dict[str, object] = {}
+
+    def _make_iq_scatter_figure(**kwargs: object) -> object:
+        called.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.capture_data.viz.make_iq_scatter_figure",
+        _make_iq_scatter_figure,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.capture_data.viz.make_waveform_figure",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    capture.figure()
+
+    plotted = called["data"]
+    assert isinstance(plotted, dict)
+    assert np.array_equal(plotted["Q00"], np.array([3.0 + 0.0j, 5.0 + 0.0j]))
 
 
 def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
@@ -795,8 +876,8 @@ def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
     assert np.array_equal(plotted["Q00"], np.array([4.0 + 6.0j, 12.0 + 14.0j]))
 
 
-def test_plot_calls_waveform_for_single_mode_loopback_shape(monkeypatch) -> None:
-    """Given SINGLE one-shot waveform-like data, plot should call waveform plotting."""
+def test_plot_calls_scatter_for_single_mode_loopback_shape(monkeypatch) -> None:
+    """Given SINGLE one-shot waveform-like data, plot should call IQ scatter by default."""
     config = _make_config(mode="single", shots=1)
     result = MeasurementResult(
         data={
@@ -813,47 +894,38 @@ def test_plot_calls_waveform_for_single_mode_loopback_shape(monkeypatch) -> None
     )
     called: dict[str, object] = {}
 
-    def _plot_waveform(
+    def _scatter_iq_data(
         *,
-        data: np.ndarray,
-        sampling_period: float,
+        data: dict[str, np.ndarray],
         title: str,
-        xlabel: str,
-        ylabel: str,
         save_image: bool,
     ) -> None:
         called["data"] = data
-        called["sampling_period"] = sampling_period
         called["title"] = title
-        called["xlabel"] = xlabel
-        called["ylabel"] = ylabel
         called["save_image"] = save_image
 
     monkeypatch.setattr(
-        "qubex.measurement.models.measurement_result.viz.plot_waveform",
-        _plot_waveform,
+        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        _scatter_iq_data,
     )
     monkeypatch.setattr(
-        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        "qubex.measurement.models.measurement_result.viz.plot_waveform",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
     )
 
     result.plot()
 
-    waveform = called["data"]
-    assert isinstance(waveform, np.ndarray)
-    assert np.array_equal(waveform, np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]))
-    assert called["sampling_period"] == 2.0
-    assert called["title"] == "Q00 : data[0]"
-    assert called["xlabel"] == "Capture time (ns)"
-    assert called["ylabel"] == "Signal (arb. units)"
+    plotted = called["data"]
+    assert isinstance(plotted, dict)
+    assert np.array_equal(plotted["Q00"], np.array([2.0 + 0.0j]))
+    assert called["title"] == "Readout IQ data : Q00"
     assert called["save_image"] is False
 
 
-def test_plot_calls_waveform_with_software_shot_average_when_not_integrated(
+def test_plot_uses_time_average_scatter_when_not_integrated_and_not_averaged(
     monkeypatch,
 ) -> None:
-    """Given non-averaged non-integrated data, plot should average shots in software then plot waveform."""
+    """Given non-averaged non-integrated data, plot should use time-average scatter by default."""
     config = MeasurementConfig(
         n_shots=2,
         shot_interval=100.0,
@@ -881,40 +953,31 @@ def test_plot_calls_waveform_with_software_shot_average_when_not_integrated(
     )
     called: dict[str, object] = {}
 
-    def _plot_waveform(
+    def _scatter_iq_data(
         *,
-        data: np.ndarray,
-        sampling_period: float,
+        data: dict[str, np.ndarray],
         title: str,
-        xlabel: str,
-        ylabel: str,
         save_image: bool,
     ) -> None:
         called["data"] = data
-        called["sampling_period"] = sampling_period
         called["title"] = title
-        called["xlabel"] = xlabel
-        called["ylabel"] = ylabel
         called["save_image"] = save_image
 
     monkeypatch.setattr(
-        "qubex.measurement.models.measurement_result.viz.plot_waveform",
-        _plot_waveform,
+        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        _scatter_iq_data,
     )
     monkeypatch.setattr(
-        "qubex.measurement.models.measurement_result.viz.scatter_iq_data",
+        "qubex.measurement.models.measurement_result.viz.plot_waveform",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
     )
 
     result.plot()
 
-    waveform = called["data"]
-    assert isinstance(waveform, np.ndarray)
-    assert np.array_equal(waveform, np.array([2.0 + 0.0j, 4.0 + 0.0j, 6.0 + 0.0j]))
-    assert called["sampling_period"] == 2.0
-    assert called["title"] == "Q00 : data[0]"
-    assert called["xlabel"] == "Capture time (ns)"
-    assert called["ylabel"] == "Signal (arb. units)"
+    plotted = called["data"]
+    assert isinstance(plotted, dict)
+    assert np.array_equal(plotted["Q00"], np.array([3.0 + 0.0j, 5.0 + 0.0j]))
+    assert called["title"] == "Readout IQ data : Q00"
     assert called["save_image"] is False
 
 

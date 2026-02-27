@@ -16,30 +16,35 @@ from qubex.core import DataModel
 from qubex.measurement.classifiers.state_classifier import StateClassifier
 
 from .capture_data import CaptureData
-from .measure_result import MeasureMode
 from .measurement_config import MeasurementConfig
 
 
 class MeasurementResult(DataModel):
     """Canonical serializable result of a measurement run."""
 
-    measurement_config: MeasurementConfig
     data: dict[str, list[CaptureData]]
+    measurement_config: MeasurementConfig
     device_config: dict[str, Any] | None = None
 
-    @property
-    def mode(self) -> MeasureMode:
-        """Return legacy-like mode derived from measurement configuration."""
-        return (
-            MeasureMode.AVG
-            if self.measurement_config.shot_averaging
-            else MeasureMode.SINGLE
-        )
-
     def __repr__(self) -> str:
-        """Return a concise representation of the result."""
-        targets = ", ".join(self.data.keys())
-        return f"<MeasurementResult mode={self.mode.value}, targets=[{targets}]>"
+        """Return a concise representation with key configuration details."""
+        target_labels = list(self.data.keys())
+        n_targets = len(target_labels)
+        n_captures = sum(len(captures) for captures in self.data.values())
+        if n_targets <= 4:
+            targets_repr = "[" + ", ".join(target_labels) + "]"
+        else:
+            head = ", ".join(target_labels[:3])
+            targets_repr = f"[{head}, ... (+{n_targets - 3})]"
+        config = self.measurement_config
+        return (
+            "<MeasurementResult "
+            f"targets={targets_repr} "
+            f"captures={n_captures} "
+            f"shot_averaging={config.shot_averaging} "
+            f"time_integration={config.time_integration} "
+            f"state_classification={config.state_classification}>"
+        )
 
     def get_basis_indices(
         self,
@@ -269,9 +274,13 @@ class MeasurementResult(DataModel):
                 figure_index = 0
                 for captures in self.data.values():
                     for capture in captures:
+                        waveform = np.asarray(capture.raw)
+                        use_scatter = capture.config.time_integration or (
+                            not capture.config.shot_averaging and waveform.ndim >= 2
+                        )
                         figure_name = (
                             "plot_state_distribution"
-                            if capture.config.time_integration
+                            if use_scatter
                             else "plot_waveform"
                         )
                         viz.save_figure(figures[figure_index], name=figure_name)
@@ -296,12 +305,19 @@ class MeasurementResult(DataModel):
 
                 waveform = np.asarray(capture.raw)
                 if not config.shot_averaging and waveform.ndim >= 2:
-                    waveform = np.mean(waveform, axis=0)
+                    shot_iq = np.mean(waveform, axis=1)
+                    viz.scatter_iq_data(
+                        data={target: np.atleast_1d(shot_iq)},
+                        title=f"Readout IQ data : {target}",
+                        save_image=save_image,
+                    )
+                    continue
                 waveform = np.squeeze(waveform)
+                waveform_title = f"Readout waveform : {target}"
                 viz.plot_waveform(
                     data=waveform,
                     sampling_period=capture.sampling_period,
-                    title=title,
+                    title=waveform_title,
                     xlabel="Capture time (ns)",
                     ylabel="Signal (arb. units)",
                     save_image=save_image,
@@ -330,13 +346,21 @@ class MeasurementResult(DataModel):
 
                 waveform = np.asarray(capture.raw)
                 if not config.shot_averaging and waveform.ndim >= 2:
-                    waveform = np.mean(waveform, axis=0)
+                    shot_iq = np.mean(waveform, axis=1)
+                    figures.append(
+                        viz.make_iq_scatter_figure(
+                            data={target: np.atleast_1d(shot_iq)},
+                            title=f"Readout IQ data : {target}",
+                        )
+                    )
+                    continue
                 waveform = np.squeeze(waveform)
+                waveform_title = f"Readout waveform : {target}"
                 figures.append(
                     viz.make_waveform_figure(
                         data=waveform,
                         sampling_period=capture.sampling_period,
-                        title=title,
+                        title=waveform_title,
                         xlabel="Capture time (ns)",
                         ylabel="Signal (arb. units)",
                     )
