@@ -744,7 +744,7 @@ class Measurement:
         targets: Collection[str],
         *,
         duration: float,
-    ) -> MeasureResult:
+    ) -> MeasurementResult:
         """
         Measure readout noise with no control waveform drive.
 
@@ -757,7 +757,7 @@ class Measurement:
 
         Returns
         -------
-        MeasureResult
+        MeasurementResult
             Noise measurement result.
 
         Examples

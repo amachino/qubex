@@ -1580,7 +1580,7 @@ class Experiment:
         *,
         duration: int | None = None,
         plot: bool | None = None,
-    ) -> MeasureResult:
+    ) -> MeasurementResult:
         """
         Check the noise level of the system.
 
@@ -1595,7 +1595,7 @@ class Experiment:
 
         Returns
         -------
-        MeasureResult
+        MeasurementResult
             Result of the experiment.
 
         Examples

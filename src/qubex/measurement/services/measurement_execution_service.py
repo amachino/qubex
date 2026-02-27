@@ -736,7 +736,7 @@ class MeasurementExecutionService:
         targets: Collection[str],
         *,
         duration: float,
-    ) -> MeasureResult:
+    ) -> MeasurementResult:
         """
         Measure readout noise.
 
@@ -749,17 +749,31 @@ class MeasurementExecutionService:
 
         Returns
         -------
-        MeasureResult
+        MeasurementResult
             Measurement results.
 
         """
-        return self.measure(
-            waveforms={target: np.zeros(0) for target in targets},
-            shot_averaging=True,
+        pulse_schedule = PulseSchedule.from_waveforms(
+            {target: np.zeros(0) for target in targets}
+        )
+        measurement_config = self.create_measurement_config(
             n_shots=1,
+            shot_averaging=True,
+            time_integration=False,
+            state_classification=False,
+        )
+        measurement_schedule = self.build_measurement_schedule(
+            pulse_schedule=pulse_schedule,
             readout_duration=duration,
             readout_amplitudes=dict.fromkeys(targets, 0),
-            time_integration=False,
+            readout_amplification=False,
+            final_measurement=True,
+        )
+        return _run_async(
+            lambda: self.run_measurement(
+                schedule=measurement_schedule,
+                config=measurement_config,
+            )
         )
 
     def measure(

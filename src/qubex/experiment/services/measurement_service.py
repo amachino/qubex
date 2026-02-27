@@ -312,7 +312,7 @@ class MeasurementService:
         *,
         duration: int | None = None,
         plot: bool | None = None,
-    ) -> MeasureResult:
+    ) -> MeasurementResult:
         """Measure noise for the specified targets."""
         if duration is None:
             duration = 10240
@@ -330,9 +330,8 @@ class MeasurementService:
             targets,
             duration=duration,
         )
-        for data in result.data.values():
-            if plot:
-                data.plot()
+        if plot:
+            result.plot()
         return result
 
     def execute(

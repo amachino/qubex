@@ -1236,8 +1236,8 @@ def test_measure_accepts_deprecated_alias_options() -> None:
     assert kwargs["enable_dsp_classification"] is None
 
 
-def test_measure_noise_disables_dsp_sum_by_default() -> None:
-    """Given noise measurement inputs, when measure_noise is called, then time integration is disabled by default."""
+def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
+    """Given noise measurement inputs, when measure_noise is called, then it builds and runs a noise schedule with explicit defaults."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1245,26 +1245,105 @@ def test_measure_noise_disables_dsp_sum_by_default() -> None:
         connect_devices=False,
     )
     called: dict[str, Any] = {}
-    expected = object()
+    measurement_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["RQ00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    measurement_config = _make_config(mode="avg", shots=1)
 
-    def fake_measure(self: MeasurementExecutionService, **kwargs: object) -> Any:
-        called["kwargs"] = kwargs
-        return expected
+    def fake_create_measurement_config(
+        self: MeasurementExecutionService,
+        *,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+    ) -> MeasurementConfig:
+        _ = self
+        called["config_kwargs"] = {
+            "n_shots": n_shots,
+            "shot_interval": shot_interval,
+            "shot_averaging": shot_averaging,
+            "time_integration": time_integration,
+            "state_classification": state_classification,
+        }
+        return measurement_config
 
-    measurement.execution_service.measure = MethodType(
-        fake_measure,
-        measurement.execution_service,
+    def fake_build_measurement_schedule(
+        self: MeasurementExecutionService,
+        *,
+        pulse_schedule: PulseSchedule,
+        **kwargs: object,
+    ) -> MeasurementSchedule:
+        _ = self
+        called["pulse_schedule"] = pulse_schedule
+        called["build_kwargs"] = kwargs
+        return measurement_schedule
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        _ = self
+        called["run_schedule"] = schedule
+        called["run_config"] = config
+        called["run_quel1_options"] = quel1_options
+        return MeasurementResult(
+            data={"Q00": [np.array([1.0 + 0.0j])]},
+            measurement_config=measurement_config,
+            sampling_period_ns=2.0,
+        )
+
+    execution_service = measurement.execution_service
+    execution_service.create_measurement_config = MethodType(
+        fake_create_measurement_config,
+        execution_service,
+    )
+    execution_service.build_measurement_schedule = MethodType(
+        fake_build_measurement_schedule,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement,
+        execution_service,
+    )
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 1}})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+        rawdata_dir=None,
     )
 
     result = measurement.measure_noise(["Q00"], duration=1024.0)
 
-    assert result is expected
-    kwargs = called["kwargs"]
-    assert kwargs["time_integration"] is False
-    assert kwargs["shot_averaging"] is True
-    assert kwargs["n_shots"] == 1
-    assert kwargs["readout_duration"] == 1024.0
-    assert kwargs["readout_amplitudes"] == {"Q00": 0}
+    assert np.array_equal(result.data["Q00"][0], np.array([1.0 + 0.0j]))
+    assert result.measurement_config is measurement_config
+    config_kwargs = cast(dict[str, Any], called["config_kwargs"])
+    assert config_kwargs["n_shots"] == 1
+    assert config_kwargs["shot_averaging"] is True
+    assert config_kwargs["time_integration"] is False
+    assert config_kwargs["state_classification"] is False
+    build_kwargs = cast(dict[str, Any], called["build_kwargs"])
+    assert build_kwargs["readout_duration"] == 1024.0
+    assert build_kwargs["readout_amplitudes"] == {"Q00": 0}
+    assert build_kwargs["readout_amplification"] is False
+    assert build_kwargs["final_measurement"] is True
+    assert called["run_schedule"] is measurement_schedule
+    assert called["run_config"] is measurement_config
+    assert called["run_quel1_options"] is None
 
 
 def test_execute_initializes_optional_flags_with_execute_defaults() -> None:

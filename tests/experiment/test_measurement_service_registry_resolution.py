@@ -11,6 +11,7 @@ import pytest
 from qxpulse import Blank, PulseSchedule
 
 from qubex.experiment.services.measurement_service import MeasurementService
+from qubex.measurement.models import MeasurementConfig, MeasurementResult
 
 
 class _DummyResult:
@@ -211,6 +212,34 @@ def test_check_noise_delegates_without_optional_noise_flags() -> None:
             "duration": 512,
         }
     ]
+
+
+def test_check_noise_uses_measurement_result_plot() -> None:
+    """Given plot enabled, when check_noise is called, then it uses result-level plotting."""
+    service, _ = _make_service()
+    plot_calls = {"count": 0}
+
+    class _NoiseResult(MeasurementResult):
+        def plot(self) -> None:
+            plot_calls["count"] += 1
+
+    expected = _NoiseResult(
+        data={"custom-target": [np.array([0.0 + 0.0j], dtype=np.complex128)]},
+        measurement_config=MeasurementConfig(
+            n_shots=1,
+            shot_interval=100.0,
+            shot_averaging=True,
+            time_integration=False,
+            state_classification=False,
+        ),
+        sampling_period_ns=2.0,
+    )
+    service.ctx.measurement.measure_noise = lambda *_args, **_kwargs: expected
+
+    result = service.check_noise(targets=["custom-target"], duration=512, plot=True)
+
+    assert result is expected
+    assert plot_calls["count"] == 1
 
 
 def test_measure_state_resolves_ef_labels_via_target_registry() -> None:
