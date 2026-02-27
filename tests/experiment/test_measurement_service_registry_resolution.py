@@ -11,7 +11,7 @@ import pytest
 from qxpulse import Blank, PulseSchedule
 
 from qubex.experiment.services.measurement_service import MeasurementService
-from qubex.measurement.models import MeasurementConfig, MeasurementResult
+from qubex.measurement.models import CaptureData, MeasurementConfig, MeasurementResult
 
 
 class _DummyResult:
@@ -275,16 +275,25 @@ def test_check_noise_uses_measurement_result_plot() -> None:
         def plot(self) -> None:
             plot_calls["count"] += 1
 
+    measurement_config = MeasurementConfig(
+        n_shots=1,
+        shot_interval=100.0,
+        shot_averaging=True,
+        time_integration=False,
+        state_classification=False,
+    )
     expected = _NoiseResult(
-        data={"custom-target": [np.array([0.0 + 0.0j], dtype=np.complex128)]},
-        measurement_config=MeasurementConfig(
-            n_shots=1,
-            shot_interval=100.0,
-            shot_averaging=True,
-            time_integration=False,
-            state_classification=False,
-        ),
-        sampling_period=2.0,
+        data={
+            "custom-target": [
+                CaptureData(
+                    target="custom-target",
+                    raw=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    config=measurement_config,
+                    sampling_period=2.0,
+                )
+            ]
+        },
+        measurement_config=measurement_config,
     )
     service.ctx.measurement.measure_noise = lambda *_args, **_kwargs: expected
 

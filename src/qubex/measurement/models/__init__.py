@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .capture_data import CaptureData
+from .classifier_ref import ClassifierRef
 from .measure_result import (
     MeasureData,
     MeasureMode,
@@ -23,6 +25,8 @@ from .sweep_measurement_result import (
 )
 
 __all__ = [
+    "CaptureData",
+    "ClassifierRef",
     "MeasureData",
     "MeasureMode",
     "MeasureResult",

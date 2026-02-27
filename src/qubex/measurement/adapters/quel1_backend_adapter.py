@@ -18,6 +18,7 @@ from qubex.backend.quel1 import (
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
+from qubex.measurement.models.capture_data import CaptureData
 from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
@@ -32,6 +33,13 @@ if TYPE_CHECKING:
         CapSampledSequenceProtocol,
         GenSampledSequenceProtocol,
     )
+
+
+def _as_read_only_array(data: object) -> np.ndarray:
+    """Return read-only NumPy array view for capture payloads."""
+    array = np.asarray(data).view()
+    array.setflags(write=False)
+    return array
 
 
 class Quel1MeasurementBackendAdapter:
@@ -305,7 +313,7 @@ class Quel1MeasurementBackendAdapter:
             else:
                 iq_data[target] = iqs
 
-        measure_data: dict[str, list[np.ndarray]] = {}
+        measure_data: dict[str, list[CaptureData]] = {}
         if not shot_averaging:
             for target, iqs in iq_data.items():
                 if target_registry is not None and hasattr(
@@ -317,12 +325,21 @@ class Quel1MeasurementBackendAdapter:
                     qubit = target[1:]
                 else:
                     qubit = target
-                values: list[np.ndarray] = []
+                values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
                         # skip the first extra capture
                         continue
-                    values.append(np.asarray(iq, dtype=np.complex128) * norm_factor)
+                    values.append(
+                        CaptureData(
+                            target=qubit,
+                            raw=_as_read_only_array(
+                                np.asarray(iq, dtype=np.complex128) * norm_factor
+                            ),
+                            config=measurement_config,
+                            sampling_period=sampling_period,
+                        )
+                    )
                 measure_data[qubit] = values
         else:
             for target, iqs in iq_data.items():
@@ -335,15 +352,22 @@ class Quel1MeasurementBackendAdapter:
                     qubit = target[1:]
                 else:
                     qubit = target
-                values = []
+                values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
                         # skip the first extra capture
                         continue
                     values.append(
-                        np.asarray(iq, dtype=np.complex128).squeeze()
-                        * norm_factor
-                        / measurement_config.n_shots
+                        CaptureData(
+                            target=qubit,
+                            raw=_as_read_only_array(
+                                np.asarray(iq, dtype=np.complex128).squeeze()
+                                * norm_factor
+                                / measurement_config.n_shots
+                            ),
+                            config=measurement_config,
+                            sampling_period=sampling_period,
+                        )
                     )
                 measure_data[qubit] = values
 
@@ -351,7 +375,6 @@ class Quel1MeasurementBackendAdapter:
             data=measure_data,
             device_config=device_config,
             measurement_config=measurement_config,
-            sampling_period=sampling_period,
         )
 
     def _resolve_resource_lookup_target(self, target: str) -> str:

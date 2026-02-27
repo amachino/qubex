@@ -17,6 +17,7 @@ from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import (
+    CaptureData,
     MeasurementConfig,
     MeasurementSchedule,
     NDSweepMeasurementResult,
@@ -64,6 +65,32 @@ def _make_multiple_result() -> MultipleMeasureResult:
         mode=MeasureMode.AVG,
         data={"Q00": [data0]},
         config={"shots": 1},
+    )
+
+
+def _make_measurement_result(
+    *,
+    data: dict[str, list[np.ndarray]],
+    measurement_config: MeasurementConfig,
+    sampling_period: float,
+    device_config: dict[str, object] | None = None,
+) -> MeasurementResult:
+    capture_data = {
+        target: [
+            CaptureData(
+                target=target,
+                raw=np.asarray(raw),
+                config=measurement_config,
+                sampling_period=sampling_period,
+            )
+            for raw in captures
+        ]
+        for target, captures in data.items()
+    }
+    return MeasurementResult(
+        data=capture_data,
+        measurement_config=measurement_config,
+        device_config=device_config,
     )
 
 
@@ -254,7 +281,7 @@ def test_capture_loopback_delegates_to_execution_service() -> None:
         connect_devices=False,
     )
     schedule = PulseSchedule(["Q00"])
-    loopback_result = MeasurementResult(
+    loopback_result = _make_measurement_result(
         data={"Q00": [np.array([1.0 + 0.0j])]},
         measurement_config=_make_config(mode="avg", shots=128),
         sampling_period=2.0,
@@ -424,7 +451,7 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         assert read_out_port.rfswitch == "block"
         assert monitor_in_port.rfswitch == "loop"
         assert monitor_out_port.rfswitch == "pass"
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
             sampling_period=2.0,
@@ -705,7 +732,7 @@ def test_capture_loopback_skips_ports_without_rfswitch() -> None:
         _ = (self, schedule, config, quel1_options)
         assert read_in_port.rfswitch == "open"
         assert read_out_port.rfswitch == "pass"
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
             sampling_period=2.0,
@@ -853,7 +880,7 @@ def test_capture_loopback_initializes_awg_and_capunits_when_supported() -> None:
     ) -> MeasurementResult:
         _ = (self, schedule, config, quel1_options)
         assert backend_controller.init_calls == [["B0"]]
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
             sampling_period=2.0,
@@ -1025,7 +1052,7 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
         call_count["run"] += 1
         if call_count["run"] < 3:
             raise E7awgCaptureDataError()
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
             sampling_period=2.0,
@@ -1147,7 +1174,7 @@ def test_capture_loopback_runs_without_dsp_demodulation() -> None:
         called["config"] = config
         _ = (self, schedule)
         called["quel1_options"] = quel1_options
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=_make_config(),
             sampling_period=2.0,
@@ -1292,7 +1319,7 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
         called["run_schedule"] = schedule
         called["run_config"] = config
         called["run_quel1_options"] = quel1_options
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([1.0 + 0.0j])]},
             measurement_config=measurement_config,
             sampling_period=2.0,
@@ -1540,7 +1567,7 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
                 "device_config": device_config,
                 "sampling_period": sampling_period,
             }
-            return MeasurementResult(
+            return _make_measurement_result(
                 data={"Q00": [np.array([1.0 + 0.0j])]},
                 measurement_config=_make_config(mode="avg"),
                 device_config={"kind": "quel3"},
@@ -1674,7 +1701,7 @@ def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
     ) -> MeasurementResult:
         del self
         step = int(schedule.pulse_schedule.labels[0][-1])
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([step + 1.0 + 0.0j])]},
             measurement_config=config,
             sampling_period=2.0,
@@ -1736,7 +1763,7 @@ def test_run_sweep_measurement_resolves_default_config() -> None:
     ) -> MeasurementResult:
         del self, schedule
         called["config"] = config
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([0.0 + 0.0j])]},
             measurement_config=config,
             sampling_period=2.0,
@@ -1792,7 +1819,7 @@ def test_run_sweep_measurement_stops_immediately_on_error() -> None:
         called["count"] += 1
         if called["count"] == 2:
             raise RuntimeError("boom")
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([0.0 + 0.0j])]},
             measurement_config=_make_config(mode="avg"),
             sampling_period=2.0,
@@ -1913,7 +1940,7 @@ def test_run_ndsweep_measurement_runs_cartesian_order_and_helpers() -> None:
     ) -> MeasurementResult:
         del self
         step = int(schedule.pulse_schedule.labels[0][-1])
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([step + 1.0 + 0.0j])]},
             measurement_config=config,
             sampling_period=2.0,
@@ -1980,7 +2007,7 @@ def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
         config: MeasurementConfig,
     ) -> MeasurementResult:
         del self, schedule, config
-        return MeasurementResult(
+        return _make_measurement_result(
             data={"Q00": [np.array([0.0 + 0.0j])]},
             measurement_config=_make_config(mode="avg"),
             sampling_period=2.0,

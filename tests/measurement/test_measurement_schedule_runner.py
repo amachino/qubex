@@ -17,6 +17,7 @@ from qubex.measurement.measurement_constraint_profile import (
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
 from qubex.measurement.models import (
+    CaptureData,
     MeasurementConfig,
     MeasurementResult,
     MeasurementSchedule,
@@ -62,6 +63,21 @@ def _make_multiple_result() -> MultipleMeasureResult:
         mode=MeasureMode.AVG,
         data={"Q00": [data]},
         config={"shots": 2},
+    )
+
+
+def _make_capture(
+    *,
+    target: str,
+    raw: np.ndarray,
+    config: MeasurementConfig,
+    sampling_period: float = 0.4,
+) -> CaptureData:
+    return CaptureData(
+        target=target,
+        raw=raw,
+        config=config,
+        sampling_period=sampling_period,
     )
 
 
@@ -332,11 +348,19 @@ def test_execute_prefers_backend_capture_decimation_hint() -> None:
 
 def test_execute_returns_backend_measurement_result_directly() -> None:
     """Given backend returns canonical result, when executing, then result factory is not called."""
+    config = _make_config(mode="avg")
     expected = MeasurementResult(
-        data={"Q00": [np.array([1.0 + 0.0j])]},
-        measurement_config=_make_config(mode="avg"),
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([1.0 + 0.0j]),
+                    config=config,
+                )
+            ]
+        },
+        measurement_config=config,
         device_config={"kind": "quel3"},
-        sampling_period=0.4,
     )
 
     class _Adapter:
@@ -381,11 +405,19 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
+    config = _make_config(mode="avg")
     expected = MeasurementResult(
-        data={"Q00": [np.array([2.0 + 0.0j])]},
-        measurement_config=_make_config(mode="avg"),
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([2.0 + 0.0j]),
+                    config=config,
+                )
+            ]
+        },
+        measurement_config=config,
         device_config={"kind": "adapter"},
-        sampling_period=0.4,
     )
 
     class _Adapter:

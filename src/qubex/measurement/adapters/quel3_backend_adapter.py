@@ -25,11 +25,19 @@ from qubex.backend.quel3 import (
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
+from qubex.measurement.models.capture_data import CaptureData
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.system import ExperimentSystem
+
+
+def _as_read_only_array(data: object) -> np.ndarray:
+    """Return read-only NumPy array view for capture payloads."""
+    array = np.asarray(data).view()
+    array.setflags(write=False)
+    return array
 
 
 class Quel3MeasurementBackendAdapter:
@@ -186,12 +194,31 @@ class Quel3MeasurementBackendAdapter:
         _ = device_config
         if not isinstance(backend_result, Quel3BackendExecutionResult):
             raise TypeError("QuEL-3 backend must return `Quel3BackendExecutionResult`.")
-        converted_data: dict[str, list[np.ndarray]] = {}
+        backend_sampling_period = backend_result.config.get("sampling_period_ns")
+        if backend_sampling_period is None:
+            resolved_sampling_period = sampling_period
+        elif isinstance(backend_sampling_period, (int, float)):
+            resolved_sampling_period = backend_sampling_period
+        else:
+            raise TypeError(
+                "QuEL-3 backend result config `sampling_period_ns` must be numeric."
+            )
+        converted_data: dict[str, list[CaptureData]] = {}
         for alias, values in backend_result.data.items():
             capture_targets = self._capture_targets_by_alias.get(alias)
             if capture_targets is None:
                 output_target = self._output_target_labels_by_target.get(alias, alias)
-                converted_data.setdefault(output_target, []).extend(values)
+                converted_data.setdefault(output_target, []).extend(
+                    [
+                        CaptureData(
+                            target=output_target,
+                            raw=_as_read_only_array(value),
+                            config=measurement_config,
+                            sampling_period=resolved_sampling_period,
+                        )
+                        for value in values
+                    ]
+                )
                 continue
             if len(capture_targets) != len(values):
                 raise ValueError(
@@ -205,21 +232,18 @@ class Quel3MeasurementBackendAdapter:
                     capture_target,
                     capture_target,
                 )
-                converted_data.setdefault(output_target, []).append(capture_value)
-        backend_sampling_period = backend_result.config.get("sampling_period_ns")
-        if backend_sampling_period is None:
-            resolved_sampling_period = sampling_period
-        elif isinstance(backend_sampling_period, (int, float)):
-            resolved_sampling_period = float(backend_sampling_period)
-        else:
-            raise TypeError(
-                "QuEL-3 backend result config `sampling_period_ns` must be numeric."
-            )
+                converted_data.setdefault(output_target, []).append(
+                    CaptureData(
+                        target=output_target,
+                        raw=_as_read_only_array(capture_value),
+                        config=measurement_config,
+                        sampling_period=resolved_sampling_period,
+                    )
+                )
         return MeasurementResult(
             data=converted_data,
             device_config={},
             measurement_config=measurement_config,
-            sampling_period=resolved_sampling_period,
         )
 
     @staticmethod

@@ -22,6 +22,7 @@ from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
 from qubex.measurement.models import (
+    CaptureData,
     MeasurementConfig,
     MeasurementResult,
     MeasurementSchedule,
@@ -490,11 +491,20 @@ def test_quel3_adapter_builds_port_binding_when_alias_is_missing() -> None:
 
 def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> None:
     """Given canonical result input, when adapter builds result, then it raises TypeError."""
+    config = _make_config(mode="avg")
     unexpected = MeasurementResult(
-        data={"Q00": [np.array([1.0 + 0.0j], dtype=np.complex128)]},
-        measurement_config=_make_config(mode="avg"),
+        data={
+            "Q00": [
+                CaptureData(
+                    target="Q00",
+                    raw=np.array([1.0 + 0.0j], dtype=np.complex128),
+                    config=config,
+                    sampling_period=0.4,
+                )
+            ]
+        },
+        measurement_config=config,
         device_config={"kind": "quel3"},
-        sampling_period=0.4,
     )
     adapter = Quel3MeasurementBackendAdapter(
         backend_controller=_make_backend_controller(),
@@ -560,7 +570,7 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     assert result.measurement_config.shot_averaging is True
     assert result.device_config == {}
     assert result.measurement_config == config
-    assert result.sampling_period == pytest.approx(0.4)
+    assert result.data["Q00"][0].sampling_period == pytest.approx(0.4)
     assert np.array_equal(
         result.data["Q00"][0],
         np.array([2.0 + 0.0j], dtype=np.complex128),

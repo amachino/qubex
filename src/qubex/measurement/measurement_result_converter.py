@@ -7,9 +7,8 @@ from typing import Any
 
 import numpy as np
 
-from qubex.backend.quel1 import SAMPLING_PERIOD
-
 from .classifiers.state_classifier import StateClassifier
+from .models.capture_data import CaptureData
 from .models.measure_result import (
     MeasureData,
     MeasureMode,
@@ -18,6 +17,13 @@ from .models.measure_result import (
 )
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
+
+
+def _as_read_only_array(data: Any) -> np.ndarray:
+    """Return read-only NumPy array view for capture payloads."""
+    array = np.asarray(data).view()
+    array.setflags(write=False)
+    return array
 
 
 class MeasurementResultConverter:
@@ -29,15 +35,9 @@ class MeasurementResultConverter:
         return MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
 
     @staticmethod
-    def _resolve_sampling_period(
-        *,
-        explicit_sampling_period: float | None,
-        result: MeasurementResult,
-    ) -> float:
-        """Resolve sampling period for legacy result models."""
-        if explicit_sampling_period is not None:
-            return explicit_sampling_period
-        return float(result.sampling_period)
+    def _resolve_capture_mode(capture: CaptureData) -> MeasureMode:
+        """Resolve legacy measure mode from capture-level config."""
+        return MeasureMode.AVG if capture.config.shot_averaging else MeasureMode.SINGLE
 
     @staticmethod
     def from_multiple(
@@ -60,21 +60,21 @@ class MeasurementResultConverter:
         MeasurementResult
             Canonical serializable measurement result.
         """
-        data = {
-            target: [np.asarray(item.raw) for item in captures]
-            for target, captures in multiple.data.items()
-        }
-        first_data = next(iter(multiple.data.values()), [])
-        first_capture = first_data[0] if first_data else None
+        data = {}
+        for target, captures in multiple.data.items():
+            data[target] = [
+                CaptureData(
+                    target=target,
+                    raw=_as_read_only_array(item.raw),
+                    config=measurement_config,
+                    sampling_period=item.sampling_period,
+                )
+                for item in captures
+            ]
         return MeasurementResult(
             data=data,
             measurement_config=measurement_config,
             device_config=multiple.config,
-            sampling_period=(
-                first_capture.sampling_period
-                if isinstance(first_capture, MeasureData)
-                else SAMPLING_PERIOD
-            ),
         )
 
     @staticmethod
@@ -112,23 +112,35 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
-        resolved_sampling_period = MeasurementResultConverter._resolve_sampling_period(
-            explicit_sampling_period=sampling_period,
-            result=result,
-        )
-        legacy_data = {
-            target: [
-                MeasureData(
-                    target=target,
-                    mode=mode,
-                    raw=np.asarray(raw),
-                    classifier=classifier_map.get(target),
-                    sampling_period=resolved_sampling_period,
+        legacy_data: dict[str, list[MeasureData]] = {}
+        for target, captures in result.data.items():
+            legacy_captures: list[MeasureData] = []
+            for capture in captures:
+                classifier = classifier_map.get(target)
+                if classifier is None:
+                    classifier = capture.classifier
+                legacy_captures.append(
+                    MeasureData(
+                        target=target,
+                        mode=mode,
+                        raw=np.asarray(capture.raw),
+                        classifier=classifier,
+                        sampling_period=(
+                            sampling_period
+                            if sampling_period is not None
+                            else capture.sampling_period
+                        ),
+                    )
                 )
-                for raw in captures
-            ]
-            for target, captures in result.data.items()
-        }
+            legacy_data[target] = legacy_captures
+        for target, captures in result.data.items():
+            for capture in captures:
+                capture_mode = MeasurementResultConverter._resolve_capture_mode(capture)
+                if capture_mode != mode:
+                    raise ValueError(
+                        f"Capture mode mismatch for target {target}: "
+                        f"result mode={mode.value} capture mode={capture_mode.value}."
+                    )
         return MultipleMeasureResult(
             mode=mode,
             data=legacy_data,
@@ -168,26 +180,38 @@ class MeasurementResultConverter:
         IndexError
             If `index` is out of range for any target.
         """
-        mode = MeasurementResultConverter._resolve_measure_mode(
-            result.measurement_config
-        )
         classifier_map = {} if classifiers is None else classifiers
-        resolved_sampling_period = MeasurementResultConverter._resolve_sampling_period(
-            explicit_sampling_period=sampling_period,
-            result=result,
-        )
         single_data: dict[str, MeasureData] = {}
+        resolved_mode: MeasureMode | None = None
         for target, captures in result.data.items():
             if not (-len(captures) <= index < len(captures)):
                 raise IndexError(
                     f"Capture index {index} is out of range for target {target}."
                 )
+            selected_capture = captures[index]
+            selected_mode = MeasurementResultConverter._resolve_capture_mode(
+                selected_capture
+            )
+            if resolved_mode is None:
+                resolved_mode = selected_mode
+            elif resolved_mode != selected_mode:
+                raise ValueError(
+                    "Cannot convert captures with mixed shot_averaging modes "
+                    "to legacy MeasureResult."
+                )
+            classifier = classifier_map.get(target)
+            if classifier is None:
+                classifier = selected_capture.classifier
             single_data[target] = MeasureData(
                 target=target,
-                mode=mode,
-                raw=np.asarray(captures[index]),
-                classifier=classifier_map.get(target),
-                sampling_period=resolved_sampling_period,
+                mode=selected_mode,
+                raw=np.asarray(selected_capture.raw),
+                classifier=classifier,
+                sampling_period=(
+                    sampling_period
+                    if sampling_period is not None
+                    else selected_capture.sampling_period
+                ),
             )
 
         if config is None:
@@ -198,7 +222,13 @@ class MeasurementResultConverter:
             resolved_config = config
 
         return MeasureResult(
-            mode=mode,
+            mode=(
+                resolved_mode
+                if resolved_mode is not None
+                else MeasurementResultConverter._resolve_measure_mode(
+                    result.measurement_config
+                )
+            ),
             data=single_data,
             config=resolved_config,
         )

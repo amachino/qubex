@@ -1,4 +1,9 @@
-"""Measurement result models and helpers."""
+"""
+Legacy measurement result models and helpers.
+
+Deprecated: use `MeasurementResult` and `CaptureData` in
+`qubex.measurement.models.measurement_result`.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
+from typing_extensions import deprecated
 
 import qubex.visualization as viz
 from qubex.backend.quel1 import SAMPLING_PERIOD
@@ -41,9 +47,14 @@ class MeasureMode(Enum):
             raise ValueError(f"Invalid mode: {self}")
 
 
+@deprecated("Use `CaptureData` in `measurement_result.py` instead.")
 @dataclass(frozen=True)
 class MeasureData:
-    """Per-target measurement data and classifier metadata."""
+    """
+    Per-target measurement data and classifier metadata.
+
+    Deprecated: use `CaptureData`.
+    """
 
     target: str
     mode: MeasureMode
@@ -332,9 +343,14 @@ class MeasureData:
         return None
 
 
+@deprecated("Use `MeasurementResult` in `measurement_result.py` instead.")
 @dataclass(frozen=True)
 class MeasureResult:
-    """Aggregate measurement result for multiple targets."""
+    """
+    Aggregate measurement result for multiple targets.
+
+    Deprecated: use `MeasurementResult`.
+    """
 
     mode: MeasureMode
     data: dict[str, MeasureData]
@@ -954,9 +970,14 @@ class MeasureResult:
         return path
 
 
+@deprecated("Use `MeasurementResult` in `measurement_result.py` instead.")
 @dataclass(frozen=True)
 class MultipleMeasureResult:
-    """Aggregate measurement results across repeated measurements."""
+    """
+    Aggregate measurement results across repeated measurements.
+
+    Deprecated: use `MeasurementResult` with multi-capture `data`.
+    """
 
     mode: MeasureMode
     data: dict[str, list[MeasureData]]

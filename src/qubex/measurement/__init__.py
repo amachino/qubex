@@ -23,6 +23,8 @@ from .measurement_result_converter import MeasurementResultConverter
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .measurement_schedule_runner import MeasurementScheduleRunner
 from .models import (
+    CaptureData,
+    ClassifierRef,
     MeasureData,
     MeasurementResult,
     MeasurementSchedule,
@@ -45,6 +47,8 @@ from .services import (
 from .sweep_measurement_builder import SweepMeasurementBuilder
 
 __all__ = [
+    "CaptureData",
+    "ClassifierRef",
     "MeasureData",
     "MeasureMode",
     "MeasureResult",

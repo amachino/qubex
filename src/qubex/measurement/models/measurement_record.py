@@ -1,4 +1,8 @@
-"""Persistence helpers for measurement records."""
+"""
+Legacy persistence helpers for measurement records.
+
+Deprecated: use `DataModel.save_json` / `DataModel.save_netcdf`-based models.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from typing import Any, Final, Generic, TypeVar
 
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
+from typing_extensions import deprecated
 
 jsonpickle_numpy.register_handlers()
 
@@ -19,10 +24,13 @@ DEFAULT_DATA_DIR: Final[str] = ".rawdata"
 T = TypeVar("T")
 
 
+@deprecated("Use `DataModel`-based save/load APIs instead.")
 @dataclass
 class MeasurementRecord(Generic[T]):
     """
     A dataclass to store the results of a measurement.
+
+    Deprecated: use `MeasurementResult` serialization on `DataModel` directly.
 
     Attributes
     ----------

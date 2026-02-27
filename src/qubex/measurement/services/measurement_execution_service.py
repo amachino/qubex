@@ -6,6 +6,8 @@ import logging
 import warnings
 from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
 
 import numpy as np
@@ -1133,7 +1135,9 @@ class MeasurementExecutionService:
 
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None and save_result:
-            result.save(rawdata_dir)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            result_path = Path(rawdata_dir) / f"{timestamp}.nc"
+            result.save(result_path)
 
         return MeasurementResultConverter.to_multiple_measure_result(
             result,
