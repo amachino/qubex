@@ -741,6 +741,7 @@ class Experiment:
             parallel=parallel,
         )
 
+    @deprecated("Use `connect()` instead.")
     def linkup(
         self,
         box_ids: list[str] | None = None,

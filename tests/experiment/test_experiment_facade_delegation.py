@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
+import pytest
+
 from qubex.experiment.experiment import Experiment
 
 
@@ -574,13 +576,14 @@ def test_configure_delegates_to_session_service() -> None:
     ]
 
 
-def test_linkup_delegates_to_session_service() -> None:
-    """Given linkup args, when called, then it delegates to session service."""
+def test_linkup_warns_deprecation_and_delegates_to_session_service() -> None:
+    """Given linkup args, when called, then deprecation warning is emitted and session service is delegated."""
     exp = object.__new__(Experiment)
     session_stub = _SessionServiceStub()
     exp.__dict__["_session_service"] = session_stub
 
-    exp.linkup(box_ids=["Q2A"], noise_threshold=100)
+    with pytest.warns(DeprecationWarning, match="measurement\\.linkup"):
+        exp.linkup(box_ids=["Q2A"], noise_threshold=100)
 
     assert session_stub.calls == [
         (
