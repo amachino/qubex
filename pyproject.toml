@@ -9,7 +9,8 @@ requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex: Qubit experiment framework"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "cma >= 4.0",
     "cvxpy >= 1.6",
@@ -24,12 +25,12 @@ dependencies = [
     "pyserial >= 3.5",
     "pyyaml >= 6.0",
     "qctrl-visualizer >= 8.0",
-    "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
-    "qxfitting @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxfitting",
-    "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
-    "qxschema @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxschema",
-    "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator",
-    "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer",
+    "qxcore",
+    "qxfitting",
+    "qxpulse",
+    "qxschema",
+    "qxsimulator",
+    "qxvisualizer",
     "rich >= 13.0",
     "scikit-learn >= 1.0",
     "scipy >= 1.0",
@@ -40,8 +41,8 @@ dependencies = [
 
 [project.optional-dependencies]
 backend = [
-    "qxdriver-quel1 @ git+https://github.com/amachino/qxdriver-quel1.git@qubex-quelware-v0.10",
-    "quelware-client @ git+https://github.com/quel-inc/quelware-client.git@main#subdirectory=quelware-client",
+    "qxdriver-quel1",
+    "quelware-client",
 ]
 
 [project.scripts]

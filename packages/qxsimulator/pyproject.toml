@@ -9,7 +9,8 @@ requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex quantum system simulation utilities"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "ipython >= 7.0",
     "jax >= 0.4",
@@ -19,8 +20,8 @@ dependencies = [
     "plotly >= 5.23",
     "qctrl-visualizer >= 8.0",
     "qutip >= 5.0",
-    "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
-    "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer",
+    "qxpulse",
+    "qxvisualizer",
     "scipy >= 1.0",
 ]
 

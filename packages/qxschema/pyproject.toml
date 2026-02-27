@@ -9,10 +9,11 @@ requires-python = ">=3.10"
 authors = [{ name = "Yasunari Suzuki" }, { name = "Akinori Machino" }]
 description = "A common schema definitions for quantum experiments"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "numpy >= 1.22",
-    "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
+    "qxcore",
 ]
 
 [tool.setuptools.package-data]

@@ -1,4 +1,17 @@
-.PHONY: sync test coverage check fix lint lint-fix format format-check type-check clean build docs docs-serve docs-build docs-clean
+.PHONY: sync test coverage check fix lint lint-fix format format-check type-check clean build build-all publish-all docs docs-serve docs-build docs-clean
+
+BUILD_CMD := uv run --with build python -m build
+TWINE_CMD := uv run --with twine twine
+REPOSITORY ?= testpypi
+PUBLISH_TARGETS := \
+	qxcore:packages/qxcore \
+	qxvisualizer:packages/qxvisualizer \
+	qxfitting:packages/qxfitting \
+	qxpulse:packages/qxpulse \
+	qxschema:packages/qxschema \
+	qxsimulator:packages/qxsimulator \
+	qxdriver-quel1:packages/qxdriver-quel1 \
+	qubex:.
 
 # Install dependencies
 sync:
@@ -47,7 +60,28 @@ clean:
 
 # Build distribution artifacts
 build:
-	uv build
+	$(BUILD_CMD)
+
+# Build all publishable packages in dependency order
+build-all:
+	rm -rf dist/publish
+	mkdir -p dist/publish
+	@set -e; \
+	for spec in $(PUBLISH_TARGETS); do \
+		name=$${spec%%:*}; \
+		path=$${spec#*:}; \
+		outdir=dist/publish/$$name; \
+		mkdir -p "$$outdir"; \
+		$(BUILD_CMD) --outdir "$$outdir" "$$path"; \
+	done
+
+# Publish all package artifacts to the selected repository in dependency order
+publish-all: build-all
+	@set -e; \
+	for spec in $(PUBLISH_TARGETS); do \
+		name=$${spec%%:*}; \
+		$(TWINE_CMD) upload --repository $(REPOSITORY) --skip-existing dist/publish/$$name/*; \
+	done
 
 # Build documentation site
 docs: docs-build
