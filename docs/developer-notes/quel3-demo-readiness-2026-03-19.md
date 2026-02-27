@@ -11,14 +11,14 @@ Prepare executable demo paths for:
 5. Bell-state generation/measurement
 6. multi-qubit experiment demo
 
-## Current source-based status (as of 2026-02-25)
+## Current source-based status (as of 2026-02-27)
 
 | Demo item | Status | Evidence in current code | Required work before demo |
 | --- | --- | --- | --- |
 | qubit frequency identification | BLOCKED | `CharacterizationService.scan_qubit_frequencies()` / `scan_resonator_frequencies()` / `measure_electrical_delay()` call `SystemManager.modified_backend_settings(...)`; QuEL-3 path does not support that capability today. | Define QuEL-3 sweep semantics and implement QuEL-3-safe path. |
 | 1Q Rabi oscillation | BLOCKED | `MeasurementService.rabi_experiment()` uses `sweep_parameter()`, and `sweep_parameter()` unconditionally calls `reset_awg_and_capunits()`. QuEL-3 backend currently lacks this reset capability. | Add QuEL-3 reset strategy or remove hard dependency in sweep paths. |
 | 1Q gate calibration + benchmarking | BLOCKED | Calibration paths depend on the same sweep/reset chain; `BenchmarkingService.rb_experiment_1q()` defaults `reset_awg_and_capunits=True`. | Same as above + verify 1Q RB on QuEL-3 hardware. |
-| 2Q gate calibration + benchmarking | BLOCKED | 2Q paths also rely on reset-dependent measurement flows; QuEL-3 execution manager still rejects multi-alias execution. | Implement multi-instrument/cross-unit trigger and reset-safe execution path. |
+| 2Q gate calibration + benchmarking | BLOCKED | 2Q paths still rely on reset-dependent measurement flows. Multi-alias execution restriction was removed in QuEL-3 execution path on `2026-02-27`, but hardware validation evidence is not attached yet. | Complete reset-safe execution path and attach cross-unit synchronized-trigger hardware evidence. |
 | Bell-state demo | BLOCKED | `MeasurementService.measure_bell_state()` defaults `reset_awg_and_capunits=True`; tomography calls it without overriding reset behavior. | Make Bell path QuEL-3-capability aware and validate 2Q execution. |
 | multi-qubit demo | BLOCKED | Several high-level `Experiment` APIs are moved/deprecated with `NotImplementedError`; remaining paths still inherit unresolved QuEL-3 blockers above. | Select concrete contrib flow and clear all upstream blockers first. |
 
@@ -55,9 +55,9 @@ Prepare executable demo paths for:
 2. Refactor `CharacterizationService` to use capability-gated strategy, not direct QuEL-1-only APIs.
 3. Implement QuEL-3 frequency sweep strategy for qubit/resonator scans and electrical delay measurement.
 4. Remove or gate unconditional reset dependencies in sweep-heavy flows (`rabi`, `rb`, `bell` paths).
-5. Complete `InstrumentResolver` migration and remove legacy `InstrumentMapper` dependency.
-6. Remove single-alias execution restriction and validate cross-unit synchronized trigger on hardware.
-7. Bind capture-mode contract (`single`/`avg`/waveform) to quelware directives end-to-end.
+5. DONE (`2026-02-27`): Completed `InstrumentResolver` migration and removed legacy `InstrumentMapper` dependency in QuEL-3 execution manager.
+6. IN_PROGRESS: Removed single-alias execution restriction in software (`2026-02-27`); cross-unit synchronized-trigger hardware validation is still required.
+7. IN_PROGRESS: Bound capture-mode directives for `avg`/`single` (`AVERAGED_VALUE` and `VALUES_PER_ITER` with legacy `VALUES_PER_LOOP` fallback); waveform-inspection (`AVERAGED_WAVEFORM`) contract validation is still pending.
 
 ## Questions to confirm with quelware team
 

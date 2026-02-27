@@ -9,6 +9,7 @@
 
 - `quelware-client` API baseline in this workspace is confirmed (`InstrumentResolver`, `Sequencer`, `Session.trigger(instrument_ids=...)`).
 - QuEL-3 beta decision items `DF-01` to `DF-06` are fixed as of `2026-02-25`.
+- QuEL-3 execution/adapter resolver path changes are implemented in source and validated by local checks as of `2026-02-27` (`uv run ruff check`, `uv run pyright`, `uv run pytest`).
 - Upstream clarification is still required for settings introspection and stable trigger/result contracts.
 - Remaining QuEL-3 beta risk is implementation completion, hardware validation, and closure of upstream clarification items.
 
@@ -32,12 +33,12 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | Priority | Task | Due | Dependency | Status |
 | --- | --- | --- | --- | --- |
 | P0 | Finalize QuEL-3 integration design (resolver boundary, lifecycle, error model) | 2026-02-27 | Fixed beta contract decisions | IN_PROGRESS |
-| P0 | Replace legacy `InstrumentMapper` integration with `InstrumentResolver` path | 2026-02-27 | Current `quelware-client` API (`main`) | TODO |
-| P0 | Implement target-to-instrument auto resolution from wiring/port with fail-fast errors | 2026-02-28 | wiring.v2 policy + resource/instrument info contracts | TODO |
-| P0 | Implement multi-instrument, cross-unit synchronized trigger execution path | 2026-02-28 | Resolver integration + session orchestration | TODO |
-| P0 | Align capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`) | 2026-02-28 | quelware directive support (`SetCaptureMode`) | TODO |
-| P0 | Implement QuEL-3 `tx/rx/trx` convergence rule (`read_out`/`read_in` -> one transceiver alias/resource when consistent) | 2026-02-28 | wiring.v2 + resolver + adapter payload semantics | TODO |
-| P0 | Remove adapter limitation that rejects multiple logical targets per one alias | 2026-02-28 | `trx` convergence rule and synchronized trigger flow | TODO |
+| P0 | Replace legacy `InstrumentMapper` integration with `InstrumentResolver` path | 2026-02-27 | Current `quelware-client` API (`main`) | DONE (2026-02-27) |
+| P0 | Implement target-to-instrument auto resolution from wiring/port with fail-fast errors | 2026-02-28 | wiring.v2 policy + resource/instrument info contracts | DONE (2026-02-27) |
+| P0 | Implement multi-instrument, cross-unit synchronized trigger execution path | 2026-02-28 | Resolver integration + session orchestration | IN_PROGRESS (software path done, hardware evidence pending) |
+| P0 | Align capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER` with legacy `VALUES_PER_LOOP` fallback) | 2026-02-28 | quelware directive support (`SetCaptureMode`) | IN_PROGRESS (mode mapping done, waveform-contract validation pending) |
+| P0 | Implement QuEL-3 `tx/rx/trx` convergence rule (`read_out`/`read_in` -> one transceiver alias/resource when consistent) | 2026-02-28 | wiring.v2 + resolver + adapter payload semantics | DONE (2026-02-27) |
+| P0 | Remove adapter limitation that rejects multiple logical targets per one alias | 2026-02-28 | `trx` convergence rule and synchronized trigger flow | DONE (2026-02-27) |
 | P0 | Add capability-gated behavior for QuEL-1-only settings introspection paths (`dump_box`-dependent utilities) on QuEL-3 | 2026-02-28 | `system` package boundary decision | TODO |
 | P0 | Define and implement QuEL-3 frequency-sweep contract for `CharacterizationService` (`scan_qubit_frequencies`, `scan_resonator_frequencies`, `measure_electrical_delay`) without QuEL-1-only LO/CNCO reset assumptions | 2026-02-28 | QuEL-3 tuning/introspection API contract + capability profile | TODO |
 | P0 | Prepare compatibility contract tests at `Measurement` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
@@ -90,7 +91,7 @@ Calendar note:
 - Target-to-instrument alias resolution follows wiring/port policy and fails fast on unresolved/ambiguous mapping
 - QuEL-3 readout `tx/rx/trx` convergence policy is implemented and validated (`read_out`/`read_in` may map to one transceiver alias).
 - Multi-instrument and cross-unit synchronized trigger execution is validated on hardware
-- Capture-mode contract is preserved (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`, waveform inspection uses `AVERAGED_WAVEFORM`)
+- Capture-mode contract is preserved (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER` with legacy `VALUES_PER_LOOP` fallback, waveform inspection uses `AVERAGED_WAVEFORM`)
 - QuEL-1-only settings introspection paths are capability-gated and fail clearly on QuEL-3 (no silent fallback).
 - Qubit-frequency identification flow is validated on QuEL-3 with documented sweep semantics (including out-of-range fail-fast behavior).
 - No blocking fixed `2 ns` assumptions remain in QuEL-3 code path
@@ -165,10 +166,10 @@ Calendar note:
 - [x] Draft beta release notes template and known limitation section (`v1-5-0-beta-release-notes-template.md`).
 - [x] Document shared pulse factory design for backend-derived sampling-period ownership across `Experiment` and `Measurement` (`v1-5-0-shared-pulse-factory-design.md`).
 - [x] Document QuEL-3 `tx/rx/trx` handling and QuEL-1/QuEL-3 `system` package boundary (`quel3-configuration-design.md`, `system-package-quel1-quel3-boundary.md`).
-- [ ] Implement resolver-based alias auto-resolution path (`wiring/port` aligned) with fail-fast errors.
-- [ ] Remove single-alias restriction in QuEL-3 execution path and validate cross-unit synchronized trigger.
-- [ ] Implement `tx/rx/trx` convergence path in adapter/execution flow.
-- [ ] Switch QuEL-3 capture flow to quelware capture-mode contract (`VALUES_PER_LOOP`/`AVERAGED_VALUE`).
+- [x] Implement resolver-based alias auto-resolution path (`wiring/port` aligned) with fail-fast errors.
+- [ ] Remove single-alias restriction in QuEL-3 execution path and validate cross-unit synchronized trigger. (software path done, hardware validation pending)
+- [x] Implement `tx/rx/trx` convergence path in adapter/execution flow.
+- [ ] Switch QuEL-3 capture flow to quelware capture-mode contract (`VALUES_PER_ITER`/`AVERAGED_VALUE` with `VALUES_PER_LOOP` fallback). (mode mapping done, remaining contract/hardware validation pending)
 - [ ] Add capability-gated unsupported errors for QuEL-1-only settings introspection utilities on QuEL-3.
 - [ ] Define and implement QuEL-3 frequency-sweep strategy for `CharacterizationService` (LO/CNCO retune policy + unsupported fallback).
 - [ ] Close blocking clarification items with quelware side and reflect answers in adapter/config docs.
@@ -247,11 +248,16 @@ Calendar note:
 - 2026-02-25: Fixed beta contract requirement: QuEL-3 hardware gate includes multi-instrument and cross-unit synchronized trigger execution.
 - 2026-02-25: Adopted `InstrumentResolver` as the integration baseline (replacing legacy `InstrumentMapper`) based on current `quelware-client` examples.
 - 2026-02-25: Fixed alias mapping policy to runtime auto-resolution from wiring/port; unresolved/ambiguous resolution must fail fast.
-- 2026-02-25: Fixed capture-mode contract for QuEL-3 path: `avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`, waveform inspection uses `AVERAGED_WAVEFORM`.
+- 2026-02-25: Fixed capture-mode contract direction for QuEL-3 path: `avg`=`AVERAGED_VALUE`, `single` follows quelware values-per-iteration semantics (legacy `VALUES_PER_LOOP` compatibility), waveform inspection uses `AVERAGED_WAVEFORM`.
 - 2026-02-25: Runtime connection defaults are provisionally aligned to `quelware-client` defaults (`endpoint=localhost`, `port=50051`, `trigger_wait=1000000`, `ttl_ms=4000`, `tentative_ttl_ms=1000`).
 - 2026-02-25: Superseded prior provisional notes that required explicit `instrument_alias_map` or deferred DF-03/DF-04; resolver-based auto-resolution and DF-03/DF-04 are now fixed beta contract decisions.
 - 2026-02-25: Added QuEL-3 `tx/rx/trx` handling decision and `system` package boundary note (`quel1`/`quel3` common-vs-split).
 - 2026-02-25: Added demo-readiness gap note for QuEL-3 `CharacterizationService` frequency identification path (`LO/CNCO`-retune assumptions) and linked required contract work.
+- 2026-02-27: `Quel3ExecutionManager` was migrated from `InstrumentMapper` flow to `InstrumentResolver` flow, and now resolves logical targets through `instrument_bindings` (`alias:` or `port:`) with fail-fast errors on unresolved/ambiguous mapping.
+- 2026-02-27: QuEL-3 payload/result contracts were extended with `instrument_bindings`, `capture_port_bindings`, and `capture_targets_by_alias` to support one alias mapped from multiple logical targets.
+- 2026-02-27: Removed adapter-level single-alias restriction and implemented `tx/rx/trx` convergence behavior in runtime payload resolution.
+- 2026-02-27: Capture-mode directive mapping was updated to `avg` -> `AVERAGED_VALUE`, `single` -> `VALUES_PER_ITER` (fallback `VALUES_PER_LOOP`) in execution flow.
+- 2026-02-27: Local quality gates passed after the above updates: `uv run ruff check`, `uv run pyright`, `uv run pytest` (`610 passed`).
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.
