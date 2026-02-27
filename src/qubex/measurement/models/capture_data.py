@@ -29,8 +29,8 @@ def _format_raw_preview(raw: NDArray) -> str:
     preview = np.array2string(flat[:1], separator=", ")
     if preview.startswith("[") and preview.endswith("]"):
         if flat.size > 1:
-            preview = f"{preview[:-1]}, ... ({flat.size} elements)]"
-    return f"array(shape={array.shape}, {preview})"
+            preview = f"{preview[:-1]}, ...]"
+    return f"array({preview}, shape={array.shape})"
 
 
 class CaptureData(DataModel):
@@ -291,15 +291,17 @@ class CaptureData(DataModel):
             )
             fig = self.figure(title=title)
             if save_image:
+                waveform = np.asarray(self.raw)
+                use_scatter = self.config.time_integration or (
+                    not self.config.shot_averaging and waveform.ndim >= 2
+                )
                 figure_name = (
-                    "plot_state_distribution"
-                    if self.config.time_integration
-                    else "plot_waveform"
+                    "plot_state_distribution" if use_scatter else "plot_waveform"
                 )
                 viz.save_figure(fig, name=figure_name)
             return fig
 
-        plot_title = title or f"Readout data : {self.target}"
+        plot_title = title or f"Readout waveform : {self.target}"
         if self.config.time_integration:
             data = {self.target: np.atleast_1d(self.kerneled)}
             viz.scatter_iq_data(data=data, title=plot_title, save_image=save_image)
@@ -307,7 +309,11 @@ class CaptureData(DataModel):
 
         waveform = np.asarray(self.raw)
         if not self.config.shot_averaging and waveform.ndim >= 2:
-            waveform = np.mean(waveform, axis=0)
+            shot_iq = np.mean(waveform, axis=1)
+            data = {self.target: np.atleast_1d(shot_iq)}
+            iq_title = title or f"Readout IQ data : {self.target}"
+            viz.scatter_iq_data(data=data, title=iq_title, save_image=save_image)
+            return None
         waveform = np.squeeze(waveform)
         viz.plot_waveform(
             data=waveform,
@@ -324,14 +330,17 @@ class CaptureData(DataModel):
         title: str | None = None,
     ) -> Any:
         """Return a Plotly figure for capture data without rendering."""
-        plot_title = title or f"Readout data : {self.target}"
+        plot_title = title or f"Readout waveform : {self.target}"
         if self.config.time_integration:
             data = {self.target: np.atleast_1d(self.kerneled)}
             return viz.make_iq_scatter_figure(data=data, title=plot_title)
 
         waveform = np.asarray(self.raw)
         if not self.config.shot_averaging and waveform.ndim >= 2:
-            waveform = np.mean(waveform, axis=0)
+            shot_iq = np.mean(waveform, axis=1)
+            data = {self.target: np.atleast_1d(shot_iq)}
+            iq_title = title or f"Readout IQ data : {self.target}"
+            return viz.make_iq_scatter_figure(data=data, title=iq_title)
         waveform = np.squeeze(waveform)
         return viz.make_waveform_figure(
             data=waveform,

@@ -141,5 +141,4 @@ def test_measure_data_repr_summarizes_raw_array() -> None:
 
     text = repr(data)
 
-    assert "raw=array(shape=(1024,), [0." in text
-    assert "... (1024 elements)" in text
+    assert "raw=array([0., ...], shape=(1024,))" in text

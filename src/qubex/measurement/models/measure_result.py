@@ -42,8 +42,8 @@ def _format_raw_preview(raw: NDArray) -> str:
     preview = np.array2string(flat[:1], separator=", ")
     if preview.startswith("[") and preview.endswith("]"):
         if flat.size > 1:
-            preview = f"{preview[:-1]}, ... ({flat.size} elements)]"
-    return f"array(shape={array.shape}, {preview})"
+            preview = f"{preview[:-1]}, ...]"
+    return f"array({preview}, shape={array.shape})"
 
 
 class MeasureMode(Enum):
