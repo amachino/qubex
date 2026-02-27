@@ -8,8 +8,6 @@ import threading
 from types import SimpleNamespace
 from typing import ClassVar
 
-import pytest
-
 from qubex.patches.quel_ic_config import suppress_duplicated_proxy_patch as patch
 
 
@@ -143,8 +141,8 @@ def test_apply_patch_releases_stale_proxy_before_registering(monkeypatch) -> Non
     assert new_coap_proxy in _FakeSyncAsyncCoapClient._clients
 
 
-def test_apply_patch_keeps_active_duplicate_proxy_and_raises(monkeypatch) -> None:
-    """Given active duplicated proxies, when registering, then RuntimeError is raised."""
+def test_apply_patch_allows_active_duplicate_proxies(monkeypatch) -> None:
+    """Given active duplicated proxies, when registering, then both proxies are kept."""
     _FakeLockKeeper._clients = set()
     _FakeSyncAsyncCoapClient._clients = set()
 
@@ -166,21 +164,19 @@ def test_apply_patch_keeps_active_duplicate_proxy_and_raises(monkeypatch) -> Non
     existing_sock_proxy = _FakeLockKeeper(target=("10.5.0.2", 16384), alive=True)
     existing_sock_proxy._register_self()
     new_sock_proxy = _FakeLockKeeper(target=("10.5.0.2", 16384), alive=True)
-    with pytest.raises(RuntimeError, match="duplicated proxy object"):
-        new_sock_proxy._register_self()
+    new_sock_proxy._register_self()
 
     assert existing_sock_proxy.deactivate_calls == 0
     assert existing_sock_proxy in _FakeLockKeeper._clients
-    assert new_sock_proxy not in _FakeLockKeeper._clients
+    assert new_sock_proxy in _FakeLockKeeper._clients
 
     existing_coap_proxy = _FakeSyncAsyncCoapClient(
         target=("10.5.0.2", 5683), alive=True
     )
     existing_coap_proxy._register_self()
     new_coap_proxy = _FakeSyncAsyncCoapClient(target=("10.5.0.2", 5683), alive=True)
-    with pytest.raises(RuntimeError, match="duplicated proxy object"):
-        new_coap_proxy._register_self()
+    new_coap_proxy._register_self()
 
     assert existing_coap_proxy.cleanup_calls == 0
     assert existing_coap_proxy in _FakeSyncAsyncCoapClient._clients
-    assert new_coap_proxy not in _FakeSyncAsyncCoapClient._clients
+    assert new_coap_proxy in _FakeSyncAsyncCoapClient._clients

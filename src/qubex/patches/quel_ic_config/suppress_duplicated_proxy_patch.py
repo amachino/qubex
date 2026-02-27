@@ -109,15 +109,6 @@ def _release_stale_coap_proxy(proxy: Any) -> None:
         proxy._locked = False
 
 
-def _collect_active_duplicate_proxies(*, proxies: Any, current: Any) -> list[Any]:
-    """Collect locked and active duplicates for one proxy."""
-    return [
-        proxy
-        for proxy in _collect_duplicate_proxies(proxies=proxies, current=current)
-        if _proxy_is_active(proxy)
-    ]
-
-
 def _collect_stale_duplicate_proxies(*, proxies: Any, current: Any) -> list[Any]:
     """Collect locked but inactive duplicates for one proxy."""
     return [
@@ -157,12 +148,6 @@ def _patch_sock_register_self(sock_module: Any) -> None:
         with lock_keeper_cls._clients_lock:
             for proxy in stale_duplicated:
                 lock_keeper_cls._clients.discard(proxy)
-            active_duplicated = _collect_active_duplicate_proxies(
-                proxies=lock_keeper_cls._clients,
-                current=self,
-            )
-            if active_duplicated:
-                raise RuntimeError(f"duplicated proxy object for {self._target[0]}")
             lock_keeper_cls._clients.add(self)
 
     lock_keeper_cls._register_self = _register_self
@@ -194,12 +179,6 @@ def _patch_coap_register_self(coap_module: Any) -> None:
         with coap_client_cls._create_lock:
             for proxy in stale_duplicated:
                 coap_client_cls._clients.discard(proxy)
-            active_duplicated = _collect_active_duplicate_proxies(
-                proxies=coap_client_cls._clients,
-                current=self,
-            )
-            if active_duplicated:
-                raise RuntimeError(f"duplicated proxy object for {self._target[0]}")
             coap_client_cls._clients.add(self)
 
     coap_client_cls._register_self = _register_self
