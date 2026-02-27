@@ -893,6 +893,46 @@ def test_plot_calls_iq_scatter_for_averaged_integrated_mode(monkeypatch) -> None
     assert np.array_equal(plotted["Q00"], np.array([1.0 + 2.0j, 3.0 + 4.0j]))
 
 
+def test_capture_data_plot_fft_skips_for_time_integrated_data(
+    monkeypatch,
+    caplog,
+) -> None:
+    """Given time-integrated capture, plot_fft should log info and skip plotting."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=False,
+    )
+    capture = _make_capture(
+        target="Q00",
+        raw=np.array(
+            [
+                [1.0 + 0.0j, 2.0 + 0.0j],
+                [3.0 + 0.0j, 4.0 + 0.0j],
+            ]
+        ),
+        measurement_config=config,
+        sampling_period=2.0,
+    )
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.capture_data.viz.plot_fft",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.capture_data.viz.make_fft_figure",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    with caplog.at_level("INFO"):
+        result = capture.plot_fft()
+
+    assert result is None
+    assert "not waveform data" in caplog.text
+
+
 def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
     """Given NetCDF save, when opening the file, then codec metadata attributes are present."""
     config = _make_config(mode="single", shots=1)

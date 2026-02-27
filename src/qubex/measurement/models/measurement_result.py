@@ -312,48 +312,6 @@ class MeasurementResult(DataModel):
             return figures
         return None
 
-    def plot_fft(
-        self,
-        return_figure: bool = False,
-        save_image: bool = False,
-    ) -> Any:
-        """Plot FFT for each capture."""
-        figures: list[Any] = []
-        for target, captures in self.data.items():
-            for capture_index, capture in enumerate(captures):
-                title = f"{target} : data[{capture_index}]"
-                waveform = np.asarray(capture.raw)
-                config = capture.config
-                if not config.shot_averaging and waveform.ndim >= 2:
-                    waveform = np.mean(waveform, axis=0)
-                waveform = np.squeeze(waveform)
-                if np.asarray(waveform).ndim == 0:
-                    waveform = np.atleast_1d(waveform)
-                times = np.arange(len(waveform)) * capture.sampling_period
-                if return_figure:
-                    figure = viz.make_fft_figure(
-                        x=times * 1e-3,
-                        y=waveform,
-                        title=title,
-                        xlabel="Frequency (MHz)",
-                        ylabel="Signal (arb. units)",
-                    )
-                    if save_image:
-                        viz.save_figure(figure, name="plot_fft")
-                    figures.append(figure)
-                else:
-                    viz.plot_fft(
-                        x=times * 1e-3,
-                        y=waveform,
-                        title=title,
-                        xlabel="Frequency (MHz)",
-                        ylabel="Signal (arb. units)",
-                        save_image=save_image,
-                    )
-        if return_figure:
-            return figures
-        return None
-
     def save(
         self,
         path: str | Path,

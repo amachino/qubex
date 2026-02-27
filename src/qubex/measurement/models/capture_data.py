@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from qubex.measurement.classifiers.state_classifier import StateClassifier
 
 from .classifier_ref import ClassifierRef
 from .measurement_config import MeasurementConfig
+
+logger = logging.getLogger(__name__)
 
 
 class CaptureData(DataModel):
@@ -297,6 +300,12 @@ class CaptureData(DataModel):
     ) -> Any:
         """Plot FFT of capture waveform data."""
         plot_title = title or f"Fourier transform : {self.target}"
+        if self.config.time_integration:
+            logger.info(
+                "Skipping FFT plot for %s: data is not waveform data.",
+                self.target,
+            )
+            return None
         waveform = np.asarray(self.raw)
         if not self.config.shot_averaging and waveform.ndim >= 2:
             waveform = np.mean(waveform, axis=0)

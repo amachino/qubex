@@ -73,3 +73,58 @@ def test_measure_data_times_use_runtime_sampling_period_in_avg_mode() -> None:
     )
 
     assert np.array_equal(data.times, np.array([0.0, 0.8, 1.6]))
+
+
+def test_measure_data_plot_uses_scatter_for_scalar_avg_data(monkeypatch) -> None:
+    """MeasureData.plot should use IQ scatter when AVG data is a single I/Q point."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.AVG,
+        raw=np.array(1.0 + 0.0j),
+        sampling_period=0.8,
+    )
+    called: dict[str, object] = {}
+
+    def _scatter_iq_data(**kwargs: object) -> None:
+        called.update(kwargs)
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measure_result.viz.scatter_iq_data",
+        _scatter_iq_data,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.models.measure_result.viz.plot_waveform",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    data.plot()
+
+    plotted = called["data"]
+    assert isinstance(plotted, dict)
+    assert np.array_equal(plotted["Q00"], np.array([1.0 + 0.0j]))
+    assert called["title"] == "Readout IQ data : Q00"
+    assert called["save_image"] is False
+
+
+def test_measure_data_plot_fft_skips_for_scalar_avg_data(
+    monkeypatch,
+    caplog,
+) -> None:
+    """MeasureData.plot_fft should log and skip when AVG data is a single I/Q point."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.AVG,
+        raw=np.array(1.0 + 0.0j),
+        sampling_period=0.8,
+    )
+
+    monkeypatch.setattr(
+        "qubex.measurement.models.measure_result.viz.plot_fft",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
+    )
+
+    with caplog.at_level("INFO"):
+        result = data.plot_fft()
+
+    assert result is None
+    assert "not waveform data" in caplog.text

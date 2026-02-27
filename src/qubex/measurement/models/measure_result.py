@@ -10,6 +10,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import logging
 from collections import Counter
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -28,6 +29,8 @@ from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.measurement.classifiers import StateClassifier
 
 from .measurement_record import MeasurementRecord
+
+logger = logging.getLogger(__name__)
 
 
 class MeasureMode(Enum):
@@ -81,7 +84,10 @@ class MeasureData:
     ) -> NDArray:
         """Return kernel-integrated IQ samples."""
         if self.mode == MeasureMode.SINGLE:
-            return np.sum(self.raw, axis=1)
+            shots = np.asarray(self.raw)
+            if shots.ndim <= 1:
+                return np.atleast_1d(shots)
+            return np.sum(shots, axis=1)
         elif self.mode == MeasureMode.AVG:
             return np.asarray(np.sum(self.raw))
         else:
@@ -101,7 +107,10 @@ class MeasureData:
     @cached_property
     def length(self) -> int:
         """Return the number of raw samples."""
-        return len(self.raw)
+        raw = np.asarray(self.raw)
+        if raw.ndim == 0:
+            return 1
+        return int(raw.shape[0])
 
     @cached_property
     def times(self) -> NDArray[np.float64]:
@@ -272,10 +281,31 @@ class MeasureData:
             )
             return None
         elif self.mode == MeasureMode.AVG:
+            waveform = np.squeeze(np.asarray(self.raw))
+            if np.asarray(waveform).ndim == 0:
+                data = {self.target: np.atleast_1d(waveform)}
+                plot_title = title or f"Readout IQ data : {self.target}"
+                if return_figure:
+                    fig = viz.make_iq_scatter_figure(
+                        data=data,
+                        title=plot_title,
+                    )
+                    if save_image:
+                        viz.save_figure(
+                            fig,
+                            name="plot_state_distribution",
+                        )
+                    return fig
+                viz.scatter_iq_data(
+                    data=data,
+                    title=plot_title,
+                    save_image=save_image,
+                )
+                return None
             plot_title = title or f"Readout waveform : {self.target}"
             if return_figure:
                 fig = viz.make_waveform_figure(
-                    data=self.raw,
+                    data=waveform,
                     sampling_period=self.sampling_period,
                     title=plot_title,
                     xlabel="Capture time (ns)",
@@ -288,7 +318,7 @@ class MeasureData:
                     )
                 return fig
             viz.plot_waveform(
-                data=self.raw,
+                data=waveform,
                 sampling_period=self.sampling_period,
                 title=plot_title,
                 xlabel="Capture time (ns)",
@@ -318,10 +348,18 @@ class MeasureData:
             Whether to save the figure image.
         """
         plot_title = title or f"Fourier transform : {self.target}"
+        waveform = np.squeeze(np.asarray(self.raw))
+        if np.asarray(waveform).ndim == 0:
+            logger.info(
+                "Skipping FFT plot for %s: data is not waveform data.",
+                self.target,
+            )
+            return None
+        times = np.arange(len(waveform)) * self.sampling_period
         if return_figure:
             fig = viz.make_fft_figure(
-                x=self.times * 1e-3,
-                y=self.raw,
+                x=times * 1e-3,
+                y=waveform,
                 title=plot_title,
                 xlabel="Frequency (MHz)",
                 ylabel="Signal (arb. units)",
@@ -333,8 +371,8 @@ class MeasureData:
                 )
             return fig
         viz.plot_fft(
-            x=self.times * 1e-3,
-            y=self.raw,
+            x=times * 1e-3,
+            y=waveform,
             title=plot_title,
             xlabel="Frequency (MHz)",
             ylabel="Signal (arb. units)",
@@ -721,7 +759,7 @@ class MeasureResult:
                 return_figure=return_figure,
                 save_image=save_image,
             )
-            if return_figure:
+            if return_figure and figure is not None:
                 figures.append(figure)
         if return_figure:
             return figures
@@ -1329,7 +1367,8 @@ class MultipleMeasureResult:
                     return_figure=return_figure,
                     save_image=save_image,
                 )
-                figures.append(fig)
+                if fig is not None:
+                    figures.append(fig)
             if return_figure:
                 return figures
         return None
