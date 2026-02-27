@@ -148,6 +148,8 @@ class Experiment:
     ... )
     """
 
+    _MISSING = object()
+
     def __init__(
         self,
         *,
@@ -255,6 +257,31 @@ class Experiment:
 
         """
         return task.execute(self)
+
+    @classmethod
+    def _resolve_deprecated_option(
+        cls,
+        *,
+        value: Any,
+        deprecated_options: dict[str, Any],
+        deprecated_name: str,
+        replacement_name: str,
+    ) -> Any:
+        """Resolve a deprecated keyword and return the normalized value."""
+        legacy_value = deprecated_options.pop(deprecated_name, cls._MISSING)
+        if legacy_value is not cls._MISSING and legacy_value is not None:
+            warnings.warn(
+                f"`{deprecated_name}` is deprecated; use `{replacement_name}`.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            if value is not None and value != legacy_value:
+                raise ValueError(
+                    f"`{deprecated_name}` conflicts with `{replacement_name}`. "
+                    f"Provide only `{replacement_name}`."
+                )
+            return legacy_value
+        return value
 
     def print_environment(self, verbose: bool | None = None) -> None:
         """Print runtime and configuration environment information."""
@@ -3175,13 +3202,23 @@ class Experiment:
         self,
         cr_labels: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
+        n_shots: int | None = None,
         save: bool | None = None,
+        **deprecated_options: Any,
     ) -> None:
         """Correct stored CR parameters via tomography."""
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
         return self.calibration_service.correct_cr_params(
             cr_labels=cr_labels,
-            shots=shots,
+            shots=n_shots,
             save=save,
         )
 
@@ -3211,8 +3248,9 @@ class Experiment:
         r2_threshold: float | None = None,
         update_params: bool | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the default pulse.
@@ -3235,9 +3273,9 @@ class Experiment:
             Threshold for R² value. Defaults to 0.5.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -3245,6 +3283,22 @@ class Experiment:
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_default_pulse(
             targets=targets,
             pulse_type=pulse_type,
@@ -3255,8 +3309,8 @@ class Experiment:
             r2_threshold=r2_threshold,
             update_params=update_params,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_hpi_pulse(
@@ -3269,8 +3323,9 @@ class Experiment:
         n_rotations: int | None = None,
         r2_threshold: float | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π/2 pulse.
@@ -3291,9 +3346,9 @@ class Experiment:
             Threshold for R² value. Defaults to 0.5.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -3301,6 +3356,22 @@ class Experiment:
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_hpi_pulse(
             targets=targets,
             duration=duration,
@@ -3309,8 +3380,8 @@ class Experiment:
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_pi_pulse(
@@ -3323,8 +3394,9 @@ class Experiment:
         n_rotations: int | None = None,
         r2_threshold: float | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π pulse.
@@ -3345,9 +3417,9 @@ class Experiment:
             Threshold for R² value. Defaults to 0.5.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -3355,6 +3427,22 @@ class Experiment:
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_pi_pulse(
             targets=targets,
             duration=duration,
@@ -3363,8 +3451,8 @@ class Experiment:
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_ef_pulse(
@@ -3378,8 +3466,9 @@ class Experiment:
         n_rotations: int | None = None,
         r2_threshold: float | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the default pulse.
@@ -3402,9 +3491,9 @@ class Experiment:
             Threshold for R² value. Defaults to 0.5.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -3412,6 +3501,22 @@ class Experiment:
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_ef_pulse(
             targets=targets,
             pulse_type=pulse_type,
@@ -3421,8 +3526,8 @@ class Experiment:
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_ef_hpi_pulse(
@@ -3435,8 +3540,9 @@ class Experiment:
         n_rotations: int | None = None,
         r2_threshold: float | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the ef π/2 pulse.
@@ -3457,9 +3563,9 @@ class Experiment:
             Threshold for R² value. Defaults to 0.5.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -3467,6 +3573,22 @@ class Experiment:
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_ef_hpi_pulse(
             targets=targets,
             duration=duration,
@@ -3475,8 +3597,8 @@ class Experiment:
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_ef_pi_pulse(
@@ -3489,8 +3611,9 @@ class Experiment:
         n_rotations: int | None = None,
         r2_threshold: float | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        **deprecated_options: Any,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the ef π pulse.
@@ -3511,9 +3634,9 @@ class Experiment:
             Threshold for R² value. Defaults to 0.5.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
-        shots : int, optional
+        n_shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : float, optional
+        shot_interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -3521,6 +3644,22 @@ class Experiment:
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_ef_pi_pulse(
             targets=targets,
             duration=duration,
@@ -3529,8 +3668,8 @@ class Experiment:
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_drag_amplitude(
@@ -3547,8 +3686,8 @@ class Experiment:
         use_stored_amplitude: bool | None = None,
         use_stored_beta: bool | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
     ) -> Result:
         """Calibrate DRAG amplitude for targets."""
         return self.calibration_service.calibrate_drag_amplitude(
@@ -3563,8 +3702,8 @@ class Experiment:
             use_stored_amplitude=use_stored_amplitude,
             use_stored_beta=use_stored_beta,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_drag_beta(
@@ -3578,8 +3717,8 @@ class Experiment:
         n_turns: int | None = None,
         degree: int | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
     ) -> Result:
         """Calibrate DRAG beta for targets."""
         return self.calibration_service.calibrate_drag_beta(
@@ -3591,8 +3730,8 @@ class Experiment:
             n_turns=n_turns,
             degree=degree,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_drag_hpi_pulse(
@@ -3611,8 +3750,8 @@ class Experiment:
         duration: float | None = None,
         drag_coeff: float | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
     ) -> Result:
         """Calibrate DRAG half-pi pulses for targets."""
         return self.calibration_service.calibrate_drag_hpi_pulse(
@@ -3629,8 +3768,8 @@ class Experiment:
             duration=duration,
             drag_coeff=drag_coeff,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def calibrate_drag_pi_pulse(
@@ -3649,8 +3788,8 @@ class Experiment:
         duration: float | None = None,
         drag_coeff: float | None = None,
         plot: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
     ) -> Result:
         """Calibrate DRAG pi pulses for targets."""
         return self.calibration_service.calibrate_drag_pi_pulse(
@@ -3667,8 +3806,8 @@ class Experiment:
             duration=duration,
             drag_coeff=drag_coeff,
             plot=plot,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     def measure_cr_dynamics(
@@ -3694,8 +3833,8 @@ class Experiment:
         ]
         | None = None,
         x180_margin: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
@@ -3715,8 +3854,8 @@ class Experiment:
             x180=x180,
             ramp_type=ramp_type,
             x180_margin=x180_margin,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
         )
@@ -3746,8 +3885,8 @@ class Experiment:
         x180: TargetMap[Waveform] | None = None,
         ramp_type: RampType | None = None,
         x180_margin: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
@@ -3784,8 +3923,8 @@ class Experiment:
         ramp_type: RampType | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
@@ -3813,8 +3952,8 @@ class Experiment:
         cancel_phase: float | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
@@ -3830,8 +3969,8 @@ class Experiment:
             cancel_phase=cancel_phase,
             x90=x90,
             x180_margin=x180_margin,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
         )
@@ -3851,8 +3990,8 @@ class Experiment:
         update_cancel_pulse: bool | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
@@ -3870,8 +4009,8 @@ class Experiment:
             update_cancel_pulse=update_cancel_pulse,
             x90=x90,
             x180_margin=x180_margin,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
         )
@@ -3894,8 +4033,8 @@ class Experiment:
         max_time_range: float | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
@@ -3916,8 +4055,8 @@ class Experiment:
             max_time_range=max_time_range,
             x90=x90,
             x180_margin=x180_margin,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
         )
@@ -3943,8 +4082,8 @@ class Experiment:
         x180_margin: float | None = None,
         use_zvalues: bool | None = None,
         store_params: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Calibrate the ZX90 gate for a qubit pair."""
@@ -3967,8 +4106,8 @@ class Experiment:
             x180_margin=x180_margin,
             use_zvalues=use_zvalues,
             store_params=store_params,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -3976,16 +4115,33 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         coarse: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """Run one-qubit calibration workflow."""
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_1q(
             targets=targets,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             coarse=coarse,
         )
@@ -3995,16 +4151,33 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         cr_calib_params: dict | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> Result:
         """Run two-qubit calibration workflow."""
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.calibration_service.calibrate_2q(
             targets=targets,
             cr_calib_params=cr_calib_params,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4020,8 +4193,8 @@ class Experiment:
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4031,8 +4204,8 @@ class Experiment:
             initial_state=initial_state,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4044,8 +4217,8 @@ class Experiment:
         amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_duration: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Sweep readout amplitudes for targets."""
@@ -4054,8 +4227,8 @@ class Experiment:
             amplitude_range=amplitude_range,
             initial_state=initial_state,
             readout_duration=readout_duration,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4066,8 +4239,8 @@ class Experiment:
         time_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Sweep readout durations for targets."""
@@ -4076,8 +4249,8 @@ class Experiment:
             time_range=time_range,
             initial_state=initial_state,
             readout_amplitudes=readout_amplitudes,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4090,8 +4263,8 @@ class Experiment:
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4103,8 +4276,8 @@ class Experiment:
             frequencies=frequencies,
             amplitudes=amplitudes,
             rabi_params=rabi_params,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4116,8 +4289,8 @@ class Experiment:
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
         rabi_level: Literal["ge", "ef"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[FreqRabiData]:
         """Obtain the frequency-Rabi relation for targets."""
@@ -4126,8 +4299,8 @@ class Experiment:
             detuning_range=detuning_range,
             time_range=time_range,
             rabi_level=rabi_level,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4137,8 +4310,8 @@ class Experiment:
         *,
         time_range: ArrayLike | None = None,
         amplitude_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[AmplRabiData]:
         """Obtain the amplitude-Rabi relation for targets."""
@@ -4146,8 +4319,8 @@ class Experiment:
             targets=targets,
             time_range=time_range,
             amplitude_range=amplitude_range,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4159,8 +4332,8 @@ class Experiment:
         time_range: ArrayLike | None = None,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Calibrate control frequencies for targets."""
@@ -4170,8 +4343,8 @@ class Experiment:
             time_range=time_range,
             frequencies=frequencies,
             amplitudes=amplitudes,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4181,8 +4354,8 @@ class Experiment:
         *,
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Calibrate EF control frequencies for targets."""
@@ -4190,8 +4363,8 @@ class Experiment:
             targets=targets,
             detuning_range=detuning_range,
             time_range=time_range,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4202,8 +4375,8 @@ class Experiment:
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Calibrate readout frequencies for targets."""
@@ -4212,8 +4385,8 @@ class Experiment:
             detuning_range=detuning_range,
             time_range=time_range,
             readout_amplitudes=readout_amplitudes,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4222,8 +4395,8 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
@@ -4232,8 +4405,8 @@ class Experiment:
         return self.characterization_service.t1_experiment(
             targets=targets,
             time_range=time_range,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
             xaxis_type=xaxis_type,
@@ -4246,8 +4419,8 @@ class Experiment:
         time_range: ArrayLike | None = None,
         n_cpmg: int | None = None,
         pi_cpmg: Waveform | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
@@ -4258,8 +4431,8 @@ class Experiment:
             time_range=time_range,
             n_cpmg=n_cpmg,
             pi_cpmg=pi_cpmg,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
             xaxis_type=xaxis_type,
@@ -4273,8 +4446,8 @@ class Experiment:
         detuning: float | None = None,
         second_rotation_axis: Literal["X", "Y"] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
@@ -4285,8 +4458,8 @@ class Experiment:
             detuning=detuning,
             second_rotation_axis=second_rotation_axis,
             spectator_state=spectator_state,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4301,8 +4474,8 @@ class Experiment:
         time_range: ArrayLike | None = None,
         detuning: float | None = None,
         second_rotation_axis: Literal["X", "Y"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> dict[str, ExperimentResult]:
@@ -4328,8 +4501,8 @@ class Experiment:
         stark_amplitude: float | dict[str, float] | None = None,
         stark_ramptime: float | dict[str, float] | None = None,
         time_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
@@ -4357,8 +4530,8 @@ class Experiment:
         stark_ramptime: float | dict[str, float] | None = None,
         time_range: ArrayLike | None = None,
         second_rotation_axis: Literal["X", "Y"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         envelope_region: Literal["full", "flat"] | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
@@ -4380,8 +4553,8 @@ class Experiment:
         *,
         time_range: ArrayLike | None = None,
         detuning: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Estimate effective control frequencies for targets."""
@@ -4389,8 +4562,8 @@ class Experiment:
             targets=targets,
             time_range=time_range,
             detuning=detuning,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4402,8 +4575,8 @@ class Experiment:
         time_range: ArrayLike | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Run a JAZZ experiment for a target/spectator pair."""
@@ -4413,8 +4586,8 @@ class Experiment:
             time_range=time_range,
             x90=x90,
             x180=x180,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4426,8 +4599,8 @@ class Experiment:
         time_range: ArrayLike | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Estimate coupling strength for a target/spectator pair."""
@@ -4437,8 +4610,8 @@ class Experiment:
             time_range=time_range,
             x90=x90,
             x180=x180,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
         )
 
@@ -4450,8 +4623,8 @@ class Experiment:
         df: float | None = None,
         n_samples: int | None = None,
         readout_amplitude: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         confirm: bool | None = None,
     ) -> float:
@@ -4462,8 +4635,8 @@ class Experiment:
             df=df,
             n_samples=n_samples,
             readout_amplitude=readout_amplitude,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             confirm=confirm,
         )
@@ -4478,8 +4651,8 @@ class Experiment:
         subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4492,8 +4665,8 @@ class Experiment:
             subrange_width=subrange_width,
             peak_height=peak_height,
             peak_distance=peak_distance,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4505,8 +4678,8 @@ class Experiment:
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike | None = None,
         electrical_delay: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4516,8 +4689,8 @@ class Experiment:
             frequency_range=frequency_range,
             power_range=power_range,
             electrical_delay=electrical_delay,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4532,8 +4705,8 @@ class Experiment:
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
         qubit_state: str | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4546,8 +4719,8 @@ class Experiment:
             readout_amplitude=readout_amplitude,
             electrical_delay=electrical_delay,
             qubit_state=qubit_state,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4563,8 +4736,8 @@ class Experiment:
         subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4578,8 +4751,8 @@ class Experiment:
             subrange_width=subrange_width,
             peak_height=peak_height,
             peak_distance=peak_distance,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4592,8 +4765,8 @@ class Experiment:
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
         target_rabi_rate: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> float:
@@ -4604,8 +4777,8 @@ class Experiment:
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             target_rabi_rate=target_rabi_rate,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4618,8 +4791,8 @@ class Experiment:
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
         target_rabi_rate: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4630,8 +4803,8 @@ class Experiment:
             control_amplitude=control_amplitude,
             readout_amplitude=readout_amplitude,
             target_rabi_rate=target_rabi_rate,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4643,8 +4816,8 @@ class Experiment:
         power_range: ArrayLike | None = None,
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4655,8 +4828,8 @@ class Experiment:
             power_range=power_range,
             readout_amplitude=readout_amplitude,
             readout_frequency=readout_frequency,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4670,8 +4843,8 @@ class Experiment:
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
         threshold: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4683,8 +4856,8 @@ class Experiment:
             readout_amplitude=readout_amplitude,
             electrical_delay=electrical_delay,
             threshold=threshold,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4697,8 +4870,8 @@ class Experiment:
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4709,8 +4882,8 @@ class Experiment:
             frequency_width=frequency_width,
             readout_amplitude=readout_amplitude,
             electrical_delay=electrical_delay,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4720,8 +4893,8 @@ class Experiment:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4729,8 +4902,8 @@ class Experiment:
         return self.characterization_service.find_optimal_readout_amplitude(
             target=target,
             amplitude_range=amplitude_range,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4820,16 +4993,16 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
-        interval: int | None = None,
+        n_shots: int | None = None,
+        shot_interval: int | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
         """Run basic single-qubit characterization routines."""
         return self.characterization_service.characterize_1q(
             targets=targets,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4838,16 +5011,16 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int | None = None,
-        interval: int | None = None,
+        n_shots: int | None = None,
+        shot_interval: int | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
         """Run basic two-qubit characterization routines."""
         return self.characterization_service.characterize_2q(
             targets=targets,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4890,8 +5063,8 @@ class Experiment:
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4906,8 +5079,8 @@ class Experiment:
             zx90=zx90,
             in_parallel=in_parallel,
             xaxis_type=xaxis_type,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4927,8 +5100,8 @@ class Experiment:
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4944,8 +5117,8 @@ class Experiment:
             x90=x90,
             zx90=zx90,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4956,18 +5129,35 @@ class Experiment:
         *,
         n_trials: int | None = None,
         in_parallel: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        **deprecated_options: Any,
     ) -> None:
         """Run standard 1Q benchmarking suite."""
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.benchmarking_service.benchmark_1q(
             targets=targets,
             n_trials=n_trials,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -4978,18 +5168,35 @@ class Experiment:
         *,
         n_trials: int | None = None,
         in_parallel: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        **deprecated_options: Any,
     ) -> None:
         """Run standard 2Q benchmarking suite."""
+        n_shots = self._resolve_deprecated_option(
+            value=n_shots,
+            deprecated_options=deprecated_options,
+            deprecated_name="shots",
+            replacement_name="n_shots",
+        )
+        shot_interval = self._resolve_deprecated_option(
+            value=shot_interval,
+            deprecated_options=deprecated_options,
+            deprecated_name="interval",
+            replacement_name="shot_interval",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+
         return self.benchmarking_service.benchmark_2q(
             targets=targets,
             n_trials=n_trials,
             in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
             plot=plot,
             save_image=save_image,
         )
@@ -5007,8 +5214,8 @@ class Experiment:
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -5039,8 +5246,8 @@ class Experiment:
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -5151,8 +5358,8 @@ class Experiment:
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
     ) -> dict:
         """
         Optimize ZX90 gate parameters for a qubit pair.
@@ -5183,8 +5390,8 @@ class Experiment:
             ramptime=ramptime,
             x180=x180,
             x180_margin=x180_margin,
-            shots=shots,
-            interval=interval,
+            shots=n_shots,
+            interval=shot_interval,
         )
 
     # endregion
