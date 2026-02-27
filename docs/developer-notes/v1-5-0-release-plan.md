@@ -47,9 +47,11 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 | P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
 | P1 | Add async-first `Experiment` measurement APIs (`run_measurement`, `run_sweep_measurement`) and keep legacy wrappers (`measure`, `execute`, `sweep_parameter`, `sweep_measurement`) | 2026-03-08 | Measurement async primitives + API design freeze | TODO |
 | P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-08 | Async primitives | TODO |
+| P1 | Support Raw data persistence in NetCDF4 format | 2026-03-25 | Integrate with existing `qxcore` `DataModel` save capability | TODO |
 | P1 | Publish beta release notes and migration notes | 2026-02-28 | Major features for beta fixed | TODO |
 | P1 | GA hardening: bug fixes from beta feedback | 2026-03-20 | Beta feedback | TODO |
 | P1 | GA release notes and documentation finalization | 2026-03-25 | GA scope frozen | TODO |
+| P1 | Publish v1.5.0 package to PyPI (build and upload distribution artifacts) | 2026-03-25 | GA release notes finalized and required checks green | TODO |
 | P1 | Finalize MkDocs user-guide and developer-guide for v1.5.0 (sufficient for experiment users and developers) | 2026-03-25 | GA scope frozen and config/runtime behavior stabilized | TODO |
 | P2 | Developer ergonomics improvements (logs/errors/examples) for new flows | 2026-03-25 | Main features implemented | TODO |
 | P2 | Clean up test code and remove obsolete test cases | 2026-03-25 | Main features implemented and compatibility/test scope stabilized | TODO |
