@@ -3337,7 +3337,7 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
-    { name = "quelware-client", marker = "extra == 'backend'", editable = "packages/quelware-client/quelware-client" },
+    { name = "quelware-client", marker = "extra == 'backend'", editable = "lib/quelware-client-internal/quelware-client" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxdriver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
     { name = "qxfitting", editable = "packages/qxfitting" },
@@ -3403,7 +3403,7 @@ wheels = [
 [[package]]
 name = "quelware-client"
 version = "0.1.0a1"
-source = { editable = "packages/quelware-client/quelware-client" }
+source = { editable = "lib/quelware-client-internal/quelware-client" }
 dependencies = [
     { name = "betterproto2" },
     { name = "grpclib" },
@@ -3424,7 +3424,7 @@ dev = [
 requires-dist = [
     { name = "betterproto2", specifier = ">=0.9.1" },
     { name = "grpclib", specifier = ">=0.4.8" },
-    { name = "quelware-core", editable = "packages/quelware-client/quelware-core/python" },
+    { name = "quelware-core", editable = "lib/quelware-client-internal/quelware-core/python" },
     { name = "typer", specifier = ">=0.21.1" },
     { name = "typing-extensions", specifier = ">=4.1.0" },
 ]
@@ -3440,7 +3440,7 @@ dev = [
 [[package]]
 name = "quelware-core"
 version = "0.1.0a1"
-source = { editable = "packages/quelware-client/quelware-core/python" }
+source = { editable = "lib/quelware-client-internal/quelware-core/python" }
 dependencies = [
     { name = "betterproto2" },
     { name = "googleapis-common-protos" },

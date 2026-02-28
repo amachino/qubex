@@ -40,10 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = [
-    "qxdriver-quel1",
-    "quelware-client",
-]
+backend = ["qxdriver-quel1", "quelware-client"]
 
 [project.scripts]
 qubex = "qubex.cli:main"
@@ -87,7 +84,7 @@ qxvisualizer = { workspace = true }
 
 [tool.uv.workspace]
 members = [
-    "packages/quelware-client/quelware-client",
+    "lib/quelware-client-internal/quelware-client",
     "packages/qxcore",
     "packages/qxdriver-quel1",
     "packages/qxfitting",
@@ -104,17 +101,17 @@ filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
 include = ["src", "packages", "tests"]
-exclude = [
-    ".venv",
-    "**/node_modules",
-    "**/__pycache__",
-    "**/.*",
-    "packages/quelware-client",
+exclude = [".venv", "lib", "**/node_modules", "**/__pycache__", "**/.*"]
+extraPaths = [
+    "lib/quelware-client-internal/quelware-client/src",
+    "lib/quelware-client-internal/quelware-core/python/src",
+    "lib/quelware-client/quelware-client/src",
+    "lib/quelware-client/quelware-core/python/src",
 ]
 typeCheckingMode = "basic"
 
 [tool.ruff]
-extend-exclude = ["packages/quelware-client"]
+extend-exclude = ["lib"]
 
 [tool.ruff.lint]
 select = [

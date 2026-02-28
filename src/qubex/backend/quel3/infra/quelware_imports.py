@@ -8,23 +8,33 @@ from pathlib import Path
 from types import ModuleType
 
 
-def _append_local_quelware_paths() -> None:
-    """Append local quelware source paths when present in the workspace."""
-    root = Path(__file__).resolve().parents[4]
-    candidates = (
-        root / "tmp" / "quelware-client-internal" / "quelware-client" / "src",
-        root / "tmp" / "quelware-client-internal" / "quelware-core" / "python" / "src",
-        root / "packages" / "quelware-client-internal" / "quelware-client" / "src",
+def _candidate_local_quelware_paths(root: Path) -> tuple[Path, ...]:
+    """Return local quelware source directories checked for fallback import."""
+    return (
+        root / "lib" / "quelware-client-internal" / "quelware-client" / "src",
+        root / "lib" / "quelware-client-internal" / "quelware-core" / "python" / "src",
+        root / "lib" / "quelware-client" / "quelware-client" / "src",
+        root / "lib" / "quelware-client" / "quelware-core" / "python" / "src",
         root
-        / "packages"
+        / "lib"
+        / "quelware-backends"
+        / "quelware-client-internal"
+        / "quelware-client"
+        / "src",
+        root
+        / "lib"
+        / "quelware-backends"
         / "quelware-client-internal"
         / "quelware-core"
         / "python"
         / "src",
-        root / "packages" / "quelware-client" / "quelware-client" / "src",
-        root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
     )
-    for path in candidates:
+
+
+def _append_local_quelware_paths() -> None:
+    """Append local quelware source paths when present in the workspace."""
+    root = Path(__file__).resolve().parents[5]
+    for path in _candidate_local_quelware_paths(root):
         path_str = str(path)
         if path.exists() and path_str not in sys.path:
             sys.path.insert(0, path_str)
