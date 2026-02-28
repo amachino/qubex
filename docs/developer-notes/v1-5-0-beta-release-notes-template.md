@@ -32,7 +32,7 @@
   - Result timing metadata should be consumed from `sampling_period_ns`.
   - Capture mode contract for QuEL-3:
     - `avg` -> `CaptureMode.AVERAGED_VALUE`
-    - `single` -> `CaptureMode.VALUES_PER_LOOP`
+    - `single` -> `CaptureMode.VALUES_PER_ITER`
     - waveform inspection paths -> `CaptureMode.AVERAGED_WAVEFORM`
 
 ## Known limitations (beta)
@@ -53,7 +53,7 @@
 | Hardware validation (QuEL-3) | TBD |  |
 | Auto target-to-alias resolution (`wiring/port` aligned, fail-fast on unresolved/ambiguous) | TBD |  |
 | Multi-instrument synchronized trigger (cross-unit) | TBD |  |
-| Capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_LOOP`) | TBD |  |
+| Capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER`) | TBD |  |
 | Synchronized scenario (`SP-BETA-001`) | TBD |  |
 
 ## Breaking changes

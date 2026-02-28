@@ -16,7 +16,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - `packages/quelware-client/quelware-client/src/quelware_client/core/_client.py`
 - `packages/quelware-client/quelware-client/src/quelware_client/core/_session.py`
 - `packages/quelware-client/quelware-client/src/quelware_client/core/instrument_driver/__init__.py`
-- `packages/quelware-client/quelware-client/examples/use_instrument.py`
+- `packages/quelware-client/quelware-client/examples/generate_readout_pulse.py`
 
 ## Integration boundary in Qubex
 
@@ -53,9 +53,10 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 | Qubex concept | quelware API candidate | Draft mapping |
 | --- | --- | --- |
 | schedule waveform samples | `Sequencer.register_waveform` | Register target waveform per logical event block. |
+| bind hardware sampling constraints | `Sequencer.bind` | Bind alias to instrument `sampling_period_fs` and `timeline_step_samples` before timeline export. |
 | schedule pulse placement | `Sequencer.add_event` | Use schedule start offset in ns and waveform name. |
 | capture schedule | `Sequencer.add_capture_window` | Capture windows are added in ns, then exported in samples. |
-| backend timeline export | `Sequencer.export_set_fixed_timeline_directive` | Convert ns timeline into sample timeline using instrument `sampling_period_fs`. |
+| backend timeline export | `Sequencer.export_set_fixed_timeline_directive` | Export timeline for one bound alias; final length is aligned to sample-grid constraints. |
 | hardware execution | `InstrumentDriver.apply` + `Session.trigger(instrument_ids=...)` | Apply fixed-timeline directive, then trigger selected instruments via session API. |
 | measured data fetch | `InstrumentDriver.fetch_result` | Read `ResultContainer.iq_result` (`WaveformList` or `IqPointList`). |
 
@@ -74,7 +75,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Keep `sampling_period_ns` in result metadata.
 - Preserve alias-to-target capture mapping metadata through backend result (`capture_targets_by_alias`) to restore logical output labels in adapter conversion.
 - Preserve quelware capture-mode semantics:
-  - `single` uses `CaptureMode.VALUES_PER_ITER` (fallback to legacy `CaptureMode.VALUES_PER_LOOP`).
+  - `single` uses `CaptureMode.VALUES_PER_ITER`.
   - `avg` uses `CaptureMode.AVERAGED_VALUE`.
   - waveform inspection flows (for example `check_waveform`) use `CaptureMode.AVERAGED_WAVEFORM`.
 - Remove QuEL-1 specific extra-capture assumptions from QuEL-3 result path.
@@ -91,7 +92,7 @@ Dependency note:
 | DF-01 | Target-to-alias mapping | Resolve target-to-instrument alias automatically from wiring/port consistency at runtime; unresolved or ambiguous mapping fails fast. Fallback to label guessing is prohibited. | Matches operator workflow (port-first wiring) while keeping execution deterministic. | DECIDED |
 | DF-02 | Capture-window key policy | Standardize key as `{instrument_alias}:{capture_index}`. `capture_index` is per-alias 0-based and deterministic (`start_time` asc, `duration` asc, then definition order). | Keeps backend payload/result vocabulary in instrument-alias terms and avoids controller-side label conversion. | DECIDED |
 | DF-03 | Trigger orchestration | Require synchronized execution with multiple instrument aliases, including cross-unit trigger in one measurement run. | Beta gate explicitly requires multi-instrument and cross-unit synchronization on hardware. | DECIDED |
-| DF-04 | Result mode contract | Use quelware capture modes as canonical: `single`=`VALUES_PER_ITER` with `VALUES_PER_LOOP` fallback, `avg`=`AVERAGED_VALUE`; waveform inspection uses `AVERAGED_WAVEFORM`. | Avoids ambiguous local averaging semantics and follows upstream contracts across legacy/new API variants. | DECIDED |
+| DF-04 | Result mode contract | Use quelware capture modes as canonical: `single`=`VALUES_PER_ITER`, `avg`=`AVERAGED_VALUE`; waveform inspection uses `AVERAGED_WAVEFORM`. | Avoids ambiguous local averaging semantics and follows current upstream contracts. | DECIDED |
 | DF-05 | `tx/rx/trx` resource mapping | Keep logical `read_out`/`read_in` in `ExperimentSystem`, but allow both to resolve to one transceiver (`trx`) resource/alias in QuEL-3 runtime when consistent. | Matches quelware resource model while keeping experiment-level vocabulary stable. | DECIDED |
 | DF-06 | Backend settings introspection | Treat QuEL-1-style `dump_box` introspection as unsupported on QuEL-3 unless explicit quelware API is provided. | Current quelware surface does not confirm LO/CNCO/FNCO-style snapshot retrieval. | DECIDED |
 
@@ -101,7 +102,7 @@ Dependency note:
 - Missing, ambiguous, or inconsistent alias resolution must raise clear runtime/configuration errors (fail-fast).
 - Capture lookup keys in sequencer/export/result-fetch paths must use `{instrument_alias}:{capture_index}`.
 - Session execution must open all resolved instrument resource IDs and trigger them synchronously, including cross-unit combinations.
-- QuEL-3 capture mode must be configured via `SetCaptureMode` according to the mode contract (`VALUES_PER_ITER` with `VALUES_PER_LOOP` fallback / `AVERAGED_VALUE` / `AVERAGED_WAVEFORM`).
+- QuEL-3 capture mode must be configured via `SetCaptureMode` according to the mode contract (`VALUES_PER_ITER` / `AVERAGED_VALUE` / `AVERAGED_WAVEFORM`).
 - `window_name` is treated as metadata/display only and is not part of the contract key.
 - Adapter/payload path must allow one alias to carry both waveform events and capture windows when resolved role is transceiver.
 - Any utility path that assumes QuEL-1 `dump_box` snapshots must be capability-gated on QuEL-3 and fail with explicit unsupported errors.

@@ -98,7 +98,7 @@ Status legend:
 - Status: `DECIDED`
 - Decision:
   - Canonical mode mapping follows quelware capture modes:
-    - `single` -> `CaptureMode.VALUES_PER_LOOP`
+    - `single` -> `CaptureMode.VALUES_PER_ITER`
     - `avg` -> `CaptureMode.AVERAGED_VALUE`
     - waveform inspection flows (for example `check_waveform`) -> `CaptureMode.AVERAGED_WAVEFORM`
 

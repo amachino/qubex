@@ -14,7 +14,7 @@ Define the minimum synchronized measurement scenario required for v1.5.0 beta ga
 - API contract surface: `Measurement.run_measurement_schedule(...)`
 - Mode contract:
   - `avg` uses `CaptureMode.AVERAGED_VALUE`
-  - `single` uses `CaptureMode.VALUES_PER_LOOP`
+  - `single` uses `CaptureMode.VALUES_PER_ITER`
 - Goal: verify one payload is applied and triggered as a synchronized flow across all involved aliases, including cross-unit combinations.
 
 ## Status
@@ -50,7 +50,7 @@ Define the minimum synchronized measurement scenario required for v1.5.0 beta ga
 - Multi-instrument cross-unit synchronized trigger is confirmed in execution evidence.
 - Mode semantics are consistent with quelware capture-mode contract:
   - `avg` returns `AVERAGED_VALUE` path semantics
-  - `single` returns `VALUES_PER_LOOP` path semantics
+  - `single` returns `VALUES_PER_ITER` path semantics
 - `sampling_period_ns` is set from backend/controller contract.
 - Same high-level flow remains callable with `mock_mode=True`.
 

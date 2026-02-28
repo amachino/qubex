@@ -57,7 +57,7 @@ Prepare executable demo paths for:
 4. Remove or gate unconditional reset dependencies in sweep-heavy flows (`rabi`, `rb`, `bell` paths).
 5. DONE (`2026-02-27`): Completed `InstrumentResolver` migration and removed legacy `InstrumentMapper` dependency in QuEL-3 execution manager.
 6. IN_PROGRESS: Removed single-alias execution restriction in software (`2026-02-27`); cross-unit synchronized-trigger hardware validation is still required.
-7. IN_PROGRESS: Bound capture-mode directives for `avg`/`single` (`AVERAGED_VALUE` and `VALUES_PER_ITER` with legacy `VALUES_PER_LOOP` fallback); waveform-inspection (`AVERAGED_WAVEFORM`) contract validation is still pending.
+7. IN_PROGRESS: Bound capture-mode directives for `avg`/`single` (`AVERAGED_VALUE` and `VALUES_PER_ITER`); waveform-inspection (`AVERAGED_WAVEFORM`) contract validation is still pending.
 
 ## Questions to confirm with quelware team
 

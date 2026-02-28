@@ -26,7 +26,7 @@ Last status update: `2026-02-27`.
 | QuEL-3 integration compatibility with current `quelware-client` resolver API (`InstrumentResolver`) | partial | `tests/backend/test_quel3_backend_controller.py` (resolver-path payload resolution with resolver-compatible doubles); TODO: add direct import/usage regression against local quelware package layout. |
 | Target-to-alias auto-resolution by wiring/port with fail-fast errors on unresolved/ambiguous cases | covered | `tests/backend/test_quel3_backend_controller.py`, `tests/measurement/test_quel3_measurement_backend_adapter.py` |
 | Multi-instrument synchronized trigger including cross-unit execution | gap | TODO (new backend execution tests + hardware gate evidence) |
-| Capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER` with legacy `VALUES_PER_LOOP` fallback, waveform inspection=`AVERAGED_WAVEFORM`) | partial | Source implementation in `src/qubex/backend/quel3/managers/execution_manager.py`; TODO: add explicit execution/result contract tests including waveform inspection path. |
+| Capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER`, waveform inspection=`AVERAGED_WAVEFORM`) | partial | Source implementation in `src/qubex/backend/quel3/managers/execution_manager.py`; TODO: add explicit execution/result contract tests including waveform inspection path. |
 
 ## Experiment delegation smoke matrix
 
