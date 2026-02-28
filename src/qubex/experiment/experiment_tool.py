@@ -123,8 +123,7 @@ def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
     get_box = _require_backend_callable("get_box")
     box = cast("Quel1Box", get_box(box_id))
-    # TODO: use appropriate noise threshold
-    box.reconnect(background_noise_threshold=10000)
+    box.reconnect(background_noise_threshold=50_000)
     return box
 
 

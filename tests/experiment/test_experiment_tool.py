@@ -119,4 +119,4 @@ def test_get_quel1_box_reconnects_box_with_default_threshold(monkeypatch) -> Non
     returned_box = experiment_tool.get_quel1_box("U15A")
 
     assert returned_box is box
-    assert box.background_noise_thresholds == [10000]
+    assert box.background_noise_thresholds == [50_000]

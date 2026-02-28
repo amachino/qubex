@@ -197,7 +197,7 @@ def test_linkup_uses_relaxed_noise_threshold_by_default(
     controller.linkup("B0")
 
     assert reconnect_calls
-    assert reconnect_calls[0]["background_noise_threshold"] == 10000
+    assert reconnect_calls[0]["background_noise_threshold"] == 50_000
 
 
 def test_linkup_keeps_explicit_noise_threshold(
