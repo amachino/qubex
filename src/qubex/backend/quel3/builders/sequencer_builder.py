@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TypeVar
 
 from qubex.backend.quel3.interfaces import SequencerProtocol
@@ -20,6 +20,8 @@ class Quel3SequencerBuilder:
         payload: Quel3ExecutionPayload,
         sequencer_factory: Callable[..., T],
         default_sampling_period_ns: float,
+        alias_bindings: Mapping[str, tuple[int, int]],
+        iterations: int,
     ) -> T:
         """
         Build one sequencer instance from a QuEL-3 execution payload.
@@ -32,6 +34,10 @@ class Quel3SequencerBuilder:
             Sequencer class or factory compatible with quelware `Sequencer`.
         default_sampling_period_ns : float
             Sequencer default sampling period in ns.
+        alias_bindings : Mapping[str, tuple[int, int]]
+            Per-alias binding of (`sampling_period_fs`, `timeline_step_samples`).
+        iterations : int
+            Fixed-timeline iteration count for one trigger execution.
 
         Returns
         -------
@@ -41,6 +47,20 @@ class Quel3SequencerBuilder:
         sequencer = sequencer_factory(
             default_sampling_period_ns=default_sampling_period_ns
         )
+        sequencer.set_iterations(iterations)
+
+        for instrument_alias in payload.fixed_timelines:
+            binding = alias_bindings.get(instrument_alias)
+            if binding is None:
+                raise ValueError(
+                    f"Missing sequencer binding for alias: {instrument_alias}."
+                )
+            sampling_period_fs, timeline_step_samples = binding
+            sequencer.bind(
+                instrument_alias,
+                sampling_period_fs=sampling_period_fs,
+                step_samples=timeline_step_samples,
+            )
 
         for waveform_name, waveform_def in payload.waveform_library.items():
             sequencer.register_waveform(

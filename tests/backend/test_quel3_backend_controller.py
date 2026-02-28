@@ -209,6 +209,24 @@ def test_build_measurement_result_keeps_backend_alias_labels() -> None:
     assert "alias-raw" in result.data
 
 
+def test_resolve_timeline_iterations_uses_repeats_for_iterative_modes() -> None:
+    """Given iterative capture mode, timeline iterations follow repeats."""
+    iterations = Quel3ExecutionManager._resolve_timeline_iterations(
+        capture_mode=Quel3CaptureMode.VALUES_PER_ITER,
+        repeats=16,
+    )
+    assert iterations == 16
+
+
+def test_resolve_timeline_iterations_uses_single_for_raw_waveforms() -> None:
+    """Given raw waveform mode, timeline iterations stay at one."""
+    iterations = Quel3ExecutionManager._resolve_timeline_iterations(
+        capture_mode=Quel3CaptureMode.RAW_WAVEFORMS,
+        repeats=16,
+    )
+    assert iterations == 1
+
+
 def test_extract_capture_samples_from_waveform_result_container() -> None:
     """Given waveform-style iq_result, extraction returns latest waveform samples."""
 

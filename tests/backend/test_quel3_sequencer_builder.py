@@ -42,12 +42,35 @@ class _CaptureWindow:
     length_ns: float
 
 
+@dataclass(frozen=True)
+class _Binding:
+    alias: str
+    sampling_period_fs: int
+    step_samples: int
+
+
 class _RecordingSequencer:
     def __init__(self, default_sampling_period_ns: float) -> None:
         self.default_sampling_period_ns = default_sampling_period_ns
         self.registered_waveforms: dict[str, _RegisteredWaveform] = {}
         self.events: list[_Event] = []
         self.capture_windows: list[_CaptureWindow] = []
+        self.bindings: list[_Binding] = []
+        self.iterations: int = 1
+
+    def bind(
+        self,
+        alias: str,
+        sampling_period_fs: int,
+        step_samples: int,
+    ) -> None:
+        self.bindings.append(
+            _Binding(
+                alias=alias,
+                sampling_period_fs=sampling_period_fs,
+                step_samples=step_samples,
+            )
+        )
 
     def register_waveform(
         self,
@@ -94,12 +117,14 @@ class _RecordingSequencer:
             )
         )
 
+    def set_iterations(self, iterations: int) -> None:
+        self.iterations = iterations
+
     def export_set_fixed_timeline_directive(
         self,
         instrument_alias: str,
-        sampling_period_fs: int,
     ) -> object:
-        del instrument_alias, sampling_period_fs
+        del instrument_alias
         return object()
 
 
@@ -150,6 +175,8 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
         payload=payload,
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
+        alias_bindings={"alias-RQ00": (400_000, 64)},
+        iterations=8,
     )
 
     assert set(sequencer.registered_waveforms.keys()) == {waveform_name}
@@ -173,6 +200,10 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
             length_ns=8.0,
         )
     ]
+    assert sequencer.bindings == [
+        _Binding(alias="alias-RQ00", sampling_period_fs=400_000, step_samples=64)
+    ]
+    assert sequencer.iterations == 8
 
 
 def test_builder_reuses_payload_waveform_across_targets() -> None:
@@ -211,6 +242,11 @@ def test_builder_reuses_payload_waveform_across_targets() -> None:
         payload=payload,
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
+        alias_bindings={
+            "alias-RQ00": (400_000, 64),
+            "alias-RQ01": (400_000, 64),
+        },
+        iterations=4,
     )
 
     assert len(sequencer.registered_waveforms) == 1
@@ -249,4 +285,40 @@ def test_builder_rejects_event_with_unknown_waveform_name() -> None:
             payload=payload,
             sequencer_factory=_RecordingSequencer,
             default_sampling_period_ns=0.4,
+            alias_bindings={"alias-RQ00": (400_000, 64)},
+            iterations=1,
+        )
+
+
+def test_builder_rejects_missing_alias_binding() -> None:
+    """Given missing alias binding, when building, ValueError is raised."""
+    payload = _make_payload(
+        waveform_library={
+            "wf_known": Quel3Waveform(
+                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.4,
+            )
+        },
+        fixed_timelines={
+            "alias-RQ00": Quel3FixedTimeline(
+                events=(
+                    Quel3WaveformEvent(
+                        waveform_name="wf_known",
+                        start_offset_ns=0.0,
+                    ),
+                ),
+                capture_windows=(),
+                length_ns=1.0,
+            )
+        },
+    )
+
+    builder = Quel3SequencerBuilder()
+    with pytest.raises(ValueError, match="Missing sequencer binding"):
+        builder.build(
+            payload=payload,
+            sequencer_factory=_RecordingSequencer,
+            default_sampling_period_ns=0.4,
+            alias_bindings={},
+            iterations=1,
         )

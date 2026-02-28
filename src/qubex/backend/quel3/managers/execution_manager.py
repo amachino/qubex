@@ -118,14 +118,9 @@ class Quel3ExecutionManager:
             )
             instrument_ids = [alias_to_id[alias] for alias in aliases]
 
-            sequencer = self._sequencer_builder.build(
-                payload=resolved_payload,
-                sequencer_factory=sequencer_factory,
-                default_sampling_period_ns=self._sampling_period,
-            )
-
             async with client.create_session(instrument_ids) as session:
                 alias_to_driver: dict[str, InstrumentDriverProtocol] = {}
+                alias_bindings: dict[str, tuple[int, int]] = {}
                 sampling_period_ns: float | None = None
                 for alias in aliases:
                     instrument_info = resolver.find_inst_info_by_alias(alias)
@@ -139,10 +134,40 @@ class Quel3ExecutionManager:
                         "sampling_period_fs",
                         None,
                     )
+                    timeline_step_samples = getattr(
+                        driver.instrument_config,
+                        "timeline_step_samples",
+                        None,
+                    )
+                    if not isinstance(sampling_period_fs, int):
+                        raise TypeError(
+                            "Instrument config must expose integer `sampling_period_fs`."
+                        )
+                    if not isinstance(timeline_step_samples, int):
+                        raise TypeError(
+                            "Instrument config must expose integer `timeline_step_samples`."
+                        )
+                    alias_bindings[alias] = (
+                        sampling_period_fs,
+                        timeline_step_samples,
+                    )
                     if isinstance(sampling_period_fs, int):
                         sampling_period_ns = sampling_period_fs / 1e6
 
+                timeline_iterations = self._resolve_timeline_iterations(
+                    capture_mode=payload.capture_mode,
+                    repeats=payload.repeats,
+                )
+                sequencer = self._sequencer_builder.build(
+                    payload=resolved_payload,
+                    sequencer_factory=sequencer_factory,
+                    default_sampling_period_ns=self._sampling_period,
+                    alias_bindings=alias_bindings,
+                    iterations=timeline_iterations,
+                )
+
                 for alias, driver in alias_to_driver.items():
+                    await driver.initialize()
                     capture_mode_directive = self._build_capture_mode_directive(
                         capture_mode=payload.capture_mode,
                         capture_mode_enum=capture_mode_enum,
@@ -150,42 +175,26 @@ class Quel3ExecutionManager:
                     )
                     if capture_mode_directive is not None:
                         await driver.apply(capture_mode_directive)
-                    directive = sequencer.export_set_fixed_timeline_directive(
-                        alias,
-                        driver.instrument_config.sampling_period_fs,
-                    )
+                    directive = sequencer.export_set_fixed_timeline_directive(alias)
                     await driver.apply(directive)
 
-                shot_count = (
-                    payload.repeats
-                    if (
-                        payload.capture_mode
-                        in (
-                            Quel3CaptureMode.AVERAGED_VALUE,
-                            Quel3CaptureMode.AVERAGED_WAVEFORM,
-                        )
-                        and payload.repeats > 1
-                    )
-                    else 1
-                )
                 shot_samples = self._initialize_shot_samples(resolved_payload)
-                for _ in range(shot_count):
-                    await session.trigger(instrument_ids=instrument_ids)
-                    alias_results = {
-                        alias: await driver.fetch_result()
-                        for alias, driver in alias_to_driver.items()
-                    }
-                    for alias, timeline in resolved_payload.fixed_timelines.items():
-                        result = alias_results[alias]
-                        for window in timeline.capture_windows:
-                            window_key = window.name
-                            capture_samples = self._extract_capture_samples(
-                                result,
-                                window_key,
-                            )
-                            if capture_samples is None:
-                                continue
-                            shot_samples[alias][window.name].append(capture_samples)
+                await session.trigger(instrument_ids=instrument_ids)
+                alias_results = {
+                    alias: await driver.fetch_result()
+                    for alias, driver in alias_to_driver.items()
+                }
+                for alias, timeline in resolved_payload.fixed_timelines.items():
+                    result = alias_results[alias]
+                    for window in timeline.capture_windows:
+                        window_key = window.name
+                        capture_samples = self._extract_capture_samples(
+                            result,
+                            window_key,
+                        )
+                        if capture_samples is None:
+                            continue
+                        shot_samples[alias][window.name].append(capture_samples)
 
         return self._build_measurement_result(
             payload=resolved_payload,
@@ -489,6 +498,23 @@ class Quel3ExecutionManager:
         if mode is None:
             return None
         return set_capture_mode_factory(mode=mode)
+
+    @staticmethod
+    def _resolve_timeline_iterations(
+        *,
+        capture_mode: Quel3CaptureMode,
+        repeats: int,
+    ) -> int:
+        """Resolve timeline iteration count from capture mode and repeats."""
+        if repeats <= 1:
+            return 1
+        if capture_mode in (
+            Quel3CaptureMode.AVERAGED_VALUE,
+            Quel3CaptureMode.AVERAGED_WAVEFORM,
+            Quel3CaptureMode.VALUES_PER_ITER,
+        ):
+            return repeats
+        return 1
 
     @staticmethod
     def _initialize_shot_samples(

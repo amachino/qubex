@@ -19,6 +19,11 @@ class InstrumentConfigProtocol(Protocol):
         """Return sampling period in femtoseconds."""
         ...
 
+    @property
+    def timeline_step_samples(self) -> int:
+        """Return timeline-step alignment size in samples."""
+        ...
+
 
 class InstrumentDriverProtocol(Protocol):
     """Minimal instrument driver protocol used in execution."""
@@ -30,6 +35,10 @@ class InstrumentDriverProtocol(Protocol):
 
     async def apply(self, directive: DirectiveProtocol) -> None:
         """Apply one fixed-timeline directive."""
+        ...
+
+    async def initialize(self) -> None:
+        """Initialize instrument state before apply/trigger flow."""
         ...
 
     async def fetch_result(self) -> object:

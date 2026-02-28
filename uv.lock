@@ -3454,7 +3454,7 @@ requires-dist = [
     { name = "betterproto2", specifier = ">=0.9.1" },
     { name = "googleapis-common-protos", specifier = ">=1.66.0" },
     { name = "grpclib", specifier = ">=0.4.8" },
-    { name = "numpy", specifier = ">=1.26.0,<2" },
+    { name = "numpy", specifier = ">=1.26.0" },
     { name = "typing-extensions", specifier = ">=4.1.0" },
 ]
 

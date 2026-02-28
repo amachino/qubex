@@ -12,6 +12,15 @@ from qubex.backend.quel3.interfaces.directives import DirectiveProtocol
 class SequencerProtocol(Protocol):
     """Minimal sequencer protocol required by QuEL-3 execution flow."""
 
+    def bind(
+        self,
+        alias: str,
+        sampling_period_fs: int,
+        step_samples: int,
+    ) -> None:
+        """Bind hardware sampling constraints for one instrument alias."""
+        ...
+
     def register_waveform(
         self,
         name: str,
@@ -42,10 +51,13 @@ class SequencerProtocol(Protocol):
         """Append one capture window to the timeline."""
         ...
 
+    def set_iterations(self, iterations: int) -> None:
+        """Set timeline iteration count for one trigger execution."""
+        ...
+
     def export_set_fixed_timeline_directive(
         self,
         instrument_alias: str,
-        sampling_period_fs: int,
     ) -> DirectiveProtocol:
         """Export fixed-timeline directive for one instrument alias."""
         ...
