@@ -128,26 +128,31 @@ class PulseSchedule:
     @classmethod
     def from_waveforms(
         cls,
-        waveforms: Mapping[str, IQArray],
+        waveforms: Mapping[str, IQArray | Waveform],
     ) -> PulseSchedule:
         """
         Create a pulse schedule from waveforms.
 
         Parameters
         ----------
-        waveforms : Mapping[str, IQArray]
-            The waveforms for each channel.
+        waveforms : Mapping[str, IQArray | Waveform]
+            The sampled waveforms or waveform objects for each channel.
 
         Returns
         -------
         PulseSchedule
             The created pulse schedule.
         """
-        if not len({len(v) for v in waveforms.values()}) == 1:
+        normalized_waveforms: dict[str, IQArray] = {
+            label: values.values if isinstance(values, Waveform) else values
+            for label, values in waveforms.items()
+        }
+
+        if not len({len(v) for v in normalized_waveforms.values()}) == 1:
             raise ValueError("Waveforms must have the same length.")
 
         with cls() as sched:
-            for label, values in waveforms.items():
+            for label, values in normalized_waveforms.items():
                 sched.add(label, Arbitrary(values))
         return sched
 

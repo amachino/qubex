@@ -1411,7 +1411,7 @@ class Experiment:
 
     async def run_sweep_measurement(
         self,
-        schedule: Callable[[SweepValue], PulseSchedule],
+        schedule: Callable[[Any], PulseSchedule],
         *,
         sweep_values: ArrayLike,
         n_shots: int | None = None,
@@ -1435,7 +1435,7 @@ class Experiment:
 
         Parameters
         ----------
-        schedule : Callable[[SweepValue], PulseSchedule]
+        schedule : Callable[[Any], PulseSchedule]
             Callback that builds one pulse schedule per sweep value.
         sweep_values : ArrayLike
             Ordered sweep values.
