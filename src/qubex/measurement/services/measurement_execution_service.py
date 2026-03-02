@@ -620,7 +620,7 @@ class MeasurementExecutionService:
             Measurement result.
 
         """
-        return await self.measurement_schedule_runner.execute(
+        return await self.measurement_schedule_runner.execute_async(
             schedule=schedule,
             config=config,
             quel1_options=quel1_options,
@@ -854,7 +854,10 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
-        if time_integration is None and deprecated_options.get("enable_dsp_sum") is None:
+        if (
+            time_integration is None
+            and deprecated_options.get("enable_dsp_sum") is None
+        ):
             time_integration = False
 
         result = self.execute(
@@ -1116,23 +1119,19 @@ class MeasurementExecutionService:
         )
 
         if classification_line_param0 is None and classification_line_param1 is None:
-            result = _run_async(
-                lambda: self.run_measurement(
-                    schedule=measurement_schedule,
-                    config=measurement_config,
-                )
+            result = self.measurement_schedule_runner.execute_sync(
+                schedule=measurement_schedule,
+                config=measurement_config,
             )
         else:
             quel1_options = Quel1MeasurementOptions(
                 classification_line_param0=classification_line_param0,
                 classification_line_param1=classification_line_param1,
             )
-            result = _run_async(
-                lambda: self.run_measurement(
-                    schedule=measurement_schedule,
-                    config=measurement_config,
-                    quel1_options=quel1_options,
-                )
+            result = self.measurement_schedule_runner.execute_sync(
+                schedule=measurement_schedule,
+                config=measurement_config,
+                quel1_options=quel1_options,
             )
 
         rawdata_dir = self.system_manager.rawdata_dir

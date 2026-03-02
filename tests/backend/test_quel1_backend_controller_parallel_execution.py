@@ -56,7 +56,7 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
     )
 
     result = asyncio.run(
-        execution_manager.execute(
+        execution_manager.execute_async(
             request=BackendExecutionRequest(
                 payload=Quel1ExecutionPayload(
                     gen_sampled_sequence={"Q00": object()},

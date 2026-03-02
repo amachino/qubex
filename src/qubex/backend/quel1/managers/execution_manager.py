@@ -45,7 +45,7 @@ class Quel1ExecutionManager:
     def __init__(self, *, runtime_context: Quel1RuntimeContextReader) -> None:
         self._runtime_context = runtime_context
 
-    def _execute(
+    def execute_sync(
         self,
         *,
         request: BackendExecutionRequest,
@@ -110,7 +110,7 @@ class Quel1ExecutionManager:
             line_param1=payload.line_param1,
         )
 
-    async def execute(
+    async def execute_async(
         self,
         *,
         request: BackendExecutionRequest,
@@ -135,7 +135,7 @@ class Quel1ExecutionManager:
             Backend-specific execution result.
         """
         return await asyncio.to_thread(
-            self._execute,
+            self.execute_sync,
             request=request,
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,

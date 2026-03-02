@@ -81,8 +81,8 @@ def _make_capture(
     )
 
 
-def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
-    """Given runner inputs, when execute is called, then it validates, runs backend controller, and builds result."""
+def test_execute_async_validates_builds_calls_backend_and_creates_result() -> None:
+    """Given runner inputs, when execute_async is called, then it validates, runs backend controller, and builds result."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
@@ -126,7 +126,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
         sampling_period: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
-        async def execute(
+        async def execute_async(
             self, *, request: BackendExecutionRequest
         ) -> Quel1BackendExecutionResult:
             called["execute_request"] = request
@@ -139,7 +139,7 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
 
     config = _make_config()
     schedule = _make_schedule()
-    result = asyncio.run(runner.execute(schedule=schedule, config=config))
+    result = asyncio.run(runner.execute_async(schedule=schedule, config=config))
 
     assert called["validated"] is schedule
     assert called["request_schedule"] is schedule
@@ -153,8 +153,8 @@ def test_execute_validates_builds_calls_backend_and_creates_result() -> None:
     assert result is expected
 
 
-def test_execute_forwards_execution_options_to_backend_controller() -> None:
-    """Given execution options, when execute is called, then backend controller receives options."""
+def test_execute_async_forwards_execution_options_to_backend_controller() -> None:
+    """Given execution options, when execute_async is called, then backend controller receives options."""
     called: dict[str, object] = {}
     base_request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
@@ -196,7 +196,7 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
         sampling_period: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
-        async def execute(
+        async def execute_async(
             self,
             *,
             request: BackendExecutionRequest,
@@ -214,15 +214,17 @@ def test_execute_forwards_execution_options_to_backend_controller() -> None:
         execution_mode="serial",
         clock_health_checks=True,
     )
-    _ = asyncio.run(runner.execute(schedule=_make_schedule(), config=_make_config()))
+    _ = asyncio.run(
+        runner.execute_async(schedule=_make_schedule(), config=_make_config())
+    )
 
     assert called["request"] is base_request
     assert called["execution_mode"] == "serial"
     assert called["clock_health_checks"] is True
 
 
-def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
-    """Given backend without box config capability, when execute runs, then adapter result builder receives an empty config."""
+def test_execute_async_falls_back_to_empty_device_config_without_box_config() -> None:
+    """Given backend without box config capability, when execute_async runs, then adapter result builder receives an empty config."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
@@ -265,7 +267,7 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
         sampling_period: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
-        async def execute(
+        async def execute_async(
             self, *, request: BackendExecutionRequest
         ) -> Quel1BackendExecutionResult:
             _ = request
@@ -277,7 +279,7 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
     )
 
     result = asyncio.run(
-        runner.execute(schedule=_make_schedule(), config=_make_config())
+        runner.execute_async(schedule=_make_schedule(), config=_make_config())
     )
 
     result_kwargs = cast(dict[str, object], called["result_kwargs"])
@@ -285,8 +287,8 @@ def test_execute_falls_back_to_empty_device_config_without_box_config() -> None:
     assert result is expected
 
 
-def test_execute_prefers_backend_capture_decimation_hint() -> None:
-    """Given backend capture decimation, when execute runs, then adapter receives effective sampling metadata."""
+def test_execute_async_prefers_backend_capture_decimation_hint() -> None:
+    """Given backend capture decimation, when execute_async runs, then adapter receives effective sampling metadata."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
@@ -327,7 +329,7 @@ def test_execute_prefers_backend_capture_decimation_hint() -> None:
         sampling_period: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 8
 
-        async def execute(
+        async def execute_async(
             self, *, request: BackendExecutionRequest
         ) -> Quel1BackendExecutionResult:
             _ = request
@@ -339,15 +341,15 @@ def test_execute_prefers_backend_capture_decimation_hint() -> None:
     )
 
     result = asyncio.run(
-        runner.execute(schedule=_make_schedule(), config=_make_config())
+        runner.execute_async(schedule=_make_schedule(), config=_make_config())
     )
 
     assert called["sampling_period"] == 16.0
     assert result is expected
 
 
-def test_execute_returns_backend_measurement_result_directly() -> None:
-    """Given backend returns canonical result, when executing, then result factory is not called."""
+def test_execute_async_returns_backend_measurement_result_directly() -> None:
+    """Given backend returns canonical result, when execute_async runs, then result factory is not called."""
     config = _make_config(mode="avg")
     expected = MeasurementResult(
         data={
@@ -383,7 +385,7 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
     class _BackendController:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
 
-        async def execute(
+        async def execute_async(
             self, *, request: BackendExecutionRequest
         ) -> MeasurementResult:
             _ = request
@@ -394,14 +396,16 @@ def test_execute_returns_backend_measurement_result_directly() -> None:
         backend_controller=cast(Any, _BackendController()),
     )
     result = asyncio.run(
-        runner.execute(schedule=_make_schedule(), config=_make_config())
+        runner.execute_async(schedule=_make_schedule(), config=_make_config())
     )
 
     assert result is expected
 
 
-def test_execute_prefers_adapter_measurement_result_builder_when_available() -> None:
-    """Given adapter result builder, when execute is called, then runner uses adapter conversion."""
+def test_execute_async_prefers_adapter_measurement_result_builder_when_available() -> (
+    None
+):
+    """Given adapter result builder, when execute_async is called, then runner uses adapter conversion."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
     backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
@@ -453,7 +457,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
         sampling_period: ClassVar[float] = 0.4
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
-        async def execute(
+        async def execute_async(
             self, *, request: BackendExecutionRequest
         ) -> Quel1BackendExecutionResult:
             called["execute_request"] = request
@@ -466,7 +470,7 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
 
     config = _make_config()
     schedule = _make_schedule()
-    result = asyncio.run(runner.execute(schedule=schedule, config=config))
+    result = asyncio.run(runner.execute_async(schedule=schedule, config=config))
 
     assert called["validated"] is schedule
     assert called["request_schedule"] is schedule
@@ -476,6 +480,49 @@ def test_execute_prefers_adapter_measurement_result_builder_when_available() -> 
     assert called["builder_measurement_config"] is config
     assert called["builder_device_config"] == {"kind": "quel3"}
     assert called["builder_sampling_period"] == 1.6
+    assert result is expected
+
+
+def test_execute_sync_calls_backend_execute_sync() -> None:
+    """Given execute_sync call, when invoked, then backend execute_sync is used."""
+    expected = MeasurementResult(
+        data={},
+        measurement_config=_make_config(),
+        device_config={},
+    )
+    called: dict[str, object] = {}
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            _ = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            _ = schedule
+            _ = config
+            return BackendExecutionRequest(payload=object())
+
+    class _BackendController:
+        sampling_period: ClassVar[float] = 0.4
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
+
+        def execute_sync(
+            self, *, request: BackendExecutionRequest
+        ) -> MeasurementResult:
+            called["request"] = request
+            return expected
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+    result = runner.execute_sync(schedule=_make_schedule(), config=_make_config())
+
+    assert "request" in called
     assert result is expected
 
 

@@ -29,8 +29,8 @@ def _make_payload() -> Quel1ExecutionPayload:
     )
 
 
-def test_execute_uses_parallel_mode_by_default() -> None:
-    """Given default mode, execute delegates to execute_sequencer_parallel."""
+def test_execute_sync_uses_parallel_mode_by_default() -> None:
+    """Given default mode, execute_sync delegates to execute_sequencer_parallel."""
     called: dict[str, Any] = {}
     sequencer = object()
 
@@ -48,8 +48,8 @@ def test_execute_uses_parallel_mode_by_default() -> None:
             return "parallel"
 
     manager = _ExecutionManager(runtime_context=cast(Any, object()))
-    result = asyncio.run(
-        manager.execute(request=BackendExecutionRequest(payload=_make_payload()))
+    result = manager.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload())
     )
 
     assert result == "parallel"
@@ -58,8 +58,8 @@ def test_execute_uses_parallel_mode_by_default() -> None:
     assert "serial" not in called
 
 
-def test_execute_uses_serial_mode_when_configured() -> None:
-    """Given serial mode, execute delegates to execute_sequencer."""
+def test_execute_sync_uses_serial_mode_when_configured() -> None:
+    """Given serial mode, execute_sync delegates to execute_sequencer."""
     called: dict[str, Any] = {}
     sequencer = object()
 
@@ -77,11 +77,9 @@ def test_execute_uses_serial_mode_when_configured() -> None:
             return "parallel"
 
     manager = _ExecutionManager(runtime_context=cast(Any, object()))
-    result = asyncio.run(
-        manager.execute(
-            request=BackendExecutionRequest(payload=_make_payload()),
-            execution_mode="serial",
-        )
+    result = manager.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload()),
+        execution_mode="serial",
     )
 
     assert result == "serial"
@@ -90,37 +88,35 @@ def test_execute_uses_serial_mode_when_configured() -> None:
 
 
 def test_init_raises_for_unknown_execution_mode() -> None:
-    """Given unsupported mode, execute raises ValueError."""
+    """Given unsupported mode, execute_sync raises ValueError."""
     manager = Quel1ExecutionManager(runtime_context=cast(Any, object()))
 
     with pytest.raises(ValueError, match="Unsupported execution mode"):
-        asyncio.run(
-            manager.execute(
-                request=BackendExecutionRequest(payload=_make_payload()),
-                execution_mode=cast(Any, "invalid"),
-            )
+        manager.execute_sync(
+            request=BackendExecutionRequest(payload=_make_payload()),
+            execution_mode=cast(Any, "invalid"),
         )
 
 
-def test_execute_raises_for_non_quel1_payload() -> None:
-    """Given non-QuEL-1 payload, execute raises TypeError."""
+def test_execute_sync_raises_for_non_quel1_payload() -> None:
+    """Given non-QuEL-1 payload, execute_sync raises TypeError."""
     manager = Quel1ExecutionManager(runtime_context=cast(Any, object()))
 
     with pytest.raises(TypeError, match="expects `Quel1ExecutionPayload` payload"):
-        asyncio.run(manager.execute(request=BackendExecutionRequest(payload=object())))
+        manager.execute_sync(request=BackendExecutionRequest(payload=object()))
 
 
-def test_execute_delegates_to_private_execute() -> None:
-    """Given async execute, manager delegates to sync private execute implementation."""
+def test_execute_async_delegates_to_execute_sync() -> None:
+    """Given execute_async call, manager delegates to execute_sync implementation."""
 
     class _ExecutionManager(Quel1ExecutionManager):
-        def _execute(self, **kwargs: Any) -> str:
+        def execute_sync(self, **kwargs: Any) -> str:
             _ = kwargs
             return "async-ok"
 
     manager = _ExecutionManager(runtime_context=cast(Any, object()))
     result = asyncio.run(
-        manager.execute(request=BackendExecutionRequest(payload=_make_payload()))
+        manager.execute_async(request=BackendExecutionRequest(payload=_make_payload()))
     )
 
     assert result == "async-ok"
@@ -155,11 +151,9 @@ def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
             return "serial"
 
     execution_manager = _ExecutionManager(runtime_context=cast(Any, _RuntimeContext()))
-    _ = asyncio.run(
-        execution_manager.execute(
-            request=BackendExecutionRequest(payload=_make_payload()),
-            execution_mode="serial",
-        )
+    _ = execution_manager.execute_sync(
+        request=BackendExecutionRequest(payload=_make_payload()),
+        execution_mode="serial",
     )
 
     assert created_kwargs["driver"] is fake_system

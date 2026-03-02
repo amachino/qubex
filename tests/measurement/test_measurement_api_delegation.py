@@ -124,7 +124,9 @@ def _bind_runtime(
     measurement.execution_service.__dict__["_session_service"] = session_service
 
 
-def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
+def test_execute_delegates_to_schedule_executor_with_built_schedule(
+    monkeypatch,
+) -> None:
     """Given execute inputs, when execute is called, then it builds schedule and delegates to schedule execution."""
     measurement = Measurement(
         chip_id="TEST",
@@ -151,25 +153,30 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    async def fake_run_measurement(
-        self: MeasurementExecutionService,
-        *,
-        schedule: MeasurementSchedule,
-        config: MeasurementConfig,
-    ) -> MeasurementResult:
-        called["run_schedule"] = schedule
-        called["run_config"] = config
-        return MeasurementResultConverter.from_multiple(
-            multiple,
-            measurement_config=_make_config(),
-        )
+    class _Executor:
+        def execute_sync(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+            quel1_options: Quel1MeasurementOptions | None = None,
+        ) -> MeasurementResult:
+            _ = quel1_options
+            called["run_schedule"] = schedule
+            called["run_config"] = config
+            return MeasurementResultConverter.from_multiple(
+                multiple,
+                measurement_config=_make_config(),
+            )
 
     execution_service = measurement.execution_service
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.run_measurement = MethodType(
-        fake_run_measurement, execution_service
+    monkeypatch.setattr(
+        MeasurementExecutionService,
+        "measurement_schedule_runner",
+        property(lambda self: _Executor()),
     )
     experiment_system = type(
         "_ES",
@@ -201,7 +208,9 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     assert called["run_config"].shot_averaging is True
 
 
-def test_execute_forwards_frequency_overrides_to_schedule_builder() -> None:
+def test_execute_forwards_frequency_overrides_to_schedule_builder(
+    monkeypatch,
+) -> None:
     """Given execute frequency overrides, when execute is called, then schedule build receives frequencies."""
     measurement = Measurement(
         chip_id="TEST",
@@ -227,24 +236,28 @@ def test_execute_forwards_frequency_overrides_to_schedule_builder() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    async def fake_run_measurement(
-        self: MeasurementExecutionService,
-        *,
-        schedule: MeasurementSchedule,
-        config: MeasurementConfig,
-    ) -> MeasurementResult:
-        _ = (schedule, config)
-        return MeasurementResultConverter.from_multiple(
-            multiple,
-            measurement_config=_make_config(),
-        )
+    class _Executor:
+        def execute_sync(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+            quel1_options: Quel1MeasurementOptions | None = None,
+        ) -> MeasurementResult:
+            _ = (schedule, config, quel1_options)
+            return MeasurementResultConverter.from_multiple(
+                multiple,
+                measurement_config=_make_config(),
+            )
 
     execution_service = measurement.execution_service
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.run_measurement = MethodType(
-        fake_run_measurement, execution_service
+    monkeypatch.setattr(
+        MeasurementExecutionService,
+        "measurement_schedule_runner",
+        property(lambda self: _Executor()),
     )
     experiment_system = type(
         "_ES",
@@ -1377,7 +1390,9 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
     assert called["run_quel1_options"] is None
 
 
-def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
+def test_execute_initializes_optional_flags_with_execute_defaults(
+    monkeypatch,
+) -> None:
     """Given None optional flags, when execute is called, then it applies execute defaults."""
     measurement = Measurement(
         chip_id="TEST",
@@ -1402,24 +1417,29 @@ def test_execute_initializes_optional_flags_with_execute_defaults() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    async def fake_run_measurement(
-        self: MeasurementExecutionService,
-        *,
-        schedule: MeasurementSchedule,
-        config: MeasurementConfig,
-    ) -> MeasurementResult:
-        called["config"] = config
-        return MeasurementResultConverter.from_multiple(
-            multiple,
-            measurement_config=_make_config(),
-        )
+    class _Executor:
+        def execute_sync(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+            quel1_options: Quel1MeasurementOptions | None = None,
+        ) -> MeasurementResult:
+            _ = (schedule, quel1_options)
+            called["config"] = config
+            return MeasurementResultConverter.from_multiple(
+                multiple,
+                measurement_config=_make_config(),
+            )
 
     execution_service = measurement.execution_service
     execution_service.build_measurement_schedule = MethodType(
         fake_build, execution_service
     )
-    execution_service.run_measurement = MethodType(
-        fake_run_measurement, execution_service
+    monkeypatch.setattr(
+        MeasurementExecutionService,
+        "measurement_schedule_runner",
+        property(lambda self: _Executor()),
     )
     experiment_system = type(
         "_ES",
@@ -1475,7 +1495,7 @@ def test_run_measurement_delegates_to_executor(
     called: dict[str, Any] = {}
 
     class _Executor:
-        async def execute(self, **kwargs: Any) -> MeasurementResult:
+        async def execute_async(self, **kwargs: Any) -> MeasurementResult:
             called["schedule"] = kwargs["schedule"]
             called["config"] = kwargs["config"]
             called["has_quel1_options"] = "quel1_options" in kwargs
@@ -1588,7 +1608,7 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
         sampling_period: ClassVar[float] = 0.4
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
-        async def execute(
+        async def execute_async(
             self,
             *,
             request: BackendExecutionRequest,

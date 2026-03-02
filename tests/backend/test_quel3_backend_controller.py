@@ -126,7 +126,7 @@ def test_execute_rejects_non_quel3_payload() -> None:
 
     with pytest.raises(TypeError, match="Quel3ExecutionPayload"):
         asyncio.run(
-            controller.execute(request=BackendExecutionRequest(payload=object()))
+            controller.execute_async(request=BackendExecutionRequest(payload=object()))
         )
 
 
@@ -147,7 +147,7 @@ def test_execute_surfaces_missing_quelware_dependency(
 
     with pytest.raises(RuntimeError, match="quelware-client is not available"):
         asyncio.run(
-            controller.execute(request=BackendExecutionRequest(payload=payload))
+            controller.execute_async(request=BackendExecutionRequest(payload=payload))
         )
 
 

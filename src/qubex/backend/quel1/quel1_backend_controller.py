@@ -784,7 +784,21 @@ class Quel1BackendController(BackendController):
         )
 
     # Execution Entry Points
-    async def execute(
+    def execute_sync(
+        self,
+        *,
+        request: BackendExecutionRequest,
+        execution_mode: ExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
+    ) -> BackendExecutionResult:
+        """Execute a backend request synchronously using QuEL-1 defaults."""
+        return self._execution_manager.execute_sync(
+            request=request,
+            execution_mode=execution_mode,
+            clock_health_checks=clock_health_checks,
+        )
+
+    async def execute_async(
         self,
         *,
         request: BackendExecutionRequest,
@@ -792,7 +806,7 @@ class Quel1BackendController(BackendController):
         clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request asynchronously using QuEL-1 defaults."""
-        return await self._execution_manager.execute(
+        return await self._execution_manager.execute_async(
             request=request,
             execution_mode=execution_mode,
             clock_health_checks=clock_health_checks,

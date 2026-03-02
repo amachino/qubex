@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from qubex.backend import (
     BackendController,
+    BackendExecutionRequest,
 )
 from qubex.backend.quel1 import (
     ExecutionMode,
@@ -75,8 +76,8 @@ class MeasurementScheduleRunner:
         )
         self._backend_controller = backend_controller
         self._constraint_profile = constraint_profile
-        self._execution_mode = execution_mode
-        self._clock_health_checks = clock_health_checks
+        self._execution_mode: ExecutionMode | None = execution_mode
+        self._clock_health_checks: bool | None = clock_health_checks
 
     def _build_result(
         self,
@@ -117,7 +118,30 @@ class MeasurementScheduleRunner:
             sampling_period=sampling_period,
         )
 
-    async def execute(
+    def execute_sync(
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        """Execute a measurement schedule synchronously with the given configuration."""
+        request = self._prepare_execution(
+            schedule=schedule,
+            config=config,
+            quel1_options=quel1_options,
+        )
+        if self._execution_mode is None and self._clock_health_checks is None:
+            backend_result = self._backend_controller.execute_sync(request=request)
+        else:
+            backend_result = self._backend_controller.execute_sync(
+                request=request,
+                execution_mode=self._execution_mode,
+                clock_health_checks=self._clock_health_checks,
+            )
+        return self._build_result(backend_result=backend_result, config=config)
+
+    async def execute_async(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -142,6 +166,34 @@ class MeasurementScheduleRunner:
             Measurement result.
 
         """
+        request = self._prepare_execution(
+            schedule=schedule,
+            config=config,
+            quel1_options=quel1_options,
+        )
+        if self._execution_mode is None and self._clock_health_checks is None:
+            backend_result = await self._backend_controller.execute_async(
+                request=request
+            )
+        else:
+            backend_result = await self._backend_controller.execute_async(
+                request=request,
+                execution_mode=self._execution_mode,
+                clock_health_checks=self._clock_health_checks,
+            )
+        return self._build_result(
+            backend_result=backend_result,
+            config=config,
+        )
+
+    def _prepare_execution(
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> BackendExecutionRequest:
+        """Validate one execution request and return backend request."""
         self._measurement_backend_adapter.validate_schedule(schedule)
         if quel1_options is None:
             request = self._measurement_backend_adapter.build_execution_request(
@@ -154,19 +206,4 @@ class MeasurementScheduleRunner:
                 config=config,
                 quel1_options=quel1_options,
             )
-        options: dict[str, object] = {}
-        if self._execution_mode is not None:
-            options["execution_mode"] = self._execution_mode
-        if self._clock_health_checks is not None:
-            options["clock_health_checks"] = self._clock_health_checks
-        if not options:
-            backend_result = await self._backend_controller.execute(request=request)
-        else:
-            backend_result = await cast(Any, self._backend_controller).execute(
-                request=request,
-                **options,
-            )
-        return self._build_result(
-            backend_result=backend_result,
-            config=config,
-        )
+        return request

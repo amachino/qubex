@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 
@@ -34,6 +34,19 @@ from qubex.backend.quel3.models import (
     Quel3FixedTimeline,
     Quel3WaveformEvent,
 )
+from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
+
+T = TypeVar("T")
+
+
+def _run_async(
+    factory: Callable[[], Awaitable[T]],
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> T:
+    """Run one awaitable factory from synchronous APIs."""
+    bridge = get_shared_async_bridge(key="quel3-execution")
+    return bridge.run(factory, timeout=timeout)
 
 
 @dataclass(frozen=True)
@@ -61,6 +74,14 @@ class Quel3ExecutionManager:
         self._sampling_period = sampling_period
         self._capture_decimation_factor = capture_decimation_factor
         self._sequencer_builder = Quel3SequencerBuilder()
+
+    def execute_sync(self, *, request: object) -> Quel3BackendExecutionResult:
+        """Execute a QuEL-3 backend request synchronously."""
+        return _run_async(lambda: self.execute_async(request=request))
+
+    async def execute_async(self, *, request: object) -> Quel3BackendExecutionResult:
+        """Execute a QuEL-3 backend request asynchronously."""
+        return await self.execute(request=request)
 
     async def execute(self, *, request: object) -> Quel3BackendExecutionResult:
         """

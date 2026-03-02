@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .quel3 import Quel3BackendController
 
 BackendKind = Literal["quel1", "quel3"]
+BackendExecutionMode = Literal["serial", "parallel"]
 
 
 @dataclass(frozen=True)
@@ -29,8 +30,8 @@ class BackendController(Protocol):
 
     This protocol defines the minimum API that both QuEL-1 and QuEL-3
     controllers must provide to the measurement layer:
-    `hash`, `is_connected`, `sampling_period`, async `execute`, `connect`,
-    and `disconnect`.
+    `hash`, `is_connected`, `sampling_period`, `execute_sync`,
+    `execute_async`, `connect`, and `disconnect`.
     """
 
     @property
@@ -48,10 +49,22 @@ class BackendController(Protocol):
         """Return backend sampling period in ns."""
         ...
 
-    async def execute(
+    def execute_sync(
         self,
         *,
         request: BackendExecutionRequest,
+        execution_mode: BackendExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
+    ) -> BackendExecutionResult:
+        """Execute prepared backend request payload synchronously."""
+        ...
+
+    async def execute_async(
+        self,
+        *,
+        request: BackendExecutionRequest,
+        execution_mode: BackendExecutionMode | None = None,
+        clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute prepared backend request payload asynchronously."""
         ...

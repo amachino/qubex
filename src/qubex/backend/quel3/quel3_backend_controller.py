@@ -92,10 +92,24 @@ class Quel3BackendController(BackendController):
         """Return backend sampling period in ns."""
         return self._sampling_period
 
-    async def execute(
+    def execute_sync(
         self,
         *,
         request: BackendExecutionRequest,
+        execution_mode: str | None = None,
+        clock_health_checks: bool | None = None,
+    ) -> BackendExecutionResult:
+        """Execute a backend request synchronously using QuEL-3 defaults."""
+        del execution_mode, clock_health_checks
+        return self._execution_manager.execute_sync(request=request)
+
+    async def execute_async(
+        self,
+        *,
+        request: BackendExecutionRequest,
+        execution_mode: str | None = None,
+        clock_health_checks: bool | None = None,
     ) -> BackendExecutionResult:
         """Execute a backend request asynchronously using QuEL-3 defaults."""
-        return await self._execution_manager.execute(request=request)
+        del execution_mode, clock_health_checks
+        return await self._execution_manager.execute_async(request=request)
