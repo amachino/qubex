@@ -75,8 +75,8 @@ class Quel1Sequencer(Sequencer):
         # sideband on R8. We therefore keep conversion logic on boxpool path,
         # equivalent to historical qubex behavior in backend/sequencer_mod.py.
         module_name = (
-            "qxdriver_quel.qubecalib"
-            if driver.package_name == "qxdriver_quel"
+            "qxdriver_quel1.qubecalib"
+            if driver.package_name == "qxdriver_quel1"
             else "qubecalib.qubecalib"
         )
         port_config_acquirer_cls = cast(

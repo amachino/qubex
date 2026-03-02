@@ -41,7 +41,7 @@ if TYPE_CHECKING:
         WaveSequenceToolsProtocol,
     )
 
-DriverPackageName: TypeAlias = Literal["qxdriver_quel", "qubecalib"]
+DriverPackageName: TypeAlias = Literal["qxdriver_quel1", "qubecalib"]
 
 # Canonical import paths in qubecalib namespace.
 _SYMBOL_IMPORT_PATHS: dict[str, str] = {
@@ -153,7 +153,7 @@ def _resolve_symbol(*, package_name: DriverPackageName, symbol_name: str) -> Any
     symbol_path = _SYMBOL_IMPORT_PATHS[symbol_name]
     module_path, resolved_attr_name = symbol_path.rsplit(".", maxsplit=1)
 
-    if package_name == "qxdriver_quel":
+    if package_name == "qxdriver_quel1":
         module_name = f"{package_name}.compat"
         attr_name = symbol_name
     else:
@@ -209,7 +209,7 @@ def load_quel1_driver() -> Que1lDriver:
     cache is explicitly cleared via `clear_quel1_driver_cache`.
     """
     package_name: DriverPackageName = (
-        "qubecalib" if _is_quelware_0_8_x() else "qxdriver_quel"
+        "qubecalib" if _is_quelware_0_8_x() else "qxdriver_quel1"
     )
     return _import_driver_symbols(package_name)
 

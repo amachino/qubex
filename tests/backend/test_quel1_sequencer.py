@@ -71,7 +71,7 @@ class _FakeConverter:
 
 @dataclass
 class _FakeDriverSymbols:
-    package_name: str = "qxdriver_quel"
+    package_name: str = "qxdriver_quel1"
     Converter: type[_FakeConverter] = _FakeConverter
 
 

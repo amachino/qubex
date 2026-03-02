@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 
 try:
-    _compat = importlib.import_module("qxdriver_quel.compat")
+    _compat = importlib.import_module("qxdriver_quel1.compat")
     _sampling_period = _compat.DEFAULT_SAMPLING_PERIOD
     QubeCalib = _compat.QubeCalib
     Sequencer = _compat.Sequencer

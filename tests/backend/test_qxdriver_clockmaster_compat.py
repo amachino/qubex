@@ -1,4 +1,4 @@
-"""Tests for qxdriver_quel clockmaster compatibility wrappers."""
+"""Tests for qxdriver_quel1 clockmaster compatibility wrappers."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar, cast
 
 import pytest
-from qxdriver_quel.clockmaster import compat
+from qxdriver_quel1.clockmaster import compat
 
 
 @dataclass(eq=False)

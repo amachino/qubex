@@ -31,7 +31,7 @@ def _build_fake_driver_modules(
     include_compat: bool = False,
 ) -> dict[str, ModuleType]:
     """Create fake modules for one driver package namespace."""
-    is_qxdriver = package_name == "qxdriver_quel"
+    is_qxdriver = package_name == "qxdriver_quel1"
     quel1_module = (
         f"{package_name}.quel1"
         if is_qxdriver
@@ -185,8 +185,8 @@ def _build_fake_driver_modules(
 
 
 def test_load_quel1_driver_uses_qxdriver_for_non_0_8_quelware(monkeypatch) -> None:
-    """Given quelware not 0.8.x, when loading driver, then qxdriver_quel is selected."""
-    mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
+    """Given quelware not 0.8.x, when loading driver, then qxdriver_quel1 is selected."""
+    mapping = _build_fake_driver_modules("qxdriver_quel1", include_compat=True)
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:
@@ -199,7 +199,7 @@ def test_load_quel1_driver_uses_qxdriver_for_non_0_8_quelware(monkeypatch) -> No
 
     modules = driver_loader.load_quel1_driver()
 
-    assert modules.package_name == "qxdriver_quel"
+    assert modules.package_name == "qxdriver_quel1"
     assert modules.QubeCalib.__name__ == "QubeCalib"
     assert modules.Action.__name__ == "Action"
     assert modules.SingleRunitSetting.__module__.endswith(".single")
@@ -226,8 +226,8 @@ def test_load_quel1_driver_uses_qubecalib_for_quelware_0_8(monkeypatch) -> None:
 def test_load_quel1_driver_defaults_to_qxdriver_when_quelware_missing(
     monkeypatch,
 ) -> None:
-    """Given missing quelware package, when loading driver, then qxdriver_quel is selected."""
-    mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
+    """Given missing quelware package, when loading driver, then qxdriver_quel1 is selected."""
+    mapping = _build_fake_driver_modules("qxdriver_quel1", include_compat=True)
 
     def _fake_version(_: str) -> str:
         raise PackageNotFoundError
@@ -243,7 +243,7 @@ def test_load_quel1_driver_defaults_to_qxdriver_when_quelware_missing(
 
     modules = driver_loader.load_quel1_driver()
 
-    assert modules.package_name == "qxdriver_quel"
+    assert modules.package_name == "qxdriver_quel1"
 
 
 def test_load_quel1_driver_qubecalib_resolves_clockmaster_from_qubecalib_module(
@@ -325,7 +325,7 @@ def test_load_quel1_driver_resolves_quel1box_symbol(
 
 def test_load_quel1_driver_applies_qubex_runtime_patches(monkeypatch) -> None:
     """Given driver load, when importing package, then qubex runtime patches are applied."""
-    mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
+    mapping = _build_fake_driver_modules("qxdriver_quel1", include_compat=True)
     patch_calls: list[str] = []
 
     def _apply_qubex_runtime_patches() -> None:
@@ -347,13 +347,13 @@ def test_load_quel1_driver_applies_qubex_runtime_patches(monkeypatch) -> None:
 
     modules = driver_loader.load_quel1_driver()
 
-    assert modules.package_name == "qxdriver_quel"
+    assert modules.package_name == "qxdriver_quel1"
     assert patch_calls == ["called"]
 
 
 def test_load_quel1_driver_requires_compat_layer_for_qxdriver(monkeypatch) -> None:
-    """Given qxdriver_quel without compat layer, when loading driver, then import fails."""
-    mapping = _build_fake_driver_modules("qxdriver_quel")
+    """Given qxdriver_quel1 without compat layer, when loading driver, then import fails."""
+    mapping = _build_fake_driver_modules("qxdriver_quel1")
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:
@@ -370,7 +370,7 @@ def test_load_quel1_driver_requires_compat_layer_for_qxdriver(monkeypatch) -> No
 
 def test_load_quel1_driver_resolves_symbols_from_compat_layer(monkeypatch) -> None:
     """Given compat exports, when loading driver, then required symbols resolve without legacy module paths."""
-    mapping = _build_fake_driver_modules("qxdriver_quel", include_compat=True)
+    mapping = _build_fake_driver_modules("qxdriver_quel1", include_compat=True)
 
     def _fake_import(name: str) -> ModuleType:
         if name in mapping:
@@ -383,7 +383,7 @@ def test_load_quel1_driver_resolves_symbols_from_compat_layer(monkeypatch) -> No
 
     modules = driver_loader.load_quel1_driver()
 
-    assert modules.package_name == "qxdriver_quel"
+    assert modules.package_name == "qxdriver_quel1"
     assert modules.Action.__name__ == "Action"
     assert modules.Skew.__name__ == "Skew"
     assert modules.BoxPool.__name__ == "BoxPool"
