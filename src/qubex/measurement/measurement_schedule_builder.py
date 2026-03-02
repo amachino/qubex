@@ -297,6 +297,7 @@ class MeasurementScheduleBuilder:
                             channels=[target],
                             start_time=0.0,
                             duration=workaround_duration,
+                            is_workaround=True,
                         )
                     )
                 if full_capture_duration > 0.0:
@@ -323,6 +324,7 @@ class MeasurementScheduleBuilder:
                         channels=[target],
                         start_time=0.0,
                         duration=workaround_duration,
+                        is_workaround=True,
                     )
                 )
             captures.extend(

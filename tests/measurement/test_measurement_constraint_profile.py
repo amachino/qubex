@@ -44,6 +44,8 @@ def test_builder_adds_workaround_capture_for_strict_profile() -> None:
     result = builder.build(schedule=schedule)
 
     assert len(result.capture_schedule.captures) == 2
+    assert result.capture_schedule.captures[0].is_workaround is True
+    assert result.capture_schedule.captures[1].is_workaround is False
 
 
 def test_builder_skips_workaround_capture_for_relaxed_profile() -> None:
@@ -57,4 +59,5 @@ def test_builder_skips_workaround_capture_for_relaxed_profile() -> None:
     result = builder.build(schedule=schedule)
 
     assert len(result.capture_schedule.captures) == 1
+    assert result.capture_schedule.captures[0].is_workaround is False
     assert result.pulse_schedule.duration == original_duration

@@ -12,7 +12,8 @@ import tunits.units as tunits_units
 from qxpulse import PulseSchedule
 
 from qubex.experiment.services.measurement_service import MeasurementService
-from qubex.measurement import SweepPoint, SweepValue
+from qubex.measurement import MeasurementSchedule, SweepPoint, SweepValue
+from qubex.measurement.models.capture_schedule import CaptureSchedule
 
 
 def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
@@ -89,6 +90,15 @@ def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
     return cast(MeasurementService, service), calls
 
 
+def _measurement_schedule() -> MeasurementSchedule:
+    with PulseSchedule(["Q00"]) as pulse_schedule:
+        pulse_schedule.barrier()
+    return MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+
+
 def test_build_measurement_schedule_delegates_none_values() -> None:
     """Given omitted optional flags, when building schedule, then None values are delegated downstream."""
     service, calls = _make_service()
@@ -163,6 +173,26 @@ def test_run_measurement_normalizes_tunits_inputs_before_delegation() -> None:
     assert calls["build_schedule"][0]["readout_ramp_time"] == pytest.approx(40.0)
 
 
+def test_run_measurement_uses_measurement_schedule_without_rebuild() -> None:
+    """Given MeasurementSchedule input, when running async measurement, then service bypasses schedule build."""
+    service, calls = _make_service()
+    schedule = _measurement_schedule()
+
+    result = asyncio.run(
+        service.run_measurement(
+            schedule,
+            shot_interval=2 * tunits_units.us,
+            frequencies={"Q00": 5100 * tunits_units.MHz},
+            readout_duration=4 * tunits_units.us,
+        )
+    )
+
+    assert result == "measurement_result"
+    assert calls["build_schedule"] == []
+    assert calls["run_measurement"][0]["schedule"] is schedule
+    assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+
+
 def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     """Given explicit final_measurement false, when running async sweep, then service preserves explicit value."""
     service, calls = _make_service()
@@ -231,6 +261,31 @@ def test_run_sweep_measurement_normalizes_tunits_inputs_before_delegation() -> N
     assert build_kwargs["readout_ramp_time"] == pytest.approx(40.0)
 
 
+def test_run_sweep_measurement_uses_measurement_schedule_without_rebuild() -> None:
+    """Given MeasurementSchedule callback output, when running async sweep, then service bypasses schedule build."""
+    service, calls = _make_service()
+    sweep_values: list[SweepValue] = [1]
+    schedule = _measurement_schedule()
+
+    def _schedule(_: SweepValue) -> MeasurementSchedule:
+        return schedule
+
+    result = asyncio.run(
+        service.run_sweep_measurement(
+            _schedule,
+            sweep_values=sweep_values,
+            shot_interval=2 * tunits_units.us,
+            frequencies={"Q00": 5100 * tunits_units.MHz},
+            readout_duration=4 * tunits_units.us,
+        )
+    )
+
+    assert result == "sweep_result"
+    assert calls["build_schedule"] == []
+    assert calls["run_sweep_measurement"][0]["built"] is schedule
+    assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+
+
 def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     """Given explicit final_measurement false, when running async ndsweep, then service preserves explicit value."""
     service, calls = _make_service()
@@ -296,3 +351,28 @@ def test_run_ndsweep_measurement_normalizes_tunits_inputs_before_delegation() ->
     assert build_kwargs["readout_pre_margin"] == pytest.approx(80.0)
     assert build_kwargs["readout_post_margin"] == pytest.approx(120.0)
     assert build_kwargs["readout_ramp_time"] == pytest.approx(40.0)
+
+
+def test_run_ndsweep_measurement_uses_measurement_schedule_without_rebuild() -> None:
+    """Given MeasurementSchedule callback output, when running async ndsweep, then service bypasses schedule build."""
+    service, calls = _make_service()
+    sweep_points: dict[str, Sequence[SweepValue]] = {"x": [1], "y": [10]}
+    schedule = _measurement_schedule()
+
+    def _schedule(_: SweepPoint) -> MeasurementSchedule:
+        return schedule
+
+    result = asyncio.run(
+        service.run_ndsweep_measurement(
+            _schedule,
+            sweep_points=sweep_points,
+            shot_interval=2 * tunits_units.us,
+            frequencies={"Q00": 5100 * tunits_units.MHz},
+            readout_duration=4 * tunits_units.us,
+        )
+    )
+
+    assert result == "ndsweep_result"
+    assert calls["build_schedule"] == []
+    assert calls["run_ndsweep_measurement"][0]["built"] is schedule
+    assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)

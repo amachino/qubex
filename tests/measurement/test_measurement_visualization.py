@@ -96,6 +96,114 @@ def test_make_measurement_schedule_figure_adds_capture_overlay() -> None:
     assert "Capture" in trace_names
 
 
+def test_make_measurement_schedule_figure_hides_workaround_capture_by_default() -> None:
+    """Given workaround capture, when making schedule figure, then workaround band is excluded by default."""
+    with PulseSchedule(["RQ00"]) as pulse_schedule:
+        pulse_schedule.add("RQ00", Blank(duration=4.0, sampling_period=0.4))
+        pulse_schedule.add(
+            "RQ00",
+            Gaussian(
+                duration=8.0,
+                amplitude=0.3,
+                sigma=1.6,
+                zero_bounds=False,
+                sampling_period=0.4,
+            ),
+        )
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=["RQ00"],
+                    start_time=0.0,
+                    duration=4.0,
+                    is_workaround=True,
+                ),
+                Capture(
+                    channels=["RQ00"],
+                    start_time=4.0,
+                    duration=8.0,
+                ),
+            ]
+        ),
+    )
+
+    figure = make_measurement_schedule_figure(schedule)
+    figure_dict = figure.to_dict()
+    shapes = [
+        shape
+        for shape in figure_dict.get("layout", {}).get("shapes", [])
+        if isinstance(shape, dict)
+    ]
+    capture_shapes = [
+        shape
+        for shape in shapes
+        if shape.get("yref") == "y domain"
+        and shape.get("y0") == 0.0
+        and shape.get("y1") == 0.2
+    ]
+
+    assert len(capture_shapes) == 1
+    assert capture_shapes[0]["x0"] == 4.0
+    assert capture_shapes[0]["x1"] == 12.0
+
+
+def test_make_measurement_schedule_figure_can_show_workaround_capture() -> None:
+    """Given workaround capture, when hide flag is false, then workaround band is rendered."""
+    with PulseSchedule(["RQ00"]) as pulse_schedule:
+        pulse_schedule.add("RQ00", Blank(duration=4.0, sampling_period=0.4))
+        pulse_schedule.add(
+            "RQ00",
+            Gaussian(
+                duration=8.0,
+                amplitude=0.3,
+                sigma=1.6,
+                zero_bounds=False,
+                sampling_period=0.4,
+            ),
+        )
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=["RQ00"],
+                    start_time=0.0,
+                    duration=4.0,
+                    is_workaround=True,
+                ),
+                Capture(
+                    channels=["RQ00"],
+                    start_time=4.0,
+                    duration=8.0,
+                ),
+            ]
+        ),
+    )
+
+    figure = make_measurement_schedule_figure(
+        schedule,
+        hide_workaround_capture=False,
+    )
+    figure_dict = figure.to_dict()
+    shapes = [
+        shape
+        for shape in figure_dict.get("layout", {}).get("shapes", [])
+        if isinstance(shape, dict)
+    ]
+    capture_shapes = [
+        shape
+        for shape in shapes
+        if shape.get("yref") == "y domain"
+        and shape.get("y0") == 0.0
+        and shape.get("y1") == 0.2
+    ]
+    capture_ranges = {(shape["x0"], shape["x1"]) for shape in capture_shapes}
+
+    assert capture_ranges == {(0.0, 4.0), (4.0, 12.0)}
+
+
 @dataclass(frozen=True)
 class _Waveform:
     sampling_period_ns: float
@@ -210,6 +318,7 @@ def test_measurement_schedule_plot_delegates_to_schedule_visualizer(
         plot_schedule: MeasurementSchedule,
         *,
         show_physical_pulse: bool,
+        hide_workaround_capture: bool,
         title: str,
         width: int,
         n_samples: int | None,
@@ -219,6 +328,7 @@ def test_measurement_schedule_plot_delegates_to_schedule_visualizer(
     ) -> None:
         called["schedule"] = plot_schedule
         called["show_physical_pulse"] = show_physical_pulse
+        called["hide_workaround_capture"] = hide_workaround_capture
         called["title"] = title
         called["width"] = width
         called["n_samples"] = n_samples
@@ -233,6 +343,7 @@ def test_measurement_schedule_plot_delegates_to_schedule_visualizer(
 
     result = schedule.plot(
         show_physical_pulse=True,
+        hide_workaround_capture=False,
         title="My Schedule",
         width=1234,
         n_samples=16,
@@ -244,6 +355,7 @@ def test_measurement_schedule_plot_delegates_to_schedule_visualizer(
     assert result is None
     assert called["schedule"] is schedule
     assert called["show_physical_pulse"] is True
+    assert called["hide_workaround_capture"] is False
     assert called["title"] == "My Schedule"
     assert called["width"] == 1234
     assert called["n_samples"] == 16

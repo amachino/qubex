@@ -1327,7 +1327,7 @@ class Experiment:
 
     async def run_measurement(
         self,
-        schedule: PulseSchedule,
+        schedule: PulseSchedule | MeasurementSchedule,
         *,
         n_shots: int | None = None,
         shot_interval: TimeLike | None = None,
@@ -1346,12 +1346,12 @@ class Experiment:
         final_measurement: bool | None = None,
     ) -> MeasurementResult:
         """
-        Run one async measurement from a pulse schedule.
+        Run one async measurement from a pulse or measurement schedule.
 
         Parameters
         ----------
-        schedule : PulseSchedule
-            Input pulse schedule.
+        schedule : PulseSchedule | MeasurementSchedule
+            Input schedule. If `MeasurementSchedule` is provided, it is used as-is.
         n_shots : int | None, optional
             Number of shots.
         shot_interval : TimeLike | None, optional
@@ -1414,7 +1414,7 @@ class Experiment:
 
     async def run_sweep_measurement(
         self,
-        schedule: Callable[[Any], PulseSchedule],
+        schedule: Callable[[Any], PulseSchedule | MeasurementSchedule],
         *,
         sweep_values: ArrayLike | Sequence[SweepValue],
         n_shots: int | None = None,
@@ -1438,8 +1438,8 @@ class Experiment:
 
         Parameters
         ----------
-        schedule : Callable[[Any], PulseSchedule]
-            Callback that builds one pulse schedule per sweep value.
+        schedule : Callable[[Any], PulseSchedule | MeasurementSchedule]
+            Callback that builds one schedule per sweep value.
         sweep_values : ArrayLike | Sequence[SweepValue]
             Ordered sweep values.
         n_shots : int | None, optional
@@ -1510,7 +1510,7 @@ class Experiment:
 
     async def run_ndsweep_measurement(
         self,
-        schedule: Callable[[SweepPoint], PulseSchedule],
+        schedule: Callable[[SweepPoint], PulseSchedule | MeasurementSchedule],
         *,
         sweep_points: dict[str, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
@@ -1535,8 +1535,8 @@ class Experiment:
 
         Parameters
         ----------
-        schedule : Callable[[SweepPoint], PulseSchedule]
-            Callback that builds one pulse schedule per resolved sweep point.
+        schedule : Callable[[SweepPoint], PulseSchedule | MeasurementSchedule]
+            Callback that builds one schedule per resolved sweep point.
         sweep_points : dict[str, Sequence[SweepValue]]
             Axis-value table (`axis -> ordered values`).
         sweep_axes : SweepAxes | None, optional

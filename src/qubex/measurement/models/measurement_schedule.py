@@ -22,6 +22,7 @@ class MeasurementSchedule(Model):
         self,
         *,
         show_physical_pulse: bool = False,
+        hide_workaround_capture: bool = True,
         title: str = "Measurement Schedule",
         width: int = 900,
         n_samples: int | None = None,
@@ -35,6 +36,7 @@ class MeasurementSchedule(Model):
         plot_measurement_schedule(
             self,
             show_physical_pulse=show_physical_pulse,
+            hide_workaround_capture=hide_workaround_capture,
             title=title,
             width=width,
             n_samples=n_samples,

@@ -13,6 +13,7 @@ class Capture(Model):
     channels: list[str]
     start_time: float
     duration: float
+    is_workaround: bool = False
 
 
 class CaptureSchedule(Model):

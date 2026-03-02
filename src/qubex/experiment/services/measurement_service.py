@@ -140,6 +140,38 @@ class MeasurementService:
             ]
         )
 
+    def _resolve_measurement_schedule(
+        self,
+        *,
+        schedule: PulseSchedule | MeasurementSchedule,
+        frequencies: dict[str, float] | None,
+        readout_amplitudes: dict[str, float] | None,
+        readout_duration: float | None,
+        readout_pre_margin: float | None,
+        readout_post_margin: float | None,
+        readout_ramp_time: float | None,
+        readout_ramp_type: RampType | None,
+        readout_drag_coeff: float | None,
+        readout_amplification: bool | None,
+        final_measurement: bool,
+    ) -> MeasurementSchedule:
+        """Return measurement schedule, building only when pulse schedule is provided."""
+        if isinstance(schedule, MeasurementSchedule):
+            return schedule
+        return self.ctx.measurement.build_measurement_schedule(
+            pulse_schedule=schedule,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+        )
+
     @classmethod
     def resolve_deprecated_option(
         cls,
@@ -208,7 +240,7 @@ class MeasurementService:
 
     async def run_measurement(
         self,
-        schedule: PulseSchedule,
+        schedule: PulseSchedule | MeasurementSchedule,
         *,
         n_shots: int | None = None,
         shot_interval: TimeLike | None = None,
@@ -237,8 +269,8 @@ class MeasurementService:
         if final_measurement is None:
             final_measurement = True
 
-        measurement_schedule = self.ctx.measurement.build_measurement_schedule(
-            pulse_schedule=schedule,
+        measurement_schedule = self._resolve_measurement_schedule(
+            schedule=schedule,
             frequencies=normalized_frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=normalized_readout_duration,
@@ -264,7 +296,7 @@ class MeasurementService:
 
     async def run_sweep_measurement(
         self,
-        schedule: Callable[[Any], PulseSchedule],
+        schedule: Callable[[Any], PulseSchedule | MeasurementSchedule],
         *,
         sweep_values: ArrayLike | Sequence[SweepValue],
         n_shots: int | None = None,
@@ -303,8 +335,8 @@ class MeasurementService:
         )
 
         def wrapped_schedule(value: SweepValue) -> MeasurementSchedule:
-            return self.ctx.measurement.build_measurement_schedule(
-                pulse_schedule=schedule(value),
+            return self._resolve_measurement_schedule(
+                schedule=schedule(value),
                 frequencies=normalized_frequencies,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=normalized_readout_duration,
@@ -325,7 +357,7 @@ class MeasurementService:
 
     async def run_ndsweep_measurement(
         self,
-        schedule: Callable[[SweepPoint], PulseSchedule],
+        schedule: Callable[[SweepPoint], PulseSchedule | MeasurementSchedule],
         *,
         sweep_points: dict[str, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
@@ -365,8 +397,8 @@ class MeasurementService:
         )
 
         def wrapped_schedule(point: SweepPoint) -> MeasurementSchedule:
-            return self.ctx.measurement.build_measurement_schedule(
-                pulse_schedule=schedule(point),
+            return self._resolve_measurement_schedule(
+                schedule=schedule(point),
                 frequencies=normalized_frequencies,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=normalized_readout_duration,

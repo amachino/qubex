@@ -53,6 +53,7 @@ def make_measurement_schedule_figure(
     schedule: MeasurementSchedule,
     *,
     show_physical_pulse: bool = False,
+    hide_workaround_capture: bool = True,
     title: str = "Measurement Schedule",
     width: int = MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
     n_samples: int | None = None,
@@ -194,6 +195,12 @@ def make_measurement_schedule_figure(
             schedule.capture_schedule.channels.get(label, []),
             key=lambda capture: capture.start_time,
         )
+        if hide_workaround_capture:
+            captures = [
+                capture
+                for capture in captures
+                if not getattr(capture, "is_workaround", False)
+            ]
         for capture_index, capture in enumerate(captures):
             x_ref = _x_axis_reference(row_index)
             y_ref = f"{_primary_y_axis_reference(row_index)} domain"
@@ -289,6 +296,7 @@ def plot_measurement_schedule(
     schedule: MeasurementSchedule,
     *,
     show_physical_pulse: bool = False,
+    hide_workaround_capture: bool = True,
     title: str = "Measurement Schedule",
     width: int = MEASUREMENT_SCHEDULE_DEFAULT_WIDTH,
     n_samples: int | None = None,
@@ -300,6 +308,7 @@ def plot_measurement_schedule(
     figure = make_measurement_schedule_figure(
         schedule,
         show_physical_pulse=show_physical_pulse,
+        hide_workaround_capture=hide_workaround_capture,
         title=title,
         width=width,
         n_samples=n_samples,
