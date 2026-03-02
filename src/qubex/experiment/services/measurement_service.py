@@ -314,8 +314,15 @@ class MeasurementService:
         readout_drag_coeff: float | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
+        plot: bool | None = None,
+        enable_tqdm: bool | None = None,
     ) -> SweepMeasurementResult:
         """Run async sweep measurement by delegating to the measurement layer."""
+        if plot is None:
+            plot = True
+        if enable_tqdm is None:
+            enable_tqdm = True
+
         normalized_shot_interval = normalize_time_to_ns(shot_interval)
         normalized_frequencies = normalize_frequencies_to_ghz(frequencies)
         normalized_readout_duration = normalize_time_to_ns(readout_duration)
@@ -333,9 +340,15 @@ class MeasurementService:
             time_integration=time_integration,
             state_classification=state_classification,
         )
+        sweep_count = int(np.asarray(sweep_values).size)
+        progress = tqdm(
+            total=sweep_count,
+            desc="Sweeping parameters",
+            disable=not enable_tqdm,
+        )
 
         def wrapped_schedule(value: SweepValue) -> MeasurementSchedule:
-            return self._resolve_measurement_schedule(
+            measurement_schedule = self._resolve_measurement_schedule(
                 schedule=schedule(value),
                 frequencies=normalized_frequencies,
                 readout_amplitudes=readout_amplitudes,
@@ -348,12 +361,47 @@ class MeasurementService:
                 readout_amplification=readout_amplification,
                 final_measurement=final_measurement,
             )
+            progress.update(1)
+            return measurement_schedule
 
-        return await self.ctx.measurement.run_sweep_measurement(
-            wrapped_schedule,
-            sweep_values=sweep_values,
-            config=config,
-        )
+        try:
+            result = await self.ctx.measurement.run_sweep_measurement(
+                wrapped_schedule,
+                sweep_values=sweep_values,
+                config=config,
+            )
+        finally:
+            progress.close()
+
+        if plot:
+            signals: dict[str, list[complex]] = {}
+            for point_result in result.results:
+                for target, captures in point_result.data.items():
+                    if len(captures) == 0:
+                        continue
+                    capture = captures[-1]
+                    kerneled = np.atleast_1d(np.asarray(capture.kerneled))
+                    if kerneled.size == 0:
+                        continue
+                    signals.setdefault(target, []).append(complex(np.mean(kerneled)))
+            if len(signals) > 0:
+                plotter = IQPlotter(
+                    {
+                        target: self.ctx.state_centers[target]
+                        for target in signals
+                        if target in self.ctx.state_centers
+                    }
+                )
+                plotter.update(
+                    {
+                        target: np.asarray(values)
+                        for target, values in signals.items()
+                        if len(values) > 0
+                    }
+                )
+                plotter.show()
+
+        return result
 
     async def run_ndsweep_measurement(
         self,

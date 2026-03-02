@@ -567,6 +567,8 @@ def test_run_sweep_measurement_delegates_to_measurement_service() -> None:
             sweep_values=sweep_values,
             final_measurement=True,
             shot_averaging=False,
+            plot=True,
+            enable_tqdm=True,
         )
     )
 
@@ -587,6 +589,8 @@ def test_run_sweep_measurement_delegates_to_measurement_service() -> None:
                 "readout_drag_coeff": None,
                 "readout_amplification": None,
                 "final_measurement": True,
+                "plot": True,
+                "enable_tqdm": True,
                 "n_shots": None,
                 "shot_interval": None,
                 "shot_averaging": False,

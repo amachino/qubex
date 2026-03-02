@@ -7,10 +7,12 @@ from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, cast
 
+import numpy as np
 import pytest
 import tunits.units as tunits_units
 from qxpulse import PulseSchedule
 
+import qubex.experiment.services.measurement_service as measurement_service_module
 from qubex.experiment.services.measurement_service import MeasurementService
 from qubex.measurement import MeasurementSchedule, SweepPoint, SweepValue
 from qubex.measurement.models.capture_schedule import CaptureSchedule
@@ -284,6 +286,83 @@ def test_run_sweep_measurement_uses_measurement_schedule_without_rebuild() -> No
     assert calls["build_schedule"] == []
     assert calls["run_sweep_measurement"][0]["built"] is schedule
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+
+
+def test_run_sweep_measurement_plots_iq_and_updates_tqdm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given plot+tqdm enabled, when running async sweep, then IQ plot and progress updates are executed."""
+    service, calls = _make_service()
+    calls["plot"] = {}
+    calls["progress"] = {}
+    service.ctx.state_centers = {"Q00": {0: 0.0 + 0.0j}}  # type: ignore[attr-defined]
+
+    class _Plotter:
+        def __init__(self, state_centers: dict[str, dict[int, complex]]) -> None:
+            calls["plot"]["state_centers"] = state_centers
+
+        def update(self, data: dict[str, np.ndarray]) -> None:
+            calls["plot"]["data"] = data
+
+        def show(self) -> None:
+            calls["plot"]["shown"] = True
+
+    class _Progress:
+        def __init__(self, *, total: int, desc: str, disable: bool) -> None:
+            calls["progress"]["total"] = total
+            calls["progress"]["desc"] = desc
+            calls["progress"]["disable"] = disable
+            calls["progress"]["updates"] = 0
+            calls["progress"]["closed"] = False
+
+        def update(self, step: int) -> None:
+            calls["progress"]["updates"] += step
+
+        def close(self) -> None:
+            calls["progress"]["closed"] = True
+
+    async def _run_sweep_measurement(
+        schedule: Any,
+        *,
+        sweep_values: list[object],
+        config: object,
+    ) -> Any:
+        _ = config
+        for value in sweep_values:
+            _ = schedule(value)
+        point = SimpleNamespace(
+            data={"Q00": [SimpleNamespace(kerneled=np.array([1.0 + 2.0j]))]}
+        )
+        return SimpleNamespace(results=[point], sweep_values=sweep_values)
+
+    service.ctx.measurement.run_sweep_measurement = _run_sweep_measurement  # type: ignore[attr-defined]
+    monkeypatch.setattr(measurement_service_module, "IQPlotter", _Plotter)
+    monkeypatch.setattr(measurement_service_module, "tqdm", _Progress)
+
+    def _schedule(value: SweepValue) -> PulseSchedule:
+        return cast(Any, f"pulse-{value}")
+
+    _ = asyncio.run(
+        service.run_sweep_measurement(
+            _schedule,
+            sweep_values=[1, 2],
+            plot=True,
+            enable_tqdm=True,
+        )
+    )
+
+    assert calls["progress"] == {
+        "total": 2,
+        "desc": "Sweeping parameters",
+        "disable": False,
+        "updates": 2,
+        "closed": True,
+    }
+    assert calls["plot"]["state_centers"] == {"Q00": {0: 0.0 + 0.0j}}
+    plotted = calls["plot"]["data"]["Q00"]
+    assert np.asarray(plotted).shape == (1,)
+    assert np.asarray(plotted)[0] == pytest.approx(1.0 + 2.0j)
+    assert calls["plot"]["shown"] is True
 
 
 def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None:

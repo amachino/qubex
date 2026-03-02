@@ -1432,6 +1432,8 @@ class Experiment:
         readout_drag_coeff: float | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
+        plot: bool | None = None,
+        enable_tqdm: bool | None = None,
     ) -> SweepMeasurementResult:
         """
         Run an async 1D sweep measurement over explicit sweep values.
@@ -1473,6 +1475,10 @@ class Experiment:
             Whether to insert pump/readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append final readout pulses at schedule tail.
+        plot : bool | None, optional
+            Whether to plot IQ trajectories over sweep points.
+        enable_tqdm : bool | None, optional
+            Whether to show a tqdm progress bar during the sweep.
 
         Returns
         -------
@@ -1501,6 +1507,8 @@ class Experiment:
             readout_drag_coeff=readout_drag_coeff,
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
+            plot=plot,
+            enable_tqdm=enable_tqdm,
             n_shots=n_shots,
             shot_interval=shot_interval,
             shot_averaging=shot_averaging,
