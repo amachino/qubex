@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
+
+pytestmark = [
+    pytest.mark.filterwarnings(
+        "ignore:Use `CaptureData` in `measurement_result.py` instead\\.:DeprecationWarning"
+    ),
+    pytest.mark.filterwarnings(
+        "ignore:Use `MeasurementResult` in `measurement_result.py` instead\\.:DeprecationWarning"
+    ),
+]
 
 
 def test_measure_data_counts_and_probabilities(dummy_classifier):

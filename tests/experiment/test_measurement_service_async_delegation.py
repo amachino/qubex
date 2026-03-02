@@ -7,8 +7,10 @@ from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from qxpulse import PulseSchedule
 
+from qubex.core import units
 from qubex.experiment.services.measurement_service import MeasurementService
 from qubex.measurement import SweepPoint, SweepValue
 
@@ -135,6 +137,32 @@ def test_run_measurement_builds_schedule_and_delegates() -> None:
     assert cast(SimpleNamespace, called["config"]).tag == "config"
 
 
+def test_run_measurement_normalizes_tunits_inputs_before_delegation() -> None:
+    """Given tunits values, when running async measurement, then shot interval and frequencies are normalized to float units."""
+    service, calls = _make_service()
+    pulse_schedule = cast(Any, object())
+
+    result = asyncio.run(
+        service.run_measurement(
+            pulse_schedule,
+            shot_interval=2 * units.us,
+            frequencies={"Q00": 5100 * units.MHz},
+            readout_duration=4 * units.us,
+            readout_pre_margin=80 * units.ns,
+            readout_post_margin=120 * units.ns,
+            readout_ramp_time=40 * units.ns,
+        )
+    )
+
+    assert result == "measurement_result"
+    assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+    assert calls["build_schedule"][0]["frequencies"] == {"Q00": pytest.approx(5.1)}
+    assert calls["build_schedule"][0]["readout_duration"] == pytest.approx(4000.0)
+    assert calls["build_schedule"][0]["readout_pre_margin"] == pytest.approx(80.0)
+    assert calls["build_schedule"][0]["readout_post_margin"] == pytest.approx(120.0)
+    assert calls["build_schedule"][0]["readout_ramp_time"] == pytest.approx(40.0)
+
+
 def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     """Given explicit final_measurement false, when running async sweep, then service preserves explicit value."""
     service, calls = _make_service()
@@ -172,6 +200,37 @@ def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     assert build_kwargs["final_measurement"] is False
 
 
+def test_run_sweep_measurement_normalizes_tunits_inputs_before_delegation() -> None:
+    """Given tunits values, when running async sweep, then interval, frequencies, and readout timings are normalized to float units."""
+    service, calls = _make_service()
+    sweep_values: list[SweepValue] = [1]
+
+    def _schedule(value: SweepValue) -> PulseSchedule:
+        return cast(Any, f"pulse-{value}")
+
+    result = asyncio.run(
+        service.run_sweep_measurement(
+            _schedule,
+            sweep_values=sweep_values,
+            shot_interval=2 * units.us,
+            frequencies={"Q00": 5100 * units.MHz},
+            readout_duration=4 * units.us,
+            readout_pre_margin=80 * units.ns,
+            readout_post_margin=120 * units.ns,
+            readout_ramp_time=40 * units.ns,
+        )
+    )
+
+    assert result == "sweep_result"
+    assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+    build_kwargs = calls["build_schedule"][0]
+    assert build_kwargs["frequencies"] == {"Q00": pytest.approx(5.1)}
+    assert build_kwargs["readout_duration"] == pytest.approx(4000.0)
+    assert build_kwargs["readout_pre_margin"] == pytest.approx(80.0)
+    assert build_kwargs["readout_post_margin"] == pytest.approx(120.0)
+    assert build_kwargs["readout_ramp_time"] == pytest.approx(40.0)
+
+
 def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     """Given explicit final_measurement false, when running async ndsweep, then service preserves explicit value."""
     service, calls = _make_service()
@@ -206,3 +265,34 @@ def test_run_ndsweep_measurement_builds_wrapped_schedule_and_delegates() -> None
     build_kwargs = calls["build_schedule"][0]
     assert build_kwargs["pulse_schedule"] == "1-10"
     assert build_kwargs["final_measurement"] is False
+
+
+def test_run_ndsweep_measurement_normalizes_tunits_inputs_before_delegation() -> None:
+    """Given tunits values, when running async ndsweep, then interval, frequencies, and readout timings are normalized to float units."""
+    service, calls = _make_service()
+    sweep_points: dict[str, Sequence[SweepValue]] = {"x": [1], "y": [10]}
+
+    def _schedule(point: SweepPoint) -> PulseSchedule:
+        return cast(Any, f"{point['x']}-{point['y']}")
+
+    result = asyncio.run(
+        service.run_ndsweep_measurement(
+            _schedule,
+            sweep_points=sweep_points,
+            shot_interval=2 * units.us,
+            frequencies={"Q00": 5100 * units.MHz},
+            readout_duration=4 * units.us,
+            readout_pre_margin=80 * units.ns,
+            readout_post_margin=120 * units.ns,
+            readout_ramp_time=40 * units.ns,
+        )
+    )
+
+    assert result == "ndsweep_result"
+    assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+    build_kwargs = calls["build_schedule"][0]
+    assert build_kwargs["frequencies"] == {"Q00": pytest.approx(5.1)}
+    assert build_kwargs["readout_duration"] == pytest.approx(4000.0)
+    assert build_kwargs["readout_pre_margin"] == pytest.approx(80.0)
+    assert build_kwargs["readout_post_margin"] == pytest.approx(120.0)
+    assert build_kwargs["readout_ramp_time"] == pytest.approx(40.0)

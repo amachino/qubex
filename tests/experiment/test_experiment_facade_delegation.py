@@ -158,8 +158,8 @@ def test_calibrate_1q_delegates_to_calibration_service() -> None:
 
     result = exp.calibrate_1q(
         targets=["Q00", "Q01"],
-        shots=1024,
-        interval=120.0,
+        n_shots=1024,
+        shot_interval=120.0,
         plot=False,
         coarse=True,
     )
@@ -188,8 +188,8 @@ def test_calibrate_2q_delegates_to_calibration_service() -> None:
     result = exp.calibrate_2q(
         targets=["Q00-Q01"],
         cr_calib_params={"Q00-Q01": {"n_iterations": 3}},
-        shots=2048,
-        interval=150.0,
+        n_shots=2048,
+        shot_interval=150.0,
         plot=True,
     )
 
@@ -218,8 +218,8 @@ def test_benchmark_1q_delegates_to_benchmarking_service() -> None:
         targets=["Q00", "Q01"],
         n_trials=10,
         in_parallel=True,
-        shots=512,
-        interval=200.0,
+        n_shots=512,
+        shot_interval=200.0,
         plot=False,
         save_image=True,
     )
@@ -251,8 +251,8 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
         targets=["Q00-Q01"],
         n_trials=12,
         in_parallel=False,
-        shots=1024,
-        interval=240.0,
+        n_shots=1024,
+        shot_interval=240.0,
         plot=True,
         save_image=False,
     )

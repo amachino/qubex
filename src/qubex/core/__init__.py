@@ -19,6 +19,13 @@ from qxcore import (
 
 from .async_bridge import AsyncBridge
 from .parallel_executor import run_parallel, run_parallel_map
+from .unit_converter import (
+    normalize_frequencies_to_ghz,
+    normalize_frequency_to_ghz,
+    normalize_quantity,
+    normalize_quantity_mapping,
+    normalize_time_to_ns,
+)
 
 __all__ = [
     "AsyncBridge",
@@ -33,6 +40,11 @@ __all__ = [
     "Value",
     "ValueArray",
     "ValueArrayLike",
+    "normalize_frequencies_to_ghz",
+    "normalize_frequency_to_ghz",
+    "normalize_quantity",
+    "normalize_quantity_mapping",
+    "normalize_time_to_ns",
     "run_parallel",
     "run_parallel_map",
     "units",

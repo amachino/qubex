@@ -11,6 +11,15 @@ import pytest
 
 from qubex.measurement import MeasureResult
 
+pytestmark = [
+    pytest.mark.filterwarnings(
+        "ignore:Use `CaptureData` in `measurement_result.py` instead\\.:DeprecationWarning"
+    ),
+    pytest.mark.filterwarnings(
+        "ignore:Use `MeasurementResult` in `measurement_result.py` instead\\.:DeprecationWarning"
+    ),
+]
+
 
 def test_save_classified_json(measure_result: MeasureResult, tmp_path: Path):
     """MeasureResult should save classified data as JSON."""
