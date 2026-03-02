@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import tunits.units as tunits_units
 
 from qubex.core import Frequency, Time, units
 from qubex.core.unit_converter import (
@@ -46,6 +47,20 @@ def test_normalize_time_to_ns_converts_tunits_time() -> None:
 def test_normalize_frequency_to_ghz_converts_tunits_frequency() -> None:
     """Given tunits frequency value, when normalize_frequency_to_ghz is used, then GHz float is returned."""
     result = normalize_frequency_to_ghz(5100 * units.MHz)
+
+    assert result == pytest.approx(5.1)
+
+
+def test_normalize_time_to_ns_converts_raw_tunits_value() -> None:
+    """Given raw tunits Value time, when normalize_time_to_ns is used, then ns float is returned."""
+    result = normalize_time_to_ns(2 * tunits_units.us)
+
+    assert result == pytest.approx(2000.0)
+
+
+def test_normalize_frequency_to_ghz_converts_raw_tunits_value() -> None:
+    """Given raw tunits Value frequency, when normalize_frequency_to_ghz is used, then GHz float is returned."""
+    result = normalize_frequency_to_ghz(5100 * tunits_units.MHz)
 
     assert result == pytest.approx(5.1)
 

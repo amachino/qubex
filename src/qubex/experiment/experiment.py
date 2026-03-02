@@ -26,7 +26,6 @@ from typing_extensions import deprecated
 from qubex.backend.backend_controller import SystemBackendController
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
-from qubex.core import Frequency, Time
 from qubex.measurement import (
     Measurement,
     MeasurementResult,
@@ -57,11 +56,13 @@ from qubex.system import (
 )
 from qubex.typing import (
     ConfigurationMode,
+    FrequencyLike,
     IQArray,
     MeasurementMode,
     ParametricPulseSchedule,
     ParametricWaveformDict,
     TargetMap,
+    TimeLike,
 )
 
 from .experiment_context import ExperimentContext
@@ -1329,16 +1330,16 @@ class Experiment:
         schedule: PulseSchedule,
         *,
         n_shots: int | None = None,
-        shot_interval: float | Time | None = None,
+        shot_interval: TimeLike | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
-        frequencies: dict[str, float | Frequency] | None = None,
+        frequencies: dict[str, FrequencyLike] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | Time | None = None,
-        readout_pre_margin: float | Time | None = None,
-        readout_post_margin: float | Time | None = None,
-        readout_ramp_time: float | Time | None = None,
+        readout_duration: TimeLike | None = None,
+        readout_pre_margin: TimeLike | None = None,
+        readout_post_margin: TimeLike | None = None,
+        readout_ramp_time: TimeLike | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
         readout_amplification: bool | None = None,
@@ -1353,27 +1354,27 @@ class Experiment:
             Input pulse schedule.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval : float | Time | None, optional
-            Interval between shots. `Time` values are converted to ns.
+        shot_interval : TimeLike | None, optional
+            Interval between shots. Time-like values are converted to ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
             Whether to enable state classification.
-        frequencies : dict[str, float | Frequency] | None, optional
+        frequencies : dict[str, FrequencyLike] | None, optional
             Temporary frequency overrides keyed by target label.
-            `Frequency` values are converted to GHz.
+            Frequency-like values are converted to GHz.
         readout_amplitudes : dict[str, float] | None, optional
             Readout amplitudes keyed by readout or qubit label.
-        readout_duration : float | Time | None, optional
-            Readout duration. `Time` values are converted to ns.
-        readout_pre_margin : float | Time | None, optional
-            Pre-margin inserted before readout. `Time` values are converted to ns.
-        readout_post_margin : float | Time | None, optional
-            Post-margin inserted after readout. `Time` values are converted to ns.
-        readout_ramp_time : float | Time | None, optional
-            Readout ramp time. `Time` values are converted to ns.
+        readout_duration : TimeLike | None, optional
+            Readout duration. Time-like values are converted to ns.
+        readout_pre_margin : TimeLike | None, optional
+            Pre-margin inserted before readout. Time-like values are converted to ns.
+        readout_post_margin : TimeLike | None, optional
+            Post-margin inserted after readout. Time-like values are converted to ns.
+        readout_ramp_time : TimeLike | None, optional
+            Readout ramp time. Time-like values are converted to ns.
         readout_ramp_type : RampType | None, optional
             Ramp waveform type.
         readout_drag_coeff : float | None, optional
@@ -1417,16 +1418,16 @@ class Experiment:
         *,
         sweep_values: ArrayLike | Sequence[SweepValue],
         n_shots: int | None = None,
-        shot_interval: float | Time | None = None,
+        shot_interval: TimeLike | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
-        frequencies: dict[str, float | Frequency] | None = None,
+        frequencies: dict[str, FrequencyLike] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | Time | None = None,
-        readout_pre_margin: float | Time | None = None,
-        readout_post_margin: float | Time | None = None,
-        readout_ramp_time: float | Time | None = None,
+        readout_duration: TimeLike | None = None,
+        readout_pre_margin: TimeLike | None = None,
+        readout_post_margin: TimeLike | None = None,
+        readout_ramp_time: TimeLike | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
         readout_amplification: bool | None = None,
@@ -1443,27 +1444,27 @@ class Experiment:
             Ordered sweep values.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval : float | Time | None, optional
-            Interval between shots. `Time` values are converted to ns.
+        shot_interval : TimeLike | None, optional
+            Interval between shots. Time-like values are converted to ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
             Whether to enable state classification.
-        frequencies : dict[str, float | Frequency] | None, optional
+        frequencies : dict[str, FrequencyLike] | None, optional
             Temporary frequency overrides keyed by target label.
-            `Frequency` values are converted to GHz.
+            Frequency-like values are converted to GHz.
         readout_amplitudes : dict[str, float] | None, optional
             Readout amplitudes keyed by readout or qubit label.
-        readout_duration : float | Time | None, optional
-            Readout duration. `Time` values are converted to ns.
-        readout_pre_margin : float | Time | None, optional
-            Pre-margin inserted before readout. `Time` values are converted to ns.
-        readout_post_margin : float | Time | None, optional
-            Post-margin inserted after readout. `Time` values are converted to ns.
-        readout_ramp_time : float | Time | None, optional
-            Readout ramp time. `Time` values are converted to ns.
+        readout_duration : TimeLike | None, optional
+            Readout duration. Time-like values are converted to ns.
+        readout_pre_margin : TimeLike | None, optional
+            Pre-margin inserted before readout. Time-like values are converted to ns.
+        readout_post_margin : TimeLike | None, optional
+            Post-margin inserted after readout. Time-like values are converted to ns.
+        readout_ramp_time : TimeLike | None, optional
+            Readout ramp time. Time-like values are converted to ns.
         readout_ramp_type : RampType | None, optional
             Ramp waveform type.
         readout_drag_coeff : float | None, optional
@@ -1514,16 +1515,16 @@ class Experiment:
         sweep_points: dict[str, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
         n_shots: int | None = None,
-        shot_interval: float | Time | None = None,
+        shot_interval: TimeLike | None = None,
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
-        frequencies: dict[str, float | Frequency] | None = None,
+        frequencies: dict[str, FrequencyLike] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | Time | None = None,
-        readout_pre_margin: float | Time | None = None,
-        readout_post_margin: float | Time | None = None,
-        readout_ramp_time: float | Time | None = None,
+        readout_duration: TimeLike | None = None,
+        readout_pre_margin: TimeLike | None = None,
+        readout_post_margin: TimeLike | None = None,
+        readout_ramp_time: TimeLike | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
         readout_amplification: bool | None = None,
@@ -1542,27 +1543,27 @@ class Experiment:
             Axis order for Cartesian expansion.
         n_shots : int | None, optional
             Number of shots.
-        shot_interval : float | Time | None, optional
-            Interval between shots. `Time` values are converted to ns.
+        shot_interval : TimeLike | None, optional
+            Interval between shots. Time-like values are converted to ns.
         shot_averaging : bool | None, optional
             Whether shot averaging is applied in hardware.
         time_integration : bool | None, optional
             Whether to integrate captured waveforms over time.
         state_classification : bool | None, optional
             Whether to enable state classification.
-        frequencies : dict[str, float | Frequency] | None, optional
+        frequencies : dict[str, FrequencyLike] | None, optional
             Temporary frequency overrides keyed by target label.
-            `Frequency` values are converted to GHz.
+            Frequency-like values are converted to GHz.
         readout_amplitudes : dict[str, float] | None, optional
             Readout amplitudes keyed by readout or qubit label.
-        readout_duration : float | Time | None, optional
-            Readout duration. `Time` values are converted to ns.
-        readout_pre_margin : float | Time | None, optional
-            Pre-margin inserted before readout. `Time` values are converted to ns.
-        readout_post_margin : float | Time | None, optional
-            Post-margin inserted after readout. `Time` values are converted to ns.
-        readout_ramp_time : float | Time | None, optional
-            Readout ramp time. `Time` values are converted to ns.
+        readout_duration : TimeLike | None, optional
+            Readout duration. Time-like values are converted to ns.
+        readout_pre_margin : TimeLike | None, optional
+            Pre-margin inserted before readout. Time-like values are converted to ns.
+        readout_post_margin : TimeLike | None, optional
+            Post-margin inserted after readout. Time-like values are converted to ns.
+        readout_ramp_time : TimeLike | None, optional
+            Readout ramp time. Time-like values are converted to ns.
         readout_ramp_type : RampType | None, optional
             Ramp waveform type.
         readout_drag_coeff : float | None, optional

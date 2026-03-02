@@ -8,9 +8,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+import tunits.units as tunits_units
 from qxpulse import PulseSchedule
 
-from qubex.core import units
 from qubex.experiment.services.measurement_service import MeasurementService
 from qubex.measurement import SweepPoint, SweepValue
 
@@ -145,12 +145,12 @@ def test_run_measurement_normalizes_tunits_inputs_before_delegation() -> None:
     result = asyncio.run(
         service.run_measurement(
             pulse_schedule,
-            shot_interval=2 * units.us,
-            frequencies={"Q00": 5100 * units.MHz},
-            readout_duration=4 * units.us,
-            readout_pre_margin=80 * units.ns,
-            readout_post_margin=120 * units.ns,
-            readout_ramp_time=40 * units.ns,
+            shot_interval=2 * tunits_units.us,
+            frequencies={"Q00": 5100 * tunits_units.MHz},
+            readout_duration=4 * tunits_units.us,
+            readout_pre_margin=80 * tunits_units.ns,
+            readout_post_margin=120 * tunits_units.ns,
+            readout_ramp_time=40 * tunits_units.ns,
         )
     )
 
@@ -212,12 +212,12 @@ def test_run_sweep_measurement_normalizes_tunits_inputs_before_delegation() -> N
         service.run_sweep_measurement(
             _schedule,
             sweep_values=sweep_values,
-            shot_interval=2 * units.us,
-            frequencies={"Q00": 5100 * units.MHz},
-            readout_duration=4 * units.us,
-            readout_pre_margin=80 * units.ns,
-            readout_post_margin=120 * units.ns,
-            readout_ramp_time=40 * units.ns,
+            shot_interval=2 * tunits_units.us,
+            frequencies={"Q00": 5100 * tunits_units.MHz},
+            readout_duration=4 * tunits_units.us,
+            readout_pre_margin=80 * tunits_units.ns,
+            readout_post_margin=120 * tunits_units.ns,
+            readout_ramp_time=40 * tunits_units.ns,
         )
     )
 
@@ -279,12 +279,12 @@ def test_run_ndsweep_measurement_normalizes_tunits_inputs_before_delegation() ->
         service.run_ndsweep_measurement(
             _schedule,
             sweep_points=sweep_points,
-            shot_interval=2 * units.us,
-            frequencies={"Q00": 5100 * units.MHz},
-            readout_duration=4 * units.us,
-            readout_pre_margin=80 * units.ns,
-            readout_post_margin=120 * units.ns,
-            readout_ramp_time=40 * units.ns,
+            shot_interval=2 * tunits_units.us,
+            frequencies={"Q00": 5100 * tunits_units.MHz},
+            readout_duration=4 * tunits_units.us,
+            readout_pre_margin=80 * tunits_units.ns,
+            readout_post_margin=120 * tunits_units.ns,
+            readout_ramp_time=40 * tunits_units.ns,
         )
     )
 

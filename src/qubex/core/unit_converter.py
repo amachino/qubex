@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Protocol, TypeVar, cast
+from typing import Any, Protocol, TypeVar, cast
 
-from qxcore import Frequency, Time
+from qxcore import Frequency, Time, Value
 
 
 class SupportsValueInBaseUnits(Protocol):
@@ -21,7 +21,7 @@ Number = float | int
 
 
 def normalize_quantity(
-    value: Number | Q,
+    value: Number | Value | Q,
     *,
     quantity_type: type[Q],
     scale_from_base: float,
@@ -29,11 +29,14 @@ def normalize_quantity(
     """Normalize a scalar quantity to float using base-unit scaling."""
     if isinstance(value, quantity_type):
         return float(value.value_in_base_units() * scale_from_base)
+    if isinstance(value, Value):
+        quantity = cast(Q, cast(Any, quantity_type)(value.value, value.units))
+        return float(quantity.value_in_base_units() * scale_from_base)
     return float(cast(Number, value))
 
 
 def normalize_quantity_mapping(
-    values: Mapping[str, Number | Q] | None,
+    values: Mapping[str, Number | Value | Q] | None,
     *,
     quantity_type: type[Q],
     scale_from_base: float,
@@ -51,7 +54,7 @@ def normalize_quantity_mapping(
     }
 
 
-def normalize_time_to_ns(value: Number | Time | None) -> float | None:
+def normalize_time_to_ns(value: Number | Time | Value | None) -> float | None:
     """Normalize time value to ns as float."""
     if value is None:
         return None
@@ -62,7 +65,7 @@ def normalize_time_to_ns(value: Number | Time | None) -> float | None:
     )
 
 
-def normalize_frequency_to_ghz(value: Number | Frequency) -> float:
+def normalize_frequency_to_ghz(value: Number | Frequency | Value) -> float:
     """Normalize frequency value to GHz as float."""
     return normalize_quantity(
         value,
@@ -72,7 +75,7 @@ def normalize_frequency_to_ghz(value: Number | Frequency) -> float:
 
 
 def normalize_frequencies_to_ghz(
-    values: Mapping[str, Number | Frequency] | None,
+    values: Mapping[str, Number | Frequency | Value] | None,
 ) -> dict[str, float] | None:
     """Normalize frequency mapping to GHz floats."""
     return normalize_quantity_mapping(
