@@ -527,6 +527,10 @@ class ConfigLoader:
         except yaml.YAMLError:
             logger.exception(f"Error loading parameter file: {path}")
             raise
+        if result is None:
+            return {}
+        if not isinstance(result, dict):
+            raise TypeError(f"`{file_name}` must be a mapping at top level.")
         return result
 
     def _load_structured_params_yaml(self, path: Path) -> dict[str, dict]:
