@@ -2,14 +2,22 @@
 
 ## Release target
 
-- Beta release window: by February 2026
-- GA release window: by March 2026
+- Beta release window: by 2026-03-05 (updated on 2026-03-02)
+- GA release window: by March 2026 (beta result dependent)
+
+## Current decisions (2026-03-02)
+
+- Beta deadline is extended to `2026-03-05`.
+- Branch migration is performed at beta cut timing.
+- Publish scope uses `make publish-all` (all packages).
+- Hardware validation (`HV-001` to `HV-007`) is executed by release owner on `2026-03-05`.
+- Blocking clarifications with quelware side remain `pending`.
 
 ## Dependency status
 
 - `quelware-client` API baseline in this workspace is confirmed (`InstrumentResolver`, `Sequencer`, `Session.trigger(instrument_ids=...)`).
 - QuEL-3 beta decision items `DF-01` to `DF-06` are fixed as of `2026-02-25`.
-- QuEL-3 execution/adapter resolver path changes are implemented in source and validated by local checks as of `2026-02-27` (`uv run ruff check`, `uv run pyright`, `uv run pytest`).
+- QuEL-3 execution/adapter resolver path changes are implemented in source and validated by local checks as of `2026-03-02` (`uv run ruff check`, `uv run pyright`, `uv run pytest`: `653 passed`).
 - Upstream clarification is still required for settings introspection and stable trigger/result contracts.
 - Remaining QuEL-3 beta risk is implementation completion, hardware validation, and closure of upstream clarification items.
 
@@ -32,27 +40,28 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 
 | Priority | Task | Due | Dependency | Status |
 | --- | --- | --- | --- | --- |
-| P0 | Finalize QuEL-3 integration design (resolver boundary, lifecycle, error model) | 2026-02-27 | Fixed beta contract decisions | IN_PROGRESS |
+| P0 | Finalize QuEL-3 integration design (resolver boundary, lifecycle, error model) | 2026-03-05 | Fixed beta contract decisions | IN_PROGRESS |
 | P0 | Replace legacy `InstrumentMapper` integration with `InstrumentResolver` path | 2026-02-27 | Current `quelware-client` API (`main`) | DONE (2026-02-27) |
 | P0 | Implement target-to-instrument auto resolution from wiring/port with fail-fast errors | 2026-02-28 | wiring.v2 policy + resource/instrument info contracts | DONE (2026-02-27) |
-| P0 | Implement multi-instrument, cross-unit synchronized trigger execution path | 2026-02-28 | Resolver integration + session orchestration | IN_PROGRESS (software path done, hardware evidence pending) |
-| P0 | Align capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER`) | 2026-02-28 | quelware directive support (`SetCaptureMode`) | IN_PROGRESS (mode mapping done, waveform-contract validation pending) |
+| P0 | Implement multi-instrument, cross-unit synchronized trigger execution path | 2026-03-05 | Resolver integration + session orchestration | IN_PROGRESS (software path done, hardware evidence pending) |
+| P0 | Align capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER`) | 2026-03-05 | quelware directive support (`SetCaptureMode`) | IN_PROGRESS (mode mapping done, waveform-contract validation pending) |
 | P0 | Implement QuEL-3 `tx/rx/trx` convergence rule (`read_out`/`read_in` -> one transceiver alias/resource when consistent) | 2026-02-28 | wiring.v2 + resolver + adapter payload semantics | DONE (2026-02-27) |
 | P0 | Remove adapter limitation that rejects multiple logical targets per one alias | 2026-02-28 | `trx` convergence rule and synchronized trigger flow | DONE (2026-02-27) |
-| P0 | Add capability-gated behavior for QuEL-1-only settings introspection paths (`dump_box`-dependent utilities) on QuEL-3 | 2026-02-28 | `system` package boundary decision | TODO |
-| P0 | Define and implement QuEL-3 frequency-sweep contract for `CharacterizationService` (`scan_qubit_frequencies`, `scan_resonator_frequencies`, `measure_electrical_delay`) without QuEL-1-only LO/CNCO reset assumptions | 2026-02-28 | QuEL-3 tuning/introspection API contract + capability profile | TODO |
-| P0 | Prepare compatibility contract tests at `Measurement` level (and `Experiment` facade delegation smoke checks) | 2026-02-25 | Existing controller APIs | IN_PROGRESS (factory-hook path covered) |
-| P0 | Implement synchronized measurement protocol execution path (SP-BETA-001) | 2026-02-28 | Multi-instrument and cross-unit trigger support | TODO |
-| P0 | Track and close blocking clarifications with quelware team (alias uniqueness, trigger guarantees, settings introspection path) | 2026-02-28 | Coordination with quelware team | TODO |
-| P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-02-26 | QuEL-3 timing model | IN_PROGRESS (measurement result time-axis path migrated) |
-| P1 | Implement new task-based async measurement primitives | 2026-02-26 | Core task model decisions | TODO |
-| P1 | Add async-first `Experiment` measurement APIs (`run_measurement`, `run_sweep_measurement`) and keep legacy wrappers (`measure`, `execute`, `sweep_parameter`, `sweep_measurement`) | 2026-03-08 | Measurement async primitives + API design freeze | TODO |
-| P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-08 | Async primitives | TODO |
-| P1 | Support Raw data persistence in NetCDF4 format | 2026-03-25 | Integrate with existing `qxcore` `DataModel` save capability | TODO |
-| P1 | Publish beta release notes and migration notes | 2026-02-28 | Major features for beta fixed | TODO |
+| P0 | Add capability-gated behavior for QuEL-1-only settings introspection paths (`dump_box`-dependent utilities) on QuEL-3 | 2026-03-05 | `system` package boundary decision | IN_PROGRESS (core optional-capability guards are in source; final verification pending) |
+| P0 | Define and implement QuEL-3 frequency-sweep contract for `CharacterizationService` (`scan_qubit_frequencies`, `scan_resonator_frequencies`, `measure_electrical_delay`) without QuEL-1-only LO/CNCO reset assumptions | 2026-03-05 | QuEL-3 tuning/introspection API contract + capability profile | TODO |
+| P0 | Prepare compatibility contract tests at `Measurement` level (and `Experiment` facade delegation smoke checks) | 2026-03-05 | Existing controller APIs | IN_PROGRESS (core matrix covered; `partial/gap` items remain in contract scope) |
+| P0 | Implement synchronized measurement protocol execution path (SP-BETA-001) | 2026-03-05 | Multi-instrument and cross-unit trigger support | IN_PROGRESS (software path done, hardware evidence pending) |
+| P0 | Track and close blocking clarifications with quelware team (alias uniqueness, trigger guarantees, settings introspection path) | 2026-03-05 | Coordination with quelware team | PENDING |
+| P0 | Audit and remove fixed `2 ns` sampling assumptions in measurement/protocol path | 2026-03-05 | QuEL-3 timing model | IN_PROGRESS (measurement result/model path migrated; characterization path remains) |
+| P1 | Implement new task-based async measurement primitives | 2026-03-02 | Core task model decisions | DONE (2026-03-02) |
+| P1 | Add async-first `Experiment` measurement APIs (`run_measurement`, `run_sweep_measurement`) and keep legacy wrappers (`measure`, `execute`, `sweep_parameter`, `sweep_measurement`) | 2026-03-02 | Measurement async primitives + API design freeze | DONE (2026-03-02) |
+| P1 | Add sweep measurement API and execution in `measurement` layer | 2026-03-02 | Async primitives | DONE (2026-03-02) |
+| P1 | Support Raw data persistence in NetCDF4 format | 2026-03-02 | Integrate with existing `qxcore` `DataModel` save capability | DONE (2026-03-02) |
+| P1 | Publish beta release notes and migration notes | 2026-03-05 | Major features for beta fixed | TODO |
+| P1 | Prepare branch migration for beta cut timing | 2026-03-05 | Beta go/no-go decision | TODO |
 | P1 | GA hardening: bug fixes from beta feedback | 2026-03-20 | Beta feedback | TODO |
 | P1 | GA release notes and documentation finalization | 2026-03-25 | GA scope frozen | TODO |
-| P1 | Publish v1.5.0 package to PyPI (build and upload distribution artifacts) | 2026-03-25 | GA release notes finalized and required checks green | TODO |
+| P1 | Publish v1.5.0 packages to PyPI via `make publish-all` (build and upload distribution artifacts for all packages) | 2026-03-25 | GA release notes finalized and required checks green | TODO |
 | P1 | Finalize MkDocs user-guide and developer-guide for v1.5.0 (sufficient for experiment users and developers) | 2026-03-25 | GA scope frozen and config/runtime behavior stabilized | TODO |
 | P2 | Developer ergonomics improvements (logs/errors/examples) for new flows | 2026-03-25 | Main features implemented | TODO |
 | P2 | Clean up test code and remove obsolete test cases | 2026-03-25 | Main features implemented and compatibility/test scope stabilized | TODO |
@@ -60,8 +69,9 @@ Legend: `P0` = highest, `P1` = important, `P2` = follow-up
 Calendar note:
 
 - `2026-02-29` does not exist; end-of-February deadlines are normalized to `2026-02-28`.
+- Beta deadline is extended from `2026-02-28` to `2026-03-05` (decision on `2026-03-02`).
 
-## Execution order (as of 2026-02-25, decision-fixed)
+## Execution order (as of 2026-03-02)
 
 1. Wave A (current): QuEL-3 beta-blocking implementation
    - Migrate execution integration from `InstrumentMapper` to `InstrumentResolver`.
@@ -74,9 +84,10 @@ Calendar note:
 2. Wave B (next): beta gate and validation evidence
    - Close blocking clarification items with quelware team.
    - Run required checks: `uv run ruff check`, `uv run ruff format`, `uv run pyright`, `uv run pytest`.
-   - Run hardware gate scenarios for QuEL-1 and QuEL-3 (including `SP-BETA-001`).
+   - Run hardware gate scenarios for QuEL-1 and QuEL-3 (including `SP-BETA-001`) on `2026-03-05` (owner: release owner).
+   - Apply branch migration at beta cut timing.
    - Publish beta release notes + known limitations + migration notes.
-3. Wave C (2026-03-01 to 2026-03-25): GA hardening and release
+3. Wave C (2026-03-06 to 2026-03-25): GA hardening and release
    - Triage beta feedback and close critical/high issues.
    - Finalize sweep/async docs and compatibility notes.
    - Finalize GA release notes and MkDocs guides.
@@ -156,7 +167,7 @@ Calendar note:
 - [x] `mock_mode=True` is mandatory for v1.5.0 beta compatibility
 - [x] Canonical sampling period source of truth: backend/controller `dt`
 
-## Current sprint checklist (2026-02-25 to 2026-02-28)
+## Historical sprint checklist (2026-02-25 to 2026-02-28)
 
 - [x] Finalize QuEL-3 integration interface based on current `quelware-client` source (`quel3-adapter-interface-draft.md`) with `InstrumentResolver` baseline.
 - [x] Freeze DF-01/DF-02 decisions in `quel3-adapter-interface-draft.md` (alias mapping and capture key policy).
@@ -175,6 +186,16 @@ Calendar note:
 - [ ] Close blocking clarification items with quelware side and reflect answers in adapter/config docs.
 - [ ] Run QuEL-3 hardware validation (`HV-001` to `HV-007`) and attach evidence.
 - [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
+
+## Current beta gate checklist (2026-03-02 to 2026-03-05)
+
+- [x] Re-run local quality gates on current `develop-next` (`uv run ruff check`, `uv run pyright`, `uv run pytest`: `653 passed`).
+- [x] Confirm async-first APIs exist on `Experiment` (`run_measurement`, `run_sweep_measurement`) and delegation tests are present.
+- [x] Confirm sweep execution APIs and NetCDF persistence are implemented in `measurement` layer.
+- [ ] Fill and publish beta release notes + migration notes.
+- [ ] Run QuEL-3 hardware validation (`HV-001` to `HV-007`) and attach evidence on `2026-03-05`.
+- [ ] Apply branch migration at beta cut timing.
+- [ ] Keep quelware clarification items as pending/open issues in release notes and adapter/config docs until resolved.
 
 ## Sampling-period audit (2026-02-17)
 
@@ -259,12 +280,15 @@ Calendar note:
 - 2026-02-27: Capture-mode directive mapping was updated to `avg` -> `AVERAGED_VALUE`, `single` -> `VALUES_PER_ITER` (fallback `VALUES_PER_LOOP`) in execution flow.
 - 2026-02-28: Updated capture-mode contract baseline to upstream latest (`single`=`VALUES_PER_ITER`, no legacy `VALUES_PER_LOOP` fallback).
 - 2026-02-27: Local quality gates passed after the above updates: `uv run ruff check`, `uv run pyright`, `uv run pytest` (`610 passed`).
+- 2026-03-02: Re-ran local quality gates on current `develop-next`: `uv run ruff check`, `uv run pyright`, `uv run pytest` (`653 passed`).
+- 2026-03-02: Updated beta schedule/operations decisions: beta deadline `2026-03-05`, branch migration at beta cut timing, publish scope `make publish-all` (all packages), and hardware gate execution owner/date (`2026-03-05`).
+- 2026-03-02: Confirmed async-first `Experiment` APIs (`run_measurement`, `run_sweep_measurement`), sweep execution APIs, and NetCDF persistence support are implemented in source with tests.
 - 2026-02-18: Updated `ExperimentUtil.discretize_time_range()` to resolve sampling period from backend/controller (`DEFAULT_SAMPLING_PERIOD`) with QuEL-1 fallback, and added regression tests.
 - 2026-02-18: Aligned experiment/contrib timing paths with backend-defined sampling period (`Measurement.sampling_period`) and added `ExperimentContext` synchronization to apply backend dt to pulse-library sampling during init/connect/reload/configure.
 - 2026-02-18: Added `v1-5-0-shared-pulse-factory-design.md` to define shared pulse construction architecture (backend/session-scoped, shared by `Experiment` and `Measurement`); implementation is explicitly deferred to 2026-02-19 or later.
 - 2026-02-25: Added `v1-5-0-experiment-async-api-plan.md` to track planned async-first `Experiment` APIs (`run_measurement`, `run_sweep_measurement`) and legacy compatibility policy for `measure`/`execute`/`sweep_parameter`/`sweep_measurement`.
 
-## Commit plan
+## Commit plan (historical reference)
 
 - Commit 1 (today): planning and audit baseline
 - Scope: release plan updates, compatibility contract finalization, sampling-period audit table

@@ -2,9 +2,19 @@
 
 ## Status
 
-- State: `PROPOSED`
+- State: `IN_PROGRESS`
 - Created: `2026-02-25`
-- Updated: `2026-02-25`
+- Updated: `2026-03-02`
+
+## Implementation snapshot (2026-03-02)
+
+- Implemented in source:
+  - `Experiment.run_measurement(...)`
+  - `Experiment.run_sweep_measurement(...)`
+- Delegation tests are present for async and legacy compatibility surfaces.
+- Remaining work before beta documentation freeze:
+  - user-guide async-first + legacy compatibility section update
+  - explicit migration notes for v1.5.0 users
 
 ## Goal
 
@@ -40,7 +50,7 @@ class Experiment:
 
 Notes:
 
-- Exact parameters/result models are intentionally `TBD`.
+- Signatures are implemented in source and treated as beta baseline.
 - Delegation should follow existing ownership:
   - `Experiment` facade -> `MeasurementService` -> measurement-layer execution services.
 
@@ -55,14 +65,13 @@ Notes:
 
 ## Implementation checklist
 
-- [ ] Freeze `run_measurement` / `run_sweep_measurement` signatures.
-- [ ] Add `Experiment` delegation tests for the new async APIs.
-- [ ] Add compatibility tests that keep legacy API behavior unchanged.
+- [x] Freeze `run_measurement` / `run_sweep_measurement` signatures.
+- [x] Add `Experiment` delegation tests for the new async APIs.
+- [x] Add compatibility tests that keep legacy API behavior unchanged.
 - [ ] Update user-guide pages to show async-first examples and legacy compatibility notes.
 - [ ] Add v1.5.0 migration notes for users.
 
-## Open questions
+## Open questions (remaining)
 
 - Should `Experiment` provide synchronous helper wrappers around coroutine APIs for notebook ergonomics?
-- What is the canonical result contract for `run_sweep_measurement` at `Experiment` level?
 - How should cancellation/timeout/error handling be surfaced relative to current sync APIs?
