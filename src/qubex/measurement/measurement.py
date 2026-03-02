@@ -678,7 +678,7 @@ class Measurement:
         schedule: Callable[[SweepValue], MeasurementSchedule],
         *,
         config: MeasurementConfig,
-        sweep_values: npt.ArrayLike,
+        sweep_values: npt.ArrayLike | Sequence[SweepValue],
     ) -> SweepMeasurementResult:
         """
         Execute a pointwise sweep over explicit sweep values.
@@ -689,7 +689,7 @@ class Measurement:
             Factory that builds one schedule from one sweep value.
         config : MeasurementConfig
             Runtime acquisition configuration.
-        sweep_values : ArrayLike
+        sweep_values : ArrayLike | Sequence[SweepValue]
             Explicit sweep values evaluated in sequence.
 
         Returns

@@ -630,7 +630,7 @@ class MeasurementExecutionService:
         self,
         schedule: Callable[[SweepValue], MeasurementSchedule],
         *,
-        sweep_values: ArrayLike,
+        sweep_values: ArrayLike | Sequence[SweepValue],
         config: MeasurementConfig | None = None,
     ) -> SweepMeasurementResult:
         """
@@ -640,7 +640,7 @@ class MeasurementExecutionService:
         ----------
         schedule : Callable[[SweepValue], MeasurementSchedule]
             Callback that builds one measurement schedule per sweep value.
-        sweep_values : ArrayLike
+        sweep_values : ArrayLike | Sequence[SweepValue]
             Ordered sweep values to execute.
         config : MeasurementConfig | None, optional
             Shared measurement configuration for all points.

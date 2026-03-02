@@ -1413,7 +1413,7 @@ class Experiment:
         self,
         schedule: Callable[[Any], PulseSchedule],
         *,
-        sweep_values: ArrayLike,
+        sweep_values: ArrayLike | Sequence[SweepValue],
         n_shots: int | None = None,
         shot_interval: float | None = None,
         shot_averaging: bool | None = None,
@@ -1437,7 +1437,7 @@ class Experiment:
         ----------
         schedule : Callable[[Any], PulseSchedule]
             Callback that builds one pulse schedule per sweep value.
-        sweep_values : ArrayLike
+        sweep_values : ArrayLike | Sequence[SweepValue]
             Ordered sweep values.
         n_shots : int | None, optional
             Number of shots.
