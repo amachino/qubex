@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
 from pydantic import Field
 
 from qubex.core import DataModel, Value
@@ -15,12 +19,73 @@ SweepPoint = dict[SweepKey, SweepValue]
 SweepAxes = tuple[SweepKey, ...]
 
 
+def _build_sweep_data(
+    *,
+    results: list[MeasurementResult],
+    sweep_shape: tuple[int, ...],
+) -> dict[str, list[NDArray[Any]]]:
+    """Aggregate capture arrays as `target -> [capture_index arrays]` with sweep axes."""
+    expected_points = int(np.prod(sweep_shape, dtype=int))
+    if len(results) != expected_points:
+        raise ValueError(
+            "results length does not match sweep shape: "
+            f"len(results)={len(results)}, sweep_shape={sweep_shape}."
+        )
+    if len(results) == 0:
+        return {}
+
+    expected_capture_counts: dict[str, int] = {}
+    per_target_capture_series: dict[str, list[list[NDArray[Any]]]] = {}
+
+    for point_index, result in enumerate(results):
+        result_targets = set(result.data)
+        if point_index > 0:
+            missing_targets = sorted(set(expected_capture_counts) - result_targets)
+            if missing_targets:
+                joined = ", ".join(missing_targets)
+                raise ValueError(
+                    f"Missing targets at sweep point index {point_index}: {joined}."
+                )
+        for target, captures in result.data.items():
+            capture_count = len(captures)
+            expected = expected_capture_counts.get(target)
+            if expected is None:
+                expected_capture_counts[target] = capture_count
+                per_target_capture_series[target] = [[] for _ in range(capture_count)]
+            elif expected != capture_count:
+                raise ValueError(
+                    f"Capture count mismatch for target {target} at sweep point "
+                    f"index {point_index}: expected {expected}, got {capture_count}."
+                )
+            for capture_index, capture in enumerate(captures):
+                per_target_capture_series[target][capture_index].append(
+                    np.asarray(capture.data)
+                )
+
+    sweep_data: dict[str, list[NDArray[Any]]] = {}
+    for target, capture_series_list in per_target_capture_series.items():
+        sweep_data[target] = []
+        for capture_series in capture_series_list:
+            stacked = np.stack(capture_series, axis=0)
+            reshaped = stacked.reshape((*sweep_shape, *stacked.shape[1:]))
+            sweep_data[target].append(reshaped)
+    return sweep_data
+
+
 class SweepMeasurementResult(DataModel):
     """Sweep measurement result."""
 
     sweep_values: list[SweepValue] = Field(default_factory=list)
     config: MeasurementConfig
     results: list[MeasurementResult] = Field(default_factory=list)
+
+    @property
+    def data(self) -> dict[str, list[NDArray[Any]]]:
+        """Return target-keyed capture arrays in sweep order."""
+        return _build_sweep_data(
+            results=self.results,
+            sweep_shape=(len(self.sweep_values),),
+        )
 
 
 class NDSweepMeasurementResult(DataModel):
@@ -31,6 +96,14 @@ class NDSweepMeasurementResult(DataModel):
     shape: tuple[int, ...] = Field(default_factory=tuple)
     config: MeasurementConfig
     results: list[MeasurementResult] = Field(default_factory=list)
+
+    @property
+    def data(self) -> dict[str, list[NDArray[Any]]]:
+        """Return target-keyed capture arrays in flattened C-order."""
+        return _build_sweep_data(
+            results=self.results,
+            sweep_shape=self.shape,
+        )
 
     def get(self, ndindex: tuple[int, ...]) -> MeasurementResult:
         """Return one point result by ndindex."""

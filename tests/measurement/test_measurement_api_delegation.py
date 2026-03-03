@@ -1738,7 +1738,12 @@ def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
         del self
         step = int(schedule.pulse_schedule.labels[0][-1])
         return _make_measurement_result(
-            data={"Q00": [np.array([step + 1.0 + 0.0j])]},
+            data={
+                "Q00": [
+                    np.array([step + 1.0 + 0.0j]),
+                    np.array([step + 11.0 + 0.0j]),
+                ]
+            },
             measurement_config=config,
             sampling_period=2.0,
         )
@@ -1761,6 +1766,77 @@ def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
     assert np.array_equal(result.results[1].data["Q00"][0].data, np.array([2.0 + 0.0j]))
     assert result.results[0].measurement_config == config
     assert result.results[1].measurement_config == config
+
+
+def test_run_sweep_measurement_data_property_returns_pointwise_data() -> None:
+    """Given sweep results, when reading data property, then target-keyed sweep arrays are returned."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+
+    def schedule(point: SweepValue) -> MeasurementSchedule:
+        step = int(point)
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self
+        step = int(schedule.pulse_schedule.labels[0][-1])
+        return _make_measurement_result(
+            data={
+                "Q00": [
+                    np.array([step + 1.0 + 0.0j]),
+                    np.array([step + 11.0 + 0.0j]),
+                ]
+            },
+            measurement_config=config,
+            sampling_period=2.0,
+        )
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_sweep_measurement(
+            schedule,
+            sweep_values=[0, 1],
+            config=config,
+        )
+    )
+
+    assert set(result.data) == {"Q00"}
+    assert len(result.data["Q00"]) == 2
+    assert np.array_equal(
+        result.data["Q00"][0],
+        np.array(
+            [
+                [1.0 + 0.0j],
+                [2.0 + 0.0j],
+            ]
+        ),
+    )
+    assert np.array_equal(
+        result.data["Q00"][1],
+        np.array(
+            [
+                [11.0 + 0.0j],
+                [12.0 + 0.0j],
+            ]
+        ),
+    )
 
 
 def test_run_sweep_measurement_resolves_default_config() -> None:
@@ -2018,6 +2094,86 @@ def test_run_ndsweep_measurement_runs_cartesian_order_and_helpers() -> None:
     with pytest.raises(TypeError):
         _ = result.get_sweep_point(4)  # type: ignore[arg-type]
     assert all(item.measurement_config == config for item in result.results)
+
+
+def test_run_ndsweep_measurement_data_property_returns_flattened_pointwise_data() -> (
+    None
+):
+    """Given ndsweep results, when reading data property, then target-keyed flattened sweep arrays are returned."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+    sweep_points: dict[str, Sequence[SweepValue]] = {
+        "amp": [0.1, 0.2],
+        "step": [0, 1],
+    }
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        step = int(point["step"])
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self
+        step = int(schedule.pulse_schedule.labels[0][-1])
+        return _make_measurement_result(
+            data={
+                "Q00": [
+                    np.array([step + 1.0 + 0.0j]),
+                    np.array([step + 11.0 + 0.0j]),
+                ]
+            },
+            measurement_config=config,
+            sampling_period=2.0,
+        )
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_ndsweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            sweep_axes=("amp", "step"),
+            config=config,
+        )
+    )
+
+    assert set(result.data) == {"Q00"}
+    assert len(result.data["Q00"]) == 2
+    assert result.data["Q00"][0].shape == (2, 2, 1)
+    assert result.data["Q00"][1].shape == (2, 2, 1)
+    assert np.array_equal(
+        result.data["Q00"][0],
+        np.array(
+            [
+                [[1.0 + 0.0j], [2.0 + 0.0j]],
+                [[1.0 + 0.0j], [2.0 + 0.0j]],
+            ]
+        ),
+    )
+    assert np.array_equal(
+        result.data["Q00"][1],
+        np.array(
+            [
+                [[11.0 + 0.0j], [12.0 + 0.0j]],
+                [[11.0 + 0.0j], [12.0 + 0.0j]],
+            ]
+        ),
+    )
 
 
 def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
