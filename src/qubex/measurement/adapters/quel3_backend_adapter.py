@@ -210,9 +210,9 @@ class Quel3MeasurementBackendAdapter:
                 output_target = self._output_target_labels_by_target.get(alias, alias)
                 converted_data.setdefault(output_target, []).extend(
                     [
-                        CaptureData(
+                        CaptureData.from_primary_data(
                             target=output_target,
-                            raw=_as_read_only_array(value),
+                            data=_as_read_only_array(value),
                             config=measurement_config,
                             sampling_period=resolved_sampling_period,
                         )
@@ -233,9 +233,9 @@ class Quel3MeasurementBackendAdapter:
                     capture_target,
                 )
                 converted_data.setdefault(output_target, []).append(
-                    CaptureData(
+                    CaptureData.from_primary_data(
                         target=output_target,
-                        raw=_as_read_only_array(capture_value),
+                        data=_as_read_only_array(capture_value),
                         config=measurement_config,
                         sampling_period=resolved_sampling_period,
                     )

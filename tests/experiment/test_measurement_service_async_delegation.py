@@ -210,6 +210,7 @@ def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
             readout_amplification=True,
             final_measurement=False,
             shot_averaging=False,
+            plot=False,
         )
     )
 
@@ -250,6 +251,7 @@ def test_run_sweep_measurement_normalizes_tunits_inputs_before_delegation() -> N
             readout_pre_margin=80 * tunits_units.ns,
             readout_post_margin=120 * tunits_units.ns,
             readout_ramp_time=40 * tunits_units.ns,
+            plot=False,
         )
     )
 
@@ -279,6 +281,7 @@ def test_run_sweep_measurement_uses_measurement_schedule_without_rebuild() -> No
             shot_interval=2 * tunits_units.us,
             frequencies={"Q00": 5100 * tunits_units.MHz},
             readout_duration=4 * tunits_units.us,
+            plot=False,
         )
     )
 
@@ -331,7 +334,13 @@ def test_run_sweep_measurement_plots_iq_and_updates_tqdm(
         for value in sweep_values:
             _ = schedule(value)
         point = SimpleNamespace(
-            data={"Q00": [SimpleNamespace(kerneled=np.array([1.0 + 2.0j]))]}
+            data={
+                "Q00": [
+                    SimpleNamespace(
+                        data=np.array([1.0 + 2.0j]),
+                    )
+                ]
+            }
         )
         return SimpleNamespace(results=[point], sweep_values=sweep_values)
 

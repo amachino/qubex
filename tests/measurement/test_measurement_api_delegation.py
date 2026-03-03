@@ -86,9 +86,9 @@ def _make_measurement_result(
 ) -> MeasurementResult:
     capture_data = {
         target: [
-            CaptureData(
+            CaptureData.from_primary_data(
                 target=target,
-                raw=np.asarray(raw),
+                data=np.asarray(raw),
                 config=measurement_config,
                 sampling_period=sampling_period,
             )
@@ -210,7 +210,10 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule(
     )
 
     assert result.mode == multiple.mode
-    assert np.array_equal(result.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
+    assert np.array_equal(
+        result.data["Q00"][0].raw,
+        multiple.data["Q00"][0].raw,
+    )
     assert called["build_schedule"] is pulse_schedule
     assert called["run_schedule"] is built_schedule
     assert called["build_kwargs"]["final_measurement"] is True
@@ -1382,7 +1385,7 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
 
     result = asyncio.run(measurement.measure_noise(["Q00"], duration=1024.0))
 
-    assert np.array_equal(result.data["Q00"][0], np.array([1.0 + 0.0j]))
+    assert np.array_equal(result.data["Q00"][0].data, np.array([1.0 + 0.0j]))
     assert result.measurement_config is measurement_config
     config_kwargs = cast(dict[str, Any], called["config_kwargs"])
     assert config_kwargs["n_shots"] == 1
@@ -1754,8 +1757,8 @@ def test_run_sweep_measurement_runs_points_and_returns_results() -> None:
 
     assert result.sweep_values == sweep_values
     assert result.config == config
-    assert np.array_equal(result.results[0].data["Q00"][0], np.array([1.0 + 0.0j]))
-    assert np.array_equal(result.results[1].data["Q00"][0], np.array([2.0 + 0.0j]))
+    assert np.array_equal(result.results[0].data["Q00"][0].data, np.array([1.0 + 0.0j]))
+    assert np.array_equal(result.results[1].data["Q00"][0].data, np.array([2.0 + 0.0j]))
     assert result.results[0].measurement_config == config
     assert result.results[1].measurement_config == config
 
@@ -2003,7 +2006,10 @@ def test_run_ndsweep_measurement_runs_cartesian_order_and_helpers() -> None:
         {"amp": 0.2, "step": 1},
         {"amp": 0.2, "step": 2},
     ]
-    assert np.array_equal(result.get((1, 2)).data["Q00"][0], np.array([3.0 + 0.0j]))
+    assert np.array_equal(
+        result.get((1, 2)).data["Q00"][0].data,
+        np.array([3.0 + 0.0j]),
+    )
     assert result.get((1, 2)) is result.results[5]
     assert result.get_sweep_point((1, 0)) == {"amp": 0.2, "step": 0}
     assert result.get_sweep_point((1, 1)) == {"amp": 0.2, "step": 1}

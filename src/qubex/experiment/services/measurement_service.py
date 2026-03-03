@@ -380,7 +380,7 @@ class MeasurementService:
                     if len(captures) == 0:
                         continue
                     capture = captures[-1]
-                    kerneled = np.atleast_1d(np.asarray(capture.kerneled))
+                    kerneled = np.atleast_1d(np.asarray(capture.data))
                     if kerneled.size == 0:
                         continue
                     signals.setdefault(target, []).append(complex(np.mean(kerneled)))

@@ -14,7 +14,7 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_SHOT_INTERVAL,
     DEFAULT_SHOTS,
 )
-from qubex.measurement.models import MeasurementConfig
+from qubex.measurement.models import MeasurementConfig, ReturnItem
 from qubex.system import ExperimentSystem
 
 
@@ -101,3 +101,45 @@ def test_factory_rejects_frequency_overrides() -> None:
 
     with pytest.raises(TypeError):
         factory.create(frequencies={"Q00": 5.0, "Q01": 5.2})  # type: ignore[call-arg]
+
+
+def test_model_populates_return_items_from_flags() -> None:
+    """Given legacy booleans, model should infer return items."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+    )
+
+    assert tuple(config.return_items) == (
+        ReturnItem.IQ_SERIES,
+        ReturnItem.STATE_SERIES,
+    )
+
+
+def test_model_rejects_return_items_conflicting_with_flags() -> None:
+    """Given conflicting return items, model validation should fail."""
+    with pytest.raises(ValidationError):
+        _ = MeasurementConfig(
+            n_shots=4,
+            shot_interval=100.0,
+            shot_averaging=True,
+            time_integration=False,
+            state_classification=False,
+            return_items=(ReturnItem.IQ_SERIES,),
+        )
+
+
+def test_model_rejects_duplicate_return_items() -> None:
+    """Given duplicate return items, model validation should fail."""
+    with pytest.raises(ValidationError):
+        _ = MeasurementConfig(
+            n_shots=4,
+            shot_interval=100.0,
+            shot_averaging=False,
+            time_integration=False,
+            state_classification=False,
+            return_items=(ReturnItem.WAVEFORM_SERIES, ReturnItem.WAVEFORM_SERIES),
+        )

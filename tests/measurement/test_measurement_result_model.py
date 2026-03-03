@@ -14,9 +14,11 @@ from sklearn import __version__ as SKLEARN_VERSION
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import (
     CaptureData,
+    CapturePayload,
     ClassifierRef,
     MeasurementConfig,
     MeasurementResult,
+    ReturnItem,
 )
 from qubex.measurement.models.measure_result import (
     MeasureData,
@@ -74,9 +76,9 @@ def _make_capture(
     sampling_period: float,
     classifier_ref: ClassifierRef | None = None,
 ) -> CaptureData:
-    return CaptureData(
+    return CaptureData.from_primary_data(
         target=target,
-        raw=raw,
+        data=raw,
         config=measurement_config,
         sampling_period=sampling_period,
         classifier_ref=classifier_ref,
@@ -100,8 +102,11 @@ def test_to_multiple_measure_result_returns_wrapped_result() -> None:
     assert restored.config == multiple.config
     assert result.device_config == multiple.config
     assert result.measurement_config == config
-    assert result.data["Q00"][0].raw.flags.writeable is False
-    assert np.array_equal(restored.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
+    assert result.data["Q00"][0].data.flags.writeable is False
+    assert np.array_equal(
+        restored.data["Q00"][0].raw,
+        multiple.data["Q00"][0].raw,
+    )
     assert result.measurement_config.shot_averaging is True
 
 
@@ -230,6 +235,7 @@ def test_json_roundtrip_preserves_capture_data() -> None:
         },
         device_config={"shots": 2},
         measurement_config=config,
+        classifier_refs={"Q00": classifier_ref},
     )
     serialized = original.to_dict()
 
@@ -237,8 +243,12 @@ def test_json_roundtrip_preserves_capture_data() -> None:
 
     assert serialized["__meta__"]["format"] == "qxdata"
     assert serialized["__meta__"]["version"] == 1
-    assert np.array_equal(restored.data["Q00"][0].raw, original.data["Q00"][0].raw)
+    assert np.array_equal(
+        restored.data["Q00"][0].data,
+        original.data["Q00"][0].data,
+    )
     assert restored.data["Q00"][0].classifier_ref == classifier_ref
+    assert restored.classifier_refs == {"Q00": classifier_ref}
     assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
 
@@ -281,9 +291,18 @@ def test_netcdf_roundtrip_preserves_capture_data(tmp_path) -> None:
 
     assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
-    assert np.array_equal(restored.data["Q00"][0].raw, original.data["Q00"][0].raw)
-    assert np.array_equal(restored.data["Q01"][0].raw, original.data["Q01"][0].raw)
-    assert np.array_equal(restored.data["Q01"][1].raw, original.data["Q01"][1].raw)
+    assert np.array_equal(
+        restored.data["Q00"][0].data,
+        original.data["Q00"][0].data,
+    )
+    assert np.array_equal(
+        restored.data["Q01"][0].data,
+        original.data["Q01"][0].data,
+    )
+    assert np.array_equal(
+        restored.data["Q01"][1].data,
+        original.data["Q01"][1].data,
+    )
     assert restored.data["Q00"][0].sampling_period == pytest.approx(2.0)
     assert restored.data["Q01"][0].sampling_period == pytest.approx(1.0)
 
@@ -309,7 +328,7 @@ def test_save_writes_netcdf_file(tmp_path) -> None:
     restored = MeasurementResult.load_netcdf(path)
 
     assert path.name == "result.nc"
-    assert np.array_equal(restored.data["Q00"][0].raw, np.array([1.0 + 0.0j]))
+    assert np.array_equal(restored.data["Q00"][0].data, np.array([1.0 + 0.0j]))
 
 
 def test_load_alias_reads_netcdf_file(tmp_path) -> None:
@@ -331,7 +350,7 @@ def test_load_alias_reads_netcdf_file(tmp_path) -> None:
     path = result.save(tmp_path / "result.nc")
     restored = MeasurementResult.load(path)
 
-    assert np.array_equal(restored.data["Q00"][0].raw, np.array([1.0 + 0.0j]))
+    assert np.array_equal(restored.data["Q00"][0].data, np.array([1.0 + 0.0j]))
 
 
 def test_capture_data_save_writes_netcdf_file(tmp_path) -> None:
@@ -349,7 +368,7 @@ def test_capture_data_save_writes_netcdf_file(tmp_path) -> None:
 
     assert path.name == "capture.nc"
     assert restored.target == "Q00"
-    assert np.array_equal(restored.raw, np.array([1.0 + 0.0j]))
+    assert np.array_equal(restored.data, np.array([1.0 + 0.0j]))
     assert restored.config == config
 
 
@@ -367,7 +386,7 @@ def test_capture_data_load_alias_reads_netcdf_file(tmp_path) -> None:
     restored = CaptureData.load(path)
 
     assert restored.target == "Q00"
-    assert np.array_equal(restored.raw, np.array([1.0 + 0.0j]))
+    assert np.array_equal(restored.data, np.array([1.0 + 0.0j]))
     assert restored.config == config
 
 
@@ -402,9 +421,9 @@ def test_capture_data_rejects_non_averaged_scalar_raw() -> None:
     )
 
     with pytest.raises(ValidationError):
-        _ = CaptureData(
+        _ = CaptureData.from_primary_data(
             target="Q00",
-            raw=np.array(1.0 + 0.0j),
+            data=np.array(1.0 + 0.0j),
             config=config,
             sampling_period=0.4,
         )
@@ -421,10 +440,222 @@ def test_capture_data_rejects_non_averaged_shot_count_mismatch() -> None:
     )
 
     with pytest.raises(ValidationError):
+        _ = CaptureData.from_primary_data(
+            target="Q00",
+            data=np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]),
+            config=config,
+            sampling_period=0.4,
+        )
+
+
+def test_capture_data_accepts_structured_waveform_payload() -> None:
+    """Given waveform_series payload, raw compatibility property should expose the same data."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=False,
+        state_classification=False,
+    )
+    waveform = np.array(
+        [[1.0 + 0.0j, 2.0 + 0.0j], [3.0 + 0.0j, 4.0 + 0.0j]],
+        dtype=np.complex128,
+    )
+
+    capture = CaptureData(
+        target="Q00",
+        config=config,
+        payload=CapturePayload(waveform_series=waveform),
+        sampling_period=0.4,
+    )
+
+    assert capture.payload.waveform_series is waveform
+    assert capture.data is waveform
+
+
+def test_capture_data_from_primary_data_populates_mode_field() -> None:
+    """Given averaged waveform mode, from_primary_data should populate averaged_waveform."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=True,
+        time_integration=False,
+        state_classification=False,
+    )
+    raw = np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128)
+
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=raw,
+        config=config,
+        sampling_period=0.4,
+    )
+
+    assert capture.payload.averaged_waveform is raw
+    assert capture.data is raw
+
+
+def test_capture_data_payload_properties_allow_none() -> None:
+    """Given waveform-only capture, non-matching payload properties return None."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=True,
+        time_integration=False,
+        state_classification=False,
+    )
+    raw = np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128)
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=raw,
+        config=config,
+        sampling_period=0.4,
+    )
+
+    assert capture.waveform_series is None
+    assert capture.iq_series is None
+    assert capture.state_series is None
+    assert capture.averaged_waveform is raw
+    assert capture.averaged_iq is None
+
+
+def test_capture_data_get_raw_data_returns_waveform_payload() -> None:
+    """Given waveform capture, get_raw_data should return waveform-domain data."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=False,
+        state_classification=False,
+    )
+    waveform = np.array(
+        [[1.0 + 0.0j, 2.0 + 0.0j], [3.0 + 0.0j, 4.0 + 0.0j]],
+        dtype=np.complex128,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=waveform,
+        config=config,
+        sampling_period=0.4,
+    )
+
+    assert capture.get_raw_data() is waveform
+
+
+def test_capture_data_get_raw_data_raises_without_waveform_payload() -> None:
+    """Given IQ-only capture, get_raw_data should raise because waveform payload is absent."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=False,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+        config=config,
+        sampling_period=0.4,
+    )
+
+    with pytest.raises(ValueError, match="Waveform payload is not set"):
+        _ = capture.get_raw_data()
+
+
+def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> None:
+    """Given reordered return_items, from_primary_data should still follow mode flags."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        return_items=(ReturnItem.STATE_SERIES, ReturnItem.IQ_SERIES),
+    )
+    raw = np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128)
+
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=raw,
+        config=config,
+        sampling_period=0.4,
+    )
+
+    assert capture.payload.iq_series is raw
+    assert capture.payload.state_series is None
+    assert capture.data is raw
+
+
+def test_capture_data_get_classified_series_returns_state_payload_when_available() -> (
+    None
+):
+    """Given state payload, get_classified_series should return it without classifier inference."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        return_items=(ReturnItem.IQ_SERIES, ReturnItem.STATE_SERIES),
+    )
+    state_series = np.array([0, 1], dtype=np.int64)
+    capture = CaptureData(
+        target="Q00",
+        config=config,
+        payload=CapturePayload(
+            iq_series=np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+            state_series=state_series,
+        ),
+        sampling_period=0.4,
+    )
+
+    assert capture.get_classified_series() is state_series
+
+
+def test_capture_data_get_classified_series_raises_without_state_payload_and_classifier() -> (
+    None
+):
+    """Given no classifier and no state payload, get_classified_series should raise."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        return_items=(ReturnItem.IQ_SERIES, ReturnItem.STATE_SERIES),
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+        config=config,
+        sampling_period=0.4,
+    )
+
+    with pytest.raises(ValueError, match="Classifier is not set"):
+        _ = capture.get_classified_series()
+
+
+def test_capture_data_rejects_payload_not_requested_by_return_items() -> None:
+    """Given payload outside return_items, capture validation should fail."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=False,
+        return_items=(ReturnItem.IQ_SERIES,),
+    )
+
+    with pytest.raises(ValidationError):
         _ = CaptureData(
             target="Q00",
-            raw=np.array([1.0 + 0.0j, 2.0 + 0.0j, 3.0 + 0.0j]),
             config=config,
+            payload=CapturePayload(
+                waveform_series=np.array(
+                    [[1.0 + 0.0j, 2.0 + 0.0j], [3.0 + 0.0j, 4.0 + 0.0j]],
+                    dtype=np.complex128,
+                ),
+            ),
             sampling_period=0.4,
         )
 
@@ -441,7 +672,7 @@ def test_capture_data_repr_summarizes_raw_array() -> None:
 
     text = repr(capture)
 
-    assert "raw=array([0., ...], shape=(1024,))" in text
+    assert "data=array([0., ...], shape=(1024,))" in text
 
 
 def test_capture_data_classifier_uses_shared_cache(
@@ -549,12 +780,12 @@ def test_capture_data_does_not_force_raw_read_only() -> None:
         sampling_period=0.4,
     )
 
-    capture.raw[0] = 2.0 + 0.0j
-    assert capture.raw[0] == 2.0 + 0.0j
+    capture.data[0] = 2.0 + 0.0j
+    assert capture.data[0] == 2.0 + 0.0j
 
 
-def test_capture_data_cached_arrays_are_read_only() -> None:
-    """Given capture data, cached arrays should be read-only."""
+def test_capture_data_get_kerneled_data_is_read_only() -> None:
+    """Given capture data, get_kerneled_data should return a read-only array."""
     config = _make_config(mode="single", shots=2)
     capture = _make_capture(
         target="Q00",
@@ -568,8 +799,7 @@ def test_capture_data_cached_arrays_are_read_only() -> None:
         sampling_period=0.4,
     )
 
-    assert capture.times.flags.writeable is False
-    assert capture.kerneled.flags.writeable is False
+    assert capture.get_kerneled_data().flags.writeable is False
 
 
 def test_measurement_result_get_classifier_loads_from_classifier_ref(
@@ -615,6 +845,79 @@ def test_measurement_result_get_classifier_loads_from_classifier_ref(
 
     assert classifier is dummy_classifier
     assert calls["count"] == 1
+
+
+def test_measurement_result_get_classifier_loads_from_top_level_classifier_refs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    dummy_classifier,
+) -> None:
+    """Given top-level classifier refs, classifier lookup should resolve from result metadata."""
+    config = _make_config(mode="avg", shots=1)
+    classifier_path = tmp_path / "classifier-Q00.pkl"
+    classifier_path.write_bytes(b"classifier-v1")
+    calls = {"count": 0}
+
+    def _load(path: str) -> object:
+        calls["count"] += 1
+        assert Path(path) == classifier_path.resolve()
+        return dummy_classifier
+
+    ClassifierRef.clear_cache()
+    monkeypatch.setattr(
+        "qubex.measurement.models.classifier_ref.StateClassifier.load",
+        _load,
+    )
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([1.0 + 0.0j]),
+                    measurement_config=config,
+                    sampling_period=0.4,
+                )
+            ]
+        },
+        measurement_config=config,
+        classifier_refs={
+            "Q00": ClassifierRef(
+                path=str(classifier_path),
+                version=SKLEARN_VERSION,
+            )
+        },
+    )
+
+    classifier = result.get_classifier("Q00")
+
+    assert classifier is dummy_classifier
+    assert calls["count"] == 1
+
+
+def test_measurement_result_rejects_unknown_classifier_ref_targets() -> None:
+    """Given unknown classifier_refs key, model validation should fail."""
+    config = _make_config(mode="avg", shots=1)
+
+    with pytest.raises(ValidationError):
+        _ = MeasurementResult(
+            data={
+                "Q00": [
+                    _make_capture(
+                        target="Q00",
+                        raw=np.array([1.0 + 0.0j]),
+                        measurement_config=config,
+                        sampling_period=0.4,
+                    )
+                ]
+            },
+            measurement_config=config,
+            classifier_refs={
+                "Q01": ClassifierRef(
+                    path="classifier-Q01.pkl",
+                    version=SKLEARN_VERSION,
+                )
+            },
+        )
 
 
 def test_measurement_result_ignores_legacy_top_level_sampling_period() -> None:

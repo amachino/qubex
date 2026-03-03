@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .capture_data import CaptureData
+from .capture_data import CaptureData, CapturePayload
 from .classifier_ref import ClassifierRef
 from .measure_result import (
     MeasureData,
@@ -10,7 +10,7 @@ from .measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
-from .measurement_config import MeasurementConfig
+from .measurement_config import MeasurementConfig, ReturnItem
 from .measurement_record import MeasurementRecord
 from .measurement_result import MeasurementResult
 from .measurement_schedule import MeasurementSchedule
@@ -26,6 +26,7 @@ from .sweep_measurement_result import (
 
 __all__ = [
     "CaptureData",
+    "CapturePayload",
     "ClassifierRef",
     "MeasureData",
     "MeasureMode",
@@ -37,6 +38,7 @@ __all__ = [
     "MultipleMeasureResult",
     "NDSweepMeasurementResult",
     "Quel1MeasurementOptions",
+    "ReturnItem",
     "SweepAxes",
     "SweepKey",
     "SweepMeasurementResult",

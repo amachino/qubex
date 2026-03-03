@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from pydantic import model_validator
 
 import qubex.visualization as viz
 from qubex.core import DataModel
 from qubex.measurement.classifiers.state_classifier import StateClassifier
 
 from .capture_data import CaptureData
+from .classifier_ref import ClassifierRef
 from .measurement_config import MeasurementConfig
 
 
@@ -25,26 +27,41 @@ class MeasurementResult(DataModel):
     data: dict[str, list[CaptureData]]
     measurement_config: MeasurementConfig
     device_config: dict[str, Any] | None = None
+    classifier_refs: dict[str, ClassifierRef] | None = None
 
-    def __repr__(self) -> str:
-        """Return a concise representation with key configuration details."""
-        target_labels = list(self.data.keys())
-        n_targets = len(target_labels)
-        n_captures = sum(len(captures) for captures in self.data.values())
-        if n_targets <= 4:
-            targets_repr = "[" + ", ".join(target_labels) + "]"
-        else:
-            head = ", ".join(target_labels[:3])
-            targets_repr = f"[{head}, ... (+{n_targets - 3})]"
-        config = self.measurement_config
-        return (
-            "<MeasurementResult "
-            f"targets={targets_repr} "
-            f"captures={n_captures} "
-            f"shot_averaging={config.shot_averaging} "
-            f"time_integration={config.time_integration} "
-            f"state_classification={config.state_classification}>"
-        )
+    @model_validator(mode="after")
+    def _validate_classifier_refs(self) -> MeasurementResult:
+        """Validate classifier-ref keys and infer mapping from capture metadata."""
+        if self.classifier_refs is not None:
+            unknown_targets = sorted(set(self.classifier_refs) - set(self.data))
+            if unknown_targets:
+                joined = ", ".join(unknown_targets)
+                raise ValueError(
+                    "classifier_refs contains unknown targets not present in data: "
+                    f"{joined}."
+                )
+            return self
+
+        inferred: dict[str, ClassifierRef] = {}
+        for target, captures in self.data.items():
+            target_ref: ClassifierRef | None = None
+            for capture in captures:
+                capture_ref = capture.classifier_ref
+                if capture_ref is None:
+                    continue
+                if target_ref is None:
+                    target_ref = capture_ref
+                    continue
+                if capture_ref != target_ref:
+                    raise ValueError(
+                        "Multiple classifier_ref values found in captures for "
+                        f"target {target}."
+                    )
+            if target_ref is not None:
+                inferred[target] = target_ref
+        if len(inferred) > 0:
+            object.__setattr__(self, "classifier_refs", inferred)
+        return self
 
     def get_basis_indices(
         self,
@@ -65,7 +82,9 @@ class MeasurementResult(DataModel):
                 capture=capture,
                 classifiers=classifiers,
             )
-            dimensions.append(capture.get_n_states(classifier_model=classifier))
+            if classifier is None:
+                raise ValueError(f"Classifier for target {target} is not set")
+            dimensions.append(classifier.n_states)
         return list(np.ndindex(*list(dimensions)))
 
     def get_basis_labels(
@@ -91,9 +110,10 @@ class MeasurementResult(DataModel):
         target_tuples = self._normalize_target_tuples(targets=targets)
         return np.column_stack(
             [
-                self._get_capture(target=target, index=index).get_classified_data(
+                self._classify_capture(
+                    capture=self._get_capture(target=target, index=index),
                     threshold=threshold,
-                    classifier_model=self._resolve_classifier(
+                    classifier=self._resolve_classifier(
                         target=target,
                         capture=self._get_capture(target=target, index=index),
                         classifiers=classifiers,
@@ -198,13 +218,17 @@ class MeasurementResult(DataModel):
         confusion_matrices = []
         for target in targets:
             capture = self._get_capture(target=target, index=0)
+            classifier = self._resolve_classifier(
+                target=target,
+                capture=capture,
+                classifiers=classifiers,
+            )
+            if classifier is None:
+                raise ValueError(f"Classifier for target {target} is not set")
             confusion_matrices.append(
-                capture.get_confusion_matrix(
-                    classifier_model=self._resolve_classifier(
-                        target=target,
-                        capture=capture,
-                        classifiers=classifiers,
-                    )
+                self._compute_confusion_matrix(
+                    capture=capture,
+                    classifier=classifier,
                 )
             )
         return reduce(np.kron, confusion_matrices)
@@ -274,7 +298,7 @@ class MeasurementResult(DataModel):
                 figure_index = 0
                 for captures in self.data.values():
                     for capture in captures:
-                        waveform = np.asarray(capture.raw)
+                        waveform = np.asarray(capture.data)
                         use_scatter = capture.config.time_integration or (
                             not capture.config.shot_averaging and waveform.ndim >= 2
                         )
@@ -292,7 +316,7 @@ class MeasurementResult(DataModel):
                 title = f"{target} : data[{capture_index}]"
                 config = capture.config
                 if config.time_integration:
-                    shots = np.asarray(capture.raw)
+                    shots = np.asarray(capture.data)
                     kerneled = np.atleast_1d(
                         shots if shots.ndim <= 1 else np.sum(shots, axis=1)
                     )
@@ -303,7 +327,7 @@ class MeasurementResult(DataModel):
                     )
                     continue
 
-                waveform = np.asarray(capture.raw)
+                waveform = np.asarray(capture.data)
                 if not config.shot_averaging and waveform.ndim >= 2:
                     shot_iq = np.mean(waveform, axis=1)
                     viz.scatter_iq_data(
@@ -332,7 +356,7 @@ class MeasurementResult(DataModel):
                 title = f"{target} : data[{capture_index}]"
                 config = capture.config
                 if config.time_integration:
-                    shots = np.asarray(capture.raw)
+                    shots = np.asarray(capture.data)
                     kerneled = np.atleast_1d(
                         shots if shots.ndim <= 1 else np.sum(shots, axis=1)
                     )
@@ -344,7 +368,7 @@ class MeasurementResult(DataModel):
                     )
                     continue
 
-                waveform = np.asarray(capture.raw)
+                waveform = np.asarray(capture.data)
                 if not config.shot_averaging and waveform.ndim >= 2:
                     shot_iq = np.mean(waveform, axis=1)
                     figures.append(
@@ -433,19 +457,82 @@ class MeasurementResult(DataModel):
             )
         return captures[index]
 
-    @staticmethod
     def _resolve_classifier(
+        self,
         *,
         target: str,
         capture: CaptureData,
         classifiers: Mapping[str, StateClassifier] | None,
     ) -> StateClassifier | None:
         """Resolve classifier model from target/capture references."""
+        classifier_ref = None
+        if self.classifier_refs is not None:
+            classifier_ref = self.classifier_refs.get(target)
+        if classifier_ref is None:
+            classifier_ref = capture.classifier_ref
+
         if classifiers is not None:
             if target in classifiers:
                 return classifiers[target]
-            if capture.classifier_ref is not None:
-                classifier_from_path = classifiers.get(capture.classifier_ref.path)
+            if classifier_ref is not None:
+                classifier_from_path = classifiers.get(classifier_ref.path)
                 if classifier_from_path is not None:
                     return classifier_from_path
-        return capture.classifier
+        if classifier_ref is None:
+            return None
+        return classifier_ref.load()
+
+    @staticmethod
+    def _compute_kerneled_data(
+        *,
+        capture: CaptureData,
+    ) -> np.ndarray:
+        """Compute kernel-integrated IQ samples from capture primary data."""
+        data = np.asarray(capture.data)
+        if not capture.config.shot_averaging:
+            if data.ndim <= 1:
+                kerneled = np.atleast_1d(data)
+            else:
+                kerneled = np.sum(data, axis=1)
+        else:
+            kerneled = np.asarray(np.sum(data))
+        kerneled.setflags(write=False)
+        return kerneled
+
+    @staticmethod
+    def _classify_capture(
+        *,
+        capture: CaptureData,
+        threshold: float | None,
+        classifier: StateClassifier | None,
+    ) -> np.ndarray:
+        """Classify capture shots into state labels."""
+        if capture.config.shot_averaging:
+            raise ValueError("Invalid mode for classification: shot_averaging=True")
+        if threshold is None and capture.payload.state_series is not None:
+            return capture.payload.state_series
+        if classifier is None:
+            raise ValueError("Classifier is not set")
+        kerneled = MeasurementResult._compute_kerneled_data(capture=capture)
+        labels = classifier.predict(kerneled)
+        if threshold is None:
+            return labels
+        data = classifier.predict_proba(kerneled)
+        if len(data) == 0:
+            raise ValueError("No classification data available")
+        max_probs = np.max(data, axis=1)
+        hard_labels = np.argmax(data, axis=1)
+        return np.where(max_probs > threshold, hard_labels, -1)
+
+    @staticmethod
+    def _compute_confusion_matrix(
+        *,
+        capture: CaptureData,
+        classifier: StateClassifier,
+    ) -> np.ndarray:
+        """Compute normalized confusion matrix for one capture target."""
+        if capture.config.shot_averaging:
+            raise ValueError("Invalid mode for classification: shot_averaging=True")
+        confusion_matrix = classifier.confusion_matrix
+        n_shots = confusion_matrix[0].sum()
+        return confusion_matrix / n_shots

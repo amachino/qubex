@@ -63,9 +63,9 @@ class MeasurementResultConverter:
         data = {}
         for target, captures in multiple.data.items():
             data[target] = [
-                CaptureData(
+                CaptureData.from_primary_data(
                     target=target,
-                    raw=_as_read_only_array(item.raw),
+                    data=_as_read_only_array(item.raw),
                     config=measurement_config,
                     sampling_period=item.sampling_period,
                 )
@@ -112,26 +112,35 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
+        resolved_classifiers: dict[str, StateClassifier | None] = {}
+        for target in result.data:
+            classifier = classifier_map.get(target)
+            if classifier is not None:
+                resolved_classifiers[target] = classifier
+                continue
+            try:
+                resolved_classifiers[target] = result.get_classifier(
+                    target,
+                    classifiers=classifier_map,
+                )
+            except ValueError:
+                resolved_classifiers[target] = None
         legacy_data: dict[str, list[MeasureData]] = {}
         for target, captures in result.data.items():
-            legacy_captures: list[MeasureData] = []
-            for capture in captures:
-                classifier = classifier_map.get(target)
-                if classifier is None:
-                    classifier = capture.classifier
-                legacy_captures.append(
-                    MeasureData(
-                        target=target,
-                        mode=mode,
-                        raw=np.asarray(capture.raw),
-                        classifier=classifier,
-                        sampling_period=(
-                            sampling_period
-                            if sampling_period is not None
-                            else capture.sampling_period
-                        ),
-                    )
+            legacy_captures = [
+                MeasureData(
+                    target=target,
+                    mode=mode,
+                    raw=np.asarray(capture.data),
+                    classifier=resolved_classifiers.get(target),
+                    sampling_period=(
+                        sampling_period
+                        if sampling_period is not None
+                        else capture.sampling_period
+                    ),
                 )
+                for capture in captures
+            ]
             legacy_data[target] = legacy_captures
         for target, captures in result.data.items():
             for capture in captures:
@@ -181,6 +190,19 @@ class MeasurementResultConverter:
             If `index` is out of range for any target.
         """
         classifier_map = {} if classifiers is None else classifiers
+        resolved_classifiers: dict[str, StateClassifier | None] = {}
+        for target in result.data:
+            classifier = classifier_map.get(target)
+            if classifier is not None:
+                resolved_classifiers[target] = classifier
+                continue
+            try:
+                resolved_classifiers[target] = result.get_classifier(
+                    target,
+                    classifiers=classifier_map,
+                )
+            except ValueError:
+                resolved_classifiers[target] = None
         single_data: dict[str, MeasureData] = {}
         resolved_mode: MeasureMode | None = None
         for target, captures in result.data.items():
@@ -199,14 +221,11 @@ class MeasurementResultConverter:
                     "Cannot convert captures with mixed shot_averaging modes "
                     "to legacy MeasureResult."
                 )
-            classifier = classifier_map.get(target)
-            if classifier is None:
-                classifier = selected_capture.classifier
             single_data[target] = MeasureData(
                 target=target,
                 mode=selected_mode,
-                raw=np.asarray(selected_capture.raw),
-                classifier=classifier,
+                raw=np.asarray(selected_capture.data),
+                classifier=resolved_classifiers.get(target),
                 sampling_period=(
                     sampling_period
                     if sampling_period is not None

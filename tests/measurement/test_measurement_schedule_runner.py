@@ -82,9 +82,9 @@ def _make_capture(
     config: MeasurementConfig,
     sampling_period: float = 0.4,
 ) -> CaptureData:
-    return CaptureData(
+    return CaptureData.from_primary_data(
         target=target,
-        raw=raw,
+        data=raw,
         config=config,
         sampling_period=sampling_period,
     )

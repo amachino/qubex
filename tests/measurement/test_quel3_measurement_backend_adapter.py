@@ -495,9 +495,9 @@ def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> 
     unexpected = MeasurementResult(
         data={
             "Q00": [
-                CaptureData(
+                CaptureData.from_primary_data(
                     target="Q00",
-                    raw=np.array([1.0 + 0.0j], dtype=np.complex128),
+                    data=np.array([1.0 + 0.0j], dtype=np.complex128),
                     config=config,
                     sampling_period=0.4,
                 )
@@ -572,7 +572,7 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     assert result.measurement_config == config
     assert result.data["Q00"][0].sampling_period == pytest.approx(0.4)
     assert np.array_equal(
-        result.data["Q00"][0],
+        result.data["Q00"][0].data,
         np.array([2.0 + 0.0j], dtype=np.complex128),
     )
 
@@ -653,5 +653,5 @@ def test_quel3_adapter_build_measurement_result_splits_shared_alias_targets() ->
         sampling_period=0.4,
     )
 
-    assert np.array_equal(result.data["Q00"][0], np.array([1.0 + 0.0j]))
-    assert np.array_equal(result.data["Q01"][0], np.array([2.0 + 0.0j]))
+    assert np.array_equal(result.data["Q00"][0].data, np.array([1.0 + 0.0j]))
+    assert np.array_equal(result.data["Q01"][0].data, np.array([2.0 + 0.0j]))

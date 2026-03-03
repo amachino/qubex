@@ -289,9 +289,9 @@ def test_check_noise_uses_measurement_result_plot() -> None:
     expected = _NoiseResult(
         data={
             "custom-target": [
-                CaptureData(
+                CaptureData.from_primary_data(
                     target="custom-target",
-                    raw=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    data=np.array([0.0 + 0.0j], dtype=np.complex128),
                     config=measurement_config,
                     sampling_period=2.0,
                 )

@@ -2,353 +2,210 @@
 
 from __future__ import annotations
 
-import warnings
-from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import model_validator
 
-import qubex.visualization as viz
-from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.core import DataModel
-from qubex.measurement.classifiers.state_classifier import StateClassifier
 
 from .classifier_ref import ClassifierRef
-from .measurement_config import MeasurementConfig
+from .measurement_config import MeasurementConfig, ReturnItem
+
+WaveformSeries: TypeAlias = NDArray[np.complexfloating[Any, Any]]
+IQSeries: TypeAlias = NDArray[np.complexfloating[Any, Any]]
+StateSeries: TypeAlias = NDArray[np.integer[Any]]
+AveragedWaveform: TypeAlias = NDArray[np.complexfloating[Any, Any]]
+AveragedIQ: TypeAlias = NDArray[np.complexfloating[Any, Any]]
 
 
-def _format_raw_preview(raw: NDArray) -> str:
-    """Return compact repr text for a raw array."""
-    array = np.asarray(raw)
-    if array.ndim == 0:
-        return repr(array)
-    flat = array.reshape(-1)
-    preview = np.array2string(flat[:1], separator=", ")
-    if preview.startswith("[") and preview.endswith("]"):
-        if flat.size > 1:
-            preview = f"{preview[:-1]}, ...]"
-    return f"array({preview}, shape={array.shape})"
+class CapturePayload(DataModel):
+    """Structured payload fields for capture data arrays."""
+
+    waveform_series: WaveformSeries | None = None
+    iq_series: IQSeries | None = None
+    state_series: StateSeries | None = None
+    averaged_waveform: AveragedWaveform | None = None
+    averaged_iq: AveragedIQ | None = None
 
 
 class CaptureData(DataModel):
-    """Serializable capture payload with per-target sampling metadata."""
+    """
+    Serializable per-capture measurement payload.
+
+    Parameters
+    ----------
+    target : str
+        Target label associated with this capture (for example, qubit label).
+    config : MeasurementConfig
+        Measurement configuration used to interpret payload fields.
+        The primary payload field is selected by `config.primary_return_item`.
+    payload : CapturePayload
+        Data payload model that may contain one or more of:
+        `waveform_series`, `iq_series`, `state_series`, `averaged_waveform`,
+        and `averaged_iq`.
+    sampling_period : float
+        Sampling period in ns for waveform-domain visualization and derived axes.
+        Must be positive.
+    classifier_ref : ClassifierRef | None, default=None
+        Optional classifier reference metadata for downstream classification.
+
+    Notes
+    -----
+    - This model stores device-returned payloads and metadata only.
+    - At least one entry must be present in `payload`.
+    - Payload fields must be consistent with `config.return_items`.
+    - The `data` property returns the primary payload selected by
+      `config.primary_return_item`.
+    """
 
     target: str
-    raw: NDArray
     config: MeasurementConfig
+    payload: CapturePayload
+    sampling_period: float
     classifier_ref: ClassifierRef | None = None
-    sampling_period: float = SAMPLING_PERIOD
+
+    @classmethod
+    def from_primary_data(
+        cls,
+        *,
+        target: str,
+        data: NDArray,
+        config: MeasurementConfig,
+        sampling_period: float,
+        classifier_ref: ClassifierRef | None = None,
+    ) -> CaptureData:
+        """Create capture data by placing data into the config-primary field."""
+        primary_item = config.primary_return_item
+        match primary_item:
+            case ReturnItem.WAVEFORM_SERIES:
+                payload = CapturePayload(waveform_series=data)
+            case ReturnItem.IQ_SERIES:
+                payload = CapturePayload(iq_series=data)
+            case ReturnItem.STATE_SERIES:
+                payload = CapturePayload(state_series=data)
+            case ReturnItem.AVERAGED_WAVEFORM:
+                payload = CapturePayload(averaged_waveform=data)
+            case ReturnItem.AVERAGED_IQ:
+                payload = CapturePayload(averaged_iq=data)
+        return cls(
+            target=target,
+            config=config,
+            payload=payload,
+            classifier_ref=classifier_ref,
+            sampling_period=sampling_period,
+        )
 
     @model_validator(mode="after")
     def _validate_invariants(self) -> CaptureData:
-        """Validate sampling period and raw-data shape constraints."""
+        """Validate sampling period, payload consistency, and shape constraints."""
         if self.sampling_period <= 0:
             raise ValueError("sampling_period must be positive.")
 
-        raw = np.asarray(self.raw)
+        configured_items = set(self.config.return_items)
+        payload_items: set[ReturnItem] = set()
+        if self.payload.waveform_series is not None:
+            payload_items.add(ReturnItem.WAVEFORM_SERIES)
+        if self.payload.iq_series is not None:
+            payload_items.add(ReturnItem.IQ_SERIES)
+        if self.payload.state_series is not None:
+            payload_items.add(ReturnItem.STATE_SERIES)
+        if self.payload.averaged_waveform is not None:
+            payload_items.add(ReturnItem.AVERAGED_WAVEFORM)
+        if self.payload.averaged_iq is not None:
+            payload_items.add(ReturnItem.AVERAGED_IQ)
+        if not payload_items:
+            raise ValueError("At least one capture payload field must be set.")
+
         config = self.config
+        unexpected_items = sorted(
+            payload_items - configured_items,
+            key=lambda item: item.value,
+        )
+        if unexpected_items:
+            joined = ", ".join(item.value for item in unexpected_items)
+            raise ValueError(
+                "Capture payload contains fields not requested by "
+                f"config.return_items: {joined}."
+            )
+
+        data = np.asarray(self.data)
         if config.shot_averaging:
             return self
-
-        if raw.ndim == 0:
+        if data.ndim == 0:
             raise ValueError(
-                "raw must have at least one dimension when shot_averaging is disabled."
+                "data must have at least one dimension when shot_averaging is disabled."
             )
-        if config.time_integration and raw.shape[0] != config.n_shots:
+        if config.time_integration and data.shape[0] != config.n_shots:
             raise ValueError(
-                "raw first-axis length must match config.n_shots "
+                "data first-axis length must match config.n_shots "
                 "when time_integration is enabled and shot_averaging is disabled."
             )
         if (
             not config.time_integration
-            and raw.ndim >= 2
-            and raw.shape[0] != config.n_shots
+            and data.ndim >= 2
+            and data.shape[0] != config.n_shots
         ):
             raise ValueError(
-                "raw shot-axis length must match config.n_shots "
+                "data shot-axis length must match config.n_shots "
                 "when waveform shots are retained."
             )
+        state_series = self.payload.state_series
+        if state_series is not None and np.asarray(state_series).ndim >= 1:
+            if np.asarray(state_series).shape[0] != config.n_shots:
+                raise ValueError(
+                    "state_series first-axis length must match config.n_shots "
+                    "when shot_averaging is disabled."
+                )
         return self
 
-    def __array__(self, dtype: Any = None) -> NDArray:
-        """Return raw capture array for NumPy interoperability."""
-        return np.asarray(self.raw, dtype=dtype)
-
-    def __repr__(self) -> str:
-        """Return a compact representation for notebook-friendly display."""
-        classifier = (
-            "None"
-            if self.classifier_ref is None
-            else f"<{self.classifier_ref.__class__.__name__}>"
-        )
-        return (
-            "CaptureData("
-            f"target={self.target!r}, "
-            f"raw={_format_raw_preview(self.raw)}, "
-            f"config={self.config!r}, "
-            f"classifier_ref={classifier}, "
-            f"sampling_period={self.sampling_period})"
-        )
-
-    def _require_classifier(
-        self,
-        *,
-        classifier_model: StateClassifier | None,
-    ) -> StateClassifier:
-        """Resolve classifier model from runtime input."""
-        if classifier_model is not None:
-            return classifier_model
-        classifier = self.classifier
-        if classifier is None:
-            raise ValueError("Classifier is not set")
-        return classifier
-
     @property
-    def classifier(self) -> StateClassifier | None:
-        """Return classifier resolved from `classifier_ref`."""
-        if self.classifier_ref is None:
-            return None
-        return self.classifier_ref.load()
-
-    @property
-    def shape(self) -> tuple[int, ...]:
-        """Return raw-array shape."""
-        return np.asarray(self.raw).shape
-
-    @cached_property
-    def length(self) -> int:
-        """Return the number of raw samples along the primary axis."""
-        raw = np.asarray(self.raw)
-        if raw.ndim == 0:
-            return 1
-        return int(raw.shape[0])
-
-    @cached_property
-    def times(self) -> NDArray[np.float64]:
-        """Return capture times in ns for the primary axis."""
-        times = np.arange(self.length, dtype=np.float64) * self.sampling_period
-        times.setflags(write=False)
-        return times
-
-    @cached_property
-    def kerneled(self) -> NDArray:
-        """Return kernel-integrated IQ samples."""
-        if not self.config.shot_averaging:
-            shots = np.asarray(self.raw)
-            if shots.ndim <= 1:
-                kerneled = np.atleast_1d(shots)
-            else:
-                kerneled = np.sum(shots, axis=1)
-        else:
-            kerneled = np.asarray(np.sum(self.raw))
-        kerneled.setflags(write=False)
-        return kerneled
-
-    def get_n_states(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> int:
-        """Return number of classifier states from runtime classifier model."""
-        model = self._require_classifier(classifier_model=classifier_model)
-        return model.n_states
-
-    def get_soft_classified_data(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> NDArray:
-        """Return soft classification probabilities for each shot."""
-        if self.config.shot_averaging:
-            raise ValueError("Invalid mode for classification: shot_averaging=True")
-        model = self._require_classifier(classifier_model=classifier_model)
-        return model.predict_proba(self.kerneled)
-
-    def get_classified_data(
-        self,
-        threshold: float | None = None,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> NDArray:
-        """Return classified labels with optional confidence threshold."""
-        if self.config.shot_averaging:
-            raise ValueError("Invalid mode for classification: shot_averaging=True")
-        model = self._require_classifier(classifier_model=classifier_model)
-        labels = model.predict(self.kerneled)
-        if threshold is None:
-            return labels
-        data = self.get_soft_classified_data(classifier_model=model)
-        if len(data) == 0:
-            raise ValueError("No classification data available")
-        max_probs = np.max(data, axis=1)
-        hard_labels = np.argmax(data, axis=1)
-        return np.where(max_probs > threshold, hard_labels, -1)
-
-    def get_counts(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> dict[str, int]:
-        """Return per-state counts for classified data."""
-        classified = self.get_classified_data(classifier_model=classifier_model)
-        if len(classified) == 0:
-            raise ValueError("No classification data available")
-        n_states = self.get_n_states(classifier_model=classifier_model)
-        count = np.bincount(classified, minlength=n_states)
-        return {str(label): int(count[label]) for label in range(len(count))}
-
-    def get_probabilities(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> NDArray[np.float64]:
-        """Return per-state probabilities for classified data."""
-        counts = self.get_counts(classifier_model=classifier_model)
-        total = sum(counts.values())
-        if total == 0:
-            raise ValueError("No classification data available")
-        return np.array([count / total for count in counts.values()])
-
-    def get_standard_deviations(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> NDArray[np.float64]:
-        """Return binomial standard deviations for probabilities."""
-        counts = self.get_counts(classifier_model=classifier_model)
-        total = sum(counts.values())
-        if total == 0:
-            raise ValueError("No classification data available")
-        probs = self.get_probabilities(classifier_model=classifier_model)
-        return np.sqrt(probs * (1 - probs) / total)
-
-    def get_confusion_matrix(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> NDArray:
-        """Return normalized confusion matrix from runtime classifier model."""
-        if self.config.shot_averaging:
-            raise ValueError("Invalid mode for classification: shot_averaging=True")
-        model = self._require_classifier(classifier_model=classifier_model)
-        cm = model.confusion_matrix
-        n_shots = cm[0].sum()
-        return cm / n_shots
-
-    def get_inverse_confusion_matrix(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> NDArray:
-        """Return inverse confusion matrix from runtime classifier model."""
-        confusion_matrix = self.get_confusion_matrix(classifier_model=classifier_model)
-        return np.linalg.inv(confusion_matrix)
-
-    def get_mitigated_counts(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> dict[str, int]:
-        """Return error-mitigated counts using inverse confusion matrix."""
-        raw = np.array(
-            list(self.get_counts(classifier_model=classifier_model).values())
-        )
-        cm_inv = self.get_inverse_confusion_matrix(classifier_model=classifier_model)
-        mitigated = raw @ cm_inv
-        return {str(i): int(count) for i, count in enumerate(mitigated)}
-
-    def get_mitigated_probabilities(
-        self,
-        *,
-        classifier_model: StateClassifier | None = None,
-    ) -> NDArray:
-        """Return error-mitigated probabilities."""
-        raw = np.array(
-            list(self.get_counts(classifier_model=classifier_model).values())
-        )
-        cm_inv = self.get_inverse_confusion_matrix(classifier_model=classifier_model)
-        mitigated = raw @ cm_inv
-        total = float(np.sum(mitigated))
-        if total == 0:
-            raise ValueError("No classification data available")
-        return mitigated / total
-
-    def plot(
-        self,
-        title: str | None = None,
-        return_figure: bool = False,
-        save_image: bool = False,
-    ) -> Any:
-        """Plot capture data according to measurement configuration."""
-        if return_figure:
-            warnings.warn(
-                "`return_figure` is deprecated; use `figure()` instead.",
-                DeprecationWarning,
-                stacklevel=2,
+    def data(self) -> NDArray:
+        """Return the primary capture payload selected by config mode."""
+        primary_field = self.config.primary_return_item
+        match primary_field:
+            case ReturnItem.WAVEFORM_SERIES:
+                value = self.payload.waveform_series
+            case ReturnItem.IQ_SERIES:
+                value = self.payload.iq_series
+            case ReturnItem.STATE_SERIES:
+                value = self.payload.state_series
+            case ReturnItem.AVERAGED_WAVEFORM:
+                value = self.payload.averaged_waveform
+            case ReturnItem.AVERAGED_IQ:
+                value = self.payload.averaged_iq
+        if value is None:
+            raise ValueError(
+                f"Primary payload field `{primary_field.value}` is not set."
             )
-            fig = self.figure(title=title)
-            if save_image:
-                waveform = np.asarray(self.raw)
-                use_scatter = self.config.time_integration or (
-                    not self.config.shot_averaging and waveform.ndim >= 2
-                )
-                figure_name = (
-                    "plot_state_distribution" if use_scatter else "plot_waveform"
-                )
-                viz.save_figure(fig, name=figure_name)
-            return fig
+        return value
 
-        plot_title = title or f"Readout waveform : {self.target}"
-        if self.config.time_integration:
-            data = {self.target: np.atleast_1d(self.kerneled)}
-            viz.scatter_iq_data(data=data, title=plot_title, save_image=save_image)
-            return None
+    @property
+    def waveform_series(self) -> WaveformSeries | None:
+        """Return non-averaged waveform payload."""
+        return self.payload.waveform_series
 
-        waveform = np.asarray(self.raw)
-        if not self.config.shot_averaging and waveform.ndim >= 2:
-            shot_iq = np.mean(waveform, axis=1)
-            data = {self.target: np.atleast_1d(shot_iq)}
-            iq_title = title or f"Readout IQ data : {self.target}"
-            viz.scatter_iq_data(data=data, title=iq_title, save_image=save_image)
-            return None
-        waveform = np.squeeze(waveform)
-        viz.plot_waveform(
-            data=waveform,
-            sampling_period=self.sampling_period,
-            title=plot_title,
-            xlabel="Capture time (ns)",
-            ylabel="Signal (arb. units)",
-            save_image=save_image,
-        )
-        return None
+    @property
+    def iq_series(self) -> IQSeries | None:
+        """Return non-averaged integrated IQ payload."""
+        return self.payload.iq_series
 
-    def figure(
-        self,
-        title: str | None = None,
-    ) -> Any:
-        """Return a Plotly figure for capture data without rendering."""
-        plot_title = title or f"Readout waveform : {self.target}"
-        if self.config.time_integration:
-            data = {self.target: np.atleast_1d(self.kerneled)}
-            return viz.make_iq_scatter_figure(data=data, title=plot_title)
+    @property
+    def state_series(self) -> StateSeries | None:
+        """Return per-shot classified state payload."""
+        return self.payload.state_series
 
-        waveform = np.asarray(self.raw)
-        if not self.config.shot_averaging and waveform.ndim >= 2:
-            shot_iq = np.mean(waveform, axis=1)
-            data = {self.target: np.atleast_1d(shot_iq)}
-            iq_title = title or f"Readout IQ data : {self.target}"
-            return viz.make_iq_scatter_figure(data=data, title=iq_title)
-        waveform = np.squeeze(waveform)
-        return viz.make_waveform_figure(
-            data=waveform,
-            sampling_period=self.sampling_period,
-            title=plot_title,
-            xlabel="Capture time (ns)",
-            ylabel="Signal (arb. units)",
-        )
+    @property
+    def averaged_waveform(self) -> AveragedWaveform | None:
+        """Return shot-averaged waveform payload."""
+        return self.payload.averaged_waveform
+
+    @property
+    def averaged_iq(self) -> AveragedIQ | None:
+        """Return shot-averaged integrated IQ payload."""
+        return self.payload.averaged_iq
 
     def save(
         self,

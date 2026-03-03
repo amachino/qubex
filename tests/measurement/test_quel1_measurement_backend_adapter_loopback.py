@@ -157,11 +157,11 @@ def test_build_measurement_result_keeps_monitor_labels() -> None:
 
     assert set(result.data.keys()) == {"Q00", "B0.MNTR0.IN"}
     assert_allclose(
-        result.data["Q00"][0],
+        result.data["Q00"][0].data,
         np.array([4.0 + 2.0j], dtype=np.complex128) * norm_factor,
     )
     assert_allclose(
-        result.data["B0.MNTR0.IN"][0],
+        result.data["B0.MNTR0.IN"][0].data,
         np.array([3.0 + 1.0j], dtype=np.complex128) * norm_factor,
     )
 

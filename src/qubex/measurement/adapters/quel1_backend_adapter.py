@@ -331,9 +331,9 @@ class Quel1MeasurementBackendAdapter:
                         # skip the first extra capture
                         continue
                     values.append(
-                        CaptureData(
+                        CaptureData.from_primary_data(
                             target=qubit,
-                            raw=_as_read_only_array(
+                            data=_as_read_only_array(
                                 np.asarray(iq, dtype=np.complex128) * norm_factor
                             ),
                             config=measurement_config,
@@ -358,9 +358,9 @@ class Quel1MeasurementBackendAdapter:
                         # skip the first extra capture
                         continue
                     values.append(
-                        CaptureData(
+                        CaptureData.from_primary_data(
                             target=qubit,
-                            raw=_as_read_only_array(
+                            data=_as_read_only_array(
                                 np.asarray(iq, dtype=np.complex128).squeeze()
                                 * norm_factor
                                 / measurement_config.n_shots

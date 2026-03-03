@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TypeVar
 
 from qubex.system import ExperimentSystem
@@ -13,7 +14,7 @@ from .measurement_defaults import (
     DEFAULT_STATE_CLASSIFICATION,
     DEFAULT_TIME_INTEGRATION,
 )
-from .models.measurement_config import MeasurementConfig
+from .models.measurement_config import MeasurementConfig, ReturnItem
 
 T = TypeVar("T")
 
@@ -41,8 +42,15 @@ class MeasurementConfigFactory:
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        return_items: Sequence[ReturnItem] | None = None,
     ) -> MeasurementConfig:
         """Create `MeasurementConfig` from optional runtime overrides."""
+        resolved_return_items: tuple[ReturnItem, ...]
+        if return_items is None:
+            resolved_return_items = ()
+        else:
+            resolved_return_items = tuple(return_items)
+
         return MeasurementConfig(
             n_shots=_or_default(
                 n_shots,
@@ -64,4 +72,5 @@ class MeasurementConfigFactory:
                 state_classification,
                 DEFAULT_STATE_CLASSIFICATION,
             ),
+            return_items=resolved_return_items,
         )

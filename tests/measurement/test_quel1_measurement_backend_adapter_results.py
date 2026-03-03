@@ -71,7 +71,7 @@ def test_build_measurement_result_converts_single_mode_to_qubit_labels() -> None
     assert len(result.data["Q00"]) == 1
     assert result.data["Q00"][0].sampling_period == 2.0
     assert_allclose(
-        result.data["Q00"][0],
+        result.data["Q00"][0].data,
         np.array([4.0 - 2.0j], dtype=np.complex128) * norm_factor,
     )
 
@@ -108,6 +108,6 @@ def test_build_measurement_result_converts_avg_mode_with_shot_scaling() -> None:
     assert set(result.data.keys()) == {"Q00"}
     assert len(result.data["Q00"]) == 1
     assert_allclose(
-        result.data["Q00"][0],
+        result.data["Q00"][0].data,
         np.array([2.0 + 1.0j, 3.0 + 1.5j], dtype=np.complex128) * norm_factor,
     )
