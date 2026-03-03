@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
+from qxpulse import PulseSchedule
 from qxvisualizer.figure import DEFAULT_TEMPLATE, make_figure, show_figure
 
 from .style import COLORS
 
 if TYPE_CHECKING:
+    from qubex.measurement.models.capture_schedule import Capture
     from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
 MEASUREMENT_SCHEDULE_DEFAULT_WIDTH = 900
@@ -31,6 +34,68 @@ _MEASUREMENT_CAPTURE_BAND_Y1 = 0.2
 _MEASUREMENT_CAPTURE_LABEL_Y = 0.1
 _SEQUENCER_WAVEFORM_FILL_COLOR = "#6A88A8"
 _SEQUENCER_WAVEFORM_LINE_COLOR = "#48657F"
+
+
+def _prepare_schedule_for_plot(
+    schedule: MeasurementSchedule,
+    *,
+    hide_workaround_capture: bool,
+) -> MeasurementSchedule:
+    """Return a plotting-safe schedule copy with optional workaround trimming."""
+    from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
+
+    prepared = deepcopy(schedule)
+    if not hide_workaround_capture:
+        return prepared
+
+    captures = prepared.capture_schedule.captures
+    has_workaround_capture = any(
+        getattr(capture, "is_workaround", False) for capture in captures
+    )
+    if not has_workaround_capture:
+        return prepared
+
+    non_workaround_starts = [
+        float(capture.start_time)
+        for capture in captures
+        if not getattr(capture, "is_workaround", False)
+    ]
+    time_offset = min(non_workaround_starts) if non_workaround_starts else 0.0
+
+    shifted_captures: list[Capture] = [
+        Capture(
+            channels=list(capture.channels),
+            start_time=float(capture.start_time) - time_offset,
+            duration=float(capture.duration),
+            is_workaround=False,
+        )
+        for capture in captures
+        if not getattr(capture, "is_workaround", False)
+    ]
+    prepared = prepared.model_copy(
+        update={
+            "capture_schedule": CaptureSchedule(captures=shifted_captures),
+        }
+    )
+
+    if time_offset <= 0.0:
+        return prepared
+
+    sequences = prepared.pulse_schedule.get_sequences(copy=False)
+    if not sequences:
+        return prepared
+    sample_period = float(next(iter(sequences.values())).SAMPLING_PERIOD)
+    trim_samples = max(0, round(time_offset / sample_period))
+    if trim_samples == 0:
+        return prepared
+
+    sampled_sequences = prepared.pulse_schedule.get_sampled_sequences(copy=True)
+    trimmed_waveforms = {
+        label: values[trim_samples:] for label, values in sampled_sequences.items()
+    }
+    trimmed_schedule = PulseSchedule.from_waveforms(trimmed_waveforms)
+    trimmed_schedule.set_frequencies(prepared.pulse_schedule.get_frequencies())
+    return prepared.model_copy(update={"pulse_schedule": trimmed_schedule})
 
 
 def _x_axis_reference(index: int) -> str:
@@ -62,6 +127,10 @@ def make_measurement_schedule_figure(
     template: str = DEFAULT_TEMPLATE,
 ) -> go.Figure:
     """Build a measurement-schedule figure with pulse and capture overlays."""
+    schedule = _prepare_schedule_for_plot(
+        schedule,
+        hide_workaround_capture=hide_workaround_capture,
+    )
     pulse_schedule = schedule.pulse_schedule
     sequences = pulse_schedule.get_sequences(copy=False)
     blank_ranges = pulse_schedule.get_blank_ranges()
@@ -195,12 +264,6 @@ def make_measurement_schedule_figure(
             schedule.capture_schedule.channels.get(label, []),
             key=lambda capture: capture.start_time,
         )
-        if hide_workaround_capture:
-            captures = [
-                capture
-                for capture in captures
-                if not getattr(capture, "is_workaround", False)
-            ]
         for capture_index, capture in enumerate(captures):
             x_ref = _x_axis_reference(row_index)
             y_ref = f"{_primary_y_axis_reference(row_index)} domain"

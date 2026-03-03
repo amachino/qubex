@@ -145,8 +145,8 @@ def test_make_measurement_schedule_figure_hides_workaround_capture_by_default() 
     ]
 
     assert len(capture_shapes) == 1
-    assert capture_shapes[0]["x0"] == 4.0
-    assert capture_shapes[0]["x1"] == 12.0
+    assert capture_shapes[0]["x0"] == 0.0
+    assert capture_shapes[0]["x1"] == 8.0
 
 
 def test_make_measurement_schedule_figure_can_show_workaround_capture() -> None:
@@ -202,6 +202,63 @@ def test_make_measurement_schedule_figure_can_show_workaround_capture() -> None:
     capture_ranges = {(shape["x0"], shape["x1"]) for shape in capture_shapes}
 
     assert capture_ranges == {(0.0, 4.0), (4.0, 12.0)}
+
+
+def test_make_measurement_schedule_figure_hides_workaround_blank_by_default() -> None:
+    """Given workaround capture and leading blank, when making schedule figure, then workaround blank is excluded by default."""
+    with PulseSchedule(["RQ00"]) as pulse_schedule:
+        pulse_schedule.add("RQ00", Blank(duration=4.0, sampling_period=0.4))
+        pulse_schedule.add(
+            "RQ00",
+            Gaussian(
+                duration=8.0,
+                amplitude=0.3,
+                sigma=1.6,
+                zero_bounds=False,
+                sampling_period=0.4,
+            ),
+        )
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=["RQ00"],
+                    start_time=0.0,
+                    duration=4.0,
+                    is_workaround=True,
+                ),
+                Capture(
+                    channels=["RQ00"],
+                    start_time=4.0,
+                    duration=8.0,
+                ),
+            ]
+        ),
+    )
+
+    figure = make_measurement_schedule_figure(schedule)
+    figure_dict = figure.to_dict()
+    shapes = [
+        shape
+        for shape in figure_dict.get("layout", {}).get("shapes", [])
+        if isinstance(shape, dict)
+    ]
+    blank_shapes = [
+        shape
+        for shape in shapes
+        if shape.get("yref") == "y domain"
+        and shape.get("y0") == 0.0
+        and shape.get("y1") == 1.0
+    ]
+
+    assert blank_shapes == []
+    trace_names = {
+        str(trace.get("name"))
+        for trace in figure_dict.get("data", [])
+        if isinstance(trace, dict)
+    }
+    assert "Blank" not in trace_names
 
 
 @dataclass(frozen=True)
