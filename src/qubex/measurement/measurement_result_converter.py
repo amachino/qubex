@@ -112,19 +112,9 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {}
-        for target in result.data:
-            classifier = classifier_map.get(target)
-            if classifier is not None:
-                resolved_classifiers[target] = classifier
-                continue
-            try:
-                resolved_classifiers[target] = result.get_classifier(
-                    target,
-                    classifiers=classifier_map,
-                )
-            except ValueError:
-                resolved_classifiers[target] = None
+        resolved_classifiers: dict[str, StateClassifier | None] = {
+            target: classifier_map.get(target) for target in result.data
+        }
         legacy_data: dict[str, list[MeasureData]] = {}
         for target, captures in result.data.items():
             legacy_captures = [
@@ -190,19 +180,9 @@ class MeasurementResultConverter:
             If `index` is out of range for any target.
         """
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {}
-        for target in result.data:
-            classifier = classifier_map.get(target)
-            if classifier is not None:
-                resolved_classifiers[target] = classifier
-                continue
-            try:
-                resolved_classifiers[target] = result.get_classifier(
-                    target,
-                    classifiers=classifier_map,
-                )
-            except ValueError:
-                resolved_classifiers[target] = None
+        resolved_classifiers: dict[str, StateClassifier | None] = {
+            target: classifier_map.get(target) for target in result.data
+        }
         single_data: dict[str, MeasureData] = {}
         resolved_mode: MeasureMode | None = None
         for target, captures in result.data.items():

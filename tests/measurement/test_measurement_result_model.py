@@ -235,7 +235,6 @@ def test_json_roundtrip_preserves_capture_data() -> None:
         },
         device_config={"shots": 2},
         measurement_config=config,
-        classifier_refs={"Q00": classifier_ref},
     )
     serialized = original.to_dict()
 
@@ -248,7 +247,6 @@ def test_json_roundtrip_preserves_capture_data() -> None:
         original.data["Q00"][0].data,
     )
     assert restored.data["Q00"][0].classifier_ref == classifier_ref
-    assert restored.classifier_refs == {"Q00": classifier_ref}
     assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
 
@@ -800,124 +798,6 @@ def test_capture_data_get_kerneled_data_is_read_only() -> None:
     )
 
     assert capture.get_kerneled_data().flags.writeable is False
-
-
-def test_measurement_result_get_classifier_loads_from_classifier_ref(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    dummy_classifier,
-) -> None:
-    """Given classifier ref, measurement result should resolve classifier via capture."""
-    config = _make_config(mode="avg", shots=1)
-    classifier_path = tmp_path / "classifier-Q00.pkl"
-    classifier_path.write_bytes(b"classifier-v1")
-    calls = {"count": 0}
-
-    def _load(path: str) -> object:
-        calls["count"] += 1
-        assert Path(path) == classifier_path.resolve()
-        return dummy_classifier
-
-    ClassifierRef.clear_cache()
-    monkeypatch.setattr(
-        "qubex.measurement.models.classifier_ref.StateClassifier.load",
-        _load,
-    )
-    result = MeasurementResult(
-        data={
-            "Q00": [
-                _make_capture(
-                    target="Q00",
-                    raw=np.array([1.0 + 0.0j]),
-                    measurement_config=config,
-                    sampling_period=0.4,
-                    classifier_ref=ClassifierRef(
-                        path=str(classifier_path),
-                        version=SKLEARN_VERSION,
-                    ),
-                )
-            ]
-        },
-        measurement_config=config,
-    )
-
-    classifier = result.get_classifier("Q00")
-
-    assert classifier is dummy_classifier
-    assert calls["count"] == 1
-
-
-def test_measurement_result_get_classifier_loads_from_top_level_classifier_refs(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    dummy_classifier,
-) -> None:
-    """Given top-level classifier refs, classifier lookup should resolve from result metadata."""
-    config = _make_config(mode="avg", shots=1)
-    classifier_path = tmp_path / "classifier-Q00.pkl"
-    classifier_path.write_bytes(b"classifier-v1")
-    calls = {"count": 0}
-
-    def _load(path: str) -> object:
-        calls["count"] += 1
-        assert Path(path) == classifier_path.resolve()
-        return dummy_classifier
-
-    ClassifierRef.clear_cache()
-    monkeypatch.setattr(
-        "qubex.measurement.models.classifier_ref.StateClassifier.load",
-        _load,
-    )
-    result = MeasurementResult(
-        data={
-            "Q00": [
-                _make_capture(
-                    target="Q00",
-                    raw=np.array([1.0 + 0.0j]),
-                    measurement_config=config,
-                    sampling_period=0.4,
-                )
-            ]
-        },
-        measurement_config=config,
-        classifier_refs={
-            "Q00": ClassifierRef(
-                path=str(classifier_path),
-                version=SKLEARN_VERSION,
-            )
-        },
-    )
-
-    classifier = result.get_classifier("Q00")
-
-    assert classifier is dummy_classifier
-    assert calls["count"] == 1
-
-
-def test_measurement_result_rejects_unknown_classifier_ref_targets() -> None:
-    """Given unknown classifier_refs key, model validation should fail."""
-    config = _make_config(mode="avg", shots=1)
-
-    with pytest.raises(ValidationError):
-        _ = MeasurementResult(
-            data={
-                "Q00": [
-                    _make_capture(
-                        target="Q00",
-                        raw=np.array([1.0 + 0.0j]),
-                        measurement_config=config,
-                        sampling_period=0.4,
-                    )
-                ]
-            },
-            measurement_config=config,
-            classifier_refs={
-                "Q01": ClassifierRef(
-                    path="classifier-Q01.pkl",
-                    version=SKLEARN_VERSION,
-                )
-            },
-        )
 
 
 def test_measurement_result_ignores_legacy_top_level_sampling_period() -> None:
