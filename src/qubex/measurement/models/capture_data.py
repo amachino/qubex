@@ -21,6 +21,18 @@ AveragedWaveform: TypeAlias = NDArray[np.complexfloating[Any, Any]]
 AveragedIQ: TypeAlias = NDArray[np.complexfloating[Any, Any]]
 
 
+def _format_array_preview(raw: NDArray) -> str:
+    """Return compact repr text for a data array."""
+    array = np.asarray(raw)
+    if array.ndim == 0:
+        return repr(array)
+    flat = array.reshape(-1)
+    preview = np.array2string(flat[:1], separator=", ")
+    if preview.startswith("[") and preview.endswith("]") and flat.size > 1:
+        preview = f"{preview[:-1]}, ...]"
+    return f"array({preview}, shape={array.shape})"
+
+
 class CapturePayload(DataModel):
     """Structured payload fields for capture data arrays."""
 
@@ -66,6 +78,19 @@ class CaptureData(DataModel):
     payload: CapturePayload
     sampling_period: float
     classifier_ref: ClassifierRef | None = None
+
+    def __repr__(self) -> str:
+        """Return a compact representation for notebook-friendly display."""
+        classifier_ref = (
+            "None" if self.classifier_ref is None else repr(self.classifier_ref)
+        )
+        return (
+            "CaptureData("
+            f"target={self.target!r}, "
+            f"data={_format_array_preview(self.data)}, "
+            f"sampling_period={self.sampling_period}, "
+            f"classifier_ref={classifier_ref})"
+        )
 
     @classmethod
     def from_primary_data(

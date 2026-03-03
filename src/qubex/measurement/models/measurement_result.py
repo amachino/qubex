@@ -29,6 +29,20 @@ class MeasurementResult(DataModel):
     device_config: dict[str, Any] | None = None
     classifier_refs: dict[str, ClassifierRef] | None = None
 
+    def __repr__(self) -> str:
+        """Return a concise summary without embedding full capture payloads."""
+        targets = ", ".join(self.data.keys())
+        captures = sum(len(captures) for captures in self.data.values())
+        config = self.measurement_config
+        return (
+            "MeasurementResult("
+            f"targets=[{targets}], "
+            f"captures={captures}, "
+            f"shot_averaging={config.shot_averaging}, "
+            f"time_integration={config.time_integration}, "
+            f"state_classification={config.state_classification})"
+        )
+
     @model_validator(mode="after")
     def _validate_classifier_refs(self) -> MeasurementResult:
         """Validate classifier-ref keys and infer mapping from capture metadata."""
