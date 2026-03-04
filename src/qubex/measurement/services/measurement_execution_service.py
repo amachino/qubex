@@ -632,6 +632,7 @@ class MeasurementExecutionService:
         *,
         sweep_values: ArrayLike | Sequence[SweepValue],
         config: MeasurementConfig | None = None,
+        on_point: Callable[[SweepValue, MeasurementResult], None] | None = None,
     ) -> SweepMeasurementResult:
         """
         Run sweep measurement pointwise.
@@ -644,6 +645,8 @@ class MeasurementExecutionService:
             Ordered sweep values to execute.
         config : MeasurementConfig | None, optional
             Shared measurement configuration for all points.
+        on_point : Callable[[SweepValue, MeasurementResult], None] | None, optional
+            Callback invoked after each point measurement completes.
 
         Returns
         -------
@@ -660,6 +663,8 @@ class MeasurementExecutionService:
                 config=resolved_config,
             )
             results.append(result)
+            if on_point is not None:
+                on_point(sweep_value, result)
         return SweepMeasurementResult(
             sweep_values=normalized_values,
             config=resolved_config,

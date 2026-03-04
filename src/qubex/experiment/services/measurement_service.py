@@ -319,9 +319,9 @@ class MeasurementService:
     ) -> SweepMeasurementResult:
         """Run async sweep measurement by delegating to the measurement layer."""
         if plot is None:
-            plot = True
+            plot = False
         if enable_tqdm is None:
-            enable_tqdm = True
+            enable_tqdm = False
 
         normalized_shot_interval = normalize_time_to_ns(shot_interval)
         normalized_frequencies = normalize_frequencies_to_ghz(frequencies)
@@ -346,9 +346,31 @@ class MeasurementService:
             desc="Sweeping parameters",
             disable=not enable_tqdm,
         )
+        signals: dict[str, list[complex]] = {}
+        plotter = IQPlotter(self.ctx.state_centers) if plot else None
+
+        def on_point(_: SweepValue, point_result: MeasurementResult) -> None:
+            progress.update(1)
+            for target, captures in point_result.data.items():
+                if len(captures) == 0:
+                    continue
+                capture = captures[-1]
+                kerneled = np.atleast_1d(np.asarray(capture.data))
+                if kerneled.size == 0:
+                    continue
+                signals.setdefault(target, []).append(complex(np.mean(kerneled)))
+            if plotter is None:
+                return
+            plotter.update(
+                {
+                    target: np.asarray(values)
+                    for target, values in signals.items()
+                    if len(values) > 0
+                }
+            )
 
         def wrapped_schedule(value: SweepValue) -> MeasurementSchedule:
-            measurement_schedule = self._resolve_measurement_schedule(
+            return self._resolve_measurement_schedule(
                 schedule=schedule(value),
                 frequencies=normalized_frequencies,
                 readout_amplitudes=readout_amplitudes,
@@ -361,45 +383,19 @@ class MeasurementService:
                 readout_amplification=readout_amplification,
                 final_measurement=final_measurement,
             )
-            progress.update(1)
-            return measurement_schedule
 
         try:
             result = await self.ctx.measurement.run_sweep_measurement(
                 wrapped_schedule,
                 sweep_values=sweep_values,
                 config=config,
+                on_point=on_point,
             )
         finally:
             progress.close()
 
-        if plot:
-            signals: dict[str, list[complex]] = {}
-            for point_result in result.results:
-                for target, captures in point_result.data.items():
-                    if len(captures) == 0:
-                        continue
-                    capture = captures[-1]
-                    kerneled = np.atleast_1d(np.asarray(capture.data))
-                    if kerneled.size == 0:
-                        continue
-                    signals.setdefault(target, []).append(complex(np.mean(kerneled)))
-            if len(signals) > 0:
-                plotter = IQPlotter(
-                    {
-                        target: self.ctx.state_centers[target]
-                        for target in signals
-                        if target in self.ctx.state_centers
-                    }
-                )
-                plotter.update(
-                    {
-                        target: np.asarray(values)
-                        for target, values in signals.items()
-                        if len(values) > 0
-                    }
-                )
-                plotter.show()
+        if plot and plotter is not None and len(signals) > 0:
+            plotter.show()
 
         return result
 
@@ -424,8 +420,13 @@ class MeasurementService:
         readout_drag_coeff: float | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
+        plot: bool | None = None,
+        enable_tqdm: bool | None = None,
     ) -> NDSweepMeasurementResult:
         """Run async N-dimensional sweep measurement by delegating to the measurement layer."""
+        _ = plot
+        if enable_tqdm is None:
+            enable_tqdm = False
         normalized_shot_interval = normalize_time_to_ns(shot_interval)
         normalized_frequencies = normalize_frequencies_to_ghz(frequencies)
         normalized_readout_duration = normalize_time_to_ns(readout_duration)
@@ -443,9 +444,15 @@ class MeasurementService:
             time_integration=time_integration,
             state_classification=state_classification,
         )
+        sweep_count = int(np.prod([len(values) for values in sweep_points.values()]))
+        progress = tqdm(
+            total=sweep_count,
+            desc="Sweeping parameters",
+            disable=not enable_tqdm,
+        )
 
         def wrapped_schedule(point: SweepPoint) -> MeasurementSchedule:
-            return self._resolve_measurement_schedule(
+            measurement_schedule = self._resolve_measurement_schedule(
                 schedule=schedule(point),
                 frequencies=normalized_frequencies,
                 readout_amplitudes=readout_amplitudes,
@@ -458,13 +465,18 @@ class MeasurementService:
                 readout_amplification=readout_amplification,
                 final_measurement=final_measurement,
             )
+            progress.update(1)
+            return measurement_schedule
 
-        return await self.ctx.measurement.run_ndsweep_measurement(
-            wrapped_schedule,
-            sweep_points=sweep_points,
-            sweep_axes=sweep_axes,
-            config=config,
-        )
+        try:
+            return await self.ctx.measurement.run_ndsweep_measurement(
+                wrapped_schedule,
+                sweep_points=sweep_points,
+                sweep_axes=sweep_axes,
+                config=config,
+            )
+        finally:
+            progress.close()
 
     def check_noise(
         self,

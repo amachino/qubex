@@ -44,6 +44,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
         *,
         sweep_values: list[object],
         config: object,
+        on_point: Any = None,
     ) -> str:
         built = None if not sweep_values else schedule(sweep_values[0])
         calls["run_sweep_measurement"].append(
@@ -52,6 +53,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
                 "schedule": schedule,
                 "config": config,
                 "built": built,
+                "on_point": on_point,
             }
         )
         return "sweep_result"
@@ -227,6 +229,7 @@ def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
     assert called["sweep_values"] == sweep_values
     assert cast(SimpleNamespace, called["config"]).tag == "config"
     assert cast(SimpleNamespace, called["built"]).source == "pulse-1"
+    assert callable(called["on_point"])
     build_kwargs = calls["build_schedule"][0]
     assert build_kwargs["pulse_schedule"] == "pulse-1"
     assert build_kwargs["readout_amplification"] is True
@@ -288,6 +291,7 @@ def test_run_sweep_measurement_uses_measurement_schedule_without_rebuild() -> No
     assert result == "sweep_result"
     assert calls["build_schedule"] == []
     assert calls["run_sweep_measurement"][0]["built"] is schedule
+    assert callable(calls["run_sweep_measurement"][0]["on_point"])
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
 
 
@@ -329,20 +333,25 @@ def test_run_sweep_measurement_plots_iq_and_updates_tqdm(
         *,
         sweep_values: list[object],
         config: object,
+        on_point: Any = None,
     ) -> Any:
         _ = config
         for value in sweep_values:
             _ = schedule(value)
-        point = SimpleNamespace(
-            data={
-                "Q00": [
+            if on_point is not None:
+                on_point(
+                    value,
                     SimpleNamespace(
-                        data=np.array([1.0 + 2.0j]),
-                    )
-                ]
-            }
-        )
-        return SimpleNamespace(results=[point], sweep_values=sweep_values)
+                        data={
+                            "Q00": [
+                                SimpleNamespace(
+                                    data=np.array([1.0 + 2.0j]),
+                                )
+                            ]
+                        }
+                    ),
+                )
+        return SimpleNamespace(results=[], sweep_values=sweep_values)
 
     service.ctx.measurement.run_sweep_measurement = _run_sweep_measurement  # type: ignore[attr-defined]
     monkeypatch.setattr(measurement_service_module, "IQPlotter", _Plotter)
@@ -369,8 +378,9 @@ def test_run_sweep_measurement_plots_iq_and_updates_tqdm(
     }
     assert calls["plot"]["state_centers"] == {"Q00": {0: 0.0 + 0.0j}}
     plotted = calls["plot"]["data"]["Q00"]
-    assert np.asarray(plotted).shape == (1,)
+    assert np.asarray(plotted).shape == (2,)
     assert np.asarray(plotted)[0] == pytest.approx(1.0 + 2.0j)
+    assert np.asarray(plotted)[1] == pytest.approx(1.0 + 2.0j)
     assert calls["plot"]["shown"] is True
 
 

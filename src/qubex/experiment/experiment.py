@@ -1497,6 +1497,11 @@ class Experiment:
         return await self.measurement_service.run_sweep_measurement(
             schedule=schedule,
             sweep_values=sweep_values,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
             frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
@@ -1509,11 +1514,6 @@ class Experiment:
             final_measurement=final_measurement,
             plot=plot,
             enable_tqdm=enable_tqdm,
-            n_shots=n_shots,
-            shot_interval=shot_interval,
-            shot_averaging=shot_averaging,
-            time_integration=time_integration,
-            state_classification=state_classification,
         )
 
     async def run_ndsweep_measurement(
@@ -1537,6 +1537,8 @@ class Experiment:
         readout_drag_coeff: float | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
+        plot: bool | None = None,
+        enable_tqdm: bool | None = None,
     ) -> NDSweepMeasurementResult:
         """
         Run an async N-dimensional Cartesian sweep measurement.
@@ -1580,6 +1582,10 @@ class Experiment:
             Whether to insert pump/readout amplification pulses.
         final_measurement : bool | None, optional
             Whether to append final readout pulses at schedule tail.
+        plot : bool | None, optional
+            Reserved plotting flag for ND sweeps.
+        enable_tqdm : bool | None, optional
+            Whether to show a tqdm progress bar during the sweep.
 
         Returns
         -------
@@ -1598,6 +1604,11 @@ class Experiment:
             schedule=schedule,
             sweep_points=sweep_points,
             sweep_axes=sweep_axes,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
             frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
@@ -1608,11 +1619,8 @@ class Experiment:
             readout_drag_coeff=readout_drag_coeff,
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
-            n_shots=n_shots,
-            shot_interval=shot_interval,
-            shot_averaging=shot_averaging,
-            time_integration=time_integration,
-            state_classification=state_classification,
+            plot=plot,
+            enable_tqdm=enable_tqdm,
         )
 
     def check_noise(

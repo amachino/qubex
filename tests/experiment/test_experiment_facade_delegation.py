@@ -638,6 +638,8 @@ def test_run_ndsweep_measurement_delegates_to_measurement_service() -> None:
                 "readout_drag_coeff": None,
                 "readout_amplification": True,
                 "final_measurement": None,
+                "plot": None,
+                "enable_tqdm": None,
                 "n_shots": None,
                 "shot_interval": None,
                 "shot_averaging": None,

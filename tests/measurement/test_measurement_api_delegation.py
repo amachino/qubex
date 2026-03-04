@@ -1676,10 +1676,12 @@ def test_run_sweep_measurement_delegates_to_execution_service() -> None:
         *,
         sweep_values: Any,
         config: MeasurementConfig | None,
+        on_point: Any = None,
     ) -> SweepMeasurementResult:
         called["schedule"] = schedule
         called["sweep_values"] = sweep_values
         called["config"] = config
+        called["on_point"] = on_point
         return expected
 
     measurement.execution_service.run_sweep_measurement = MethodType(
@@ -1698,7 +1700,63 @@ def test_run_sweep_measurement_delegates_to_execution_service() -> None:
     assert called["schedule"] is schedule
     assert called["sweep_values"] is sweep_values
     assert called["config"] is config
+    assert called["on_point"] is None
     assert result is expected
+
+
+def test_run_sweep_measurement_calls_on_point_for_each_result() -> None:
+    """Given on_point callback, when sweep runs, then callback receives each point result in order."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+    sweep_values: list[SweepValue] = [0, 1]
+    callbacks: list[tuple[SweepValue, MeasurementResult]] = []
+
+    def schedule(point: SweepValue) -> MeasurementSchedule:
+        step = int(point)
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self
+        step = int(schedule.pulse_schedule.labels[0][-1])
+        return _make_measurement_result(
+            data={"Q00": [np.array([step + 0.0j])]},
+            measurement_config=config,
+            sampling_period=2.0,
+        )
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_sweep_measurement(
+            schedule,
+            sweep_values=sweep_values,
+            config=config,
+            on_point=lambda value, measured: callbacks.append((value, measured)),
+        )
+    )
+
+    assert [value for value, _ in callbacks] == sweep_values
+    assert len(callbacks) == len(result.results)
+    assert all(
+        measured is expected
+        for (_, measured), expected in zip(callbacks, result.results, strict=True)
+    )
 
 
 def test_run_sweep_measurement_runs_points_and_returns_results() -> None:

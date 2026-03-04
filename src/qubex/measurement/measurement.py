@@ -679,6 +679,7 @@ class Measurement:
         *,
         config: MeasurementConfig,
         sweep_values: npt.ArrayLike | Sequence[SweepValue],
+        on_point: Callable[[SweepValue, MeasurementResult], None] | None = None,
     ) -> SweepMeasurementResult:
         """
         Execute a pointwise sweep over explicit sweep values.
@@ -691,6 +692,8 @@ class Measurement:
             Runtime acquisition configuration.
         sweep_values : ArrayLike | Sequence[SweepValue]
             Explicit sweep values evaluated in sequence.
+        on_point : Callable[[SweepValue, MeasurementResult], None] | None, optional
+            Callback invoked after each point measurement completes.
 
         Returns
         -------
@@ -701,6 +704,7 @@ class Measurement:
             schedule,
             config=config,
             sweep_values=sweep_values,
+            on_point=on_point,
         )
 
     async def run_ndsweep_measurement(
