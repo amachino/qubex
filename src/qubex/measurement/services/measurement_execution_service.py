@@ -797,7 +797,7 @@ class MeasurementExecutionService:
         readout_amplification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
-        plot: bool = False,
+        plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
         """
@@ -910,8 +910,7 @@ class MeasurementExecutionService:
         final_measurement: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
-        plot: bool = False,
-        save_result: bool = True,
+        plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
         """
@@ -963,7 +962,7 @@ class MeasurementExecutionService:
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 1.
-        plot : bool, optional
+        plot : bool | None, optional
             Whether to plot the results.
 
         Returns
@@ -1078,6 +1077,8 @@ class MeasurementExecutionService:
         )
         if state_classification is None:
             state_classification = False
+        if plot is None:
+            plot = False
 
         classification_line_param0 = self._resolve_deprecated_alias(
             new_value=classification_line_param0,
@@ -1135,7 +1136,7 @@ class MeasurementExecutionService:
             )
 
         rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None and save_result:
+        if rawdata_dir is not None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             result_path = Path(rawdata_dir) / f"{timestamp}.nc"
             result.save(result_path)

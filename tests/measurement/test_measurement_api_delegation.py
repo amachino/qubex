@@ -197,7 +197,6 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule(
     result = measurement.execute(
         schedule=pulse_schedule,
         final_measurement=True,
-        save_result=False,
     )
 
     assert result.mode == multiple.mode
@@ -281,7 +280,6 @@ def test_execute_forwards_frequency_overrides_to_schedule_builder(
     _ = measurement.execute(
         schedule=pulse_schedule,
         frequencies={"Q00": 5.12},
-        save_result=False,
     )
 
     assert called["build_schedule"] is pulse_schedule
@@ -1241,6 +1239,7 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
 
     assert called["kwargs"]["final_measurement"] is True
     assert called["kwargs"]["time_integration"] is False
+    assert called["kwargs"]["plot"] is None
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
@@ -1281,6 +1280,7 @@ def test_measure_accepts_deprecated_alias_options() -> None:
     assert kwargs["enable_dsp_sum"] is None
     assert kwargs["enable_dsp_demodulation"] is None
     assert kwargs["enable_dsp_classification"] is None
+    assert kwargs["plot"] is None
 
 
 def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
@@ -1465,10 +1465,10 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
         add_pump_pulses=None,
         enable_dsp_demodulation=None,
         enable_dsp_classification=None,
-        save_result=False,
     )
 
     assert called["build_kwargs"]["readout_amplification"] is False
+    assert called["build_kwargs"]["plot"] is False
     config = called["config"]
     assert config.time_integration is True
     assert config.state_classification is False

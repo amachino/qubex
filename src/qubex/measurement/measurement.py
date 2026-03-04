@@ -790,7 +790,7 @@ class Measurement:
         readout_amplification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
-        plot: bool = False,
+        plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
         """
@@ -833,7 +833,7 @@ class Measurement:
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 1.
-        plot : bool, optional
+        plot : bool | None, optional
             Whether to plot readout waveforms and/or results.
         **deprecated_options : Any
             Deprecated option aliases kept for backward compatibility.
@@ -900,8 +900,7 @@ class Measurement:
         final_measurement: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
-        plot: bool = False,
-        save_result: bool = True,
+        plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
         """
@@ -945,10 +944,8 @@ class Measurement:
             Optional QuEL-1 classification line parameter 0.
         classification_line_param1 : tuple[float, float, float] | None, optional
             Optional QuEL-1 classification line parameter 1.
-        plot : bool, optional
+        plot : bool | None, optional
             Whether to plot readout waveforms and/or results.
-        save_result : bool, optional
-            Whether to save execution outputs into the session result cache.
         **deprecated_options : Any
             Deprecated option aliases kept for backward compatibility.
 
@@ -991,7 +988,6 @@ class Measurement:
             classification_line_param0=classification_line_param0,
             classification_line_param1=classification_line_param1,
             plot=plot,
-            save_result=save_result,
             **deprecated_options,
         )
 
