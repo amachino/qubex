@@ -5,13 +5,18 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 from typing_extensions import deprecated
 
+from qubex.backend.backend_controller import (
+    BACKEND_KIND_QUEL1,
+    BACKEND_KIND_QUEL3,
+    BackendKind,
+    normalize_backend_kind,
+)
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
@@ -22,13 +27,14 @@ from qubex.constants import (
     WIRING_FILE,
     WIRING_V2_FILE,
 )
+from qubex.system.quel1.quel1_system_loader import Quel1SystemLoader
+from qubex.system.quel3.quel3_system_loader import Quel3SystemLoader
 from qubex.system.wiring import (
     normalize_wiring_v2_rows,
-    split_box_port_specifier,
 )
 from qubex.typing import ConfigurationMode
 
-logger = logging.getLogger("qubex.system.config_loader")
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from qubex.system.control_system import ControlSystem
@@ -105,8 +111,11 @@ class ConfigLoader:
         Directory containing parameter files (`params.yaml` and per-section
         files under `params/`). Defaults to
         `DEFAULT_CONFIG_DIR/<chip_id>/params`.
-    chip_file, system_file, box_file, wiring_file, props_file, params_file : str, optional
+    chip_file, system_file, box_file, props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
+    wiring_file : str | None, optional
+        Wiring filename override. If omitted, the loader selects a wiring file
+        from resolved backend kind and config files.
     targets_to_exclude : list[str] | None, optional
         Qubit/resonator labels to exclude when assembling the ExperimentSystem.
     configuration_mode : ConfigurationMode | None, optional
@@ -140,7 +149,7 @@ class ConfigLoader:
         chip_file: str = CHIP_FILE,
         system_file: str = SYSTEM_FILE,
         box_file: str = BOX_FILE,
-        wiring_file: str = WIRING_FILE,
+        wiring_file: str | None = None,
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
         targets_to_exclude: list[str] | None = None,
@@ -164,8 +173,8 @@ class ConfigLoader:
             System YAML filename.
         box_file : str, optional
             Box YAML filename.
-        wiring_file : str, optional
-            Wiring YAML filename.
+        wiring_file : str | None, optional
+            Wiring YAML filename override.
         props_file : str, optional
             Legacy props YAML filename.
         params_file : str, optional
@@ -190,6 +199,7 @@ class ConfigLoader:
         self._system_file = system_file
         self._box_file = box_file
         self._wiring_file = wiring_file
+        self._resolved_wiring_file = wiring_file or WIRING_FILE
         self._props_file = props_file
         self._params_file = params_file
         self._default_targets_to_exclude = targets_to_exclude
@@ -209,6 +219,8 @@ class ConfigLoader:
         self._wiring_info: WiringInfo | None = None
         self._control_params: ControlParams | None = None
         self._experiment_system: ExperimentSystem | None = None
+        self._system_loader: Quel1SystemLoader | Quel3SystemLoader | None = None
+        self._backend_kind: BackendKind = BACKEND_KIND_QUEL1
 
         if autoload:
             self.load(
@@ -221,7 +233,7 @@ class ConfigLoader:
         *,
         chip_id: str,
         config_dir: Path | str | None,
-        backend_kind: Literal["quel1", "quel3"],
+        backend_kind: BackendKind,
     ) -> str:
         """
         Resolve wiring file name from backend kind and config directory.
@@ -232,7 +244,7 @@ class ConfigLoader:
             Chip identifier.
         config_dir : Path | str | None
             Configuration directory. If `None`, default config path is used.
-        backend_kind : Literal["quel1", "quel3"]
+        backend_kind : BackendKind
             Backend family (`"quel1"` or `"quel3"`).
 
         Returns
@@ -240,7 +252,7 @@ class ConfigLoader:
         str
             Resolved wiring file name.
         """
-        if backend_kind != "quel3":
+        if backend_kind != BACKEND_KIND_QUEL3:
             return WIRING_FILE
         config_path = (
             Path(config_dir)
@@ -251,97 +263,12 @@ class ConfigLoader:
             return WIRING_V2_FILE
         return WIRING_FILE
 
-    @staticmethod
-    def resolve_backend_kind(
-        *,
-        chip_id: str,
-        config_dir: Path | str | None,
-        system_file: str = SYSTEM_FILE,
-        chip_file: str = CHIP_FILE,
-    ) -> str:
-        """
-        Resolve backend family from `system.yaml` then `chip.yaml`.
-
-        Parameters
-        ----------
-        chip_id : str
-            Chip identifier.
-        config_dir : Path | str | None
-            Configuration directory. If `None`, default config path is used.
-        system_file : str, optional
-            System configuration filename.
-        chip_file : str, optional
-            Chip configuration filename.
-
-        Returns
-        -------
-        str
-            Backend kind (`"quel1"` or `"quel3"`). Defaults to `"quel1"` when
-            no backend is configured.
-        """
-        config_path = (
-            Path(config_dir)
-            if config_dir is not None
-            else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
-        )
-        system_path = config_path / system_file
-        if system_path.exists():
-            with system_path.open(encoding="utf-8") as file:
-                system_dict = yaml.safe_load(file) or {}
-            if not isinstance(system_dict, dict):
-                raise TypeError(f"`{system_file}` must be a mapping at top level.")
-            configured_chip_id = system_dict.get("chip_id")
-            if configured_chip_id is not None and str(configured_chip_id) != chip_id:
-                raise ValueError(
-                    f"`{system_file}` chip_id mismatch: expected `{chip_id}`, got `{configured_chip_id}`."
-                )
-            value = system_dict.get("backend")
-            if value is not None:
-                if isinstance(value, str):
-                    normalized = value.strip().lower()
-                    if normalized in ("quel1", "quel3"):
-                        return normalized
-                raise ValueError(
-                    f"Unsupported backend for chip `{chip_id}` in `{system_file}`: {value!r}"
-                )
-
-        chip_path = config_path / chip_file
-        if not chip_path.exists():
-            logger.debug(
-                "chip config `%s` is missing; defaulting backend kind to quel1",
-                chip_path,
-            )
-            return "quel1"
-        with chip_path.open(encoding="utf-8") as file:
-            chip_dict = yaml.safe_load(file) or {}
-        if not isinstance(chip_dict, dict):
-            raise TypeError(f"`{chip_file}` must be a mapping at top level.")
-        chip_info = chip_dict.get(chip_id)
-        if chip_info is None:
-            logger.debug(
-                "chip `%s` is missing in `%s`; defaulting backend kind to quel1",
-                chip_id,
-                chip_file,
-            )
-            return "quel1"
-        if not isinstance(chip_info, dict):
-            raise TypeError(f"`{chip_file}` entry for `{chip_id}` must be a mapping.")
-        value = chip_info.get("backend")
-        if value is None:
-            return "quel1"
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in ("quel1", "quel3"):
-                return normalized
-        raise ValueError(
-            f"Unsupported backend for chip `{chip_id}` in `{chip_file}`: {value!r}"
-        )
-
     def load(
         self,
         *,
         targets_to_exclude: list[str] | None = None,
         configuration_mode: ConfigurationMode | None = None,
+        backend_kind: BackendKind | None = None,
     ) -> None:
         """
         Load configuration files and build runtime system objects.
@@ -352,6 +279,9 @@ class ConfigLoader:
             Target labels to exclude in experiment-system assembly.
         configuration_mode : ConfigurationMode | None, optional
             Configuration mode used for experiment-system assembly.
+        backend_kind : BackendKind | None, optional
+            Backend family override. If omitted, backend is resolved from
+            `system.yaml`.
         """
         if targets_to_exclude is None:
             targets_to_exclude = self._default_targets_to_exclude
@@ -367,12 +297,19 @@ class ConfigLoader:
         try:
             self._chip_dict = self._load_config_file(self._chip_file)
             self._system_dict = self._load_optional_config_file(self._system_file)
+            self._backend_kind = self._resolve_loaded_backend_kind(
+                backend_kind=backend_kind
+            )
+            self._resolved_wiring_file = self._resolve_wiring_file(
+                backend_kind=self._backend_kind
+            )
             self._box_dict = self._load_config_file(self._box_file)
-            self._wiring_dict = self._load_config_file(self._wiring_file)
+            self._wiring_dict = self._load_config_file(self._resolved_wiring_file)
             self._props_dict = self._load_legacy_params_file(self._props_file)  # legacy
             self._params_dict = self._load_legacy_params_file(
                 self._params_file
             )  # legacy
+            self._system_loader = self._create_system_loader(self._backend_kind)
 
             self._quantum_system = self._load_quantum_system()
             self._wiring_rows = self._load_wiring_rows()
@@ -396,6 +333,18 @@ class ConfigLoader:
     def params_path(self) -> Path:
         """Returns the absolute path to the parameters directory."""
         return Path(self._params_dir).resolve()
+
+    @property
+    def backend_kind(self) -> BackendKind:
+        """Return backend family used for this loaded configuration."""
+        self._ensure_loaded()
+        return self._backend_kind
+
+    @property
+    def wiring_file(self) -> str:
+        """Return effective wiring file name selected for this load."""
+        self._ensure_loaded()
+        return self._resolved_wiring_file
 
     def get_experiment_system(self, chip_id: str | None = None) -> ExperimentSystem:
         """
@@ -487,31 +436,80 @@ class ConfigLoader:
             raise TypeError(f"`{file_name}` must be a mapping at top level.")
         return result
 
+    def _validate_loaded_system_chip_id(self) -> None:
+        """Validate loaded system chip id against loader chip id."""
+        configured_chip_id = self._system_dict.get("chip_id")
+        if configured_chip_id is not None and str(configured_chip_id) != self._chip_id:
+            raise ValueError(
+                f"`{self._system_file}` chip_id mismatch: expected `{self._chip_id}`, got `{configured_chip_id}`."
+            )
+
+    def _resolve_loaded_backend_kind(
+        self,
+        *,
+        backend_kind: BackendKind | None = None,
+    ) -> BackendKind:
+        """Resolve backend kind from explicit override or loaded system mapping."""
+        self._validate_loaded_system_chip_id()
+        if backend_kind is not None:
+            normalized_override = normalize_backend_kind(backend_kind)
+            if normalized_override is None:
+                raise ValueError(
+                    f"Unsupported backend for chip `{self._chip_id}` in explicit argument: {backend_kind!r}"
+                )
+            return normalized_override
+
+        value = self._system_dict.get("backend")
+        if value is not None:
+            normalized = normalize_backend_kind(value)
+            if normalized is not None:
+                return normalized
+            raise ValueError(
+                f"Unsupported backend for chip `{self._chip_id}` in `{self._system_file}`: {value!r}"
+            )
+        return BACKEND_KIND_QUEL1
+
+    def _resolve_wiring_file(self, *, backend_kind: BackendKind) -> str:
+        """Resolve effective wiring file name for the current load."""
+        if self._wiring_file is not None:
+            return self._wiring_file
+        return self.resolve_wiring_file(
+            chip_id=self._chip_id,
+            config_dir=self._config_dir,
+            backend_kind=backend_kind,
+        )
+
+    def _create_system_loader(
+        self,
+        backend_kind: BackendKind,
+    ) -> Quel1SystemLoader | Quel3SystemLoader:
+        """Create a backend-specific system loader."""
+        if backend_kind == BACKEND_KIND_QUEL3:
+            return Quel3SystemLoader()
+        return Quel1SystemLoader()
+
+    def _resolve_system_loader(self) -> Quel1SystemLoader | Quel3SystemLoader:
+        """Return active system loader for the current loaded configuration."""
+        if self._system_loader is None:
+            backend_kind = self._resolve_loaded_backend_kind()
+            self._system_loader = self._create_system_loader(backend_kind)
+        return self._system_loader
+
     def _resolve_clock_master_address(self) -> str | None:
         """
-        Resolve clock-master address from system or chip configuration.
+        Resolve clock-master address from loaded config via backend-specific loader.
 
         Returns
         -------
         str | None
             Resolved clock-master address. Returns `None` when unresolved.
         """
-        chip_info = self._chip_dict.get(self._chip_id)
-        chip_clock_master = None
-        if isinstance(chip_info, dict):
-            raw_clock_master = chip_info.get("clock_master")
-            if raw_clock_master is not None:
-                chip_clock_master = str(raw_clock_master)
-
-        backend = self._system_dict.get("backend")
-        if isinstance(backend, str) and backend.strip().lower() == "quel1":
-            quel1_section = self._system_dict.get("quel1")
-            if isinstance(quel1_section, dict):
-                raw_clock_master = quel1_section.get("clock_master")
-                if raw_clock_master is not None:
-                    return str(raw_clock_master)
-
-        return chip_clock_master
+        system_loader = self._resolve_system_loader()
+        return system_loader.resolve_clock_master_address(
+            chip_id=self._chip_id,
+            chip_dict=self._chip_dict,
+            system_dict=self._system_dict,
+        )
 
     def _load_legacy_params_file(self, file_name: str) -> dict:
         path = Path(self._params_dir) / file_name
@@ -761,97 +759,22 @@ class ConfigLoader:
         return QuantumSystem(chip=chip)
 
     def _load_control_system(self) -> ControlSystem | None:
-        from qubex.system.control_system import Box, ControlSystem
-
-        chip_id = self._chip_id
-        box_ports = defaultdict(list)
-        wirings = self._wiring_rows
-        if wirings is None:
-            logger.warning(f"Chip `{chip_id}` is missing in `{self._wiring_file}`. ")
-            return None
-        for wiring in wirings:
-            box, port = split_box_port_specifier(wiring["read_out"])
-            box_ports[box].append(port)
-            box, port = split_box_port_specifier(wiring["read_in"])
-            box_ports[box].append(port)
-            for ctrl in wiring["ctrl"]:
-                box, port = split_box_port_specifier(ctrl)
-                box_ports[box].append(port)
-            if (pump_specifier := wiring.get("pump")) is not None:
-                box, port = split_box_port_specifier(pump_specifier)
-                box_ports[box].append(port)
-        boxes = [
-            Box.new(
-                id=id,
-                name=box["name"],
-                type=box["type"],
-                address=box["address"],
-                adapter=box["adapter"],
-                port_numbers=box_ports[id],
-                options=box.get("options"),
-            )
-            for id, box in self._box_dict.items()
-            if id in box_ports
-        ]
-        return ControlSystem(
-            boxes=boxes,
+        system_loader = self._resolve_system_loader()
+        return system_loader.load_control_system(
+            chip_id=self._chip_id,
+            box_dict=self._box_dict,
+            wiring_rows=self._wiring_rows,
+            wiring_file=self._resolved_wiring_file,
             clock_master_address=self._resolve_clock_master_address(),
         )
 
     def _load_wiring_info(self) -> WiringInfo | None:
-        from qubex.system.experiment_system import WiringInfo
-
-        wirings = self._wiring_rows
-        if wirings is None:
-            return None
-        quantum_system = self._quantum_system
-        control_system = self._control_system
-        if quantum_system is None or control_system is None:
-            return None
-
-        def get_gen_port(specifier: str | None):
-            if specifier is None:
-                return None
-            box_id, port_num = split_box_port_specifier(specifier)
-            port = control_system.get_gen_port(box_id, port_num)
-            return port
-
-        def get_cap_port(specifier: str | None):
-            if specifier is None:
-                return None
-            box_id, port_num = split_box_port_specifier(specifier)
-            port = control_system.get_cap_port(box_id, port_num)
-            return port
-
-        ctrl = []
-        read_out = []
-        read_in = []
-        pump = []
-        for wiring in wirings:
-            mux_num = int(wiring["mux"])
-            mux = quantum_system.get_mux(mux_num)
-            qubits = quantum_system.get_qubits_in_mux(mux_num)
-            for identifier, qubit in zip(wiring["ctrl"], qubits, strict=True):
-                ctrl_port = get_gen_port(identifier)
-                if ctrl_port is not None:
-                    ctrl.append((qubit, ctrl_port))
-            read_out_port = get_gen_port(wiring["read_out"])
-            if read_out_port is not None:
-                read_out.append((mux, read_out_port))
-            read_in_port = get_cap_port(wiring["read_in"])
-            if read_in_port is not None:
-                read_in.append((mux, read_in_port))
-            pump_port = get_gen_port(wiring.get("pump"))
-            if pump_port is not None:
-                pump.append((mux, pump_port))
-
-        wiring_info = WiringInfo(
-            ctrl=ctrl,
-            read_out=read_out,
-            read_in=read_in,
-            pump=pump,
+        system_loader = self._resolve_system_loader()
+        return system_loader.load_wiring_info(
+            wiring_rows=self._wiring_rows,
+            quantum_system=self._quantum_system,
+            control_system=self._control_system,
         )
-        return wiring_info
 
     def _load_wiring_rows(self) -> list[dict[str, Any]] | None:
         """Return wiring rows in canonical legacy shape."""
@@ -860,17 +783,19 @@ class ConfigLoader:
             wirings = self._wiring_dict[chip_id]
             if wirings is None:
                 logger.warning(
-                    f"Chip `{chip_id}` is missing in `{self._wiring_file}`. "
+                    f"Chip `{chip_id}` is missing in `{self._resolved_wiring_file}`. "
                 )
                 return None
             if not isinstance(wirings, list):
                 raise TypeError(
-                    f"`{self._wiring_file}` must map chip id to a list of wiring entries."
+                    f"`{self._resolved_wiring_file}` must map chip id to a list of wiring entries."
                 )
             return [dict(wiring) for wiring in wirings]
 
         if self._wiring_dict.get("schema_version") != 2:
-            logger.warning(f"Chip `{chip_id}` is missing in `{self._wiring_file}`. ")
+            logger.warning(
+                f"Chip `{chip_id}` is missing in `{self._resolved_wiring_file}`. "
+            )
             return None
 
         file_chip_id = self._wiring_dict.get("chip_id")
@@ -879,7 +804,7 @@ class ConfigLoader:
                 "Chip `%s` does not match `%s` in `%s`.",
                 chip_id,
                 file_chip_id,
-                self._wiring_file,
+                self._resolved_wiring_file,
             )
             return None
 
@@ -887,7 +812,7 @@ class ConfigLoader:
             return []
         return normalize_wiring_v2_rows(
             wiring_dict=self._wiring_dict,
-            wiring_file=self._wiring_file,
+            wiring_file=self._resolved_wiring_file,
             qubit_indices={qubit.index for qubit in self._quantum_system.qubits},
             mux_to_qubit_indices={
                 mux.index: tuple(

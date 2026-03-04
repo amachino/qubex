@@ -42,7 +42,7 @@ Status legend:
 - Status: `IN_PROGRESS`
 - Question: Where should QuEL-3 runtime configuration be defined primarily?
 - Current behavior:
-  - Backend family is selected by config file (`system.yaml` / `chip.yaml` fallback).
+  - Backend family is selected by config file (`system.yaml` top-level `backend`).
   - QuEL-3 runtime endpoint/port/trigger values are controller defaults.
 - Target:
   - Config-file first (`system.yaml`) with optional explicit runtime override.

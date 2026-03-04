@@ -24,7 +24,7 @@ Define the minimum synchronized measurement scenario required for v1.5.0 beta ga
 
 ## Preconditions
 
-- `system.yaml` / `chip.yaml` backend resolution is configured for QuEL-3.
+- `system.yaml` backend resolution is configured for QuEL-3.
 - Target-to-alias mapping is resolved automatically from wiring/port consistency; fallback to target-label guessing is not allowed.
 - Capture schedule contains at least two channels/targets mapped to different instrument aliases and different units.
 - Test environment can run both:

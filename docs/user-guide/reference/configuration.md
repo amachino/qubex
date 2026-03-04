@@ -61,8 +61,7 @@ When backend family is not explicitly fixed, Qubex resolves it in this order:
 
 1. explicit backend override from session options
 2. `system.yaml` top-level `backend`
-3. `chip.yaml` chip entry `backend` (legacy fallback)
-4. default `quel1`
+3. default `quel1`
 
 `backend` must be either `quel1` or `quel3`.
 

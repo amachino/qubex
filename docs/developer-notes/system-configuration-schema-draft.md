@@ -72,5 +72,6 @@ quel3: {}
 
 ## Migration note
 
-- During transition, `chip.yaml` `backend` is still accepted as a compatibility fallback.
+- Backend selection is resolved from `system.yaml` top-level `backend` only
+  (or explicit runtime override). `chip.yaml` does not carry backend selection.
 - For v1.5.0, QuEL-3 runtime endpoint/port/trigger values use controller defaults.

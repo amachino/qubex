@@ -15,6 +15,8 @@ from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
 
 from qubex.backend.backend_controller import (
+    BACKEND_KIND_QUEL1,
+    BACKEND_KIND_QUEL3,
     BackendKind,
     SystemBackendController,
 )
@@ -25,7 +27,7 @@ from qubex.constants import (
 )
 from qubex.typing import ConfigurationMode
 
-from .config_loader import ConfigLoader, ConfigLoader as ConfigurationConfigLoader
+from .config_loader import ConfigLoader
 from .control_system import Box
 from .experiment_system import ExperimentSystem
 from .quel1.quel1_system_synchronizer import Quel1SystemSynchronizer
@@ -140,7 +142,7 @@ class SystemManager:
         if self._initialized:
             return
         self._experiment_system = None
-        self._backend_kind: BackendKind = "quel1"
+        self._backend_kind: BackendKind = BACKEND_KIND_QUEL1
         self._backend_controller = self._create_backend_controller(self._backend_kind)
         self._system_synchronizer = self._create_system_synchronizer(
             self._backend_controller,
@@ -157,7 +159,7 @@ class SystemManager:
         backend_kind: BackendKind,
     ) -> SystemBackendController:
         """Create a backend controller instance for one experiment session."""
-        if backend_kind == "quel3":
+        if backend_kind == BACKEND_KIND_QUEL3:
             return Quel3BackendController()
         return Quel1BackendController()
 
@@ -192,11 +194,11 @@ class SystemManager:
     ) -> SystemSynchronizer | None:
         """Create backend-specific system synchronizer when supported."""
         resolved_backend_kind = backend_kind or self._backend_kind
-        if resolved_backend_kind == "quel1":
+        if resolved_backend_kind == BACKEND_KIND_QUEL1:
             return Quel1SystemSynchronizer(
                 backend_controller=cast(Quel1BackendController, backend_controller),
             )
-        if resolved_backend_kind == "quel3":
+        if resolved_backend_kind == BACKEND_KIND_QUEL3:
             return Quel3SystemSynchronizer(
                 backend_controller=cast(Quel3BackendController, backend_controller),
             )
@@ -339,34 +341,23 @@ class SystemManager:
         mock_mode : bool, optional
             If `True`, skip backend controller model synchronization.
         """
-        resolved_backend_kind = backend_kind
-        if resolved_backend_kind is None:
-            resolved_backend_kind = cast(
-                BackendKind,
-                ConfigurationConfigLoader.resolve_backend_kind(
-                    chip_id=chip_id,
-                    config_dir=config_dir,
-                ),
-            )
-        self.set_backend_kind(resolved_backend_kind)
-        wiring_file = ConfigurationConfigLoader.resolve_wiring_file(
-            chip_id=chip_id,
-            config_dir=config_dir,
-            backend_kind=self._backend_kind,
-        )
-        self._config_loader = ConfigLoader(
+        next_config_loader = ConfigLoader(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
-            wiring_file=wiring_file,
             autoload=False,
         )
-        self._config_loader.load(
+        next_config_loader.load(
             targets_to_exclude=targets_to_exclude,
             configuration_mode=configuration_mode,
+            backend_kind=backend_kind,
         )
+        next_experiment_system = next_config_loader.get_experiment_system()
+
+        self.set_backend_kind(next_config_loader.backend_kind)
+        self._config_loader = next_config_loader
         self._mock_mode = mock_mode
-        self._experiment_system = self._config_loader.get_experiment_system()
+        self._experiment_system = next_experiment_system
         if self._mock_mode:
             # skip updating backend controller in mock mode
             return

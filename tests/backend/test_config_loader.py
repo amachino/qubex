@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.system.config_loader import ConfigLoader
 from qubex.system.experiment_system import DEFAULT_PUMP_FREQUENCY
 
@@ -476,6 +477,149 @@ def test_build_experiment_system_from_wiring_v2_schema(tmp_path: Path) -> None:
     assert system.control_system.get_box("unit-a").id == "unit-a"
 
 
+def test_load_auto_selects_wiring_v2_for_quel3_backend(tmp_path: Path) -> None:
+    """Given quel3 backend with wiring.v2 only, when loading, then ConfigLoader auto-selects wiring.v2.yaml."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        config_dir / "wiring.v2.yaml",
+        {
+            "schema_version": 2,
+            "chip_id": chip_id,
+            "control": {
+                0: "unit-a:p2tx",
+                1: "unit-a:p4tx",
+                2: "unit-a:p9tx",
+                3: "unit-a:p11tx",
+            },
+            "readout": {
+                0: {
+                    "out": "unit-a:p0p1trx",
+                    "in": "unit-a:p0p1trx",
+                    "pump": "unit-a:p3tx",
+                },
+            },
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert loader.backend_kind == BACKEND_KIND_QUEL3
+    assert loader.wiring_file == "wiring.v2.yaml"
+
+
+def test_load_raises_for_system_chip_id_mismatch(tmp_path: Path) -> None:
+    """Given mismatched system chip id, when loading, then ConfigLoader raises ValueError."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": "OTHER", "backend": BACKEND_KIND_QUEL1},
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+
+    with pytest.raises(ValueError, match="chip_id mismatch"):
+        loader.load()
+
+
+def test_load_backend_override_takes_precedence_over_system_backend(
+    tmp_path: Path,
+) -> None:
+    """Given explicit backend override, when loading, then ConfigLoader selects override backend kind."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load(backend_kind=BACKEND_KIND_QUEL1)
+
+    assert loader.backend_kind == BACKEND_KIND_QUEL1
+    assert loader.wiring_file == "wiring.yaml"
+
+
 def test_wiring_v2_rejects_unknown_port_specifier(tmp_path: Path) -> None:
     """Given unknown wiring v2 port label, when loading, then ValueError is raised."""
     chip_id = "TESTCHIP"
@@ -529,69 +673,162 @@ def test_wiring_v2_rejects_unknown_port_specifier(tmp_path: Path) -> None:
         )
 
 
-def test_resolve_backend_kind_prefers_system_yaml_over_chip_yaml(
+def test_load_uses_system_yaml_backend_and_ignores_chip_yaml_backend(
     tmp_path: Path,
 ) -> None:
-    """Given backend in system.yaml and chip.yaml, when resolving backend kind, then system.yaml value is selected."""
+    """Given backend in system.yaml and chip.yaml, when loading, then system.yaml value is selected."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
     config_dir.mkdir(parents=True)
     _write_yaml(
         config_dir / "chip.yaml",
-        {chip_id: {"name": "Test Chip", "n_qubits": 4, "backend": "quel1"}},
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "backend": "unknown"}},
     )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
     _write_yaml(
         config_dir / "system.yaml",
         {"schema_version": 1, "chip_id": chip_id, "backend": "quel3"},
     )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
 
-    backend_kind = ConfigLoader.resolve_backend_kind(
+    loader = ConfigLoader(
         chip_id=chip_id,
         config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
     )
+    loader.load()
 
-    assert backend_kind == "quel3"
+    assert loader.backend_kind == "quel3"
 
 
-def test_resolve_backend_kind_defaults_to_quel1_when_not_configured(
+def test_load_ignores_chip_yaml_backend_when_system_yaml_is_missing(
     tmp_path: Path,
 ) -> None:
-    """Given no backend config, when resolving backend kind, then quel1 is selected."""
+    """Given backend only in chip.yaml, when loading, then quel1 default is selected."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "backend": "quel3"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert loader.backend_kind == "quel1"
+
+
+def test_load_defaults_to_quel1_when_not_configured(
+    tmp_path: Path,
+) -> None:
+    """Given no backend config, when loading, then quel1 is selected."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
     config_dir.mkdir(parents=True)
     _write_yaml(
         config_dir / "chip.yaml", {chip_id: {"name": "Test Chip", "n_qubits": 4}}
     )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
 
-    backend_kind = ConfigLoader.resolve_backend_kind(
+    loader = ConfigLoader(
         chip_id=chip_id,
         config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
     )
+    loader.load()
 
-    assert backend_kind == "quel1"
+    assert loader.backend_kind == "quel1"
 
 
-def test_resolve_backend_kind_raises_for_unknown_backend_value(
+def test_load_raises_for_unknown_backend_value_in_system_yaml(
     tmp_path: Path,
 ) -> None:
-    """Given unknown backend in system.yaml, when resolving backend kind, then ValueError is raised."""
+    """Given unknown backend in system.yaml, when loading, then ValueError is raised."""
     chip_id = "TESTCHIP"
     config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
     config_dir.mkdir(parents=True)
     _write_yaml(
         config_dir / "chip.yaml", {chip_id: {"name": "Test Chip", "n_qubits": 4}}
     )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
     _write_yaml(
         config_dir / "system.yaml",
         {"schema_version": 1, "chip_id": chip_id, "backend": "unknown"},
     )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
 
     with pytest.raises(ValueError, match="Unsupported backend"):
-        ConfigLoader.resolve_backend_kind(
-            chip_id=chip_id,
-            config_dir=config_dir,
-        )
+        loader.load()
 
 
 def test_resolve_wiring_file_prefers_v2_for_quel3_when_available(
@@ -627,3 +864,103 @@ def test_resolve_wiring_file_falls_back_to_legacy_for_quel3(
     )
 
     assert wiring_file == "wiring.yaml"
+
+
+def test_load_uses_quel3_system_loader_when_backend_is_quel3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quel3 backend config, when loading, then ConfigLoader delegates assembly to Quel3SystemLoader."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": "quel3",
+        },
+    )
+    called: list[str] = []
+
+    class _FailQuel1SystemLoader:
+        def __init__(self) -> None:
+            raise AssertionError(
+                "Quel1SystemLoader must not be used for quel3 backend."
+            )
+
+    class _FakeQuel3SystemLoader:
+        def resolve_clock_master_address(self, **_: object) -> str | None:
+            called.append("clock")
+            return None
+
+        def load_control_system(self, **_: object) -> object:
+            called.append("control")
+            return None
+
+        def load_wiring_info(self, **_: object) -> object:
+            called.append("wiring")
+            return None
+
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel1SystemLoader",
+        _FailQuel1SystemLoader,
+    )
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel3SystemLoader",
+        _FakeQuel3SystemLoader,
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert called == ["clock", "control", "wiring"]
+
+
+def test_load_uses_quel1_system_loader_when_backend_is_unset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given no backend config, when loading, then ConfigLoader delegates assembly to Quel1SystemLoader."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    called: list[str] = []
+
+    class _FakeQuel1SystemLoader:
+        def resolve_clock_master_address(self, **_: object) -> str | None:
+            called.append("clock")
+            return None
+
+        def load_control_system(self, **_: object) -> object:
+            called.append("control")
+            return None
+
+        def load_wiring_info(self, **_: object) -> object:
+            called.append("wiring")
+            return None
+
+    class _FailQuel3SystemLoader:
+        def __init__(self) -> None:
+            raise AssertionError("Quel3SystemLoader must not be used by default.")
+
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel1SystemLoader",
+        _FakeQuel1SystemLoader,
+    )
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel3SystemLoader",
+        _FailQuel3SystemLoader,
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert called == ["clock", "control", "wiring"]

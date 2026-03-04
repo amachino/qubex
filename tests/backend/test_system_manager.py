@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.system.control_system import PortType
 from qubex.system.system_manager import BackendSettings, SystemManager
@@ -670,13 +671,18 @@ def test_load_passes_backend_kind_to_selector(
     """Given load with backend kind, when loading, then selector is called before sync."""
     manager = SystemManager.shared()
     called: list[str] = []
+    captured_load_kwargs: dict[str, object] = {}
 
     class _FakeConfigLoader:
         def __init__(self, **_: object) -> None:
             pass
 
-        def load(self, **_: object) -> None:
-            pass
+        def load(self, **kwargs: object) -> None:
+            captured_load_kwargs.update(kwargs)
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
 
         def get_experiment_system(self) -> object:
             return SimpleNamespace(hash=hash("TEST"))
@@ -701,266 +707,33 @@ def test_load_passes_backend_kind_to_selector(
     )
 
     assert called == ["kind:quel3", "sync"]
+    assert captured_load_kwargs["backend_kind"] == BACKEND_KIND_QUEL3
 
 
-def test_load_prefers_wiring_v2_for_quel3_when_available(
-    tmp_path: Path,
+def test_load_uses_config_loader_backend_kind_when_backend_kind_is_omitted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given quel3 backend and wiring.v2 file, when loading, then ConfigLoader uses wiring.v2.yaml."""
+    """Given backend_kind omission, when loading, then ConfigLoader backend kind is used to select backend controller."""
     manager = SystemManager.shared()
-    captured: dict[str, object] = {}
-    config_dir = tmp_path / "config"
-    params_dir = tmp_path / "params"
-    config_dir.mkdir()
-    params_dir.mkdir()
-    (config_dir / "wiring.v2.yaml").write_text(
-        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
-        encoding="utf-8",
-    )
-
-    class _FakeConfigLoader:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
-
-        def load(self, **_: object) -> None:
-            pass
-
-        def get_experiment_system(self) -> object:
-            return SimpleNamespace(hash=hash("TEST"))
-
-    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
-
-    manager.load(
-        chip_id="TEST",
-        config_dir=config_dir,
-        params_dir=params_dir,
-        backend_kind="quel3",
-        mock_mode=True,
-    )
-
-    assert captured["wiring_file"] == "wiring.v2.yaml"
-
-
-def test_load_falls_back_to_legacy_wiring_for_quel3_when_v2_is_missing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given quel3 backend without wiring.v2 file, when loading, then ConfigLoader uses wiring.yaml."""
-    manager = SystemManager.shared()
-    captured: dict[str, object] = {}
-    config_dir = tmp_path / "config"
-    params_dir = tmp_path / "params"
-    config_dir.mkdir()
-    params_dir.mkdir()
-
-    class _FakeConfigLoader:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
-
-        def load(self, **_: object) -> None:
-            pass
-
-        def get_experiment_system(self) -> object:
-            return SimpleNamespace(hash=hash("TEST"))
-
-    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
-
-    manager.load(
-        chip_id="TEST",
-        config_dir=config_dir,
-        params_dir=params_dir,
-        backend_kind="quel3",
-        mock_mode=True,
-    )
-
-    assert captured["wiring_file"] == "wiring.yaml"
-
-
-def test_load_resolves_backend_kind_from_chip_config(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given chip backend in chip.yaml, when load is called without backend_kind, then backend kind is resolved from chip.yaml."""
-    manager = SystemManager.shared()
-    captured: dict[str, object] = {}
-    selected: list[str] = []
-    config_dir = tmp_path / "config"
-    params_dir = tmp_path / "params"
-    config_dir.mkdir()
-    params_dir.mkdir()
-    (config_dir / "chip.yaml").write_text(
-        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: quel3\n',
-        encoding="utf-8",
-    )
-    (config_dir / "wiring.v2.yaml").write_text(
-        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
-        encoding="utf-8",
-    )
-
-    class _FakeConfigLoader:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
-
-        def load(self, **_: object) -> None:
-            pass
-
-        def get_experiment_system(self) -> object:
-            return SimpleNamespace(hash=hash("TEST"))
-
-    def _fake_set_backend_kind(kind: str) -> None:
-        selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
-
-    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
-    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
-
-    manager.load(
-        chip_id="TEST",
-        config_dir=config_dir,
-        params_dir=params_dir,
-        mock_mode=True,
-    )
-
-    assert selected == ["quel3"]
-    assert captured["wiring_file"] == "wiring.v2.yaml"
-
-
-def test_load_resolves_backend_kind_from_system_config(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given system backend in system.yaml, when load is called without backend_kind, then backend kind is resolved from system.yaml."""
-    manager = SystemManager.shared()
-    captured: dict[str, object] = {}
-    selected: list[str] = []
-    config_dir = tmp_path / "config"
-    params_dir = tmp_path / "params"
-    config_dir.mkdir()
-    params_dir.mkdir()
-    (config_dir / "chip.yaml").write_text(
-        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: quel1\n',
-        encoding="utf-8",
-    )
-    (config_dir / "system.yaml").write_text(
-        "schema_version: 1\nchip_id: TEST\nbackend: quel3\n",
-        encoding="utf-8",
-    )
-    (config_dir / "wiring.v2.yaml").write_text(
-        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
-        encoding="utf-8",
-    )
-
-    class _FakeConfigLoader:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
-
-        def load(self, **_: object) -> None:
-            pass
-
-        def get_experiment_system(self) -> object:
-            return SimpleNamespace(hash=hash("TEST"))
-
-    def _fake_set_backend_kind(kind: str) -> None:
-        selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
-
-    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
-    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
-
-    manager.load(
-        chip_id="TEST",
-        config_dir=config_dir,
-        params_dir=params_dir,
-        mock_mode=True,
-    )
-
-    assert selected == ["quel3"]
-    assert captured["wiring_file"] == "wiring.v2.yaml"
-
-
-def test_load_explicit_backend_kind_overrides_chip_config(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given explicit backend_kind, when load is called, then explicit value overrides chip.yaml backend."""
-    manager = SystemManager.shared()
-    captured: dict[str, object] = {}
-    selected: list[str] = []
-    config_dir = tmp_path / "config"
-    params_dir = tmp_path / "params"
-    config_dir.mkdir()
-    params_dir.mkdir()
-    (config_dir / "chip.yaml").write_text(
-        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: quel3\n',
-        encoding="utf-8",
-    )
-    (config_dir / "wiring.v2.yaml").write_text(
-        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
-        encoding="utf-8",
-    )
-
-    class _FakeConfigLoader:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
-
-        def load(self, **_: object) -> None:
-            pass
-
-        def get_experiment_system(self) -> object:
-            return SimpleNamespace(hash=hash("TEST"))
-
-    def _fake_set_backend_kind(kind: str) -> None:
-        selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
-
-    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
-    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
-
-    manager.load(
-        chip_id="TEST",
-        config_dir=config_dir,
-        params_dir=params_dir,
-        backend_kind="quel1",
-        mock_mode=True,
-    )
-
-    assert selected == ["quel1"]
-    assert captured["wiring_file"] == "wiring.yaml"
-
-
-def test_load_explicit_backend_kind_overrides_system_config(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given explicit backend_kind, when load is called, then explicit value overrides system.yaml backend."""
-    manager = SystemManager.shared()
-    selected: list[str] = []
-    config_dir = tmp_path / "config"
-    params_dir = tmp_path / "params"
-    config_dir.mkdir()
-    params_dir.mkdir()
-    (config_dir / "chip.yaml").write_text(
-        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: quel3\n',
-        encoding="utf-8",
-    )
-    (config_dir / "system.yaml").write_text(
-        "schema_version: 1\nchip_id: TEST\nbackend: quel3\n",
-        encoding="utf-8",
-    )
+    called: list[str] = []
+    captured_load_kwargs: dict[str, object] = {}
 
     class _FakeConfigLoader:
         def __init__(self, **_: object) -> None:
             pass
 
-        def load(self, **_: object) -> None:
-            pass
+        def load(self, **kwargs: object) -> None:
+            captured_load_kwargs.update(kwargs)
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
 
         def get_experiment_system(self) -> object:
             return SimpleNamespace(hash=hash("TEST"))
 
     def _fake_set_backend_kind(kind: str) -> None:
-        selected.append(kind)
+        called.append(f"kind:{kind}")
         manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
@@ -968,20 +741,101 @@ def test_load_explicit_backend_kind_overrides_system_config(
 
     manager.load(
         chip_id="TEST",
-        config_dir=config_dir,
-        params_dir=params_dir,
-        backend_kind="quel1",
         mock_mode=True,
     )
 
-    assert selected == ["quel1"]
+    assert called == [f"kind:{BACKEND_KIND_QUEL3}"]
+    assert captured_load_kwargs["backend_kind"] is None
 
 
-def test_load_defaults_to_quel1_when_chip_backend_kind_is_missing(
+def test_load_does_not_pass_wiring_file_to_config_loader(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given missing chip backend, when load is called without backend_kind, then backend defaults to quel1."""
+    """Given manager load, when creating ConfigLoader, then wiring file is not forced by SystemManager."""
+    manager = SystemManager.shared()
+    captured_init_kwargs: dict[str, object] = {}
+    captured_load_kwargs: dict[str, object] = {}
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+
+    class _FakeConfigLoader:
+        def __init__(self, **kwargs: object) -> None:
+            captured_init_kwargs.update(kwargs)
+
+        def load(self, **kwargs: object) -> None:
+            captured_load_kwargs.update(kwargs)
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel3",
+        mock_mode=True,
+    )
+
+    assert "wiring_file" not in captured_init_kwargs
+    assert captured_load_kwargs["backend_kind"] == BACKEND_KIND_QUEL3
+
+
+def test_load_forwards_core_paths_to_config_loader(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given load parameters, when initializing ConfigLoader, then SystemManager forwards chip/config/params without wiring override."""
+    manager = SystemManager.shared()
+    captured_init_kwargs: dict[str, object] = {}
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+
+    class _FakeConfigLoader:
+        def __init__(self, **kwargs: object) -> None:
+            captured_init_kwargs.update(kwargs)
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel3",
+        mock_mode=True,
+    )
+
+    assert captured_init_kwargs["chip_id"] == "TEST"
+    assert captured_init_kwargs["config_dir"] == config_dir
+    assert captured_init_kwargs["params_dir"] == params_dir
+    assert "wiring_file" not in captured_init_kwargs
+
+
+def test_load_defaults_to_quel1_when_system_backend_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given missing system backend, when load is called without backend_kind, then backend defaults to quel1."""
     manager = SystemManager.shared()
     selected: list[str] = []
     config_dir = tmp_path / "config"
@@ -1000,6 +854,10 @@ def test_load_defaults_to_quel1_when_chip_backend_kind_is_missing(
         def load(self, **_: object) -> None:
             pass
 
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL1
+
         def get_experiment_system(self) -> object:
             return SimpleNamespace(hash=hash("TEST"))
 
@@ -1020,11 +878,219 @@ def test_load_defaults_to_quel1_when_chip_backend_kind_is_missing(
     assert selected == ["quel1"]
 
 
-def test_load_raises_for_unknown_backend_kind_in_chip_config(
+def test_load_resolves_backend_kind_from_system_config(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given unknown backend in chip.yaml, when load is called, then ValueError is raised."""
+    """Given system backend in system.yaml, when load is called without backend_kind, then backend kind is resolved from system.yaml."""
     manager = SystemManager.shared()
+    selected: list[str] = []
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "chip.yaml").write_text(
+        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n  backend: unknown\n',
+        encoding="utf-8",
+    )
+    (config_dir / "system.yaml").write_text(
+        "schema_version: 1\nchip_id: TEST\nbackend: quel3\n",
+        encoding="utf-8",
+    )
+    (config_dir / "wiring.v2.yaml").write_text(
+        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
+        encoding="utf-8",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        mock_mode=True,
+    )
+
+    assert selected == ["quel3"]
+
+
+def test_load_explicit_backend_kind_overrides_default_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given explicit backend_kind, when load is called, then explicit value overrides default resolution."""
+    manager = SystemManager.shared()
+    captured_load_kwargs: dict[str, object] = {}
+    selected: list[str] = []
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "chip.yaml").write_text(
+        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n',
+        encoding="utf-8",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **kwargs: object) -> None:
+            captured_load_kwargs.update(kwargs)
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL1
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel1",
+        mock_mode=True,
+    )
+
+    assert selected == ["quel1"]
+    assert captured_load_kwargs["backend_kind"] == BACKEND_KIND_QUEL1
+
+
+def test_load_explicit_backend_kind_overrides_system_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given explicit backend_kind, when load is called, then explicit value overrides system.yaml backend."""
+    manager = SystemManager.shared()
+    captured_load_kwargs: dict[str, object] = {}
+    selected: list[str] = []
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "chip.yaml").write_text(
+        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n',
+        encoding="utf-8",
+    )
+    (config_dir / "system.yaml").write_text(
+        "schema_version: 1\nchip_id: TEST\nbackend: quel3\n",
+        encoding="utf-8",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **kwargs: object) -> None:
+            captured_load_kwargs.update(kwargs)
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL1
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel1",
+        mock_mode=True,
+    )
+
+    assert selected == ["quel1"]
+    assert captured_load_kwargs["backend_kind"] == BACKEND_KIND_QUEL1
+
+
+def test_load_defaults_to_quel1_when_chip_and_system_backend_are_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given no backend in system.yaml, when load is called without backend_kind, then backend defaults to quel1."""
+    manager = SystemManager.shared()
+    selected: list[str] = []
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+    (config_dir / "chip.yaml").write_text(
+        'TEST:\n  name: "Test Chip"\n  n_qubits: 4\n',
+        encoding="utf-8",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL1
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        mock_mode=True,
+    )
+
+    assert selected == ["quel1"]
+
+
+def test_load_ignores_unknown_backend_kind_in_chip_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given unknown backend in chip.yaml only, when load is called, then backend defaults to quel1."""
+    manager = SystemManager.shared()
+    selected: list[str] = []
     config_dir = tmp_path / "config"
     params_dir = tmp_path / "params"
     config_dir.mkdir()
@@ -1034,13 +1100,35 @@ def test_load_raises_for_unknown_backend_kind_in_chip_config(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Unsupported backend"):
-        manager.load(
-            chip_id="TEST",
-            config_dir=config_dir,
-            params_dir=params_dir,
-            mock_mode=True,
-        )
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL1
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    manager.load(
+        chip_id="TEST",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        mock_mode=True,
+    )
+
+    assert selected == ["quel1"]
 
 
 def test_load_raises_for_unknown_backend_kind_in_system_config(
@@ -1068,3 +1156,48 @@ def test_load_raises_for_unknown_backend_kind_in_system_config(
             params_dir=params_dir,
             mock_mode=True,
         )
+
+
+def test_load_preserves_backend_kind_when_experiment_system_resolution_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given experiment-system resolution failure, when loading, then backend kind and config loader remain unchanged."""
+    manager = SystemManager.shared()
+    manager.__dict__["_backend_kind"] = BACKEND_KIND_QUEL1
+    previous_loader = object()
+    manager.__dict__["_config_loader"] = previous_loader
+    selected: list[str] = []
+
+    class _FailingConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        def get_experiment_system(self) -> object:
+            raise RuntimeError("ExperimentSystem is not available for chip: TEST")
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+        manager.__dict__["_backend_kind"] = kind
+
+    monkeypatch.setattr(
+        "qubex.system.system_manager.ConfigLoader",
+        _FailingConfigLoader,
+    )
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    with pytest.raises(RuntimeError, match="ExperimentSystem is not available"):
+        manager.load(
+            chip_id="TEST",
+            mock_mode=True,
+        )
+
+    assert selected == []
+    assert manager.backend_kind == BACKEND_KIND_QUEL1
+    assert manager.__dict__["_config_loader"] is previous_loader

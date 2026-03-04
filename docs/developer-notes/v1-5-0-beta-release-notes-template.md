@@ -23,7 +23,7 @@
 ## Migration notes
 
 - Configuration:
-  - Backend selection precedence: explicit argument > `system.yaml` > `chip.yaml` > `quel1` default.
+  - Backend selection precedence: explicit argument > `system.yaml` > `quel1` default.
   - QuEL-3 prefers `wiring.v2.yaml` when present.
   - Target-to-instrument mapping is auto-resolved from wiring/port consistency; unresolved or ambiguous mapping fails fast.
   - Runtime defaults are provisionally aligned to `quelware-client` defaults (`endpoint=localhost`, `port=50051`, `trigger_wait=1000000`, `ttl_ms=4000`, `tentative_ttl_ms=1000`).
