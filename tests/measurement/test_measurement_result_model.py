@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -28,15 +29,6 @@ from qubex.measurement.models.measure_result import (
 )
 from qubex.typing import MeasurementMode
 
-pytestmark = [
-    pytest.mark.filterwarnings(
-        "ignore:Use `CaptureData` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-    pytest.mark.filterwarnings(
-        "ignore:Use `MeasurementResult` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-]
-
 
 def _make_multiple_measure_result() -> MultipleMeasureResult:
     data0 = MeasureData(
@@ -55,6 +47,28 @@ def _make_multiple_measure_result() -> MultipleMeasureResult:
         mode=MeasureMode.AVG,
         data={"Q00": [data0, data1]},
         config={"shots": 2},
+    )
+
+
+def test_legacy_multiple_measure_result_does_not_warn_on_init() -> None:
+    """MultipleMeasureResult instantiation should not emit deprecation warnings."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.AVG,
+        raw=np.array([1.0 + 0.0j]),
+        classifier=None,
+    )
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always", DeprecationWarning)
+        MultipleMeasureResult(
+            mode=MeasureMode.AVG,
+            data={"Q00": [data]},
+            config={"shots": 1},
+        )
+
+    assert not any(
+        issubclass(warning.category, DeprecationWarning) for warning in captured
     )
 
 
@@ -517,8 +531,8 @@ def test_capture_data_payload_properties_allow_none() -> None:
     assert capture.averaged_iq is None
 
 
-def test_capture_data_get_raw_data_returns_waveform_payload() -> None:
-    """Given waveform capture, get_raw_data should return waveform-domain data."""
+def test_capture_data_data_returns_waveform_payload() -> None:
+    """Given waveform capture, data and waveform_series should expose waveform payload."""
     config = MeasurementConfig(
         n_shots=2,
         shot_interval=100.0,
@@ -537,11 +551,12 @@ def test_capture_data_get_raw_data_returns_waveform_payload() -> None:
         sampling_period=0.4,
     )
 
-    assert capture.get_raw_data() is waveform
+    assert capture.data is waveform
+    assert capture.waveform_series is waveform
 
 
-def test_capture_data_get_raw_data_raises_without_waveform_payload() -> None:
-    """Given IQ-only capture, get_raw_data should raise because waveform payload is absent."""
+def test_capture_data_waveform_series_is_none_for_iq_primary_payload() -> None:
+    """Given IQ primary payload, waveform_series should be None and data should expose IQ data."""
     config = MeasurementConfig(
         n_shots=2,
         shot_interval=100.0,
@@ -549,15 +564,16 @@ def test_capture_data_get_raw_data_raises_without_waveform_payload() -> None:
         time_integration=True,
         state_classification=False,
     )
+    iq_series = np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128)
     capture = CaptureData.from_primary_data(
         target="Q00",
-        data=np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+        data=iq_series,
         config=config,
         sampling_period=0.4,
     )
 
-    with pytest.raises(ValueError, match="Waveform payload is not set"):
-        _ = capture.get_raw_data()
+    assert capture.waveform_series is None
+    assert capture.data is iq_series
 
 
 def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> None:
@@ -584,10 +600,8 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
     assert capture.data is raw
 
 
-def test_capture_data_get_classified_series_returns_state_payload_when_available() -> (
-    None
-):
-    """Given state payload, get_classified_series should return it without classifier inference."""
+def test_capture_data_state_series_returns_payload_when_available() -> None:
+    """Given state payload, state_series should return it as-is."""
     config = MeasurementConfig(
         n_shots=2,
         shot_interval=100.0,
@@ -607,13 +621,11 @@ def test_capture_data_get_classified_series_returns_state_payload_when_available
         sampling_period=0.4,
     )
 
-    assert capture.get_classified_series() is state_series
+    assert capture.state_series is state_series
 
 
-def test_capture_data_get_classified_series_raises_without_state_payload_and_classifier() -> (
-    None
-):
-    """Given no classifier and no state payload, get_classified_series should raise."""
+def test_capture_data_state_series_returns_none_when_not_provided() -> None:
+    """Given no state payload, state_series should return None."""
     config = MeasurementConfig(
         n_shots=2,
         shot_interval=100.0,
@@ -629,8 +641,7 @@ def test_capture_data_get_classified_series_raises_without_state_payload_and_cla
         sampling_period=0.4,
     )
 
-    with pytest.raises(ValueError, match="Classifier is not set"):
-        _ = capture.get_classified_series()
+    assert capture.state_series is None
 
 
 def test_capture_data_rejects_payload_not_requested_by_return_items() -> None:
@@ -710,8 +721,11 @@ def test_capture_data_classifier_uses_shared_cache(
         _load,
     )
 
-    first = capture0.classifier
-    second = capture1.classifier
+    assert capture0.classifier_ref is not None
+    assert capture1.classifier_ref is not None
+
+    first = capture0.classifier_ref.load()
+    second = capture1.classifier_ref.load()
 
     assert first is dummy_classifier
     assert second is dummy_classifier
@@ -749,8 +763,8 @@ def test_classifier_ref_reloads_classifier_after_file_update(
     assert calls["count"] == 2
 
 
-def test_capture_data_classifier_rejects_unsupported_ref_version() -> None:
-    """Given unsupported classifier ref version, classifier property should fail."""
+def test_capture_data_classifier_ref_rejects_unsupported_version() -> None:
+    """Given unsupported classifier ref version, loading through classifier_ref should fail."""
     config = _make_config(mode="avg", shots=1)
     capture = _make_capture(
         target="Q00",
@@ -763,8 +777,9 @@ def test_capture_data_classifier_rejects_unsupported_ref_version() -> None:
         ),
     )
 
+    assert capture.classifier_ref is not None
     with pytest.raises(ValueError, match="scikit-learn version mismatch"):
-        _ = capture.classifier
+        _ = capture.classifier_ref.load()
 
 
 def test_capture_data_does_not_force_raw_read_only() -> None:
@@ -780,24 +795,6 @@ def test_capture_data_does_not_force_raw_read_only() -> None:
 
     capture.data[0] = 2.0 + 0.0j
     assert capture.data[0] == 2.0 + 0.0j
-
-
-def test_capture_data_get_kerneled_data_is_read_only() -> None:
-    """Given capture data, get_kerneled_data should return a read-only array."""
-    config = _make_config(mode="single", shots=2)
-    capture = _make_capture(
-        target="Q00",
-        raw=np.array(
-            [
-                [1.0 + 0.0j, 2.0 + 0.0j],
-                [3.0 + 0.0j, 4.0 + 0.0j],
-            ]
-        ),
-        measurement_config=config,
-        sampling_period=0.4,
-    )
-
-    assert capture.get_kerneled_data().flags.writeable is False
 
 
 def test_measurement_result_ignores_legacy_top_level_sampling_period() -> None:
@@ -908,30 +905,30 @@ def test_plot_calls_waveform_plot_for_avg_mode(monkeypatch) -> None:
     assert called["save_image"] is False
 
 
-def test_capture_data_plot_return_figure_warns_deprecated(monkeypatch) -> None:
-    """Given return_figure usage, capture plot warns and still returns a figure."""
+def test_measurement_result_figure_returns_figure_list(monkeypatch) -> None:
+    """Given waveform capture data, figure should return one waveform figure object."""
     config = _make_config(mode="avg", shots=1)
-    capture = _make_capture(
-        target="Q00",
-        raw=np.array([1.0 + 0.0j, 2.0 + 0.0j]),
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([1.0 + 0.0j, 2.0 + 0.0j]),
+                    measurement_config=config,
+                    sampling_period=0.8,
+                )
+            ]
+        },
         measurement_config=config,
-        sampling_period=0.8,
     )
     sentinel = object()
 
     monkeypatch.setattr(
-        "qubex.measurement.models.capture_data.viz.make_waveform_figure",
+        "qubex.measurement.models.measurement_result.viz.make_waveform_figure",
         lambda **kwargs: sentinel,
     )
-    monkeypatch.setattr(
-        "qubex.measurement.models.capture_data.viz.plot_waveform",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
-    )
 
-    with pytest.warns(DeprecationWarning, match="figure\\("):
-        figure = capture.plot(return_figure=True)
-
-    assert figure is sentinel
+    assert result.figure() == [sentinel]
 
 
 def test_measurement_result_plot_return_figure_warns_deprecated(
@@ -969,8 +966,10 @@ def test_measurement_result_plot_return_figure_warns_deprecated(
     assert figures == [sentinel]
 
 
-def test_capture_data_figure_uses_time_average_scatter_by_default(monkeypatch) -> None:
-    """Given non-averaged waveform shots, capture figure should use time-average scatter by default."""
+def test_measurement_result_figure_uses_time_average_scatter_by_default(
+    monkeypatch,
+) -> None:
+    """Given non-averaged waveform shots, figure should use time-average scatter by default."""
     config = MeasurementConfig(
         n_shots=2,
         shot_interval=100.0,
@@ -978,16 +977,23 @@ def test_capture_data_figure_uses_time_average_scatter_by_default(monkeypatch) -
         time_integration=False,
         state_classification=False,
     )
-    capture = _make_capture(
-        target="Q00",
-        raw=np.array(
-            [
-                [1.0 + 0.0j, 3.0 + 0.0j, 5.0 + 0.0j],
-                [3.0 + 0.0j, 5.0 + 0.0j, 7.0 + 0.0j],
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array(
+                        [
+                            [1.0 + 0.0j, 3.0 + 0.0j, 5.0 + 0.0j],
+                            [3.0 + 0.0j, 5.0 + 0.0j, 7.0 + 0.0j],
+                        ]
+                    ),
+                    measurement_config=config,
+                    sampling_period=2.0,
+                )
             ]
-        ),
+        },
         measurement_config=config,
-        sampling_period=2.0,
     )
     called: dict[str, object] = {}
 
@@ -996,15 +1002,15 @@ def test_capture_data_figure_uses_time_average_scatter_by_default(monkeypatch) -
         return object()
 
     monkeypatch.setattr(
-        "qubex.measurement.models.capture_data.viz.make_iq_scatter_figure",
+        "qubex.measurement.models.measurement_result.viz.make_iq_scatter_figure",
         _make_iq_scatter_figure,
     )
     monkeypatch.setattr(
-        "qubex.measurement.models.capture_data.viz.make_waveform_figure",
+        "qubex.measurement.models.measurement_result.viz.make_waveform_figure",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError(kwargs)),
     )
 
-    capture.figure()
+    result.figure()
 
     plotted = called["data"]
     assert isinstance(plotted, dict)

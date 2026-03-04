@@ -10,27 +10,27 @@ import datetime
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
-from typing_extensions import deprecated
+
+from qubex.constants import DEFAULT_RAWDATA_DIR
 
 jsonpickle_numpy.register_handlers()
 
 
-DEFAULT_DATA_DIR: Final[str] = ".rawdata"
-
 T = TypeVar("T")
 
 
-@deprecated("Use `DataModel`-based save/load APIs instead.")
 @dataclass
 class MeasurementRecord(Generic[T]):
     """
-    A dataclass to store the results of a measurement.
+    Legacy dataclass to store measurement results for compatibility.
 
-    Deprecated: use `MeasurementResult` serialization on `DataModel` directly.
+    Prefer `MeasurementResult` serialization on `DataModel` directly. This
+    compatibility record remains available while persistence workflows migrate to
+    `save_json` / `save_netcdf`-based models.
 
     Attributes
     ----------
@@ -59,7 +59,7 @@ class MeasurementRecord(Generic[T]):
             Path to the directory where the record will be saved.
         """
         if data_dir is None:
-            data_dir = DEFAULT_DATA_DIR
+            data_dir = DEFAULT_RAWDATA_DIR
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
 
@@ -128,7 +128,7 @@ class MeasurementRecord(Generic[T]):
             If the specified file does not exist.
         """
         if data_dir is None:
-            data_dir = DEFAULT_DATA_DIR
+            data_dir = DEFAULT_RAWDATA_DIR
         if not name.endswith(".json"):
             name = name + ".json"
         path = os.path.join(data_dir, name)

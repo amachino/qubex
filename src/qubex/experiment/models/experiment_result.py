@@ -34,14 +34,14 @@ def _build_normalized_error_y(param: RabiParam) -> dict[str, Any] | None:
 @dataclass
 class TargetData:
     """
-    Data class representing some data of a target.
+    Data class representing the measurement data for a specific target in an experiment.
 
     Attributes
     ----------
     target : str
-        Target of the experiment.
+        Target of the experiment (e.g., qubit label).
     data : NDArray
-        Measured data.
+        Measured data associated with the target.
     """
 
     target: str
@@ -62,16 +62,12 @@ T = TypeVar("T", bound=TargetData)
 @dataclass
 class ExperimentResult(Generic[T]):
     """
-    Data class representing the result of an experiment.
+    Data class representing the result of an experiment, containing data for multiple targets.
 
     Attributes
     ----------
     data: TargetMap[TargetData]
-        Result of the experiment.
-    rabi_params: TargetMap[RabiParam]
-        Parameters of the Rabi oscillation.
-    created_at: str
-        Time when the experiment is conducted.
+        Mapping from target labels to their corresponding data.
     """
 
     data: TargetMap[T]

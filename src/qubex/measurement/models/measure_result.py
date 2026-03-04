@@ -1,8 +1,8 @@
 """
 Legacy measurement result models and helpers.
 
-Deprecated: use `MeasurementResult` and `CaptureData` in
-`qubex.measurement.models.measurement_result`.
+These compatibility models remain available for existing APIs while the codebase
+continues migrating to `MeasurementResult`-based workflows.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from typing_extensions import deprecated
 
 import qubex.visualization as viz
 from qubex.backend.quel1 import SAMPLING_PERIOD
@@ -63,13 +62,13 @@ class MeasureMode(Enum):
             raise ValueError(f"Invalid mode: {self}")
 
 
-@deprecated("Use `CaptureData` in `measurement_result.py` instead.")
 @dataclass(frozen=True)
 class MeasureData:
     """
-    Per-target measurement data and classifier metadata.
+    Per-target measurement data and classifier metadata for legacy APIs.
 
-    Deprecated: use `CaptureData`.
+    This compatibility model will be migrated to `MeasurementResult`-based
+    workflows in a future release.
     """
 
     target: str
@@ -410,13 +409,13 @@ class MeasureData:
         return None
 
 
-@deprecated("Use `MeasurementResult` in `measurement_result.py` instead.")
 @dataclass(frozen=True)
 class MeasureResult:
     """
     Aggregate measurement result for multiple targets.
 
-    Deprecated: use `MeasurementResult`.
+    This compatibility model will be migrated to `MeasurementResult`-based
+    workflows in a future release.
     """
 
     mode: MeasureMode
@@ -1037,13 +1036,13 @@ class MeasureResult:
         return path
 
 
-@deprecated("Use `MeasurementResult` in `measurement_result.py` instead.")
 @dataclass(frozen=True)
 class MultipleMeasureResult:
     """
     Aggregate measurement results across repeated measurements.
 
-    Deprecated: use `MeasurementResult` with multi-capture `data`.
+    This compatibility model will be migrated to `MeasurementResult`-based
+    workflows in a future release.
     """
 
     mode: MeasureMode

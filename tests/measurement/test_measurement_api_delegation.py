@@ -39,15 +39,6 @@ from qubex.measurement.services.measurement_execution_service import (
 from qubex.system import PortType
 from qubex.typing import MeasurementMode, TargetMap
 
-pytestmark = [
-    pytest.mark.filterwarnings(
-        "ignore:Use `CaptureData` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-    pytest.mark.filterwarnings(
-        "ignore:Use `MeasurementResult` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-]
-
 
 def _make_config(
     *,

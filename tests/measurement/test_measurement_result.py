@@ -2,19 +2,30 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
-import pytest
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
 
-pytestmark = [
-    pytest.mark.filterwarnings(
-        "ignore:Use `CaptureData` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-    pytest.mark.filterwarnings(
-        "ignore:Use `MeasurementResult` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-]
+
+def test_legacy_measure_models_do_not_warn_on_init(dummy_classifier) -> None:
+    """MeasureData and MeasureResult instantiation should not emit deprecation warnings."""
+    raw = dummy_classifier.dataset[0][:5, None]
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always", DeprecationWarning)
+        data = MeasureData(
+            target="Q00",
+            mode=MeasureMode.SINGLE,
+            raw=raw,
+            classifier=dummy_classifier,
+        )
+        MeasureResult(mode=MeasureMode.SINGLE, data={"Q00": data}, config={})
+
+    assert not any(
+        issubclass(warning.category, DeprecationWarning) for warning in captured
+    )
 
 
 def test_measure_data_counts_and_probabilities(dummy_classifier):

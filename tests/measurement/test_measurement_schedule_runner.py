@@ -30,15 +30,6 @@ from qubex.measurement.models.measure_result import (
 )
 from qubex.typing import MeasurementMode
 
-pytestmark = [
-    pytest.mark.filterwarnings(
-        "ignore:Use `CaptureData` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-    pytest.mark.filterwarnings(
-        "ignore:Use `MeasurementResult` in `measurement_result.py` instead\\.:DeprecationWarning"
-    ),
-]
-
 
 def _make_config(
     *,
