@@ -149,17 +149,17 @@ def test_target_registry_measurement_output_label_prefers_qubit() -> None:
     assert registry.measurement_output_label("M0") == "M0"
 
 
-def test_target_registry_get_returns_target_metadata() -> None:
-    """Given registered labels, when fetching metadata, then resolved kind and qubit are returned."""
+def test_target_registry_get_target_variants_return_registered_targets() -> None:
+    """Given registered labels, when fetching target variants, then matching targets are returned."""
     registry = _build_registry()
 
-    ge = registry.get("Q00")
-    read = registry.get("RQ00")
+    ge = registry.get_gen_target("Q00")
+    read_out = registry.get_gen_target("RQ00")
+    read_in = registry.get_cap_target("RQ00")
 
-    assert ge.kind == "gen"
-    assert ge.qubit_label == "Q00"
-    assert read.kind == "gen"
-    assert read.qubit_label == "Q00"
+    assert ge.label == "Q00"
+    assert read_out.label == "RQ00"
+    assert read_in.label == "RQ00"
 
 
 def test_target_registry_raises_for_unknown_labels() -> None:
@@ -173,8 +173,10 @@ def test_target_registry_raises_for_unknown_labels() -> None:
         registry.resolve_qubit_label("BAD")
     with pytest.raises(ValueError, match="Readout target is not registered"):
         no_read_registry.resolve_read_label("Q10")
-    with pytest.raises(KeyError, match="Target `BAD` is not registered"):
-        registry.get("BAD")
+    with pytest.raises(KeyError, match="Generator target `BAD` is not registered"):
+        registry.get_gen_target("BAD")
+    with pytest.raises(KeyError, match="Capture target `BAD` is not registered"):
+        registry.get_cap_target("BAD")
 
 
 def test_target_registry_rejects_non_target_entries() -> None:
@@ -191,3 +193,43 @@ def test_target_registry_rejects_non_target_entries() -> None:
     invalid_entries = cast(dict[str, Target], {"GEN": ge, "RAW": object()})
     with pytest.raises(TypeError, match="gen_targets entries must be Target"):
         TargetRegistry(gen_targets=invalid_entries)
+
+
+def test_target_registry_register_adds_generator_and_capture_targets() -> None:
+    """Given empty registry, when registering targets, then metadata resolution succeeds."""
+    registry = TargetRegistry()
+    qubit = _make_qubit("Q00")
+    resonator = _make_resonator("RQ00", "Q00")
+    gen_channel = _make_gen_channel()
+    cap_channel = _make_cap_channel()
+    ge_target = Target.new_ge_target(qubit=qubit, channel=gen_channel)
+    cap_target = CapTarget.new_read_target(resonator=resonator, channel=cap_channel)
+
+    registry.register(ge_target)
+    registry.register(cap_target)
+
+    assert registry.resolve_ge_label("Q00") == "Q00"
+    assert registry.resolve_read_label("Q00") == "RQ00"
+    assert registry.get_cap_target("RQ00").label == "RQ00"
+
+
+def test_target_registry_register_overwrites_existing_label() -> None:
+    """Given duplicate label, when registering again, then latest target is stored."""
+    qubit = _make_qubit("Q00")
+    old_channel = _make_gen_channel(sideband="U")
+    new_channel = _make_gen_channel(sideband="L")
+    old_target = Target.new_ge_target(qubit=qubit, channel=old_channel)
+    new_target = Target.new_target(
+        label=old_target.label,
+        frequency=5.123,
+        object=qubit,
+        channel=new_channel,
+        type=TargetType.CTRL_GE,
+    )
+    registry = TargetRegistry(gen_targets={old_target.label: old_target})
+
+    registry.register(new_target)
+
+    updated = registry.get_gen_target("Q00")
+    assert updated.frequency == 5.123
+    assert updated.channel.port.sideband == "L"

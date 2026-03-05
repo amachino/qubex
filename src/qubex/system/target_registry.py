@@ -3,19 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
-from typing import Literal
 
 from .target import CapTarget, Target
-
-
-@dataclass(frozen=True)
-class TargetResolution:
-    """Resolved target properties used by higher-level mapping logic."""
-
-    label: str
-    kind: Literal["gen", "cap"]
-    qubit_label: str | None
 
 
 class TargetRegistry:
@@ -29,6 +18,16 @@ class TargetRegistry:
     ) -> None:
         self._gen_target_dict = self._to_gen_target_map(gen_targets)
         self._cap_target_dict = self._to_cap_target_map(cap_targets)
+        self._build_indexes()
+
+    def register(self, target: Target | CapTarget) -> None:
+        """Register one target and rebuild label-resolution indexes."""
+        if isinstance(target, Target):
+            self._gen_target_dict[target.label] = target
+        elif isinstance(target, CapTarget):
+            self._cap_target_dict[target.label] = target
+        else:
+            raise TypeError("target must be a Target or CapTarget instance.")
         self._build_indexes()
 
     @staticmethod
@@ -131,6 +130,20 @@ class TargetRegistry:
     def cap_targets(self) -> dict[str, CapTarget]:
         """Return capture targets keyed by label."""
         return dict(self._cap_target_dict)
+
+    def get_gen_target(self, label: str) -> Target:
+        """Return one generator target by label."""
+        try:
+            return self._gen_target_dict[label]
+        except KeyError:
+            raise KeyError(f"Generator target `{label}` is not registered.") from None
+
+    def get_cap_target(self, label: str) -> CapTarget:
+        """Return one capture target by label."""
+        try:
+            return self._cap_target_dict[label]
+        except KeyError:
+            raise KeyError(f"Capture target `{label}` is not registered.") from None
 
     def resolve_qubit_label(
         self,
@@ -246,13 +259,3 @@ class TargetRegistry:
             return self.resolve_qubit_label(target_label)
         except ValueError:
             return target_label
-
-    def get(self, label: str) -> TargetResolution:
-        """Return resolved metadata for one registered target label."""
-        if label in self._gen_target_dict:
-            qubit_label = self._target_to_qubit.get(label)
-            return TargetResolution(label=label, kind="gen", qubit_label=qubit_label)
-        if label in self._cap_target_dict:
-            qubit_label = self._target_to_qubit.get(label)
-            return TargetResolution(label=label, kind="cap", qubit_label=qubit_label)
-        raise KeyError(f"Target `{label}` is not registered.")

@@ -8,7 +8,7 @@ from collections.abc import Collection, Sequence
 from typing import Final, Literal
 
 import numpy as np
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, deprecated
 
 from qubex.backend.quel1.quel1_backend_constants import (
     AWG_MAX,
@@ -36,13 +36,15 @@ from qubex.typing import ConfigurationMode
 
 from .control_system import (
     Box,
+    BoxType,
     CapPort,
     ControlSystem,
+    GenChannel,
     GenPort,
     PortType,
 )
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .target import CapTarget, Target
+from .target import CapTarget, Target, TargetType
 from .target_registry import TargetRegistry
 
 logger = logging.getLogger(__name__)
@@ -204,8 +206,15 @@ class ExperimentSystem:
         self._wiring_info: Final = wiring_info
         self._control_params: Final = control_params
         self._targets_to_exclude: Final = targets_to_exclude or []
+        self._configuration_mode: ConfigurationMode = configuration_mode
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
-        self._target_registry = self._build_target_registry(mode=configuration_mode)
+        boxes_to_configure = [box for box in self.boxes if box.type != BoxType.QUEL3]
+        if boxes_to_configure:
+            self._configure_ports(
+                mode=self._configuration_mode,
+                boxes=boxes_to_configure,
+            )
+        self._target_registry = self._build_target_registry()
 
     @property
     def hash(self) -> int:
@@ -316,16 +325,7 @@ class ExperimentSystem:
 
     def add_target(self, target: Target | CapTarget) -> None:
         """Add a target to the system mapping."""
-        gen_targets = self.gen_targets
-        cap_targets = self.cap_targets
-        if isinstance(target, Target):
-            gen_targets[target.label] = target
-        elif isinstance(target, CapTarget):
-            cap_targets[target.label] = target
-        self._target_registry = TargetRegistry(
-            gen_targets=gen_targets,
-            cap_targets=cap_targets,
-        )
+        self._target_registry.register(target)
 
     def get_mux(self, label: int | str) -> Mux:
         """Return a mux by label or index."""
@@ -384,9 +384,8 @@ class ExperimentSystem:
 
     def get_target(self, label: str) -> Target:
         """Return a generator target by label."""
-        gen_targets = self.gen_targets
         try:
-            return gen_targets[label]
+            return self.target_registry.get_gen_target(label)
         except KeyError:
             raise KeyError(f"Target `{label}` not found.") from None
 
@@ -420,9 +419,8 @@ class ExperimentSystem:
 
     def get_cap_target(self, label: str) -> CapTarget:
         """Return a capture target by label."""
-        cap_targets = self.cap_targets
         try:
-            return cap_targets[label]
+            return self.target_registry.get_cap_target(label)
         except KeyError:
             raise KeyError(f"CapTarget `{label}` not found.") from None
 
@@ -601,24 +599,30 @@ class ExperimentSystem:
             for qubit in ctrl_port_map
         }
 
+    @deprecated(
+        "Use `SystemManager.load(..., configuration_mode=...)` to rebuild configuration."
+    )
     def configure(
         self,
         mode: ConfigurationMode = "ge-cr-cr",
     ) -> None:
-        """Configure target mappings for the specified mode."""
+        """Configure port/channel parameters and rebuild target mappings."""
+        self._configuration_mode = mode
+        self._configure_ports(mode=mode)
         self._target_registry = self._build_target_registry(mode=mode)
 
-    def _build_target_registry(
+    def _configure_ports(
         self,
-        mode: ConfigurationMode = "ge-cr-cr",
-    ) -> TargetRegistry:
-        """Build target registry and update port/channel parameters for the mode."""
+        mode: ConfigurationMode | None = None,
+        boxes: Sequence[Box] | None = None,
+    ) -> None:
+        """Apply per-port hardware model parameters for the specified mode."""
+        if mode is None:
+            mode = self._configuration_mode
+        else:
+            self._configuration_mode = mode
         params = self.control_params
-
-        gen_targets: dict[str, Target] = {}
-        cap_targets: dict[str, CapTarget] = {}
-
-        for box in self.boxes:
+        for box in self.boxes if boxes is None else boxes:
             for port in box.ports:
                 if isinstance(port, GenPort):
                     port.rfswitch = "pass"
@@ -627,7 +631,6 @@ class ExperimentSystem:
                             box=box,
                             port=port,
                             params=params,
-                            gen_targets=gen_targets,
                         )
                     elif port.type == PortType.CTRL:
                         self._configure_control_port(
@@ -635,13 +638,11 @@ class ExperimentSystem:
                             port=port,
                             params=params,
                             mode=mode,
-                            gen_targets=gen_targets,
                         )
                     elif port.type == PortType.PUMP:
                         self._configure_pump_port(
                             port=port,
                             params=params,
-                            gen_targets=gen_targets,
                         )
                 elif isinstance(port, CapPort):
                     port.rfswitch = "open"
@@ -650,6 +651,44 @@ class ExperimentSystem:
                             box=box,
                             port=port,
                             params=params,
+                        )
+
+    def _build_target_registry(
+        self,
+        mode: ConfigurationMode | None = None,
+    ) -> TargetRegistry:
+        """Build target registry from the current control/quantum model state."""
+        if mode is None:
+            mode = self._configuration_mode
+        params = self.control_params
+        gen_targets: dict[str, Target] = {}
+        cap_targets: dict[str, CapTarget] = {}
+
+        for box in self.boxes:
+            for port in box.ports:
+                if isinstance(port, GenPort):
+                    if port.type == PortType.READ_OUT:
+                        self._build_readout_targets(
+                            port=port,
+                            gen_targets=gen_targets,
+                        )
+                    elif port.type == PortType.CTRL:
+                        self._build_control_targets(
+                            box=box,
+                            port=port,
+                            mode=mode,
+                            gen_targets=gen_targets,
+                        )
+                    elif port.type == PortType.PUMP:
+                        self._build_pump_targets(
+                            port=port,
+                            params=params,
+                            gen_targets=gen_targets,
+                        )
+                elif isinstance(port, CapPort):
+                    if port.type == PortType.READ_IN:
+                        self._build_capture_targets(
+                            port=port,
                             cap_targets=cap_targets,
                         )
 
@@ -664,7 +703,6 @@ class ExperimentSystem:
         port: GenPort,
         params: ControlParams,
         mode: ConfigurationMode,
-        gen_targets: dict[str, Target],
     ) -> None:
         qubit = self.get_qubit_by_control_port(port)
         if qubit is None or not qubit.is_valid:
@@ -690,89 +728,10 @@ class ExperimentSystem:
         for idx, gen_channel in enumerate(port.channels):
             gen_channel.fnco_freq = config["channels"][idx]["fnco"]
 
-        if port.n_channels == 1:
-            # ge only
-            ge_target = Target.new_ge_target(
-                qubit=qubit,
-                channel=port.channels[0],
-            )
-            gen_targets[ge_target.label] = ge_target
-        elif port.n_channels == 2:
-            # ge
-            ge_target = Target.new_ge_target(
-                qubit=qubit,
-                channel=port.channels[0],
-            )
-            gen_targets[ge_target.label] = ge_target
-            # cr
-            cr_target = Target.new_cr_target(
-                control_qubit=qubit,
-                channel=port.channels[1],
-            )
-            gen_targets[cr_target.label] = cr_target
-            for spectator in self.get_spectator_qubits(qubit.label):
-                cr_target = Target.new_cr_target(
-                    control_qubit=qubit,
-                    target_qubit=spectator,
-                    channel=port.channels[1],
-                )
-                gen_targets[cr_target.label] = cr_target
-        elif port.n_channels == 3:
-            if mode == "ge-ef-cr":
-                # ge
-                ge_target = Target.new_ge_target(
-                    qubit=qubit,
-                    channel=port.channels[0],
-                )
-                gen_targets[ge_target.label] = ge_target
-                # ef
-                ef_target = Target.new_ef_target(
-                    qubit=qubit,
-                    channel=port.channels[1],
-                )
-                gen_targets[ef_target.label] = ef_target
-                # cr
-                cr_target = Target.new_cr_target(
-                    control_qubit=qubit,
-                    channel=port.channels[2],
-                )
-                gen_targets[cr_target.label] = cr_target
-                for spectator in self.get_spectator_qubits(qubit.label):
-                    cr_target = Target.new_cr_target(
-                        control_qubit=qubit,
-                        target_qubit=spectator,
-                        channel=port.channels[2],
-                    )
-                    gen_targets[cr_target.label] = cr_target
-            elif mode == "ge-cr-cr":
-                for i, ch in config["channels"].items():
-                    for label in ch["targets"]:
-                        if match := re.match(r"^(Q\d+)$", label):
-                            qubit_label = match.group(1)
-                            qubit = self.get_qubit(qubit_label)
-                            target = Target.new_ge_target(
-                                qubit=qubit,
-                                channel=port.channels[i],
-                            )
-                        elif match := re.match(r"^(Q\d+)-(Q\d+)$", label):
-                            control_label = match.group(1)
-                            target_label = match.group(2)
-                            control_qubit = self.get_qubit(control_label)
-                            target_qubit = self.get_qubit(target_label)
-                            target = Target.new_cr_target(
-                                control_qubit=control_qubit,
-                                target_qubit=target_qubit,
-                                channel=port.channels[i],
-                            )
-                        else:
-                            raise ValueError(f"Invalid target label `{label}`.")
-                        gen_targets[target.label] = target
-
     def _configure_pump_port(
         self,
         port: GenPort,
         params: ControlParams,
-        gen_targets: dict[str, Target],
     ) -> None:
         mux = self.get_mux_by_pump_port(port)
         if mux is None:
@@ -798,19 +757,11 @@ class ExperimentSystem:
         port.fullscale_current = params.get_pump_fsc(mux.index)
         port.channels[0].fnco_freq = fnco
 
-        pump_target = Target.new_pump_target(
-            mux=mux,
-            frequency=frequency,
-            channel=port.channels[0],
-        )
-        gen_targets[pump_target.label] = pump_target
-
     def _configure_readout_port(
         self,
         box: Box,
         port: GenPort,
         params: ControlParams,
-        gen_targets: dict[str, Target],
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
         if mux is None:
@@ -837,24 +788,11 @@ class ExperimentSystem:
         port.fullscale_current = params.get_readout_fsc(mux.index)
         port.channels[0].fnco_freq = config["fnco"]
 
-        for resonator in mux.resonators:
-            if not resonator.is_valid:
-                logger.debug(
-                    f"Resonator `{resonator.label}` not valid. Skipping configuration.",
-                )
-                continue
-            read_out_target = Target.new_read_target(
-                resonator=resonator,
-                channel=port.channels[0],
-            )
-            gen_targets[read_out_target.label] = read_out_target
-
     def _configure_capture_port(
         self,
         box: Box,
         port: CapPort,
         params: ControlParams,
-        cap_targets: dict[str, CapTarget],
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
         if mux is None:
@@ -881,11 +819,223 @@ class ExperimentSystem:
             cap_channel.fnco_freq = config["fnco"]
             cap_channel.ndelay = params.get_capture_delay(mux.index)
 
+    def _build_control_targets(
+        self,
+        box: Box,
+        port: GenPort,
+        mode: ConfigurationMode,
+        gen_targets: dict[str, Target],
+    ) -> None:
+        """Build generator targets for one control port."""
+        qubit = self.get_qubit_by_control_port(port)
+        if qubit is None or not qubit.is_valid:
+            return
+
+        if port.n_channels == 1:
+            ge_target = Target.new_ge_target(
+                qubit=qubit,
+                channel=port.channels[0],
+            )
+            gen_targets[ge_target.label] = ge_target
+            return
+
+        if port.n_channels == 2:
+            ge_target = Target.new_ge_target(
+                qubit=qubit,
+                channel=port.channels[0],
+            )
+            gen_targets[ge_target.label] = ge_target
+            traits = box.traits
+            config = self._create_control_configuration(
+                mode=mode,
+                qubit=qubit,
+                n_channels=port.n_channels,
+                ssb=traits.ctrl_ssb,
+                min_frequency=traits.ctrl_min_frequency_hz,
+            )
+            cr_target = self._new_default_cr_target(
+                control_qubit=qubit,
+                channel=port.channels[1],
+                lo=config["lo"],
+                cnco=config["cnco"],
+                fnco=config["channels"][1]["fnco"],
+                ssb=traits.ctrl_ssb,
+            )
+            gen_targets[cr_target.label] = cr_target
+            for spectator in self.get_spectator_qubits(qubit.label):
+                cr_target = Target.new_cr_target(
+                    control_qubit=qubit,
+                    target_qubit=spectator,
+                    channel=port.channels[1],
+                )
+                gen_targets[cr_target.label] = cr_target
+            return
+
+        if port.n_channels != 3:
+            return
+
+        if mode == "ge-ef-cr":
+            ge_target = Target.new_ge_target(
+                qubit=qubit,
+                channel=port.channels[0],
+            )
+            ef_target = Target.new_ef_target(
+                qubit=qubit,
+                channel=port.channels[1],
+            )
+            traits = box.traits
+            config = self._create_control_configuration(
+                mode=mode,
+                qubit=qubit,
+                n_channels=port.n_channels,
+                ssb=traits.ctrl_ssb,
+                min_frequency=traits.ctrl_min_frequency_hz,
+            )
+            cr_target = self._new_default_cr_target(
+                control_qubit=qubit,
+                channel=port.channels[2],
+                lo=config["lo"],
+                cnco=config["cnco"],
+                fnco=config["channels"][2]["fnco"],
+                ssb=traits.ctrl_ssb,
+            )
+            gen_targets[ge_target.label] = ge_target
+            gen_targets[ef_target.label] = ef_target
+            gen_targets[cr_target.label] = cr_target
+            for spectator in self.get_spectator_qubits(qubit.label):
+                cr_target = Target.new_cr_target(
+                    control_qubit=qubit,
+                    target_qubit=spectator,
+                    channel=port.channels[2],
+                )
+                gen_targets[cr_target.label] = cr_target
+            return
+
+        if mode != "ge-cr-cr":
+            return
+
+        traits = box.traits
+        config = self._create_control_configuration(
+            mode=mode,
+            qubit=qubit,
+            n_channels=port.n_channels,
+            ssb=traits.ctrl_ssb,
+            min_frequency=traits.ctrl_min_frequency_hz,
+        )
+        for channel_idx, channel_config in config["channels"].items():
+            for target_label in channel_config["targets"]:
+                if match := re.match(r"^(Q\d+)$", target_label):
+                    ge_qubit = self.get_qubit(match.group(1))
+                    target = Target.new_ge_target(
+                        qubit=ge_qubit,
+                        channel=port.channels[channel_idx],
+                    )
+                elif match := re.match(r"^(Q\d+)-(Q\d+)$", target_label):
+                    control_qubit = self.get_qubit(match.group(1))
+                    target_qubit = self.get_qubit(match.group(2))
+                    target = Target.new_cr_target(
+                        control_qubit=control_qubit,
+                        target_qubit=target_qubit,
+                        channel=port.channels[channel_idx],
+                    )
+                else:
+                    raise ValueError(f"Invalid target label `{target_label}`.")
+                gen_targets[target.label] = target
+
+    def _new_default_cr_target(
+        self,
+        *,
+        control_qubit: Qubit,
+        channel: GenChannel,
+        lo: int | None,
+        cnco: int,
+        fnco: int,
+        ssb: Literal["U", "L"] | None,
+    ) -> Target:
+        """Create default CR target without requiring configured channel frequencies."""
+        frequency_hz = self._resolve_mixed_frequency_hz(
+            lo=lo,
+            cnco=cnco,
+            fnco=fnco,
+            ssb=ssb,
+        )
+        return Target.new_target(
+            label=Target.cr_label(control_qubit.label),
+            frequency=round(frequency_hz * 1e-9, 6),
+            object=control_qubit,
+            channel=channel,
+            type=TargetType.CTRL_CR,
+        )
+
+    @staticmethod
+    def _resolve_mixed_frequency_hz(
+        *,
+        lo: int | None,
+        cnco: int,
+        fnco: int,
+        ssb: Literal["U", "L"] | None,
+    ) -> float:
+        """Resolve output frequency from LO/CNCO/FNCO and sideband."""
+        nco = cnco + fnco
+        if lo is None and ssb is None:
+            return float(nco)
+        if lo is None:
+            raise ValueError("LO frequency is required when sideband is set.")
+        if ssb is None:
+            raise ValueError("Sideband is required when LO frequency is set.")
+        if ssb == "U":
+            return float(lo + nco)
+        if ssb == "L":
+            return float(lo - nco)
+        raise ValueError(f"Invalid sideband: {ssb}")
+
+    def _build_pump_targets(
+        self,
+        port: GenPort,
+        params: ControlParams,
+        gen_targets: dict[str, Target],
+    ) -> None:
+        """Build generator targets for one pump port."""
+        mux = self.get_mux_by_pump_port(port)
+        if mux is None:
+            return
+        frequency = params.get_pump_frequency(mux.index)
+        pump_target = Target.new_pump_target(
+            mux=mux,
+            frequency=frequency,
+            channel=port.channels[0],
+        )
+        gen_targets[pump_target.label] = pump_target
+
+    def _build_readout_targets(
+        self,
+        port: GenPort,
+        gen_targets: dict[str, Target],
+    ) -> None:
+        """Build generator readout targets for one readout port."""
+        mux = self.get_mux_by_readout_port(port)
+        if mux is None or mux.is_not_available:
+            return
+        for resonator in mux.resonators:
+            if not resonator.is_valid:
+                continue
+            read_out_target = Target.new_read_target(
+                resonator=resonator,
+                channel=port.channels[0],
+            )
+            gen_targets[read_out_target.label] = read_out_target
+
+    def _build_capture_targets(
+        self,
+        port: CapPort,
+        cap_targets: dict[str, CapTarget],
+    ) -> None:
+        """Build capture targets for one read-in port."""
+        mux = self.get_mux_by_readout_port(port)
+        if mux is None or mux.is_not_available:
+            return
         for idx, resonator in enumerate(mux.resonators):
             if not resonator.is_valid:
-                logger.debug(
-                    f"Resonator `{resonator.label}` not valid. Skipping configuration.",
-                )
                 continue
             read_in_target = CapTarget.new_read_target(
                 resonator=resonator,

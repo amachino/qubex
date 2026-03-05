@@ -487,6 +487,85 @@ def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
     assert read_in_port.lo_freq is None
 
 
+def test_build_target_registry_does_not_mutate_port_state(tmp_path: Path) -> None:
+    """Given configured system, when rebuilding target registry, then port state remains unchanged."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    read_out_port = experiment_system.control_system.get_gen_port("BOX1", 1)
+    read_in_port = experiment_system.control_system.get_cap_port("BOX1", 0)
+
+    read_out_snapshot = (
+        read_out_port.lo_freq,
+        read_out_port.cnco_freq,
+        read_out_port.sideband,
+        read_out_port.channels[0].fnco_freq,
+        read_out_port.rfswitch,
+    )
+    read_in_snapshot = (
+        read_in_port.lo_freq,
+        read_in_port.cnco_freq,
+        tuple(channel.fnco_freq for channel in read_in_port.channels),
+        read_in_port.rfswitch,
+    )
+
+    _ = experiment_system._build_target_registry(mode="ge-cr-cr")  # noqa: SLF001
+
+    assert (
+        read_out_port.lo_freq,
+        read_out_port.cnco_freq,
+        read_out_port.sideband,
+        read_out_port.channels[0].fnco_freq,
+        read_out_port.rfswitch,
+    ) == read_out_snapshot
+    assert (
+        read_in_port.lo_freq,
+        read_in_port.cnco_freq,
+        tuple(channel.fnco_freq for channel in read_in_port.channels),
+        read_in_port.rfswitch,
+    ) == read_in_snapshot
+
+
+def test_configure_updates_port_state_before_target_registry_rebuild(
+    tmp_path: Path,
+) -> None:
+    """Given modified ports, when configuring, then port state is recomputed and applied."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    read_out_port = experiment_system.control_system.get_gen_port("BOX1", 1)
+    read_in_port = experiment_system.control_system.get_cap_port("BOX1", 0)
+
+    read_out_port.lo_freq = None
+    read_out_port.cnco_freq = None
+    read_out_port.channels[0].fnco_freq = None
+    read_in_port.lo_freq = None
+    read_in_port.cnco_freq = None
+    for channel in read_in_port.channels:
+        channel.fnco_freq = None
+
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"Use `SystemManager\.load\(\.\.\., configuration_mode=\.\.\.\)` to rebuild configuration\.",
+    ):
+        experiment_system.configure(mode="ge-cr-cr")
+
+    assert read_out_port.lo_freq is not None
+    assert read_out_port.cnco_freq is not None
+    assert read_out_port.channels[0].fnco_freq is not None
+    assert read_in_port.lo_freq is not None
+    assert read_in_port.cnco_freq is not None
+    assert all(channel.fnco_freq is not None for channel in read_in_port.channels)
+
+
 def test_load_raises_for_system_chip_id_mismatch(tmp_path: Path) -> None:
     """Given mismatched system chip id, when loading, then ConfigLoader raises ValueError."""
     chip_id = "TESTCHIP"

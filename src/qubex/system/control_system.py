@@ -490,6 +490,7 @@ def _initialize_ports(
 ) -> tuple[GenPort | CapPort, ...]:
     """Initialize ports for a box based on mapping rules."""
     ports: list[GenPort | CapPort] = []
+    traits = _BOX_TRAITS_BY_TYPE.get(box_type, _DEFAULT_BOX_TRAITS)
     port_index = {
         PortType.NOT_AVAILABLE: 0,
         PortType.READ_IN: 0,
@@ -550,7 +551,7 @@ def _initialize_ports(
                 box_id=box_id,
                 number=port_num,
                 type=port_type,
-                sideband="U",
+                sideband=traits.readout_ssb,
             )
             port.channels = tuple(
                 GenChannel(

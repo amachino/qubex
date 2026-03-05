@@ -658,6 +658,50 @@ def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
     assert backend_controller.get_box_config_cache() == backend_settings
 
 
+def test_push_does_not_reconfigure_ports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given user-modified system model, when pushing, then push does not reconfigure ports."""
+    manager = SystemManager.shared()
+    backend_controller = FakeBackendController({})
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    monkeypatch.setattr(manager, "_backend_settings", {})
+
+    box = SimpleNamespace(id="A", name="Alpha")
+
+    class _ExperimentSystem:
+        def get_box(self, box_id: str) -> object:
+            if box_id != "A":
+                raise KeyError(box_id)
+            return box
+
+        def configure_ports(self) -> None:
+            raise AssertionError("push must not call configure_ports")
+
+        @property
+        def hash(self) -> int:
+            return 0
+
+    monkeypatch.setattr(manager, "_experiment_system", _ExperimentSystem())
+
+    called_sync_hardware = False
+
+    def _sync_hardware(**_: object) -> None:
+        nonlocal called_sync_hardware
+        called_sync_hardware = True
+
+    monkeypatch.setattr(manager, "_sync_experiment_system_to_hardware", _sync_hardware)
+    monkeypatch.setattr(
+        manager,
+        "_fetch_backend_settings_from_hardware",
+        lambda **_: {"A": {"ports": {}}},
+    )
+
+    manager.push(["A"], confirm=False)
+
+    assert called_sync_hardware is True
+
+
 def test_create_backend_controller_supports_quel3() -> None:
     """Given Quel3 kind, when creating backend controller, then Quel3 controller is returned."""
     controller = SystemManager._create_backend_controller("quel3")  # noqa: SLF001
