@@ -26,6 +26,9 @@ Related policy:
 - Target-to-instrument resolution is performed by runtime-side logic.
 - QuEL-3 system synchronizer is currently a no-op:
   - no backend-settings snapshot pull path is implemented yet
+- Planned change:
+  - QuEL-3 `push()` path deploys instruments from `TargetRegistry` through a
+    dedicated configuration manager (`Quel3ConfigurationManager`)
 - `quelware-client` exposes `PORT`/`INSTRUMENT` resources and currently
   represents readout paths as transceiver-style resources in examples
   (`...:p0p1trx`).
@@ -192,6 +195,20 @@ Status legend:
   - When requested range exceeds supported range, fail fast with a clear error
     and suggested valid range.
   - Capability and behavior differences must be visible in docs and tests.
+
+### D13. QuEL-3 `push()` semantics and manager ownership
+
+- Status: `DECIDED`
+- Question: Where should QuEL-3 instrument deployment be implemented?
+- Decision:
+  - Treat instrument deployment as configuration-stage behavior triggered by
+    `SystemManager.push(...)`.
+  - Keep execution manager focused on run-time sequencing and result retrieval.
+  - Add `Quel3ConfigurationManager` for:
+    - `TargetRegistry -> deploy definition` conversion
+    - `session.deploy_instruments(...)` calls
+    - deployed instrument info caching for execution lookup
+  - Keep QuEL-3 backend-settings pull/snapshot capability unsupported.
 
 ## Proposed minimum beta contract
 

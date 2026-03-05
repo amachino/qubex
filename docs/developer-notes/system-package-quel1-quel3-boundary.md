@@ -36,6 +36,7 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 
 1. Introduce explicit capability labels in docs and API behavior:
    - `backend_settings_pull`: supported on QuEL-1, unsupported on QuEL-3 (current)
+   - `hardware_push_configure`: supported on QuEL-1 and QuEL-3
 2. Gate QuEL-1-only utility paths with clear unsupported errors on QuEL-3.
 3. Keep `ExperimentSystem` logical readout split (`read_out`, `read_in`) as common
    vocabulary, but allow QuEL-3 runtime convergence to one `trx` alias/resource.
@@ -44,6 +45,9 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 5. Refactor `CharacterizationService` frequency-sweep path to use backend
    capabilities/strategy; do not hard-require QuEL-1-only LO/CNCO cache APIs on
    QuEL-3.
+6. Implement QuEL-3 `push()` deploy flow via backend-specific configuration
+   manager (`Quel3ConfigurationManager`) while keeping backend-settings pull
+   unsupported.
 
 ## Post-beta refactor candidates
 
