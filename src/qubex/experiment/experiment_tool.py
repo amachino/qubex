@@ -751,7 +751,7 @@ def print_box_info(box_id: str, fetch: bool | None = None) -> None:
                 continue
             if isinstance(port, CapPort):
                 ssb = ""
-                lo = f"{port.lo_freq:_}"
+                lo = f"{port.lo_freq:_}" if port.lo_freq is not None else ""
                 cnco = f"{port.cnco_freq:_}"
                 vatt = ""
                 fsc = ""

@@ -452,6 +452,41 @@ def test_load_uses_wiring_yaml_for_quel3_backend(tmp_path: Path) -> None:
     assert loader.wiring_file == "wiring.yaml"
 
 
+def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
+    """Given quel3 backend, when loading, then readout ports are configured without LO."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    control_system = experiment_system.control_system
+    read_out_port = control_system.get_gen_port("BOX1", 1)
+    read_in_port = control_system.get_cap_port("BOX1", 0)
+
+    assert read_out_port.sideband is None
+    assert read_out_port.lo_freq is None
+    assert read_in_port.lo_freq is None
+
+
 def test_load_raises_for_system_chip_id_mismatch(tmp_path: Path) -> None:
     """Given mismatched system chip id, when loading, then ConfigLoader raises ValueError."""
     chip_id = "TESTCHIP"

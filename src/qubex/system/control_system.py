@@ -28,6 +28,7 @@ from qubex.core import MutableModel
 class BoxType(Enum):
     """Supported box types."""
 
+    QUEL3 = "quel3"
     QUEL1_A = "quel1-a"
     QUEL1_B = "quel1-b"
     QUBE_RIKEN_A = "qube-riken-a"
@@ -47,7 +48,7 @@ class BoxTraits:
     ctrl_ssb: Literal["L", "U"] | None
     ctrl_min_frequency_hz: float
     ctrl_uses_vatt: bool
-    readout_ssb: Literal["L", "U"]
+    readout_ssb: Literal["L", "U"] | None
     readout_cnco_center: int
     default_readout_frequency_range: tuple[float, float, float]
     default_control_frequency_range: tuple[float, float, float]
@@ -64,7 +65,18 @@ _DEFAULT_BOX_TRAITS: Final = BoxTraits(
     default_control_frequency_range=(6.5, 9.5, 0.005),
 )
 
-_R8_BOX_TRAITS: Final = BoxTraits(
+_QUEL3_BOX_TRAITS: Final = BoxTraits(
+    ctrl_uses_lo=False,
+    ctrl_ssb=None,
+    ctrl_min_frequency_hz=0.5e9,
+    ctrl_uses_vatt=False,
+    readout_ssb=None,
+    readout_cnco_center=CNCO_CENTER_READ_R8,
+    default_readout_frequency_range=(5.75, 6.75, 0.002),
+    default_control_frequency_range=(3.0, 5.0, 0.005),
+)
+
+_QUEL1SE_R8_BOX_TRAITS: Final = BoxTraits(
     ctrl_uses_lo=False,
     ctrl_ssb=None,
     ctrl_min_frequency_hz=0.0,
@@ -75,8 +87,10 @@ _R8_BOX_TRAITS: Final = BoxTraits(
     default_control_frequency_range=(3.0, 5.0, 0.005),
 )
 
+
 _BOX_TRAITS_BY_TYPE: Final[dict[BoxType, BoxTraits]] = {
-    BoxType.QUEL1SE_R8: _R8_BOX_TRAITS,
+    BoxType.QUEL3: _QUEL3_BOX_TRAITS,
+    BoxType.QUEL1SE_R8: _QUEL1SE_R8_BOX_TRAITS,
 }
 
 
@@ -105,6 +119,26 @@ PORT_DIRECTION: Final = {
 
 
 PORT_MAPPING: Final = {
+    BoxType.QUEL3: {
+        0: PortType.READ_IN,
+        1: PortType.READ_OUT,
+        2: PortType.CTRL,
+        3: PortType.PUMP,
+        4: PortType.CTRL,
+        5: PortType.MNTR_IN,
+        6: PortType.MNTR_OUT,
+        7: PortType.READ_IN,
+        8: PortType.READ_OUT,
+        9: PortType.CTRL,
+        10: PortType.PUMP,
+        11: PortType.CTRL,
+        12: PortType.MNTR_IN,
+        13: PortType.MNTR_OUT,
+        14: PortType.CTRL,
+        15: PortType.CTRL,
+        16: PortType.CTRL,
+        17: PortType.CTRL,
+    },
     BoxType.QUEL1SE_R8: {
         0: PortType.READ_IN,
         1: PortType.READ_OUT,
@@ -251,6 +285,26 @@ PORT_MAPPING: Final = {
 }
 
 NUMBER_OF_CHANNELS: Final = {
+    BoxType.QUEL3: {
+        0: 8,
+        1: 2,
+        2: 1,
+        3: 1,
+        4: 2,
+        5: 1,
+        6: 1,
+        7: 8,
+        8: 2,
+        9: 1,
+        10: 1,
+        11: 2,
+        12: 1,
+        13: 1,
+        14: 1,
+        15: 1,
+        16: 2,
+        17: 2,
+    },
     BoxType.QUEL1SE_R8: {
         0: 4,
         1: 1,
@@ -746,7 +800,7 @@ class CapPort(Port):
     """Capture port with frequency settings."""
 
     channels: tuple[CapChannel, ...] = ()
-    lo_freq: int = DEFAULT_LO_FREQ
+    lo_freq: int | None = DEFAULT_LO_FREQ
     cnco_freq: int = DEFAULT_CNCO_FREQ
     rfswitch: Literal["open", "loop"] = "open"
 
@@ -1000,7 +1054,7 @@ class ControlSystem:
             if rfswitch is not None:
                 port.rfswitch = rfswitch  # type: ignore
             if not isinstance(lo_freq, self.NotGivenType):
-                port.lo_freq = lo_freq  # type: ignore
+                port.lo_freq = lo_freq
             if cnco_freq is not None:
                 port.cnco_freq = cnco_freq
             if fnco_freqs is not None:

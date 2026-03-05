@@ -73,6 +73,36 @@ class JPAParam(TypedDict):
     pump_amplitude: float | None
 
 
+class ReadoutMixingConfig(TypedDict):
+    """Readout mixing configuration for one mux."""
+
+    lo: int | None
+    cnco: int
+    fnco: int
+
+
+class ControlChannelConfig(TypedDict):
+    """Per-channel control mixing configuration."""
+
+    fnco: int
+    targets: list[str]
+
+
+class ControlMixingConfig(TypedDict):
+    """Control mixing configuration for one qubit."""
+
+    lo: int | None
+    cnco: int
+    channels: dict[int, ControlChannelConfig]
+
+
+class CrTargetConfig(TypedDict):
+    """CR target label and frequency pair."""
+
+    label: str
+    frequency: float
+
+
 class ControlParams(MutableModel):
     """Control parameters and access helpers for the system."""
 
@@ -518,7 +548,7 @@ class ExperimentSystem:
             gen_channel.fnco_freq = fnco_freq
             if target.is_read:
                 cap_channel = self.get_read_in_target(label).channel
-                cap_channel.port.lo_freq = lo_freq  # type: ignore
+                cap_channel.port.lo_freq = lo_freq
                 cap_channel.port.cnco_freq = cnco_freq
                 cap_channel.fnco_freq = fnco_freq
         except Exception as e:
@@ -530,7 +560,7 @@ class ExperimentSystem:
             ) = original_values
             if target.is_read:
                 (
-                    cap_channel.port.lo_freq,  # type: ignore
+                    cap_channel.port.lo_freq,
                     cap_channel.port.cnco_freq,
                     cap_channel.fnco_freq,
                 ) = original_values
@@ -839,9 +869,9 @@ class ExperimentSystem:
     def _create_readout_configuration(
         self,
         mux: Mux,
-        ssb: Literal["U", "L"] = "U",
+        ssb: Literal["U", "L"] | None = "U",
         cnco_center: int = CNCO_CENTER_READ,
-    ) -> dict:
+    ) -> ReadoutMixingConfig:
         """
         Find the (lo, cnco, fnco) values for the readout mux.
 
@@ -850,7 +880,7 @@ class ExperimentSystem:
         mux : Mux
             Readout mux.
 
-        ssb : Literal["U", "L"], optional
+        ssb : Literal["U", "L"] | None, optional
             Sideband, by default "U".
 
         cnco_center : int, optional
@@ -859,7 +889,7 @@ class ExperimentSystem:
 
         Returns
         -------
-        dict[str, int]
+        ReadoutMixingConfig
             Dictionary containing the lo, cnco, and fnco values.
 
         """
@@ -896,7 +926,7 @@ class ExperimentSystem:
         ssb: Literal["U", "L"] | None = "L",
         cnco_center: int = CNCO_CENTER_CTRL,
         min_frequency: float = 6.5e9,
-    ) -> dict:
+    ) -> ControlMixingConfig:
         """
         Find the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
 
@@ -911,7 +941,7 @@ class ExperimentSystem:
         n_channels : int
             Number of channels.
 
-        ssb : Literal["U", "L"], optional
+        ssb : Literal["U", "L"] | None, optional
             Sideband, by default "L".
 
         cnco_center : int, optional
@@ -920,7 +950,7 @@ class ExperimentSystem:
 
         Returns
         -------
-        dict[str, int]
+        ControlMixingConfig
             Dictionary containing the lo, cnco, and fnco values.
 
         """
@@ -1080,7 +1110,7 @@ class ExperimentSystem:
             f_ef = qubit.control_frequency_ef * 1e9
 
             spectators = self.get_spectator_qubits(qubit.label)
-            cr_targets = [
+            cr_targets: list[CrTargetConfig] = [
                 {
                     "label": f"{qubit.label}-{spectator.label}",
                     "frequency": spectator.frequency * 1e9,
@@ -1139,8 +1169,8 @@ class ExperimentSystem:
 
     def _split_cr_target_group(
         self,
-        group: list[dict[str, float]],
-    ) -> tuple[list[dict[str, float]], list[dict[str, float]]]:
+        group: list[CrTargetConfig],
+    ) -> tuple[list[CrTargetConfig], list[CrTargetConfig]]:
         group = sorted(group, key=lambda x: x["frequency"])
         if len(group) == 0:
             raise ValueError("No CR target found.")
