@@ -1015,11 +1015,14 @@ class ExperimentContext:
         )
         self.experiment_system.add_target(target)
         if update_lsi:
+            cnco = port.cnco_freq
+            if cnco is None:
+                raise ValueError("CNCO frequency is not set for the target port.")
             fnco, _ = MixingUtil.calc_fnco(
                 f=frequency * 1e9,
                 ssb=port.sideband,
                 lo=port.lo_freq,
-                cnco=port.cnco_freq,
+                cnco=cnco,
             )
             channel.fnco_freq = fnco
             self.system_manager.push(box_ids=[box_id])

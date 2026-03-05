@@ -14,13 +14,6 @@ from qubex.backend.quel1.quel1_backend_constants import (
     CNCO_CENTER_READ,
     CNCO_CENTER_READ_R8,
     DEFAULT_CLOCK_MASTER_ADDRESS,
-    DEFAULT_CNCO_FREQ,
-    DEFAULT_FNCO_FREQ,
-    DEFAULT_FULLSCALE_CURRENT,
-    DEFAULT_LO_FREQ,
-    DEFAULT_NDELAY,
-    DEFAULT_NWAIT,
-    DEFAULT_VATT,
 )
 from qubex.core import MutableModel
 
@@ -489,13 +482,13 @@ def get_number_of_channels(
     return NUMBER_OF_CHANNELS[box_type].get(port_number, 0)
 
 
-def create_ports(
+def _initialize_ports(
     box_id: str,
     box_type: BoxType,
     port_numbers: Sequence[int] | None = None,
     options: Sequence[str] | None = None,
 ) -> tuple[GenPort | CapPort, ...]:
-    """Create ports for a box based on mapping rules."""
+    """Initialize ports for a box based on mapping rules."""
     ports: list[GenPort | CapPort] = []
     port_index = {
         PortType.NOT_AVAILABLE: 0,
@@ -676,7 +669,7 @@ class Box(MutableModel):
             address=address,
             adapter=adapter,
             options=options_tuple,
-            ports=create_ports(id, type, port_numbers, options=options_tuple),
+            ports=_initialize_ports(id, type, port_numbers, options=options_tuple),
         )
 
     @property
@@ -784,11 +777,11 @@ class GenPort(Port):
 
     channels: tuple[GenChannel, ...] = ()
     sideband: Literal["U", "L"] | None = None
-    lo_freq: int | None = DEFAULT_LO_FREQ
-    cnco_freq: int = DEFAULT_CNCO_FREQ
-    vatt: int | None = DEFAULT_VATT
-    fullscale_current: int = DEFAULT_FULLSCALE_CURRENT
-    rfswitch: Literal["pass", "block"] = "pass"
+    lo_freq: int | None = None
+    cnco_freq: int | None = None
+    vatt: int | None = None
+    fullscale_current: int | None = None
+    rfswitch: Literal["pass", "block"] | None = None
 
     @property
     def base_frequencies(self) -> tuple[int, ...]:
@@ -800,8 +793,8 @@ class CapPort(Port):
     """Capture port with frequency settings."""
 
     channels: tuple[CapChannel, ...] = ()
-    lo_freq: int | None = DEFAULT_LO_FREQ
-    cnco_freq: int = DEFAULT_CNCO_FREQ
+    lo_freq: int | None = None
+    cnco_freq: int | None = None
     rfswitch: Literal["open", "loop"] = "open"
 
 
@@ -816,8 +809,8 @@ class GenChannel(Channel):
     """Generator channel with frequency parameters."""
 
     port_ref: GenPort = Field(alias="_port", exclude=True, repr=False)
-    fnco_freq: int = DEFAULT_FNCO_FREQ
-    nwait: int = DEFAULT_NWAIT
+    fnco_freq: int | None = None
+    nwait: int | None = None
 
     @property
     def port(self) -> GenPort:
@@ -846,12 +839,17 @@ class GenChannel(Channel):
     @property
     def cnco_freq(self) -> int:
         """Return the CNCO frequency for the channel."""
-        return self.port.cnco_freq
+        cnco = self.port.cnco_freq
+        if cnco is None:
+            raise ValueError("CNCO frequency is not set.")
+        return cnco
 
     @property
     def nco_freq(self) -> int:
         """Return the NCO frequency for the channel."""
-        return self.port.cnco_freq + self.fnco_freq
+        if self.fnco_freq is None:
+            raise ValueError("FNCO frequency is not set.")
+        return self.cnco_freq + self.fnco_freq
 
     @property
     def coarse_frequency(self) -> int:
@@ -860,6 +858,8 @@ class GenChannel(Channel):
         lo = self.port.lo_freq
         cnco = self.port.cnco_freq
 
+        if cnco is None:
+            raise ValueError("CNCO frequency is not set.")
         if lo is None and sideband is None:
             return cnco
         elif lo is None:
@@ -880,7 +880,11 @@ class GenChannel(Channel):
         sideband = self.port.sideband
         lo = self.port.lo_freq
         cnco = self.port.cnco_freq
+        if cnco is None:
+            raise ValueError("CNCO frequency is not set.")
         fnco = self.fnco_freq
+        if fnco is None:
+            raise ValueError("FNCO frequency is not set.")
         nco = cnco + fnco
 
         if lo is None and sideband is None:
@@ -902,8 +906,8 @@ class CapChannel(Channel):
     """Capture channel with frequency parameters."""
 
     port_ref: CapPort = Field(alias="_port", exclude=True, repr=False)
-    fnco_freq: int = DEFAULT_FNCO_FREQ
-    ndelay: int = DEFAULT_NDELAY
+    fnco_freq: int | None = None
+    ndelay: int | None = None
 
     @property
     def port(self) -> CapPort:

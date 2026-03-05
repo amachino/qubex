@@ -531,8 +531,8 @@ class ExperimentSystem:
         label: str,
         *,
         lo_freq: int | None,
-        cnco_freq: int,
-        fnco_freq: int,
+        cnco_freq: int | None,
+        fnco_freq: int | None,
     ) -> None:
         """Update LO/CNCO/FNCO parameters for a target port."""
         target = self.get_target(label)

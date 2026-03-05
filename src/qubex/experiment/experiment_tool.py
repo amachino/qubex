@@ -752,15 +752,19 @@ def print_box_info(box_id: str, fetch: bool | None = None) -> None:
             if isinstance(port, CapPort):
                 ssb = ""
                 lo = f"{port.lo_freq:_}" if port.lo_freq is not None else ""
-                cnco = f"{port.cnco_freq:_}"
+                cnco = f"{port.cnco_freq:_}" if port.cnco_freq is not None else ""
                 vatt = ""
                 fsc = ""
             elif isinstance(port, GenPort):
                 ssb = port.sideband if port.sideband is not None else ""
                 lo = f"{port.lo_freq:_}" if port.lo_freq is not None else ""
-                cnco = f"{port.cnco_freq:_}"
+                cnco = f"{port.cnco_freq:_}" if port.cnco_freq is not None else ""
                 vatt = str(port.vatt) if port.vatt is not None else ""
-                fsc = str(port.fullscale_current)
+                fsc = (
+                    str(port.fullscale_current)
+                    if port.fullscale_current is not None
+                    else ""
+                )
 
             table1.add_row(number, type, ssb, lo, cnco, vatt, fsc)
             if isinstance(port, GenPort):
@@ -768,7 +772,10 @@ def print_box_info(box_id: str, fetch: bool | None = None) -> None:
                     number,
                     type,
                     ssb,
-                    *[f"{ch.fnco_freq:_}" for ch in port.channels],
+                    *[
+                        f"{ch.fnco_freq:_}" if ch.fnco_freq is not None else ""
+                        for ch in port.channels
+                    ],
                 )
 
     console.print(table1)
@@ -828,7 +835,7 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
                     f"{lo * 1e-6:.0f}" if lo is not None else "",
                     f"{nco * 1e-6:.3f}",
                     f"{cnco * 1e-6:.3f}",
-                    f"{fnco * 1e-6:+.3f}",
+                    f"{fnco * 1e-6:+.3f}" if fnco is not None else "",
                     f"{ffreq * 1e3:.3f}",
                     f"{tfreq * 1e3:.3f}",
                     f"{diff * 1e3:+.3f}",
@@ -904,7 +911,7 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
                     f"{lo * 1e-6:.0f}",
                     f"{nco * 1e-6:.3f}",
                     f"{cnco * 1e-6:.3f}",
-                    f"{fnco * 1e-6:+.3f}",
+                    f"{fnco * 1e-6:+.3f}" if fnco is not None else "",
                     f"{ffreq * 1e3:.3f}",
                     f"{tfreq * 1e3:.3f}",
                     f"{diff * 1e3:+.3f}",
