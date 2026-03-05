@@ -25,13 +25,9 @@ from qubex.constants import (
     PROPS_FILE,
     SYSTEM_FILE,
     WIRING_FILE,
-    WIRING_V2_FILE,
 )
 from qubex.system.quel1.quel1_system_loader import Quel1SystemLoader
 from qubex.system.quel3.quel3_system_loader import Quel3SystemLoader
-from qubex.system.wiring import (
-    normalize_wiring_v2_rows,
-)
 from qubex.typing import ConfigurationMode
 
 logger = logging.getLogger(__name__)
@@ -114,8 +110,7 @@ class ConfigLoader:
     chip_file, system_file, box_file, props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     wiring_file : str | None, optional
-        Wiring filename override. If omitted, the loader selects a wiring file
-        from resolved backend kind and config files.
+        Wiring filename override. Defaults to `wiring.yaml` when omitted.
     targets_to_exclude : list[str] | None, optional
         Qubit/resonator labels to exclude when assembling the ExperimentSystem.
     configuration_mode : ConfigurationMode | None, optional
@@ -228,41 +223,6 @@ class ConfigLoader:
                 configuration_mode=configuration_mode,
             )
 
-    @staticmethod
-    def resolve_wiring_file(
-        *,
-        chip_id: str,
-        config_dir: Path | str | None,
-        backend_kind: BackendKind,
-    ) -> str:
-        """
-        Resolve wiring file name from backend kind and config directory.
-
-        Parameters
-        ----------
-        chip_id : str
-            Chip identifier.
-        config_dir : Path | str | None
-            Configuration directory. If `None`, default config path is used.
-        backend_kind : BackendKind
-            Backend family (`"quel1"` or `"quel3"`).
-
-        Returns
-        -------
-        str
-            Resolved wiring file name.
-        """
-        if backend_kind != BACKEND_KIND_QUEL3:
-            return WIRING_FILE
-        config_path = (
-            Path(config_dir)
-            if config_dir is not None
-            else Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
-        )
-        if (config_path / WIRING_V2_FILE).exists():
-            return WIRING_V2_FILE
-        return WIRING_FILE
-
     def load(
         self,
         *,
@@ -300,9 +260,7 @@ class ConfigLoader:
             self._backend_kind = self._resolve_loaded_backend_kind(
                 backend_kind=backend_kind
             )
-            self._resolved_wiring_file = self._resolve_wiring_file(
-                backend_kind=self._backend_kind
-            )
+            self._resolved_wiring_file = self._resolve_wiring_file()
             self._box_dict = self._load_config_file(self._box_file)
             self._wiring_dict = self._load_config_file(self._resolved_wiring_file)
             self._props_dict = self._load_legacy_params_file(self._props_file)  # legacy
@@ -469,15 +427,11 @@ class ConfigLoader:
             )
         return BACKEND_KIND_QUEL1
 
-    def _resolve_wiring_file(self, *, backend_kind: BackendKind) -> str:
+    def _resolve_wiring_file(self) -> str:
         """Resolve effective wiring file name for the current load."""
         if self._wiring_file is not None:
             return self._wiring_file
-        return self.resolve_wiring_file(
-            chip_id=self._chip_id,
-            config_dir=self._config_dir,
-            backend_kind=backend_kind,
-        )
+        return WIRING_FILE
 
     def _create_system_loader(
         self,
@@ -791,37 +745,10 @@ class ConfigLoader:
                     f"`{self._resolved_wiring_file}` must map chip id to a list of wiring entries."
                 )
             return [dict(wiring) for wiring in wirings]
-
-        if self._wiring_dict.get("schema_version") != 2:
-            logger.warning(
-                f"Chip `{chip_id}` is missing in `{self._resolved_wiring_file}`. "
-            )
-            return None
-
-        file_chip_id = self._wiring_dict.get("chip_id")
-        if file_chip_id != chip_id:
-            logger.warning(
-                "Chip `%s` does not match `%s` in `%s`.",
-                chip_id,
-                file_chip_id,
-                self._resolved_wiring_file,
-            )
-            return None
-
-        if self._quantum_system is None:
-            return []
-        return normalize_wiring_v2_rows(
-            wiring_dict=self._wiring_dict,
-            wiring_file=self._resolved_wiring_file,
-            qubit_indices={qubit.index for qubit in self._quantum_system.qubits},
-            mux_to_qubit_indices={
-                mux.index: tuple(
-                    qubit.index
-                    for qubit in self._quantum_system.get_qubits_in_mux(mux.index)
-                )
-                for mux in self._quantum_system.muxes
-            },
+        logger.warning(
+            f"Chip `{chip_id}` is missing in `{self._resolved_wiring_file}`. "
         )
+        return None
 
     def _load_control_params(self) -> ControlParams | None:
         from qubex.system.experiment_system import ControlParams

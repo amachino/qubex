@@ -22,7 +22,7 @@ from .system_manager import BackendSettings, SystemManager, SystemState
 from .system_synchronizer import SystemSynchronizer
 from .target import CapTarget, Target, TargetType
 from .target_registry import TargetRegistry
-from .wiring import normalize_wiring_v2_rows, split_box_port_specifier
+from .wiring import split_box_port_specifier
 
 __all__ = [
     "BackendSettings",
@@ -56,6 +56,5 @@ __all__ = [
     "TargetRegistry",
     "TargetType",
     "WiringInfo",
-    "normalize_wiring_v2_rows",
     "split_box_port_specifier",
 ]

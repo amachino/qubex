@@ -170,9 +170,9 @@ exp.connect()
 
 ## Example files in repository
 
-The repository includes ready-to-read examples under `docs/examples/configuration/`.
+The repository includes ready-to-read examples under `docs/examples/system/`.
 
-### Config examples (`docs/examples/configuration/config`)
+### Config examples (`docs/examples/system/config`)
 
 - `chip.yaml`
   Defines chip metadata such as chip name, `n_qubits`, and topology.
@@ -182,11 +182,8 @@ The repository includes ready-to-read examples under `docs/examples/configuratio
   Defines available control boxes (type, IP address, adapter).
 - `wiring.yaml`
   Defines mux-level port assignment (`ctrl`, `read_out`, `read_in`, optional `pump`).
-- `wiring.v2.yaml`
-  Defines QuEL-3 style physical wiring with zero-based `qubit_id`/`mux_id` mapped to `port_id`.
-  When backend kind resolves to `quel3`, Qubex prefers `wiring.v2.yaml` if present and falls back to `wiring.yaml`.
 
-### Parameter examples (`docs/examples/configuration/params`)
+### Parameter examples (`docs/examples/system/params`)
 
 - `control_frequency.yaml`
   Per-qubit control frequencies (`Q00`-style keys, unit: `GHz`).

@@ -897,10 +897,6 @@ def test_load_resolves_backend_kind_from_system_config(
         "schema_version: 1\nchip_id: TEST\nbackend: quel3\n",
         encoding="utf-8",
     )
-    (config_dir / "wiring.v2.yaml").write_text(
-        "schema_version: 2\nchip_id: TEST\ncontrol: {}\nreadout: {}\n",
-        encoding="utf-8",
-    )
 
     class _FakeConfigLoader:
         def __init__(self, **_: object) -> None:
