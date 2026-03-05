@@ -205,7 +205,7 @@ class ExperimentSystem:
         self._control_params: Final = control_params
         self._targets_to_exclude: Final = targets_to_exclude or []
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
-        self.configure(mode=configuration_mode)
+        self._target_registry = self._build_target_registry(mode=configuration_mode)
 
     @property
     def hash(self) -> int:
@@ -262,17 +262,17 @@ class ExperimentSystem:
     @property
     def ge_targets(self) -> list[Target]:
         """Return the ge targets."""
-        return [target for target in self._gen_target_dict.values() if target.is_ge]
+        return [target for target in self.gen_targets.values() if target.is_ge]
 
     @property
     def ef_targets(self) -> list[Target]:
         """Return the ef targets."""
-        return [target for target in self._gen_target_dict.values() if target.is_ef]
+        return [target for target in self.gen_targets.values() if target.is_ef]
 
     @property
     def cr_targets(self) -> list[Target]:
         """Return the cr targets."""
-        return [target for target in self._gen_target_dict.values() if target.is_cr]
+        return [target for target in self.gen_targets.values() if target.is_cr]
 
     @property
     def ctrl_targets(self) -> list[Target]:
@@ -282,17 +282,27 @@ class ExperimentSystem:
     @property
     def read_out_targets(self) -> list[Target]:
         """Return the readout targets."""
-        return [target for target in self._gen_target_dict.values() if target.is_read]
+        return [target for target in self.gen_targets.values() if target.is_read]
+
+    @property
+    def gen_targets(self) -> dict[str, Target]:
+        """Return generator targets keyed by label."""
+        return self.target_registry.gen_targets
+
+    @property
+    def cap_targets(self) -> dict[str, CapTarget]:
+        """Return capture targets keyed by label."""
+        return self.target_registry.cap_targets
 
     @property
     def targets(self) -> list[Target]:
         """Return all generator targets."""
-        return list(self._gen_target_dict.values())
+        return list(self.gen_targets.values())
 
     @property
     def read_in_targets(self) -> list[CapTarget]:
         """Return all capture targets."""
-        return list(self._cap_target_dict.values())
+        return list(self.cap_targets.values())
 
     @property
     def all_targets(self) -> list[Target | CapTarget]:
@@ -306,13 +316,15 @@ class ExperimentSystem:
 
     def add_target(self, target: Target | CapTarget) -> None:
         """Add a target to the system mapping."""
+        gen_targets = self.gen_targets
+        cap_targets = self.cap_targets
         if isinstance(target, Target):
-            self._gen_target_dict[target.label] = target
+            gen_targets[target.label] = target
         elif isinstance(target, CapTarget):
-            self._cap_target_dict[target.label] = target
+            cap_targets[target.label] = target
         self._target_registry = TargetRegistry(
-            gen_targets=self._gen_target_dict,
-            cap_targets=self._cap_target_dict,
+            gen_targets=gen_targets,
+            cap_targets=cap_targets,
         )
 
     def get_mux(self, label: int | str) -> Mux:
@@ -372,8 +384,9 @@ class ExperimentSystem:
 
     def get_target(self, label: str) -> Target:
         """Return a generator target by label."""
+        gen_targets = self.gen_targets
         try:
-            return self._gen_target_dict[label]
+            return gen_targets[label]
         except KeyError:
             raise KeyError(f"Target `{label}` not found.") from None
 
@@ -407,8 +420,9 @@ class ExperimentSystem:
 
     def get_cap_target(self, label: str) -> CapTarget:
         """Return a capture target by label."""
+        cap_targets = self.cap_targets
         try:
-            return self._cap_target_dict[label]
+            return cap_targets[label]
         except KeyError:
             raise KeyError(f"CapTarget `{label}` not found.") from None
 
@@ -592,10 +606,17 @@ class ExperimentSystem:
         mode: ConfigurationMode = "ge-cr-cr",
     ) -> None:
         """Configure target mappings for the specified mode."""
+        self._target_registry = self._build_target_registry(mode=mode)
+
+    def _build_target_registry(
+        self,
+        mode: ConfigurationMode = "ge-cr-cr",
+    ) -> TargetRegistry:
+        """Build target registry and update port/channel parameters for the mode."""
         params = self.control_params
 
-        self._gen_target_dict: dict[str, Target] = {}
-        self._cap_target_dict: dict[str, CapTarget] = {}
+        gen_targets: dict[str, Target] = {}
+        cap_targets: dict[str, CapTarget] = {}
 
         for box in self.boxes:
             for port in box.ports:
@@ -606,6 +627,7 @@ class ExperimentSystem:
                             box=box,
                             port=port,
                             params=params,
+                            gen_targets=gen_targets,
                         )
                     elif port.type == PortType.CTRL:
                         self._configure_control_port(
@@ -613,11 +635,13 @@ class ExperimentSystem:
                             port=port,
                             params=params,
                             mode=mode,
+                            gen_targets=gen_targets,
                         )
                     elif port.type == PortType.PUMP:
                         self._configure_pump_port(
                             port=port,
                             params=params,
+                            gen_targets=gen_targets,
                         )
                 elif isinstance(port, CapPort):
                     port.rfswitch = "open"
@@ -626,13 +650,12 @@ class ExperimentSystem:
                             box=box,
                             port=port,
                             params=params,
+                            cap_targets=cap_targets,
                         )
 
-        self._gen_target_dict = dict(sorted(self._gen_target_dict.items()))
-        self._cap_target_dict = dict(sorted(self._cap_target_dict.items()))
-        self._target_registry = TargetRegistry(
-            gen_targets=self._gen_target_dict,
-            cap_targets=self._cap_target_dict,
+        return TargetRegistry(
+            gen_targets=dict(sorted(gen_targets.items())),
+            cap_targets=dict(sorted(cap_targets.items())),
         )
 
     def _configure_control_port(
@@ -641,6 +664,7 @@ class ExperimentSystem:
         port: GenPort,
         params: ControlParams,
         mode: ConfigurationMode,
+        gen_targets: dict[str, Target],
     ) -> None:
         qubit = self.get_qubit_by_control_port(port)
         if qubit is None or not qubit.is_valid:
@@ -672,27 +696,27 @@ class ExperimentSystem:
                 qubit=qubit,
                 channel=port.channels[0],
             )
-            self._gen_target_dict[ge_target.label] = ge_target
+            gen_targets[ge_target.label] = ge_target
         elif port.n_channels == 2:
             # ge
             ge_target = Target.new_ge_target(
                 qubit=qubit,
                 channel=port.channels[0],
             )
-            self._gen_target_dict[ge_target.label] = ge_target
+            gen_targets[ge_target.label] = ge_target
             # cr
             cr_target = Target.new_cr_target(
                 control_qubit=qubit,
                 channel=port.channels[1],
             )
-            self._gen_target_dict[cr_target.label] = cr_target
+            gen_targets[cr_target.label] = cr_target
             for spectator in self.get_spectator_qubits(qubit.label):
                 cr_target = Target.new_cr_target(
                     control_qubit=qubit,
                     target_qubit=spectator,
                     channel=port.channels[1],
                 )
-                self._gen_target_dict[cr_target.label] = cr_target
+                gen_targets[cr_target.label] = cr_target
         elif port.n_channels == 3:
             if mode == "ge-ef-cr":
                 # ge
@@ -700,26 +724,26 @@ class ExperimentSystem:
                     qubit=qubit,
                     channel=port.channels[0],
                 )
-                self._gen_target_dict[ge_target.label] = ge_target
+                gen_targets[ge_target.label] = ge_target
                 # ef
                 ef_target = Target.new_ef_target(
                     qubit=qubit,
                     channel=port.channels[1],
                 )
-                self._gen_target_dict[ef_target.label] = ef_target
+                gen_targets[ef_target.label] = ef_target
                 # cr
                 cr_target = Target.new_cr_target(
                     control_qubit=qubit,
                     channel=port.channels[2],
                 )
-                self._gen_target_dict[cr_target.label] = cr_target
+                gen_targets[cr_target.label] = cr_target
                 for spectator in self.get_spectator_qubits(qubit.label):
                     cr_target = Target.new_cr_target(
                         control_qubit=qubit,
                         target_qubit=spectator,
                         channel=port.channels[2],
                     )
-                    self._gen_target_dict[cr_target.label] = cr_target
+                    gen_targets[cr_target.label] = cr_target
             elif mode == "ge-cr-cr":
                 for i, ch in config["channels"].items():
                     for label in ch["targets"]:
@@ -742,12 +766,13 @@ class ExperimentSystem:
                             )
                         else:
                             raise ValueError(f"Invalid target label `{label}`.")
-                        self._gen_target_dict[target.label] = target
+                        gen_targets[target.label] = target
 
     def _configure_pump_port(
         self,
         port: GenPort,
         params: ControlParams,
+        gen_targets: dict[str, Target],
     ) -> None:
         mux = self.get_mux_by_pump_port(port)
         if mux is None:
@@ -778,13 +803,14 @@ class ExperimentSystem:
             frequency=frequency,
             channel=port.channels[0],
         )
-        self._gen_target_dict[pump_target.label] = pump_target
+        gen_targets[pump_target.label] = pump_target
 
     def _configure_readout_port(
         self,
         box: Box,
         port: GenPort,
         params: ControlParams,
+        gen_targets: dict[str, Target],
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
         if mux is None:
@@ -821,13 +847,14 @@ class ExperimentSystem:
                 resonator=resonator,
                 channel=port.channels[0],
             )
-            self._gen_target_dict[read_out_target.label] = read_out_target
+            gen_targets[read_out_target.label] = read_out_target
 
     def _configure_capture_port(
         self,
         box: Box,
         port: CapPort,
         params: ControlParams,
+        cap_targets: dict[str, CapTarget],
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
         if mux is None:
@@ -864,7 +891,7 @@ class ExperimentSystem:
                 resonator=resonator,
                 channel=port.channels[idx],
             )
-            self._cap_target_dict[read_in_target.label] = read_in_target
+            cap_targets[read_in_target.label] = read_in_target
 
     def _create_readout_configuration(
         self,
