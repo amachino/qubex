@@ -1,0 +1,52 @@
+# Example wiring configuration for QuEL-3 examples.
+#
+# Format
+# ------
+# <chip_id>:
+#   - mux: <mux_index>
+#     ctrl: [<port_id>, ...]
+#     read_out: <port_id>
+#     read_in: <port_id>
+#     pump: <port_id>  # optional
+
+64Q:
+  - mux: 0
+    ctrl: [T1-4, T1-2, T1-11, T1-9]
+    read_out: T1-1
+    read_in: T1-0
+    pump: T1-3
+  # - mux: 1
+  #   ctrl: [T1-16, T1-14, T1-17, T1-15]
+  #   read_out: T1-8
+  #   read_in: T1-7
+  #   pump: T1-10
+  # - mux: 2
+  #   ctrl: [T2-4, T2-2, T2-11, T2-9]
+  #   read_out: T2-1
+  #   read_in: T2-0
+  #   pump: T2-3
+  # - mux: 3
+  #   ctrl: [T2-16, T2-14, T2-17, T2-15]
+  #   read_out: T2-8
+  #   read_in: T2-7
+  #   pump: T2-10
+  # - mux: 4
+  #   ctrl: [T3-4, T3-2, T3-11, T3-9]
+  #   read_out: T3-1
+  #   read_in: T3-0
+  #   pump: T3-3
+  # - mux: 5
+  #   ctrl: [T3-16, T3-14, T3-17, T3-15]
+  #   read_out: T3-8
+  #   read_in: T3-7
+  #   pump: T3-10
+  # - mux: 6
+  #   ctrl: [T4-4, T4-2, T4-11, T4-9]
+  #   read_out: T4-1
+  #   read_in: T4-0
+  #   pump: T4-3
+  # - mux: 7
+  #   ctrl: [T4-16, T4-14, T4-17, T4-15]
+  #   read_out: T4-8
+  #   read_in: T4-7
+  #   pump: T4-10

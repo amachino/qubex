@@ -52,6 +52,10 @@ def test_build_instrument_deploy_requests_groups_targets_by_port_and_role() -> N
     experiment_system = SimpleNamespace(
         gen_targets=gen_targets,
         wiring_info=SimpleNamespace(read_in=[(mux0, read_in_port)]),
+        get_box=lambda box_id: SimpleNamespace(
+            id=box_id,
+            name="quel3-02-a01" if box_id == "BOX1" else "quel3-02-a02",
+        ),
         get_mux_by_readout_port=lambda port: mux0 if port is read_out_port else None,
     )
 
@@ -61,15 +65,18 @@ def test_build_instrument_deploy_requests_groups_targets_by_port_and_role() -> N
     )
 
     request_by_port_id = {request.port_id: request for request in requests}
-    assert set(request_by_port_id) == {"BOX1:trx_p00p01", "BOX1:tx_p02"}
+    assert set(request_by_port_id) == {
+        "quel3-02-a01:trx_p00p01",
+        "quel3-02-a01:tx_p02",
+    }
 
-    read_request = request_by_port_id["BOX1:trx_p00p01"]
+    read_request = request_by_port_id["quel3-02-a01:trx_p00p01"]
     assert read_request.role == "TRANSCEIVER"
     assert read_request.frequency_range_min_hz == pytest.approx(6.0e9)
     assert read_request.frequency_range_max_hz == pytest.approx(6.0e9)
     assert read_request.target_labels == ("RQ00",)
 
-    ctrl_request = request_by_port_id["BOX1:tx_p02"]
+    ctrl_request = request_by_port_id["quel3-02-a01:tx_p02"]
     assert ctrl_request.role == "TRANSMITTER"
     assert ctrl_request.frequency_range_min_hz == pytest.approx(4.20e9)
     assert ctrl_request.frequency_range_max_hz == pytest.approx(4.35e9)
@@ -174,6 +181,7 @@ def test_deploy_instruments_from_target_registry_calls_session_api(
     experiment_system = SimpleNamespace(
         gen_targets={"Q00": target},
         wiring_info=SimpleNamespace(read_in=[]),
+        get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
         get_mux_by_readout_port=lambda _port: None,
     )
 
@@ -182,16 +190,16 @@ def test_deploy_instruments_from_target_registry_calls_session_api(
         box_ids=["BOX1"],
     )
 
-    assert create_session_calls == [("BOX1:tx_p02",)]
+    assert create_session_calls == [("quel3-02-a01:tx_p02",)]
     assert len(deploy_calls) == 1
     port_id, definitions = deploy_calls[0]
-    assert port_id == "BOX1:tx_p02"
+    assert port_id == "quel3-02-a01:tx_p02"
     definition = cast(Any, definitions[0])
     assert definition.mode == "fixed_timeline"
     assert definition.role == "transmitter"
     assert definition.profile.frequency_range_min == pytest.approx(4.2e9)
     assert definition.profile.frequency_range_max == pytest.approx(4.2e9)
-    assert definition.alias.startswith("inst_transmitter_BOX1_tx_p02")
+    assert definition.alias.startswith("inst_transmitter_quel3-02-a01_tx_p02")
     assert manager.target_alias_map == {"Q00": definition.alias}
     assert definition.alias in deployed
 

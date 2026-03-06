@@ -1,0 +1,108 @@
+# Example readout frequency configuration file.
+#
+# Format
+# ------
+# meta:
+#   description: <description>
+#   unit: <unit>
+# data:
+#   <qubit_label>: <frequency>
+#
+# Fields
+# ------
+# description : str
+#     Human-readable description of this parameter section.
+# unit : str
+#     Unit string consumed by ConfigLoader (converted to internal units).
+# qubit_label : str
+#     Qubit label with zero padding determined by n_qubits.
+#     Example: n_qubits=64 -> Q00..Q63, n_qubits=144 -> Q000..Q143.
+# frequency : float
+#     Readout frequency associated with each qubit.
+
+
+meta:
+  description: QuEL-3-compatible example readout frequencies for 64Q chip
+  unit: GHz
+
+data:
+  # MUX00
+  Q00: 6.656502
+  Q01: 5.833797
+  Q02: 5.997309
+  Q03: 5.839833
+  # MUX01
+  Q04: 6.381873
+  Q05: 5.970236
+  Q06: 6.268419
+  Q07: 6.314104
+  # MUX02
+  Q08: 6.068344
+  Q09: 6.515377
+  Q10: 5.841052
+  Q11: 6.643042
+  # MUX03
+  Q12: 6.589901
+  Q13: 6.657719
+  Q14: 6.143729
+  Q15: 5.890927
+  # MUX04
+  Q16: 6.545721
+  Q17: 6.430575
+  Q18: 5.777899
+  Q19: 6.277645
+  # MUX05
+  Q20: 6.539332
+  Q21: 6.620546
+  Q22: 6.052813
+  Q23: 6.443277
+  # MUX06
+  Q24: 6.364049
+  Q25: 6.025832
+  Q26: 6.638446
+  Q27: 5.750478
+  # MUX07
+  Q28: 5.756175
+  Q29: 5.945996
+  Q30: 6.352342
+  Q31: 6.283372
+  # MUX08
+  Q32: 6.392017
+  Q33: 6.645771
+  Q34: 6.579906
+  Q35: 6.151936
+  # MUX09
+  Q36: 6.489606
+  Q37: 6.488654
+  Q38: 6.416721
+  Q39: 6.058848
+  # MUX10
+  Q40: 5.830560
+  Q41: 5.893543
+  Q42: 6.678534
+  Q43: 6.410210
+  # MUX11
+  Q44: 6.686702
+  Q45: 6.056743
+  Q46: 5.898093
+  Q47: 6.542232
+  # MUX12
+  Q48: 5.945867
+  Q49: 6.720400
+  Q50: 5.756750
+  Q51: 6.233014
+  # MUX13
+  Q52: 6.605693
+  Q53: 6.181446
+  Q54: 6.733879
+  Q55: 6.345699
+  # MUX14
+  Q56: 6.527785
+  Q57: 6.097125
+  Q58: 6.221504
+  Q59: 5.811295
+  # MUX15
+  Q60: 6.604089
+  Q61: 6.707535
+  Q62: 6.539469
+  Q63: 6.552773

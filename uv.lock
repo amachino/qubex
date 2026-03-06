@@ -3402,7 +3402,7 @@ wheels = [
 
 [[package]]
 name = "quelware-client"
-version = "0.1.0a1"
+version = "0.1.0a2"
 source = { editable = "lib/quelware-client-internal/quelware-client" }
 dependencies = [
     { name = "betterproto2" },
@@ -3439,7 +3439,7 @@ dev = [
 
 [[package]]
 name = "quelware-core"
-version = "0.1.0a1"
+version = "0.1.0a2"
 source = { editable = "lib/quelware-client-internal/quelware-core/python" }
 dependencies = [
     { name = "betterproto2" },

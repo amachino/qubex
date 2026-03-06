@@ -1,0 +1,15 @@
+# Example system configuration for backend selection and runtime settings.
+#
+# Notes
+# -----
+# - One system.yaml maps to one chip_id.
+# - backend selects the active backend section.
+
+schema_version: 1
+chip_id: 64Q
+backend: quel1
+
+quel1:
+  clock_master: 10.0.0.10
+
+quel3: {}
