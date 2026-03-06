@@ -101,6 +101,8 @@ def test_new_ports_start_with_unset_lo_and_cnco() -> None:
         if isinstance(port, GenPort | CapPort):
             assert port.lo_freq is None
             assert port.cnco_freq is None
+        if isinstance(port, CapPort):
+            assert port.rfswitch is None
         if isinstance(port, GenPort):
             assert port.vatt is None
             assert port.fullscale_current is None

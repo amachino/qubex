@@ -16,10 +16,13 @@ from qubex.backend.quel1.quel1_backend_constants import (
     CNCO_CENTER_READ,
     DEFAULT_CAPTURE_DELAY,
     DEFAULT_CAPTURE_DELAY_WORD,
+    DEFAULT_CNCO_FREQ,
     DEFAULT_CONTROL_AMPLITUDE,
     DEFAULT_CONTROL_FSC,
     DEFAULT_CONTROL_VATT,
     DEFAULT_DC_VOLTAGE,
+    DEFAULT_FNCO_FREQ,
+    DEFAULT_LO_FREQ,
     DEFAULT_PUMP_AMPLITUDE,
     DEFAULT_PUMP_FREQUENCY,
     DEFAULT_PUMP_FSC,
@@ -652,6 +655,11 @@ class ExperimentSystem:
                             port=port,
                             params=params,
                         )
+                    elif port.type == PortType.MNTR_IN:
+                        self._configure_monitor_port(
+                            box=box,
+                            port=port,
+                        )
 
     def _build_target_registry(
         self,
@@ -818,6 +826,18 @@ class ExperimentSystem:
         for cap_channel in port.channels:
             cap_channel.fnco_freq = config["fnco"]
             cap_channel.ndelay = params.get_capture_delay(mux.index)
+
+    def _configure_monitor_port(
+        self,
+        box: Box,
+        port: CapPort,
+    ) -> None:
+        """Initialize monitor input with default frequencies for hardware sync."""
+        port.lo_freq = DEFAULT_LO_FREQ
+        port.cnco_freq = DEFAULT_CNCO_FREQ
+        for channel in port.channels:
+            channel.fnco_freq = DEFAULT_FNCO_FREQ
+            channel.ndelay = DEFAULT_CAPTURE_DELAY
 
     def _build_control_targets(
         self,

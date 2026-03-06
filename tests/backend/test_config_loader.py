@@ -10,7 +10,14 @@ import pytest
 import yaml
 
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_CAPTURE_DELAY,
+    DEFAULT_CNCO_FREQ,
+    DEFAULT_FNCO_FREQ,
+    DEFAULT_LO_FREQ,
+)
 from qubex.system.config_loader import ConfigLoader
+from qubex.system.control_system import CapPort, GenPort, PortType
 from qubex.system.experiment_system import DEFAULT_PUMP_FREQUENCY
 
 
@@ -564,6 +571,36 @@ def test_configure_updates_port_state_before_target_registry_rebuild(
     assert read_in_port.lo_freq is not None
     assert read_in_port.cnco_freq is not None
     assert all(channel.fnco_freq is not None for channel in read_in_port.channels)
+
+
+def test_configure_initializes_monitor_ports_for_quel1(tmp_path: Path) -> None:
+    """Given QuEL-1 system init, when building ports, then monitor input has initial frequencies."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    box = experiment_system.control_system.get_box("BOX1")
+    monitor_out_port = next(port for port in box.ports if port.type == PortType.MNTR_OUT)
+    monitor_in_port = next(port for port in box.ports if port.type == PortType.MNTR_IN)
+    assert isinstance(monitor_out_port, GenPort)
+    assert isinstance(monitor_in_port, CapPort)
+
+    assert monitor_out_port.lo_freq is None
+    assert monitor_out_port.cnco_freq is None
+    assert all(channel.fnco_freq is None for channel in monitor_out_port.channels)
+    assert monitor_out_port.rfswitch == "pass"
+    assert monitor_in_port.lo_freq == DEFAULT_LO_FREQ
+    assert monitor_in_port.cnco_freq == DEFAULT_CNCO_FREQ
+    assert all(
+        channel.fnco_freq == DEFAULT_FNCO_FREQ for channel in monitor_in_port.channels
+    )
+    assert all(
+        channel.ndelay == DEFAULT_CAPTURE_DELAY for channel in monitor_in_port.channels
+    )
+    assert monitor_in_port.rfswitch == "open"
 
 
 def test_load_raises_for_system_chip_id_mismatch(tmp_path: Path) -> None:

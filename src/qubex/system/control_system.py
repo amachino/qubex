@@ -567,7 +567,6 @@ def _initialize_ports(
                 box_id=box_id,
                 number=port_num,
                 type=port_type,
-                sideband="L",
             )
             port.channels = tuple(
                 GenChannel(
@@ -577,13 +576,12 @@ def _initialize_ports(
                 )
                 for channel_num in range(n_channels)
             )
-        elif port_type == PortType.CTRL or port_type == PortType.PUMP:
+        elif port_type in (PortType.CTRL, PortType.PUMP):
             port = GenPort(
                 id=port_id,
                 box_id=box_id,
                 number=port_num,
                 type=port_type,
-                sideband="L",
             )
             port.channels = tuple(
                 GenChannel(
@@ -796,7 +794,7 @@ class CapPort(Port):
     channels: tuple[CapChannel, ...] = ()
     lo_freq: int | None = None
     cnco_freq: int | None = None
-    rfswitch: Literal["open", "loop"] = "open"
+    rfswitch: Literal["open", "loop"] | None = None
 
 
 class Channel(MutableModel):
