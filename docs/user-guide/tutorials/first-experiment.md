@@ -13,7 +13,6 @@ exp = qx.Experiment(
     qubits=["Q00", "Q01"],
     config_dir="/path/to/config",
     params_dir="/path/to/params",
-    # mock_mode=True,
 )
 ```
 
@@ -37,7 +36,7 @@ exp.check_waveform()
 ## 4. Run a basic measurement
 
 ```python
-waveform = [0.01 + 0.01j] * 16
+waveform = np.full(16, 0.01 + 0.01j)
 
 result = exp.measure(
     sequence={
@@ -50,6 +49,9 @@ result = exp.measure(
 
 result.plot()
 ```
+
+`measure()` accepts a simple `numpy` array for each qubit waveform and appends
+the readout automatically after the control sequence.
 
 ## 5. Build a pulse and sweep a parameter
 

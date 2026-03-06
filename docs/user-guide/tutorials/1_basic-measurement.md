@@ -32,7 +32,7 @@ exp.check_waveform()
 ## 3. Run `single` and `avg` measurements
 
 ```python
-waveform = [0.01 + 0.01j] * 16
+waveform = np.full(16, 0.01 + 0.01j)
 sequence = {
     exp.qubit_labels[0]: waveform,
     exp.qubit_labels[1]: waveform,
@@ -65,6 +65,11 @@ custom_result = exp.execute(
 )
 custom_result.plot()
 ```
+
+This example appends a final readout automatically, but `execute()` also lets
+you design readout pulses explicitly and place measurements inside the
+sequence. If one target is captured multiple times, `custom_result.data[target]`
+returns one capture entry per measurement point.
 
 ## Related example
 

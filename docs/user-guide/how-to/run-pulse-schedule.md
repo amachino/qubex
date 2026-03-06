@@ -1,60 +1,86 @@
-# Run a pulse schedule (Measurement API, advanced)
+# Build a measurement schedule (Measurement API, advanced)
 
-This guide shows how to build a `qxpulse.PulseSchedule` and execute it with the lower-level `Measurement` API.
+This guide shows how to build reusable `PulseSchedule` objects and convert them
+into `MeasurementSchedule` objects for `run_measurement()`.
 
-For most workflows, use `Experiment.execute()` and related high-level APIs.
+For the end-to-end `run_*` workflow and NetCDF result models, see
+[Basic measurement](basic-measurement.md).
 
-## Build a schedule
+## 1. Create a measurement session
 
 ```python
-from qxpulse import Blank, FlatTop, Gaussian, PulseSchedule
-from qubex.measurement import Measurement
+import qubex as qx
 
-session = Measurement(
+session = qx.Measurement(
     chip_id="64Q",
     qubits=["Q00", "Q01"],
     config_dir="/path/to/config",
     params_dir="/path/to/params",
 )
 
-schedule = PulseSchedule()
-with schedule as s:
-    s.add("Q00", Gaussian(duration=32, amplitude=0.03, sigma=8))
-    s.add("Q01", Gaussian(duration=32, amplitude=0.03, sigma=8))
-    s.add("Q00", Blank(duration=16))
-    s.barrier()
-    s.add("RQ00", FlatTop(duration=256, amplitude=0.1, tau=32))
-    s.add("RQ01", FlatTop(duration=256, amplitude=0.1, tau=32))
+q0, q1 = session.qubit_labels[:2]
 ```
 
-## Execute the schedule
+## 2. Build and reuse a pulse schedule
 
 ```python
-result = session.execute(
-    schedule,
-    mode="single",
-    shots=1024,
-)
+with qx.PulseSchedule([q0, q1]) as base:
+    base.add(
+        q0,
+        qx.pulse.Gaussian(duration=64, amplitude=0.05, sigma=16),
+    )
+    base.add(
+        q1,
+        qx.pulse.Gaussian(duration=64, amplitude=0.05, sigma=16),
+    )
+    base.barrier()
+    base.add(q0, qx.pulse.Blank(duration=32))
+    base.add(q1, qx.pulse.Blank(duration=32))
 
-result.plot()
+with qx.PulseSchedule([q0, q1]) as schedule:
+    schedule.call(base)
+    schedule.call(base)
+
+schedule.plot()
 ```
 
-## Advanced: build and execute measurement schedules
+Use `call()` to reuse a prebuilt sub-sequence without rebuilding each pulse by hand.
+
+## 3. Convert the pulse schedule into a measurement schedule
 
 ```python
-measurement_schedule = session.build_measurement_schedule(pulse_schedule=schedule)
-config = session.create_measurement_config(
-    mode="single",
-    shots=1024,
-    enable_dsp_demodulation=True,
-    enable_dsp_sum=True,
-    enable_dsp_classification=False,
-    line_param0=(1.0, 0.0, 0.0),
-    line_param1=(0.0, 1.0, 0.0),
-)
-
-result = await session.run_measurement(
-    schedule=measurement_schedule,
-    config=config,
+measurement_schedule = session.build_measurement_schedule(
+    pulse_schedule=schedule,
+    final_measurement=True,
 )
 ```
+
+`final_measurement=True` appends the readout instructions, so the pulse schedule
+itself only has to describe the control sequence.
+
+## 4. Run the prepared schedule
+
+```python
+import asyncio
+
+
+async def main() -> None:
+    config = session.create_measurement_config(
+        n_shots=1024,
+        shot_averaging=True,
+        time_integration=False,
+        state_classification=False,
+    )
+
+    result = await session.run_measurement(
+        schedule=measurement_schedule,
+        config=config,
+    )
+    result.plot()
+
+
+asyncio.run(main())
+```
+
+Use the same pattern when you want to hand a `MeasurementSchedule` factory to
+`run_sweep_measurement()` or `run_ndsweep_measurement()`.

@@ -66,9 +66,8 @@ nav:
       - Terminology: user-guide/concepts/terminology.md
   - How-to guides:
       - Overview: user-guide/how-to/index.md
-      - Save and load results: user-guide/how-to/save-and-load-results.md
       - Basic measurement (Measurement API, advanced): user-guide/how-to/basic-measurement.md
-      - Run a pulse schedule (Measurement API, advanced): user-guide/how-to/run-pulse-schedule.md
+      - Build a measurement schedule (Measurement API, advanced): user-guide/how-to/run-pulse-schedule.md
   - Tutorials:
       - Overview: user-guide/tutorials/index.md
       - 1. Basic measurement with Experiment: user-guide/tutorials/1_basic-measurement.md
