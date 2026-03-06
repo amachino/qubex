@@ -49,6 +49,8 @@ class Quel3BackendController(BackendController):
         self._sampling_period = self.SAMPLING_PERIOD_NS
         endpoint = quelware_endpoint if quelware_endpoint is not None else "localhost"
         port = quelware_port if quelware_port is not None else 50051
+        self._quelware_endpoint = endpoint
+        self._quelware_port = port
 
         self._connection_manager = Quel3ConnectionManager(
             quelware_endpoint=endpoint,
@@ -70,6 +72,16 @@ class Quel3BackendController(BackendController):
     def is_connected(self) -> bool:
         """Return whether backend resources are connected."""
         return self._connection_manager.is_connected
+
+    @property
+    def quelware_endpoint(self) -> str:
+        """Return configured quelware endpoint."""
+        return self._quelware_endpoint
+
+    @property
+    def quelware_port(self) -> int:
+        """Return configured quelware port."""
+        return self._quelware_port
 
     def connect(
         self,

@@ -702,6 +702,35 @@ def test_push_does_not_reconfigure_ports(
     assert called_sync_hardware is True
 
 
+def test_push_without_cache_sync_still_applies_hardware_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given backend without cache sync support, when pushing, then hardware sync still runs."""
+    manager = SystemManager.shared()
+    box = SimpleNamespace(id="A", name="Alpha")
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            get_box=lambda box_id: box,
+            hash=0,
+        ),
+    )
+    monkeypatch.setattr(manager, "_supports_box_settings_cache_sync", lambda: False)
+
+    called_sync_hardware = False
+
+    def _sync_hardware(**_: object) -> None:
+        nonlocal called_sync_hardware
+        called_sync_hardware = True
+
+    monkeypatch.setattr(manager, "_sync_experiment_system_to_hardware", _sync_hardware)
+
+    manager.push(["A"], confirm=False)
+
+    assert called_sync_hardware is True
+
+
 def test_create_backend_controller_supports_quel3() -> None:
     """Given Quel3 kind, when creating backend controller, then Quel3 controller is returned."""
     controller = SystemManager._create_backend_controller("quel3")  # noqa: SLF001

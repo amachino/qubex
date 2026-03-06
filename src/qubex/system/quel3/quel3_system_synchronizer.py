@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from .quel3_configuration_manager import Quel3ConfigurationManager
+
 if TYPE_CHECKING:
     from qubex.backend.quel3.quel3_backend_controller import Quel3BackendController
     from qubex.system.control_system import Box
@@ -12,22 +14,41 @@ if TYPE_CHECKING:
 
 
 class Quel3SystemSynchronizer:
-    """No-op synchronizer for QuEL-3 until sync APIs are supported."""
+    """Synchronize QuEL-3 logical targets to deployed instruments."""
 
-    def __init__(self, *, backend_controller: Quel3BackendController) -> None:
+    def __init__(
+        self,
+        *,
+        backend_controller: Quel3BackendController,
+        configuration_manager: Quel3ConfigurationManager | None = None,
+    ) -> None:
         self._backend_controller = backend_controller
+        self._configuration_manager = (
+            configuration_manager
+            if configuration_manager is not None
+            else Quel3ConfigurationManager(
+                quelware_endpoint=backend_controller.quelware_endpoint,
+                quelware_port=backend_controller.quelware_port,
+            )
+        )
+        self._experiment_system: ExperimentSystem | None = None
 
     @property
     def backend_controller(self) -> Quel3BackendController:
         """Return backend controller bound to this synchronizer."""
         return self._backend_controller
 
+    @property
+    def configuration_manager(self) -> Quel3ConfigurationManager:
+        """Return QuEL-3 push-time configuration manager."""
+        return self._configuration_manager
+
     def sync_experiment_system_to_backend_controller(
         self,
         experiment_system: ExperimentSystem,
     ) -> None:
-        """No-op: QuEL-3 backend controller model sync is not implemented."""
-        del experiment_system
+        """Store current experiment-system model for upcoming push operation."""
+        self._experiment_system = experiment_system
 
     def sync_experiment_system_to_hardware(
         self,
@@ -35,8 +56,20 @@ class Quel3SystemSynchronizer:
         boxes: Sequence[Box],
         parallel: bool | None = None,
     ) -> None:
-        """No-op: QuEL-3 hardware sync path is not implemented."""
-        del boxes, parallel
+        """Deploy instruments for selected boxes from the current target registry."""
+        del parallel
+        if self._experiment_system is None:
+            raise RuntimeError(
+                "Experiment system is not synchronized for QuEL-3 push. "
+                "Call load() before push()."
+            )
+        box_ids = [box.id for box in boxes]
+        if len(box_ids) == 0:
+            return
+        self._configuration_manager.deploy_instruments_from_target_registry(
+            experiment_system=self._experiment_system,
+            box_ids=box_ids,
+        )
 
     def fetch_backend_settings_from_hardware(
         self,

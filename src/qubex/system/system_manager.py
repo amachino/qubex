@@ -441,11 +441,11 @@ class SystemManager:
             Whether to configure selected boxes in parallel. If `None`,
             defaults to `True`.
         """
-        if not self._supports_box_settings_cache_sync():
+        supports_cache_sync = self._supports_box_settings_cache_sync()
+        if not supports_cache_sync:
             logger.info(
-                "Skipping push because this backend does not expose box-settings cache APIs."
+                "Running push without backend-settings cache synchronization for this backend."
             )
-            return
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         boxes_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
 
@@ -472,6 +472,9 @@ This operation will overwrite the existing backend settings. Do you want to cont
             boxes=boxes,
             parallel=parallel,
         )
+        if not supports_cache_sync:
+            self._update_cached_state()
+            return
         fetched_backend_settings = self._fetch_backend_settings_from_hardware(
             box_ids=box_ids,
             parallel=parallel,
