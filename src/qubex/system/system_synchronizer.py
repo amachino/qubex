@@ -31,6 +31,7 @@ class SystemSynchronizer(Protocol):
         *,
         boxes: Sequence[Box],
         parallel: bool | None = None,
+        target_labels: Sequence[str] | None = None,
     ) -> None:
         """Apply experiment-system settings to hardware boxes."""
         ...

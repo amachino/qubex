@@ -43,6 +43,7 @@ class _ContextStub:
     ) -> None:
         self.configuration_mode: ConfigurationMode = "ge-cr-cr"
         self.box_ids = ["Q2A", "Q2B"]
+        self.targets = {"Q00": object(), "RQ00": object()}
         self.backend_controller = object()
         self.system_manager = system_manager
         self.measurement = measurement
@@ -191,6 +192,7 @@ def test_configure_uses_system_manager_and_sync_hook(monkeypatch) -> None:
             "system_manager.push",
             {
                 "box_ids": ["Q2A"],
+                "target_labels": ["Q00", "RQ00"],
             },
         ),
     ]

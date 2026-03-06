@@ -111,6 +111,7 @@ class CrTargetConfig(TypedDict):
 class ControlParams(MutableModel):
     """Control parameters and access helpers for the system."""
 
+    frequency_margin: dict[str, float]
     control_amplitude: dict[str, float]
     readout_amplitude: dict[str, float]
     control_vatt: dict[str, int | None]
@@ -122,6 +123,22 @@ class ControlParams(MutableModel):
     capture_delay: dict[int, int]
     capture_delay_word: dict[int, int]
     jpa_params: dict[int, JPAParam | None]
+
+    _DEFAULT_FREQUENCY_MARGIN_BY_TYPE: Final[dict[str, float]] = {
+        TargetType.READ.value: 0.1,
+        TargetType.CTRL_GE.value: 0.1,
+        TargetType.CTRL_EF.value: 0.1,
+        TargetType.CTRL_CR.value: 0.1,
+        TargetType.PUMP.value: 0.1,
+    }
+
+    def get_frequency_margin(self, target_type: TargetType | str) -> float:
+        """Return the QuEL-3 deploy frequency margin for a target type."""
+        key = target_type.value if isinstance(target_type, TargetType) else target_type
+        return self.frequency_margin.get(
+            key,
+            self._DEFAULT_FREQUENCY_MARGIN_BY_TYPE.get(key, 0.1),
+        )
 
     def get_control_amplitude(self, qubit: str) -> float:
         """Return the control amplitude for a qubit."""

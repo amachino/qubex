@@ -11,8 +11,8 @@ from qubex.system.quel3 import Quel3ConfigurationManager, Quel3SystemSynchronize
 from qubex.system.target import TargetType
 
 
-def test_build_instrument_deploy_requests_groups_targets_by_port_and_role() -> None:
-    """Given selected boxes, when building requests, then targets are grouped by port and role."""
+def test_build_instrument_deploy_requests_creates_one_request_per_target() -> None:
+    """Given selected boxes, when building requests, then QuEL-3 creates one instrument per target."""
     manager = Quel3ConfigurationManager(
         quelware_endpoint="localhost",
         quelware_port=50051,
@@ -52,6 +52,9 @@ def test_build_instrument_deploy_requests_groups_targets_by_port_and_role() -> N
     experiment_system = SimpleNamespace(
         gen_targets=gen_targets,
         wiring_info=SimpleNamespace(read_in=[(mux0, read_in_port)]),
+        control_params=SimpleNamespace(
+            get_frequency_margin=lambda _target_type: 0.1,
+        ),
         get_box=lambda box_id: SimpleNamespace(
             id=box_id,
             name="quel3-02-a01" if box_id == "BOX1" else "quel3-02-a02",
@@ -64,23 +67,72 @@ def test_build_instrument_deploy_requests_groups_targets_by_port_and_role() -> N
         box_ids=["BOX1"],
     )
 
-    request_by_port_id = {request.port_id: request for request in requests}
-    assert set(request_by_port_id) == {
-        "quel3-02-a01:trx_p00p01",
-        "quel3-02-a01:tx_p02",
-    }
+    request_by_target = {request.target_labels[0]: request for request in requests}
+    assert set(request_by_target) == {"RQ00", "Q00", "Q00-CR"}
 
-    read_request = request_by_port_id["quel3-02-a01:trx_p00p01"]
+    read_request = request_by_target["RQ00"]
+    assert read_request.port_id == "quel3-02-a01:trx_p00p01"
     assert read_request.role == "TRANSCEIVER"
-    assert read_request.frequency_range_min_hz == pytest.approx(6.0e9)
-    assert read_request.frequency_range_max_hz == pytest.approx(6.0e9)
+    assert read_request.frequency_range_min_hz == pytest.approx(5.9e9)
+    assert read_request.frequency_range_max_hz == pytest.approx(6.1e9)
     assert read_request.target_labels == ("RQ00",)
 
-    ctrl_request = request_by_port_id["quel3-02-a01:tx_p02"]
+    ctrl_request = request_by_target["Q00"]
+    assert ctrl_request.port_id == "quel3-02-a01:tx_p02"
     assert ctrl_request.role == "TRANSMITTER"
-    assert ctrl_request.frequency_range_min_hz == pytest.approx(4.20e9)
-    assert ctrl_request.frequency_range_max_hz == pytest.approx(4.35e9)
-    assert ctrl_request.target_labels == ("Q00", "Q00-CR")
+    assert ctrl_request.frequency_range_min_hz == pytest.approx(4.10e9)
+    assert ctrl_request.frequency_range_max_hz == pytest.approx(4.30e9)
+    assert ctrl_request.target_labels == ("Q00",)
+
+    cr_request = request_by_target["Q00-CR"]
+    assert cr_request.port_id == "quel3-02-a01:tx_p02"
+    assert cr_request.role == "TRANSMITTER"
+    assert cr_request.frequency_range_min_hz == pytest.approx(4.25e9)
+    assert cr_request.frequency_range_max_hz == pytest.approx(4.45e9)
+    assert cr_request.target_labels == ("Q00-CR",)
+
+
+def test_build_instrument_deploy_requests_filters_by_target_labels() -> None:
+    """Given selected targets, when building requests, then only requested targets are included."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+    ctrl_port = SimpleNamespace(id="BOX1.CTRL0", box_id="BOX1", number=2)
+    experiment_system = SimpleNamespace(
+        gen_targets={
+            "Q00": SimpleNamespace(
+                label="Q00",
+                frequency=4.20,
+                type=TargetType.CTRL_GE,
+                channel=SimpleNamespace(port=ctrl_port),
+            ),
+            "Q00-CR": SimpleNamespace(
+                label="Q00-CR",
+                frequency=4.35,
+                type=TargetType.CTRL_CR,
+                channel=SimpleNamespace(port=ctrl_port),
+            ),
+        },
+        wiring_info=SimpleNamespace(read_in=[]),
+        control_params=SimpleNamespace(
+            get_frequency_margin=lambda _target_type: 0.1,
+        ),
+        get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
+        get_mux_by_readout_port=lambda _port: None,
+    )
+
+    requests = manager._build_instrument_deploy_requests(  # noqa: SLF001
+        experiment_system=cast(Any, experiment_system),
+        box_ids=["BOX1"],
+        target_labels=["Q00"],
+    )
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.target_labels == ("Q00",)
+    assert request.frequency_range_min_hz == pytest.approx(4.10e9)
+    assert request.frequency_range_max_hz == pytest.approx(4.30e9)
 
 
 def test_deploy_instruments_from_target_registry_calls_session_api(
@@ -181,6 +233,9 @@ def test_deploy_instruments_from_target_registry_calls_session_api(
     experiment_system = SimpleNamespace(
         gen_targets={"Q00": target},
         wiring_info=SimpleNamespace(read_in=[]),
+        control_params=SimpleNamespace(
+            get_frequency_margin=lambda _target_type: 0.1,
+        ),
         get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
         get_mux_by_readout_port=lambda _port: None,
     )
@@ -197,16 +252,51 @@ def test_deploy_instruments_from_target_registry_calls_session_api(
     definition = cast(Any, definitions[0])
     assert definition.mode == "fixed_timeline"
     assert definition.role == "transmitter"
-    assert definition.profile.frequency_range_min == pytest.approx(4.2e9)
-    assert definition.profile.frequency_range_max == pytest.approx(4.2e9)
-    assert definition.alias.startswith("inst_transmitter_quel3-02-a01_tx_p02")
+    assert definition.profile.frequency_range_min == pytest.approx(4.1e9)
+    assert definition.profile.frequency_range_max == pytest.approx(4.3e9)
+    assert definition.alias.startswith("inst_transmitter_quel3-02-a01_tx_p02_q00")
     assert manager.target_alias_map == {"Q00": definition.alias}
     assert definition.alias in deployed
 
 
+def test_build_instrument_deploy_requests_raises_when_frequency_margin_reaches_nyquist() -> (
+    None
+):
+    """Given an oversized margin, when building requests, then QuEL-3 fails fast before deploy."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+    ctrl_port = SimpleNamespace(id="BOX1.CTRL0", box_id="BOX1", number=2)
+    experiment_system = SimpleNamespace(
+        gen_targets={
+            "Q00": SimpleNamespace(
+                label="Q00",
+                frequency=4.20,
+                type=TargetType.CTRL_GE,
+                channel=SimpleNamespace(port=ctrl_port),
+            ),
+        },
+        wiring_info=SimpleNamespace(read_in=[]),
+        control_params=SimpleNamespace(
+            get_frequency_margin=lambda _target_type: 1.25,
+        ),
+        get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
+        get_mux_by_readout_port=lambda _port: None,
+    )
+
+    with pytest.raises(
+        ValueError, match="frequency_margin must be smaller than Nyquist"
+    ):
+        manager._build_instrument_deploy_requests(  # noqa: SLF001
+            experiment_system=cast(Any, experiment_system),
+            box_ids=["BOX1"],
+        )
+
+
 def test_quel3_synchronizer_deploys_from_last_synced_experiment_system() -> None:
     """Given synchronized experiment system, when pushing hardware sync, then synchronizer delegates deployment."""
-    calls: list[tuple[object, tuple[str, ...]]] = []
+    calls: list[tuple[object, tuple[str, ...], tuple[str, ...]]] = []
 
     class _FakeConfigurationManager:
         def deploy_instruments_from_target_registry(
@@ -214,8 +304,11 @@ def test_quel3_synchronizer_deploys_from_last_synced_experiment_system() -> None
             *,
             experiment_system: object,
             box_ids: list[str],
+            target_labels: list[str] | None = None,
         ) -> dict[str, tuple[object, ...]]:
-            calls.append((experiment_system, tuple(box_ids)))
+            calls.append(
+                (experiment_system, tuple(box_ids), tuple(target_labels or ()))
+            )
             return {}
 
     backend_controller = SimpleNamespace(
@@ -236,9 +329,10 @@ def test_quel3_synchronizer_deploys_from_last_synced_experiment_system() -> None
     synchronizer.sync_experiment_system_to_hardware(
         boxes=cast(Any, boxes),
         parallel=True,
+        target_labels=["Q00", "RQ00"],
     )
 
-    assert calls == [(experiment_system, ("BOX1", "BOX2"))]
+    assert calls == [(experiment_system, ("BOX1", "BOX2"), ("Q00", "RQ00"))]
 
 
 def test_quel3_synchronizer_raises_if_push_called_before_load() -> None:

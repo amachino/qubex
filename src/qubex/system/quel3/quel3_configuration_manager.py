@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 RoleName = Literal["TRANSMITTER", "TRANSCEIVER"]
+FIXED_TIMELINE_SAMPLING_RATE_HZ = 2.5e9
 
 
 def _run_async(
@@ -84,12 +85,14 @@ class Quel3ConfigurationManager:
         *,
         experiment_system: ExperimentSystem,
         box_ids: Sequence[str],
+        target_labels: Sequence[str] | None = None,
     ) -> dict[str, tuple[object, ...]]:
         """Deploy instruments from selected boxes in target registry."""
         return _run_async(
             lambda: self._deploy_instruments_from_target_registry(
                 experiment_system=experiment_system,
                 box_ids=box_ids,
+                target_labels=target_labels,
             )
         )
 
@@ -98,11 +101,13 @@ class Quel3ConfigurationManager:
         *,
         experiment_system: ExperimentSystem,
         box_ids: Sequence[str],
+        target_labels: Sequence[str] | None = None,
     ) -> dict[str, tuple[object, ...]]:
         """Deploy grouped target-based instruments through quelware session APIs."""
         requests = self._build_instrument_deploy_requests(
             experiment_system=experiment_system,
             box_ids=box_ids,
+            target_labels=target_labels,
         )
         if len(requests) == 0:
             self._last_deployed_instrument_infos = {}
@@ -152,35 +157,41 @@ class Quel3ConfigurationManager:
         *,
         experiment_system: ExperimentSystem,
         box_ids: Sequence[str],
+        target_labels: Sequence[str] | None = None,
     ) -> tuple[InstrumentDeployRequest, ...]:
-        """Build deterministic deploy requests from selected generator targets."""
+        """Build deterministic one-target-per-instrument deploy requests."""
         selected_box_ids = set(box_ids)
-        grouped_targets: dict[tuple[str, RoleName], list[Target]] = defaultdict(list)
+        selected_target_labels = (
+            set(target_labels) if target_labels is not None else None
+        )
 
+        requests: list[InstrumentDeployRequest] = []
         for _label, target in sorted(experiment_system.gen_targets.items()):
             port = target.channel.port
             if port.box_id not in selected_box_ids:
+                continue
+            if (
+                selected_target_labels is not None
+                and target.label not in selected_target_labels
+            ):
                 continue
             role = self._resolve_instrument_role(target.type)
             port_id = self._resolve_port_id(
                 experiment_system=experiment_system,
                 target=target,
             )
-            grouped_targets[(port_id, role)].append(target)
-
-        requests: list[InstrumentDeployRequest] = []
-        for (port_id, role), targets in sorted(grouped_targets.items()):
-            frequency_hz = [
-                self._resolve_target_frequency_hz(target=target) for target in targets
-            ]
-            freq_min = min(frequency_hz)
-            freq_max = max(frequency_hz)
-            if freq_min > freq_max:
-                raise ValueError(
-                    "Invalid frequency range derived from target group: "
-                    f"port_id={port_id} role={role} min={freq_min} max={freq_max}"
-                )
-            alias = self._build_alias(port_id=port_id, role=role)
+            frequency_hz = self._resolve_target_frequency_hz(target=target)
+            frequency_margin_hz = self._resolve_target_frequency_margin_hz(
+                experiment_system=experiment_system,
+                target=target,
+            )
+            freq_min = frequency_hz - frequency_margin_hz
+            freq_max = frequency_hz + frequency_margin_hz
+            alias = self._build_alias(
+                port_id=port_id,
+                role=role,
+                target_label=target.label,
+            )
             requests.append(
                 InstrumentDeployRequest(
                     port_id=port_id,
@@ -188,7 +199,7 @@ class Quel3ConfigurationManager:
                     frequency_range_min_hz=freq_min,
                     frequency_range_max_hz=freq_max,
                     alias=alias,
-                    target_labels=tuple(sorted(target.label for target in targets)),
+                    target_labels=(target.label,),
                 )
             )
         return tuple(requests)
@@ -278,10 +289,38 @@ class Quel3ConfigurationManager:
         return frequency_hz
 
     @staticmethod
-    def _build_alias(*, port_id: str, role: RoleName) -> str:
-        """Build deterministic instrument alias from port and role."""
+    def _resolve_target_frequency_margin_hz(
+        *,
+        experiment_system: ExperimentSystem,
+        target: Target,
+    ) -> float:
+        """Resolve validated QuEL-3 deploy margin in Hz for one target."""
+        frequency_margin = float(
+            experiment_system.control_params.get_frequency_margin(target.type)
+        )
+        if not math.isfinite(frequency_margin):
+            raise ValueError(
+                f"frequency_margin must be finite: label={target.label} value={frequency_margin}"
+            )
+        if frequency_margin < 0:
+            raise ValueError(
+                f"frequency_margin must be non-negative: label={target.label} value={frequency_margin}"
+            )
+        nyquist_hz = FIXED_TIMELINE_SAMPLING_RATE_HZ / 2
+        frequency_margin_hz = frequency_margin * 1e9
+        if frequency_margin_hz >= nyquist_hz:
+            raise ValueError(
+                "frequency_margin must be smaller than Nyquist: "
+                f"label={target.label} value={frequency_margin} nyquist_hz={nyquist_hz}"
+            )
+        return frequency_margin_hz
+
+    @staticmethod
+    def _build_alias(*, port_id: str, role: RoleName, target_label: str) -> str:
+        """Build deterministic instrument alias from port, role, and target label."""
         normalized_port_id = port_id.replace(":", "_")
-        return f"inst_{role.lower()}_{normalized_port_id}"
+        normalized_target_label = re.sub(r"[^0-9A-Za-z]+", "_", target_label).lower()
+        return f"inst_{role.lower()}_{normalized_port_id}_{normalized_target_label}"
 
     @staticmethod
     def _load_quelware_client_factory() -> Callable[[str, int], Any]:

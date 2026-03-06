@@ -169,7 +169,10 @@ class SessionService:
             configuration_mode=mode,
         )
         resolved_box_ids = box_ids or self.ctx.box_ids
-        system_manager.push(box_ids=resolved_box_ids)
+        system_manager.push(
+            box_ids=resolved_box_ids,
+            target_labels=list(self.ctx.targets),
+        )
         self._sync_pulse_sampling_period()
 
     def reset_awg_and_capunits(

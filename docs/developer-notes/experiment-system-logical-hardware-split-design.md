@@ -73,7 +73,7 @@ Owners:
 
 Responsibilities:
 
-- convert targets to deploy groups
+- convert selected targets to one-instrument-per-target deploy requests
 - create `InstrumentDefinition` with fixed timeline profile
 - call `session.deploy_instruments(...)`
 - cache deployed instrument infos for execution path
@@ -128,18 +128,24 @@ Derive `port_id` from target channel binding:
 
 ### Frequency-range mapping
 
-Group targets by `(port_id, role)` and compute:
+For each selected target, compute:
 
-- `frequency_range_min_hz = min(target.frequency * 1e9)`
-- `frequency_range_max_hz = max(target.frequency * 1e9)`
+- `frequency_margin = control_params.frequency_margin[target.type]`
+- `frequency_range_min_hz = (target.frequency - frequency_margin) * 1e9`
+- `frequency_range_max_hz = (target.frequency + frequency_margin) * 1e9`
 
-Use this range for:
+Constraints:
+
+- `frequency_margin` is a QuEL-3 deploy-time parameter stored in params data
+- validate `frequency_margin < Fs / 2` before deploy to avoid fold-back noise
+
+Use the computed range for:
 
 - `FixedTimelineProfile(frequency_range_min=..., frequency_range_max=...)`
 
 ### Alias policy
 
-- generate deterministic alias from `port_id` (for example `inst:{port_id}`)
+- generate deterministic alias from `port_id`, role, and target label
 - keep stable alias naming across repeated push
 
 ## QuEL-3 deployment API contract
@@ -172,6 +178,7 @@ class Quel3ConfigurationManager(Protocol):
         *,
         experiment_system: ExperimentSystem,
         box_ids: Sequence[str],
+        target_labels: Sequence[str] | None = None,
     ) -> dict[str, tuple[InstrumentInfo, ...]]:
         ...
 ```
@@ -187,8 +194,8 @@ Optional delegation:
 2. `Quel3SystemSynchronizer.sync_experiment_system_to_hardware(...)` is called.
 3. Synchronizer delegates to `Quel3ConfigurationManager`.
 4. Configuration manager:
-   - reads `TargetRegistry`
-   - builds deploy groups
+   - reads selected target labels from the current experiment context
+   - builds one-instrument-per-target deploy requests
    - deploys instruments via quelware session
    - stores returned `inst_infos` in QuEL-3 runtime state
 5. Push completes.

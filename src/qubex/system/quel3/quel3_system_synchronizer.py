@@ -55,6 +55,7 @@ class Quel3SystemSynchronizer:
         *,
         boxes: Sequence[Box],
         parallel: bool | None = None,
+        target_labels: Sequence[str] | None = None,
     ) -> None:
         """Deploy instruments for selected boxes from the current target registry."""
         del parallel
@@ -69,6 +70,7 @@ class Quel3SystemSynchronizer:
         self._configuration_manager.deploy_instruments_from_target_registry(
             experiment_system=self._experiment_system,
             box_ids=box_ids,
+            target_labels=target_labels,
         )
 
     def fetch_backend_settings_from_hardware(

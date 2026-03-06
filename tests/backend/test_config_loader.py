@@ -86,6 +86,13 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
             "data": {"Q0": 0.05},
         },
     )
+    _write_yaml(
+        params_dir / "frequency_margin.yaml",
+        {
+            "meta": {"unit": "GHz", "default": 0.1},
+            "data": {"READ": 0.2},
+        },
+    )
 
     # jpa_params per-file: pass-through
     _write_yaml(
@@ -194,6 +201,10 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
         cp.get_pump_frequency(1), DEFAULT_PUMP_FREQUENCY, rel_tol=0, abs_tol=1e-12
+    )
+    assert math.isclose(cp.get_frequency_margin("READ"), 0.2, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(
+        cp.get_frequency_margin("CTRL_GE"), 0.1, rel_tol=0, abs_tol=1e-12
     )
 
 
@@ -583,7 +594,9 @@ def test_configure_initializes_monitor_ports_for_quel1(tmp_path: Path) -> None:
     )
     experiment_system = loader.get_experiment_system()
     box = experiment_system.control_system.get_box("BOX1")
-    monitor_out_port = next(port for port in box.ports if port.type == PortType.MNTR_OUT)
+    monitor_out_port = next(
+        port for port in box.ports if port.type == PortType.MNTR_OUT
+    )
     monitor_in_port = next(port for port in box.ports if port.type == PortType.MNTR_IN)
     assert isinstance(monitor_out_port, GenPort)
     assert isinstance(monitor_in_port, CapPort)

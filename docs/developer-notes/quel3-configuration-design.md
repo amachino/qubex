@@ -205,7 +205,8 @@ Status legend:
     `SystemManager.push(...)`.
   - Keep execution manager focused on run-time sequencing and result retrieval.
   - Add `Quel3ConfigurationManager` for:
-    - `TargetRegistry -> deploy definition` conversion
+    - active-target (`ExperimentContext.targets`) -> deploy definition conversion
+    - one-instrument-per-target range planning using `target.frequency ± frequency_margin`
     - `session.deploy_instruments(...)` calls
     - deployed instrument info caching for execution lookup
   - Keep QuEL-3 backend-settings pull/snapshot capability unsupported.

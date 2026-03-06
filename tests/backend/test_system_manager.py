@@ -412,7 +412,7 @@ def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
         FakeBox(id="A", ports=()),
         FakeBox(id="B", ports=()),
     ]
-    calls: list[tuple[list[str], bool | None]] = []
+    calls: list[tuple[list[str], bool | None, tuple[str, ...]]] = []
 
     class _SystemSyncManager:
         def sync_experiment_system_to_hardware(
@@ -420,17 +420,21 @@ def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
             *,
             boxes: Sequence[FakeBox],
             parallel: bool | None = None,
+            target_labels: Sequence[str] | None = None,
         ) -> None:
-            calls.append(([box.id for box in boxes], parallel))
+            calls.append(
+                ([box.id for box in boxes], parallel, tuple(target_labels or ()))
+            )
 
     monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
         parallel=True,
+        target_labels=["Q00", "RQ00"],
     )
 
-    assert calls == [(["A", "B"], True)]
+    assert calls == [(["A", "B"], True, ("Q00", "RQ00"))]
 
 
 def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
@@ -442,7 +446,7 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
         FakeBox(id="A", ports=()),
         FakeBox(id="B", ports=()),
     ]
-    calls: list[tuple[list[str], bool | None]] = []
+    calls: list[tuple[list[str], bool | None, tuple[str, ...]]] = []
 
     class _SystemSyncManager:
         def sync_experiment_system_to_hardware(
@@ -450,17 +454,21 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
             *,
             boxes: Sequence[FakeBox],
             parallel: bool | None = None,
+            target_labels: Sequence[str] | None = None,
         ) -> None:
-            calls.append(([box.id for box in boxes], parallel))
+            calls.append(
+                ([box.id for box in boxes], parallel, tuple(target_labels or ()))
+            )
 
     monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
         parallel=False,
+        target_labels=None,
     )
 
-    assert calls == [(["A", "B"], False)]
+    assert calls == [(["A", "B"], False, ())]
 
 
 def test_sync_experiment_system_to_hardware_skips_without_system_synchronizer(
@@ -729,6 +737,33 @@ def test_push_without_cache_sync_still_applies_hardware_sync(
     manager.push(["A"], confirm=False)
 
     assert called_sync_hardware is True
+
+
+def test_push_forwards_target_labels_to_hardware_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given target labels, when pushing, then SystemManager forwards them to hardware sync."""
+    manager = SystemManager.shared()
+    box = SimpleNamespace(id="A", name="Alpha")
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            get_box=lambda box_id: box,
+            hash=0,
+        ),
+    )
+    monkeypatch.setattr(manager, "_supports_box_settings_cache_sync", lambda: False)
+    captured: dict[str, object] = {}
+
+    def _sync_hardware(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(manager, "_sync_experiment_system_to_hardware", _sync_hardware)
+
+    manager.push(["A"], confirm=False, target_labels=["Q00", "RQ00"])
+
+    assert captured["target_labels"] == ["Q00", "RQ00"]
 
 
 def test_create_backend_controller_supports_quel3() -> None:

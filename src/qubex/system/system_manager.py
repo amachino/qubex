@@ -423,6 +423,7 @@ class SystemManager:
         confirm: bool = True,
         *,
         parallel: bool | None = None,
+        target_labels: Sequence[str] | None = None,
     ) -> None:
         """
         Push software experiment-system settings to selected hardware boxes.
@@ -440,6 +441,9 @@ class SystemManager:
         parallel : bool | None, optional
             Whether to configure selected boxes in parallel. If `None`,
             defaults to `True`.
+        target_labels : Sequence[str] | None, optional
+            Logical target labels to apply for backends that support
+            target-scoped hardware configuration.
         """
         supports_cache_sync = self._supports_box_settings_cache_sync()
         if not supports_cache_sync:
@@ -471,6 +475,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         self._sync_experiment_system_to_hardware(
             boxes=boxes,
             parallel=parallel,
+            target_labels=target_labels,
         )
         if not supports_cache_sync:
             self._update_cached_state()
@@ -579,6 +584,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         *,
         boxes: Sequence[Box],
         parallel: bool | None = None,
+        target_labels: Sequence[str] | None = None,
     ) -> None:
         """
         Apply experiment-system port/channel parameters to hardware boxes.
@@ -590,6 +596,9 @@ This operation will overwrite the existing backend settings. Do you want to cont
         parallel : bool | None, optional
             Whether to configure boxes in parallel. If `None`, defaults to
             `True`.
+        target_labels : Sequence[str] | None, optional
+            Logical target labels to apply for backends that support
+            target-scoped hardware configuration.
         """
         system_synchronizer = self._resolve_system_synchronizer()
         if system_synchronizer is None:
@@ -600,6 +609,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         system_synchronizer.sync_experiment_system_to_hardware(
             boxes=boxes,
             parallel=parallel,
+            target_labels=target_labels,
         )
 
     def _fetch_backend_settings_from_hardware(

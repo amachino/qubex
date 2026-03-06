@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from qubex.system.quantum_system import QuantumSystem
 
 PARAMS_MAP = {
+    "frequency_margin": (None, "params"),
     "qubit_frequency": ("qubit_frequency", "props"),
     "qubit_anharmonicity": ("anharmonicity", "props"),
     "resonator_frequency": ("resonator_frequency", "props"),
@@ -757,6 +758,7 @@ class ConfigLoader:
         # fall back to monolithic params.yaml where needed. Do not require the
         # legacy monolithic file to exist.
         control_params = ControlParams(
+            frequency_margin=self.load_param_data("frequency_margin"),
             control_amplitude=self.load_param_data("control_amplitude"),
             readout_amplitude=self.load_param_data("readout_amplitude"),
             control_vatt=self.load_param_data("control_vatt"),

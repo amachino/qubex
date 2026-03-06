@@ -113,8 +113,10 @@ class Quel1SystemSynchronizer:
         *,
         boxes: Sequence[Box],
         parallel: bool | None = None,
+        target_labels: Sequence[str] | None = None,
     ) -> None:
         """Apply experiment-system port/channel parameters to hardware boxes."""
+        del target_labels
         if parallel is None:
             parallel = True
         if not boxes:
