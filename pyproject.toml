@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = ["qxdriver-quel1"]
+backend = ["quelware-client", "qxdriver-quel1"]
 
 [project.scripts]
 qubex = "qubex.cli:main"
@@ -73,6 +73,7 @@ qubex = ["py.typed", "clifford/**/*.json"]
 cache-dir = ".cache/uv"
 
 [tool.uv.sources]
+quelware_client = { workspace = true }
 qxdriver_quel1 = { workspace = true }
 qxcore = { workspace = true }
 qxfitting = { workspace = true }
@@ -83,6 +84,7 @@ qxvisualizer = { workspace = true }
 
 [tool.uv.workspace]
 members = [
+    "packages/quelware-client/quelware-client",
     "packages/qxcore",
     "packages/qxdriver-quel1",
     "packages/qxfitting",
