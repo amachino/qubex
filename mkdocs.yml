@@ -61,13 +61,6 @@ nav:
   - Getting started:
       - Installation: user-guide/getting-started/installation.md
       - Quickstart: user-guide/getting-started/quickstart.md
-  - Concepts:
-      - Overview: user-guide/concepts/overview.md
-      - Terminology: user-guide/concepts/terminology.md
-  - How-to guides:
-      - Overview: user-guide/how-to/index.md
-      - Basic measurement (Measurement API, advanced): user-guide/how-to/basic-measurement.md
-      - Build a measurement schedule (Measurement API, advanced): user-guide/how-to/run-pulse-schedule.md
   - Tutorials:
       - Overview: user-guide/tutorials/index.md
       - 1. Basic measurement with Experiment: user-guide/tutorials/1_basic-measurement.md
@@ -76,8 +69,10 @@ nav:
       - 4. 1Q characterization: user-guide/tutorials/4_1q-characterization.md
       - 5. 1Q benchmarking: user-guide/tutorials/5_1q-benchmarking.md
       - 6. 2Q calibration and benchmarking: user-guide/tutorials/6_2q-calibration-benchmarking.md
-  - Reference:
-      - Overview: user-guide/reference/index.md
+  - How-to guides:
+      - Overview: user-guide/how-to/index.md
+      - Basic measurement (Measurement API, advanced): user-guide/how-to/basic-measurement.md
+      - Build a measurement schedule (Measurement API, advanced): user-guide/how-to/run-pulse-schedule.md
       - Configuration: user-guide/reference/configuration.md
       - Skew adjustment: user-guide/reference/skew-adjustment.md
       - Results and records: user-guide/reference/results-and-records.md
