@@ -1,10 +1,7 @@
 # 1Q calibration
 
-This tutorial calibrates key single-qubit parameters:
-
-1. Control frequency
-2. Readout frequency
-3. `pi/2` and `pi` pulses
+This tutorial walks through a typical single-qubit calibration flow for
+frequencies and control pulses.
 
 ## 1. Setup
 
@@ -14,47 +11,58 @@ import qubex as qx
 
 exp = qx.Experiment(
     chip_id="xxx",
-    muxes=[0],
+    qubits=[0, 1],
 )
 
 exp.connect()
-targets = exp.qubit_labels
 ```
 
-## 2. Run frequency calibrations
+## 2. Obtain Rabi parameters
+
+Use current Rabi parameters as the starting point for pulse calibration and
+validation.
 
 ```python
-exp.obtain_rabi_params()
+exp.obtain_rabi_params(exp.qubit_labels)
+```
 
+## 3. Calibrate control and readout frequencies
+
+Run the frequency calibrations after the environment checks are complete.
+
+```python
 exp.calibrate_control_frequency(
-    targets,
+    exp.qubit_labels,
     detuning_range=np.linspace(-0.01, 0.01, 21),
-    time_range=range(0, 101, 4),
+    time_range=np.arange(0, 101, 4),
 )
 
 exp.calibrate_readout_frequency(
-    targets,
+    exp.qubit_labels,
     detuning_range=np.linspace(-0.01, 0.01, 21),
-    time_range=range(0, 101, 4),
+    time_range=np.arange(0, 101, 4),
 )
 ```
 
-## 3. Run pulse calibrations
+## 4. Calibrate `pi/2` and `pi` pulses
+
+After the frequencies are updated, calibrate the standard single-qubit control
+pulses.
 
 ```python
-exp.calibrate_hpi_pulse(targets, n_rotations=1)
-exp.calibrate_pi_pulse(targets)
+exp.calibrate_hpi_pulse(exp.qubit_labels, n_rotations=1)
+exp.calibrate_pi_pulse(exp.qubit_labels)
 ```
 
-After updating parameter files, reload and validate:
+## 5. Reload and validate
+
+If you update the parameter files during calibration, reload the experiment and
+validate the calibrated pulses.
 
 ```python
 exp.reload()
-exp.obtain_rabi_params()
-exp.repeat_sequence(exp.hpi_pulse, repetitions=20).plot(normalize=True)
+exp.obtain_rabi_params(exp.qubit_labels)
+
+result = exp.repeat_sequence(exp.hpi_pulse, repetitions=20)
+result.plot(normalize=True)
 ```
-
-## Related examples
-
-- `docs/examples/experiment/2_frequency_calibration.ipynb`
-- `docs/examples/experiment/3_pulse_calibration.ipynb`

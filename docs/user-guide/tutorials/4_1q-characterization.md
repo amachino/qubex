@@ -1,10 +1,7 @@
 # 1Q characterization
 
-This tutorial measures coherence and detuning indicators using:
-
-1. T1
-2. T2 echo
-3. Ramsey
+This tutorial runs standard single-qubit characterization procedures for T1,
+T2 echo, and Ramsey experiments.
 
 ## 1. Setup
 
@@ -18,37 +15,41 @@ exp = qx.Experiment(
 )
 
 exp.connect()
-q = exp.qubit_labels[0]
+Q0 = exp.qubit_labels[0]
 ```
 
-## 2. Run characterization experiments
+## 2. Run `T1`
+
+Start by measuring energy relaxation.
 
 ```python
 result_t1 = exp.t1_experiment(
-    [q],
-    time_range=np.logspace(np.log10(100), np.log10(100 * 1000), 51),
+    [Q0],
+    time_range=np.geomspace(100, 100e3, 51),
 )
+```
 
+## 3. Run `T2 echo` and `Ramsey`
+
+Then measure dephasing and detuning-sensitive coherence.
+
+```python
 result_t2 = exp.t2_experiment(
-    [q],
-    time_range=np.logspace(np.log10(300), np.log10(100 * 1000), 51),
+    [Q0],
+    time_range=np.geomspace(300, 100e3, 51),
 )
 
 result_ramsey = exp.ramsey_experiment(
-    [q],
+    [Q0],
     time_range=np.arange(0, 10_001, 100),
     detuning=0.001,
 )
 ```
 
-## 3. Plot results
+## 4. Plot results
 
 ```python
 result_t1.plot()
 result_t2.plot()
 result_ramsey.plot()
 ```
-
-## Related example
-
-- `docs/examples/experiment/4_t1_t2_experiments.ipynb`

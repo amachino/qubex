@@ -1,8 +1,10 @@
 # Tutorials
 
-Step-by-step tutorials that connect multiple concepts.
+Step-by-step tutorials for the basic procedures used in quantum control
+experiments, including environment checks, spectroscopy, calibration,
+characterization, and benchmarking.
 
-- [1. Basic measurement with `Experiment`](1_basic-measurement.md)
+- [1. Environment health check](1_health-check.md)
 - [2. Qubit and resonator spectroscopy](2_spectroscopy.md)
 - [3. 1Q calibration](3_1q-calibration.md)
 - [4. 1Q characterization](4_1q-characterization.md)

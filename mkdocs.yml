@@ -62,8 +62,8 @@ nav:
       - Installation: user-guide/getting-started/installation.md
       - Quickstart: user-guide/getting-started/quickstart.md
   - Tutorials:
-      - Overview: user-guide/tutorials/index.md
-      - 1. Basic measurement with Experiment: user-guide/tutorials/1_basic-measurement.md
+      - Learning path: user-guide/tutorials/index.md
+      - 1. Environment health check: user-guide/tutorials/1_health-check.md
       - 2. Qubit and resonator spectroscopy: user-guide/tutorials/2_spectroscopy.md
       - 3. 1Q calibration: user-guide/tutorials/3_1q-calibration.md
       - 4. 1Q characterization: user-guide/tutorials/4_1q-characterization.md

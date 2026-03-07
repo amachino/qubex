@@ -1,9 +1,7 @@
 # 1Q benchmarking
 
-This tutorial evaluates single-qubit gate quality using:
-
-1. Standard randomized benchmarking (RB)
-2. Interleaved randomized benchmarking (IRB)
+This tutorial evaluates calibrated single-qubit gates with randomized
+benchmarking.
 
 ## 1. Setup
 
@@ -13,39 +11,43 @@ import qubex as qx
 
 exp = qx.Experiment(
     chip_id="xxx",
-    muxes=[0],
+    qubits=[0],
 )
 
 exp.connect()
-target = exp.qubit_labels[0]
+Q0 = exp.qubit_labels[0]
 ```
 
-## 2. Prepare calibrated DRAG pulses
+## 2. Calibrate DRAG pulses
+
+Calibrate the DRAG `pi/2` and `pi` pulses before running benchmarking.
 
 ```python
-exp.calibrate_drag_hpi_pulse()
-exp.calibrate_drag_pi_pulse()
+exp.calibrate_drag_hpi_pulse(Q0)
+exp.calibrate_drag_pi_pulse(Q0)
 ```
 
-## 3. Run RB and IRB
+## 3. Run standard RB
 
 ```python
-rb = exp.randomized_benchmarking(
-    target,
+result_rb = exp.randomized_benchmarking(
+    Q0,
     n_cliffords_range=np.arange(0, 1001, 100),
     n_trials=30,
     save_image=True,
 )
+```
 
-irb_x90 = exp.interleaved_randomized_benchmarking(
-    target,
+## 4. Run interleaved RB
+
+Use interleaved RB to estimate the quality of a specific calibrated gate.
+
+```python
+result_irb = exp.interleaved_randomized_benchmarking(
+    Q0,
     interleaved_clifford="X90",
     n_cliffords_range=np.arange(0, 1001, 100),
     n_trials=30,
     save_image=True,
 )
 ```
-
-## Related example
-
-- `docs/examples/experiment/5_randomized_benchmarking.ipynb`
