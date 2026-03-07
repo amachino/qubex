@@ -45,7 +45,7 @@ Use this option when you want the newest Qubex features from the repository.
 
 ### Install with backend support (Linux)
 
-Use this variant when you need hardware backend dependencies on Linux hosts.
+Use this variant when you need packaged hardware backend dependencies on Linux hosts.
 
 === "uv"
     ```bash
@@ -56,6 +56,12 @@ Use this variant when you need hardware backend dependencies on Linux hosts.
     ```bash
     pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
     ```
+
+This installs packaged backend dependencies such as `qxdriver-quel1`.
+QuEL-3 support also requires compatible `quelware-client` sources or packages.
+For repository development, `packages/quelware-client` is fetched as a
+submodule, while a local `lib/quelware-client-internal` checkout takes
+precedence when present.
 
 ### Install specific version
 
@@ -79,5 +85,6 @@ Development commands in this repository assume a `uv`-managed environment.
 ```bash
 git clone -b develop-next https://github.com/amachino/qubex.git
 cd qubex
+git submodule update --init --recursive
 make sync
 ```

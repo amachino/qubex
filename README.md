@@ -37,6 +37,12 @@ pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
 
+This installs packaged backend dependencies such as `qxdriver-quel1`.
+QuEL-3 support also requires compatible `quelware-client` sources or packages.
+This repository fetches `packages/quelware-client` as a submodule for
+development and CI, and prefers `lib/quelware-client-internal` when present
+in a local development workspace.
+
 ### Install specific version
 
 ```bash
@@ -56,6 +62,7 @@ Development in this repository assumes a `uv`-managed environment.
 ```bash
 git clone -b develop-next https://github.com/amachino/qubex.git
 cd qubex
+git submodule update --init --recursive
 make sync
 ```
 

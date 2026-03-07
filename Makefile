@@ -15,7 +15,7 @@ PUBLISH_TARGETS := \
 
 # Install dependencies
 sync:
-	git submodule update --init --recursive --remote
+	git submodule update --init --recursive
 	uv sync --all-groups --all-extras
 
 # Run unit tests

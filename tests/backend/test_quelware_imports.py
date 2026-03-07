@@ -12,11 +12,13 @@ import pytest
 from qubex.backend.quel3.infra import quelware_imports
 
 
-def test_candidate_local_quelware_paths_include_lib_layouts(tmp_path: Path) -> None:
-    """Given workspace root, helper yields lib quelware source directories."""
-    candidates = set(quelware_imports._candidate_local_quelware_paths(tmp_path))
+def test_candidate_local_quelware_paths_include_packages_and_lib_layouts(
+    tmp_path: Path,
+) -> None:
+    """Yields packages and lib quelware source directories."""
+    candidates = quelware_imports._candidate_local_quelware_paths(tmp_path)
 
-    expected = {
+    expected = (
         tmp_path / "lib" / "quelware-client-internal" / "quelware-client" / "src",
         tmp_path
         / "lib"
@@ -24,11 +26,11 @@ def test_candidate_local_quelware_paths_include_lib_layouts(tmp_path: Path) -> N
         / "quelware-core"
         / "python"
         / "src",
-        tmp_path / "lib" / "quelware-client" / "quelware-client" / "src",
-        tmp_path / "lib" / "quelware-client" / "quelware-core" / "python" / "src",
-    }
+        tmp_path / "packages" / "quelware-client" / "quelware-client" / "src",
+        tmp_path / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
+    )
 
-    assert expected.issubset(candidates)
+    assert candidates == expected
 
 
 def test_append_local_quelware_paths_adds_only_existing_once(

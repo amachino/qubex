@@ -13,21 +13,8 @@ def _candidate_local_quelware_paths(root: Path) -> tuple[Path, ...]:
     return (
         root / "lib" / "quelware-client-internal" / "quelware-client" / "src",
         root / "lib" / "quelware-client-internal" / "quelware-core" / "python" / "src",
-        root / "lib" / "quelware-client" / "quelware-client" / "src",
-        root / "lib" / "quelware-client" / "quelware-core" / "python" / "src",
-        root
-        / "lib"
-        / "quelware-backends"
-        / "quelware-client-internal"
-        / "quelware-client"
-        / "src",
-        root
-        / "lib"
-        / "quelware-backends"
-        / "quelware-client-internal"
-        / "quelware-core"
-        / "python"
-        / "src",
+        root / "packages" / "quelware-client" / "quelware-client" / "src",
+        root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
     )
 
 
