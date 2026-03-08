@@ -5,8 +5,6 @@ repo_name: amachino/qubex
 
 docs_dir: docs
 site_dir: site
-exclude_docs: |
-  user-guide/tutorials/**
 
 theme:
   name: material
@@ -64,14 +62,6 @@ nav:
       - Installation: user-guide/getting-started/installation.md
       - Quickstart: user-guide/getting-started/quickstart.md
   - Examples: examples/index.md
-  - How-to guides:
-      - Overview: user-guide/how-to/index.md
-      - Basic measurement: user-guide/how-to/basic-measurement.md
-      - Build a measurement schedule: user-guide/how-to/run-pulse-schedule.md
-      - Configuration: user-guide/reference/configuration.md
-      - Skew adjustment: user-guide/reference/skew-adjustment.md
-      - Results and records: user-guide/reference/results-and-records.md
-      - State classification: user-guide/reference/state-classification.md
   - Developer guide:
       - Overview: developer-guide/index.md
       - Development flow: developer-guide/development-flow.md

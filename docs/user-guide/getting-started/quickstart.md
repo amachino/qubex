@@ -9,8 +9,6 @@ It assumes you already have configuration and parameter files for your chip.
 > - Default location: `/home/shared/qubex-config/<chip_id>/`
 > - Custom locations: pass `config_dir` and `params_dir` when creating an `Experiment`
 > - Base units in `Experiment`: time-like values use `ns`, and frequency-like values use `GHz`
->
-> See [Configuration](../reference/configuration.md) for details.
 
 ## 1. Create an experiment
 
@@ -222,5 +220,3 @@ pulse, and finally performs a second readout. Because `RQ0` is read out twice,
 ## Next steps
 
 - Explore notebooks: [Examples](../../examples/index.md)
-- Review configuration requirements: [Configuration](../reference/configuration.md)
-- Use lower-level APIs only when needed: [Basic measurement](../how-to/basic-measurement.md)
