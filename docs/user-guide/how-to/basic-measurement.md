@@ -1,4 +1,4 @@
-# Basic measurement (Measurement API, advanced)
+# Basic measurement
 
 This guide shows the v1.5.0 `Measurement` workflow for prepared schedules,
 async execution, and NetCDF-based result storage.

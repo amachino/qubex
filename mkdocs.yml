@@ -5,6 +5,8 @@ repo_name: amachino/qubex
 
 docs_dir: docs
 site_dir: site
+exclude_docs: |
+  user-guide/tutorials/**
 
 theme:
   name: material
@@ -61,18 +63,11 @@ nav:
   - Getting started:
       - Installation: user-guide/getting-started/installation.md
       - Quickstart: user-guide/getting-started/quickstart.md
-  - Tutorials:
-      - Learning path: user-guide/tutorials/index.md
-      - 1. Environment health check: user-guide/tutorials/1_health-check.md
-      - 2. Qubit and resonator spectroscopy: user-guide/tutorials/2_spectroscopy.md
-      - 3. 1Q calibration: user-guide/tutorials/3_1q-calibration.md
-      - 4. 1Q characterization: user-guide/tutorials/4_1q-characterization.md
-      - 5. 1Q benchmarking: user-guide/tutorials/5_1q-benchmarking.md
-      - 6. 2Q calibration and benchmarking: user-guide/tutorials/6_2q-calibration-benchmarking.md
+  - Examples: examples/index.md
   - How-to guides:
       - Overview: user-guide/how-to/index.md
-      - Basic measurement (Measurement API, advanced): user-guide/how-to/basic-measurement.md
-      - Build a measurement schedule (Measurement API, advanced): user-guide/how-to/run-pulse-schedule.md
+      - Basic measurement: user-guide/how-to/basic-measurement.md
+      - Build a measurement schedule: user-guide/how-to/run-pulse-schedule.md
       - Configuration: user-guide/reference/configuration.md
       - Skew adjustment: user-guide/reference/skew-adjustment.md
       - Results and records: user-guide/reference/results-and-records.md
@@ -90,5 +85,4 @@ nav:
       - Issue guidelines: developer-guide/issue-guidelines.md
       - Pull request guidelines: developer-guide/pull-request-guidelines.md
       - Commit message guidelines: developer-guide/commit-guidelines.md
-  - Examples: examples/index.md
   - API reference: api-reference/qubex/

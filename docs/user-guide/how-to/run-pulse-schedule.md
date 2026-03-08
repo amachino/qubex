@@ -1,4 +1,4 @@
-# Build a measurement schedule (Measurement API, advanced)
+# Build a measurement schedule
 
 This guide shows how to build reusable `PulseSchedule` objects and convert them
 into `MeasurementSchedule` objects for `run_measurement()`.

@@ -221,7 +221,6 @@ pulse, and finally performs a second readout. Because `RQ0` is read out twice,
 
 ## Next steps
 
-- Continue with high-level experiment workflows: [Tutorials](../tutorials/index.md)
-- Review configuration requirements: [Configuration](../reference/configuration.md)
-- Use lower-level APIs only when needed: [Basic measurement (Measurement API)](../how-to/basic-measurement.md)
 - Explore notebooks: [Examples](../../examples/index.md)
+- Review configuration requirements: [Configuration](../reference/configuration.md)
+- Use lower-level APIs only when needed: [Basic measurement](../how-to/basic-measurement.md)
