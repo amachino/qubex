@@ -1,17 +1,13 @@
-"""QuEL-3 instrument deployment manager used by push-time configuration."""
+"""Target deploy planning for QuEL-3 push-time configuration."""
 
 from __future__ import annotations
 
 import math
 import re
-from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
-from qubex.backend.quel3.infra.quelware_imports import (
-    import_module_with_workspace_fallback,
-)
-from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
+from qubex.backend.quel3.models import InstrumentDeployRequest, RoleName
 from qubex.system.target import TargetType
 
 if TYPE_CHECKING:
@@ -19,140 +15,13 @@ if TYPE_CHECKING:
     from qubex.system.experiment_system import ExperimentSystem
     from qubex.system.target import Target
 
-T = TypeVar("T")
-RoleName = Literal["TRANSMITTER", "TRANSCEIVER"]
 FIXED_TIMELINE_SAMPLING_RATE_HZ = 2.5e9
 
 
-def _run_async(
-    factory: Callable[[], Awaitable[T]],
-    *,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> T:
-    """Run one awaitable factory from synchronous APIs."""
-    bridge = get_shared_async_bridge(key="quel3-configuration")
-    return bridge.run(factory, timeout=timeout)
+class Quel3TargetDeployPlanner:
+    """Build QuEL-3 deploy requests from logical target registry metadata."""
 
-
-@dataclass(frozen=True)
-class InstrumentDeployRequest:
-    """One deploy request derived from grouped logical targets."""
-
-    port_id: str
-    role: RoleName
-    frequency_range_min_hz: float
-    frequency_range_max_hz: float
-    alias: str
-    target_labels: tuple[str, ...]
-
-
-class Quel3ConfigurationManager:
-    """Build and deploy QuEL-3 instruments from logical target registry."""
-
-    def __init__(
-        self,
-        *,
-        quelware_endpoint: str,
-        quelware_port: int,
-    ) -> None:
-        self._quelware_endpoint = quelware_endpoint
-        self._quelware_port = quelware_port
-        self._last_deployed_instrument_infos: dict[str, tuple[object, ...]] = {}
-        self._target_alias_map: dict[str, str] = {}
-
-    @property
-    def quelware_endpoint(self) -> str:
-        """Return quelware endpoint used for deployment."""
-        return self._quelware_endpoint
-
-    @property
-    def quelware_port(self) -> int:
-        """Return quelware port used for deployment."""
-        return self._quelware_port
-
-    @property
-    def last_deployed_instrument_infos(self) -> dict[str, tuple[object, ...]]:
-        """Return last deployed instrument infos keyed by alias."""
-        return dict(self._last_deployed_instrument_infos)
-
-    @property
-    def target_alias_map(self) -> dict[str, str]:
-        """Return last deployed target-to-alias mapping."""
-        return dict(self._target_alias_map)
-
-    def deploy_instruments_from_target_registry(
-        self,
-        *,
-        experiment_system: ExperimentSystem,
-        box_ids: Sequence[str],
-        target_labels: Sequence[str] | None = None,
-    ) -> dict[str, tuple[object, ...]]:
-        """Deploy instruments from selected boxes in target registry."""
-        return _run_async(
-            lambda: self._deploy_instruments_from_target_registry(
-                experiment_system=experiment_system,
-                box_ids=box_ids,
-                target_labels=target_labels,
-            )
-        )
-
-    async def _deploy_instruments_from_target_registry(
-        self,
-        *,
-        experiment_system: ExperimentSystem,
-        box_ids: Sequence[str],
-        target_labels: Sequence[str] | None = None,
-    ) -> dict[str, tuple[object, ...]]:
-        """Deploy grouped target-based instruments through quelware session APIs."""
-        requests = self._build_instrument_deploy_requests(
-            experiment_system=experiment_system,
-            box_ids=box_ids,
-            target_labels=target_labels,
-        )
-        if len(requests) == 0:
-            self._last_deployed_instrument_infos = {}
-            self._target_alias_map = {}
-            return {}
-
-        client_factory = self._load_quelware_client_factory()
-        (
-            fixed_timeline_profile_cls,
-            instrument_definition_cls,
-            instrument_mode,
-            instrument_role,
-        ) = self._load_instrument_entities()
-
-        deployed: dict[str, tuple[object, ...]] = {}
-        target_alias_map: dict[str, str] = {}
-        async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
-        ) as client:
-            for request in requests:
-                async with client.create_session([request.port_id]) as session:
-                    profile = fixed_timeline_profile_cls(
-                        frequency_range_min=request.frequency_range_min_hz,
-                        frequency_range_max=request.frequency_range_max_hz,
-                    )
-                    definition = instrument_definition_cls(
-                        alias=request.alias,
-                        mode=instrument_mode.FIXED_TIMELINE,
-                        role=getattr(instrument_role, request.role),
-                        profile=profile,
-                    )
-                    inst_infos = await session.deploy_instruments(
-                        request.port_id,
-                        definitions=[definition],
-                    )
-                    deployed[request.alias] = tuple(inst_infos)
-                    for target_label in request.target_labels:
-                        target_alias_map[target_label] = request.alias
-
-        self._last_deployed_instrument_infos = dict(deployed)
-        self._target_alias_map = target_alias_map
-        return deployed
-
-    def _build_instrument_deploy_requests(
+    def build_deploy_requests(
         self,
         *,
         experiment_system: ExperimentSystem,
@@ -321,22 +190,3 @@ class Quel3ConfigurationManager:
         normalized_port_id = port_id.replace(":", "_")
         normalized_target_label = re.sub(r"[^0-9A-Za-z]+", "_", target_label).lower()
         return f"inst_{role.lower()}_{normalized_port_id}_{normalized_target_label}"
-
-    @staticmethod
-    def _load_quelware_client_factory() -> Callable[[str, int], Any]:
-        """Import quelware client factory lazily."""
-        client_module = import_module_with_workspace_fallback("quelware_client.client")
-        return client_module.create_quelware_client
-
-    @staticmethod
-    def _load_instrument_entities() -> tuple[type[Any], type[Any], Any, Any]:
-        """Import instrument entities lazily from quelware core package."""
-        instrument_module = import_module_with_workspace_fallback(
-            "quelware_core.entities.instrument"
-        )
-        return (
-            instrument_module.FixedTimelineProfile,
-            instrument_module.InstrumentDefinition,
-            instrument_module.InstrumentMode,
-            instrument_module.InstrumentRole,
-        )

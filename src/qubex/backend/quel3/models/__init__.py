@@ -1,5 +1,6 @@
-"""Data models for QuEL-3 backend payloads and results."""
+"""Data models for QuEL-3 backend payloads, deployment, and results."""
 
+from .deploy import InstrumentDeployRequest, RoleName
 from .payload import (
     Quel3CaptureMode,
     Quel3CaptureWindow,
@@ -11,6 +12,7 @@ from .payload import (
 from .result import Quel3BackendExecutionResult
 
 __all__ = [
+    "InstrumentDeployRequest",
     "Quel3BackendExecutionResult",
     "Quel3CaptureMode",
     "Quel3CaptureWindow",
@@ -18,4 +20,5 @@ __all__ = [
     "Quel3FixedTimeline",
     "Quel3Waveform",
     "Quel3WaveformEvent",
+    "RoleName",
 ]

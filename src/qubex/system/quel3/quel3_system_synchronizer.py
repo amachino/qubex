@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from .quel3_configuration_manager import Quel3ConfigurationManager
+from .quel3_target_deploy_planner import Quel3TargetDeployPlanner
 
 if TYPE_CHECKING:
     from qubex.backend.quel3.quel3_backend_controller import Quel3BackendController
@@ -20,16 +20,11 @@ class Quel3SystemSynchronizer:
         self,
         *,
         backend_controller: Quel3BackendController,
-        configuration_manager: Quel3ConfigurationManager | None = None,
+        deploy_planner: Quel3TargetDeployPlanner | None = None,
     ) -> None:
         self._backend_controller = backend_controller
-        self._configuration_manager = (
-            configuration_manager
-            if configuration_manager is not None
-            else Quel3ConfigurationManager(
-                quelware_endpoint=backend_controller.quelware_endpoint,
-                quelware_port=backend_controller.quelware_port,
-            )
+        self._deploy_planner = (
+            deploy_planner if deploy_planner is not None else Quel3TargetDeployPlanner()
         )
         self._experiment_system: ExperimentSystem | None = None
 
@@ -39,9 +34,9 @@ class Quel3SystemSynchronizer:
         return self._backend_controller
 
     @property
-    def configuration_manager(self) -> Quel3ConfigurationManager:
-        """Return QuEL-3 push-time configuration manager."""
-        return self._configuration_manager
+    def deploy_planner(self) -> Quel3TargetDeployPlanner:
+        """Return QuEL-3 deploy planner used for push-time configuration."""
+        return self._deploy_planner
 
     def sync_experiment_system_to_backend_controller(
         self,
@@ -67,11 +62,12 @@ class Quel3SystemSynchronizer:
         box_ids = [box.id for box in boxes]
         if len(box_ids) == 0:
             return
-        self._configuration_manager.deploy_instruments_from_target_registry(
+        requests = self._deploy_planner.build_deploy_requests(
             experiment_system=self._experiment_system,
             box_ids=box_ids,
             target_labels=target_labels,
         )
+        self._backend_controller.deploy_instruments(requests=requests)
 
     def fetch_backend_settings_from_hardware(
         self,

@@ -7,14 +7,20 @@ built on quelware-client managers.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
 
-from .managers.connection_manager import Quel3ConnectionManager
-from .managers.execution_manager import Quel3ExecutionManager
+from .managers import (
+    Quel3ConfigurationManager,
+    Quel3ConnectionManager,
+    Quel3ExecutionManager,
+)
+from .models import InstrumentDeployRequest
 
 
 class Quel3BackendController(BackendController):
@@ -35,6 +41,7 @@ class Quel3BackendController(BackendController):
         *,
         quelware_endpoint: str | None = None,
         quelware_port: int | None = None,
+        configuration_manager: Quel3ConfigurationManager | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -56,6 +63,14 @@ class Quel3BackendController(BackendController):
             quelware_endpoint=endpoint,
             quelware_port=port,
         )
+        self._configuration_manager = (
+            configuration_manager
+            if configuration_manager is not None
+            else Quel3ConfigurationManager(
+                quelware_endpoint=endpoint,
+                quelware_port=port,
+            )
+        )
         self._execution_manager = Quel3ExecutionManager(
             quelware_endpoint=endpoint,
             quelware_port=port,
@@ -66,7 +81,17 @@ class Quel3BackendController(BackendController):
     @property
     def hash(self) -> int:
         """Return stable hash from runtime state."""
-        return self._connection_manager.hash
+        return hash(
+            (
+                self._connection_manager.hash,
+                tuple(sorted(self._configuration_manager.target_alias_map.items())),
+                tuple(
+                    sorted(
+                        self._configuration_manager.last_deployed_instrument_infos.keys()
+                    )
+                ),
+            )
+        )
 
     @property
     def is_connected(self) -> bool:
@@ -83,6 +108,21 @@ class Quel3BackendController(BackendController):
         """Return configured quelware port."""
         return self._quelware_port
 
+    @property
+    def configuration_manager(self) -> Quel3ConfigurationManager:
+        """Return backend-side QuEL-3 configuration manager."""
+        return self._configuration_manager
+
+    @property
+    def target_alias_map(self) -> dict[str, str]:
+        """Return deployed target-to-alias mapping from backend runtime state."""
+        return self._configuration_manager.target_alias_map
+
+    @property
+    def last_deployed_instrument_infos(self) -> dict[str, tuple[object, ...]]:
+        """Return deployed instrument infos from backend runtime state."""
+        return self._configuration_manager.last_deployed_instrument_infos
+
     def connect(
         self,
         box_names: str | list[str] | None = None,
@@ -98,6 +138,14 @@ class Quel3BackendController(BackendController):
     def disconnect(self) -> None:
         """Disconnect backend resources."""
         self._connection_manager.disconnect()
+
+    def deploy_instruments(
+        self,
+        *,
+        requests: Sequence[InstrumentDeployRequest],
+    ) -> dict[str, tuple[object, ...]]:
+        """Deploy QuEL-3 instruments for the provided requests."""
+        return self._configuration_manager.deploy_instruments(requests=requests)
 
     @property
     def sampling_period(self) -> float:
