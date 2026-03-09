@@ -441,6 +441,44 @@ def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:
     ]
 
 
+def test_filter_runnable_payload_drops_empty_aliases() -> None:
+    """Given empty and active timelines, filtering should keep only runnable aliases."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-empty": Quel3FixedTimeline(
+                events=(),
+                capture_windows=(),
+                length_ns=payload.fixed_timelines["alias-rq00"].length_ns,
+            ),
+            "alias-rq00": payload.fixed_timelines["alias-rq00"],
+        },
+    )
+
+    filtered = Quel3ExecutionManager._filter_runnable_payload(payload)
+
+    assert set(filtered.fixed_timelines.keys()) == {"alias-rq00"}
+
+
+def test_filter_runnable_payload_rejects_all_empty_timelines() -> None:
+    """Given only empty timelines, filtering should fail with a clear error."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-empty": Quel3FixedTimeline(
+                events=(),
+                capture_windows=(),
+                length_ns=payload.fixed_timelines["alias-rq00"].length_ns,
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="no waveform events or capture windows"):
+        Quel3ExecutionManager._filter_runnable_payload(payload)
+
+
 def test_resolve_payload_rejects_ambiguous_port_binding() -> None:
     """Given ambiguous port binding, resolving payload fails fast."""
     payload = _make_payload()

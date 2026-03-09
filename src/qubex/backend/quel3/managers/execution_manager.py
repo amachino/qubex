@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, TypeVar
 
 import numpy as np
@@ -168,6 +168,7 @@ class Quel3ExecutionManager:
                 payload=payload,
                 resolver=resolver,
             )
+            resolved_payload = self._filter_runnable_payload(resolved_payload)
             aliases = sorted(resolved_payload.fixed_timelines.keys())
             alias_to_id = self._resolve_alias_to_id_map(
                 resolver=resolver,
@@ -371,6 +372,22 @@ class Quel3ExecutionManager:
             instrument_bindings={},
             capture_port_bindings={},
         )
+
+    @staticmethod
+    def _filter_runnable_payload(
+        payload: Quel3ExecutionPayload,
+    ) -> Quel3ExecutionPayload:
+        """Drop fixed timelines that would export an empty hardware directive."""
+        runnable_timelines = {
+            alias: timeline
+            for alias, timeline in payload.fixed_timelines.items()
+            if len(timeline.events) > 0 or len(timeline.capture_windows) > 0
+        }
+        if len(runnable_timelines) == 0:
+            raise ValueError(
+                "Quel3ExecutionPayload has no waveform events or capture windows to execute."
+            )
+        return replace(payload, fixed_timelines=runnable_timelines)
 
     @classmethod
     def _resolve_alias_from_binding(
