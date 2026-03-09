@@ -172,6 +172,7 @@ class Experiment:
         classifier_dir: Path | str | None = None,
         classifier_type: Literal["kmeans", "gmm"] | None = None,
         configuration_mode: ConfigurationMode | None = None,
+        backend_controller: SystemBackendController | None = None,
         mock_mode: bool | None = None,
     ):
         experiment_context = ExperimentContext(
@@ -192,6 +193,7 @@ class Experiment:
             classifier_dir=classifier_dir,
             classifier_type=classifier_type,
             configuration_mode=configuration_mode,
+            backend_controller=backend_controller,
             mock_mode=mock_mode,
         )
         session_service = SessionService(

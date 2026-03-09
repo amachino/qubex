@@ -84,6 +84,8 @@ Responsibilities:
 - backend configuration manager:
   - create `InstrumentDefinition` with fixed timeline profile
   - call `session.deploy_instruments(...)`
+  - preserve shared-port multi-instrument deployment by appending later
+    definitions on the same port instead of overwriting them
   - cache deployed instrument infos for execution path
 
 ### QuEL-3 execution layer
@@ -162,21 +164,31 @@ Use the computed range for:
 Based on `quelware-client`:
 
 ```python
-profile = FixedTimelineProfile(
-    frequency_range_min=request.frequency_range_min_hz,
-    frequency_range_max=request.frequency_range_max_hz,
-)
-definition = InstrumentDefinition(
-    alias=request.alias,
-    mode=InstrumentMode.FIXED_TIMELINE,
-    role=request.role,
-    profile=profile,
-)
-inst_infos = await session.deploy_instruments(
-    request.port_id,
-    definitions=[definition],
-)
+for index, request in enumerate(port_requests):
+    profile = FixedTimelineProfile(
+        frequency_range_min=request.frequency_range_min_hz,
+        frequency_range_max=request.frequency_range_max_hz,
+    )
+    definition = InstrumentDefinition(
+        alias=request.alias,
+        mode=InstrumentMode.FIXED_TIMELINE,
+        role=request.role,
+        profile=profile,
+    )
+    inst_infos = await session.deploy_instruments(
+        port_id,
+        definitions=[definition],
+        append=index > 0,
+    )
 ```
+
+Notes:
+
+- Multiple logical targets may share one QuEL-3 port.
+- For such ports, deploy order is preserved and later instruments are appended
+  within the same session.
+- This avoids replacing earlier instruments while still letting quelware solve
+  constraints incrementally for one port.
 
 ## Manager contract
 
@@ -218,6 +230,14 @@ Optional delegation:
    - deploys instruments via quelware session
    - stores returned `inst_infos` in backend runtime state
 6. Push completes.
+
+Reload/runtime note:
+
+- If `Experiment(..., backend_controller=...)` injects a custom
+  `Quel3BackendController` (for example standalone mode with one explicit unit
+  label), that controller instance must be reused across `exp.configure()` /
+  `SystemManager.load()` reloads so the runtime mode does not silently fall
+  back to default server-mode settings.
 
 Capability policy:
 

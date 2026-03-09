@@ -30,6 +30,12 @@ Related policy:
   - QuEL-3 `push()` path plans deploy requests from `TargetRegistry` in the
     system layer, then executes deployment through a backend-owned
     configuration manager
+- QuEL-3 backend runtime now supports two client modes:
+  - `server`
+  - `standalone` with required `standalone_unit_label`
+- When `Experiment(..., backend_controller=...)` injects a custom
+  `Quel3BackendController`, the same controller instance is reused through
+  subsequent `exp.configure()` / `SystemManager.load()` reloads.
 - `quelware-client` exposes `PORT`/`INSTRUMENT` resources and currently
   represents readout paths as transceiver-style resources in examples
   (`...:p0p1trx`).
@@ -222,6 +228,16 @@ Status legend:
   - Backend configuration-manager responsibilities:
     - quelware client/session lifecycle for deploy
     - deploy result capture for execution lookup
+    - preserve one injected backend controller/runtime override across
+      `Experiment.configure()`-driven reloads
+  - Shared-port deployment policy:
+    - one port may host multiple instruments
+    - configuration manager must not collapse same-port requests to one
+      definition or overwrite earlier deploys accidentally
+    - current deploy policy is:
+      - first request on a port: `append=False`
+      - subsequent requests on the same port, within the same session:
+        `append=True`
   - Keep QuEL-3 backend-settings pull/snapshot capability unsupported.
 
 ## Proposed minimum beta contract

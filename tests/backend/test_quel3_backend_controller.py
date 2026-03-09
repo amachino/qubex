@@ -282,6 +282,26 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     assert controller._connection_manager.quelware_port == 50051
 
 
+def test_constructor_accepts_standalone_runtime_options() -> None:
+    """Given standalone runtime options, controller should propagate them to all managers."""
+    controller = Quel3BackendController(
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+    )
+
+    assert controller.client_mode == "standalone"
+    assert controller.standalone_unit_label == "quel3-02-a01"
+    assert controller.connection_manager.client_mode == "standalone"
+    assert controller.configuration_manager.client_mode == "standalone"
+    assert controller.execution_manager.client_mode == "standalone"
+
+
+def test_constructor_rejects_standalone_mode_without_unit_label() -> None:
+    """Given standalone mode without unit label, controller construction should fail fast."""
+    with pytest.raises(ValueError, match="standalone_unit_label"):
+        Quel3BackendController(client_mode="standalone")
+
+
 def test_constructor_accepts_injected_managers() -> None:
     """Given injected managers, controller should use those manager instances."""
     connection_manager = SimpleNamespace(
@@ -289,12 +309,16 @@ def test_constructor_accepts_injected_managers() -> None:
         is_connected=True,
         quelware_endpoint="injected-host",
         quelware_port=61000,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
         connect=lambda box_names=None, parallel=None: None,
         disconnect=lambda: None,
     )
     configuration_manager = SimpleNamespace(
         quelware_endpoint="injected-host",
         quelware_port=61000,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
         target_alias_map={"Q00": "inst-q00"},
         last_deployed_instrument_infos={"inst-q00": (object(),)},
         deploy_instruments=lambda *, requests: {"inst-q00": tuple(requests)},
@@ -303,6 +327,8 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_endpoint="injected-host",
         quelware_port=61000,
         sampling_period=0.8,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
         execute_sync=lambda *, request: request,
         execute_async=lambda *, request: request,
     )
@@ -319,6 +345,8 @@ def test_constructor_accepts_injected_managers() -> None:
     assert controller.quelware_endpoint == "injected-host"
     assert controller.quelware_port == 61000
     assert controller.sampling_period == pytest.approx(0.8)
+    assert controller.client_mode == "standalone"
+    assert controller.standalone_unit_label == "quel3-02-a01"
 
 
 def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> None:
@@ -334,12 +362,43 @@ def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> Non
     configuration_manager = SimpleNamespace(
         quelware_endpoint="host-b",
         quelware_port=50051,
+        client_mode="server",
+        standalone_unit_label=None,
         target_alias_map={},
         last_deployed_instrument_infos={},
         deploy_instruments=lambda *, requests: {},
     )
 
     with pytest.raises(ValueError, match="quelware_endpoint"):
+        Quel3BackendController(
+            connection_manager=cast(Any, connection_manager),
+            configuration_manager=cast(Any, configuration_manager),
+        )
+
+
+def test_constructor_rejects_mismatched_injected_client_runtime_values() -> None:
+    """Given mismatched client runtime values, controller construction should fail fast."""
+    connection_manager = SimpleNamespace(
+        hash=11,
+        is_connected=False,
+        quelware_endpoint="host-a",
+        quelware_port=50051,
+        client_mode="server",
+        standalone_unit_label=None,
+        connect=lambda box_names=None, parallel=None: None,
+        disconnect=lambda: None,
+    )
+    configuration_manager = SimpleNamespace(
+        quelware_endpoint="host-a",
+        quelware_port=50051,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+        target_alias_map={},
+        last_deployed_instrument_infos={},
+        deploy_instruments=lambda *, requests: {},
+    )
+
+    with pytest.raises(ValueError, match="client_mode"):
         Quel3BackendController(
             connection_manager=cast(Any, connection_manager),
             configuration_manager=cast(Any, configuration_manager),

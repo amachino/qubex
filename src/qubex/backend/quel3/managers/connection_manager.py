@@ -6,7 +6,9 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import (
-    import_module_with_workspace_fallback,
+    Quel3ClientMode,
+    load_quelware_client_factory,
+    validate_quelware_client_runtime,
 )
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
@@ -32,15 +34,31 @@ class Quel3ConnectionManager:
         *,
         quelware_endpoint: str,
         quelware_port: int,
+        client_mode: str = "server",
+        standalone_unit_label: str | None = None,
     ) -> None:
+        normalized_client_mode = validate_quelware_client_runtime(
+            client_mode=client_mode,
+            standalone_unit_label=standalone_unit_label,
+        )
         self._is_connected = False
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
+        self._client_mode: Quel3ClientMode = normalized_client_mode
+        self._standalone_unit_label = standalone_unit_label
 
     @property
     def hash(self) -> int:
         """Return stable hash for connection-side runtime state."""
-        return hash((self._is_connected, self._quelware_endpoint, self._quelware_port))
+        return hash(
+            (
+                self._is_connected,
+                self._quelware_endpoint,
+                self._quelware_port,
+                self._client_mode,
+                self._standalone_unit_label,
+            )
+        )
 
     @property
     def is_connected(self) -> bool:
@@ -56,6 +74,16 @@ class Quel3ConnectionManager:
     def quelware_port(self) -> int:
         """Return quelware port."""
         return self._quelware_port
+
+    @property
+    def client_mode(self) -> Quel3ClientMode:
+        """Return configured quelware client mode."""
+        return self._client_mode
+
+    @property
+    def standalone_unit_label(self) -> str | None:
+        """Return configured standalone unit label."""
+        return self._standalone_unit_label
 
     def connect(
         self,
@@ -89,8 +117,9 @@ class Quel3ConnectionManager:
         ) as client:
             await client.list_resource_infos()
 
-    @staticmethod
-    def load_quelware_client_factory() -> QuelwareClientFactory:
+    def load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        client_module = import_module_with_workspace_fallback("quelware_client.client")
-        return client_module.create_quelware_client
+        return load_quelware_client_factory(
+            client_mode=self._client_mode,
+            standalone_unit_label=self._standalone_unit_label,
+        )

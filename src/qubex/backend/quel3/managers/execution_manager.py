@@ -12,7 +12,10 @@ import numpy as np
 
 from qubex.backend.quel3.builders.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.infra.quelware_imports import (
+    Quel3ClientMode,
     import_module_with_workspace_fallback,
+    load_quelware_client_factory,
+    validate_quelware_client_runtime,
 )
 from qubex.backend.quel3.interfaces import (
     DirectiveProtocol,
@@ -68,11 +71,19 @@ class Quel3ExecutionManager:
         quelware_port: int,
         sampling_period: float,
         capture_decimation_factor: int,
+        client_mode: str = "server",
+        standalone_unit_label: str | None = None,
     ) -> None:
+        normalized_client_mode = validate_quelware_client_runtime(
+            client_mode=client_mode,
+            standalone_unit_label=standalone_unit_label,
+        )
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
         self._sampling_period = sampling_period
         self._capture_decimation_factor = capture_decimation_factor
+        self._client_mode: Quel3ClientMode = normalized_client_mode
+        self._standalone_unit_label = standalone_unit_label
         self._sequencer_builder = Quel3SequencerBuilder()
 
     @property
@@ -89,6 +100,16 @@ class Quel3ExecutionManager:
     def sampling_period(self) -> float:
         """Return backend sampling period in ns."""
         return self._sampling_period
+
+    @property
+    def client_mode(self) -> Quel3ClientMode:
+        """Return configured quelware client mode."""
+        return self._client_mode
+
+    @property
+    def standalone_unit_label(self) -> str | None:
+        """Return configured standalone unit label."""
+        return self._standalone_unit_label
 
     def execute_sync(self, *, request: object) -> Quel3BackendExecutionResult:
         """Execute a QuEL-3 backend request synchronously."""
@@ -636,8 +657,9 @@ class Quel3ExecutionManager:
             config={"sampling_period_ns": effective_sampling_period},
         )
 
-    @staticmethod
-    def _load_quelware_api() -> tuple[
+    def _load_quelware_api(
+        self,
+    ) -> tuple[
         QuelwareClientFactory,
         InstrumentResolverFactory,
         Callable[..., SequencerProtocol],
@@ -646,7 +668,6 @@ class Quel3ExecutionManager:
         SetCaptureModeFactory,
     ]:
         """Import quelware helpers lazily and return required symbols."""
-        client_module = import_module_with_workspace_fallback("quelware_client.client")
         resolver_module = import_module_with_workspace_fallback(
             "quelware_client.client.helpers.instrument_resolver"
         )
@@ -659,8 +680,9 @@ class Quel3ExecutionManager:
         driver_module = import_module_with_workspace_fallback(
             "quelware_client.core.instrument_driver"
         )
-        create_quelware_client: QuelwareClientFactory = (
-            client_module.create_quelware_client
+        create_quelware_client: QuelwareClientFactory = load_quelware_client_factory(
+            client_mode=self._client_mode,
+            standalone_unit_label=self._standalone_unit_label,
         )
         instrument_resolver_factory: InstrumentResolverFactory = (
             resolver_module.InstrumentResolver

@@ -161,13 +161,28 @@ class SessionService:
             mode = self.ctx.configuration_mode
 
         system_manager = self.ctx.system_manager
-        system_manager.load(
-            chip_id=self.ctx.chip_id,
-            config_dir=self.ctx.config_path,
-            params_dir=self.ctx.params_path,
-            targets_to_exclude=exclude,
-            configuration_mode=mode,
+        backend_controller_override = getattr(
+            self.ctx,
+            "backend_controller_override",
+            None,
         )
+        if backend_controller_override is None:
+            system_manager.load(
+                chip_id=self.ctx.chip_id,
+                config_dir=self.ctx.config_path,
+                params_dir=self.ctx.params_path,
+                targets_to_exclude=exclude,
+                configuration_mode=mode,
+            )
+        else:
+            system_manager.load(
+                chip_id=self.ctx.chip_id,
+                config_dir=self.ctx.config_path,
+                params_dir=self.ctx.params_path,
+                targets_to_exclude=exclude,
+                configuration_mode=mode,
+                backend_controller=backend_controller_override,
+            )
         resolved_box_ids = box_ids or self.ctx.box_ids
         system_manager.push(
             box_ids=resolved_box_ids,

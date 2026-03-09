@@ -319,6 +319,7 @@ class SystemManager:
         targets_to_exclude: list[str] | None = None,
         configuration_mode: ConfigurationMode | None = None,
         backend_kind: BackendKind | None = None,
+        backend_controller: SystemBackendController | None = None,
         mock_mode: bool = False,
     ) -> None:
         """
@@ -338,6 +339,8 @@ class SystemManager:
             Configuration mode passed to `ConfigLoader`.
         backend_kind : BackendKind | None, optional
             Backend family used for this experiment session.
+        backend_controller : SystemBackendController | None, optional
+            Backend controller override reused for this experiment session.
         mock_mode : bool, optional
             If `True`, skip backend controller model synchronization.
         """
@@ -354,7 +357,19 @@ class SystemManager:
         )
         next_experiment_system = next_config_loader.get_experiment_system()
 
-        self.set_backend_kind(next_config_loader.backend_kind)
+        resolved_backend_kind = next_config_loader.backend_kind
+        self.set_backend_kind(resolved_backend_kind)
+        if backend_controller is not None:
+            self._validate_backend_controller_kind(
+                backend_controller=backend_controller,
+                backend_kind=resolved_backend_kind,
+            )
+            self._backend_controller = backend_controller
+            self._system_synchronizer = self._create_system_synchronizer(
+                backend_controller,
+                resolved_backend_kind,
+            )
+            self._backend_settings = BackendSettings()
         self._config_loader = next_config_loader
         self._mock_mode = mock_mode
         self._experiment_system = next_experiment_system
@@ -363,6 +378,26 @@ class SystemManager:
             return
         # update backend controller to reflect the new experiment system
         self._sync_experiment_system_to_backend_controller()
+
+    @staticmethod
+    def _validate_backend_controller_kind(
+        *,
+        backend_controller: SystemBackendController,
+        backend_kind: BackendKind,
+    ) -> None:
+        """Validate that one backend controller matches the selected backend kind."""
+        if backend_kind == BACKEND_KIND_QUEL1 and not isinstance(
+            backend_controller, Quel1BackendController
+        ):
+            raise TypeError(
+                "Expected `Quel1BackendController` for `backend_kind='quel1'`."
+            )
+        if backend_kind == BACKEND_KIND_QUEL3 and not isinstance(
+            backend_controller, Quel3BackendController
+        ):
+            raise TypeError(
+                "Expected `Quel3BackendController` for `backend_kind='quel3'`."
+            )
 
     def pull(
         self,

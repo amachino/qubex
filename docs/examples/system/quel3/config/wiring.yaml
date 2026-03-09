@@ -14,12 +14,12 @@
     ctrl: [T1-4, T1-2, T1-11, T1-9]
     read_out: T1-1
     read_in: T1-0
-    pump: T1-3
-  # - mux: 1
-  #   ctrl: [T1-16, T1-14, T1-17, T1-15]
-  #   read_out: T1-8
-  #   read_in: T1-7
-  #   pump: T1-10
+    # pump: T1-3
+  - mux: 1
+    ctrl: [T1-16, T1-14, T1-17, T1-15]
+    read_out: T1-8
+    read_in: T1-7
+    # pump: T1-10
   # - mux: 2
   #   ctrl: [T2-4, T2-2, T2-11, T2-9]
   #   read_out: T2-1

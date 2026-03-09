@@ -955,6 +955,41 @@ def test_load_forwards_core_paths_to_config_loader(
     assert "wiring_file" not in captured_init_kwargs
 
 
+def test_load_uses_provided_backend_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given an injected backend controller, load should keep that controller instance."""
+    manager = SystemManager.shared()
+    injected_controller = Quel3BackendController(
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+    )
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        chip_id="TEST",
+        backend_controller=injected_controller,
+        mock_mode=True,
+    )
+
+    assert manager.backend_controller is injected_controller
+
+
 def test_load_defaults_to_quel1_when_system_backend_is_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

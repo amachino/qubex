@@ -146,6 +146,7 @@ class ExperimentContext:
         classifier_dir: Path | str | None = None,
         classifier_type: Literal["kmeans", "gmm"] | None = None,
         configuration_mode: ConfigurationMode | None = None,
+        backend_controller: SystemBackendController | None = None,
         mock_mode: bool | None = None,
     ):
         if calibration_valid_days is None:
@@ -170,12 +171,14 @@ class ExperimentContext:
             configuration_mode = "ge-cr-cr"
         if mock_mode is None:
             mock_mode = False
+        self._backend_controller_override = backend_controller
 
         self._load_config(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            backend_controller=backend_controller,
             mock_mode=mock_mode,
         )
         qubits = self._create_qubit_labels(
@@ -225,6 +228,7 @@ class ExperimentContext:
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: ConfigurationMode,
+        backend_controller: SystemBackendController | None = None,
         mock_mode: bool | None = None,
     ):
         """Load the configuration files."""
@@ -235,6 +239,7 @@ class ExperimentContext:
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            backend_controller=backend_controller,
             mock_mode=mock_mode,
         )
 
@@ -385,6 +390,11 @@ class ExperimentContext:
     def backend_controller(self) -> SystemBackendController:
         """Return the backend controller."""
         return self.system_manager.backend_controller
+
+    @property
+    def backend_controller_override(self) -> SystemBackendController | None:
+        """Return the configured backend controller override, if any."""
+        return self._backend_controller_override
 
     @property
     def params(self) -> ControlParams:

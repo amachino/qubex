@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import (
+    Quel3ClientMode,
     import_module_with_workspace_fallback,
+    load_quelware_client_factory,
+    validate_quelware_client_runtime,
 )
 from qubex.backend.quel3.models import InstrumentDeployRequest
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
@@ -32,9 +36,17 @@ class Quel3ConfigurationManager:
         *,
         quelware_endpoint: str,
         quelware_port: int,
+        client_mode: str = "server",
+        standalone_unit_label: str | None = None,
     ) -> None:
+        normalized_client_mode = validate_quelware_client_runtime(
+            client_mode=client_mode,
+            standalone_unit_label=standalone_unit_label,
+        )
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
+        self._client_mode: Quel3ClientMode = normalized_client_mode
+        self._standalone_unit_label = standalone_unit_label
         self._last_deployed_instrument_infos: dict[str, tuple[object, ...]] = {}
         self._target_alias_map: dict[str, str] = {}
 
@@ -47,6 +59,16 @@ class Quel3ConfigurationManager:
     def quelware_port(self) -> int:
         """Return quelware port used for deployment."""
         return self._quelware_port
+
+    @property
+    def client_mode(self) -> Quel3ClientMode:
+        """Return configured quelware client mode."""
+        return self._client_mode
+
+    @property
+    def standalone_unit_label(self) -> str | None:
+        """Return configured standalone unit label."""
+        return self._standalone_unit_label
 
     @property
     def last_deployed_instrument_infos(self) -> dict[str, tuple[object, ...]]:
@@ -87,39 +109,59 @@ class Quel3ConfigurationManager:
 
         deployed: dict[str, tuple[object, ...]] = {}
         target_alias_map: dict[str, str] = {}
+        requests_by_port: dict[str, list[InstrumentDeployRequest]] = defaultdict(list)
+        for request in requests:
+            requests_by_port[request.port_id].append(request)
         async with client_factory(
             self._quelware_endpoint,
             self._quelware_port,
         ) as client:
-            for request in requests:
-                async with client.create_session([request.port_id]) as session:
-                    profile = fixed_timeline_profile_cls(
-                        frequency_range_min=request.frequency_range_min_hz,
-                        frequency_range_max=request.frequency_range_max_hz,
-                    )
-                    definition = instrument_definition_cls(
-                        alias=request.alias,
-                        mode=instrument_mode.FIXED_TIMELINE,
-                        role=getattr(instrument_role, request.role),
-                        profile=profile,
-                    )
-                    inst_infos = await session.deploy_instruments(
-                        request.port_id,
-                        definitions=[definition],
-                    )
-                    deployed[request.alias] = tuple(inst_infos)
-                    for target_label in request.target_labels:
-                        target_alias_map[target_label] = request.alias
+            for port_id, port_requests in requests_by_port.items():
+                async with client.create_session([port_id]) as session:
+                    for index, request in enumerate(port_requests):
+                        profile = fixed_timeline_profile_cls(
+                            frequency_range_min=request.frequency_range_min_hz,
+                            frequency_range_max=request.frequency_range_max_hz,
+                        )
+                        definition = instrument_definition_cls(
+                            alias=request.alias,
+                            mode=instrument_mode.FIXED_TIMELINE,
+                            role=getattr(instrument_role, request.role),
+                            profile=profile,
+                        )
+                        inst_infos = await session.deploy_instruments(
+                            port_id,
+                            definitions=[definition],
+                            append=index > 0,
+                        )
+                        matched_infos = tuple(
+                            inst_info
+                            for inst_info in inst_infos
+                            if getattr(
+                                getattr(inst_info, "definition", None),
+                                "alias",
+                                None,
+                            )
+                            == request.alias
+                        )
+                        if len(matched_infos) != 1:
+                            raise ValueError(
+                                "quelware did not return the deployed instrument info for one request."
+                            )
+                        deployed[request.alias] = matched_infos
+                        for target_label in request.target_labels:
+                            target_alias_map[target_label] = request.alias
 
         self._last_deployed_instrument_infos = dict(deployed)
         self._target_alias_map = target_alias_map
         return deployed
 
-    @staticmethod
-    def _load_quelware_client_factory() -> Callable[[str, int], Any]:
+    def _load_quelware_client_factory(self) -> Callable[[str, int], Any]:
         """Import quelware client factory lazily."""
-        client_module = import_module_with_workspace_fallback("quelware_client.client")
-        return client_module.create_quelware_client
+        return load_quelware_client_factory(
+            client_mode=self._client_mode,
+            standalone_unit_label=self._standalone_unit_label,
+        )
 
     @staticmethod
     def _load_instrument_entities() -> tuple[type[Any], type[Any], Any, Any]:

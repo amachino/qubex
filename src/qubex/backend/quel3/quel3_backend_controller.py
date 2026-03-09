@@ -8,12 +8,17 @@ built on quelware-client managers.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
+)
+from qubex.backend.quel3.infra import (
+    Quel3ClientMode,
+    normalize_quel3_client_mode,
+    validate_quelware_client_runtime,
 )
 
 from .managers import (
@@ -44,6 +49,8 @@ class Quel3BackendController(BackendController):
         *,
         quelware_endpoint: str | None = None,
         quelware_port: int | None = None,
+        client_mode: str | None = None,
+        standalone_unit_label: str | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
@@ -92,6 +99,46 @@ class Quel3BackendController(BackendController):
             ],
             default=50051,
         )
+        explicit_client_mode = None
+        if client_mode is not None:
+            explicit_client_mode = normalize_quel3_client_mode(client_mode)
+            if explicit_client_mode is None:
+                raise ValueError(f"Unsupported QuEL-3 client mode: {client_mode!r}")
+        resolved_client_mode = cast(
+            Quel3ClientMode,
+            self._resolve_runtime_value(
+                name="client_mode",
+                explicit_value=explicit_client_mode,
+                candidates=[
+                    manager.client_mode
+                    for manager in (
+                        connection_manager,
+                        configuration_manager,
+                        execution_manager,
+                    )
+                    if manager is not None
+                ],
+                default="server",
+            ),
+        )
+        resolved_standalone_unit_label = self._resolve_optional_runtime_value(
+            name="standalone_unit_label",
+            explicit_value=standalone_unit_label,
+            candidates=[
+                manager.standalone_unit_label
+                for manager in (
+                    connection_manager,
+                    configuration_manager,
+                    execution_manager,
+                )
+                if manager is not None
+            ],
+            default=None,
+        )
+        resolved_client_mode = validate_quelware_client_runtime(
+            client_mode=resolved_client_mode,
+            standalone_unit_label=resolved_standalone_unit_label,
+        )
         self._sampling_period = (
             execution_manager.sampling_period
             if execution_manager is not None
@@ -99,6 +146,8 @@ class Quel3BackendController(BackendController):
         )
         self._quelware_endpoint = endpoint
         self._quelware_port = port
+        self._client_mode: Quel3ClientMode = resolved_client_mode
+        self._standalone_unit_label = resolved_standalone_unit_label
 
         self._connection_manager = (
             connection_manager
@@ -106,6 +155,8 @@ class Quel3BackendController(BackendController):
             else Quel3ConnectionManager(
                 quelware_endpoint=endpoint,
                 quelware_port=port,
+                client_mode=resolved_client_mode,
+                standalone_unit_label=resolved_standalone_unit_label,
             )
         )
         self._configuration_manager = (
@@ -114,6 +165,8 @@ class Quel3BackendController(BackendController):
             else Quel3ConfigurationManager(
                 quelware_endpoint=endpoint,
                 quelware_port=port,
+                client_mode=resolved_client_mode,
+                standalone_unit_label=resolved_standalone_unit_label,
             )
         )
         self._execution_manager = (
@@ -124,6 +177,8 @@ class Quel3BackendController(BackendController):
                 quelware_port=port,
                 sampling_period=self._sampling_period,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
+                client_mode=resolved_client_mode,
+                standalone_unit_label=resolved_standalone_unit_label,
             )
         )
 
@@ -137,6 +192,29 @@ class Quel3BackendController(BackendController):
     ) -> T:
         """Resolve one runtime value from explicit input and injected managers."""
         unique_candidates: list[T] = []
+        for candidate in candidates:
+            if candidate not in unique_candidates:
+                unique_candidates.append(candidate)
+        if explicit_value is not None:
+            if any(candidate != explicit_value for candidate in unique_candidates):
+                raise ValueError(f"Inconsistent `{name}` across injected managers.")
+            return explicit_value
+        if len(unique_candidates) > 1:
+            raise ValueError(f"Inconsistent `{name}` across injected managers.")
+        if len(unique_candidates) == 1:
+            return unique_candidates[0]
+        return default
+
+    @staticmethod
+    def _resolve_optional_runtime_value(
+        *,
+        name: str,
+        explicit_value: T | None,
+        candidates: Sequence[T | None],
+        default: T | None,
+    ) -> T | None:
+        """Resolve one optional runtime value from explicit input and injected managers."""
+        unique_candidates: list[T | None] = []
         for candidate in candidates:
             if candidate not in unique_candidates:
                 unique_candidates.append(candidate)
@@ -179,6 +257,16 @@ class Quel3BackendController(BackendController):
     def quelware_port(self) -> int:
         """Return configured quelware port."""
         return self._quelware_port
+
+    @property
+    def client_mode(self) -> Quel3ClientMode:
+        """Return configured quelware client mode."""
+        return self._client_mode
+
+    @property
+    def standalone_unit_label(self) -> str | None:
+        """Return configured standalone unit label."""
+        return self._standalone_unit_label
 
     @property
     def configuration_manager(self) -> Quel3ConfigurationManager:
