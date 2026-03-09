@@ -8,7 +8,7 @@ from typing import Any
 
 from qxpulse import Blank, FlatTop, PulseArray, RampType
 
-from qubex.system import ControlParams, Mux, TargetRegistry
+from qubex.system import ControlParameters, Mux, TargetRegistry
 
 from .measurement_defaults import (
     DEFAULT_READOUT_DRAG_COEFF,
@@ -26,7 +26,7 @@ class MeasurementPulseFactory:
     def __init__(
         self,
         *,
-        control_params: ControlParams,
+        control_params: ControlParameters,
         mux_dict: Mapping[str, Mux],
         target_registry: TargetRegistry | None = None,
     ) -> None:
@@ -35,7 +35,7 @@ class MeasurementPulseFactory:
 
         Parameters
         ----------
-        control_params : ControlParams
+        control_params : ControlParameters
             Control parameters providing readout and pump amplitudes.
         mux_dict : Mapping[str, Mux]
             Mapping from qubit label to mux metadata.

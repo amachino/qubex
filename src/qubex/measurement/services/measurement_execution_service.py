@@ -57,7 +57,7 @@ from qubex.measurement.services.measurement_session_service import (
 )
 from qubex.system import (
     ConfigLoader,
-    ControlParams,
+    ControlParameters,
     ExperimentSystem,
     Mux,
     PortType,
@@ -199,7 +199,7 @@ class MeasurementExecutionService:
         )
 
     @property
-    def control_params(self) -> ControlParams:
+    def control_params(self) -> ControlParameters:
         """Return active control parameters."""
         return self.experiment_system.control_params
 

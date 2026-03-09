@@ -6,9 +6,9 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
-from qubex.backend.quel1.quel1_backend_constants import DEFAULT_CAPTURE_DELAY
 from qubex.core.parallel_executor import run_parallel, run_parallel_map
 from qubex.system.control_system import PortType
+from qubex.system.quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,16 @@ class Quel1SystemSynchronizer:
         """Rebuild backend controller from one experiment-system model."""
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
-        self._backend_controller.define_clockmaster(
-            ipaddr=control_system.clock_master_address,
-            reset=True,
-        )
+        clock_master_address = control_system.clock_master_address
+        if len(control_system.boxes) > 1 and clock_master_address is None:
+            raise ValueError(
+                "Clock master address is required for multi-box QuEL-1 synchronization."
+            )
+        if clock_master_address is not None:
+            self._backend_controller.define_clockmaster(
+                ipaddr=clock_master_address,
+                reset=True,
+            )
         self._backend_controller.set_box_options(
             {box.id: box.options for box in control_system.boxes}
         )

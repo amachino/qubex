@@ -34,7 +34,7 @@ from qubex.system import (
     Box,
     Chip,
     ConfigLoader,
-    ControlParams,
+    ControlParameters,
     ControlSystem,
     ExperimentSystem,
     GenPort,
@@ -45,8 +45,8 @@ from qubex.system import (
     Resonator,
     SystemManager,
     Target,
-    TargetType,
 )
+from qubex.system.target_type import TargetType
 from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
 
@@ -391,7 +391,7 @@ class ExperimentContext:
         return self.system_manager.backend_controller
 
     @property
-    def params(self) -> ControlParams:
+    def params(self) -> ControlParameters:
         """Return the control parameters."""
         return self.experiment_system.control_params
 

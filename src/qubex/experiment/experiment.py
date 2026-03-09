@@ -44,7 +44,7 @@ from qubex.system import (
     Box,
     Chip,
     ConfigLoader,
-    ControlParams,
+    ControlParameters,
     ControlSystem,
     ExperimentSystem,
     QuantumSystem,
@@ -52,8 +52,8 @@ from qubex.system import (
     Resonator,
     SystemManager,
     Target,
-    TargetType,
 )
+from qubex.system.target_type import TargetType
 from qubex.typing import (
     ConfigurationMode,
     FrequencyLike,
@@ -382,7 +382,7 @@ class Experiment:
         return self.ctx.backend_controller
 
     @property
-    def params(self) -> ControlParams:
+    def params(self) -> ControlParameters:
         """Return the control parameters."""
         return self.ctx.params
 

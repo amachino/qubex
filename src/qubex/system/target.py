@@ -4,27 +4,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection
-from enum import Enum
 from typing import Literal
 
 from qubex.core import MutableModel
 
 from .control_system import CapChannel, GenChannel
 from .quantum_system import Mux, Qubit, Resonator
-
-# TODO: Make target label formats configurable
-
-
-class TargetType(Enum):
-    """Enumerate supported target types."""
-
-    CTRL_GE = "CTRL_GE"
-    CTRL_EF = "CTRL_EF"
-    CTRL_CR = "CTRL_CR"
-    READ = "READ"
-    PUMP = "PUMP"
-    UNKNOWN = "UNKNOWN"
-
+from .target_type import TargetType
 
 PhysicalObject = Qubit | Resonator | Mux
 

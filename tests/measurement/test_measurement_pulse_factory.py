@@ -15,13 +15,13 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_PRE_MARGIN,
     DEFAULT_READOUT_RAMP_TIME,
 )
-from qubex.system import ControlParams, Mux
+from qubex.system import ControlParameters, Mux
 
 
 def test_readout_pulse_uses_defaults_from_control_params() -> None:
     """Given default args, when readout pulse is built, then defaults are applied."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(
             get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
         ),
@@ -48,7 +48,7 @@ def test_readout_pulse_uses_defaults_from_control_params() -> None:
 def test_readout_pulse_accepts_renamed_ramp_parameters() -> None:
     """Given renamed ramp args, when readout pulse is built, then they are applied."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(
             get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
         ),
@@ -72,7 +72,7 @@ def test_readout_pulse_accepts_renamed_ramp_parameters() -> None:
 def test_readout_pulse_accepts_legacy_ramp_aliases_with_warning() -> None:
     """Given legacy ramp args, when readout pulse is built, then deprecation warning is emitted."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(
             get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
         ),
@@ -97,7 +97,7 @@ def test_readout_pulse_accepts_legacy_ramp_aliases_with_warning() -> None:
 def test_readout_pulse_rejects_conflicting_ramp_aliases() -> None:
     """Given legacy and renamed ramp args, when values conflict, then ValueError is raised."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(
             get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
         ),
@@ -122,7 +122,7 @@ def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
     """Given mux mapping, when pump pulse is built, then pump amplitude uses mux index."""
     mux = cast(Mux, SimpleNamespace(index=2, label="MX2"))
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
     )
     factory = MeasurementPulseFactory(
@@ -141,7 +141,7 @@ def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
 def test_pump_pulse_accepts_renamed_ramp_parameters() -> None:
     """Given renamed ramp args, when pump pulse is built, then they are applied."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
     )
     factory = MeasurementPulseFactory(
@@ -163,7 +163,7 @@ def test_pump_pulse_accepts_renamed_ramp_parameters() -> None:
 def test_pump_pulse_accepts_legacy_ramp_aliases_with_warning() -> None:
     """Given legacy ramp args, when pump pulse is built, then deprecation warning is emitted."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
     )
     factory = MeasurementPulseFactory(
@@ -186,7 +186,7 @@ def test_pump_pulse_accepts_legacy_ramp_aliases_with_warning() -> None:
 def test_pump_pulse_rejects_conflicting_ramp_aliases() -> None:
     """Given legacy and renamed ramp args, when values conflict, then ValueError is raised."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
     )
     factory = MeasurementPulseFactory(
@@ -208,7 +208,7 @@ def test_pump_pulse_rejects_conflicting_ramp_aliases() -> None:
 def test_readout_pulse_uses_target_registry_when_label_is_custom() -> None:
     """Given custom target label, when registry is provided, then amplitude lookup uses resolved qubit."""
     control_params = cast(
-        ControlParams,
+        ControlParameters,
         SimpleNamespace(
             get_readout_amplitude=lambda qubit: 0.4 if qubit == "Q17" else 0.0
         ),

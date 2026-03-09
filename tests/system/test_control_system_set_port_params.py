@@ -15,7 +15,7 @@ def test_set_port_params_preserves_cap_lo_freq_when_not_given() -> None:
         adapter="none",
         port_numbers=[0],
     )
-    control_system = ControlSystem([box])
+    control_system = ControlSystem([box], clock_master_address="192.0.2.1")
     cap_port = control_system.get_cap_port("B0", 0)
     original_lo_freq = cap_port.lo_freq
 

@@ -34,6 +34,9 @@ Define a clean split between chip metadata and runtime/backend settings.
 ### D4. Clock-master policy
 
 - `quel1` section may define `clock_master`.
+- When omitted, QuEL-1 configuration still loads, but operations that require
+  a shared clock master (for example multi-box synchronization or skew checks)
+  must fail explicitly at execution time.
 - `quel3` section does not require `clock_master` in current quelware-client API.
 
 ## Proposed schema

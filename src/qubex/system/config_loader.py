@@ -33,9 +33,10 @@ from qubex.typing import ConfigurationMode
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from qubex.system.control_parameter_defaults import ControlParameterDefaults
+    from qubex.system.control_parameters import ControlParameters
     from qubex.system.control_system import ControlSystem
     from qubex.system.experiment_system import (
-        ControlParams,
         ExperimentSystem,
         WiringInfo,
     )
@@ -92,8 +93,9 @@ class ConfigLoader:
     time-like quantities). `meta.unit` must be a string and is applied
     uniformly to the values in per-file `data` only.
 
-    The loader passes through `jpa_params` as-is; it does not perform key
-    normalization. Downstream consumers should handle optional keys.
+    `jpa_params` are resolved into effective per-mux values during load, so the
+    resulting control-parameter object serializes concrete values rather than
+    relying on runtime fallback logic.
 
     Parameters
     ----------
@@ -213,7 +215,7 @@ class ConfigLoader:
         self._wiring_rows: list[dict[str, Any]] | None = None
         self._control_system: ControlSystem | None = None
         self._wiring_info: WiringInfo | None = None
-        self._control_params: ControlParams | None = None
+        self._control_params: ControlParameters | None = None
         self._experiment_system: ExperimentSystem | None = None
         self._system_loader: Quel1SystemLoader | Quel3SystemLoader | None = None
         self._backend_kind: BackendKind = BACKEND_KIND_QUEL1
@@ -751,13 +753,45 @@ class ConfigLoader:
         )
         return None
 
-    def _load_control_params(self) -> ControlParams | None:
-        from qubex.system.experiment_system import ControlParams
+    def _create_control_parameter_defaults(self) -> ControlParameterDefaults:
+        """
+        Return backend-specific defaults for control-parameter materialization.
 
+        The concrete defaults class is selected from `self._backend_kind`, which
+        is resolved during `load()` from the explicit `backend_kind` argument or
+        from the `backend` field in `system.yaml`.
+        """
+        if self._backend_kind == BACKEND_KIND_QUEL3:
+            from qubex.system.quel3.quel3_control_parameter_defaults import (
+                Quel3ControlParameterDefaults,
+            )
+
+            return Quel3ControlParameterDefaults()
+        from qubex.system.quel1.quel1_control_parameter_defaults import (
+            Quel1ControlParameterDefaults,
+        )
+
+        return Quel1ControlParameterDefaults()
+
+    def _load_control_params(self) -> ControlParameters | None:
+        """
+        Materialize effective control parameters for the loaded backend.
+
+        Returns
+        -------
+        ControlParameters | None
+            Fully materialized control parameters, or `None` if the quantum
+            system is not available yet.
+        """
+        if self._quantum_system is None:
+            return None
+
+        control_parameter_defaults = self._create_control_parameter_defaults()
         # Build control params primarily from per-file param names when present;
         # fall back to monolithic params.yaml where needed. Do not require the
         # legacy monolithic file to exist.
-        control_params = ControlParams(
+        control_params = control_parameter_defaults.create_control_parameters(
+            quantum_system=self._quantum_system,
             frequency_margin=self.load_param_data("frequency_margin"),
             control_amplitude=self.load_param_data("control_amplitude"),
             readout_amplitude=self.load_param_data("readout_amplitude"),

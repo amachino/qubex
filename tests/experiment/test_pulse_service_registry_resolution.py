@@ -11,7 +11,7 @@ from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.services import pulse_service as pulse_service_module
 from qubex.experiment.services.pulse_service import PulseService
 from qubex.pulse import Arbitrary
-from qubex.system import TargetType
+from qubex.system.target_type import TargetType
 
 
 def _make_rabi_param(target: str, frequency: float) -> RabiParam:

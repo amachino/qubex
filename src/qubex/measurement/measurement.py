@@ -24,7 +24,7 @@ from qubex.measurement.models.measurement_result import (
 )
 from qubex.system import (
     ConfigLoader,
-    ControlParams,
+    ControlParameters,
     ExperimentSystem,
     Mux,
     SystemManager,
@@ -356,7 +356,7 @@ class Measurement:
         return self.execution_service.measurement_schedule_runner
 
     @property
-    def control_params(self) -> ControlParams:
+    def control_params(self) -> ControlParameters:
         """Return active control parameters."""
         return self.experiment_system.control_params
 

@@ -45,3 +45,20 @@ def test_backend_quel3_module_hides_module_level_decimation_constant() -> None:
     import qubex.backend.quel3 as quel3
 
     assert not hasattr(quel3, "CAPTURE_DECIMATION_FACTOR")
+
+
+def test_backend_quel1_module_hides_migrated_system_defaults() -> None:
+    """Given backend.quel1 module, when checking migrated defaults, then system-level constants are not re-exported."""
+    import qubex.backend.quel1 as quel1
+
+    assert not hasattr(quel1, "DEFAULT_PUMP_FREQUENCY_GHZ")
+    assert not hasattr(quel1, "DEFAULT_LO_FREQUENCY_HZ")
+    assert not hasattr(quel1, "LO_STEP_HZ")
+    assert not hasattr(quel1, "EXTRA_SUM_SECTION_LENGTH")
+
+
+def test_backend_quel3_module_hides_migrated_system_defaults() -> None:
+    """Given backend.quel3 module, when checking migrated defaults, then system-level constants are not re-exported."""
+    import qubex.backend.quel3 as quel3
+
+    assert not hasattr(quel3, "DEFAULT_PUMP_FREQUENCY_GHZ")

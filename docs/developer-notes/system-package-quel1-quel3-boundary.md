@@ -26,7 +26,7 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 - session-level backend selection and orchestration in `SystemManager`
 - fail-fast policy for unresolved/ambiguous runtime resolution
 - backend-facing planning inputs derived from shared logical models
-  (`ExperimentSystem`, `Target`, `ControlParams`)
+  (`ExperimentSystem`, `Target`, `ControlParameters`)
 
 ### Must remain backend-specific
 

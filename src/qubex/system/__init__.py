@@ -1,6 +1,8 @@
 """System orchestration components across backends."""
 
 from .config_loader import ConfigLoader
+from .control_parameter_defaults import ControlParameterDefaults
+from .control_parameters import ControlParameters
 from .control_system import (
     Box,
     BoxType,
@@ -13,15 +15,16 @@ from .control_system import (
     Port,
     PortType,
 )
-from .experiment_system import ControlParams, ExperimentSystem, MixingUtil, WiringInfo
+from .experiment_system import ExperimentSystem, WiringInfo
 from .lattice_graph import LatticeGraph
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .quel1 import Quel1SystemSynchronizer
+from .quel1 import MixingUtil, Quel1SystemSynchronizer
 from .quel3 import Quel3SystemSynchronizer
 from .system_manager import BackendSettings, SystemManager, SystemState
 from .system_synchronizer import SystemSynchronizer
-from .target import CapTarget, Target, TargetType
+from .target import CapTarget, Target
 from .target_registry import TargetRegistry
+from .target_type import TargetType
 from .wiring import split_box_port_specifier
 
 __all__ = [
@@ -34,7 +37,8 @@ __all__ = [
     "Channel",
     "Chip",
     "ConfigLoader",
-    "ControlParams",
+    "ControlParameterDefaults",
+    "ControlParameters",
     "ControlSystem",
     "ExperimentSystem",
     "GenChannel",

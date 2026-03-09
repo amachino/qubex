@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.measurement.measurement_context import MeasurementContext
-from qubex.system import ControlParams, ExperimentSystem
+from qubex.system import ControlParameters, ExperimentSystem
 
 
 class MeasurementAmplificationService:
@@ -31,7 +31,7 @@ class MeasurementAmplificationService:
         return self.context.experiment_system
 
     @property
-    def control_params(self) -> ControlParams:
+    def control_params(self) -> ControlParameters:
         """Return control parameters from the active experiment system."""
         return self.experiment_system.control_params
 

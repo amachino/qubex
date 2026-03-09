@@ -6,10 +6,12 @@ from dataclasses import dataclass
 
 from qubex.backend.quel1 import (
     BLOCK_LENGTH,
-    EXTRA_POST_BLANK_LENGTH,
-    EXTRA_SUM_SECTION_LENGTH,
     SAMPLING_PERIOD_NS,
     WORD_LENGTH,
+)
+from qubex.system.quel1.quel1_system_constants import (
+    EXTRA_POST_BLANK_LENGTH,
+    EXTRA_SUM_SECTION_LENGTH,
 )
 
 

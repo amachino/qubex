@@ -70,6 +70,8 @@ def check_skew(
     clock_master_address = (
         system_manager.experiment_system.control_system.clock_master_address
     )
+    if clock_master_address is None:
+        raise ValueError("Clock master address is required to check skew.")
 
     if config_dir is not None:
         config_path = Path(config_dir)
@@ -188,6 +190,8 @@ def reset_clockmaster(
     """Reset the clock master."""
     if ipaddr is None:
         ipaddr = system_manager.experiment_system.control_system.clock_master_address
+    if ipaddr is None:
+        raise ValueError("Clock master address is required to reset the clock master.")
 
     reset_clockmaster_impl = _require_backend_callable("reset_clockmaster")
     return cast(bool, reset_clockmaster_impl(ipaddr))

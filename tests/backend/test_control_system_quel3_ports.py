@@ -86,8 +86,7 @@ def test_quel3_box_traits_follow_direct_nco_control_profile() -> None:
         adapter="A3",
     )
 
-    assert box.traits.ctrl_uses_lo is False
     assert box.traits.ctrl_ssb is None
-    assert box.traits.ctrl_uses_vatt is False
     assert box.traits.readout_ssb is None
+    assert box.traits.readout_cnco_center is None
     assert box.traits.default_control_frequency_range == (3.0, 5.0, 0.005)

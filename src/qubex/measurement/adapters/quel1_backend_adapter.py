@@ -598,7 +598,11 @@ class Quel1MeasurementBackendAdapter:
             except (KeyError, ValueError):
                 mux = None
             if mux is not None:
-                capture_delay_word = capture_delays.get(mux.index, 0)
+                capture_delay_word = capture_delays.get(mux.index)
+                if capture_delay_word is None:
+                    raise ValueError(
+                        f"Capture delay word is not configured for mux {mux.index}."
+                    )
                 return capture_delay_word * word_length
 
         control_system = getattr(self._experiment_system, "control_system", None)

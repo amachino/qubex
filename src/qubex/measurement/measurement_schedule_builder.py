@@ -8,7 +8,7 @@ from typing import Literal
 
 from qxpulse import PulseSchedule, RampType
 
-from qubex.system import ControlParams, Mux, Target, TargetRegistry
+from qubex.system import ControlParameters, Mux, Target, TargetRegistry
 
 from .measurement_constraint_profile import MeasurementConstraintProfile
 from .measurement_pulse_factory import MeasurementPulseFactory
@@ -24,7 +24,7 @@ class MeasurementScheduleBuilder:
     def __init__(
         self,
         *,
-        control_params: ControlParams,
+        control_params: ControlParameters,
         pulse_factory: MeasurementPulseFactory,
         targets: Mapping[str, Target],
         mux_dict: Mapping[str, Mux],

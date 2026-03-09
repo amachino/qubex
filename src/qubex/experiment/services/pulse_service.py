@@ -27,7 +27,7 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.experiment_exceptions import CalibrationMissingError
 from qubex.experiment.models.rabi_param import RabiParam
-from qubex.system import TargetType
+from qubex.system.target_type import TargetType
 from qubex.typing import TargetMap
 
 logger = logging.getLogger(__name__)

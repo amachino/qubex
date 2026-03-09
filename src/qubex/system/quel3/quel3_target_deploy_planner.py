@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from qubex.backend.quel3.models import InstrumentDeployRequest, RoleName
-from qubex.system.target import TargetType
+from qubex.system.target_type import TargetType
 
 if TYPE_CHECKING:
     from qubex.system.control_system import GenPort

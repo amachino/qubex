@@ -7,36 +7,12 @@ import re
 from collections.abc import Collection, Sequence
 from typing import Final, Literal
 
-import numpy as np
-from typing_extensions import TypedDict, deprecated
+from typing_extensions import deprecated
 
-from qubex.backend.quel1.quel1_backend_constants import (
-    AWG_MAX_HZ,
-    CNCO_CENTER_CTRL_HZ,
-    CNCO_CENTER_READ_HZ,
-    DEFAULT_CAPTURE_DELAY,
-    DEFAULT_CAPTURE_DELAY_WORD,
-    DEFAULT_CNCO_FREQUENCY_HZ,
-    DEFAULT_CONTROL_AMPLITUDE,
-    DEFAULT_CONTROL_FSC,
-    DEFAULT_CONTROL_VATT,
-    DEFAULT_DC_VOLTAGE,
-    DEFAULT_FNCO_FREQUENCY_HZ,
-    DEFAULT_LO_FREQUENCY_HZ,
-    DEFAULT_PUMP_AMPLITUDE,
-    DEFAULT_PUMP_FREQUENCY_GHZ,
-    DEFAULT_PUMP_FSC,
-    DEFAULT_PUMP_VATT,
-    DEFAULT_READOUT_AMPLITUDE,
-    DEFAULT_READOUT_FSC,
-    DEFAULT_READOUT_VATT,
-    FNCO_MAX_HZ,
-    LO_STEP_HZ,
-    NCO_STEP_HZ,
-)
 from qubex.core import MutableModel
 from qubex.typing import ConfigurationMode
 
+from .control_parameters import ControlParameters
 from .control_system import (
     Box,
     BoxType,
@@ -47,8 +23,22 @@ from .control_system import (
     PortType,
 )
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .target import CapTarget, Target, TargetType
+from .quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
+from .quel1.quel1_port_configurator import (
+    MixingUtil,
+    create_control_configuration,
+    create_readout_configuration,
+    get_boxes_to_configure,
+)
+from .quel1.quel1_system_constants import (
+    CNCO_CENTER_READ_HZ,
+    DEFAULT_CNCO_FREQUENCY_HZ,
+    DEFAULT_FNCO_FREQUENCY_HZ,
+    DEFAULT_LO_FREQUENCY_HZ,
+)
+from .target import CapTarget, Target
 from .target_registry import TargetRegistry
+from .target_type import TargetType
 
 logger = logging.getLogger(__name__)
 
@@ -70,145 +60,6 @@ class QubitPortSet(MutableModel):
     read_in_port: CapPort
 
 
-class JPAParam(TypedDict):
-    """JPA parameter dictionary for a mux."""
-
-    dc_voltage: float | None
-    pump_frequency: float | None
-    pump_amplitude: float | None
-
-
-class ReadoutMixingConfig(TypedDict):
-    """Readout mixing configuration for one mux."""
-
-    lo: int | None
-    cnco: int
-    fnco: int
-
-
-class ControlChannelConfig(TypedDict):
-    """Per-channel control mixing configuration."""
-
-    fnco: int
-    targets: list[str]
-
-
-class ControlMixingConfig(TypedDict):
-    """Control mixing configuration for one qubit."""
-
-    lo: int | None
-    cnco: int
-    channels: dict[int, ControlChannelConfig]
-
-
-class CrTargetConfig(TypedDict):
-    """CR target label and frequency pair."""
-
-    label: str
-    frequency: float
-
-
-class ControlParams(MutableModel):
-    """Control parameters and access helpers for the system."""
-
-    frequency_margin: dict[str, float]
-    control_amplitude: dict[str, float]
-    readout_amplitude: dict[str, float]
-    control_vatt: dict[str, int | None]
-    readout_vatt: dict[int, int]
-    pump_vatt: dict[int, int]
-    control_fsc: dict[str, int]
-    readout_fsc: dict[int, int]
-    pump_fsc: dict[int, int]
-    capture_delay: dict[int, int]
-    capture_delay_word: dict[int, int]
-    jpa_params: dict[int, JPAParam | None]
-
-    _DEFAULT_FREQUENCY_MARGIN_BY_TYPE: Final[dict[str, float]] = {
-        TargetType.READ.value: 0.1,
-        TargetType.CTRL_GE.value: 0.1,
-        TargetType.CTRL_EF.value: 0.1,
-        TargetType.CTRL_CR.value: 0.1,
-        TargetType.PUMP.value: 0.1,
-    }
-
-    def get_frequency_margin(self, target_type: TargetType | str) -> float:
-        """Return the QuEL-3 deploy frequency margin for a target type."""
-        key = target_type.value if isinstance(target_type, TargetType) else target_type
-        return self.frequency_margin.get(
-            key,
-            self._DEFAULT_FREQUENCY_MARGIN_BY_TYPE.get(key, 0.1),
-        )
-
-    def get_control_amplitude(self, qubit: str) -> float:
-        """Return the control amplitude for a qubit."""
-        return self.control_amplitude.get(qubit, DEFAULT_CONTROL_AMPLITUDE)
-
-    def get_ef_control_amplitude(self, qubit: str) -> float:
-        """Return the ef control amplitude for a qubit."""
-        return self.get_control_amplitude(qubit) / np.sqrt(2)
-
-    def get_readout_amplitude(self, qubit: str) -> float:
-        """Return the readout amplitude for a qubit."""
-        return self.readout_amplitude.get(qubit, DEFAULT_READOUT_AMPLITUDE)
-
-    def get_control_vatt(self, qubit: str) -> int | None:
-        """Return the control VATT for a qubit."""
-        return self.control_vatt.get(qubit, DEFAULT_CONTROL_VATT)
-
-    def get_readout_vatt(self, mux: int) -> int:
-        """Return the readout VATT for a mux."""
-        return self.readout_vatt.get(mux, DEFAULT_READOUT_VATT)
-
-    def get_pump_vatt(self, mux: int) -> int:
-        """Return the pump VATT for a mux."""
-        return self.pump_vatt.get(mux, DEFAULT_PUMP_VATT)
-
-    def get_control_fsc(self, qubit: str) -> int:
-        """Return the control FSC for a qubit."""
-        return self.control_fsc.get(qubit, DEFAULT_CONTROL_FSC)
-
-    def get_readout_fsc(self, mux: int) -> int:
-        """Return the readout FSC for a mux."""
-        return self.readout_fsc.get(mux, DEFAULT_READOUT_FSC)
-
-    def get_pump_fsc(self, mux: int) -> int:
-        """Return the pump FSC for a mux."""
-        return self.pump_fsc.get(mux, DEFAULT_PUMP_FSC)
-
-    def get_capture_delay(self, mux: int) -> int:
-        """Return the capture delay for a mux."""
-        return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
-
-    def get_capture_delay_word(self, mux: int) -> int:
-        """Return the capture delay word for a mux."""
-        return self.capture_delay_word.get(mux, DEFAULT_CAPTURE_DELAY_WORD)
-
-    def get_pump_frequency(self, mux: int) -> float:
-        """Return the pump frequency for a mux."""
-        jpa_param = self.jpa_params.get(mux)
-        if jpa_param is None:
-            return DEFAULT_PUMP_FREQUENCY_GHZ
-        else:
-            return jpa_param.get("pump_frequency") or DEFAULT_PUMP_FREQUENCY_GHZ
-
-    def get_pump_amplitude(self, mux: int) -> float:
-        """Return the pump amplitude for a mux."""
-        jpa_param = self.jpa_params.get(mux)
-        if jpa_param is None:
-            return DEFAULT_PUMP_AMPLITUDE
-        else:
-            return jpa_param.get("pump_amplitude") or DEFAULT_PUMP_AMPLITUDE
-
-    def get_dc_voltage(self, mux: int) -> float:
-        """Return the DC voltage for a mux."""
-        jpa_param = self.jpa_params.get(mux)
-        if jpa_param is None:
-            return DEFAULT_DC_VOLTAGE
-        else:
-            return jpa_param.get("dc_voltage") or DEFAULT_DC_VOLTAGE
-
-
 class ExperimentSystem:
     """Experiment system containing wiring and target mappings."""
 
@@ -217,7 +68,7 @@ class ExperimentSystem:
         quantum_system: QuantumSystem,
         control_system: ControlSystem,
         wiring_info: WiringInfo,
-        control_params: ControlParams,
+        control_params: ControlParameters,
         targets_to_exclude: list[str] | None = None,
         configuration_mode: ConfigurationMode = "ge-cr-cr",
     ):
@@ -228,13 +79,7 @@ class ExperimentSystem:
         self._targets_to_exclude: Final = targets_to_exclude or []
         self._configuration_mode: ConfigurationMode = configuration_mode
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
-        boxes_to_configure = [box for box in self.boxes if box.type != BoxType.QUEL3]
-        if boxes_to_configure:
-            self._configure_ports(
-                mode=self._configuration_mode,
-                boxes=boxes_to_configure,
-            )
-        self._target_registry = self._build_target_registry()
+        self._rebuild_configuration(mode=self._configuration_mode)
 
     @property
     def hash(self) -> int:
@@ -264,7 +109,7 @@ class ExperimentSystem:
         return self._wiring_info
 
     @property
-    def control_params(self) -> ControlParams:
+    def control_params(self) -> ControlParameters:
         """Return the control parameters."""
         return self._control_params
 
@@ -287,6 +132,11 @@ class ExperimentSystem:
     def boxes(self) -> list[Box]:
         """Return the list of control boxes."""
         return self.control_system.boxes
+
+    @property
+    def targets_to_exclude(self) -> list[str]:
+        """Return target labels excluded from generated configurations."""
+        return list(self._targets_to_exclude)
 
     @property
     def ge_targets(self) -> list[Target]:
@@ -627,31 +477,30 @@ class ExperimentSystem:
         mode: ConfigurationMode = "ge-cr-cr",
     ) -> None:
         """Configure port/channel parameters and rebuild target mappings."""
+        self._rebuild_configuration(mode=mode)
+
+    def _rebuild_configuration(
+        self,
+        *,
+        mode: ConfigurationMode,
+    ) -> None:
+        """Recompute port settings and target mappings for one configuration mode."""
         self._configuration_mode = mode
         self._configure_ports(mode=mode)
-        self._target_registry = self._build_target_registry(mode=mode)
+        self._target_registry = self._build_target_registry()
 
     def _configure_ports(
         self,
-        mode: ConfigurationMode | None = None,
-        boxes: Sequence[Box] | None = None,
+        mode: ConfigurationMode,
     ) -> None:
-        """Apply per-port hardware model parameters for the specified mode."""
-        if mode is None:
-            mode = self._configuration_mode
-        else:
-            self._configuration_mode = mode
+        """Apply backend-specific port initialization for the current system."""
         params = self.control_params
-        for box in self.boxes if boxes is None else boxes:
+        for box in get_boxes_to_configure(self.boxes):
             for port in box.ports:
                 if isinstance(port, GenPort):
                     port.rfswitch = "pass"
                     if port.type == PortType.READ_OUT:
-                        self._configure_readout_port(
-                            box=box,
-                            port=port,
-                            params=params,
-                        )
+                        self._configure_readout_port(box=box, port=port, params=params)
                     elif port.type == PortType.CTRL:
                         self._configure_control_port(
                             box=box,
@@ -660,23 +509,139 @@ class ExperimentSystem:
                             mode=mode,
                         )
                     elif port.type == PortType.PUMP:
-                        self._configure_pump_port(
-                            port=port,
-                            params=params,
-                        )
+                        self._configure_pump_port(port=port, params=params)
                 elif isinstance(port, CapPort):
                     port.rfswitch = "open"
                     if port.type == PortType.READ_IN:
-                        self._configure_capture_port(
-                            box=box,
-                            port=port,
-                            params=params,
-                        )
+                        self._configure_capture_port(box=box, port=port, params=params)
                     elif port.type == PortType.MNTR_IN:
-                        self._configure_monitor_port(
-                            box=box,
-                            port=port,
-                        )
+                        self._configure_monitor_port(port=port)
+
+    def _configure_control_port(
+        self,
+        *,
+        box: Box,
+        port: GenPort,
+        params: ControlParameters,
+        mode: ConfigurationMode,
+    ) -> None:
+        qubit = self.get_qubit_by_control_port(port)
+        if qubit is None or not qubit.is_valid:
+            return
+        traits = box.traits
+        config = create_control_configuration(
+            mode=mode,
+            qubit=qubit,
+            n_channels=port.n_channels,
+            get_spectator_qubits=self.get_spectator_qubits,
+            excluded_targets=self.targets_to_exclude,
+            ssb=traits.ctrl_ssb,
+            min_frequency=traits.ctrl_min_frequency_hz,
+        )
+        port.lo_freq = config["lo"]
+        port.cnco_freq = config["cnco"]
+        port.sideband = traits.ctrl_ssb
+        port.vatt = params.control_vatt[qubit.label]
+        port.fullscale_current = params.get_control_fsc(qubit.label)
+        for idx, gen_channel in enumerate(port.channels):
+            gen_channel.fnco_freq = config["channels"][idx]["fnco"]
+
+    def _configure_pump_port(
+        self,
+        *,
+        port: GenPort,
+        params: ControlParameters,
+    ) -> None:
+        mux = self.get_mux_by_pump_port(port)
+        if mux is None:
+            return
+        frequency = params.get_pump_frequency(mux.index)
+        lo, cnco, _ = MixingUtil.calc_lo_cnco(
+            f=frequency * 1e9,
+            ssb="U",
+            cnco_center=CNCO_CENTER_READ_HZ,
+        )
+        fnco, _ = MixingUtil.calc_fnco(
+            f=frequency * 1e9,
+            ssb="U",
+            lo=lo,
+            cnco=cnco,
+        )
+        port.lo_freq = lo
+        port.cnco_freq = cnco
+        port.sideband = "U"
+        port.vatt = params.get_pump_vatt(mux.index)
+        port.fullscale_current = params.get_pump_fsc(mux.index)
+        port.channels[0].fnco_freq = fnco
+
+    def _configure_readout_port(
+        self,
+        *,
+        box: Box,
+        port: GenPort,
+        params: ControlParameters,
+    ) -> None:
+        mux = self.get_mux_by_readout_port(port)
+        if mux is None:
+            logger.warning(
+                f"Readout port `{port.id}` not connected to a mux. Skipping configuration.",
+            )
+            return
+        if mux.is_not_available:
+            return
+        traits = box.traits
+        config = create_readout_configuration(
+            mux,
+            excluded_targets=self.targets_to_exclude,
+            ssb=traits.readout_ssb,
+            cnco_center=traits.readout_cnco_center,
+        )
+        port.lo_freq = config["lo"]
+        port.cnco_freq = config["cnco"]
+        port.sideband = traits.readout_ssb
+        port.vatt = params.get_readout_vatt(mux.index)
+        port.fullscale_current = params.get_readout_fsc(mux.index)
+        port.channels[0].fnco_freq = config["fnco"]
+
+    def _configure_capture_port(
+        self,
+        *,
+        box: Box,
+        port: CapPort,
+        params: ControlParameters,
+    ) -> None:
+        mux = self.get_mux_by_readout_port(port)
+        if mux is None:
+            logger.warning(
+                f"Capture port `{port.id}` not connected to a mux. Skipping configuration.",
+            )
+            return
+        if mux.is_not_available:
+            return
+        traits = box.traits
+        config = create_readout_configuration(
+            mux,
+            excluded_targets=self.targets_to_exclude,
+            ssb=traits.readout_ssb,
+            cnco_center=traits.readout_cnco_center,
+        )
+        port.lo_freq = config["lo"]
+        port.cnco_freq = config["cnco"]
+        for cap_channel in port.channels:
+            cap_channel.fnco_freq = config["fnco"]
+            cap_channel.ndelay = params.get_capture_delay(mux.index)
+
+    def _configure_monitor_port(
+        self,
+        *,
+        port: CapPort,
+    ) -> None:
+        """Initialize monitor input with default frequencies for hardware sync."""
+        port.lo_freq = DEFAULT_LO_FREQUENCY_HZ
+        port.cnco_freq = DEFAULT_CNCO_FREQUENCY_HZ
+        for channel in port.channels:
+            channel.fnco_freq = DEFAULT_FNCO_FREQUENCY_HZ
+            channel.ndelay = DEFAULT_CAPTURE_DELAY
 
     def _build_target_registry(
         self,
@@ -722,140 +687,6 @@ class ExperimentSystem:
             cap_targets=dict(sorted(cap_targets.items())),
         )
 
-    def _configure_control_port(
-        self,
-        box: Box,
-        port: GenPort,
-        params: ControlParams,
-        mode: ConfigurationMode,
-    ) -> None:
-        qubit = self.get_qubit_by_control_port(port)
-        if qubit is None or not qubit.is_valid:
-            return
-
-        traits = box.traits
-        ssb = traits.ctrl_ssb
-        min_frequency = traits.ctrl_min_frequency_hz
-        vatt = params.get_control_vatt(qubit.label) if traits.ctrl_uses_vatt else None
-
-        config = self._create_control_configuration(
-            mode=mode,
-            qubit=qubit,
-            n_channels=port.n_channels,
-            ssb=ssb,
-            min_frequency=min_frequency,
-        )
-        port.lo_freq = config["lo"]
-        port.cnco_freq = config["cnco"]
-        port.sideband = ssb
-        port.vatt = vatt
-        port.fullscale_current = params.get_control_fsc(qubit.label)
-        for idx, gen_channel in enumerate(port.channels):
-            gen_channel.fnco_freq = config["channels"][idx]["fnco"]
-
-    def _configure_pump_port(
-        self,
-        port: GenPort,
-        params: ControlParams,
-    ) -> None:
-        mux = self.get_mux_by_pump_port(port)
-        if mux is None:
-            return
-
-        frequency = params.get_pump_frequency(mux.index)
-        ssb = "U"
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f=frequency * 1e9,
-            ssb=ssb,
-            cnco_center=CNCO_CENTER_READ_HZ,
-        )
-        fnco, _ = MixingUtil.calc_fnco(
-            f=frequency * 1e9,
-            ssb=ssb,
-            lo=lo,
-            cnco=cnco,
-        )
-        port.lo_freq = lo
-        port.cnco_freq = cnco
-        port.sideband = ssb
-        port.vatt = params.get_pump_vatt(mux.index)
-        port.fullscale_current = params.get_pump_fsc(mux.index)
-        port.channels[0].fnco_freq = fnco
-
-    def _configure_readout_port(
-        self,
-        box: Box,
-        port: GenPort,
-        params: ControlParams,
-    ) -> None:
-        mux = self.get_mux_by_readout_port(port)
-        if mux is None:
-            logger.warning(
-                f"Readout port `{port.id}` not connected to a mux. Skipping configuration.",
-            )
-            return
-        if mux.is_not_available:
-            return
-
-        traits = box.traits
-        ssb = traits.readout_ssb
-        cnco_center = traits.readout_cnco_center
-
-        config = self._create_readout_configuration(
-            mux,
-            ssb=ssb,
-            cnco_center=cnco_center,
-        )
-        port.lo_freq = config["lo"]
-        port.cnco_freq = config["cnco"]
-        port.sideband = ssb
-        port.vatt = params.get_readout_vatt(mux.index)
-        port.fullscale_current = params.get_readout_fsc(mux.index)
-        port.channels[0].fnco_freq = config["fnco"]
-
-    def _configure_capture_port(
-        self,
-        box: Box,
-        port: CapPort,
-        params: ControlParams,
-    ) -> None:
-        mux = self.get_mux_by_readout_port(port)
-        if mux is None:
-            logger.warning(
-                f"Capture port `{port.id}` not connected to a mux. Skipping configuration.",
-            )
-            return
-
-        if mux.is_not_available:
-            return
-
-        traits = box.traits
-        ssb = traits.readout_ssb
-        cnco_center = traits.readout_cnco_center
-
-        config = self._create_readout_configuration(
-            mux,
-            ssb=ssb,
-            cnco_center=cnco_center,
-        )
-        port.lo_freq = config["lo"]
-        port.cnco_freq = config["cnco"]
-        for cap_channel in port.channels:
-            cap_channel.fnco_freq = config["fnco"]
-            cap_channel.ndelay = params.get_capture_delay(mux.index)
-
-    def _configure_monitor_port(
-        self,
-        box: Box,
-        port: CapPort,
-    ) -> None:
-        """Initialize monitor input with default frequencies for hardware sync."""
-        port.lo_freq = DEFAULT_LO_FREQUENCY_HZ
-        port.cnco_freq = DEFAULT_CNCO_FREQUENCY_HZ
-        for channel in port.channels:
-            channel.fnco_freq = DEFAULT_FNCO_FREQUENCY_HZ
-            channel.ndelay = DEFAULT_CAPTURE_DELAY
-
     def _build_control_targets(
         self,
         box: Box,
@@ -868,6 +699,32 @@ class ExperimentSystem:
         if qubit is None or not qubit.is_valid:
             return
 
+        if box.type == BoxType.QUEL3:
+            self._build_quel3_control_targets(
+                qubit=qubit,
+                port=port,
+                gen_targets=gen_targets,
+            )
+            return
+
+        self._build_quel1_control_targets(
+            box=box,
+            qubit=qubit,
+            port=port,
+            mode=mode,
+            gen_targets=gen_targets,
+        )
+
+    def _build_quel1_control_targets(
+        self,
+        *,
+        box: Box,
+        qubit: Qubit,
+        port: GenPort,
+        mode: ConfigurationMode,
+        gen_targets: dict[str, Target],
+    ) -> None:
+        """Build mode-aware control targets for one QuEL-1-family port."""
         if port.n_channels == 1:
             ge_target = Target.new_ge_target(
                 qubit=qubit,
@@ -883,10 +740,12 @@ class ExperimentSystem:
             )
             gen_targets[ge_target.label] = ge_target
             traits = box.traits
-            config = self._create_control_configuration(
+            config = create_control_configuration(
                 mode=mode,
                 qubit=qubit,
                 n_channels=port.n_channels,
+                get_spectator_qubits=self.get_spectator_qubits,
+                excluded_targets=self.targets_to_exclude,
                 ssb=traits.ctrl_ssb,
                 min_frequency=traits.ctrl_min_frequency_hz,
             )
@@ -921,10 +780,12 @@ class ExperimentSystem:
                 channel=port.channels[1],
             )
             traits = box.traits
-            config = self._create_control_configuration(
+            config = create_control_configuration(
                 mode=mode,
                 qubit=qubit,
                 n_channels=port.n_channels,
+                get_spectator_qubits=self.get_spectator_qubits,
+                excluded_targets=self.targets_to_exclude,
                 ssb=traits.ctrl_ssb,
                 min_frequency=traits.ctrl_min_frequency_hz,
             )
@@ -952,10 +813,12 @@ class ExperimentSystem:
             return
 
         traits = box.traits
-        config = self._create_control_configuration(
+        config = create_control_configuration(
             mode=mode,
             qubit=qubit,
             n_channels=port.n_channels,
+            get_spectator_qubits=self.get_spectator_qubits,
+            excluded_targets=self.targets_to_exclude,
             ssb=traits.ctrl_ssb,
             min_frequency=traits.ctrl_min_frequency_hz,
         )
@@ -979,6 +842,48 @@ class ExperimentSystem:
                     raise ValueError(f"Invalid target label `{target_label}`.")
                 gen_targets[target.label] = target
 
+    def _build_quel3_control_targets(
+        self,
+        *,
+        qubit: Qubit,
+        port: GenPort,
+        gen_targets: dict[str, Target],
+    ) -> None:
+        """Build mode-independent logical control targets for one QuEL-3 port."""
+        if not port.channels:
+            return
+
+        channel = port.channels[0]
+        ge_target = Target.new_ge_target(qubit=qubit, channel=channel)
+        if ge_target.label not in self.targets_to_exclude:
+            gen_targets[ge_target.label] = ge_target
+
+        ef_target = Target.new_ef_target(qubit=qubit, channel=channel)
+        if ef_target.label not in self.targets_to_exclude:
+            gen_targets[ef_target.label] = ef_target
+
+        spectators = self.get_spectator_qubits(qubit.label)
+        default_cr_frequency = (
+            spectators[0].frequency if spectators else qubit.frequency
+        )
+        default_cr_target = self._new_logical_default_cr_target(
+            control_qubit=qubit,
+            channel=channel,
+            frequency=default_cr_frequency,
+        )
+        if default_cr_target.label not in self.targets_to_exclude:
+            gen_targets[default_cr_target.label] = default_cr_target
+
+        for spectator in spectators:
+            cr_target = Target.new_cr_target(
+                control_qubit=qubit,
+                target_qubit=spectator,
+                channel=channel,
+            )
+            if cr_target.label in self.targets_to_exclude:
+                continue
+            gen_targets[cr_target.label] = cr_target
+
     def _new_default_cr_target(
         self,
         *,
@@ -999,6 +904,22 @@ class ExperimentSystem:
         return Target.new_target(
             label=Target.cr_label(control_qubit.label),
             frequency=round(frequency_hz * 1e-9, 6),
+            object=control_qubit,
+            channel=channel,
+            type=TargetType.CTRL_CR,
+        )
+
+    @staticmethod
+    def _new_logical_default_cr_target(
+        *,
+        control_qubit: Qubit,
+        channel: GenChannel,
+        frequency: float,
+    ) -> Target:
+        """Create a default CR target with one explicit logical frequency."""
+        return Target.new_target(
+            label=Target.cr_label(control_qubit.label),
+            frequency=round(frequency, 6),
             object=control_qubit,
             channel=channel,
             type=TargetType.CTRL_CR,
@@ -1029,7 +950,7 @@ class ExperimentSystem:
     def _build_pump_targets(
         self,
         port: GenPort,
-        params: ControlParams,
+        params: ControlParameters,
         gen_targets: dict[str, Target],
     ) -> None:
         """Build generator targets for one pump port."""
@@ -1079,452 +1000,3 @@ class ExperimentSystem:
                 channel=port.channels[idx],
             )
             cap_targets[read_in_target.label] = read_in_target
-
-    def _create_readout_configuration(
-        self,
-        mux: Mux,
-        ssb: Literal["U", "L"] | None = "U",
-        cnco_center: int = CNCO_CENTER_READ_HZ,
-    ) -> ReadoutMixingConfig:
-        """
-        Find the (lo, cnco, fnco) values for the readout mux.
-
-        Parameters
-        ----------
-        mux : Mux
-            Readout mux.
-
-        ssb : Literal["U", "L"] | None, optional
-            Sideband, by default "U".
-
-        cnco_center : int, optional
-            Center frequency of the CNCO, by default CNCO_CETNER_READ.
-
-
-        Returns
-        -------
-        ReadoutMixingConfig
-            Dictionary containing the lo, cnco, and fnco values.
-
-        """
-        resonators = [
-            resonator
-            for resonator in mux.resonators
-            if resonator.is_valid and resonator.label not in self._targets_to_exclude
-        ]
-        freqs = [resonator.frequency * 1e9 for resonator in resonators]
-        f_target = (max(freqs) + min(freqs)) / 2
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f=f_target,
-            ssb=ssb,
-            cnco_center=cnco_center,
-        )
-        fnco, _ = MixingUtil.calc_fnco(
-            f=f_target,
-            ssb=ssb,
-            lo=lo,
-            cnco=cnco,
-        )
-        return {
-            "lo": lo,
-            "cnco": cnco,
-            "fnco": fnco,
-        }
-
-    def _create_control_configuration(
-        self,
-        qubit: Qubit,
-        n_channels: int,
-        *,
-        mode: ConfigurationMode = "ge-cr-cr",
-        ssb: Literal["U", "L"] | None = "L",
-        cnco_center: int = CNCO_CENTER_CTRL_HZ,
-        min_frequency: float = 6.5e9,
-    ) -> ControlMixingConfig:
-        """
-        Find the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
-
-        Parameters
-        ----------
-        mode : ConfigurationMode
-            Mode to configure the control qubit.
-
-        qubit : Qubit
-            Control qubit.
-
-        n_channels : int
-            Number of channels.
-
-        ssb : Literal["U", "L"] | None, optional
-            Sideband, by default "L".
-
-        cnco_center : int, optional
-            Center frequency of the CNCO, by default CNCO_CENTER_CTRL_HZ.
-
-
-        Returns
-        -------
-        ControlMixingConfig
-            Dictionary containing the lo, cnco, and fnco values.
-
-        """
-        if n_channels == 1:
-            f_target = qubit.frequency * 1e9
-            lo, cnco, _ = MixingUtil.calc_lo_cnco(
-                f=f_target,
-                ssb=ssb,
-                cnco_center=cnco_center,
-            )
-            fnco, _ = MixingUtil.calc_fnco(
-                f=f_target,
-                ssb=ssb,
-                lo=lo,
-                cnco=cnco,
-            )
-            return {
-                "lo": lo,
-                "cnco": cnco,
-                "channels": {
-                    0: {
-                        "fnco": fnco,
-                        "targets": [qubit.label],
-                    },
-                },
-            }
-        elif n_channels == 2:
-            f_ge = qubit.frequency * 1e9
-            f_ef = qubit.control_frequency_ef * 1e9
-            spectators = self.get_spectator_qubits(qubit.label)
-            f_CRs = [
-                spectator.frequency * 1e9
-                for spectator in spectators
-                if spectator.frequency > 0
-                and spectator.label not in self._targets_to_exclude
-                and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
-            ]
-            if not f_CRs:
-                f_CRs = [f_ge]
-
-            f_CR_max = max(f_CRs)
-            if f_CR_max > f_ge:
-                # if any CR is larger than GE, then let EF be the smallest
-                if f_ef < min_frequency:
-                    f_ef = f_ge
-                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ef + FNCO_MAX_HZ,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                f_CRs_valid = [
-                    f for f in f_CRs if f < f_coarse + FNCO_MAX_HZ + AWG_MAX_HZ
-                ]
-            else:
-                # if all CRs are smaller than GE, then let GE be the largest
-                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ge - FNCO_MAX_HZ,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                f_CRs_valid = [
-                    f for f in f_CRs if f > f_coarse - FNCO_MAX_HZ - AWG_MAX_HZ
-                ]
-            f_CR = self._find_center_freq_for_cr(
-                f_coarse=f_coarse,
-                f_CRs=f_CRs_valid,
-            )
-            fnco_ge, _ = MixingUtil.calc_fnco(
-                f=(f_ge + f_ef) * 0.5,
-                ssb=ssb,
-                lo=lo,
-                cnco=cnco,
-            )
-            fnco_CR, _ = MixingUtil.calc_fnco(
-                f=f_CR,
-                ssb=ssb,
-                lo=lo,
-                cnco=cnco,
-            )
-            return {
-                "lo": lo,
-                "cnco": cnco,
-                "channels": {
-                    0: {
-                        "fnco": fnco_ge,
-                        "targets": [qubit.label],
-                    },
-                    1: {
-                        "fnco": fnco_CR,
-                        "targets": [
-                            f"{qubit.label}-{spectator.label}"
-                            for spectator in self.get_spectator_qubits(qubit.label)
-                        ],
-                    },
-                },
-            }
-
-        if mode == "ge-ef-cr":
-            f_ge = qubit.frequency * 1e9
-            f_ef = qubit.control_frequency_ef * 1e9
-            spectators = self.get_spectator_qubits(qubit.label)
-            f_CRs = [
-                spectator.frequency * 1e9
-                for spectator in spectators
-                if spectator.frequency > 0
-                and spectator.label not in self._targets_to_exclude
-                and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
-            ]
-            if not f_CRs:
-                f_CRs = [f_ge]
-
-            f_CR_max = max(f_CRs)
-            if f_CR_max > f_ge:
-                # if any CR is larger than GE, then let EF be the smallest
-                if f_ef < min_frequency:
-                    f_ef = f_ge
-                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ef + FNCO_MAX_HZ,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                f_CRs_valid = [
-                    f for f in f_CRs if f < f_coarse + FNCO_MAX_HZ + AWG_MAX_HZ
-                ]
-            else:
-                # if all CRs are smaller than GE, then let GE be the largest
-                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ge - FNCO_MAX_HZ,
-                    ssb=ssb,
-                    cnco_center=cnco_center,
-                )
-                f_CRs_valid = [
-                    f for f in f_CRs if f > f_coarse - FNCO_MAX_HZ - AWG_MAX_HZ
-                ]
-            f_CR = self._find_center_freq_for_cr(
-                f_coarse=f_coarse,
-                f_CRs=f_CRs_valid,
-            )
-            fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
-            fnco_ef, _ = MixingUtil.calc_fnco(f=f_ef, ssb=ssb, lo=lo, cnco=cnco)
-            fnco_CR, _ = MixingUtil.calc_fnco(f=f_CR, ssb=ssb, lo=lo, cnco=cnco)
-            return {
-                "lo": lo,
-                "cnco": cnco,
-                "channels": {
-                    0: {
-                        "fnco": fnco_ge,
-                        "targets": [qubit.label],
-                    },
-                    1: {
-                        "fnco": fnco_ef,
-                        "targets": [f"{qubit.label}-ef"],
-                    },
-                    2: {
-                        "fnco": fnco_CR,
-                        "targets": [
-                            f"{qubit.label}-{spectator.label}"
-                            for spectator in self.get_spectator_qubits(qubit.label)
-                        ],
-                    },
-                },
-            }
-        elif mode == "ge-cr-cr":
-            f_ge = qubit.frequency * 1e9
-            f_ef = qubit.control_frequency_ef * 1e9
-
-            spectators = self.get_spectator_qubits(qubit.label)
-            cr_targets: list[CrTargetConfig] = [
-                {
-                    "label": f"{qubit.label}-{spectator.label}",
-                    "frequency": spectator.frequency * 1e9,
-                }
-                for spectator in spectators
-                if spectator.frequency > 0
-                and spectator.label not in self._targets_to_exclude
-                and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
-            ]
-
-            if not cr_targets:
-                cr_targets = [
-                    {
-                        "label": f"{qubit.label}",
-                        "frequency": f_ge,
-                    },
-                    {
-                        "label": f"{qubit.label}-ef",
-                        "frequency": f_ef,
-                    },
-                ]
-
-            group1, group2 = self._split_cr_target_group(cr_targets)
-            f_CR_1 = np.mean([target["frequency"] for target in group1]).astype(float)
-            f_CR_2 = np.mean([target["frequency"] for target in group2]).astype(float)
-            f_min = min(f_ge, f_CR_1, f_CR_2)
-            f_max = max(f_ge, f_CR_1, f_CR_2)
-            lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                f=(f_min + f_max) / 2,
-                ssb=ssb,
-                cnco_center=cnco_center,
-            )
-            fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
-            fnco_CR_1, _ = MixingUtil.calc_fnco(f=f_CR_1, ssb=ssb, lo=lo, cnco=cnco)
-            fnco_CR_2, _ = MixingUtil.calc_fnco(f=f_CR_2, ssb=ssb, lo=lo, cnco=cnco)
-            return {
-                "lo": lo,
-                "cnco": cnco,
-                "channels": {
-                    0: {
-                        "fnco": fnco_ge,
-                        "targets": [qubit.label],
-                    },
-                    1: {
-                        "fnco": fnco_CR_1,
-                        "targets": [target["label"] for target in group1],
-                    },
-                    2: {
-                        "fnco": fnco_CR_2,
-                        "targets": [target["label"] for target in group2],
-                    },
-                },
-            }
-        else:
-            raise ValueError("Invalid mode.")
-
-    def _split_cr_target_group(
-        self,
-        group: list[CrTargetConfig],
-    ) -> tuple[list[CrTargetConfig], list[CrTargetConfig]]:
-        group = sorted(group, key=lambda x: x["frequency"])
-        if len(group) == 0:
-            raise ValueError("No CR target found.")
-        elif len(group) == 1:
-            return [group[0]], [group[0]]
-        elif len(group) == 2:
-            return [group[0]], [group[1]]
-        elif len(group) == 3:
-            split_options = [
-                ([group[0], group[1]], [group[2]]),
-                ([group[0]], [group[1], group[2]]),
-            ]
-        elif len(group) == 4:
-            split_options = [
-                ([group[0], group[1]], [group[2], group[3]]),
-                ([group[0], group[1], group[2]], [group[3]]),
-                ([group[0]], [group[1], group[2], group[3]]),
-            ]
-        else:
-            raise ValueError("Too many CR targets.")
-
-        best_split = None
-        best_max_bandwidth = float("inf")
-
-        for group1, group2 in split_options:
-            f_min1 = min(target["frequency"] for target in group1)
-            f_max1 = max(target["frequency"] for target in group1)
-            f_min2 = min(target["frequency"] for target in group2)
-            f_max2 = max(target["frequency"] for target in group2)
-            bandwidth1 = f_max1 - f_min1 if len(group1) > 1 else 0
-            bandwidth2 = f_max2 - f_min2 if len(group2) > 1 else 0
-            max_band = max(bandwidth1, bandwidth2)
-
-            if max_band < best_max_bandwidth:
-                best_max_bandwidth = max_band
-                best_split = (group1, group2)
-
-        if best_split is None:
-            raise ValueError("No split found.")
-
-        return best_split
-
-    def _find_center_freq_for_cr(
-        self,
-        f_coarse: int,
-        f_CRs: list[float],
-    ) -> int:
-        if not f_CRs:
-            return f_coarse
-        # possible range
-        min_center_freq = f_coarse - FNCO_MAX_HZ
-        max_center_freq = f_coarse + FNCO_MAX_HZ
-
-        # search range
-        search_range = np.arange(
-            max(min(f_CRs), min_center_freq),
-            min(max(f_CRs), max_center_freq) + 1,
-            NCO_STEP_HZ,
-        )
-        # count the number of CR frequencies within the range of each search point
-        center_freqs_by_count = []
-        for f in search_range:
-            valid_f_CRs = [
-                f_CR for f_CR in f_CRs if f - AWG_MAX_HZ <= f_CR <= f + AWG_MAX_HZ
-            ]
-            if not valid_f_CRs:
-                continue
-            center = (min(valid_f_CRs) + max(valid_f_CRs)) / 2
-            center_freqs_by_count.append((len(valid_f_CRs), center))
-        if not center_freqs_by_count:
-            return f_coarse
-        # sort by count and then by frequency
-        center_freqs_by_count.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        # choose the one with the highest count and frequency
-        center_freq = int(center_freqs_by_count[0][1])
-        # round to the nearest NCO step
-        center_freq = round(center_freq / NCO_STEP_HZ) * NCO_STEP_HZ
-        # clip to the possible range
-        center_freq = max(min_center_freq, min(center_freq, max_center_freq))
-        return center_freq
-
-
-class MixingUtil:
-    """Utility helpers for LO/NCO mixing calculations."""
-
-    @staticmethod
-    def calc_lo_cnco(
-        f: float,
-        cnco_center: int,
-        ssb: Literal["U", "L"] | None,
-        lo_step: int = LO_STEP_HZ,
-        nco_step: int = NCO_STEP_HZ,
-    ) -> tuple[int | None, int, int]:
-        """Calculate LO/CNCO settings for a target frequency."""
-        if ssb is None:
-            lo = None
-            cnco = round(f / nco_step) * nco_step
-            f_mix = cnco
-        else:
-            if ssb == "U":
-                lo = round((f - cnco_center) / lo_step) * lo_step
-                cnco = round((f - lo) / nco_step) * nco_step
-            elif ssb == "L":
-                lo = round((f + cnco_center) / lo_step) * lo_step
-                cnco = round((lo - f) / nco_step) * nco_step
-            else:
-                raise ValueError("Invalid SSB")
-            f_mix = lo + cnco if ssb == "U" else lo - cnco
-        return lo, cnco, f_mix
-
-    @staticmethod
-    def calc_fnco(
-        f: float,
-        ssb: Literal["U", "L"] | None,
-        lo: int | None,
-        cnco: int,
-        nco_step: int = NCO_STEP_HZ,
-    ) -> tuple[int, int]:
-        """Calculate FNCO settings for a target frequency."""
-        if ssb is None and lo is None:
-            fnco = round((f - cnco) / nco_step) * nco_step
-            f_mix = cnco + fnco
-        elif lo is None:
-            raise ValueError("LO frequency is required when SSB is not None.")
-        elif ssb is None:
-            raise ValueError("SSB is required when LO frequency is not None.")
-        else:
-            if ssb == "U":
-                fnco = round((f - (lo + cnco)) / nco_step) * nco_step
-            elif ssb == "L":
-                fnco = round(((lo - cnco) - f) / nco_step) * nco_step
-            else:
-                raise ValueError("Invalid SSB")
-            f_mix = lo + cnco + fnco if ssb == "U" else lo - cnco - fnco
-        return fnco, f_mix

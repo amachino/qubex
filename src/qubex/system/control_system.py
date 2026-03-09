@@ -10,11 +10,6 @@ from typing import Final, Literal
 from pydantic import Field
 from typing_extensions import deprecated
 
-from qubex.backend.quel1.quel1_backend_constants import (
-    CNCO_CENTER_READ_HZ,
-    CNCO_CENTER_READ_R8_HZ,
-    DEFAULT_CLOCK_MASTER_ADDRESS,
-)
 from qubex.core import MutableModel
 
 
@@ -22,60 +17,52 @@ class BoxType(Enum):
     """Supported box types."""
 
     QUEL3 = "quel3"
+    QUEL1SE_A = "quel1se-fujitsu11-a"
+    QUEL1SE_B = "quel1se-fujitsu11-b"
+    QUEL1SE_R8 = "quel1se-riken8"
     QUEL1_A = "quel1-a"
     QUEL1_B = "quel1-b"
     QUBE_RIKEN_A = "qube-riken-a"
     QUBE_RIKEN_B = "qube-riken-b"
     QUBE_OU_A = "qube-ou-a"
     QUBE_OU_B = "qube-ou-b"
-    QUEL1SE_A = "quel1se-fujitsu11-a"
-    QUEL1SE_B = "quel1se-fujitsu11-b"
-    QUEL1SE_R8 = "quel1se-riken8"
 
 
 @dataclass(frozen=True)
 class BoxTraits:
     """Hardware traits used to configure per-box behavior without type branches."""
 
-    ctrl_uses_lo: bool
     ctrl_ssb: Literal["L", "U"] | None
     ctrl_min_frequency_hz: float
-    ctrl_uses_vatt: bool
     readout_ssb: Literal["L", "U"] | None
-    readout_cnco_center: int
+    readout_cnco_center: int | None
     default_readout_frequency_range: tuple[float, float, float]
     default_control_frequency_range: tuple[float, float, float]
 
 
 _DEFAULT_BOX_TRAITS: Final = BoxTraits(
-    ctrl_uses_lo=True,
     ctrl_ssb="L",
     ctrl_min_frequency_hz=6.5e9,
-    ctrl_uses_vatt=True,
     readout_ssb="U",
-    readout_cnco_center=CNCO_CENTER_READ_HZ,
+    readout_cnco_center=1_500_000_000,
     default_readout_frequency_range=(9.75, 10.75, 0.002),
     default_control_frequency_range=(6.5, 9.5, 0.005),
 )
 
 _QUEL3_BOX_TRAITS: Final = BoxTraits(
-    ctrl_uses_lo=False,
     ctrl_ssb=None,
     ctrl_min_frequency_hz=0.5e9,
-    ctrl_uses_vatt=False,
     readout_ssb=None,
-    readout_cnco_center=CNCO_CENTER_READ_R8_HZ,
+    readout_cnco_center=None,
     default_readout_frequency_range=(5.75, 6.75, 0.002),
     default_control_frequency_range=(3.0, 5.0, 0.005),
 )
 
 _QUEL1SE_R8_BOX_TRAITS: Final = BoxTraits(
-    ctrl_uses_lo=False,
     ctrl_ssb=None,
     ctrl_min_frequency_hz=0.0,
-    ctrl_uses_vatt=False,
     readout_ssb="L",
-    readout_cnco_center=CNCO_CENTER_READ_R8_HZ,
+    readout_cnco_center=2_250_000_000,
     default_readout_frequency_range=(5.75, 6.75, 0.002),
     default_control_frequency_range=(3.0, 5.0, 0.005),
 )
@@ -456,7 +443,7 @@ _QUEL1SE_R8_PORTS_BY_AWG_OPTION: Final[dict[str, dict[int, int]]] = {
 }
 
 
-def resolve_quel1se_r8_awg_option(options: Sequence[str] | None = None) -> str:
+def _resolve_quel1se_r8_awg_option(options: Sequence[str] | None = None) -> str:
     """Resolve a single AWG option for QuEL-1 SE R8 from optional labels."""
     option_labels = tuple(options or ())
     awg_options = [label for label in option_labels if label in _QUEL1SE_R8_AWG_OPTIONS]
@@ -467,14 +454,14 @@ def resolve_quel1se_r8_awg_option(options: Sequence[str] | None = None) -> str:
     return _QUEL1SE_R8_DEFAULT_AWG_OPTION
 
 
-def get_number_of_channels(
+def _get_number_of_channels(
     box_type: BoxType,
     port_number: int | tuple[int, int],
     options: Sequence[str] | None = None,
 ) -> int:
     """Return the number of channels for a box port with optional profile overrides."""
     if box_type == BoxType.QUEL1SE_R8:
-        awg_option = resolve_quel1se_r8_awg_option(options)
+        awg_option = _resolve_quel1se_r8_awg_option(options)
         if isinstance(port_number, int):
             override = _QUEL1SE_R8_PORTS_BY_AWG_OPTION[awg_option].get(port_number)
             if override is not None:
@@ -525,7 +512,7 @@ def _initialize_ports(
             port_id = f"{box_id}.FOGI{index}"
         else:
             raise ValueError(f"Invalid port type: {port_type}")
-        n_channels = get_number_of_channels(box_type, port_num, options=options)
+        n_channels = _get_number_of_channels(box_type, port_num, options=options)
         port: GenPort | CapPort | Port
         if port_type == PortType.NOT_AVAILABLE:
             continue
@@ -618,7 +605,7 @@ def _initialize_ports(
 class BoxPool(MutableModel):
     """Collection of boxes and clock master configuration."""
 
-    clock_master_address: str
+    clock_master_address: str | None
     boxes: tuple[Box, ...]
 
     @property
@@ -941,8 +928,6 @@ class ControlSystem:
         boxes: Sequence[Box],
         clock_master_address: str | None = None,
     ):
-        if clock_master_address is None:
-            clock_master_address = DEFAULT_CLOCK_MASTER_ADDRESS
         self._box_pool: Final = BoxPool(
             boxes=tuple(boxes),
             clock_master_address=clock_master_address,
@@ -960,7 +945,7 @@ class ControlSystem:
         return self.box_pool.hash
 
     @property
-    def clock_master_address(self) -> str:
+    def clock_master_address(self) -> str | None:
         """Return the clock master address."""
         return self.box_pool.clock_master_address
 

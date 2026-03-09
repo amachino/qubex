@@ -14,14 +14,14 @@ from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBu
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
-from qubex.system import ControlParams, Target
+from qubex.system import ControlParameters, Target
 
 
 def test_schedule_builder_keeps_readout_target_order(monkeypatch) -> None:
     """Given schedule labels, when adding readout targets, then first-seen label order is kept."""
     builder = MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1, "RQ01": 0.1}),
         ),
         pulse_factory=cast(
@@ -84,7 +84,7 @@ def test_schedule_builder_uses_registry_for_readout_label_order(
 
     builder = MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1, "RQ01": 0.1}),
         ),
         pulse_factory=cast(
@@ -143,7 +143,7 @@ def test_schedule_builder_accepts_qubit_keyed_readout_amplitudes(monkeypatch) ->
 
     builder = MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
         ),
         pulse_factory=cast(
@@ -193,7 +193,7 @@ def test_schedule_builder_resolves_none_options_in_build(monkeypatch) -> None:
     """Given None build options, when building, then builder applies internal defaults."""
     builder = MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
         ),
         pulse_factory=cast(MeasurementPulseFactory, SimpleNamespace()),
@@ -246,7 +246,7 @@ def test_schedule_builder_applies_frequency_overrides_to_existing_channels() -> 
     """Given frequency overrides, when building without final measurement, then channel frequencies are updated."""
     builder = MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
         ),
         pulse_factory=cast(
@@ -281,7 +281,7 @@ def test_schedule_builder_keeps_frequency_overrides_after_final_measurement() ->
     """Given frequency overrides, when appending final measurement, then added readout channels keep frequencies."""
     builder = MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
         ),
         pulse_factory=cast(
@@ -316,7 +316,7 @@ def test_schedule_builder_rejects_unknown_frequency_override_targets() -> None:
     """Given unknown frequency labels, when building, then frequency overrides are rejected."""
     builder = MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
         ),
         pulse_factory=cast(

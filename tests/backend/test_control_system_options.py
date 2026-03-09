@@ -62,9 +62,7 @@ def test_box_traits_for_r8_reflect_direct_nco_control() -> None:
         adapter="A0",
     )
 
-    assert box.traits.ctrl_uses_lo is False
     assert box.traits.ctrl_ssb is None
-    assert box.traits.ctrl_uses_vatt is False
     assert box.traits.readout_ssb == "L"
     assert box.traits.default_control_frequency_range == (3.0, 5.0, 0.005)
 
@@ -79,9 +77,7 @@ def test_box_traits_for_non_r8_keep_legacy_defaults() -> None:
         adapter="A1",
     )
 
-    assert box.traits.ctrl_uses_lo is True
     assert box.traits.ctrl_ssb == "L"
-    assert box.traits.ctrl_uses_vatt is True
     assert box.traits.readout_ssb == "U"
     assert box.traits.default_control_frequency_range == (6.5, 9.5, 0.005)
 

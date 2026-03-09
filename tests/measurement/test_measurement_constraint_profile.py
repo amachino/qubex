@@ -12,7 +12,7 @@ from qubex.measurement.measurement_constraint_profile import (
 )
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
-from qubex.system import ControlParams, Target
+from qubex.system import ControlParameters, Target
 
 
 def _make_builder(
@@ -21,7 +21,7 @@ def _make_builder(
 ) -> MeasurementScheduleBuilder:
     return MeasurementScheduleBuilder(
         control_params=cast(
-            ControlParams,
+            ControlParameters,
             SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
         ),
         pulse_factory=cast(MeasurementPulseFactory, SimpleNamespace()),

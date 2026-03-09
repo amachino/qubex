@@ -27,6 +27,7 @@ from .managers import (
     Quel3ExecutionManager,
 )
 from .models import InstrumentDeployRequest
+from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
 
 T = TypeVar("T")
 
@@ -41,8 +42,8 @@ class Quel3BackendController(BackendController):
     contract.
     """
 
-    SAMPLING_PERIOD_NS: float = 0.4
-    CAPTURE_DECIMATION_FACTOR: int = 4
+    SAMPLING_PERIOD_NS: float = SAMPLING_PERIOD_NS
+    CAPTURE_DECIMATION_FACTOR: int = CAPTURE_DECIMATION_FACTOR
 
     def __init__(
         self,

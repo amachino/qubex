@@ -249,7 +249,7 @@ Calendar note:
 - 2026-03-04: Backend resolution policy was finalized to `explicit argument > system.yaml > quel1 default`; `chip.yaml` is no longer used for backend selection.
 - 2026-02-18: Documented draft split of `chip.yaml`/`system.yaml` responsibilities (`topology.type` in `chip.yaml`, backend-specific runtime sections in `system.yaml`) in developer notes.
 - 2026-02-18: `SystemManager.load(chip_id=...)` backend resolution supports `system.yaml` (`backend`) with precedence `explicit argument > system.yaml > quel1 default`.
-- 2026-02-18: `ConfigLoader` now reads optional `system.yaml`; `ControlSystem.clock_master_address` prefers `system.yaml` `quel1.clock_master` and falls back to legacy `chip.yaml` `clock_master`.
+- 2026-02-18: `ConfigLoader` now reads optional `system.yaml`; `ControlSystem.clock_master_address` prefers `system.yaml` `quel1.clock_master` and falls back to legacy `chip.yaml` `clock_master` when present. When unresolved, configuration still loads and QuEL-1 operations that require a shared clock master fail explicitly at execution time.
 - 2026-02-18: `ExperimentContext.register_custom_target()` now resolves qubits via `TargetRegistry` (or explicit `qubit_label`) and validates port/channel/target-type mapping before registration.
 - 2026-02-18: Updated configuration docs/examples to align with current runtime behavior (`system.yaml` backend selection + `quel1.clock_master` support, QuEL-3 runtime endpoint/port/trigger using controller defaults in v1.5.0 pre-release).
 - 2026-02-18: Reordered this release plan into execution waves (A to D), normalized invalid February end dates to `2026-02-28`, and added a current sprint checklist.

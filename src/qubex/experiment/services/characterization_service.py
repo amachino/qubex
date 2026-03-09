@@ -48,9 +48,7 @@ from qubex.experiment.models.experiment_result import (
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
 from qubex.system import MixingUtil
-from qubex.system.experiment_system import (
-    CNCO_CENTER_CTRL_HZ,
-)
+from qubex.system.quel1.quel1_system_constants import CNCO_CENTER_CTRL_HZ
 from qubex.typing import TargetMap
 from qubex.visualization import COLORS
 

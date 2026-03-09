@@ -9,7 +9,7 @@ import pytest
 
 from qubex.backend.quel3.models import InstrumentDeployRequest
 from qubex.system.quel3 import Quel3SystemSynchronizer, Quel3TargetDeployPlanner
-from qubex.system.target import TargetType
+from qubex.system.target_type import TargetType
 
 
 def test_build_deploy_requests_creates_one_request_per_target() -> None:
