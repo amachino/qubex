@@ -72,9 +72,29 @@ readout:
 
 1. Resolve target properties from `TargetRegistry` (no label parsing dependency).
 2. Resolve physical port from wiring map.
-3. Resolve instrument automatically in runtime (target metadata + available instrument aliases/resource infos).
-4. Validate consistency (`instrument.port_id` matches expected port when port constraints are required).
-5. Fail fast on unresolved or inconsistent mapping.
+3. Convert runtime bindings to `<unit>-<port>` using physical port metadata:
+   - `port.box_id`
+   - integer `port.number`
+   - `experiment_system.get_box(box_id).name`
+4. Resolve instrument alias automatically in runtime from deployed alias map when available.
+5. Validate consistency (`instrument.port_id` matches expected port when port constraints are required).
+6. Fail fast on unresolved or inconsistent mapping.
+
+## Runtime contract
+
+- QuEL-3 execution does not fall back to logical `port.id` strings such as `QT1.CTRL1`.
+- Missing physical port metadata is a configuration error and must raise immediately.
+- Measurement execution should prefer deployed `target_alias_map` over port-based alias inference.
+- Port-based inference remains a validation path, not the primary happy path.
+- Deploy-time instrument alias is identical to `target_label`.
+
+## Deployed instrument `port_id` contract
+
+- Runtime resolver accepts current deploy-time resource identifiers only:
+  - `unit-a:tx_p04`
+  - `unit-a:rx_p00`
+  - `unit-a:trx_p00p01`
+- Legacy formats are intentionally unsupported in the current unreleased implementation.
 
 ## Impact on v1.5.0 scope
 

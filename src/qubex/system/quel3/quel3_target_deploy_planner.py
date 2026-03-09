@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -187,6 +186,5 @@ class Quel3TargetDeployPlanner:
     @staticmethod
     def _build_alias(*, port_id: str, role: RoleName, target_label: str) -> str:
         """Build deterministic instrument alias from port, role, and target label."""
-        normalized_port_id = port_id.replace(":", "_")
-        normalized_target_label = re.sub(r"[^0-9A-Za-z]+", "_", target_label).lower()
-        return f"inst_{role.lower()}_{normalized_port_id}_{normalized_target_label}"
+        del port_id, role
+        return target_label

@@ -60,6 +60,9 @@ class _FakeExperimentSystem:
     awg_frequency: float = 100_000_000.0
     target_port_ids: dict[str, str] = field(default_factory=dict)
     capture_port_ids: dict[str, str] = field(default_factory=dict)
+    target_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
+    capture_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
+    box_names: dict[str, str] = field(default_factory=dict)
 
     def get_awg_frequency(self, _: str) -> float:
         return self.awg_frequency
@@ -76,18 +79,35 @@ class _FakeExperimentSystem:
             return str(resolver(label))
 
     def get_target(self, label: str) -> Any:
+        box_id, port_number = self.target_port_bindings.get(label, ("BOX", 0))
         port_id = self.target_port_ids.get(label, f"box-{label}")
         return SimpleNamespace(
-            channel=SimpleNamespace(port=SimpleNamespace(id=port_id))
+            channel=SimpleNamespace(
+                port=SimpleNamespace(
+                    id=port_id,
+                    box_id=box_id,
+                    number=port_number,
+                )
+            )
         )
 
     def get_read_in_target(self, label: str) -> Any:
+        box_id, port_number = self.capture_port_bindings.get(label, ("BOX", 0))
         port_id = self.capture_port_ids.get(
             label, self.target_port_ids.get(label, label)
         )
         return SimpleNamespace(
-            channel=SimpleNamespace(port=SimpleNamespace(id=port_id))
+            channel=SimpleNamespace(
+                port=SimpleNamespace(
+                    id=port_id,
+                    box_id=box_id,
+                    number=port_number,
+                )
+            )
         )
+
+    def get_box(self, box_id: str) -> Any:
+        return SimpleNamespace(name=self.box_names.get(box_id, box_id.lower()))
 
 
 def _make_backend_controller() -> Quel3BackendController:
@@ -478,7 +498,11 @@ def test_quel3_adapter_builds_port_binding_when_alias_is_missing() -> None:
         backend_controller=_make_backend_controller(),
         experiment_system=cast(
             Any,
-            _FakeExperimentSystem(target_port_ids={target: "unit-a-3"}),
+            _FakeExperimentSystem(
+                target_port_ids={target: "unit-a-3"},
+                target_port_bindings={target: ("unit-a", 3)},
+                box_names={"unit-a": "unit-a"},
+            ),
         ),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
@@ -487,6 +511,83 @@ def test_quel3_adapter_builds_port_binding_when_alias_is_missing() -> None:
     payload = request.payload
     assert isinstance(payload, Quel3ExecutionPayload)
     assert payload.instrument_bindings[target] == "port:unit-a-3"
+
+
+def test_quel3_adapter_rejects_port_binding_without_physical_metadata() -> None:
+    """Given missing physical port metadata, when building payload, then it raises ValueError."""
+    target = "RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(
+            Any,
+            _FakeExperimentSystem(
+                target_port_ids={target: "QT1.CTRL1"},
+                target_port_bindings={target: ("", -1)},
+            ),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+
+    with pytest.raises(ValueError, match=r"requires port metadata with `box_id`"):
+        adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+
+def test_quel3_adapter_resolves_logical_port_id_to_box_port_binding() -> None:
+    """Given logical port IDs, when building payload, then physical box-port bindings are embedded."""
+    target = "RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.4,
+                ),
+            ]
+        ),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(
+            Any,
+            _FakeExperimentSystem(
+                target_port_ids={target: "QT1.CTRL1"},
+                capture_port_ids={target: "QT1.READ0.IN"},
+                target_port_bindings={target: ("QT1", 3)},
+                capture_port_bindings={target: ("QT1", 0)},
+                box_names={"QT1": "unit-a"},
+            ),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.instrument_bindings[target] == "port:unit-a-3"
+    assert payload.capture_port_bindings[target] == "unit-a-0"
 
 
 def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> None:

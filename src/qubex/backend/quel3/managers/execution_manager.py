@@ -527,7 +527,7 @@ class Quel3ExecutionManager:
     def _parse_instrument_port_binding(resource_id: str) -> _PortBinding | None:
         """Parse quelware instrument `port_id` into comparable port binding."""
         match = re.fullmatch(
-            r"(?P<unit>[^:]+):p(?P<first>\d+)(?:p(?P<second>\d+))?(?P<kind>tx|rx|trx)?",
+            r"(?P<unit>[^:]+):(?P<kind>tx|rx|trx)_p(?P<first>\d+)(?:p(?P<second>\d+))?",
             resource_id,
         )
         if match is None:

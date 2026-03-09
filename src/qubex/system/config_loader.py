@@ -813,7 +813,9 @@ class ConfigLoader:
         if self._wiring_info is None or self._control_system is None:
             return {}
         return {
-            mux.index: self._control_system.get_box(port.box_id).traits.default_pump_frequency_ghz
+            mux.index: self._control_system.get_box(
+                port.box_id
+            ).traits.default_pump_frequency_ghz
             for mux, port in self._wiring_info.pump
         }
 

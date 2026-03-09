@@ -34,7 +34,10 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 - Adapter builds backend payload models; backend controller/execution manager consume them.
 - `Quel3ExecutionPayload.fixed_timelines` is keyed by logical target, and runtime resolution merges/rewrites timelines by resolved instrument alias before sequencer export.
 - `Quel3ExecutionPayload` now includes runtime binding metadata (`instrument_bindings`, `capture_port_bindings`) for resolver-stage mapping.
-- Target-to-alias mapping policy for beta is runtime auto-resolution from wiring/port consistency checks, using current `quelware-client` `InstrumentResolver` flow.
+- Target-to-alias mapping policy for beta is:
+  - primary path: deployed `target_alias_map` from `Quel3BackendController`
+  - validation/fallback-free path: runtime port consistency checks using current `quelware-client` `InstrumentResolver` flow
+- Deploy-time instrument alias is the exact `target_label`.
 - `Quel3ExecutionPayload` is limited to fields currently exercised by `quelware-client-internal` flow; QuEL-1 DSP/classifier options are intentionally excluded.
 - Adapter no longer rejects multiple logical targets mapped to one alias; this is required for transceiver-style (`trx`) readout convergence.
 - Added `Quel3BackendController` scaffold in `src/qubex/backend/quel3/quel3_backend_controller.py`.
@@ -100,6 +103,8 @@ Dependency note:
 
 - Alias resolution must use runtime resolver flow (`InstrumentResolver`) with wiring/port consistency validation.
 - Missing, ambiguous, or inconsistent alias resolution must raise clear runtime/configuration errors (fail-fast).
+- QuEL-3 adapter runtime binding construction must require physical port metadata (`box_id`, integer `number`, `box.name`) and must not fall back to logical `port.id`.
+- Resolver-side instrument `port_id` parsing supports current deploy-time forms only: `tx_pNN`, `rx_pNN`, `trx_pNNpMM`.
 - Capture lookup keys in sequencer/export/result-fetch paths must use `{instrument_alias}:{capture_index}`.
 - Session execution must open all resolved instrument resource IDs and trigger them synchronously, including cross-unit combinations.
 - QuEL-3 capture mode must be configured via `SetCaptureMode` according to the mode contract (`VALUES_PER_ITER` / `AVERAGED_VALUE` / `AVERAGED_WAVEFORM`).

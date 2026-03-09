@@ -119,7 +119,7 @@ class Quel3MeasurementBackendAdapter:
 
         for target in pulse_schedule.labels:
             target_obj = self._experiment_system.get_target(target)
-            target_port_id = str(target_obj.channel.port.id)
+            target_port_id = self._resolve_runtime_port_binding(target_obj.channel.port)
             configured_alias = str(alias_map.get(target, "")).strip()
             if len(configured_alias) > 0:
                 instrument_bindings[target] = f"alias:{configured_alias}"
@@ -150,14 +150,9 @@ class Quel3MeasurementBackendAdapter:
                 length_ns=pulse_schedule.duration,
             )
             if len(captures) > 0:
-                try:
-                    capture_port_bindings[target] = str(
-                        self._experiment_system.get_read_in_target(
-                            target
-                        ).channel.port.id
-                    )
-                except (KeyError, ValueError):
-                    capture_port_bindings[target] = target_port_id
+                capture_port_bindings[target] = self._resolve_runtime_port_binding(
+                    self._experiment_system.get_read_in_target(target).channel.port
+                )
             try:
                 output_target_labels_by_target[target] = str(
                     self._experiment_system.resolve_qubit_label(target)
@@ -181,6 +176,24 @@ class Quel3MeasurementBackendAdapter:
         )
         self._capture_targets_by_alias = self._build_capture_targets_by_alias(payload)
         return BackendExecutionRequest(payload=payload)
+
+    def _resolve_runtime_port_binding(self, port: object) -> str:
+        """Resolve runtime binding as `<unit>-<port>` from physical port metadata."""
+        box_id = getattr(port, "box_id", None)
+        port_number = getattr(port, "number", None)
+        if not (
+            isinstance(box_id, str) and len(box_id) > 0 and isinstance(port_number, int)
+        ):
+            raise ValueError(
+                "QuEL-3 runtime port binding requires port metadata with `box_id` and integer `number`."
+            )
+        box = self._experiment_system.get_box(box_id)
+        unit_name = getattr(box, "name", None)
+        if not isinstance(unit_name, str) or len(unit_name) == 0:
+            raise ValueError(
+                "QuEL-3 runtime port binding requires `box_id`, `number`, and `box.name`."
+            )
+        return f"{unit_name}-{port_number}"
 
     def build_measurement_result(
         self,

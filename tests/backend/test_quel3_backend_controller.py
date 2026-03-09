@@ -319,9 +319,9 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_port=61000,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
-        target_alias_map={"Q00": "inst-q00"},
-        last_deployed_instrument_infos={"inst-q00": (object(),)},
-        deploy_instruments=lambda *, requests: {"inst-q00": tuple(requests)},
+        target_alias_map={"Q00": "Q00"},
+        last_deployed_instrument_infos={"Q00": (object(),)},
+        deploy_instruments=lambda *, requests: {"Q00": tuple(requests)},
     )
     execution_manager = SimpleNamespace(
         quelware_endpoint="injected-host",
@@ -422,7 +422,7 @@ def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:
     resolver = _FakeInstrumentResolver(
         alias_to_info={
             "alias-shared": _FakeInstrumentInfo(
-                port_id="unit-a:p0trx",
+                port_id="unit-a:trx_p00",
                 definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
             )
         }
@@ -491,11 +491,11 @@ def test_resolve_payload_rejects_ambiguous_port_binding() -> None:
     resolver = _FakeInstrumentResolver(
         alias_to_info={
             "alias-a": _FakeInstrumentInfo(
-                port_id="unit-a:p0trx",
+                port_id="unit-a:trx_p00",
                 definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
             ),
             "alias-b": _FakeInstrumentInfo(
-                port_id="unit-a:p0trx",
+                port_id="unit-a:trx_p00",
                 definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
             ),
         }
@@ -506,3 +506,62 @@ def test_resolve_payload_rejects_ambiguous_port_binding() -> None:
             payload=payload,
             resolver=cast(Any, resolver),
         )
+
+
+def test_parse_instrument_port_binding_rejects_legacy_port_id_format() -> None:
+    """Given legacy port IDs, parser should reject unsupported format."""
+    parsed = Quel3ExecutionManager._parse_instrument_port_binding("unit-a:p0trx")
+
+    assert parsed is None
+
+
+def test_parse_instrument_port_binding_supports_transmitter_port_ids() -> None:
+    """Given transmitter port IDs, parser should resolve output binding."""
+    parsed = Quel3ExecutionManager._parse_instrument_port_binding("quel3-02-a01:tx_p04")
+
+    assert parsed is not None
+    assert parsed.unit == "quel3-02-a01"
+    assert parsed.out_port == 4
+    assert parsed.in_port is None
+
+
+def test_parse_instrument_port_binding_supports_transceiver_port_ids() -> None:
+    """Given transceiver port IDs, parser should resolve paired input and output bindings."""
+    parsed = Quel3ExecutionManager._parse_instrument_port_binding(
+        "quel3-02-a01:trx_p00p01"
+    )
+
+    assert parsed is not None
+    assert parsed.unit == "quel3-02-a01"
+    assert parsed.out_port == 1
+    assert parsed.in_port == 0
+
+
+def test_resolve_payload_accepts_deployed_transmitter_port_id_format() -> None:
+    """Given deployed transmitter port IDs, resolving payload should match compatible alias."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "Q00": replace(
+                payload.fixed_timelines["alias-rq00"],
+                capture_windows=(),
+            )
+        },
+        instrument_bindings={"Q00": "port:quel3-02-a01-4"},
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "inst-q00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:tx_p04",
+                definition=_FakeInstrumentDefinition(role="TRANSMITTER"),
+            )
+        }
+    )
+
+    resolved = Quel3ExecutionManager._resolve_payload(
+        payload=payload,
+        resolver=cast(Any, resolver),
+    )
+
+    assert set(resolved.fixed_timelines.keys()) == {"inst-q00"}

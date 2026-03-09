@@ -55,6 +55,7 @@ class MeasurementScheduleRunner:
                     backend_controller=backend_controller,
                     experiment_system=experiment_system,
                     constraint_profile=constraint_profile,
+                    instrument_alias_map=backend_controller.target_alias_map,
                 )
             elif isinstance(backend_controller, Quel1BackendController):
                 constraint_profile = MeasurementConstraintProfile.quel1(

@@ -107,7 +107,7 @@ def test_deploy_instruments_calls_session_api(
         role="TRANSMITTER",
         frequency_range_min_hz=4.1e9,
         frequency_range_max_hz=4.3e9,
-        alias="inst_transmitter_quel3-02-a01_tx_p02_q00",
+        alias="Q00",
         target_labels=("Q00",),
     )
 
@@ -122,7 +122,7 @@ def test_deploy_instruments_calls_session_api(
     assert definition.role == "transmitter"
     assert definition.profile.frequency_range_min == pytest.approx(4.1e9)
     assert definition.profile.frequency_range_max == pytest.approx(4.3e9)
-    assert definition.alias == "inst_transmitter_quel3-02-a01_tx_p02_q00"
+    assert definition.alias == "Q00"
     assert manager.target_alias_map == {"Q00": definition.alias}
     assert definition.alias in deployed
 
@@ -138,7 +138,7 @@ def test_deploy_instruments_clears_cache_for_empty_requests() -> None:
         role="TRANSMITTER",
         frequency_range_min_hz=4.1e9,
         frequency_range_max_hz=4.3e9,
-        alias="inst_transmitter_quel3-02-a01_tx_p02_q00",
+        alias="Q00",
         target_labels=("Q00",),
     )
     manager._last_deployed_instrument_infos = {request.alias: (object(),)}  # noqa: SLF001
@@ -244,7 +244,7 @@ def test_deploy_instruments_groups_requests_by_port(
             role="TRANSMITTER",
             frequency_range_min_hz=4.1e9,
             frequency_range_max_hz=4.3e9,
-            alias="inst_q00",
+            alias="Q00",
             target_labels=("Q00",),
         ),
         InstrumentDeployRequest(
@@ -252,7 +252,7 @@ def test_deploy_instruments_groups_requests_by_port(
             role="TRANSMITTER",
             frequency_range_min_hz=4.2e9,
             frequency_range_max_hz=4.4e9,
-            alias="inst_q00_cr",
+            alias="Q00-CR",
             target_labels=("Q00-CR",),
         ),
     )
@@ -264,20 +264,20 @@ def test_deploy_instruments_groups_requests_by_port(
     assert deploy_calls[0][0] == "quel3-02-a01:tx_p04"
     assert deploy_calls[0][2] is False
     assert [cast(Any, definition).alias for definition in deploy_calls[0][1]] == [
-        "inst_q00",
+        "Q00",
     ]
     assert deploy_calls[1][0] == "quel3-02-a01:tx_p04"
     assert deploy_calls[1][2] is True
     assert [cast(Any, definition).alias for definition in deploy_calls[1][1]] == [
-        "inst_q00_cr",
+        "Q00-CR",
     ]
     assert manager.target_alias_map == {
-        "Q00": "inst_q00",
-        "Q00-CR": "inst_q00_cr",
+        "Q00": "Q00",
+        "Q00-CR": "Q00-CR",
     }
-    assert set(deployed) == {"inst_q00", "inst_q00_cr"}
-    assert cast(Any, deployed["inst_q00"][0]).id == "id:quel3-02-a01:tx_p04:0"
-    assert cast(Any, deployed["inst_q00_cr"][0]).id == "id:quel3-02-a01:tx_p04:0"
+    assert set(deployed) == {"Q00", "Q00-CR"}
+    assert cast(Any, deployed["Q00"][0]).id == "id:quel3-02-a01:tx_p04:0"
+    assert cast(Any, deployed["Q00-CR"][0]).id == "id:quel3-02-a01:tx_p04:0"
 
 
 def test_load_client_factory_uses_configured_client_runtime(
