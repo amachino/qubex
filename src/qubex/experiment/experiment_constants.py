@@ -1,6 +1,6 @@
 """Experiment-wide constant values."""
 
-from qubex.backend.quel1 import SAMPLING_PERIOD as BACKEND_SAMPLING_PERIOD
+from qubex.backend.quel1 import SAMPLING_PERIOD_NS as BACKEND_SAMPLING_PERIOD_NS
 from qubex.measurement.measurement_defaults import (
     DEFAULT_N_SHOTS as MEASUREMENT_DEFAULT_N_SHOTS,
     DEFAULT_SHOT_INTERVAL as MEASUREMENT_DEFAULT_SHOT_INTERVAL,
@@ -30,7 +30,7 @@ DRAG_PI_DURATION = 24
 DRAG_COEFF = 0.5
 
 # Legacy compatibility alias. New code should prefer context/measurement-derived dt.
-SAMPLING_PERIOD = BACKEND_SAMPLING_PERIOD
+SAMPLING_PERIOD = BACKEND_SAMPLING_PERIOD_NS
 
 DEFAULT_SHOTS = MEASUREMENT_DEFAULT_N_SHOTS
 DEFAULT_INTERVAL = MEASUREMENT_DEFAULT_SHOT_INTERVAL

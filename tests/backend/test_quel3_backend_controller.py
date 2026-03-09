@@ -168,7 +168,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         payload=payload,
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
-        backend_sampling_period=0.4,
+        backend_sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
 
@@ -202,7 +202,7 @@ def test_build_measurement_result_keeps_backend_alias_labels() -> None:
         payload=payload,
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
-        backend_sampling_period=0.4,
+        backend_sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
 
@@ -277,7 +277,7 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
 
     controller = Quel3BackendController()
 
-    assert pytest.approx(0.4) == controller.sampling_period
+    assert pytest.approx(0.4) == controller.sampling_period_ns
     assert controller._connection_manager.quelware_endpoint == "localhost"
     assert controller._connection_manager.quelware_port == 50051
 
@@ -326,7 +326,7 @@ def test_constructor_accepts_injected_managers() -> None:
     execution_manager = SimpleNamespace(
         quelware_endpoint="injected-host",
         quelware_port=61000,
-        sampling_period=0.8,
+        sampling_period_ns=0.8,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
         execute_sync=lambda *, request: request,
@@ -344,7 +344,7 @@ def test_constructor_accepts_injected_managers() -> None:
     assert controller.execution_manager is execution_manager
     assert controller.quelware_endpoint == "injected-host"
     assert controller.quelware_port == 61000
-    assert controller.sampling_period == pytest.approx(0.8)
+    assert controller.sampling_period_ns == pytest.approx(0.8)
     assert controller.client_mode == "standalone"
     assert controller.standalone_unit_label == "quel3-02-a01"
 

@@ -10,7 +10,7 @@ from contextlib import contextmanager
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from qubex.backend.quel1 import SAMPLING_PERIOD as DEFAULT_BACKEND_SAMPLING_PERIOD
+from qubex.backend.quel1 import SAMPLING_PERIOD_NS as DEFAULT_BACKEND_SAMPLING_PERIOD_NS
 from qubex.system import SystemManager
 
 
@@ -51,14 +51,14 @@ class ExperimentUtil:
         if isinstance(sampling_period, (int, float)):
             return float(sampling_period)
         backend_controller = getattr(SystemManager.shared(), "backend_controller", None)
-        backend_sampling_period = getattr(
+        backend_sampling_period_ns = getattr(
             backend_controller,
-            "sampling_period",
+            "sampling_period_ns",
             None,
         )
-        if isinstance(backend_sampling_period, (int, float)):
-            return float(backend_sampling_period)
-        return float(DEFAULT_BACKEND_SAMPLING_PERIOD)
+        if isinstance(backend_sampling_period_ns, (int, float)):
+            return float(backend_sampling_period_ns)
+        return float(DEFAULT_BACKEND_SAMPLING_PERIOD_NS)
 
     @staticmethod
     def discretize_time_range(

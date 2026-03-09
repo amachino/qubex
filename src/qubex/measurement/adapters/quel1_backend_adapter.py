@@ -211,7 +211,7 @@ class Quel1MeasurementBackendAdapter:
         measure_mode = MeasureMode.AVG if config.shot_averaging else MeasureMode.SINGLE
         base_duration = schedule.pulse_schedule.duration
         if profile.enforce_block_alignment and block_duration is not None:
-            interval = int(
+            interval_ns = int(
                 math.ceil((base_duration + config.shot_interval) / block_duration)
                 * block_duration
             )
@@ -227,9 +227,9 @@ class Quel1MeasurementBackendAdapter:
                     math.ceil((base_duration + block_duration) / block_duration)
                     * block_duration
                 )
-                interval = max(interval, minimum_interval)
+                interval_ns = max(interval_ns, minimum_interval)
         else:
-            interval = math.ceil(base_duration + config.shot_interval)
+            interval_ns = math.ceil(base_duration + config.shot_interval)
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
         )
@@ -259,7 +259,7 @@ class Quel1MeasurementBackendAdapter:
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map=resource_map,
-            interval=interval,
+            interval_ns=interval_ns,
             repeats=config.n_shots,
             integral_mode=measure_mode.integral_mode,
             dsp_demodulation=dsp_demodulation,

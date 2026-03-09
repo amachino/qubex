@@ -122,9 +122,9 @@ class Quel1BackendController(BackendController):
         return self._runtime_context.driver
 
     @property
-    def sampling_period(self) -> float:
+    def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
-        return self._runtime_context.sampling_period
+        return self._runtime_context.sampling_period_ns
 
     @property
     def is_connected(self) -> bool:
@@ -510,7 +510,7 @@ class Quel1BackendController(BackendController):
         self,
         target_name: str,
         channel_name: str,
-        target_frequency: float | None = None,
+        target_frequency_ghz: float | None = None,
     ) -> None:
         """
         Define a target.
@@ -521,16 +521,16 @@ class Quel1BackendController(BackendController):
             Name of the target.
         channel_name : str
             Name of the channel.
-        target_frequency : float, optional
+        target_frequency_ghz : float, optional
             Frequency of the target in GHz.
         """
         self._configuration_manager.define_target(
             target_name=target_name,
             channel_name=channel_name,
-            target_frequency=target_frequency,
+            target_frequency_ghz=target_frequency_ghz,
         )
 
-    def modify_target_frequency(self, target: str, frequency: float) -> None:
+    def modify_target_frequency(self, target: str, frequency_ghz: float) -> None:
         """
         Modify the target frequency.
 
@@ -538,32 +538,36 @@ class Quel1BackendController(BackendController):
         ----------
         target : str
             Name of the target.
-        frequency : float
+        frequency_ghz : float
             Modified frequency in GHz.
         """
         self._configuration_manager.modify_target_frequency(
             target=target,
-            frequency=frequency,
+            frequency_ghz=frequency_ghz,
         )
 
-    def modify_target_frequencies(self, frequencies: dict[str, float]) -> None:
+    def modify_target_frequencies(
+        self, target_frequencies_ghz: dict[str, float]
+    ) -> None:
         """
         Modify the target frequencies.
 
         Parameters
         ----------
-        frequencies : dict[str, float]
+        target_frequencies_ghz : dict[str, float]
             Dictionary of target frequencies.
         """
-        self._configuration_manager.modify_target_frequencies(frequencies=frequencies)
+        self._configuration_manager.modify_target_frequencies(
+            target_frequencies_ghz=target_frequencies_ghz
+        )
 
     def config_port(
         self,
         box_name: str,
         *,
         port: int | tuple[int, int],
-        lo_freq: float | None = None,
-        cnco_freq: float | None = None,
+        lo_freq_hz: int | None = None,
+        cnco_freq_hz: int | None = None,
         vatt: int | None = None,
         sideband: str | None = None,
         fullscale_current: int | None = None,
@@ -578,10 +582,10 @@ class Quel1BackendController(BackendController):
             Name of the box.
         port : int | tuple[int, int]
             Port number.
-        lo_freq : float | None, optional
-            Local oscillator frequency in GHz.
-        cnco_freq : float | None, optional
-            CNCO frequency in GHz.
+        lo_freq_hz : int | None, optional
+            Local oscillator frequency in Hz.
+        cnco_freq_hz : int | None, optional
+            CNCO frequency in Hz.
         vatt : int | None, optional
             VATT value.
         sideband : str | None, optional
@@ -594,8 +598,8 @@ class Quel1BackendController(BackendController):
         self._configuration_manager.config_port(
             box_name=box_name,
             port=port,
-            lo_freq=lo_freq,
-            cnco_freq=cnco_freq,
+            lo_freq_hz=lo_freq_hz,
+            cnco_freq_hz=cnco_freq_hz,
             vatt=vatt,
             sideband=sideband,
             fullscale_current=fullscale_current,
@@ -608,7 +612,7 @@ class Quel1BackendController(BackendController):
         *,
         port: int | tuple[int, int],
         channel: int,
-        fnco_freq: float | None = None,
+        fnco_freq_hz: int | None = None,
     ) -> None:
         """
         Configure the channel of a box.
@@ -621,14 +625,14 @@ class Quel1BackendController(BackendController):
             Port number.
         channel : int
             Channel number.
-        fnco_freq : float | None, optional
-            FNCO frequency in GHz.
+        fnco_freq_hz : int | None, optional
+            FNCO frequency in Hz.
         """
         self._configuration_manager.config_channel(
             box_name=box_name,
             port=port,
             channel=channel,
-            fnco_freq=fnco_freq,
+            fnco_freq_hz=fnco_freq_hz,
         )
 
     def config_runit(
@@ -637,7 +641,7 @@ class Quel1BackendController(BackendController):
         *,
         port: int | tuple[int, int],
         runit: int,
-        fnco_freq: float | None = None,
+        fnco_freq_hz: int | None = None,
     ) -> None:
         """
         Configure the runit of a box.
@@ -650,14 +654,14 @@ class Quel1BackendController(BackendController):
             Port number.
         runit : int
             Runit number.
-        fnco_freq : float | None, optional
-            FNCO frequency in GHz.
+        fnco_freq_hz : int | None, optional
+            FNCO frequency in Hz.
         """
         self._configuration_manager.config_runit(
             box_name=box_name,
             port=port,
             runit=runit,
-            fnco_freq=fnco_freq,
+            fnco_freq_hz=fnco_freq_hz,
         )
 
     def dump_box(self, box_name: str) -> dict:

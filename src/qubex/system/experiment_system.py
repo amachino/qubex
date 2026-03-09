@@ -11,28 +11,28 @@ import numpy as np
 from typing_extensions import TypedDict, deprecated
 
 from qubex.backend.quel1.quel1_backend_constants import (
-    AWG_MAX,
-    CNCO_CENTER_CTRL,
-    CNCO_CENTER_READ,
+    AWG_MAX_HZ,
+    CNCO_CENTER_CTRL_HZ,
+    CNCO_CENTER_READ_HZ,
     DEFAULT_CAPTURE_DELAY,
     DEFAULT_CAPTURE_DELAY_WORD,
-    DEFAULT_CNCO_FREQ,
+    DEFAULT_CNCO_FREQUENCY_HZ,
     DEFAULT_CONTROL_AMPLITUDE,
     DEFAULT_CONTROL_FSC,
     DEFAULT_CONTROL_VATT,
     DEFAULT_DC_VOLTAGE,
-    DEFAULT_FNCO_FREQ,
-    DEFAULT_LO_FREQ,
+    DEFAULT_FNCO_FREQUENCY_HZ,
+    DEFAULT_LO_FREQUENCY_HZ,
     DEFAULT_PUMP_AMPLITUDE,
-    DEFAULT_PUMP_FREQUENCY,
+    DEFAULT_PUMP_FREQUENCY_GHZ,
     DEFAULT_PUMP_FSC,
     DEFAULT_PUMP_VATT,
     DEFAULT_READOUT_AMPLITUDE,
     DEFAULT_READOUT_FSC,
     DEFAULT_READOUT_VATT,
-    FNCO_MAX,
-    LO_STEP,
-    NCO_STEP,
+    FNCO_MAX_HZ,
+    LO_STEP_HZ,
+    NCO_STEP_HZ,
 )
 from qubex.core import MutableModel
 from qubex.typing import ConfigurationMode
@@ -188,9 +188,9 @@ class ControlParams(MutableModel):
         """Return the pump frequency for a mux."""
         jpa_param = self.jpa_params.get(mux)
         if jpa_param is None:
-            return DEFAULT_PUMP_FREQUENCY
+            return DEFAULT_PUMP_FREQUENCY_GHZ
         else:
-            return jpa_param.get("pump_frequency") or DEFAULT_PUMP_FREQUENCY
+            return jpa_param.get("pump_frequency") or DEFAULT_PUMP_FREQUENCY_GHZ
 
     def get_pump_amplitude(self, mux: int) -> float:
         """Return the pump amplitude for a mux."""
@@ -767,7 +767,7 @@ class ExperimentSystem:
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
             f=frequency * 1e9,
             ssb=ssb,
-            cnco_center=CNCO_CENTER_READ,
+            cnco_center=CNCO_CENTER_READ_HZ,
         )
         fnco, _ = MixingUtil.calc_fnco(
             f=frequency * 1e9,
@@ -850,10 +850,10 @@ class ExperimentSystem:
         port: CapPort,
     ) -> None:
         """Initialize monitor input with default frequencies for hardware sync."""
-        port.lo_freq = DEFAULT_LO_FREQ
-        port.cnco_freq = DEFAULT_CNCO_FREQ
+        port.lo_freq = DEFAULT_LO_FREQUENCY_HZ
+        port.cnco_freq = DEFAULT_CNCO_FREQUENCY_HZ
         for channel in port.channels:
-            channel.fnco_freq = DEFAULT_FNCO_FREQ
+            channel.fnco_freq = DEFAULT_FNCO_FREQUENCY_HZ
             channel.ndelay = DEFAULT_CAPTURE_DELAY
 
     def _build_control_targets(
@@ -1084,7 +1084,7 @@ class ExperimentSystem:
         self,
         mux: Mux,
         ssb: Literal["U", "L"] | None = "U",
-        cnco_center: int = CNCO_CENTER_READ,
+        cnco_center: int = CNCO_CENTER_READ_HZ,
     ) -> ReadoutMixingConfig:
         """
         Find the (lo, cnco, fnco) values for the readout mux.
@@ -1138,7 +1138,7 @@ class ExperimentSystem:
         *,
         mode: ConfigurationMode = "ge-cr-cr",
         ssb: Literal["U", "L"] | None = "L",
-        cnco_center: int = CNCO_CENTER_CTRL,
+        cnco_center: int = CNCO_CENTER_CTRL_HZ,
         min_frequency: float = 6.5e9,
     ) -> ControlMixingConfig:
         """
@@ -1159,7 +1159,7 @@ class ExperimentSystem:
             Sideband, by default "L".
 
         cnco_center : int, optional
-            Center frequency of the CNCO, by default CNCO_CENTER_CTRL.
+            Center frequency of the CNCO, by default CNCO_CENTER_CTRL_HZ.
 
 
         Returns
@@ -1211,19 +1211,23 @@ class ExperimentSystem:
                 if f_ef < min_frequency:
                     f_ef = f_ge
                 lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ef + FNCO_MAX,
+                    f=f_ef + FNCO_MAX_HZ,
                     ssb=ssb,
                     cnco_center=cnco_center,
                 )
-                f_CRs_valid = [f for f in f_CRs if f < f_coarse + FNCO_MAX + AWG_MAX]
+                f_CRs_valid = [
+                    f for f in f_CRs if f < f_coarse + FNCO_MAX_HZ + AWG_MAX_HZ
+                ]
             else:
                 # if all CRs are smaller than GE, then let GE be the largest
                 lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ge - FNCO_MAX,
+                    f=f_ge - FNCO_MAX_HZ,
                     ssb=ssb,
                     cnco_center=cnco_center,
                 )
-                f_CRs_valid = [f for f in f_CRs if f > f_coarse - FNCO_MAX - AWG_MAX]
+                f_CRs_valid = [
+                    f for f in f_CRs if f > f_coarse - FNCO_MAX_HZ - AWG_MAX_HZ
+                ]
             f_CR = self._find_center_freq_for_cr(
                 f_coarse=f_coarse,
                 f_CRs=f_CRs_valid,
@@ -1278,19 +1282,23 @@ class ExperimentSystem:
                 if f_ef < min_frequency:
                     f_ef = f_ge
                 lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ef + FNCO_MAX,
+                    f=f_ef + FNCO_MAX_HZ,
                     ssb=ssb,
                     cnco_center=cnco_center,
                 )
-                f_CRs_valid = [f for f in f_CRs if f < f_coarse + FNCO_MAX + AWG_MAX]
+                f_CRs_valid = [
+                    f for f in f_CRs if f < f_coarse + FNCO_MAX_HZ + AWG_MAX_HZ
+                ]
             else:
                 # if all CRs are smaller than GE, then let GE be the largest
                 lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                    f=f_ge - FNCO_MAX,
+                    f=f_ge - FNCO_MAX_HZ,
                     ssb=ssb,
                     cnco_center=cnco_center,
                 )
-                f_CRs_valid = [f for f in f_CRs if f > f_coarse - FNCO_MAX - AWG_MAX]
+                f_CRs_valid = [
+                    f for f in f_CRs if f > f_coarse - FNCO_MAX_HZ - AWG_MAX_HZ
+                ]
             f_CR = self._find_center_freq_for_cr(
                 f_coarse=f_coarse,
                 f_CRs=f_CRs_valid,
@@ -1435,19 +1443,21 @@ class ExperimentSystem:
         if not f_CRs:
             return f_coarse
         # possible range
-        min_center_freq = f_coarse - FNCO_MAX
-        max_center_freq = f_coarse + FNCO_MAX
+        min_center_freq = f_coarse - FNCO_MAX_HZ
+        max_center_freq = f_coarse + FNCO_MAX_HZ
 
         # search range
         search_range = np.arange(
             max(min(f_CRs), min_center_freq),
             min(max(f_CRs), max_center_freq) + 1,
-            NCO_STEP,
+            NCO_STEP_HZ,
         )
         # count the number of CR frequencies within the range of each search point
         center_freqs_by_count = []
         for f in search_range:
-            valid_f_CRs = [f_CR for f_CR in f_CRs if f - AWG_MAX <= f_CR <= f + AWG_MAX]
+            valid_f_CRs = [
+                f_CR for f_CR in f_CRs if f - AWG_MAX_HZ <= f_CR <= f + AWG_MAX_HZ
+            ]
             if not valid_f_CRs:
                 continue
             center = (min(valid_f_CRs) + max(valid_f_CRs)) / 2
@@ -1459,7 +1469,7 @@ class ExperimentSystem:
         # choose the one with the highest count and frequency
         center_freq = int(center_freqs_by_count[0][1])
         # round to the nearest NCO step
-        center_freq = round(center_freq / NCO_STEP) * NCO_STEP
+        center_freq = round(center_freq / NCO_STEP_HZ) * NCO_STEP_HZ
         # clip to the possible range
         center_freq = max(min_center_freq, min(center_freq, max_center_freq))
         return center_freq
@@ -1473,8 +1483,8 @@ class MixingUtil:
         f: float,
         cnco_center: int,
         ssb: Literal["U", "L"] | None,
-        lo_step: int = LO_STEP,
-        nco_step: int = NCO_STEP,
+        lo_step: int = LO_STEP_HZ,
+        nco_step: int = NCO_STEP_HZ,
     ) -> tuple[int | None, int, int]:
         """Calculate LO/CNCO settings for a target frequency."""
         if ssb is None:
@@ -1499,7 +1509,7 @@ class MixingUtil:
         ssb: Literal["U", "L"] | None,
         lo: int | None,
         cnco: int,
-        nco_step: int = NCO_STEP,
+        nco_step: int = NCO_STEP_HZ,
     ) -> tuple[int, int]:
         """Calculate FNCO settings for a target frequency."""
         if ssb is None and lo is None:

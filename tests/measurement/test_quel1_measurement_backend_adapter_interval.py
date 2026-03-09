@@ -73,9 +73,9 @@ def test_build_execution_request_adds_one_block_margin_when_interval_nonpositive
     )
 
     payload = request.payload
-    assert hasattr(payload, "interval")
+    assert hasattr(payload, "interval_ns")
     # block duration for strict QuEL-1 profile is 128 ns; one extra block is added.
-    assert payload.interval == 256
+    assert payload.interval_ns == 256
 
 
 def test_build_execution_request_preserves_positive_interval_without_extra_margin(
@@ -120,9 +120,9 @@ def test_build_execution_request_preserves_positive_interval_without_extra_margi
     )
 
     payload = request.payload
-    assert hasattr(payload, "interval")
+    assert hasattr(payload, "interval_ns")
     # ceil((128 + 256) / 128) * 128 = 384
-    assert payload.interval == 384
+    assert payload.interval_ns == 384
 
 
 def test_build_execution_request_honors_quel1_dsp_demodulation_option(

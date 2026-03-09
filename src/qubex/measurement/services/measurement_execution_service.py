@@ -179,7 +179,7 @@ class MeasurementExecutionService:
     @property
     def constraint_profile(self) -> MeasurementConstraintProfile:
         """Return backend timing and alignment constraints."""
-        sampling_period = self.backend_controller.sampling_period
+        sampling_period = self.backend_controller.sampling_period_ns
         if isinstance(self.backend_controller, Quel3BackendController):
             return MeasurementConstraintProfile.quel3(sampling_period)
         if isinstance(self.backend_controller, Quel1BackendController):

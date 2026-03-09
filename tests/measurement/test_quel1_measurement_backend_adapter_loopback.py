@@ -10,7 +10,7 @@ import numpy as np
 from numpy.testing import assert_allclose
 from qxpulse import Blank, Gaussian, PulseSchedule
 
-from qubex.backend.quel1 import SAMPLING_PERIOD, Quel1BackendExecutionResult
+from qubex.backend.quel1 import SAMPLING_PERIOD_NS, Quel1BackendExecutionResult
 from qubex.measurement.adapters.backend_adapter import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
@@ -60,12 +60,12 @@ def _make_config(*, mode: MeasurementMode, shots: int) -> MeasurementConfig:
 
 def test_validate_schedule_accepts_full_span_captures_without_pulse_ranges() -> None:
     """Given full-span mode, when captures have no pulse ranges, then validation succeeds."""
-    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
     block_duration = cast(float, profile.block_duration_ns)
     start_offset = profile.extra_capture_duration_ns
     pulse_schedule = _FakePulseSchedule(
         duration=2 * block_duration,
-        length=round((2 * block_duration) / SAMPLING_PERIOD),
+        length=round((2 * block_duration) / SAMPLING_PERIOD_NS),
         ranges={},
     )
     capture_schedule = CaptureSchedule(
@@ -168,7 +168,7 @@ def test_build_measurement_result_keeps_monitor_labels() -> None:
 
 def test_create_sampled_sequences_accepts_monitor_capture_targets() -> None:
     """Given monitor capture labels, when building sampled sequences, then monitor channels are included."""
-    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
 
     class _ExperimentSystemStub:
         control_params = SimpleNamespace(capture_delay_word={0: 1})
@@ -274,7 +274,7 @@ def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_pha
     None
 ):
     """Given schedule frequency metadata, when building sampled sequences, then modulation and phase use that frequency."""
-    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
 
     class _ExperimentSystemStub:
         control_params = SimpleNamespace(capture_delay_word={0: 0})
@@ -376,7 +376,7 @@ def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_pha
     expected_modulation_frequency = 120e6
     expected = pulse_schedule.get_sampled_sequences()["Q00"].copy()
     for rng in pulse_schedule.get_pulse_ranges(["Q00"])["Q00"]:
-        offset = rng.start * SAMPLING_PERIOD
+        offset = rng.start * SAMPLING_PERIOD_NS
         expected[rng] *= np.exp(1j * 2 * np.pi * expected_modulation_frequency * offset)
     expected = np.conj(expected)
 
@@ -388,7 +388,7 @@ def test_create_sampled_sequences_uses_schedule_frequency_for_modulation_and_pha
 
 def test_create_sampled_sequences_uses_zero_delay_for_entire_schedule() -> None:
     """Given full-span captures, when building sampled sequences, then capture delay is zero."""
-    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
 
     class _ExperimentSystemStub:
         control_params = SimpleNamespace(capture_delay_word={0: 1})
@@ -494,7 +494,7 @@ def test_create_sampled_sequences_skips_readout_phase_shift_when_capture_targets
     None
 ):
     """Given no overlap between capture targets and pulse labels, when building sequences, then it does not look up missing capture delays."""
-    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+    profile = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD_NS)
 
     class _ExperimentSystemStub:
         control_params = SimpleNamespace(capture_delay_word={0: 1})

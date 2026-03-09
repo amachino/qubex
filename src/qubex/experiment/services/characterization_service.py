@@ -49,7 +49,7 @@ from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
 from qubex.system import MixingUtil
 from qubex.system.experiment_system import (
-    CNCO_CENTER_CTRL,
+    CNCO_CENTER_CTRL_HZ,
 )
 from qubex.typing import TargetMap
 from qubex.visualization import COLORS
@@ -2595,7 +2595,7 @@ class CharacterizationService:
         signals = []
 
         ssb = ctrl_box.traits.ctrl_ssb
-        cnco_center = CNCO_CENTER_CTRL
+        cnco_center = CNCO_CENTER_CTRL_HZ
 
         # measure the phase and amplitude
         idx = 0

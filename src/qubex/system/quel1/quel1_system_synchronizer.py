@@ -87,14 +87,14 @@ class Quel1SystemSynchronizer:
                     self._backend_controller.define_target(
                         target_name=port.id,
                         channel_name=port.channels[0].id,
-                        target_frequency=0.0,
+                        target_frequency_ghz=0.0,
                     )
 
         for target in experiment_system.all_targets:
             self._backend_controller.define_target(
                 target_name=target.label,
                 channel_name=target.channel.id,
-                target_frequency=target.frequency,
+                target_frequency_ghz=target.frequency,
             )
 
         self._backend_controller.clear_command_queue()
@@ -221,9 +221,9 @@ class Quel1SystemSynchronizer:
                 if not isinstance(port_config, dict):
                     continue
                 direction = port_config.get("direction")
-                lo_freq = port_config.get("lo_freq")
-                lo_freq = int(lo_freq) if lo_freq is not None else None
-                cnco_freq = int(port_config["cnco_freq"])
+                lo_freq_hz = port_config.get("lo_freq")
+                lo_freq_hz = int(lo_freq_hz) if lo_freq_hz is not None else None
+                cnco_freq_hz = int(port_config["cnco_freq"])
                 if direction == "out":
                     raw_sideband = port_config.get("sideband")
                     sideband: Literal["U", "L"] | None = (
@@ -235,14 +235,14 @@ class Quel1SystemSynchronizer:
                         if fullscale_current is not None
                         else None
                     )
-                    fnco_freqs = [
+                    fnco_freqs_hz = [
                         int(channel["fnco_freq"])
                         for channel in port_config.get("channels", {}).values()
                     ]
                 elif direction == "in":
                     sideband = None
                     fullscale_current = None
-                    fnco_freqs = [
+                    fnco_freqs_hz = [
                         int(channel["fnco_freq"])
                         for channel in port_config.get("runits", {}).values()
                     ]
@@ -252,7 +252,7 @@ class Quel1SystemSynchronizer:
                 expected_fnco_count = len(channels) if len(channels) > 0 else None
                 if (
                     expected_fnco_count is not None
-                    and len(fnco_freqs) != expected_fnco_count
+                    and len(fnco_freqs_hz) != expected_fnco_count
                 ):
                     logger.warning(
                         "Skipping backend port sync for %s:%s due to fnco count mismatch "
@@ -260,7 +260,7 @@ class Quel1SystemSynchronizer:
                         box_id,
                         port_number,
                         expected_fnco_count,
-                        len(fnco_freqs),
+                        len(fnco_freqs_hz),
                     )
                     continue
                 updates.append(
@@ -268,9 +268,9 @@ class Quel1SystemSynchronizer:
                         box_id,
                         port_number,
                         sideband,
-                        lo_freq,
-                        cnco_freq,
-                        fnco_freqs,
+                        lo_freq_hz,
+                        cnco_freq_hz,
+                        fnco_freqs_hz,
                         fullscale_current,
                     )
                 )
@@ -278,18 +278,18 @@ class Quel1SystemSynchronizer:
             box_id,
             port_number,
             sideband,
-            lo_freq,
-            cnco_freq,
-            fnco_freqs,
+            lo_freq_hz,
+            cnco_freq_hz,
+            fnco_freqs_hz,
             fullscale_current,
         ) in updates:
             experiment_system.control_system.set_port_params(
                 box_id=box_id,
                 port_number=port_number,
                 sideband=sideband,
-                lo_freq=lo_freq,
-                cnco_freq=cnco_freq,
-                fnco_freqs=fnco_freqs,
+                lo_freq=lo_freq_hz,
+                cnco_freq=cnco_freq_hz,
+                fnco_freqs=fnco_freqs_hz,
                 fullscale_current=fullscale_current,
             )
 
@@ -299,8 +299,8 @@ class Quel1SystemSynchronizer:
             self._backend_controller.config_port(
                 box_name=box.id,
                 port=port.number,
-                lo_freq=port.lo_freq,
-                cnco_freq=port.cnco_freq,
+                lo_freq_hz=port.lo_freq,
+                cnco_freq_hz=port.cnco_freq,
                 vatt=port.vatt,
                 sideband=port.sideband,
                 fullscale_current=port.fullscale_current,
@@ -311,7 +311,7 @@ class Quel1SystemSynchronizer:
                     box_name=box.id,
                     port=port.number,
                     channel=gen_channel.number,
-                    fnco_freq=gen_channel.fnco_freq,
+                    fnco_freq_hz=gen_channel.fnco_freq,
                 )
         except Exception:
             logger.exception("Failed to configure %s", port.id)
@@ -322,8 +322,8 @@ class Quel1SystemSynchronizer:
             self._backend_controller.config_port(
                 box_name=box.id,
                 port=port.number,
-                lo_freq=port.lo_freq,
-                cnco_freq=port.cnco_freq,
+                lo_freq_hz=port.lo_freq,
+                cnco_freq_hz=port.cnco_freq,
                 vatt=None,
                 sideband=None,
                 fullscale_current=None,
@@ -334,7 +334,7 @@ class Quel1SystemSynchronizer:
                     box_name=box.id,
                     port=port.number,
                     runit=cap_channel.number,
-                    fnco_freq=cap_channel.fnco_freq,
+                    fnco_freq_hz=cap_channel.fnco_freq,
                 )
         except Exception:
             logger.exception("Failed to configure %s", port.id)

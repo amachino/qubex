@@ -8,7 +8,7 @@ from qubex.backend.quel1 import (
     BLOCK_LENGTH,
     EXTRA_POST_BLANK_LENGTH,
     EXTRA_SUM_SECTION_LENGTH,
-    SAMPLING_PERIOD,
+    SAMPLING_PERIOD_NS,
     WORD_LENGTH,
 )
 
@@ -30,7 +30,7 @@ class MeasurementConstraintProfile:
     @classmethod
     def quel1(
         cls,
-        sampling_period_ns: float = SAMPLING_PERIOD,
+        sampling_period_ns: float = SAMPLING_PERIOD_NS,
     ) -> MeasurementConstraintProfile:
         """Create QuEL-1 constraints with the given sampling period."""
         return cls(

@@ -11,8 +11,8 @@ from pydantic import Field
 from typing_extensions import deprecated
 
 from qubex.backend.quel1.quel1_backend_constants import (
-    CNCO_CENTER_READ,
-    CNCO_CENTER_READ_R8,
+    CNCO_CENTER_READ_HZ,
+    CNCO_CENTER_READ_R8_HZ,
     DEFAULT_CLOCK_MASTER_ADDRESS,
 )
 from qubex.core import MutableModel
@@ -53,7 +53,7 @@ _DEFAULT_BOX_TRAITS: Final = BoxTraits(
     ctrl_min_frequency_hz=6.5e9,
     ctrl_uses_vatt=True,
     readout_ssb="U",
-    readout_cnco_center=CNCO_CENTER_READ,
+    readout_cnco_center=CNCO_CENTER_READ_HZ,
     default_readout_frequency_range=(9.75, 10.75, 0.002),
     default_control_frequency_range=(6.5, 9.5, 0.005),
 )
@@ -64,7 +64,7 @@ _QUEL3_BOX_TRAITS: Final = BoxTraits(
     ctrl_min_frequency_hz=0.5e9,
     ctrl_uses_vatt=False,
     readout_ssb=None,
-    readout_cnco_center=CNCO_CENTER_READ_R8,
+    readout_cnco_center=CNCO_CENTER_READ_R8_HZ,
     default_readout_frequency_range=(5.75, 6.75, 0.002),
     default_control_frequency_range=(3.0, 5.0, 0.005),
 )
@@ -75,7 +75,7 @@ _QUEL1SE_R8_BOX_TRAITS: Final = BoxTraits(
     ctrl_min_frequency_hz=0.0,
     ctrl_uses_vatt=False,
     readout_ssb="L",
-    readout_cnco_center=CNCO_CENTER_READ_R8,
+    readout_cnco_center=CNCO_CENTER_READ_R8_HZ,
     default_readout_frequency_range=(5.75, 6.75, 0.002),
     default_control_frequency_range=(3.0, 5.0, 0.005),
 )

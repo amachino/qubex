@@ -50,7 +50,7 @@ class Quel1RuntimeContextReader(Protocol):
         ...
 
     @property
-    def sampling_period(self) -> float:
+    def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
         ...
 
@@ -92,7 +92,7 @@ class Quel1RuntimeContext:
         *,
         driver: QuelDriverClassesProtocol | None = None,
         qubecalib: QubeCalib | None = None,
-        sampling_period: float | None = None,
+        sampling_period_ns: float | None = None,
     ) -> None:
         resolved_driver = (
             driver
@@ -105,15 +105,15 @@ class Quel1RuntimeContext:
                 resolved_qubecalib = resolved_driver.QubeCalib()
             except Exception:
                 resolved_qubecalib = None
-        resolved_sampling_period = (
-            sampling_period
-            if sampling_period is not None
+        resolved_sampling_period_ns = (
+            sampling_period_ns
+            if sampling_period_ns is not None
             else resolved_driver.DEFAULT_SAMPLING_PERIOD
         )
 
         self._driver = resolved_driver
         self._qubecalib = resolved_qubecalib
-        self._sampling_period = resolved_sampling_period
+        self._sampling_period_ns = resolved_sampling_period_ns
         self._box_options: dict[str, tuple[str, ...]] = {}
         self._boxpool: BoxPool | None = None
         self._quel1system: Quel1System | None = None
@@ -146,9 +146,9 @@ class Quel1RuntimeContext:
         return list(box_settings.keys())
 
     @property
-    def sampling_period(self) -> float:
+    def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
-        return self._sampling_period
+        return self._sampling_period_ns
 
     @property
     def is_connected(self) -> bool:

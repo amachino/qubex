@@ -25,7 +25,7 @@ def _make_measurement_with_backend(
         _Quel3Controller = type(
             "_Quel3Controller",
             (),
-            {"sampling_period": sampling_period},
+            {"sampling_period_ns": sampling_period},
         )
 
         monkeypatch.setattr(
@@ -37,7 +37,7 @@ def _make_measurement_with_backend(
         _Quel1Controller = type(
             "_Quel1Controller",
             (),
-            {"sampling_period": sampling_period},
+            {"sampling_period_ns": sampling_period},
         )
 
         monkeypatch.setattr(

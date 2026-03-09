@@ -49,7 +49,7 @@ class MeasurementScheduleRunner:
                 )
             if isinstance(backend_controller, Quel3BackendController):
                 constraint_profile = MeasurementConstraintProfile.quel3(
-                    backend_controller.sampling_period
+                    backend_controller.sampling_period_ns
                 )
                 measurement_backend_adapter = Quel3MeasurementBackendAdapter(
                     backend_controller=backend_controller,
@@ -58,7 +58,7 @@ class MeasurementScheduleRunner:
                 )
             elif isinstance(backend_controller, Quel1BackendController):
                 constraint_profile = MeasurementConstraintProfile.quel1(
-                    backend_controller.sampling_period
+                    backend_controller.sampling_period_ns
                 )
                 measurement_backend_adapter = Quel1MeasurementBackendAdapter(
                     backend_controller=backend_controller,
@@ -107,7 +107,7 @@ class MeasurementScheduleRunner:
                 "backend_controller.CAPTURE_DECIMATION_FACTOR must be a positive integer."
             )
 
-        sampling_period = self._backend_controller.sampling_period
+        sampling_period = self._backend_controller.sampling_period_ns
         if config.shot_averaging:
             sampling_period = sampling_period * capture_decimation_factor
 

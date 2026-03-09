@@ -139,8 +139,8 @@ class Quel3BackendController(BackendController):
             client_mode=resolved_client_mode,
             standalone_unit_label=resolved_standalone_unit_label,
         )
-        self._sampling_period = (
-            execution_manager.sampling_period
+        self._sampling_period_ns = (
+            execution_manager.sampling_period_ns
             if execution_manager is not None
             else self.SAMPLING_PERIOD_NS
         )
@@ -175,7 +175,7 @@ class Quel3BackendController(BackendController):
             else Quel3ExecutionManager(
                 quelware_endpoint=endpoint,
                 quelware_port=port,
-                sampling_period=self._sampling_period,
+                sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 client_mode=resolved_client_mode,
                 standalone_unit_label=resolved_standalone_unit_label,
@@ -318,9 +318,9 @@ class Quel3BackendController(BackendController):
         return self._configuration_manager.deploy_instruments(requests=requests)
 
     @property
-    def sampling_period(self) -> float:
+    def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
-        return self._sampling_period
+        return self._sampling_period_ns
 
     def execute_sync(
         self,

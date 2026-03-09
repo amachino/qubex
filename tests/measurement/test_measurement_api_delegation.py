@@ -1608,7 +1608,7 @@ def test_run_measurement_selects_quel3_adapter_from_controller_type(
 
     class _Quel3Controller:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
-        sampling_period: ClassVar[float] = 0.4
+        sampling_period_ns: ClassVar[float] = 0.4
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute_async(

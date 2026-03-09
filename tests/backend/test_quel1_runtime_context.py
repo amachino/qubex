@@ -48,7 +48,7 @@ def test_runtime_context_constructor_loads_driver_by_default(
 
     assert context.driver is driver
     assert context.qubecalib is driver._qubecalib
-    assert context.sampling_period == 0.8
+    assert context.sampling_period_ns == 0.8
 
 
 def test_runtime_context_constructor_handles_qubecalib_failure(

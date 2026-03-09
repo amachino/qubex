@@ -1015,7 +1015,7 @@ class ExperimentContext:
         define_target(
             target_name=target.label,
             channel_name=target.channel.id,
-            target_frequency=target.frequency,
+            target_frequency_ghz=target.frequency,
         )
         self.experiment_system.add_target(target)
         if update_lsi:

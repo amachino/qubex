@@ -851,14 +851,14 @@ This operation will overwrite the existing backend settings. Do you want to cont
         config_port(
             box_name=port.box_id,
             port=port.number,
-            lo_freq=lo_freq,
-            cnco_freq=cnco_freq,
+            lo_freq_hz=lo_freq,
+            cnco_freq_hz=cnco_freq,
         )
         config_channel(
             box_name=port.box_id,
             port=port.number,
             channel=channel.number,
-            fnco_freq=fnco_freq,
+            fnco_freq_hz=fnco_freq,
         )
         port_cache = box_cache[port.box_id]["ports"][port.number]
         port_cache["lo_freq"] = lo_freq
@@ -875,14 +875,14 @@ This operation will overwrite the existing backend settings. Do you want to cont
             config_port(
                 box_name=cap_port.box_id,
                 port=cap_port.number,
-                lo_freq=lo_freq,
-                cnco_freq=cnco_freq,
+                lo_freq_hz=lo_freq,
+                cnco_freq_hz=cnco_freq,
             )
             config_runit(
                 box_name=cap_port.box_id,
                 port=cap_port.number,
                 runit=cap_channel.number,
-                fnco_freq=fnco_freq,
+                fnco_freq_hz=fnco_freq,
             )
             cap_port_cache = box_cache[cap_port.box_id]["ports"][cap_port.number]
             cap_port_cache["lo_freq"] = lo_freq
@@ -914,27 +914,27 @@ This operation will overwrite the existing backend settings. Do you want to cont
             config_port(
                 box_name=port.box_id,
                 port=port.number,
-                lo_freq=original_lo_freq,
-                cnco_freq=original_cnco_freq,
+                lo_freq_hz=original_lo_freq,
+                cnco_freq_hz=original_cnco_freq,
             )
             config_channel(
                 box_name=port.box_id,
                 port=port.number,
                 channel=channel.number,
-                fnco_freq=original_fnco_freq,
+                fnco_freq_hz=original_fnco_freq,
             )
             if target.is_read:
                 config_port(
                     box_name=cap_port.box_id,
                     port=cap_port.number,
-                    lo_freq=original_lo_freq,
-                    cnco_freq=original_cnco_freq,
+                    lo_freq_hz=original_lo_freq,
+                    cnco_freq_hz=original_cnco_freq,
                 )
                 config_runit(
                     box_name=cap_port.box_id,
                     port=cap_port.number,
                     runit=cap_channel.number,
-                    fnco_freq=original_fnco_freq,
+                    fnco_freq_hz=original_fnco_freq,
                 )
 
             # restore the original box config

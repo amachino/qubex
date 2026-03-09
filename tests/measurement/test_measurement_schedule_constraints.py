@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from qubex.backend.quel1 import SAMPLING_PERIOD
+from qubex.backend.quel1 import SAMPLING_PERIOD_NS
 from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
@@ -15,7 +15,9 @@ from qubex.measurement.measurement_constraint_profile import (
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
-_STRICT_PROFILE = MeasurementConstraintProfile.quel1(sampling_period_ns=SAMPLING_PERIOD)
+_STRICT_PROFILE = MeasurementConstraintProfile.quel1(
+    sampling_period_ns=SAMPLING_PERIOD_NS
+)
 BLOCK_DURATION = cast(float, _STRICT_PROFILE.block_duration_ns)
 WORD_DURATION = cast(float, _STRICT_PROFILE.word_duration_ns)
 EXTRA_SUM_SECTION_LENGTH = _STRICT_PROFILE.extra_sum_section_length_samples
@@ -52,7 +54,7 @@ def test_validate_measurement_schedule_accepts_device_constraints() -> None:
     target = "RQ00"
     pulse_schedule = _FakePulseSchedule(
         duration=2 * BLOCK_DURATION,
-        length=round((2 * BLOCK_DURATION) / SAMPLING_PERIOD),
+        length=round((2 * BLOCK_DURATION) / SAMPLING_PERIOD_NS),
         ranges={target: [_FakeRange(start=64, stop=80)]},
     )
     capture_schedule = CaptureSchedule(
@@ -60,12 +62,12 @@ def test_validate_measurement_schedule_accepts_device_constraints() -> None:
             Capture(
                 channels=[target],
                 start_time=0.0,
-                duration=EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD,
+                duration=EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD_NS,
             ),
             Capture(
                 channels=[target],
-                start_time=64 * SAMPLING_PERIOD,
-                duration=16 * SAMPLING_PERIOD,
+                start_time=64 * SAMPLING_PERIOD_NS,
+                duration=16 * SAMPLING_PERIOD_NS,
             ),
         ]
     )
@@ -89,7 +91,7 @@ def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture()
     target = "RQ00"
     pulse_schedule = _FakePulseSchedule(
         duration=2 * BLOCK_DURATION,
-        length=round((2 * BLOCK_DURATION) / SAMPLING_PERIOD),
+        length=round((2 * BLOCK_DURATION) / SAMPLING_PERIOD_NS),
         ranges={target: [_FakeRange(start=64, stop=80)]},
     )
     capture_schedule = CaptureSchedule(
@@ -97,12 +99,12 @@ def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture()
             Capture(
                 channels=[target],
                 start_time=WORD_DURATION,
-                duration=EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD,
+                duration=EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD_NS,
             ),
             Capture(
                 channels=[target],
-                start_time=64 * SAMPLING_PERIOD,
-                duration=16 * SAMPLING_PERIOD,
+                start_time=64 * SAMPLING_PERIOD_NS,
+                duration=16 * SAMPLING_PERIOD_NS,
             ),
         ]
     )

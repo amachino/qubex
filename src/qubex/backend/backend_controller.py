@@ -53,7 +53,7 @@ class BackendController(Protocol):
 
     This protocol defines the minimum API that both QuEL-1 and QuEL-3
     controllers must provide to the measurement layer:
-    `hash`, `is_connected`, `sampling_period`, `execute_sync`,
+    `hash`, `is_connected`, `sampling_period_ns`, `execute_sync`,
     `execute_async`, `connect`, and `disconnect`.
     """
 
@@ -68,7 +68,7 @@ class BackendController(Protocol):
         ...
 
     @property
-    def sampling_period(self) -> float:
+    def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
         ...
 

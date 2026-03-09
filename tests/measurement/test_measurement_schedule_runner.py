@@ -123,7 +123,7 @@ def test_execute_async_validates_builds_calls_backend_and_creates_result() -> No
 
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
-        sampling_period: ClassVar[float] = 2.0
+        sampling_period_ns: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute_async(
@@ -193,7 +193,7 @@ def test_execute_async_forwards_execution_options_to_backend_controller() -> Non
 
     class _BackendController:
         box_config: ClassVar[dict[str, int]] = {"shots": 2}
-        sampling_period: ClassVar[float] = 2.0
+        sampling_period_ns: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute_async(
@@ -264,7 +264,7 @@ def test_execute_async_falls_back_to_empty_device_config_without_box_config() ->
             return expected
 
     class _BackendController:
-        sampling_period: ClassVar[float] = 2.0
+        sampling_period_ns: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute_async(
@@ -326,7 +326,7 @@ def test_execute_async_prefers_backend_capture_decimation_hint() -> None:
             return expected
 
     class _BackendController:
-        sampling_period: ClassVar[float] = 2.0
+        sampling_period_ns: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 8
 
         async def execute_async(
@@ -454,7 +454,7 @@ def test_execute_async_prefers_adapter_measurement_result_builder_when_available
 
     class _BackendController:
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
-        sampling_period: ClassVar[float] = 0.4
+        sampling_period_ns: ClassVar[float] = 0.4
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         async def execute_async(
@@ -507,7 +507,7 @@ def test_execute_sync_calls_backend_execute_sync() -> None:
             return BackendExecutionRequest(payload=object())
 
     class _BackendController:
-        sampling_period: ClassVar[float] = 0.4
+        sampling_period_ns: ClassVar[float] = 0.4
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
         def execute_sync(
@@ -550,7 +550,7 @@ def test_init_sets_default_adapter_and_constraint_profile_for_quel1(
     )
 
     class _Quel1Controller:
-        sampling_period: ClassVar[float] = 4.0
+        sampling_period_ns: ClassVar[float] = 4.0
 
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel1BackendController",
@@ -591,7 +591,7 @@ def test_init_ignores_constraint_mode_hint_for_quel1(
     )
 
     class _Quel1Controller:
-        sampling_period: ClassVar[float] = 0.4
+        sampling_period_ns: ClassVar[float] = 0.4
         MEASUREMENT_CONSTRAINT_MODE: ClassVar[str] = "quel3"
 
     monkeypatch.setattr(
@@ -616,7 +616,9 @@ def test_init_ignores_constraint_mode_hint_for_quel1(
 
 def test_init_raises_for_unsupported_backend_controller_without_adapter() -> None:
     """Given unsupported backend controller, when adapter is omitted, then init raises TypeError."""
-    backend_controller = type("_UnsupportedController", (), {"sampling_period": 0.4})()
+    backend_controller = type(
+        "_UnsupportedController", (), {"sampling_period_ns": 0.4}
+    )()
 
     with pytest.raises(TypeError, match="Unsupported backend controller"):
         _ = MeasurementScheduleRunner(
@@ -629,7 +631,7 @@ def test_init_requires_experiment_system_when_adapter_is_omitted() -> None:
     """Given omitted adapter without experiment system, when init runs, then it raises ValueError."""
 
     class _Quel1Controller:
-        sampling_period: ClassVar[float] = 0.4
+        sampling_period_ns: ClassVar[float] = 0.4
 
     with pytest.raises(ValueError, match="experiment_system"):
         _ = MeasurementScheduleRunner(
@@ -669,7 +671,7 @@ def test_init_uses_quel3_adapter_when_backend_controller_is_quel3(
     )
 
     class _Quel3Controller:
-        sampling_period: ClassVar[float] = 0.4
+        sampling_period_ns: ClassVar[float] = 0.4
 
     monkeypatch.setattr(
         "qubex.measurement.measurement_schedule_runner.Quel3BackendController",

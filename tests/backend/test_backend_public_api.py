@@ -7,7 +7,7 @@ from typing import get_args
 import qubex.backend as backend
 from qubex.backend.quel1 import (
     CAPTURE_DECIMATION_FACTOR as QUEL1_DECIMATION_FACTOR,
-    SAMPLING_PERIOD,
+    SAMPLING_PERIOD_NS,
     ExecutionMode,
     Quel1BackendController,
     Quel1BackendExecutionResult,
@@ -22,7 +22,7 @@ def test_backend_module_hides_quel1_specific_symbols() -> None:
     assert not hasattr(backend, "Quel1ExecutionPayload")
     assert not hasattr(backend, "Quel1BackendExecutionResult")
     assert not hasattr(backend, "CAPTURE_DECIMATION_FACTOR")
-    assert not hasattr(backend, "SAMPLING_PERIOD")
+    assert not hasattr(backend, "SAMPLING_PERIOD_NS")
 
 
 def test_backend_quel1_module_exposes_quel1_specific_symbols() -> None:
@@ -30,7 +30,7 @@ def test_backend_quel1_module_exposes_quel1_specific_symbols() -> None:
     assert Quel1BackendController.__name__ == "Quel1BackendController"
     assert Quel1ExecutionPayload.__name__ == "Quel1ExecutionPayload"
     assert Quel1BackendExecutionResult.__name__ == "Quel1BackendExecutionResult"
-    assert isinstance(SAMPLING_PERIOD, float)
+    assert isinstance(SAMPLING_PERIOD_NS, float)
     assert set(get_args(ExecutionMode)) == {"serial", "parallel"}
 
 

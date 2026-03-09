@@ -56,7 +56,7 @@ def _make_manager() -> Quel1ConnectionManager:
     runtime_context = Quel1RuntimeContext(
         driver=_FakeDriver(),  # type: ignore[arg-type]
         qubecalib=_FakeQubeCalib(),  # type: ignore[arg-type]
-        sampling_period=2.0,
+        sampling_period_ns=2.0,
     )
     return Quel1ConnectionManager(runtime_context=runtime_context)
 

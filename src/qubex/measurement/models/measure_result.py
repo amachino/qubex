@@ -24,7 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 import qubex.visualization as viz
-from qubex.backend.quel1 import SAMPLING_PERIOD
+from qubex.backend.quel1 import SAMPLING_PERIOD_NS
 from qubex.measurement.classifiers import StateClassifier
 
 from .measurement_record import MeasurementRecord
@@ -75,7 +75,7 @@ class MeasureData:
     mode: MeasureMode
     raw: NDArray
     classifier: StateClassifier | None = None
-    sampling_period: float = SAMPLING_PERIOD
+    sampling_period: float = SAMPLING_PERIOD_NS
 
     def __post_init__(self) -> None:
         """Validate sampling metadata values."""

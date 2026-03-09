@@ -58,7 +58,7 @@ class Quel3MeasurementBackendAdapter:
         self._capture_targets_by_alias: dict[str, list[str]] = {}
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel3(
-                sampling_period_ns=backend_controller.sampling_period
+                sampling_period_ns=backend_controller.sampling_period_ns
             )
         self._constraint_profile = constraint_profile
 

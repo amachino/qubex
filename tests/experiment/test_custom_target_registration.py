@@ -25,13 +25,13 @@ class _BackendControllerStub:
         self,
         target_name: str,
         channel_name: str,
-        target_frequency: float | None = None,
+        target_frequency_ghz: float | None = None,
     ) -> None:
         self.define_calls.append(
             {
                 "target_name": target_name,
                 "channel_name": channel_name,
-                "target_frequency": target_frequency,
+                "target_frequency_ghz": target_frequency_ghz,
             }
         )
 

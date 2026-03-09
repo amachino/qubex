@@ -12,13 +12,13 @@ import yaml
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.backend.quel1.quel1_backend_constants import (
     DEFAULT_CAPTURE_DELAY,
-    DEFAULT_CNCO_FREQ,
-    DEFAULT_FNCO_FREQ,
-    DEFAULT_LO_FREQ,
+    DEFAULT_CNCO_FREQUENCY_HZ,
+    DEFAULT_FNCO_FREQUENCY_HZ,
+    DEFAULT_LO_FREQUENCY_HZ,
 )
 from qubex.system.config_loader import ConfigLoader
 from qubex.system.control_system import CapPort, GenPort, PortType
-from qubex.system.experiment_system import DEFAULT_PUMP_FREQUENCY
+from qubex.system.experiment_system import DEFAULT_PUMP_FREQUENCY_GHZ
 
 
 def _write_yaml(path: Path, data: dict) -> None:
@@ -200,7 +200,10 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert cp.jpa_params.get(1) is None
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
-        cp.get_pump_frequency(1), DEFAULT_PUMP_FREQUENCY, rel_tol=0, abs_tol=1e-12
+        cp.get_pump_frequency(1),
+        DEFAULT_PUMP_FREQUENCY_GHZ,
+        rel_tol=0,
+        abs_tol=1e-12,
     )
     assert math.isclose(cp.get_frequency_margin("READ"), 0.2, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
@@ -605,10 +608,11 @@ def test_configure_initializes_monitor_ports_for_quel1(tmp_path: Path) -> None:
     assert monitor_out_port.cnco_freq is None
     assert all(channel.fnco_freq is None for channel in monitor_out_port.channels)
     assert monitor_out_port.rfswitch == "pass"
-    assert monitor_in_port.lo_freq == DEFAULT_LO_FREQ
-    assert monitor_in_port.cnco_freq == DEFAULT_CNCO_FREQ
+    assert monitor_in_port.lo_freq == DEFAULT_LO_FREQUENCY_HZ
+    assert monitor_in_port.cnco_freq == DEFAULT_CNCO_FREQUENCY_HZ
     assert all(
-        channel.fnco_freq == DEFAULT_FNCO_FREQ for channel in monitor_in_port.channels
+        channel.fnco_freq == DEFAULT_FNCO_FREQUENCY_HZ
+        for channel in monitor_in_port.channels
     )
     assert all(
         channel.ndelay == DEFAULT_CAPTURE_DELAY for channel in monitor_in_port.channels

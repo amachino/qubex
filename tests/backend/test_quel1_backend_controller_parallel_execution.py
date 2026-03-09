@@ -62,7 +62,7 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
                     gen_sampled_sequence={"Q00": object()},
                     cap_sampled_sequence={"RQ00": object()},
                     resource_map={"Q00": [{}]},
-                    interval=128,
+                    interval_ns=128,
                     repeats=16,
                     integral_mode="integral",
                     dsp_demodulation=True,

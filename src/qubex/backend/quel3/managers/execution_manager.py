@@ -69,7 +69,7 @@ class Quel3ExecutionManager:
         *,
         quelware_endpoint: str,
         quelware_port: int,
-        sampling_period: float,
+        sampling_period_ns: float,
         capture_decimation_factor: int,
         client_mode: str = "server",
         standalone_unit_label: str | None = None,
@@ -80,7 +80,7 @@ class Quel3ExecutionManager:
         )
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
-        self._sampling_period = sampling_period
+        self._sampling_period_ns = sampling_period_ns
         self._capture_decimation_factor = capture_decimation_factor
         self._client_mode: Quel3ClientMode = normalized_client_mode
         self._standalone_unit_label = standalone_unit_label
@@ -97,9 +97,9 @@ class Quel3ExecutionManager:
         return self._quelware_port
 
     @property
-    def sampling_period(self) -> float:
+    def sampling_period_ns(self) -> float:
         """Return backend sampling period in ns."""
-        return self._sampling_period
+        return self._sampling_period_ns
 
     @property
     def client_mode(self) -> Quel3ClientMode:
@@ -218,7 +218,7 @@ class Quel3ExecutionManager:
                 sequencer = self._sequencer_builder.build(
                     payload=resolved_payload,
                     sequencer_factory=sequencer_factory,
-                    default_sampling_period_ns=self._sampling_period,
+                    default_sampling_period_ns=self._sampling_period_ns,
                     alias_bindings=alias_bindings,
                     iterations=timeline_iterations,
                 )
@@ -257,7 +257,7 @@ class Quel3ExecutionManager:
             payload=resolved_payload,
             shot_samples=shot_samples,
             sampling_period_ns=sampling_period_ns,
-            backend_sampling_period=self._sampling_period,
+            backend_sampling_period_ns=self._sampling_period_ns,
             capture_decimation_factor=self._capture_decimation_factor,
         )
 
@@ -610,7 +610,7 @@ class Quel3ExecutionManager:
         payload: Quel3ExecutionPayload,
         shot_samples: dict[str, dict[str, list[np.ndarray]]],
         sampling_period_ns: float | None,
-        backend_sampling_period: float,
+        backend_sampling_period_ns: float,
         capture_decimation_factor: int,
     ) -> Quel3BackendExecutionResult:
         """Build canonical measurement result from per-shot capture samples."""
@@ -640,21 +640,21 @@ class Quel3ExecutionManager:
                 else:
                     measurement_data[alias].append(samples[0])
 
-        base_sampling_period = (
+        base_sampling_period_ns = (
             sampling_period_ns
             if sampling_period_ns is not None
-            else backend_sampling_period
+            else backend_sampling_period_ns
         )
-        effective_sampling_period = (
-            base_sampling_period * capture_decimation_factor
+        effective_sampling_period_ns = (
+            base_sampling_period_ns * capture_decimation_factor
             if is_averaged
-            else base_sampling_period
+            else base_sampling_period_ns
         )
 
         return Quel3BackendExecutionResult(
             status={},
             data=dict(measurement_data),
-            config={"sampling_period_ns": effective_sampling_period},
+            config={"sampling_period_ns": effective_sampling_period_ns},
         )
 
     def _load_quelware_api(

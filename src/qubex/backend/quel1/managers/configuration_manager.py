@@ -63,8 +63,8 @@ class Quel1ConfigurationManager:
         *,
         box_name: str,
         port: int | tuple[int, int],
-        lo_freq: float | None,
-        cnco_freq: float | None,
+        lo_freq_hz: int | None,
+        cnco_freq_hz: int | None,
         vatt: int | None,
         sideband: str | None,
         fullscale_current: int | None,
@@ -79,11 +79,11 @@ class Quel1ConfigurationManager:
             vatt = None
             sideband = None
         if box.boxtype == "quel1se-riken8" and port not in box.get_input_ports():
-            lo_freq = None
+            lo_freq_hz = None
         box.config_port(
             port=port,
-            lo_freq=lo_freq,
-            cnco_freq=cnco_freq,
+            lo_freq=lo_freq_hz,
+            cnco_freq=cnco_freq_hz,
             vatt=vatt,
             sideband=sideband,
             fullscale_current=fullscale_current,
@@ -96,7 +96,7 @@ class Quel1ConfigurationManager:
         box_name: str,
         port: int | tuple[int, int],
         channel: int,
-        fnco_freq: float | None,
+        fnco_freq_hz: int | None,
     ) -> None:
         """Configure one box channel."""
         box = self._resolve_box(
@@ -106,7 +106,7 @@ class Quel1ConfigurationManager:
         box.config_channel(
             port=port,
             channel=channel,
-            fnco_freq=fnco_freq,
+            fnco_freq=fnco_freq_hz,
         )
 
     def config_runit(
@@ -115,7 +115,7 @@ class Quel1ConfigurationManager:
         box_name: str,
         port: int | tuple[int, int],
         runit: int,
-        fnco_freq: float | None,
+        fnco_freq_hz: int | None,
     ) -> None:
         """Configure one box runit."""
         box = self._resolve_box(
@@ -125,7 +125,7 @@ class Quel1ConfigurationManager:
         box.config_runit(
             port=port,
             runit=runit,
-            fnco_freq=fnco_freq,
+            fnco_freq=fnco_freq_hz,
         )
 
     def define_clockmaster(
@@ -201,37 +201,37 @@ class Quel1ConfigurationManager:
         *,
         target_name: str,
         channel_name: str,
-        target_frequency: float | None = None,
+        target_frequency_ghz: float | None = None,
     ) -> None:
         """Define one target in qubecalib."""
         self._runtime_context.qubecalib.define_target(
             target_name=target_name,
             channel_name=channel_name,
-            target_frequency=target_frequency,
+            target_frequency=target_frequency_ghz,
         )
 
     def modify_target_frequency(
         self,
         *,
         target: str,
-        frequency: float,
+        frequency_ghz: float,
     ) -> None:
         """Modify one target frequency in qubecalib."""
         self._runtime_context.qubecalib.modify_target_frequency(
             target,
-            frequency,
+            frequency_ghz,
         )
 
     def modify_target_frequencies(
         self,
         *,
-        frequencies: dict[str, float],
+        target_frequencies_ghz: dict[str, float],
     ) -> None:
         """Modify multiple target frequencies in qubecalib."""
-        for target, frequency in frequencies.items():
+        for target, frequency_ghz in target_frequencies_ghz.items():
             self.modify_target_frequency(
                 target=target,
-                frequency=frequency,
+                frequency_ghz=frequency_ghz,
             )
 
     def add_sequencer(self, *, sequencer: Sequencer) -> None:

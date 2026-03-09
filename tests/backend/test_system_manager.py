@@ -568,11 +568,11 @@ def test_modified_backend_settings_initializes_shared_read_box_once(
             *,
             box_name: str,
             port: int,
-            lo_freq: int | None,
-            cnco_freq: int,
+            lo_freq_hz: int | None,
+            cnco_freq_hz: int,
         ) -> None:
-            self._cache[box_name]["ports"][port]["lo_freq"] = lo_freq
-            self._cache[box_name]["ports"][port]["cnco_freq"] = cnco_freq
+            self._cache[box_name]["ports"][port]["lo_freq"] = lo_freq_hz
+            self._cache[box_name]["ports"][port]["cnco_freq"] = cnco_freq_hz
 
         def config_channel(
             self,
@@ -580,10 +580,10 @@ def test_modified_backend_settings_initializes_shared_read_box_once(
             box_name: str,
             port: int,
             channel: int,
-            fnco_freq: int,
+            fnco_freq_hz: int,
         ) -> None:
             self._cache[box_name]["ports"][port]["channels"][channel]["fnco_freq"] = (
-                fnco_freq
+                fnco_freq_hz
             )
 
         def config_runit(
@@ -592,10 +592,10 @@ def test_modified_backend_settings_initializes_shared_read_box_once(
             box_name: str,
             port: int,
             runit: int,
-            fnco_freq: int,
+            fnco_freq_hz: int,
         ) -> None:
             self._cache[box_name]["ports"][port]["runits"][runit]["fnco_freq"] = (
-                fnco_freq
+                fnco_freq_hz
             )
 
         def update_box_config_cache(self, box_configs: dict[str, dict]) -> None:

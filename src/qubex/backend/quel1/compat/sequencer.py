@@ -133,14 +133,14 @@ class Quel1Sequencer(Sequencer):
                 channel=channel_number,
             )
 
-        interval = self.interval if self.interval is not None else 10240
+        interval_ns = self.interval if self.interval is not None else 10240
         cap_e7_settings = driver.Converter.convert_to_cap_device_specific_sequence(
             gen_sampled_sequence=self.gen_sampled_sequence,
             cap_sampled_sequence=self.cap_sampled_sequence,
             resource_map=cap_resource_map,
             port_config=cap_target_portconf,
             repeats=self.repeats,
-            interval=interval,
+            interval=interval_ns,
             integral_mode=self.integral_mode,
             dsp_demodulation=self.dsp_demodulation,
             software_demodulation=self.software_demodulation,
@@ -155,7 +155,7 @@ class Quel1Sequencer(Sequencer):
             resource_map=gen_resource_map,
             port_config=gen_target_portconf,
             repeats=self.repeats,
-            interval=interval,
+            interval=interval_ns,
         )
         return cap_e7_settings, gen_e7_settings, cap_resource_map
 

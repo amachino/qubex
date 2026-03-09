@@ -83,7 +83,7 @@ class Quel1ExecutionManager:
             gen_sampled_sequence=payload.gen_sampled_sequence,
             cap_sampled_sequence=payload.cap_sampled_sequence,
             resource_map=payload.resource_map,
-            interval=payload.interval,
+            interval_ns=payload.interval_ns,
         )
         if mode == "parallel":
             return self._execute_sequencer_parallel(
@@ -147,14 +147,14 @@ class Quel1ExecutionManager:
         gen_sampled_sequence: dict[str, GenSampledSequenceProtocol],
         cap_sampled_sequence: dict[str, CapSampledSequenceProtocol],
         resource_map: dict[str, list[dict[str, Any]]],
-        interval: int,
+        interval_ns: int,
     ) -> Sequencer:
         """Create QuEL-1 sequencer instance from prepared execution payload."""
         return Quel1Sequencer(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map=resource_map,  # type: ignore[arg-type]
-            interval=interval,
+            interval=interval_ns,
             sysdb=self._runtime_context.qubecalib.sysdb,
             # Keep passing connected system for constructor compatibility across
             # old/new driver packages.

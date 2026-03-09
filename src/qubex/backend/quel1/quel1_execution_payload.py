@@ -13,7 +13,7 @@ class Quel1ExecutionPayload:
     gen_sampled_sequence: dict[str, Any]
     cap_sampled_sequence: dict[str, Any]
     resource_map: dict[str, list[dict[str, Any]]]
-    interval: int
+    interval_ns: int
     repeats: int
     integral_mode: str
     dsp_demodulation: bool
