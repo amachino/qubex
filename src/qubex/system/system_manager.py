@@ -607,6 +607,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             )
             return
         system_synchronizer.sync_experiment_system_to_hardware(
+            experiment_system=self.experiment_system,
             boxes=boxes,
             parallel=parallel,
             target_labels=target_labels,

@@ -205,6 +205,8 @@ Status legend:
   - Treat instrument deployment as configuration-stage behavior triggered by
     `SystemManager.push(...)`.
   - Keep execution manager focused on run-time sequencing and result retrieval.
+  - Do not require controller-side logical-model rebuild before QuEL-3
+    `push()`.
   - Split QuEL-3 push responsibilities explicitly:
     - system-side planner converts active targets into
       `InstrumentDeployRequest`

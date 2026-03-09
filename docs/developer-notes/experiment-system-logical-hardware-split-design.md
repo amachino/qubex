@@ -29,6 +29,8 @@ This note focuses on the QuEL-3 path and removes intermediate models that are no
    `Quel3ConfigurationManager`.
 5. `InstrumentMode.FIXED_TIMELINE` is fixed in this phase.
 6. `backend_settings_pull` remains unsupported on QuEL-3.
+7. QuEL-3 does not persist `ExperimentSystem` inside the controller or
+   synchronizer just to support `push()`.
 
 ## Scope
 
@@ -207,7 +209,8 @@ Optional delegation:
 ## Push flow
 
 1. `SystemManager.push(box_ids)` selects QuEL-3 synchronizer.
-2. `Quel3SystemSynchronizer.sync_experiment_system_to_hardware(...)` is called.
+2. `Quel3SystemSynchronizer.sync_experiment_system_to_hardware(...)` is called
+   with the current `experiment_system`.
 3. Synchronizer asks the system-side planner for deploy requests.
 4. Synchronizer delegates the requests to backend-side
    `Quel3ConfigurationManager`.
@@ -244,7 +247,7 @@ Capability policy:
 
 ### Phase 3
 
-- remove QuEL-3 no-op push behavior
+- remove QuEL-3 synchronizer-side cached `ExperimentSystem` state
 - keep pull/snapshot unsupported with explicit error messaging
 
 ## Test plan

@@ -160,10 +160,8 @@ def test_build_deploy_requests_raises_when_frequency_margin_reaches_nyquist() ->
         )
 
 
-def test_quel3_synchronizer_plans_then_deploys_from_last_synced_experiment_system() -> (
-    None
-):
-    """Given synchronized state, synchronizer should plan requests then delegate deploy."""
+def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> None:
+    """Given push input, synchronizer should plan requests from that experiment system."""
     planner_calls: list[tuple[object, tuple[str, ...], tuple[str, ...]]] = []
     deploy_calls: list[tuple[InstrumentDeployRequest, ...]] = []
     requests = (
@@ -206,12 +204,10 @@ def test_quel3_synchronizer_plans_then_deploys_from_last_synced_experiment_syste
     )
 
     experiment_system = object()
-    synchronizer.sync_experiment_system_to_backend_controller(
-        cast(Any, experiment_system)
-    )
     boxes = [SimpleNamespace(id="BOX1"), SimpleNamespace(id="BOX2")]
 
     synchronizer.sync_experiment_system_to_hardware(
+        experiment_system=cast(Any, experiment_system),
         boxes=cast(Any, boxes),
         parallel=True,
         target_labels=["Q00", "RQ00"],
@@ -221,14 +217,45 @@ def test_quel3_synchronizer_plans_then_deploys_from_last_synced_experiment_syste
     assert deploy_calls == [requests]
 
 
-def test_quel3_synchronizer_raises_if_push_called_before_load() -> None:
-    """Given unsynchronized state, when pushing on QuEL-3, then synchronizer raises RuntimeError."""
+def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
+    """Given controller-sync input, QuEL-3 push should use the experiment system passed to hardware sync."""
+    planner_calls: list[object] = []
+
+    class _FakeDeployPlanner:
+        def build_deploy_requests(
+            self,
+            *,
+            experiment_system: object,
+            box_ids: list[str],
+            target_labels: list[str] | None = None,
+        ) -> tuple[InstrumentDeployRequest, ...]:
+            del box_ids, target_labels
+            planner_calls.append(experiment_system)
+            return ()
+
+    class _FakeBackendController:
+        def deploy_instruments(
+            self,
+            *,
+            requests: tuple[InstrumentDeployRequest, ...],
+        ) -> dict[str, tuple[object, ...]]:
+            assert requests == ()
+            return {}
+
     synchronizer = Quel3SystemSynchronizer(
-        backend_controller=cast(Any, SimpleNamespace()),
+        backend_controller=cast(Any, _FakeBackendController()),
+        deploy_planner=cast(Any, _FakeDeployPlanner()),
+    )
+    synced_experiment_system = object()
+    pushed_experiment_system = object()
+    synchronizer.sync_experiment_system_to_backend_controller(
+        cast(Any, synced_experiment_system)
     )
 
-    with pytest.raises(RuntimeError, match="Call load\\(\\) before push\\(\\)"):
-        synchronizer.sync_experiment_system_to_hardware(
-            boxes=cast(Any, [SimpleNamespace(id="BOX1")]),
-            parallel=None,
-        )
+    synchronizer.sync_experiment_system_to_hardware(
+        experiment_system=cast(Any, pushed_experiment_system),
+        boxes=cast(Any, [SimpleNamespace(id="BOX1")]),
+        parallel=None,
+    )
+
+    assert planner_calls == [pushed_experiment_system]

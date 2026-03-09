@@ -29,6 +29,7 @@ class SystemSynchronizer(Protocol):
     def sync_experiment_system_to_hardware(
         self,
         *,
+        experiment_system: ExperimentSystem,
         boxes: Sequence[Box],
         parallel: bool | None = None,
         target_labels: Sequence[str] | None = None,

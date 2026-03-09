@@ -26,7 +26,6 @@ class Quel3SystemSynchronizer:
         self._deploy_planner = (
             deploy_planner if deploy_planner is not None else Quel3TargetDeployPlanner()
         )
-        self._experiment_system: ExperimentSystem | None = None
 
     @property
     def backend_controller(self) -> Quel3BackendController:
@@ -42,28 +41,24 @@ class Quel3SystemSynchronizer:
         self,
         experiment_system: ExperimentSystem,
     ) -> None:
-        """Store current experiment-system model for upcoming push operation."""
-        self._experiment_system = experiment_system
+        """No-op: QuEL-3 does not rebuild controller state from `ExperimentSystem`."""
+        del experiment_system
 
     def sync_experiment_system_to_hardware(
         self,
         *,
+        experiment_system: ExperimentSystem,
         boxes: Sequence[Box],
         parallel: bool | None = None,
         target_labels: Sequence[str] | None = None,
     ) -> None:
         """Deploy instruments for selected boxes from the current target registry."""
         del parallel
-        if self._experiment_system is None:
-            raise RuntimeError(
-                "Experiment system is not synchronized for QuEL-3 push. "
-                "Call load() before push()."
-            )
         box_ids = [box.id for box in boxes]
         if len(box_ids) == 0:
             return
         requests = self._deploy_planner.build_deploy_requests(
-            experiment_system=self._experiment_system,
+            experiment_system=experiment_system,
             box_ids=box_ids,
             target_labels=target_labels,
         )

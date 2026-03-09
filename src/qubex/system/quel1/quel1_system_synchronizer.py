@@ -111,12 +111,13 @@ class Quel1SystemSynchronizer:
     def sync_experiment_system_to_hardware(
         self,
         *,
+        experiment_system: ExperimentSystem,
         boxes: Sequence[Box],
         parallel: bool | None = None,
         target_labels: Sequence[str] | None = None,
     ) -> None:
         """Apply experiment-system port/channel parameters to hardware boxes."""
-        del target_labels
+        del experiment_system, target_labels
         if parallel is None:
             parallel = True
         if not boxes:

@@ -412,21 +412,29 @@ def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
         FakeBox(id="A", ports=()),
         FakeBox(id="B", ports=()),
     ]
-    calls: list[tuple[list[str], bool | None, tuple[str, ...]]] = []
+    experiment_system = SimpleNamespace(hash=11)
+    calls: list[tuple[object, list[str], bool | None, tuple[str, ...]]] = []
 
     class _SystemSyncManager:
         def sync_experiment_system_to_hardware(
             self,
             *,
+            experiment_system: object,
             boxes: Sequence[FakeBox],
             parallel: bool | None = None,
             target_labels: Sequence[str] | None = None,
         ) -> None:
             calls.append(
-                ([box.id for box in boxes], parallel, tuple(target_labels or ()))
+                (
+                    experiment_system,
+                    [box.id for box in boxes],
+                    parallel,
+                    tuple(target_labels or ()),
+                )
             )
 
     monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_experiment_system", experiment_system)
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
@@ -434,7 +442,7 @@ def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
         target_labels=["Q00", "RQ00"],
     )
 
-    assert calls == [(["A", "B"], True, ("Q00", "RQ00"))]
+    assert calls == [(experiment_system, ["A", "B"], True, ("Q00", "RQ00"))]
 
 
 def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
@@ -446,21 +454,29 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
         FakeBox(id="A", ports=()),
         FakeBox(id="B", ports=()),
     ]
-    calls: list[tuple[list[str], bool | None, tuple[str, ...]]] = []
+    experiment_system = SimpleNamespace(hash=11)
+    calls: list[tuple[object, list[str], bool | None, tuple[str, ...]]] = []
 
     class _SystemSyncManager:
         def sync_experiment_system_to_hardware(
             self,
             *,
+            experiment_system: object,
             boxes: Sequence[FakeBox],
             parallel: bool | None = None,
             target_labels: Sequence[str] | None = None,
         ) -> None:
             calls.append(
-                ([box.id for box in boxes], parallel, tuple(target_labels or ()))
+                (
+                    experiment_system,
+                    [box.id for box in boxes],
+                    parallel,
+                    tuple(target_labels or ()),
+                )
             )
 
     monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_experiment_system", experiment_system)
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
         boxes=boxes,  # type: ignore[arg-type]
@@ -468,7 +484,7 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
         target_labels=None,
     )
 
-    assert calls == [(["A", "B"], False, ())]
+    assert calls == [(experiment_system, ["A", "B"], False, ())]
 
 
 def test_sync_experiment_system_to_hardware_skips_without_system_synchronizer(

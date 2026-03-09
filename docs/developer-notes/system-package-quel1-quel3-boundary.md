@@ -12,6 +12,9 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 - QuEL-3 synchronizer is currently no-op; backend-settings pull path is absent.
 - Core model classes still include QuEL-1-oriented constants/traits in
   `control_system.py` and `experiment_system.py`.
+- QuEL-1 rebuilds controller-side runtime model from `ExperimentSystem`.
+- QuEL-3 does not require controller-side logical-model rebuild before `push()`;
+  it can consume `ExperimentSystem` directly at hardware-sync time.
 
 ## Boundary decision
 
@@ -53,6 +56,9 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
    - system-side planner converts logical targets to deploy requests
    - backend-side configuration manager owns quelware deploy execution and cache
    while keeping backend-settings pull unsupported.
+7. Keep `sync_experiment_system_to_backend_controller(...)` meaningful for
+   QuEL-1 rebuilds, but avoid using it as a fake pre-push cache step on
+   QuEL-3.
 
 ## Post-beta refactor candidates
 
