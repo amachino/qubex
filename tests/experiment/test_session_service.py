@@ -45,7 +45,6 @@ class _ContextStub:
         self.box_ids = ["Q2A", "Q2B"]
         self.targets = {"Q00": object(), "RQ00": object()}
         self.backend_controller = object()
-        self.backend_controller_override: object | None = None
         self.system_manager = system_manager
         self.measurement = measurement
         self.chip_id = "64Qv2"
@@ -150,38 +149,6 @@ def test_connect_uses_measurement_and_sync_hook(monkeypatch) -> None:
             },
         ),
     ]
-    assert sync_calls == ["sync", "sync"]
-
-
-def test_configure_reuses_backend_controller_override(monkeypatch) -> None:
-    """Given a backend controller override, configure should reuse it during reload."""
-    calls: list[tuple[str, dict[str, object]]] = []
-    backend_controller = object()
-
-    context = _ContextStub(
-        system_manager=_SystemManagerStub(calls),
-        measurement=_MeasurementStub(calls),
-        config_path="config-dir",
-        params_path="params-dir",
-        calls=calls,
-    )
-    context.backend_controller_override = backend_controller
-    sync_calls: list[str] = []
-
-    monkeypatch.setattr(
-        SessionService,
-        "_sync_pulse_sampling_period",
-        lambda self: sync_calls.append("sync") or 0.4,
-    )
-
-    service = SessionService(
-        experiment_context=cast(ExperimentContext, context),
-    )
-
-    service.configure(box_ids=["Q2A"], exclude=None, mode=None)
-
-    assert calls[0][0] == "system_manager.load"
-    assert calls[0][1]["backend_controller"] is backend_controller
     assert sync_calls == ["sync", "sync"]
 
 

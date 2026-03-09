@@ -59,11 +59,13 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 7. Keep `sync_experiment_system_to_backend_controller(...)` meaningful for
    QuEL-1 rebuilds, but avoid using it as a fake pre-push cache step on
    QuEL-3.
-8. When a custom backend controller is injected at `Experiment(...)` or
-   `SystemManager.load(...)` time, preserve that controller instance across
-   QuEL-3 reload/configure flows instead of recreating a default controller.
-   This is required for runtime-specific settings such as standalone
-   `client_mode` and `standalone_unit_label`.
+8. Document the current singleton assumption explicitly:
+   - one active experiment/measurement session per process
+   - no supported interleaving of multiple sessions with different backend
+     runtime settings
+9. Plan a post-beta refactor to move `SystemManager` to session/experiment-owned
+   state so custom backend controller/runtime settings are owned by the session
+   rather than ambient singleton state.
 
 ## Post-beta refactor candidates
 

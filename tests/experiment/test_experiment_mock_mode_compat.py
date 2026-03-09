@@ -82,7 +82,7 @@ def test_experiment_init_creates_session_service_with_context(monkeypatch) -> No
 def test_experiment_init_forwards_backend_controller_to_context(
     monkeypatch,
 ) -> None:
-    """Given a backend controller override, ExperimentContext should receive it."""
+    """Given a custom backend controller, ExperimentContext should receive it."""
     called: dict[str, object] = {}
 
     class _ExperimentContext:

@@ -171,7 +171,6 @@ class ExperimentContext:
             configuration_mode = "ge-cr-cr"
         if mock_mode is None:
             mock_mode = False
-        self._backend_controller_override = backend_controller
 
         self._load_config(
             chip_id=chip_id,
@@ -390,11 +389,6 @@ class ExperimentContext:
     def backend_controller(self) -> SystemBackendController:
         """Return the backend controller."""
         return self.system_manager.backend_controller
-
-    @property
-    def backend_controller_override(self) -> SystemBackendController | None:
-        """Return the configured backend controller override, if any."""
-        return self._backend_controller_override
 
     @property
     def params(self) -> ControlParams:

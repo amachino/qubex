@@ -33,9 +33,10 @@ Related policy:
 - QuEL-3 backend runtime now supports two client modes:
   - `server`
   - `standalone` with required `standalone_unit_label`
-- When `Experiment(..., backend_controller=...)` injects a custom
-  `Quel3BackendController`, the same controller instance is reused through
-  subsequent `exp.configure()` / `SystemManager.load()` reloads.
+- Current runtime still uses process-global `SystemManager` singleton state:
+  - one active experiment/measurement session per process is assumed
+  - `Experiment(..., backend_controller=...)` is treated as session-start
+    configuration, not per-reload override state
 - `quelware-client` exposes `PORT`/`INSTRUMENT` resources and currently
   represents readout paths as transceiver-style resources in examples
   (`...:p0p1trx`).
@@ -228,8 +229,6 @@ Status legend:
   - Backend configuration-manager responsibilities:
     - quelware client/session lifecycle for deploy
     - deploy result capture for execution lookup
-    - preserve one injected backend controller/runtime override across
-      `Experiment.configure()`-driven reloads
   - Shared-port deployment policy:
     - one port may host multiple instruments
     - configuration manager must not collapse same-port requests to one
@@ -238,6 +237,16 @@ Status legend:
       - first request on a port: `append=False`
       - subsequent requests on the same port, within the same session:
         `append=True`
+  - Session/runtime assumption for current scope:
+    - `SystemManager` remains singleton-managed
+    - QuEL-3 standalone/server runtime selection is assumed stable for the
+      active session
+    - interleaving multiple active `Experiment` / `Measurement` objects with
+      different backend runtime settings in one process is not supported
+  - Future direction:
+    - move `SystemManager` from process-global singleton state to
+      session/experiment-owned state
+    - remove remaining ambient runtime assumptions at that point
   - Keep QuEL-3 backend-settings pull/snapshot capability unsupported.
 
 ## Proposed minimum beta contract

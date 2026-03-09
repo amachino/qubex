@@ -233,11 +233,15 @@ Optional delegation:
 
 Reload/runtime note:
 
-- If `Experiment(..., backend_controller=...)` injects a custom
-  `Quel3BackendController` (for example standalone mode with one explicit unit
-  label), that controller instance must be reused across `exp.configure()` /
-  `SystemManager.load()` reloads so the runtime mode does not silently fall
-  back to default server-mode settings.
+- Current runtime model still assumes one active session per process because
+  `SystemManager` remains singleton-managed.
+- `Experiment(..., backend_controller=...)` configures the active session at
+  startup. Subsequent `exp.configure()` calls rely on the same ambient
+  `SystemManager.backend_controller` as long as no other session reconfigures
+  that singleton.
+- Future refactor target:
+  - make `SystemManager` session/experiment-owned
+  - remove process-global controller/runtime coupling
 
 Capability policy:
 

@@ -100,6 +100,11 @@ class SystemManager:
     It exposes explicit pull/push operations and keeps a cached hash-based
     snapshot for consistency checks.
 
+    Current runtime assumption:
+    - one active experiment/measurement session per process
+    - this class remains singleton-managed until a later refactor moves it to
+      session/experiment-owned state
+
     Attributes
     ----------
     _instance : SystemManager
@@ -340,7 +345,7 @@ class SystemManager:
         backend_kind : BackendKind | None, optional
             Backend family used for this experiment session.
         backend_controller : SystemBackendController | None, optional
-            Backend controller override reused for this experiment session.
+            Backend controller to install for the active experiment session.
         mock_mode : bool, optional
             If `True`, skip backend controller model synchronization.
         """
