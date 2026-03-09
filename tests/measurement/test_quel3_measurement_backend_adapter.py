@@ -471,8 +471,8 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
     assert event_b.phase_offset_deg == pytest.approx(30.0)
 
 
-def test_quel3_adapter_builds_port_binding_when_alias_is_missing() -> None:
-    """Given missing alias mapping, when building payload, then port binding is embedded."""
+def test_quel3_adapter_rejects_missing_alias_mapping() -> None:
+    """Given missing alias mapping, when building payload, then it fails fast."""
     target = "RQ00"
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
@@ -507,14 +507,12 @@ def test_quel3_adapter_builds_port_binding_when_alias_is_missing() -> None:
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
     )
 
-    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
-    payload = request.payload
-    assert isinstance(payload, Quel3ExecutionPayload)
-    assert payload.instrument_bindings[target] == "port:unit-a-3"
+    with pytest.raises(ValueError, match="Missing QuEL-3 instrument alias mapping"):
+        adapter.build_execution_request(schedule=schedule, config=_make_config())
 
 
-def test_quel3_adapter_rejects_port_binding_without_physical_metadata() -> None:
-    """Given missing physical port metadata, when building payload, then it raises ValueError."""
+def test_quel3_adapter_does_not_require_physical_port_metadata_with_alias_map() -> None:
+    """Given alias mapping, when building payload, then physical port metadata is not required."""
     target = "RQ00"
     schedule = MeasurementSchedule.model_construct(
         pulse_schedule=_FakePulseSchedule(
@@ -538,56 +536,14 @@ def test_quel3_adapter_rejects_port_binding_without_physical_metadata() -> None:
             ),
         ),
         constraint_profile=MeasurementConstraintProfile.quel3(0.4),
-    )
-
-    with pytest.raises(ValueError, match=r"requires port metadata with `box_id`"):
-        adapter.build_execution_request(schedule=schedule, config=_make_config())
-
-
-def test_quel3_adapter_resolves_logical_port_id_to_box_port_binding() -> None:
-    """Given logical port IDs, when building payload, then physical box-port bindings are embedded."""
-    target = "RQ00"
-    schedule = MeasurementSchedule.model_construct(
-        pulse_schedule=_FakePulseSchedule(
-            duration=1.2,
-            sequences={
-                target: _pulse_array(
-                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
-                    sampling_period=0.4,
-                )
-            },
-        ),
-        capture_schedule=CaptureSchedule(
-            captures=[
-                Capture(
-                    channels=[target],
-                    start_time=0.4,
-                    duration=0.4,
-                ),
-            ]
-        ),
-    )
-    adapter = Quel3MeasurementBackendAdapter(
-        backend_controller=_make_backend_controller(),
-        experiment_system=cast(
-            Any,
-            _FakeExperimentSystem(
-                target_port_ids={target: "QT1.CTRL1"},
-                capture_port_ids={target: "QT1.READ0.IN"},
-                target_port_bindings={target: ("QT1", 3)},
-                capture_port_bindings={target: ("QT1", 0)},
-                box_names={"QT1": "unit-a"},
-            ),
-        ),
-        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: "alias-RQ00"},
     )
 
     request = adapter.build_execution_request(schedule=schedule, config=_make_config())
-
     payload = request.payload
     assert isinstance(payload, Quel3ExecutionPayload)
-    assert payload.instrument_bindings[target] == "port:unit-a-3"
-    assert payload.capture_port_bindings[target] == "unit-a-0"
+    assert payload.instrument_bindings[target] == "alias:alias-RQ00"
+    assert payload.capture_port_bindings == {}
 
 
 def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> None:

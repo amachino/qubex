@@ -308,6 +308,7 @@ class Quel3ExecutionManager:
                 )
             capture_port_binding = payload.capture_port_bindings.get(target)
             alias = cls._resolve_alias_from_binding(
+                target=target,
                 resolver=resolver,
                 binding=binding,
                 capture_port_binding=capture_port_binding,
@@ -393,6 +394,7 @@ class Quel3ExecutionManager:
     def _resolve_alias_from_binding(
         cls,
         *,
+        target: str,
         resolver: InstrumentResolverProtocol,
         binding: str,
         capture_port_binding: str | None,
@@ -424,6 +426,7 @@ class Quel3ExecutionManager:
                 else None
             )
             return cls._resolve_alias_from_port_binding(
+                target=target,
                 resolver=resolver,
                 port_binding=port_binding,
                 capture_port_binding=capture_binding,
@@ -436,6 +439,7 @@ class Quel3ExecutionManager:
     def _resolve_alias_from_port_binding(
         cls,
         *,
+        target: str,
         resolver: InstrumentResolverProtocol,
         port_binding: _PortBinding,
         capture_port_binding: _PortBinding | None,
@@ -490,6 +494,8 @@ class Quel3ExecutionManager:
                 f"`{port_binding.unit}-{port_binding.out_port}`. available={available}"
             )
         unique_candidates = sorted(dict.fromkeys(candidates))
+        if target in unique_candidates:
+            return target
         if len(unique_candidates) > 1:
             raise ValueError(
                 "Ambiguous instrument aliases for binding "

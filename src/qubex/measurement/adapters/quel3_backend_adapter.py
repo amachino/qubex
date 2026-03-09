@@ -113,18 +113,17 @@ class Quel3MeasurementBackendAdapter:
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
         output_target_labels_by_target: dict[str, str] = {}
         instrument_bindings: dict[str, str] = {}
-        capture_port_bindings: dict[str, str] = {}
         target_registry = self._experiment_system.target_registry
         alias_map = self._instrument_alias_map
 
         for target in pulse_schedule.labels:
-            target_obj = self._experiment_system.get_target(target)
-            target_port_id = self._resolve_runtime_port_binding(target_obj.channel.port)
             configured_alias = str(alias_map.get(target, "")).strip()
-            if len(configured_alias) > 0:
-                instrument_bindings[target] = f"alias:{configured_alias}"
-            else:
-                instrument_bindings[target] = f"port:{target_port_id}"
+            if len(configured_alias) == 0:
+                raise ValueError(
+                    "Missing QuEL-3 instrument alias mapping for "
+                    f"target `{target}`. Configure instruments before measurement."
+                )
+            instrument_bindings[target] = f"alias:{configured_alias}"
 
             sequence = pulse_schedule.get_sequence(target, copy=False)
             events, waveform_index = self._create_waveform_events(
@@ -149,10 +148,6 @@ class Quel3MeasurementBackendAdapter:
                 capture_windows=capture_windows,
                 length_ns=pulse_schedule.duration,
             )
-            if len(captures) > 0:
-                capture_port_bindings[target] = self._resolve_runtime_port_binding(
-                    self._experiment_system.get_read_in_target(target).channel.port
-                )
             try:
                 output_target_labels_by_target[target] = str(
                     self._experiment_system.resolve_qubit_label(target)
@@ -172,7 +167,6 @@ class Quel3MeasurementBackendAdapter:
             repeats=config.n_shots,
             capture_mode=capture_mode,
             instrument_bindings=instrument_bindings,
-            capture_port_bindings=capture_port_bindings,
         )
         self._capture_targets_by_alias = self._build_capture_targets_by_alias(payload)
         return BackendExecutionRequest(payload=payload)

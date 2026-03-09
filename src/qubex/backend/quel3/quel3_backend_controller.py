@@ -305,6 +305,7 @@ class Quel3BackendController(BackendController):
             box_names=box_names,
             parallel=parallel,
         )
+        self._configuration_manager.refresh_instrument_cache()
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""

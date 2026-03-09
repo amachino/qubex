@@ -349,6 +349,40 @@ def test_constructor_accepts_injected_managers() -> None:
     assert controller.standalone_unit_label == "quel3-02-a01"
 
 
+def test_connect_refreshes_existing_instrument_cache() -> None:
+    """Given connect on QuEL-3, controller should refresh alias cache from existing instruments."""
+    calls: list[str] = []
+    connection_manager = SimpleNamespace(
+        hash=11,
+        is_connected=False,
+        quelware_endpoint="host-a",
+        quelware_port=50051,
+        client_mode="server",
+        standalone_unit_label=None,
+        connect=lambda box_names=None, parallel=None: calls.append("connect"),
+        disconnect=lambda: None,
+    )
+    configuration_manager = SimpleNamespace(
+        quelware_endpoint="host-a",
+        quelware_port=50051,
+        client_mode="server",
+        standalone_unit_label=None,
+        target_alias_map={},
+        last_deployed_instrument_infos={},
+        refresh_instrument_cache=lambda: calls.append("refresh") or {},
+        deploy_instruments=lambda *, requests: {},
+    )
+
+    controller = Quel3BackendController(
+        connection_manager=cast(Any, connection_manager),
+        configuration_manager=cast(Any, configuration_manager),
+    )
+
+    controller.connect(["A"])
+
+    assert calls == ["connect", "refresh"]
+
+
 def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> None:
     """Given mismatched injected manager runtime values, constructor should fail fast."""
     connection_manager = SimpleNamespace(
@@ -506,6 +540,38 @@ def test_resolve_payload_rejects_ambiguous_port_binding() -> None:
             payload=payload,
             resolver=cast(Any, resolver),
         )
+
+
+def test_resolve_payload_prefers_exact_target_alias_for_ambiguous_port_binding() -> (
+    None
+):
+    """Given ambiguous port candidates, resolving should prefer an alias matching the target label."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={"Q00": payload.fixed_timelines["alias-rq00"]},
+        instrument_bindings={"Q00": "port:quel3-02-a01-4"},
+        capture_port_bindings={"Q00": "quel3-02-a01-0"},
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "Q00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00p04",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            ),
+            "Q00-CR": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00p04",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            ),
+        }
+    )
+
+    resolved = Quel3ExecutionManager._resolve_payload(
+        payload=payload,
+        resolver=cast(Any, resolver),
+    )
+
+    assert set(resolved.fixed_timelines.keys()) == {"Q00"}
 
 
 def test_parse_instrument_port_binding_rejects_legacy_port_id_format() -> None:

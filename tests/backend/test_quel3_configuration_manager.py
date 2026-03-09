@@ -313,3 +313,64 @@ def test_load_client_factory_uses_configured_client_runtime(
         "client_mode": "standalone",
         "standalone_unit_label": "quel3-02-a01",
     }
+
+
+def test_refresh_instrument_cache_loads_existing_instruments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given existing quelware instruments, refreshing cache should expose alias mappings."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    class _Category:
+        name = "INSTRUMENT"
+
+    class _ResourceInfo:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+            self.category = _Category()
+
+    class _Definition:
+        def __init__(self, alias: str) -> None:
+            self.alias = alias
+
+    class _InstrumentInfo:
+        def __init__(self, alias: str, port_id: str) -> None:
+            self.definition = _Definition(alias)
+            self.port_id = port_id
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+
+        async def list_resource_infos(self) -> list[object]:
+            return [_ResourceInfo("inst-q00"), _ResourceInfo("inst-rq00")]
+
+        async def get_instrument_info(self, resource_id: str) -> object:
+            infos = {
+                "inst-q00": _InstrumentInfo("Q00", "quel3-02-a01:tx_p04"),
+                "inst-rq00": _InstrumentInfo("RQ00", "quel3-02-a01:trx_p00p04"),
+            }
+            return infos[resource_id]
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_client_factory",
+        lambda: (lambda endpoint, port: _FakeClient()),
+    )
+
+    cached = manager.refresh_instrument_cache()
+
+    assert set(cached.keys()) == {"Q00", "RQ00"}
+    assert manager.target_alias_map == {"Q00": "Q00", "RQ00": "RQ00"}
+    assert set(manager.last_deployed_instrument_infos.keys()) == {"Q00", "RQ00"}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, TypeVar
@@ -88,6 +89,10 @@ class Quel3ConfigurationManager:
         """Deploy instruments for the provided QuEL-3 requests."""
         return _run_async(lambda: self._deploy_instruments(requests=tuple(requests)))
 
+    def refresh_instrument_cache(self) -> dict[str, tuple[object, ...]]:
+        """Refresh cached alias mappings from existing quelware instruments."""
+        return _run_async(self._refresh_instrument_cache)
+
     async def _deploy_instruments(
         self,
         *,
@@ -156,12 +161,56 @@ class Quel3ConfigurationManager:
         self._target_alias_map = target_alias_map
         return deployed
 
+    async def _refresh_instrument_cache(self) -> dict[str, tuple[object, ...]]:
+        """Load existing fixed-timeline instruments into local alias caches."""
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._quelware_endpoint,
+            self._quelware_port,
+        ) as client:
+            resource_infos = await client.list_resource_infos()
+            instrument_resource_ids = [
+                getattr(resource_info, "id", None)
+                for resource_info in resource_infos
+                if self._is_instrument_resource(resource_info)
+            ]
+            instrument_infos = await asyncio.gather(
+                *(
+                    client.get_instrument_info(resource_id)
+                    for resource_id in instrument_resource_ids
+                )
+            )
+
+        deployed: dict[str, tuple[object, ...]] = {}
+        target_alias_map: dict[str, str] = {}
+        for instrument_info in instrument_infos:
+            definition = getattr(instrument_info, "definition", None)
+            alias = getattr(definition, "alias", None)
+            if not isinstance(alias, str) or len(alias.strip()) == 0:
+                continue
+            normalized_alias = alias.strip()
+            deployed[normalized_alias] = (instrument_info,)
+            target_alias_map[normalized_alias] = normalized_alias
+
+        self._last_deployed_instrument_infos = deployed
+        self._target_alias_map = target_alias_map
+        return dict(deployed)
+
     def _load_quelware_client_factory(self) -> Callable[[str, int], Any]:
         """Import quelware client factory lazily."""
         return load_quelware_client_factory(
             client_mode=self._client_mode,
             standalone_unit_label=self._standalone_unit_label,
         )
+
+    @staticmethod
+    def _is_instrument_resource(resource_info: object) -> bool:
+        """Return whether one listed resource info represents an instrument."""
+        category = getattr(resource_info, "category", None)
+        category_name = getattr(category, "name", None)
+        if isinstance(category_name, str):
+            return category_name == "INSTRUMENT"
+        return str(category) == "INSTRUMENT"
 
     @staticmethod
     def _load_instrument_entities() -> tuple[type[Any], type[Any], Any, Any]:
