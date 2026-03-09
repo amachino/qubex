@@ -23,8 +23,10 @@ This note focuses on the QuEL-3 path and removes intermediate models that are no
 
 1. `ExperimentSystem` keeps logical ownership only.
 2. QuEL-3 hardware deployment is executed during `SystemManager.push(...)`.
-3. QuEL-3 deployment is implemented by a dedicated `Quel3ConfigurationManager`.
-4. `Quel3ConfigurationManager` builds quelware deploy requests directly from `TargetRegistry`.
+3. QuEL-3 planning is implemented by a system-side planner that consumes
+   `TargetRegistry`.
+4. QuEL-3 deploy execution is implemented by a backend-side
+   `Quel3ConfigurationManager`.
 5. `InstrumentMode.FIXED_TIMELINE` is fixed in this phase.
 6. `backend_settings_pull` remains unsupported on QuEL-3.
 
@@ -69,14 +71,18 @@ Responsibilities:
 Owners:
 
 - `Quel3SystemSynchronizer` as push entrypoint
-- `Quel3ConfigurationManager` as deploy owner
+- system-side target deploy planner as logical-to-runtime converter
+- backend-side `Quel3ConfigurationManager` as deploy owner
 
 Responsibilities:
 
-- convert selected targets to one-instrument-per-target deploy requests
-- create `InstrumentDefinition` with fixed timeline profile
-- call `session.deploy_instruments(...)`
-- cache deployed instrument infos for execution path
+- planner:
+  - convert selected targets to one-instrument-per-target deploy requests
+  - derive role, port ID, alias, and frequency ranges from logical metadata
+- backend configuration manager:
+  - create `InstrumentDefinition` with fixed timeline profile
+  - call `session.deploy_instruments(...)`
+  - cache deployed instrument infos for execution path
 
 ### QuEL-3 execution layer
 
@@ -92,7 +98,7 @@ Responsibilities:
 
 No generic realization classes are introduced in this phase.
 
-Use one minimal internal grouping model in QuEL-3 configuration code:
+Use one minimal internal grouping model between planner and backend deploy code:
 
 ```python
 @dataclass(frozen=True)
@@ -107,7 +113,8 @@ class InstrumentDeployRequest:
 
 Notes:
 
-- This is an internal QuEL-3 helper model, not a common `system` model.
+- This is a QuEL-3-specific boundary model shared only between planner and
+  backend deploy code.
 - `ChannelRealization` and similar generic realization containers are not part of this phase.
 
 ## Mapping rules
@@ -172,33 +179,42 @@ inst_infos = await session.deploy_instruments(
 ## Manager contract
 
 ```python
-class Quel3ConfigurationManager(Protocol):
-    async def deploy_instruments_from_target_registry(
+class Quel3TargetDeployPlanner(Protocol):
+    def build_deploy_requests(
         self,
         *,
         experiment_system: ExperimentSystem,
         box_ids: Sequence[str],
         target_labels: Sequence[str] | None = None,
+    ) -> tuple[InstrumentDeployRequest, ...]:
+        ...
+
+
+class Quel3ConfigurationManager(Protocol):
+    async def deploy_instruments(
+        self,
+        *,
+        requests: Sequence[InstrumentDeployRequest],
     ) -> dict[str, tuple[InstrumentInfo, ...]]:
         ...
 ```
 
 Optional delegation:
 
-- `Quel3TargetInstrumentPlanner` for target-to-group conversion
+- `Quel3TargetDeployPlanner` for logical target to deploy-request conversion
 - `Quel3ConfigurationManager` for client/session/deploy calls
 
 ## Push flow
 
 1. `SystemManager.push(box_ids)` selects QuEL-3 synchronizer.
 2. `Quel3SystemSynchronizer.sync_experiment_system_to_hardware(...)` is called.
-3. Synchronizer delegates to `Quel3ConfigurationManager`.
-4. Configuration manager:
-   - reads selected target labels from the current experiment context
-   - builds one-instrument-per-target deploy requests
+3. Synchronizer asks the system-side planner for deploy requests.
+4. Synchronizer delegates the requests to backend-side
+   `Quel3ConfigurationManager`.
+5. Configuration manager:
    - deploys instruments via quelware session
-   - stores returned `inst_infos` in QuEL-3 runtime state
-5. Push completes.
+   - stores returned `inst_infos` in backend runtime state
+6. Push completes.
 
 Capability policy:
 
@@ -219,11 +235,11 @@ Capability policy:
 ### Phase 1
 
 - keep `ExperimentSystem` logical API stable
-- move QuEL-3 deploy behavior to `Quel3ConfigurationManager`
+- extract deploy-request planning from deploy execution
 
 ### Phase 2
 
-- wire QuEL-3 push path in synchronizer
+- wire planner plus backend configuration manager in synchronizer
 - persist deployed instrument infos for execution lookup
 
 ### Phase 3
@@ -254,4 +270,5 @@ Regression tests:
 ## Open questions
 
 1. Final canonical conversion from `target.channel.port` to quelware `port_id` string.
-2. Runtime-state location for deployed `inst_infos` (controller context vs synchronizer cache).
+2. Final backend runtime-state location for deployed `inst_infos`
+   (controller-owned cache vs dedicated runtime context).

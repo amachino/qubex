@@ -27,8 +27,9 @@ Related policy:
 - QuEL-3 system synchronizer is currently a no-op:
   - no backend-settings snapshot pull path is implemented yet
 - Planned change:
-  - QuEL-3 `push()` path deploys instruments from `TargetRegistry` through a
-    dedicated configuration manager (`Quel3ConfigurationManager`)
+  - QuEL-3 `push()` path plans deploy requests from `TargetRegistry` in the
+    system layer, then executes deployment through a backend-owned
+    configuration manager
 - `quelware-client` exposes `PORT`/`INSTRUMENT` resources and currently
   represents readout paths as transceiver-style resources in examples
   (`...:p0p1trx`).
@@ -204,11 +205,21 @@ Status legend:
   - Treat instrument deployment as configuration-stage behavior triggered by
     `SystemManager.push(...)`.
   - Keep execution manager focused on run-time sequencing and result retrieval.
-  - Add `Quel3ConfigurationManager` for:
+  - Split QuEL-3 push responsibilities explicitly:
+    - system-side planner converts active targets into
+      `InstrumentDeployRequest`
+    - backend-side `Quel3ConfigurationManager` owns
+      `session.deploy_instruments(...)`
+    - deployment result caches live with backend runtime state, not
+      `ExperimentSystem`
+  - Planner responsibilities:
     - active-target (`ExperimentContext.targets`) -> deploy definition conversion
-    - one-instrument-per-target range planning using `target.frequency ± frequency_margin`
-    - `session.deploy_instruments(...)` calls
-    - deployed instrument info caching for execution lookup
+    - one-instrument-per-target range planning using
+      `target.frequency ± frequency_margin`
+    - port and role derivation from logical target metadata
+  - Backend configuration-manager responsibilities:
+    - quelware client/session lifecycle for deploy
+    - deploy result capture for execution lookup
   - Keep QuEL-3 backend-settings pull/snapshot capability unsupported.
 
 ## Proposed minimum beta contract

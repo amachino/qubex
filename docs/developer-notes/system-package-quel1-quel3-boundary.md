@@ -22,6 +22,8 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 - experiment-system assembly flow
 - session-level backend selection and orchestration in `SystemManager`
 - fail-fast policy for unresolved/ambiguous runtime resolution
+- backend-facing planning inputs derived from shared logical models
+  (`ExperimentSystem`, `Target`, `ControlParams`)
 
 ### Must remain backend-specific
 
@@ -31,6 +33,8 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 - coarse tuning strategy for spectroscopy (`LO/CNCO` retune semantics)
 - clock/trigger/device-control semantics not representable in shared contract
 - operational tools that depend on QuEL-1-only APIs (`experiment_tool.dump_box`, etc.)
+- QuEL-3 quelware session ownership and `deploy_instruments(...)` execution
+- runtime deployment cache ownership (`target_alias_map`, deployed instrument infos)
 
 ## v1.5.0 required actions
 
@@ -45,9 +49,10 @@ and where backend-specific split is required for v1.5.0 and GA hardening.
 5. Refactor `CharacterizationService` frequency-sweep path to use backend
    capabilities/strategy; do not hard-require QuEL-1-only LO/CNCO cache APIs on
    QuEL-3.
-6. Implement QuEL-3 `push()` deploy flow via backend-specific configuration
-   manager (`Quel3ConfigurationManager`) while keeping backend-settings pull
-   unsupported.
+6. Implement QuEL-3 `push()` deploy flow with an explicit split:
+   - system-side planner converts logical targets to deploy requests
+   - backend-side configuration manager owns quelware deploy execution and cache
+   while keeping backend-settings pull unsupported.
 
 ## Post-beta refactor candidates
 
