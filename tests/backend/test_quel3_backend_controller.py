@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
@@ -279,6 +280,70 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     assert pytest.approx(0.4) == controller.sampling_period
     assert controller._connection_manager.quelware_endpoint == "localhost"
     assert controller._connection_manager.quelware_port == 50051
+
+
+def test_constructor_accepts_injected_managers() -> None:
+    """Given injected managers, controller should use those manager instances."""
+    connection_manager = SimpleNamespace(
+        hash=11,
+        is_connected=True,
+        quelware_endpoint="injected-host",
+        quelware_port=61000,
+        connect=lambda box_names=None, parallel=None: None,
+        disconnect=lambda: None,
+    )
+    configuration_manager = SimpleNamespace(
+        quelware_endpoint="injected-host",
+        quelware_port=61000,
+        target_alias_map={"Q00": "inst-q00"},
+        last_deployed_instrument_infos={"inst-q00": (object(),)},
+        deploy_instruments=lambda *, requests: {"inst-q00": tuple(requests)},
+    )
+    execution_manager = SimpleNamespace(
+        quelware_endpoint="injected-host",
+        quelware_port=61000,
+        sampling_period=0.8,
+        execute_sync=lambda *, request: request,
+        execute_async=lambda *, request: request,
+    )
+
+    controller = Quel3BackendController(
+        connection_manager=cast(Any, connection_manager),
+        configuration_manager=cast(Any, configuration_manager),
+        execution_manager=cast(Any, execution_manager),
+    )
+
+    assert controller.connection_manager is connection_manager
+    assert controller.configuration_manager is configuration_manager
+    assert controller.execution_manager is execution_manager
+    assert controller.quelware_endpoint == "injected-host"
+    assert controller.quelware_port == 61000
+    assert controller.sampling_period == pytest.approx(0.8)
+
+
+def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> None:
+    """Given mismatched injected manager runtime values, constructor should fail fast."""
+    connection_manager = SimpleNamespace(
+        hash=11,
+        is_connected=False,
+        quelware_endpoint="host-a",
+        quelware_port=50051,
+        connect=lambda box_names=None, parallel=None: None,
+        disconnect=lambda: None,
+    )
+    configuration_manager = SimpleNamespace(
+        quelware_endpoint="host-b",
+        quelware_port=50051,
+        target_alias_map={},
+        last_deployed_instrument_infos={},
+        deploy_instruments=lambda *, requests: {},
+    )
+
+    with pytest.raises(ValueError, match="quelware_endpoint"):
+        Quel3BackendController(
+            connection_manager=cast(Any, connection_manager),
+            configuration_manager=cast(Any, configuration_manager),
+        )
 
 
 def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:

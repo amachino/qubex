@@ -8,6 +8,7 @@ built on quelware-client managers.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TypeVar
 
 from qubex.backend.backend_controller import (
     BackendController,
@@ -21,6 +22,8 @@ from .managers import (
     Quel3ExecutionManager,
 )
 from .models import InstrumentDeployRequest
+
+T = TypeVar("T")
 
 
 class Quel3BackendController(BackendController):
@@ -41,7 +44,9 @@ class Quel3BackendController(BackendController):
         *,
         quelware_endpoint: str | None = None,
         quelware_port: int | None = None,
+        connection_manager: Quel3ConnectionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
+        execution_manager: Quel3ExecutionManager | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -52,16 +57,56 @@ class Quel3BackendController(BackendController):
             quelware API endpoint. Defaults to "localhost".
         quelware_port : int | None, optional
             quelware API port. Defaults to 50051.
+        connection_manager : Quel3ConnectionManager | None, optional
+            Injected connection manager for testing or customization.
+        configuration_manager : Quel3ConfigurationManager | None, optional
+            Injected configuration manager for testing or customization.
+        execution_manager : Quel3ExecutionManager | None, optional
+            Injected execution manager for testing or customization.
         """
-        self._sampling_period = self.SAMPLING_PERIOD_NS
-        endpoint = quelware_endpoint if quelware_endpoint is not None else "localhost"
-        port = quelware_port if quelware_port is not None else 50051
+        endpoint = self._resolve_runtime_value(
+            name="quelware_endpoint",
+            explicit_value=quelware_endpoint,
+            candidates=[
+                manager.quelware_endpoint
+                for manager in (
+                    connection_manager,
+                    configuration_manager,
+                    execution_manager,
+                )
+                if manager is not None
+            ],
+            default="localhost",
+        )
+        port = self._resolve_runtime_value(
+            name="quelware_port",
+            explicit_value=quelware_port,
+            candidates=[
+                manager.quelware_port
+                for manager in (
+                    connection_manager,
+                    configuration_manager,
+                    execution_manager,
+                )
+                if manager is not None
+            ],
+            default=50051,
+        )
+        self._sampling_period = (
+            execution_manager.sampling_period
+            if execution_manager is not None
+            else self.SAMPLING_PERIOD_NS
+        )
         self._quelware_endpoint = endpoint
         self._quelware_port = port
 
-        self._connection_manager = Quel3ConnectionManager(
-            quelware_endpoint=endpoint,
-            quelware_port=port,
+        self._connection_manager = (
+            connection_manager
+            if connection_manager is not None
+            else Quel3ConnectionManager(
+                quelware_endpoint=endpoint,
+                quelware_port=port,
+            )
         )
         self._configuration_manager = (
             configuration_manager
@@ -71,12 +116,39 @@ class Quel3BackendController(BackendController):
                 quelware_port=port,
             )
         )
-        self._execution_manager = Quel3ExecutionManager(
-            quelware_endpoint=endpoint,
-            quelware_port=port,
-            sampling_period=self._sampling_period,
-            capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
+        self._execution_manager = (
+            execution_manager
+            if execution_manager is not None
+            else Quel3ExecutionManager(
+                quelware_endpoint=endpoint,
+                quelware_port=port,
+                sampling_period=self._sampling_period,
+                capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
+            )
         )
+
+    @staticmethod
+    def _resolve_runtime_value(
+        *,
+        name: str,
+        explicit_value: T | None,
+        candidates: Sequence[T],
+        default: T,
+    ) -> T:
+        """Resolve one runtime value from explicit input and injected managers."""
+        unique_candidates: list[T] = []
+        for candidate in candidates:
+            if candidate not in unique_candidates:
+                unique_candidates.append(candidate)
+        if explicit_value is not None:
+            if any(candidate != explicit_value for candidate in unique_candidates):
+                raise ValueError(f"Inconsistent `{name}` across injected managers.")
+            return explicit_value
+        if len(unique_candidates) > 1:
+            raise ValueError(f"Inconsistent `{name}` across injected managers.")
+        if len(unique_candidates) == 1:
+            return unique_candidates[0]
+        return default
 
     @property
     def hash(self) -> int:
@@ -112,6 +184,16 @@ class Quel3BackendController(BackendController):
     def configuration_manager(self) -> Quel3ConfigurationManager:
         """Return backend-side QuEL-3 configuration manager."""
         return self._configuration_manager
+
+    @property
+    def connection_manager(self) -> Quel3ConnectionManager:
+        """Return backend-side QuEL-3 connection manager."""
+        return self._connection_manager
+
+    @property
+    def execution_manager(self) -> Quel3ExecutionManager:
+        """Return backend-side QuEL-3 execution manager."""
+        return self._execution_manager
 
     @property
     def target_alias_map(self) -> dict[str, str]:

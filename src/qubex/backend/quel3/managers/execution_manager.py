@@ -75,6 +75,21 @@ class Quel3ExecutionManager:
         self._capture_decimation_factor = capture_decimation_factor
         self._sequencer_builder = Quel3SequencerBuilder()
 
+    @property
+    def quelware_endpoint(self) -> str:
+        """Return quelware endpoint used for execution."""
+        return self._quelware_endpoint
+
+    @property
+    def quelware_port(self) -> int:
+        """Return quelware port used for execution."""
+        return self._quelware_port
+
+    @property
+    def sampling_period(self) -> float:
+        """Return backend sampling period in ns."""
+        return self._sampling_period
+
     def execute_sync(self, *, request: object) -> Quel3BackendExecutionResult:
         """Execute a QuEL-3 backend request synchronously."""
         return _run_async(lambda: self.execute_async(request=request))
