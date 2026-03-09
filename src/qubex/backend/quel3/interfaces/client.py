@@ -49,6 +49,10 @@ class SessionProtocol(Protocol):
 class QuelwareClientProtocol(Protocol):
     """Minimal quelware client protocol for execution."""
 
+    def list_unit_labels(self) -> object:
+        """List available QuEL-3 unit labels."""
+        ...
+
     async def list_resource_infos(self) -> object:
         """List available resources."""
         ...
@@ -57,6 +61,10 @@ class QuelwareClientProtocol(Protocol):
         self, resource_id: ResourceIdProtocol
     ) -> InstrumentInfoProtocol:
         """Get instrument info for one resource ID."""
+        ...
+
+    async def get_port_info(self, resource_id: ResourceIdProtocol) -> object:
+        """Get port info for one resource ID."""
         ...
 
     def create_session(

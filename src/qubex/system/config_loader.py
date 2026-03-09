@@ -804,8 +804,18 @@ class ConfigLoader:
             capture_delay=self.load_param_data("capture_delay"),
             capture_delay_word=self.load_param_data("capture_delay_word"),
             jpa_params=self.load_param_data("jpa_params"),
+            pump_frequency_by_mux=self._build_default_pump_frequency_by_mux(),
         )
         return control_params
+
+    def _build_default_pump_frequency_by_mux(self) -> dict[int, float]:
+        """Return per-mux default pump frequencies from the connected pump-box traits."""
+        if self._wiring_info is None or self._control_system is None:
+            return {}
+        return {
+            mux.index: self._control_system.get_box(port.box_id).traits.default_pump_frequency_ghz
+            for mux, port in self._wiring_info.pump
+        }
 
     def _load_experiment_system(
         self,

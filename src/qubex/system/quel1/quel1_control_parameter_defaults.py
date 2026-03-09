@@ -6,8 +6,8 @@ from typing import Final
 
 from qubex.system.control_parameter_defaults import ControlParameterDefaults
 
-DEFAULT_CONTROL_AMPLITUDE: Final[float] = 0.03
-DEFAULT_READOUT_AMPLITUDE: Final[float] = 0.01
+DEFAULT_CONTROL_AMPLITUDE: Final[float] = 0.1
+DEFAULT_READOUT_AMPLITUDE: Final[float] = 0.1
 DEFAULT_CONTROL_VATT: Final[int] = 3072  # 0xC00
 DEFAULT_READOUT_VATT: Final[int] = 2048
 DEFAULT_PUMP_VATT: Final[int] = 3072  # 0xC00

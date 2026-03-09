@@ -8,42 +8,42 @@
 #   address: <ip_address>
 #   adapter: <adapter_id>
 
-T1:
+QT1:
   name: "quel3-02-a01"
   type: "quel3"
   address: ""
   adapter: ""
-T2:
+QT2:
   name: "QuEL-3 #2"
   type: "quel3"
   address: ""
   adapter: ""
-T3:
+QT3:
   name: "QuEL-3 #3"
   type: "quel3"
   address: ""
   adapter: ""
-T4:
+QT4:
   name: "QuEL-3 #4"
   type: "quel3"
   address: ""
   adapter: ""
-T5:
+QT5:
   name: "QuEL-3 #5"
   type: "quel3"
   address: ""
   adapter: ""
-T6:
+QT6:
   name: "QuEL-3 #6"
   type: "quel3"
   address: ""
   adapter: ""
-T7:
+QT7:
   name: "QuEL-3 #7"
   type: "quel3"
   address: ""
   adapter: ""
-T8:
+QT8:
   name: "QuEL-3 #8"
   type: "quel3"
   address: ""

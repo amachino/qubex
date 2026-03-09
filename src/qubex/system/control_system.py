@@ -36,6 +36,7 @@ class BoxTraits:
     ctrl_min_frequency_hz: float
     readout_ssb: Literal["L", "U"] | None
     readout_cnco_center: int | None
+    default_pump_frequency_ghz: float
     default_readout_frequency_range: tuple[float, float, float]
     default_control_frequency_range: tuple[float, float, float]
 
@@ -45,6 +46,7 @@ _DEFAULT_BOX_TRAITS: Final = BoxTraits(
     ctrl_min_frequency_hz=6.5e9,
     readout_ssb="U",
     readout_cnco_center=1_500_000_000,
+    default_pump_frequency_ghz=10.0,
     default_readout_frequency_range=(9.75, 10.75, 0.002),
     default_control_frequency_range=(6.5, 9.5, 0.005),
 )
@@ -54,6 +56,7 @@ _QUEL3_BOX_TRAITS: Final = BoxTraits(
     ctrl_min_frequency_hz=0.5e9,
     readout_ssb=None,
     readout_cnco_center=None,
+    default_pump_frequency_ghz=6.0,
     default_readout_frequency_range=(5.75, 6.75, 0.002),
     default_control_frequency_range=(3.0, 5.0, 0.005),
 )
@@ -63,6 +66,7 @@ _QUEL1SE_R8_BOX_TRAITS: Final = BoxTraits(
     ctrl_min_frequency_hz=0.0,
     readout_ssb="L",
     readout_cnco_center=2_250_000_000,
+    default_pump_frequency_ghz=6.0,
     default_readout_frequency_range=(5.75, 6.75, 0.002),
     default_control_frequency_range=(3.0, 5.0, 0.005),
 )

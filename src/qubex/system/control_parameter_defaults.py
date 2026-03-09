@@ -63,6 +63,7 @@ class ControlParameterDefaults:
         capture_delay: Mapping[int, int | None],
         capture_delay_word: Mapping[int, int | None],
         jpa_params: Mapping[int, Mapping[str, Any] | None],
+        pump_frequency_by_mux: Mapping[int, float] | None = None,
     ) -> ControlParameters:
         """
         Return fully materialized control parameters for the active backend.
@@ -95,6 +96,8 @@ class ControlParameterDefaults:
             Explicit capture-delay-word overrides by mux index.
         jpa_params : Mapping[int, Mapping[str, Any] | None]
             Explicit JPA overrides by mux index.
+        pump_frequency_by_mux : Mapping[int, float] | None, optional
+            Default pump frequencies by mux index derived from hardware traits.
 
         Returns
         -------
@@ -164,6 +167,7 @@ class ControlParameterDefaults:
             jpa_params=self._resolve_jpa_parameters(
                 quantum_system=quantum_system,
                 values=jpa_params,
+                pump_frequency_by_mux=pump_frequency_by_mux,
             ),
         )
 
@@ -211,22 +215,45 @@ class ControlParameterDefaults:
         *,
         quantum_system: QuantumSystem,
         values: Mapping[int, Mapping[str, Any] | None],
+        pump_frequency_by_mux: Mapping[int, float] | None = None,
     ) -> dict[int, JPAParameters]:
         resolved: dict[int, JPAParameters] = {
-            int(index): self._resolve_one_jpa_parameters(raw_value)
+            int(index): self._resolve_one_jpa_parameters(
+                raw_value,
+                pump_frequency=(
+                    pump_frequency_by_mux.get(int(index))
+                    if pump_frequency_by_mux is not None
+                    else None
+                ),
+            )
             for index, raw_value in values.items()
         }
         for mux in quantum_system.muxes:
-            resolved.setdefault(mux.index, self._resolve_one_jpa_parameters(None))
+            resolved.setdefault(
+                mux.index,
+                self._resolve_one_jpa_parameters(
+                    None,
+                    pump_frequency=(
+                        pump_frequency_by_mux.get(mux.index)
+                        if pump_frequency_by_mux is not None
+                        else None
+                    ),
+                ),
+            )
         return resolved
 
     def _resolve_one_jpa_parameters(
         self,
         value: Mapping[str, Any] | None,
+        *,
+        pump_frequency: float | None = None,
     ) -> JPAParameters:
+        default_pump_frequency = (
+            pump_frequency if pump_frequency is not None else self.pump_frequency
+        )
         if value is None:
             return {
-                "pump_frequency": self.pump_frequency,
+                "pump_frequency": default_pump_frequency,
                 "pump_amplitude": self.pump_amplitude,
                 "dc_voltage": self.dc_voltage,
             }
@@ -237,7 +264,7 @@ class ControlParameterDefaults:
             "pump_frequency": (
                 float(raw_pump_frequency)
                 if raw_pump_frequency is not None
-                else self.pump_frequency
+                else default_pump_frequency
             ),
             "pump_amplitude": (
                 float(raw_pump_amplitude)

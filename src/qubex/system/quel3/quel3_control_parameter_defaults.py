@@ -14,8 +14,8 @@ DEFAULT_FREQUENCY_MARGIN_GHZ: Final[dict[str, float]] = {
     "PUMP": 0.1,
 }
 
-DEFAULT_CONTROL_AMPLITUDE: Final[float] = 0.03
-DEFAULT_READOUT_AMPLITUDE: Final[float] = 0.01
+DEFAULT_CONTROL_AMPLITUDE: Final[float] = 0.1
+DEFAULT_READOUT_AMPLITUDE: Final[float] = 0.1
 DEFAULT_CONTROL_VATT: Final[None] = None
 DEFAULT_READOUT_VATT: Final[None] = None
 DEFAULT_PUMP_VATT: Final[None] = None
@@ -24,7 +24,7 @@ DEFAULT_READOUT_FSC: Final[None] = None
 DEFAULT_PUMP_FSC: Final[None] = None
 DEFAULT_CAPTURE_DELAY: Final[None] = None
 DEFAULT_CAPTURE_DELAY_WORD: Final[None] = None
-DEFAULT_PUMP_FREQUENCY_GHZ: Final[float] = 10.0
+DEFAULT_PUMP_FREQUENCY_GHZ: Final[float] = 6.0
 DEFAULT_PUMP_AMPLITUDE: Final[float] = 0.0
 DEFAULT_DC_VOLTAGE: Final[float] = 0.0
 

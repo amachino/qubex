@@ -193,11 +193,11 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
 
     # Per-file control_amplitude overrides default for Q0; others fallback to DEFAULT_CONTROL_AMPLITUDE
     assert math.isclose(cp.get_control_amplitude("Q0"), 0.05, rel_tol=0, abs_tol=1e-12)
-    assert math.isclose(cp.get_control_amplitude("Q3"), 0.03, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(cp.get_control_amplitude("Q3"), 0.1, rel_tol=0, abs_tol=1e-12)
 
     # Legacy readout_amplitude used when per-file is absent
     assert math.isclose(cp.get_readout_amplitude("Q0"), 0.02, rel_tol=0, abs_tol=1e-12)
-    assert math.isclose(cp.get_readout_amplitude("Q1"), 0.01, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(cp.get_readout_amplitude("Q1"), 0.1, rel_tol=0, abs_tol=1e-12)
 
     # jpa_params are resolved to effective values during load.
     assert cp.jpa_params.get(0) == {
@@ -280,7 +280,7 @@ def test_merge_per_file_over_legacy(tmp_path: Path):
     # Assert: readout_amplitude is merged: Q0 from legacy, Q1 from per-file, others default
     assert math.isclose(cp.get_readout_amplitude("Q0"), 0.02, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(cp.get_readout_amplitude("Q1"), 0.04, rel_tol=0, abs_tol=1e-12)
-    assert math.isclose(cp.get_readout_amplitude("Q2"), 0.01, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(cp.get_readout_amplitude("Q2"), 0.1, rel_tol=0, abs_tol=1e-12)
 
     # Assert: qubit_frequency merged: per-file for Q0/Q1 (with unit conversion and default),
     # legacy provides Q2 (GHz, no conversion), Q3 remains NaN
@@ -591,6 +591,55 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     assert control_parameters.get_dc_voltage(1) == pytest.approx(
         DEFAULT_QUEL3_DC_VOLTAGE
     )
+
+
+def test_load_resolves_r8_pump_frequency_with_r8_default(tmp_path: Path) -> None:
+    """Given R8 boxes, when loading control parameters, then pump frequency defaults to 6.0 GHz."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1se-riken8",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-3", "BOX1-6", "BOX1-7", "BOX1-8"],
+                    "pump": "BOX1-2",
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        params_dir / "jpa_params.yaml",
+        {
+            "meta": {},
+            "data": {
+                0: None,
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    control_parameters = loader.get_experiment_system().control_params
+
+    assert control_parameters.get_pump_frequency(0) == pytest.approx(6.0)
 
 
 def test_quel3_target_registry_is_independent_of_configuration_mode(
