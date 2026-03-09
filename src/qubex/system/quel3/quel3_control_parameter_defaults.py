@@ -8,7 +8,7 @@ from qubex.system.control_parameter_defaults import ControlParameterDefaults
 
 DEFAULT_FREQUENCY_MARGIN_GHZ: Final[dict[str, float]] = {
     "READ": 0.1,
-    "CTRL_GE": 0.1,
+    "CTRL_GE": 0.5,
     "CTRL_EF": 0.1,
     "CTRL_CR": 0.1,
     "PUMP": 0.1,
