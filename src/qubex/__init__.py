@@ -12,7 +12,7 @@ from qxpulse import (
     VirtualZ,
 )
 
-from . import core, visualization as viz
+from . import contrib, core, visualization as viz
 from .analysis import fitting as fit
 from .core import Frequency, FrequencyArray, Time, TimeArray, units
 from .experiment import Experiment
@@ -36,6 +36,7 @@ __all__ = [
     "Time",
     "TimeArray",
     "VirtualZ",
+    "contrib",
     "core",
     "fit",
     "pulse",
