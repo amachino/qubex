@@ -80,8 +80,10 @@ class ExperimentContext:
 
     Parameters
     ----------
-    chip_id : str
-        Identifier of the quantum chip.
+    chip_id : str | None, optional
+        Deprecated chip identifier compatibility input.
+    system_id : str | None, optional
+        Canonical system identifier used to resolve configuration resources.
     muxes : Collection[str | int], optional
         Mux labels to use in the experiment.
     qubits : Collection[str | int], optional

@@ -70,7 +70,24 @@ class MeasurementSessionService:
         configuration_mode: ConfigurationMode | None = None,
         backend_kind: BackendKind | None = None,
     ) -> None:
-        """Load configuration and skew settings."""
+        """
+        Load configuration and skew settings.
+
+        Parameters
+        ----------
+        chip_id : str | None, optional
+            Deprecated chip identifier compatibility input.
+        system_id : str | None, optional
+            Canonical system identifier used to resolve configuration resources.
+        config_dir : Path | str | None, optional
+            Base directory that contains system configuration files.
+        params_dir : Path | str | None, optional
+            Base directory that contains control parameter files.
+        configuration_mode : ConfigurationMode | None, optional
+            Configuration variant passed to `SystemManager.load`.
+        backend_kind : BackendKind | None, optional
+            Backend family to initialize through configuration loading.
+        """
         self.system_manager.load(
             chip_id=chip_id,
             system_id=system_id,

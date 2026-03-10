@@ -48,6 +48,19 @@ class ChipInspector:
 
         `system_id` is the canonical selector. `chip_id` remains available as a
         compatibility input for single-system chip configurations.
+
+        Parameters
+        ----------
+        chip_id : str | None, optional
+            Deprecated chip identifier compatibility input.
+        system_id : str | None, optional
+            Canonical system identifier used to resolve configuration resources.
+        config_dir : Path | str | None, optional
+            Base directory that contains system configuration files.
+        params_dir : Path | str | None, optional
+            Base directory that contains control parameter files.
+        props_dir : Path | str | None, optional
+            Legacy alias for `params_dir`.
         """
         self._init_graph(
             chip_id=chip_id,
