@@ -1,0 +1,28 @@
+# Example system catalog keyed by system_id.
+#
+# Format
+# ------
+# <system_id>:
+#   chip_id: <chip_id>
+#   backend: <backend_kind>
+#   <backend_kind>:
+#     <runtime_key>: <value>
+
+64Q-HF-Q1:
+  chip_id: 64Q-HF
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10
+
+144Q-LF-Q1:
+  chip_id: 144Q-LF
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10
+
+144Q-LF-Q3:
+  chip_id: 144Q-LF
+  backend: quel3
+  quel3:
+    endpoint: localhost
+    port: 50051

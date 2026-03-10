@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -56,6 +57,15 @@ class _SystemManagerStub:
         self.pull_calls.append((box_ids, parallel))
 
 
+class _ExperimentSystemStub:
+    def __init__(self, *, box_count: int) -> None:
+        self.control_system = type(
+            "_ControlSystem",
+            (),
+            {"boxes": [object() for _ in range(box_count)]},
+        )()
+
+
 class _ContextStub:
     def __init__(
         self,
@@ -63,15 +73,18 @@ class _ContextStub:
         backend_controller: object,
         box_ids: list[str],
         config_path: Path,
+        backend_kind: str = "quel1",
+        box_count: int = 1,
     ) -> None:
         self.backend_controller = backend_controller
         self.box_ids = box_ids
-        self.experiment_system = object()
+        self.experiment_system = _ExperimentSystemStub(box_count=box_count)
         self.config_loader = type(
             "_ConfigLoader",
             (),
             {
                 "config_path": config_path,
+                "backend_kind": backend_kind,
             },
         )()
 
@@ -81,12 +94,16 @@ def _make_session_service(
     backend_controller: object,
     tmp_path: Path,
     box_ids: list[str] | None = None,
+    backend_kind: str = "quel1",
+    box_count: int = 1,
 ) -> tuple[MeasurementSessionService, _SystemManagerStub]:
     system_manager = _SystemManagerStub()
     context = _ContextStub(
         backend_controller=backend_controller,
         box_ids=["A"] if box_ids is None else box_ids,
         config_path=tmp_path,
+        backend_kind=backend_kind,
+        box_count=box_count,
     )
     service = MeasurementSessionService(
         system_manager=system_manager,  # type: ignore[arg-type]
@@ -108,6 +125,75 @@ def test_connect_skips_resync_when_backend_does_not_support_it(tmp_path: Path) -
 
     assert backend.connect_calls == [(["A"], None)]
     assert system_manager.pull_calls == [(["A"], None)]
+
+
+def test_load_skew_file_warns_for_missing_multi_box_quel1(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given missing skew file on multi-box QuEL-1, when loading, then a warning is logged."""
+    backend = _BackendWithoutOptionalCapabilities()
+    service, _ = _make_session_service(
+        backend_controller=backend,
+        tmp_path=tmp_path,
+        backend_kind="quel1",
+        box_count=2,
+    )
+
+    caplog.set_level(
+        logging.WARNING,
+        logger="qubex.measurement.services.measurement_session_service",
+    )
+
+    service.load_skew_file()
+
+    assert "Skew file not found" in caplog.text
+
+
+def test_load_skew_file_skips_warning_for_missing_single_box_quel1(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given missing skew file on single-box QuEL-1, when loading, then no warning is logged."""
+    backend = _BackendWithoutOptionalCapabilities()
+    service, _ = _make_session_service(
+        backend_controller=backend,
+        tmp_path=tmp_path,
+        backend_kind="quel1",
+        box_count=1,
+    )
+
+    caplog.set_level(
+        logging.WARNING,
+        logger="qubex.measurement.services.measurement_session_service",
+    )
+
+    service.load_skew_file()
+
+    assert "Skew file not found" not in caplog.text
+
+
+def test_load_skew_file_skips_warning_for_missing_quel3(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given missing skew file on QuEL-3, when loading, then no warning is logged."""
+    backend = _BackendWithoutOptionalCapabilities()
+    service, _ = _make_session_service(
+        backend_controller=backend,
+        tmp_path=tmp_path,
+        backend_kind="quel3",
+        box_count=2,
+    )
+
+    caplog.set_level(
+        logging.WARNING,
+        logger="qubex.measurement.services.measurement_session_service",
+    )
+
+    service.load_skew_file()
+
+    assert "Skew file not found" not in caplog.text
 
 
 def test_connect_runs_pull_when_all_links_are_up(tmp_path: Path) -> None:

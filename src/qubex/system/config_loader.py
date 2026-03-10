@@ -104,7 +104,7 @@ class ConfigLoader:
     Parameters
     ----------
     system_id : str, optional
-        Canonical system identifier (for example, `"64Q-A"`). When provided,
+        Canonical system identifier (for example, `"64Q-HF-Q1"`). When provided,
         `system.yaml` and `wiring.yaml` are resolved through this key.
     chip_id : str, optional
         Deprecated compatibility selector. The chip identifier must resolve to
@@ -140,7 +140,7 @@ class ConfigLoader:
     Examples
     --------
     >>> from qubex.system import ConfigLoader
-    >>> cfg = ConfigLoader(system_id="64Q-A")
+    >>> cfg = ConfigLoader(system_id="64Q-HF-Q1")
     >>> system = cfg.get_experiment_system()
     """
 
@@ -376,7 +376,7 @@ class ConfigLoader:
 
         Examples
         --------
-        >>> cfg = ConfigLoader(chip_id="64Q")
+        >>> cfg = ConfigLoader(chip_id="64Q-HF")
         >>> cfg.get_experiment_system()
         """
         if chip_id is not None:

@@ -41,8 +41,9 @@ system-specific deployment manifests (`system`, `wiring`).
 - One system entry maps to one `chip_id`.
 - Many system entries may reference the same `chip_id`.
 - Example:
-  - `64Q-A -> chip_id: 64Q`
-  - `64Q-B -> chip_id: 64Q`
+  - `64Q-HF-Q1 -> chip_id: 64Q-HF`
+  - `144Q-LF-Q1 -> chip_id: 144Q-LF`
+  - `144Q-LF-Q3 -> chip_id: 144Q-LF`
 
 ### D3. Wiring scope
 
@@ -71,9 +72,16 @@ system-specific deployment manifests (`system`, `wiring`).
 ### chip.yaml
 
 ```yaml
-64Q:
-  name: "2023-1st-64Q-No14-run3 chip (1,0)"
+64Q-HF:
+  name: "64-qubit high-frequency example chip"
   n_qubits: 64
+  topology:
+    type: square_lattice
+    mux_size: 4
+
+144Q-LF:
+  name: "144-qubit low-frequency example chip"
+  n_qubits: 144
   topology:
     type: square_lattice
     mux_size: 4
@@ -96,14 +104,14 @@ QT1:
 ### system.yaml
 
 ```yaml
-64Q-A:
-  chip_id: 64Q
+64Q-HF-Q1:
+  chip_id: 64Q-HF
   backend: quel1
   quel1:
     clock_master: 10.0.0.10
 
-64Q-B:
-  chip_id: 64Q
+144Q-LF-Q3:
+  chip_id: 144Q-LF
   backend: quel3
   quel3:
     endpoint: localhost
@@ -113,13 +121,13 @@ QT1:
 ### wiring.yaml
 
 ```yaml
-64Q-A:
+64Q-HF-Q1:
   - mux: 0
     ctrl: [BOX1-2, BOX1-4, BOX1-9, BOX1-11]
     read_out: BOX1-1
     read_in: BOX1-0
 
-64Q-B:
+144Q-LF-Q3:
   - mux: 0
     ctrl: [QT1-4, QT1-2, QT1-11, QT1-9]
     read_out: QT1-1
@@ -148,7 +156,7 @@ Target load order:
 5. Read `wiring.yaml[system_id]`
 6. Derive used box ids from wiring references
 7. Read only the referenced box definitions from `box.yaml`
-8. Read chip-scoped parameter files using the resolved `chip_id`
+8. Read parameter files from the selected `params_dir`
 
 ## Compatibility policy
 
@@ -166,11 +174,11 @@ Target load order:
 Example:
 
 - allowed:
-  - `chip_id=64Q` and only one system entry references `64Q`
+  - `chip_id=64Q-HF` and only one system entry references `64Q-HF`
 - error:
-  - `64Q-A -> chip_id: 64Q`
-  - `64Q-B -> chip_id: 64Q`
-  - loader input is only `chip_id=64Q`
+  - `144Q-LF-Q1 -> chip_id: 144Q-LF`
+  - `144Q-LF-Q3 -> chip_id: 144Q-LF`
+  - loader input is only `chip_id=144Q-LF`
 
 ## Migration note
 

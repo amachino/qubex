@@ -8,10 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
-from qubex.backend import (
-    BackendController,
-    BackendKind,
-)
+from qubex.backend import BackendController, BackendKind
+from qubex.backend.backend_controller import BACKEND_KIND_QUEL1
 from qubex.core.parallel_executor import run_parallel_map
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.system import ConfigLoader, ExperimentSystem, SystemManager
@@ -87,7 +85,8 @@ class MeasurementSessionService:
         """Load skew calibration data from the current config directory."""
         skew_file_path = self.config_loader.config_path / "skew.yaml"
         if not skew_file_path.exists():
-            logger.warning(f"Skew file not found: {skew_file_path}")
+            if self._should_warn_missing_skew_file():
+                logger.warning(f"Skew file not found: {skew_file_path}")
             return
         backend_controller = self.backend_controller
         load_skew_yaml = getattr(backend_controller, "load_skew_yaml", None)
@@ -100,6 +99,13 @@ class MeasurementSessionService:
             load_skew_yaml(skew_file_path)
         except Exception:
             logger.exception("Failed to load the skew file.")
+
+    def _should_warn_missing_skew_file(self) -> bool:
+        """Return whether a missing skew file should emit a warning."""
+        return (
+            self.config_loader.backend_kind == BACKEND_KIND_QUEL1
+            and len(self.experiment_system.control_system.boxes) > 1
+        )
 
     def connect(
         self,

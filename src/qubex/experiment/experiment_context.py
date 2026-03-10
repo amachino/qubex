@@ -19,6 +19,7 @@ from rich.table import Table
 from typing_extensions import deprecated
 
 from qubex.backend.backend_controller import (
+    BACKEND_KIND_QUEL1,
     SystemBackendController,
 )
 from qubex.measurement import (
@@ -121,7 +122,7 @@ class ExperimentContext:
     --------
     >>> from qubex import Experiment
     >>> exp = Experiment(
-    ...     chip_id="64Q",
+    ...     system_id="64Q-HF-Q1",
     ...     qubits=["Q00", "Q01"],
     ... )
     """
@@ -255,7 +256,8 @@ class ExperimentContext:
         """Load skew calibration data from the current config directory."""
         skew_file_path = self.config_loader.config_path / "skew.yaml"
         if not skew_file_path.exists():
-            logger.warning(f"Skew file not found: {skew_file_path}")
+            if self._should_warn_missing_skew_file():
+                logger.warning(f"Skew file not found: {skew_file_path}")
             return
         backend_controller = self.backend_controller
         load_skew_yaml = getattr(backend_controller, "load_skew_yaml", None)
@@ -265,6 +267,13 @@ class ExperimentContext:
             load_skew_yaml(skew_file_path)
         except Exception:
             logger.exception("Failed to load the skew file.")
+
+    def _should_warn_missing_skew_file(self) -> bool:
+        """Return whether a missing skew file should emit a warning."""
+        return (
+            self.config_loader.backend_kind == BACKEND_KIND_QUEL1
+            and len(self.control_system.boxes) > 1
+        )
 
     def _create_qubit_labels(
         self,

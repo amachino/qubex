@@ -145,7 +145,7 @@ class Experiment:
     --------
     >>> from qubex import Experiment
     >>> exp = Experiment(
-    ...     chip_id="64Q",
+    ...     system_id="64Q-HF-Q1",
     ...     qubits=["Q00", "Q01"],
     ... )
     """

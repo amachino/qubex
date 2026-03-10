@@ -1,15 +1,12 @@
-# Example wiring configuration for QuEL-1 / QuBE examples.
+# Example wiring catalog keyed by system_id.
 #
-# Format
-# ------
-# <system_id>:
-#   - mux: <mux_index>
-#     ctrl: [<port_id>, ...]
-#     read_out: <port_id>
-#     read_in: <port_id>
-#     pump: <port_id>  # optional
+# Notes
+# -----
+# - `64Q-HF-Q1` wires the full 64Q high-frequency example.
+# - `144Q-LF-Q1` and `144Q-LF-Q3` wire the first two muxes of the
+#   144Q low-frequency example so that notebooks can load a compact subset.
 
-64Q-A:
+64Q-HF-Q1:
   - mux: 0
     ctrl: [R21B-5, R21B-0, R21B-2, R21B-6]
     read_out: Q73A-1
@@ -91,3 +88,24 @@
     read_in: U15A-1
     pump: U15A-2
 
+144Q-LF-Q1:
+  - mux: 0
+    ctrl: [R21B-5, R21B-0, R21B-2, R21B-6]
+    read_out: Q73A-1
+    read_in: Q73A-0
+    pump: Q73A-3
+  - mux: 1
+    ctrl: [Q73A-2, Q73A-4, Q73A-9, Q73A-11]
+    read_out: Q73A-8
+    read_in: Q73A-7
+    pump: Q73A-10
+
+144Q-LF-Q3:
+  - mux: 0
+    ctrl: [QT1-4, QT1-2, QT1-11, QT1-9]
+    read_out: QT1-1
+    read_in: QT1-0
+  - mux: 1
+    ctrl: [QT1-16, QT1-14, QT1-17, QT1-15]
+    read_out: QT1-8
+    read_in: QT1-7

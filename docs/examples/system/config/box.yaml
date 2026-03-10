@@ -1,30 +1,12 @@
-# Example configuration for QuBE, QuEL-1, QuEL-1 SE boxes.
+# Example box catalog shared by the system examples.
 #
 # Format
 # ------
 # <box_id>:
 #   name: <box_name>
 #   type: <box_type>
-#   address: <ip_address>
-#   adapter: <adapter_id>
-#   options: [<quel1_config_option>, ...]  # optional
-#
-# Fields
-# ------
-# box_id : str
-#     User-defined unique identifier for each box.
-# box_name : str
-#     Descriptive name for the box.
-# box_type : str
-#     Box type identifier defined in quelware.
-# ip_address : str
-#     IP address of the FPGA board inside the box.
-# adapter_id : str
-#     Unique identifier printed on the adapter label (also visible via xsdb).
-# options : list[str], optional
-#     Additional Quel1 config options. For `quel1se-riken8`, AWG options such as
-#     `se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113` can be set.
-
+#   address: <ip_address>  # required for QuBE and QuEL-1
+#   adapter: <adapter_id>  # required for QuBE and QuEL-1
 
 Q2A:
   name: "QuBE OU #1-02"
@@ -111,4 +93,27 @@ S159A:
   type: "quel1se-fujitsu11-a"
   address: "10.1.0.159"
   adapter: "500202A800QAA"
-
+QT1:
+  name: "quel3-02-a01"
+  type: "quel3"
+QT2:
+  name: "quel3-02-a02"
+  type: "quel3"
+QT3:
+  name: "quel3-02-a03"
+  type: "quel3"
+QT4:
+  name: "quel3-02-a04"
+  type: "quel3"
+QT5:
+  name: "quel3-02-a05"
+  type: "quel3"
+QT6:
+  name: "quel3-02-a06"
+  type: "quel3"
+QT7:
+  name: "quel3-02-a07"
+  type: "quel3"
+QT8:
+  name: "quel3-02-a08"
+  type: "quel3"

@@ -1,0 +1,11 @@
+meta:
+  description: QuEL-3-compatible example JPA parameters for 144Q-LF chip
+data:
+  0:
+    pump_frequency: 6.0
+    pump_amplitude: 0.1
+    dc_voltage: 0.0
+  1:
+    pump_frequency: 6.01
+    pump_amplitude: 0.105
+    dc_voltage: 0.0
