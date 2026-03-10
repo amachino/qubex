@@ -271,13 +271,12 @@ def print_chip_info(
         if "chip_summary" in info_type:
             active_system_id = system_manager.config_loader.system_id
             inspector_kwargs: dict[str, Any] = {
+                "chip_id": chip.id,
                 "config_dir": system_manager.config_loader.config_path,
                 "params_dir": system_manager.config_loader.params_path,
             }
             if active_system_id is not None:
                 inspector_kwargs["system_id"] = active_system_id
-            else:
-                inspector_kwargs["chip_id"] = chip.id
             inspector = ChipInspector(**inspector_kwargs)
             if chip.n_qubits == 144:
                 inspection_params = {

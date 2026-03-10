@@ -187,6 +187,7 @@ def test_configure_uses_system_manager_and_sync_hook(monkeypatch) -> None:
         (
             "system_manager.load",
             {
+                "chip_id": "64Qv2",
                 "system_id": "64Qv2-Q1",
                 "config_dir": "config-dir",
                 "params_dir": "params-dir",
@@ -234,6 +235,7 @@ def test_configure_reloads_with_active_system_id(monkeypatch) -> None:
     assert calls[0] == (
         "system_manager.load",
         {
+            "chip_id": "144Q-LF",
             "system_id": "144Q-LF-Q3",
             "config_dir": "config-dir",
             "params_dir": "params-dir",

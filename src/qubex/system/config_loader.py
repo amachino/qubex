@@ -133,7 +133,9 @@ class ConfigLoader:
     ----------
     system_id : str, optional
         Canonical system identifier (for example, `"64Q-HF-Q1"`). When provided,
-        `system.yaml` and `wiring.yaml` are resolved through this key.
+        `system.yaml` and `wiring.yaml` are resolved through this key. If
+        `system.yaml` is absent and the identifier exists in `chip.yaml`,
+        Qubex falls back to chip-scoped loading for compatibility.
     chip_id : str, optional
         Deprecated compatibility selector. The chip identifier must resolve to
         exactly one system entry when `system.yaml` is a catalog.
@@ -508,7 +510,11 @@ class ConfigLoader:
         """Resolve the selected system entry from the loaded system payload."""
         payload = self._system_catalog_dict
         if not payload:
-            if self._requested_chip_id is None and self._system_id is not None:
+            if (
+                self._requested_chip_id is None
+                and self._system_id is not None
+                and self._system_id not in self._chip_dict
+            ):
                 raise ValueError(
                     f"`{self._system_file}` is required when loading by `system_id={self._system_id}`."
                 )
@@ -570,6 +576,8 @@ class ConfigLoader:
         configured_chip_id = self._system_dict.get("chip_id")
         if configured_chip_id is not None:
             return str(configured_chip_id)
+        if self._system_id is not None and self._system_id in self._chip_dict:
+            return self._system_id
         if self._requested_chip_id is not None:
             return self._requested_chip_id
         raise ValueError(

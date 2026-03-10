@@ -179,6 +179,7 @@ def test_print_chip_info_uses_active_system_id_for_chip_summary(
     experiment_tool.print_chip_info("chip_summary")
 
     assert FakeChipInspector.init_kwargs == {
+        "chip_id": "144Q-LF",
         "system_id": "144Q-LF-Q3",
         "config_dir": tmp_path / "config",
         "params_dir": tmp_path / "params",

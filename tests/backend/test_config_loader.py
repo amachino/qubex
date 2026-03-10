@@ -1568,6 +1568,50 @@ def test_load_ignores_chip_yaml_backend_when_system_yaml_is_missing(
     assert loader.backend_kind == "quel1"
 
 
+def test_load_allows_system_id_when_system_yaml_is_missing(tmp_path: Path) -> None:
+    """Given system_id without system.yaml, when loading, then chip-scoped config still loads."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 4,
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert loader.system_id == chip_id
+    assert loader.chip_id == chip_id
+    assert loader.backend_kind == "quel1"
+
+
 def test_load_defaults_to_quel1_when_not_configured(
     tmp_path: Path,
 ) -> None:
