@@ -8,8 +8,6 @@
 64Q-B:
   chip_id: 64Q
   backend: quel3
-  # Optional section reserved for QuEL-3 runtime fields.
-  # Current runtime endpoint/port/trigger settings use built-in defaults:
-  # endpoint=`localhost`, port=`50051`, trigger_wait=`1000000`.
-  # QuEL-3 schedule default sampling period is `0.4 ns` (2.5 GS/s).
-  quel3: {}
+  quel3:
+    endpoint: localhost
+    port: 50051
