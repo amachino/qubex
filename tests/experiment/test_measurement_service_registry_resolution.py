@@ -11,12 +11,40 @@ import pytest
 from qxpulse import Blank, PulseSchedule
 
 from qubex.experiment.services.measurement_service import MeasurementService
-from qubex.measurement.models import CaptureData, MeasurementConfig, MeasurementResult
+from qubex.measurement.models import (
+    CaptureData,
+    MeasurementConfig,
+    MeasurementResult,
+    MeasureResult,
+)
 
 
 class _DummyResult:
     def plot(self) -> None:
         return None
+
+
+def _make_measurement_result(target: str = "custom-target") -> MeasurementResult:
+    measurement_config = MeasurementConfig(
+        n_shots=1,
+        shot_interval=100.0,
+        shot_averaging=True,
+        time_integration=False,
+        state_classification=False,
+    )
+    return MeasurementResult(
+        data={
+            target: [
+                CaptureData.from_primary_data(
+                    target=target,
+                    data=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    config=measurement_config,
+                    sampling_period=2.0,
+                )
+            ]
+        },
+        measurement_config=measurement_config,
+    )
 
 
 def _make_service() -> tuple[MeasurementService, dict[str, object]]:
@@ -53,7 +81,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
         targets: Any,
         duration: float,
         **kwargs: object,
-    ) -> SimpleNamespace:
+    ) -> MeasurementResult:
         measure_noise_calls.append(
             {
                 "targets": list(targets),
@@ -61,7 +89,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
                 **kwargs,
             }
         )
-        return SimpleNamespace(data={})
+        return _make_measurement_result()
 
     ctx = SimpleNamespace(
         experiment_system=experiment_system,
@@ -208,11 +236,11 @@ def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
         self: MeasurementService,
         schedule: object,
         **kwargs: object,
-    ) -> _DummyResult:
+    ) -> MeasurementResult:
         captured["labels"] = list(cast(PulseSchedule, schedule).labels)
         captured["readout_amplitudes"] = kwargs["readout_amplitudes"]
         captured["time_integration"] = kwargs["time_integration"]
-        return _DummyResult()
+        return _make_measurement_result()
 
     service.__dict__["run_measurement"] = MethodType(_run_measurement, service)
 
@@ -238,10 +266,10 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
         self: MeasurementService,
         schedule: object,
         **kwargs: object,
-    ) -> _DummyResult:
+    ) -> MeasurementResult:
         captured["labels"] = list(cast(PulseSchedule, schedule).labels)
         captured["time_integration"] = kwargs["time_integration"]
-        return _DummyResult()
+        return _make_measurement_result()
 
     service.__dict__["run_measurement"] = MethodType(_run_measurement, service)
 
@@ -254,6 +282,26 @@ def test_check_waveform_for_execute_forces_dsp_sum_disabled() -> None:
 
     assert captured["labels"] == ["custom-target"]
     assert captured["time_integration"] is False
+
+
+def test_check_waveform_returns_legacy_measure_result() -> None:
+    """Given waveform inspection, when check_waveform is called, then it returns a legacy MeasureResult."""
+    service, _ = _make_service()
+    expected = _make_measurement_result()
+
+    async def _run_measurement(
+        self: MeasurementService,
+        schedule: object,
+        **kwargs: object,
+    ) -> MeasurementResult:
+        return expected
+
+    service.__dict__["run_measurement"] = MethodType(_run_measurement, service)
+
+    result = service.check_waveform(targets=["custom-target"], plot=False)
+
+    assert isinstance(result, MeasureResult)
+    assert result.data["custom-target"].raw.shape == (1,)
 
 
 def test_check_noise_delegates_without_optional_noise_flags() -> None:
@@ -270,35 +318,18 @@ def test_check_noise_delegates_without_optional_noise_flags() -> None:
     ]
 
 
-def test_check_noise_uses_measurement_result_plot() -> None:
-    """Given plot enabled, when check_noise is called, then it uses result-level plotting."""
+def test_check_noise_returns_legacy_measure_result_and_plots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given plot enabled, when check_noise is called, then it returns and plots a legacy MeasureResult."""
     service, _ = _make_service()
     plot_calls = {"count": 0}
+    expected = _make_measurement_result()
 
-    class _NoiseResult(MeasurementResult):
-        def plot(self) -> None:
-            plot_calls["count"] += 1
+    def _plot(self: MeasureResult, *args: object, **kwargs: object) -> None:
+        plot_calls["count"] += 1
 
-    measurement_config = MeasurementConfig(
-        n_shots=1,
-        shot_interval=100.0,
-        shot_averaging=True,
-        time_integration=False,
-        state_classification=False,
-    )
-    expected = _NoiseResult(
-        data={
-            "custom-target": [
-                CaptureData.from_primary_data(
-                    target="custom-target",
-                    data=np.array([0.0 + 0.0j], dtype=np.complex128),
-                    config=measurement_config,
-                    sampling_period=2.0,
-                )
-            ]
-        },
-        measurement_config=measurement_config,
-    )
+    monkeypatch.setattr(MeasureResult, "plot", _plot)
 
     async def _measure_noise(*_args: object, **_kwargs: object) -> MeasurementResult:
         return expected
@@ -307,7 +338,8 @@ def test_check_noise_uses_measurement_result_plot() -> None:
 
     result = service.check_noise(targets=["custom-target"], duration=512, plot=True)
 
-    assert result is expected
+    assert isinstance(result, MeasureResult)
+    assert result.data["custom-target"].raw.shape == (1,)
     assert plot_calls["count"] == 1
 
 

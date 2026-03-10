@@ -58,6 +58,7 @@ from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
 from qubex.measurement import (
     MeasurementResult,
+    MeasurementResultConverter,
     MeasurementSchedule,
     MeasureResult,
     MultipleMeasureResult,
@@ -484,8 +485,15 @@ class MeasurementService:
         *,
         duration: int | None = None,
         plot: bool | None = None,
-    ) -> MeasurementResult:
-        """Measure noise for the specified targets."""
+    ) -> MeasureResult:
+        """
+        Measure noise for the specified targets.
+
+        Returns
+        -------
+        MeasureResult
+            Legacy experiment-layer result for the measured targets.
+        """
         if duration is None:
             duration = 10240
         if plot is None:
@@ -498,10 +506,12 @@ class MeasurementService:
         else:
             targets = list(targets)
 
-        result = _run_async(
-            lambda: self.ctx.measurement.measure_noise(
-                targets=targets,
-                duration=duration,
+        result = MeasurementResultConverter.to_measure_result(
+            _run_async(
+                lambda: self.ctx.measurement.measure_noise(
+                    targets=targets,
+                    duration=duration,
+                )
             )
         )
         if plot:
@@ -1375,7 +1385,7 @@ class MeasurementService:
         readout_amplification: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
-    ) -> MeasurementResult:
+    ) -> MeasureResult:
         """
         Check the readout waveforms of the given targets.
 
@@ -1405,8 +1415,8 @@ class MeasurementService:
 
         Returns
         -------
-        MeasurementResult
-            Result of the experiment.
+        MeasureResult
+            Legacy experiment-layer result of the waveform check.
 
         Examples
         --------
@@ -1463,18 +1473,20 @@ class MeasurementService:
             for target in targets:
                 ps.add(target, Blank(0))
 
-        result = _run_async(
-            lambda: self.run_measurement(
-                schedule=ps,
-                n_shots=n_shots,
-                shot_interval=shot_interval,
-                readout_amplitudes=readout_amplitudes,
-                readout_duration=readout_duration,
-                readout_pre_margin=readout_pre_margin,
-                readout_post_margin=readout_post_margin,
-                readout_amplification=readout_amplification,
-                final_measurement=True,
-                time_integration=False,
+        result = MeasurementResultConverter.to_measure_result(
+            _run_async(
+                lambda: self.run_measurement(
+                    schedule=ps,
+                    n_shots=n_shots,
+                    shot_interval=shot_interval,
+                    readout_amplitudes=readout_amplitudes,
+                    readout_duration=readout_duration,
+                    readout_pre_margin=readout_pre_margin,
+                    readout_post_margin=readout_post_margin,
+                    readout_amplification=readout_amplification,
+                    final_measurement=True,
+                    time_integration=False,
+                )
             )
         )
         if plot:

@@ -1633,7 +1633,7 @@ class Experiment:
         *,
         duration: int | None = None,
         plot: bool | None = None,
-    ) -> MeasurementResult:
+    ) -> MeasureResult:
         """
         Check the noise level of the system.
 
@@ -1648,8 +1648,8 @@ class Experiment:
 
         Returns
         -------
-        MeasurementResult
-            Result of the experiment.
+        MeasureResult
+            Legacy experiment-layer result of the noise check.
 
         Examples
         --------
@@ -1675,7 +1675,7 @@ class Experiment:
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
-    ) -> MeasurementResult:
+    ) -> MeasureResult:
         """
         Check the readout waveforms of the given targets.
 
@@ -1705,8 +1705,8 @@ class Experiment:
 
         Returns
         -------
-        MeasurementResult
-            Result of the experiment.
+        MeasureResult
+            Legacy experiment-layer result of the waveform check.
 
         Examples
         --------
