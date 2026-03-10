@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from threading import Event, Lock
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
@@ -423,6 +424,64 @@ class _FakeTriggeredAction:
         return cls(box=box, _wseqs=[], _triggers={})
 
 
+@dataclass
+class _ConcurrencyProbe:
+    total_calls: int
+    active_calls: int = 0
+    max_active_calls: int = 0
+    all_started: Event = field(default_factory=Event)
+    lock: Lock = field(default_factory=Lock)
+
+    def enter(self) -> None:
+        """Record one active call and signal when all expected calls have started."""
+        with self.lock:
+            self.active_calls += 1
+            self.max_active_calls = max(self.max_active_calls, self.active_calls)
+            if self.active_calls == self.total_calls:
+                self.all_started.set()
+
+    def wait_for_peers(self) -> None:
+        """Wait briefly for sibling calls so the test can detect overlap."""
+        self.all_started.wait(timeout=0.2)
+
+    def leave(self) -> None:
+        """Record call completion."""
+        with self.lock:
+            self.active_calls -= 1
+
+
+@dataclass
+class _ConcurrentCaptureAction:
+    probe: _ConcurrencyProbe
+    capture_start_value: dict[Any, Any]
+    capture_stop_value: tuple[dict[Any, Any], dict[tuple[Any, int], Any]]
+    _cprms: dict[str, object] = field(default_factory=lambda: {"P0": object()})
+    _wseqs: list[object] = field(default_factory=list)
+    _triggers: dict[str, object] = field(default_factory=dict)
+
+    def capture_start(self) -> dict[Any, Any]:
+        """Wait for sibling starts so the test can detect concurrency."""
+        self.probe.enter()
+        try:
+            self.probe.wait_for_peers()
+            return self.capture_start_value
+        finally:
+            self.probe.leave()
+
+    def capture_stop(
+        self,
+        futures: dict[Any, Any],
+    ) -> tuple[dict[Any, Any], dict[tuple[Any, int], Any]]:
+        """Wait for sibling stops so the test can detect concurrency."""
+        _ = futures
+        self.probe.enter()
+        try:
+            self.probe.wait_for_peers()
+            return self.capture_stop_value
+        finally:
+            self.probe.leave()
+
+
 def test_qubecalib_emit_at_reserves_triggered_boxes() -> None:
     """Qubecalib compatibility should reserve emission for triggered boxes."""
     box = _FakeWavegenBox()
@@ -483,3 +542,96 @@ def test_qxdriver_emit_at_skips_triggered_boxes() -> None:
     multi_action.emit_at(min_time_offset=16)
 
     assert box.reservations == []
+
+
+def test_qubex_multi_action_capture_start_runs_box_calls_in_parallel() -> None:
+    """Given multiple boxes, when starting capture, then per-box starts should overlap."""
+    # Arrange
+    probe = _ConcurrencyProbe(total_calls=2)
+    multi_action = QubexMultiAction(
+        _system=cast(Any, SimpleNamespace(box={}, timing_shift={}, displacement=0)),
+        _actions=cast(
+            Any,
+            MappingProxyType(
+                {
+                    "B0": _ConcurrentCaptureAction(
+                        probe=probe,
+                        capture_start_value={"P0": "F0"},
+                        capture_stop_value=({"P0": "unused"}, {("P0", 0): "unused"}),
+                    ),
+                    "B1": _ConcurrentCaptureAction(
+                        probe=probe,
+                        capture_start_value={"P1": "F1"},
+                        capture_stop_value=({"P1": "unused"}, {("P1", 1): "unused"}),
+                    ),
+                }
+            ),
+        ),
+        _estimated_timediff=MappingProxyType({"B0": 0, "B1": 0}),
+        _reference_box_name="B0",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+    )
+
+    # Act
+    futures = multi_action.capture_start()
+
+    # Assert
+    assert futures == {"B0": {"P0": "F0"}, "B1": {"P1": "F1"}}
+    assert probe.max_active_calls == 2
+
+
+def test_qubex_multi_action_capture_stop_runs_box_calls_in_parallel() -> None:
+    """Given multiple boxes, when stopping capture, then per-box stops should overlap."""
+    # Arrange
+    probe = _ConcurrencyProbe(total_calls=2)
+    multi_action = QubexMultiAction(
+        _system=cast(Any, SimpleNamespace(box={}, timing_shift={}, displacement=0)),
+        _actions=cast(
+            Any,
+            MappingProxyType(
+                {
+                    "B0": _ConcurrentCaptureAction(
+                        probe=probe,
+                        capture_start_value={"P0": "unused"},
+                        capture_stop_value=(
+                            {"P0": "ok0"},
+                            {("P0", 0): "data0"},
+                        ),
+                    ),
+                    "B1": _ConcurrentCaptureAction(
+                        probe=probe,
+                        capture_start_value={"P1": "unused"},
+                        capture_stop_value=(
+                            {"P1": "ok1"},
+                            {("P1", 1): "data1"},
+                        ),
+                    ),
+                }
+            ),
+        ),
+        _estimated_timediff=MappingProxyType({"B0": 0, "B1": 0}),
+        _reference_box_name="B0",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+    )
+
+    # Act
+    status, data = multi_action.capture_stop(
+        cast(Any, {"B0": {"P0": "F0"}, "B1": {"P1": "F1"}})
+    )
+
+    # Assert
+    assert status == {
+        ("B0", "P0"): "ok0",
+        ("B1", "P1"): "ok1",
+    }
+    assert data == {
+        ("B0", "P0", 0): "data0",
+        ("B1", "P1", 1): "data1",
+    }
+    assert probe.max_active_calls == 2

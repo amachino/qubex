@@ -430,6 +430,23 @@ def _estimate_timediff(
     return reference_box_name, ref_sysref_time_offset, estimated_timediff
 
 
+def _run_per_box_parallel(
+    items: Sequence[tuple[str, Any]],
+    runner: Callable[[str, Any], Any],
+) -> dict[str, Any]:
+    """Run one independent box operation per worker and preserve input order."""
+    if not items:
+        return {}
+
+    def _invoke(item: tuple[str, Any]) -> tuple[str, Any]:
+        name, payload = item
+        return name, runner(name, payload)
+
+    max_workers = max(1, len(items))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        return dict(executor.map(_invoke, items))
+
+
 @dataclass(frozen=True)
 class ClockHealthCheckOptions:
     """
@@ -483,11 +500,18 @@ class QubexMultiAction:
 
     def capture_start(self) -> dict[str, dict[PortType, Any]]:
         """Start capture for boxes that include capture settings."""
-        return {
-            name: action.capture_start()
+        capture_actions = [
+            (name, action)
             for name, action in self._actions.items()
             if self._has_capture_setting(action)
-        }
+        ]
+        return cast(
+            dict[str, dict[PortType, Any]],
+            _run_per_box_parallel(
+                capture_actions,
+                lambda _name, action: action.capture_start(),
+            ),
+        )
 
     def capture_stop(
         self,
@@ -497,10 +521,13 @@ class QubexMultiAction:
         dict[tuple[str, PortType, int], Any],
     ]:
         """Stop capture and flatten per-box status/data maps."""
-        box_results = {
-            name: self._actions[name].capture_stop(future)
-            for name, future in futures.items()
-        }
+        box_results = cast(
+            dict[str, tuple[dict[PortType, Any], dict[tuple[PortType, int], Any]]],
+            _run_per_box_parallel(
+                list(futures.items()),
+                lambda name, future: self._actions[name].capture_stop(future),
+            ),
+        )
         status: dict[tuple[str, PortType], Any] = {}
         data: dict[tuple[str, PortType, int], Any] = {}
         for name, (box_status, box_data) in box_results.items():
