@@ -4,10 +4,12 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from logging import Logger
 from types import MappingProxyType
 from typing import Any, Final, Protocol, TypeAlias, TypeGuard, cast
@@ -102,6 +104,27 @@ def _resolve_clock_health_checks(
 ) -> ClockHealthCheckOptions:
     """Return effective clock check options with default fallback."""
     return ClockHealthCheckOptions() if options is None else options
+
+
+def _get_installed_quelware_version() -> str | None:
+    """Return installed `quel_ic_config` version if available."""
+    try:
+        return version("quel_ic_config")
+    except PackageNotFoundError:
+        return None
+
+
+def resolve_build_worker_count(quelware_version: str | None, box_count: int) -> int:
+    """Return build worker count tuned for the active quelware version."""
+    # Notes:
+    # quelware 0.10.x spends most build time in `config_runit -> CapUnit.load_parameter`,
+    # where `copy.deepcopy(param)` dominates. Threading that path across boxes tends to
+    # increase wall-clock time because the work is CPU/GIL-heavy before hardware I/O.
+    # Keep the workaround version-scoped so future quelware releases can recover parallel
+    # build automatically once that load path is improved upstream.
+    if quelware_version and re.match(r"^0\.10(\.|$)", quelware_version):
+        return 1
+    return max(1, box_count)
 
 
 def _instantiate_awg_id(
@@ -380,9 +403,10 @@ def _build_single_actions_parallel(
     multi_action: type[MultiActionProtocol],
     logger: Logger,
     clock_health_checks: ClockHealthCheckOptions,
+    quelware_version: str | None,
 ) -> dict[str, SingleActionProtocol]:
     """Build one single action per box in parallel."""
-    max_workers = max(1, len(settings_by_box))
+    max_workers = resolve_build_worker_count(quelware_version, len(settings_by_box))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         actions = dict(
             executor.map(
@@ -665,6 +689,8 @@ def build_parallel_multi_action(
     driver = load_quel1_driver()
     multi_action = driver.MultiAction
     single_action = driver.SingleAction
+    driver_package_name = getattr(driver, "package_name", "qxdriver_quel1")
+    quelware_version = _get_installed_quelware_version()
     clock_health_checks = _resolve_clock_health_checks(clock_health_checks)
 
     settings_by_box = _convert_to_box_setting_dict(
@@ -700,6 +726,7 @@ def build_parallel_multi_action(
         multi_action=multi_action,
         logger=logger,
         clock_health_checks=clock_health_checks,
+        quelware_version=quelware_version,
     )
     reference_box_name, ref_sysref_time_offset, estimated_timediff = _estimate_timediff(
         actions=actions,
@@ -718,8 +745,7 @@ def build_parallel_multi_action(
         _ref_sysref_time_offset=ref_sysref_time_offset,
         _clock_options=clock_health_checks,
         _logger=logger,
-        _emit_triggered_boxes=getattr(driver, "package_name", "qxdriver_quel1")
-        == "qubecalib",
+        _emit_triggered_boxes=driver_package_name == "qubecalib",
     )
     cprms = _collect_multi_action_cprms(actions=actions)
     return multi_action_instance, cprms

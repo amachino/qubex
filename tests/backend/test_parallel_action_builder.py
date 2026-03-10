@@ -373,6 +373,17 @@ def test_build_parallel_multi_action_single_box_path_uses_action_builder(
     assert cprms == {("B0", "P0", 1): "CP0", ("B0", "P0", 2): "CP1"}
 
 
+def test_resolve_build_worker_count_uses_serial_build_for_quelware_0_10() -> None:
+    """Given quelware 0.10.x, when resolving build workers, then build should run serially."""
+    assert parallel_action_builder.resolve_build_worker_count("0.10.7", 4) == 1
+
+
+def test_resolve_build_worker_count_keeps_parallel_build_for_other_versions() -> None:
+    """Given quelware outside 0.10.x, when resolving build workers, then build should use one worker per box."""
+    assert parallel_action_builder.resolve_build_worker_count("0.11.0", 4) == 4
+    assert parallel_action_builder.resolve_build_worker_count("0.8.14", 4) == 4
+
+
 @dataclass
 class _CompletedWavegenTask:
     def result(self) -> None:
