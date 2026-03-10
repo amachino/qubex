@@ -123,12 +123,19 @@ exclude = [
     "**/__pycache__",
     "**/.*",
     "lib",
+    "packages/qube-calib",
     "packages/quelware-client",
+    "packages/qxdriver-quel1",
 ]
 typeCheckingMode = "basic"
 
 [tool.ruff]
-extend-exclude = ["lib", "packages/quelware-client"]
+extend-exclude = [
+    "lib",
+    "packages/qube-calib",
+    "packages/quelware-client",
+    "packages/qxdriver-quel1",
+]
 
 [tool.ruff.lint]
 select = [
