@@ -43,6 +43,13 @@ This repository fetches `packages/quelware-client` as a submodule for
 development and CI, and prefers `lib/quelware-client-internal` when present
 in a local development workspace.
 
+Available backend extras:
+
+- `backend`: install packaged QuEL-1 and QuEL-3 dependencies.
+- `quel1`: install `qxdriver-quel1` only.
+- `quel3`: install `quelware-client` only.
+- `qubecalib`: install `qubecalib` only.
+
 ### Install specific version
 
 ```bash

@@ -63,6 +63,13 @@ For repository development, `packages/quelware-client` is fetched as a
 submodule, while a local `lib/quelware-client-internal` checkout takes
 precedence when present.
 
+Available backend extras:
+
+- `backend`: install packaged QuEL-1 and QuEL-3 dependencies.
+- `quel1`: install `qxdriver-quel1` only.
+- `quel3`: install `quelware-client` only.
+- `qubecalib`: install `qubecalib` only.
+
 ### Install specific version
 
 Use this option when you need a pinned version for reproducibility.

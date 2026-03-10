@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from types import SimpleNamespace
+from dataclasses import dataclass, field
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
 import qubex.backend.quel1.compat.parallel_action_builder as parallel_action_builder
 from qubex.backend.quel1.compat.parallel_action_builder import (
+    ClockHealthCheckOptions,
+    QubexMultiAction,
     _convert_to_box_setting_dict,
     build_parallel_multi_action,
 )
@@ -368,3 +370,116 @@ def test_build_parallel_multi_action_single_box_path_uses_action_builder(
     assert action_builder_calls["system"] is system
     assert action_builder_calls["settings"] == settings
     assert cprms == {("B0", "P0", 1): "CP0", ("B0", "P0", 2): "CP1"}
+
+
+@dataclass
+class _CompletedWavegenTask:
+    def result(self) -> None:
+        """Return immediately for scheduled wavegen."""
+
+
+@dataclass
+class _FakeWavegenBox:
+    current_time: int = 100
+    latest_sysref_time: int = 0
+    reservations: list[tuple[set[tuple[str, int]], int | None]] = field(
+        default_factory=list
+    )
+
+    def get_current_timecounter(self) -> int:
+        """Return the mocked current time counter."""
+        return self.current_time
+
+    def get_latest_sysref_timecounter(self) -> int:
+        """Return the mocked latest SYSREF time counter."""
+        return self.latest_sysref_time
+
+    def start_wavegen(
+        self,
+        channels: set[tuple[str, int]],
+        timecounter: int | None = None,
+    ) -> _CompletedWavegenTask:
+        """Record one emission reservation."""
+        self.reservations.append((channels, timecounter))
+        return _CompletedWavegenTask()
+
+
+@dataclass
+class _FakeTriggeredAction:
+    box: _FakeWavegenBox
+    _wseqs: list[SimpleNamespace]
+    _triggers: dict[str, SimpleNamespace]
+    _cprms: dict[object, object] = field(default_factory=dict)
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        box: _FakeWavegenBox,
+        settings: list[object],
+    ) -> _FakeTriggeredAction:
+        """Build one fake action for protocol compatibility in tests."""
+        _ = settings
+        return cls(box=box, _wseqs=[], _triggers={})
+
+
+def test_qubecalib_emit_at_reserves_triggered_boxes() -> None:
+    """Qubecalib compatibility should reserve emission for triggered boxes."""
+    box = _FakeWavegenBox()
+    action = _FakeTriggeredAction(
+        box=box,
+        _wseqs=[SimpleNamespace(port="P0", channel=1)],
+        _triggers={"P1": SimpleNamespace(port="P0", channel=1)},
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"B0": box},
+                timing_shift={"B0": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(Any, MappingProxyType({"B0": action})),
+        _estimated_timediff=MappingProxyType({"B0": 0}),
+        _reference_box_name="B0",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=True,
+    )
+
+    multi_action.emit_at(min_time_offset=16)
+
+    assert box.reservations == [({("P0", 1)}, 128)]
+
+
+def test_qxdriver_emit_at_skips_triggered_boxes() -> None:
+    """Qxdriver compatibility should not reserve emission for triggered boxes."""
+    box = _FakeWavegenBox()
+    action = _FakeTriggeredAction(
+        box=box,
+        _wseqs=[SimpleNamespace(port="P0", channel=1)],
+        _triggers={"P1": SimpleNamespace(port="P0", channel=1)},
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"B0": box},
+                timing_shift={"B0": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(Any, MappingProxyType({"B0": action})),
+        _estimated_timediff=MappingProxyType({"B0": 0}),
+        _reference_box_name="B0",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+    )
+
+    multi_action.emit_at(min_time_offset=16)
+
+    assert box.reservations == []

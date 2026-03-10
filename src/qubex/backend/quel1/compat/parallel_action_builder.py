@@ -464,6 +464,7 @@ class QubexMultiAction:
     _ref_sysref_time_offset: int
     _clock_options: ClockHealthCheckOptions
     _logger: Logger
+    _emit_triggered_boxes: bool = False
 
     SYSREF_PERIOD: Final[int] = 2_000
     TIMING_OFFSET: Final[int] = 0
@@ -564,7 +565,7 @@ class QubexMultiAction:
         timing_shift = self._system.timing_shift
         tasks: list[_WavegenTaskProtocol] = []
         for name, action in self._actions.items():
-            if getattr(action, "_triggers", {}):
+            if not self._emit_triggered_boxes and getattr(action, "_triggers", {}):
                 continue
             scheduled_time = (
                 base_time + self._estimated_timediff[name] + timing_shift[name]
@@ -690,6 +691,8 @@ def build_parallel_multi_action(
         _ref_sysref_time_offset=ref_sysref_time_offset,
         _clock_options=clock_health_checks,
         _logger=logger,
+        _emit_triggered_boxes=getattr(driver, "package_name", "qxdriver_quel1")
+        == "qubecalib",
     )
     cprms = _collect_multi_action_cprms(actions=actions)
     return multi_action_instance, cprms
