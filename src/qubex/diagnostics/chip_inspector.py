@@ -36,28 +36,47 @@ class ChipInspector:
 
     def __init__(
         self,
-        chip_id: str,
+        chip_id: str | None = None,
+        *,
+        system_id: str | None = None,
         config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         props_dir: Path | str | None = None,
-    ):
+    ) -> None:
+        """
+        Initialize one inspector from system or chip configuration.
+
+        `system_id` is the canonical selector. `chip_id` remains available as a
+        compatibility input for single-system chip configurations.
+        """
         self._init_graph(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
+            params_dir=params_dir,
             props_dir=props_dir,
         )
 
     def _init_graph(
         self,
-        chip_id: str,
+        chip_id: str | None = None,
+        *,
+        system_id: str | None = None,
         config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         props_dir: Path | str | None = None,
-    ):
+    ) -> None:
+        """Load config data and build the inspection graph."""
+        if chip_id is None and system_id is None:
+            raise ValueError("Either `system_id` or `chip_id` must be provided.")
+        resolved_params_dir = params_dir if params_dir is not None else props_dir
         config_loader = ConfigLoader(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
-            params_dir=props_dir,
+            params_dir=resolved_params_dir,
         )
-        experiment_system = config_loader.get_experiment_system(chip_id)
+        experiment_system = config_loader.get_experiment_system()
         self.graph = experiment_system.quantum_system.chip_graph
 
         frequency_dict = config_loader.load_param_data("qubit_frequency")

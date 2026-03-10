@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from qubex.experiment import experiment_tool
 from qubex.system.control_system import PortType
@@ -87,8 +88,18 @@ class FakeBackendControllerWithGetBox(FakeBackendController):
 class FakeSystemManager:
     """System-manager stub for experiment_tool tests."""
 
-    experiment_system: FakeExperimentSystem
+    experiment_system: object
     backend_controller: FakeBackendController
+    config_loader: object | None = None
+
+
+@dataclass(frozen=True)
+class FakeConfigLoader:
+    """Config-loader stub for experiment_tool tests."""
+
+    system_id: str
+    config_path: Path
+    params_path: Path
 
 
 def test_print_box_info_fetch_uses_dump_box(monkeypatch) -> None:
@@ -120,3 +131,53 @@ def test_get_quel1_box_reconnects_box_with_default_threshold(monkeypatch) -> Non
 
     assert returned_box is box
     assert box.background_noise_thresholds == [50_000]
+
+
+def test_print_chip_info_uses_active_system_id_for_chip_summary(
+    monkeypatch, tmp_path
+) -> None:
+    """Given a loaded shared-chip system, chip summary should use active system_id."""
+
+    class FakeChipInspector:
+        """Inspector stub recording initialization arguments."""
+
+        init_kwargs: dict[str, object] | None = None
+
+        def __init__(self, **kwargs: object) -> None:
+            self.__class__.init_kwargs = kwargs
+
+        def execute(self, params: dict | None = None) -> object:
+            """Return a fake inspection summary."""
+            del params
+            return self
+
+        def draw(
+            self,
+            *,
+            draw_individual_results: bool = True,
+            save_image: bool = False,
+        ) -> None:
+            """Accept draw requests."""
+            del draw_individual_results, save_image
+
+    fake_chip = type("FakeChip", (), {"id": "144Q-LF", "n_qubits": 144})()
+    fake_loader = FakeConfigLoader(
+        system_id="144Q-LF-Q3",
+        config_path=tmp_path / "config",
+        params_path=tmp_path / "params",
+    )
+    fake_manager = FakeSystemManager(
+        experiment_system=type("FakeExperimentSystemWithChip", (), {"chip": fake_chip})(),
+        backend_controller=FakeBackendController(),
+        config_loader=fake_loader,
+    )
+    monkeypatch.setattr(experiment_tool, "system_manager", fake_manager)
+    monkeypatch.setattr(experiment_tool, "ChipInspector", FakeChipInspector)
+
+    experiment_tool.print_chip_info("chip_summary")
+
+    assert FakeChipInspector.init_kwargs == {
+        "system_id": "144Q-LF-Q3",
+        "config_dir": tmp_path / "config",
+        "params_dir": tmp_path / "params",
+    }
