@@ -52,6 +52,8 @@ system-specific deployment manifests (`system`, `wiring`).
   deployment is attached to one concrete set of boxes/resources.
 - Box usage is derived from wiring references.
 - `system.yaml` does not need an explicit `boxes:` field by default.
+- Preferred port specifier format is `<box_id>:<port>`.
+- Legacy `<box_id>-<port>` remains accepted for compatibility.
 
 ### D4. Backend section style
 
@@ -132,15 +134,15 @@ QT1:
 ```yaml
 64Q-HF-Q1:
   - mux: 0
-    ctrl: [BOX1-2, BOX1-4, BOX1-9, BOX1-11]
-    read_out: BOX1-1
-    read_in: BOX1-0
+    ctrl: [BOX1:2, BOX1:4, BOX1:9, BOX1:11]
+    read_out: BOX1:1
+    read_in: BOX1:0
 
 144Q-LF-Q3:
   - mux: 0
-    ctrl: [QT1-4, QT1-2, QT1-11, QT1-9]
-    read_out: QT1-1
-    read_in: QT1-0
+    ctrl: [QT1:4, QT1:2, QT1:11, QT1:9]
+    read_out: QT1:1
+    read_in: QT1:0
 ```
 
 ## Validation rules

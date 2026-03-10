@@ -272,6 +272,35 @@ def test_load_resolves_system_id_and_system_keyed_wiring(tmp_path: Path) -> None
         system.control_system.get_box("BOX2")
 
 
+def test_load_accepts_colon_separated_wiring_specifiers(tmp_path: Path) -> None:
+    """Given colon-based wiring specifiers, when loading, then ConfigLoader resolves ports correctly."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1:1",
+                    "read_in": "BOX1:0",
+                    "ctrl": ["BOX1:2", "BOX1:4", "BOX1:9", "BOX1:11"],
+                    "pump": "BOX1:3",
+                }
+            ]
+        },
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert system.control_system.get_gen_port("BOX1", 1).number == 1
+    assert system.control_system.get_cap_port("BOX1", 0).number == 0
+
+
 def test_load_warns_for_deprecated_chip_id_when_system_match_is_unique(
     tmp_path: Path,
 ) -> None:

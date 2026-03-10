@@ -15,6 +15,14 @@ def test_split_box_port_specifier_accepts_hyphenated_box_id() -> None:
     assert port == 11
 
 
+def test_split_box_port_specifier_accepts_colon_separator() -> None:
+    """Given colon-separated specifier, when splitting, then id and port are resolved."""
+    box_id, port = split_box_port_specifier("unit-a:11")
+
+    assert box_id == "unit-a"
+    assert port == 11
+
+
 def test_split_box_port_specifier_rejects_missing_separator() -> None:
     """Given invalid specifier without separator, when splitting, then ValueError is raised."""
     with pytest.raises(ValueError, match="Invalid port specifier"):

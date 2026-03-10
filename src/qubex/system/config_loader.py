@@ -28,6 +28,7 @@ from qubex.constants import (
 )
 from qubex.system.quel1.quel1_system_loader import Quel1SystemLoader
 from qubex.system.quel3.quel3_system_loader import Quel3SystemLoader
+from qubex.system.wiring import split_box_port_specifier
 from qubex.typing import ConfigurationMode
 
 logger = logging.getLogger(__name__)
@@ -1010,8 +1011,7 @@ class ConfigLoader:
     @staticmethod
     def _split_box_port_specifier(specifier: str) -> tuple[str, int]:
         """Return box id and port number from a port specifier string."""
-        box_id, port = specifier.rsplit("-", 1)
-        return box_id, int(port)
+        return split_box_port_specifier(specifier)
 
     def _create_control_parameter_defaults(self) -> ControlParameterDefaults:
         """

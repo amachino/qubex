@@ -35,7 +35,7 @@ Define the configuration split for QuEL-3 so that:
 
 ## Rationale
 
-- Existing wiring design is physical-port based (`<box>-<port>`), and current system assembly also starts from ports.
+- Existing wiring design is physical-port based (`<box>:<port>` preferred, legacy `<box>-<port>`), and current system assembly also starts from ports.
 - In quelware, instruments are attached to a port (`InstrumentInfo.port_id`) and can be deployed as multiple instruments per port.
 - Alias-based lookup is convenient for execution but unstable as a physical source of truth.
 - Some systems may expose only combined ports (for example `p0p1trx`) rather than decomposed `p0` and `p1`.
@@ -72,7 +72,7 @@ readout:
 
 1. Resolve target properties from `TargetRegistry` (no label parsing dependency).
 2. Resolve physical port from wiring map.
-3. Convert runtime bindings to `<unit>-<port>` using physical port metadata:
+3. Convert runtime bindings to `<unit>:<port>` using physical port metadata:
    - `port.box_id`
    - integer `port.number`
    - `experiment_system.get_box(box_id).name`
