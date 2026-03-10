@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any, TypeVar
 
 import numpy as np
@@ -21,7 +20,6 @@ from qubex.backend.quel3.interfaces import (
     DirectiveProtocol,
     InstrumentDriverFactory,
     InstrumentDriverProtocol,
-    InstrumentInfoProtocol,
     InstrumentResolverFactory,
     InstrumentResolverProtocol,
     QuelwareClientFactory,
@@ -50,16 +48,6 @@ def _run_async(
     """Run one awaitable factory from synchronous APIs."""
     bridge = get_shared_async_bridge(key="quel3-execution")
     return bridge.run(factory, timeout=timeout)
-
-
-@dataclass(frozen=True)
-class _PortBinding:
-    """Parsed port binding for matching target ports to instrument resources."""
-
-    unit: str
-    out_port: int | None
-    in_port: int | None
-
 
 class Quel3ExecutionManager:
     """Handle backend execution entrypoints for QuEL-3 controller."""
@@ -413,145 +401,7 @@ class Quel3ExecutionManager:
                     f"Instrument alias `{alias}` could not be resolved."
                 ) from exc
             return alias
-        if binding.startswith("port:"):
-            port_binding = cls._parse_box_port_binding(
-                binding.removeprefix("port:").strip()
-            )
-            capture_binding = (
-                cls._parse_box_port_binding(capture_port_binding)
-                if (
-                    capture_port_binding is not None
-                    and len(capture_port_binding.strip()) > 0
-                )
-                else None
-            )
-            return cls._resolve_alias_from_port_binding(
-                target=target,
-                resolver=resolver,
-                port_binding=port_binding,
-                capture_port_binding=capture_binding,
-                has_events=has_events,
-                has_captures=has_captures,
-            )
         raise ValueError(f"Unsupported instrument binding: `{binding}`.")
-
-    @classmethod
-    def _resolve_alias_from_port_binding(
-        cls,
-        *,
-        target: str,
-        resolver: InstrumentResolverProtocol,
-        port_binding: _PortBinding,
-        capture_port_binding: _PortBinding | None,
-        has_events: bool,
-        has_captures: bool,
-    ) -> str:
-        """Resolve one alias from one box-port binding with fail-fast behavior."""
-        instrument_infos = cls._list_instrument_infos_by_alias(resolver)
-        candidates: list[str] = []
-        for alias, instrument_info in instrument_infos.items():
-            parsed = cls._parse_instrument_port_binding(str(instrument_info.port_id))
-            if parsed is None or parsed.unit != port_binding.unit:
-                continue
-            role_name = str(instrument_info.definition.role)
-            supports_tx = any(
-                token in role_name for token in ("TRANSMITTER", "TRANSCEIVER")
-            )
-            supports_rx = any(
-                token in role_name for token in ("RECEIVER", "TRANSCEIVER")
-            )
-
-            if has_events:
-                if not supports_tx:
-                    continue
-                if (
-                    parsed.out_port is not None
-                    and parsed.out_port != port_binding.out_port
-                ):
-                    continue
-            if has_captures:
-                if not supports_rx:
-                    continue
-                expected_capture_port = (
-                    capture_port_binding.out_port
-                    if capture_port_binding is not None
-                    else port_binding.out_port
-                )
-                if parsed.in_port is not None:
-                    if parsed.in_port != expected_capture_port:
-                        continue
-                elif (
-                    parsed.out_port is not None
-                    and parsed.out_port != expected_capture_port
-                ):
-                    continue
-            candidates.append(alias)
-
-        if len(candidates) == 0:
-            available = sorted(instrument_infos.keys())
-            raise ValueError(
-                "No instrument alias is compatible with binding "
-                f"`{port_binding.unit}-{port_binding.out_port}`. available={available}"
-            )
-        unique_candidates = sorted(dict.fromkeys(candidates))
-        if target in unique_candidates:
-            return target
-        if len(unique_candidates) > 1:
-            raise ValueError(
-                "Ambiguous instrument aliases for binding "
-                f"`{port_binding.unit}-{port_binding.out_port}`: {unique_candidates}"
-            )
-        return unique_candidates[0]
-
-    @staticmethod
-    def _list_instrument_infos_by_alias(
-        resolver: InstrumentResolverProtocol,
-    ) -> dict[str, InstrumentInfoProtocol]:
-        """List instrument infos keyed by alias from resolver state."""
-        alias_to_id = getattr(resolver, "_alias_to_id", None)
-        if not isinstance(alias_to_id, dict):
-            raise TypeError("InstrumentResolver does not expose alias mapping state.")
-        infos: dict[str, InstrumentInfoProtocol] = {}
-        for alias in sorted(alias_to_id.keys()):
-            alias_str = str(alias)
-            infos[alias_str] = resolver.find_inst_info_by_alias(alias_str)
-        return infos
-
-    @staticmethod
-    def _parse_box_port_binding(binding: str) -> _PortBinding:
-        """Parse `<box>-<port>` binding used by Qubex runtime wiring."""
-        box_id, separator, port_text = binding.rpartition("-")
-        if separator == "" or len(box_id) == 0 or len(port_text) == 0:
-            raise ValueError(f"Invalid port binding: `{binding}`.")
-        try:
-            port_number = int(port_text)
-        except ValueError as exc:
-            raise ValueError(f"Invalid port number in binding: `{binding}`.") from exc
-        return _PortBinding(unit=box_id, out_port=port_number, in_port=port_number)
-
-    @staticmethod
-    def _parse_instrument_port_binding(resource_id: str) -> _PortBinding | None:
-        """Parse quelware instrument `port_id` into comparable port binding."""
-        match = re.fullmatch(
-            r"(?P<unit>[^:]+):(?P<kind>tx|rx|trx)_p(?P<first>\d+)(?:p(?P<second>\d+))?",
-            resource_id,
-        )
-        if match is None:
-            return None
-        unit = str(match.group("unit"))
-        first = int(match.group("first"))
-        second_raw = match.group("second")
-        second = int(second_raw) if second_raw is not None else None
-        kind = match.group("kind")
-        if kind == "tx":
-            return _PortBinding(unit=unit, out_port=first, in_port=None)
-        if kind == "rx":
-            return _PortBinding(unit=unit, out_port=None, in_port=first)
-        if kind == "trx":
-            if second is None:
-                return _PortBinding(unit=unit, out_port=first, in_port=first)
-            return _PortBinding(unit=unit, out_port=second, in_port=first)
-        return _PortBinding(unit=unit, out_port=first, in_port=first)
 
     @staticmethod
     def _build_capture_mode_directive(

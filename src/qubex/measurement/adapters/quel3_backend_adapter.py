@@ -171,24 +171,6 @@ class Quel3MeasurementBackendAdapter:
         self._capture_targets_by_alias = self._build_capture_targets_by_alias(payload)
         return BackendExecutionRequest(payload=payload)
 
-    def _resolve_runtime_port_binding(self, port: object) -> str:
-        """Resolve runtime binding as `<unit>-<port>` from physical port metadata."""
-        box_id = getattr(port, "box_id", None)
-        port_number = getattr(port, "number", None)
-        if not (
-            isinstance(box_id, str) and len(box_id) > 0 and isinstance(port_number, int)
-        ):
-            raise ValueError(
-                "QuEL-3 runtime port binding requires port metadata with `box_id` and integer `number`."
-            )
-        box = self._experiment_system.get_box(box_id)
-        unit_name = getattr(box, "name", None)
-        if not isinstance(unit_name, str) or len(unit_name) == 0:
-            raise ValueError(
-                "QuEL-3 runtime port binding requires `box_id`, `number`, and `box.name`."
-            )
-        return f"{unit_name}-{port_number}"
-
     def build_measurement_result(
         self,
         *,

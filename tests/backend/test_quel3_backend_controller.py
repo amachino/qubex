@@ -513,8 +513,8 @@ def test_filter_runnable_payload_rejects_all_empty_timelines() -> None:
         Quel3ExecutionManager._filter_runnable_payload(payload)
 
 
-def test_resolve_payload_rejects_ambiguous_port_binding() -> None:
-    """Given ambiguous port binding, resolving payload fails fast."""
+def test_resolve_payload_rejects_port_binding() -> None:
+    """Given legacy port binding, resolving payload fails fast."""
     payload = _make_payload()
     payload = replace(
         payload,
@@ -522,99 +522,22 @@ def test_resolve_payload_rejects_ambiguous_port_binding() -> None:
         instrument_bindings={"RQ00": "port:unit-a-0"},
         capture_port_bindings={"RQ00": "unit-a-0"},
     )
-    resolver = _FakeInstrumentResolver(
-        alias_to_info={
-            "alias-a": _FakeInstrumentInfo(
-                port_id="unit-a:trx_p00",
-                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
-            ),
-            "alias-b": _FakeInstrumentInfo(
-                port_id="unit-a:trx_p00",
-                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
-            ),
-        }
-    )
+    resolver = _FakeInstrumentResolver(alias_to_info={})
 
-    with pytest.raises(ValueError, match="Ambiguous instrument aliases"):
+    with pytest.raises(ValueError, match="Unsupported instrument binding"):
         Quel3ExecutionManager._resolve_payload(
             payload=payload,
             resolver=cast(Any, resolver),
         )
 
 
-def test_resolve_payload_prefers_exact_target_alias_for_ambiguous_port_binding() -> (
-    None
-):
-    """Given ambiguous port candidates, resolving should prefer an alias matching the target label."""
+def test_resolve_payload_accepts_alias_binding() -> None:
+    """Given alias binding, resolving payload keeps the resolved alias."""
     payload = _make_payload()
     payload = replace(
         payload,
         fixed_timelines={"Q00": payload.fixed_timelines["alias-rq00"]},
-        instrument_bindings={"Q00": "port:quel3-02-a01-4"},
-        capture_port_bindings={"Q00": "quel3-02-a01-0"},
-    )
-    resolver = _FakeInstrumentResolver(
-        alias_to_info={
-            "Q00": _FakeInstrumentInfo(
-                port_id="quel3-02-a01:trx_p00p04",
-                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
-            ),
-            "Q00-CR": _FakeInstrumentInfo(
-                port_id="quel3-02-a01:trx_p00p04",
-                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
-            ),
-        }
-    )
-
-    resolved = Quel3ExecutionManager._resolve_payload(
-        payload=payload,
-        resolver=cast(Any, resolver),
-    )
-
-    assert set(resolved.fixed_timelines.keys()) == {"Q00"}
-
-
-def test_parse_instrument_port_binding_rejects_legacy_port_id_format() -> None:
-    """Given legacy port IDs, parser should reject unsupported format."""
-    parsed = Quel3ExecutionManager._parse_instrument_port_binding("unit-a:p0trx")
-
-    assert parsed is None
-
-
-def test_parse_instrument_port_binding_supports_transmitter_port_ids() -> None:
-    """Given transmitter port IDs, parser should resolve output binding."""
-    parsed = Quel3ExecutionManager._parse_instrument_port_binding("quel3-02-a01:tx_p04")
-
-    assert parsed is not None
-    assert parsed.unit == "quel3-02-a01"
-    assert parsed.out_port == 4
-    assert parsed.in_port is None
-
-
-def test_parse_instrument_port_binding_supports_transceiver_port_ids() -> None:
-    """Given transceiver port IDs, parser should resolve paired input and output bindings."""
-    parsed = Quel3ExecutionManager._parse_instrument_port_binding(
-        "quel3-02-a01:trx_p00p01"
-    )
-
-    assert parsed is not None
-    assert parsed.unit == "quel3-02-a01"
-    assert parsed.out_port == 1
-    assert parsed.in_port == 0
-
-
-def test_resolve_payload_accepts_deployed_transmitter_port_id_format() -> None:
-    """Given deployed transmitter port IDs, resolving payload should match compatible alias."""
-    payload = _make_payload()
-    payload = replace(
-        payload,
-        fixed_timelines={
-            "Q00": replace(
-                payload.fixed_timelines["alias-rq00"],
-                capture_windows=(),
-            )
-        },
-        instrument_bindings={"Q00": "port:quel3-02-a01-4"},
+        instrument_bindings={"Q00": "alias:inst-q00"},
     )
     resolver = _FakeInstrumentResolver(
         alias_to_info={
