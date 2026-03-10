@@ -130,6 +130,25 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
     return config_dir, params_dir, chip_id
 
 
+def _write_system_catalog(
+    config_dir: Path,
+    *,
+    system_id: str,
+    chip_id: str,
+    backend: str,
+    system_section: dict | None = None,
+) -> None:
+    payload: dict[str, dict[str, object]] = {
+        system_id: {
+            "chip_id": chip_id,
+            "backend": backend,
+        }
+    }
+    if system_section is not None:
+        payload[system_id][backend] = system_section
+    _write_yaml(config_dir / "system.yaml", payload)
+
+
 def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     """Given ConfigLoader, when building ExperimentSystem, then units are converted correctly."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
@@ -177,6 +196,137 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     assert ro_port.number == 1
     assert ri_port.number == 0
     assert mux_ro.index == mux_ri.index == 0
+
+
+def test_load_resolves_system_id_and_system_keyed_wiring(tmp_path: Path) -> None:
+    """Given system catalog entries, when loading by system_id, then system wiring and boxes are selected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            },
+            "BOX2": {
+                "name": "Box Two",
+                "type": "quel1-a",
+                "address": "10.0.0.3",
+                "adapter": "dummy",
+            },
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "SYS-A": {
+                "chip_id": chip_id,
+                "backend": "quel1",
+                "quel1": {"clock_master": "10.0.0.9"},
+            },
+            "SYS-B": {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            },
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            "SYS-A": [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                    "pump": "BOX1-3",
+                }
+            ],
+            "SYS-B": [
+                {
+                    "mux": 0,
+                    "read_out": "BOX2-1",
+                    "read_in": "BOX2-0",
+                    "ctrl": ["BOX2-2", "BOX2-4", "BOX2-9", "BOX2-11"],
+                    "pump": "BOX2-3",
+                }
+            ],
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id="SYS-A",
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert loader.system_id == "SYS-A"
+    assert loader.chip_id == chip_id
+    assert system.control_system.clock_master_address == "10.0.0.9"
+    assert [box.id for box in system.control_system.boxes] == ["BOX1"]
+    assert system.control_system.get_gen_port("BOX1", 1).number == 1
+    with pytest.raises(KeyError, match="Box `BOX2` not found"):
+        system.control_system.get_box("BOX2")
+
+
+def test_load_warns_for_deprecated_chip_id_when_system_match_is_unique(
+    tmp_path: Path,
+) -> None:
+    """Given a unique system match, when loading by chip_id, then ConfigLoader warns and resolves that system."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_system_catalog(
+        config_dir,
+        system_id="SYS-A",
+        chip_id=chip_id,
+        backend="quel1",
+        system_section={"clock_master": "10.0.0.9"},
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {"SYS-A": (yaml.safe_load((config_dir / "wiring.yaml").read_text()))[chip_id]},
+    )
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+    assert loader.system_id == "SYS-A"
+    assert loader.chip_id == chip_id
+
+
+def test_load_raises_for_ambiguous_chip_id_in_system_catalog(tmp_path: Path) -> None:
+    """Given multiple system matches, when loading by chip_id, then ConfigLoader raises ValueError."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "SYS-A": {"chip_id": chip_id, "backend": "quel1"},
+            "SYS-B": {"chip_id": chip_id, "backend": "quel3"},
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            "SYS-A": [],
+            "SYS-B": [],
+        },
+    )
+
+    with (
+        pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"),
+        pytest.raises(ValueError, match="multiple systems share the same chip"),
+    ):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
 
 
 def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):

@@ -155,7 +155,8 @@ class Experiment:
     def __init__(
         self,
         *,
-        chip_id: str,
+        chip_id: str | None = None,
+        system_id: str | None = None,
         muxes: Collection[str | int] | None = None,
         qubits: Collection[str | int] | None = None,
         exclude_qubits: Collection[str | int] | None = None,
@@ -177,6 +178,7 @@ class Experiment:
     ):
         experiment_context = ExperimentContext(
             chip_id=chip_id,
+            system_id=system_id,
             muxes=muxes,
             qubits=qubits,
             exclude_qubits=exclude_qubits,

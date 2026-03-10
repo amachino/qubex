@@ -65,7 +65,8 @@ class MeasurementSessionService:
     def load(
         self,
         *,
-        chip_id: str,
+        chip_id: str | None = None,
+        system_id: str | None = None,
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         configuration_mode: ConfigurationMode | None = None,
@@ -74,6 +75,7 @@ class MeasurementSessionService:
         """Load configuration and skew settings."""
         self.system_manager.load(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,

@@ -53,10 +53,11 @@ Status legend:
 - Status: `IN_PROGRESS`
 - Question: Where should QuEL-3 runtime configuration be defined primarily?
 - Current behavior:
-  - Backend family is selected by config file (`system.yaml` top-level `backend`).
+  - Backend family is selected by config file (`system.yaml` selected entry `backend`).
   - QuEL-3 runtime endpoint/port/trigger values are controller defaults.
 - Target:
-  - Config-file first (`system.yaml`) with optional explicit runtime override.
+  - Config-file first (`system.yaml` keyed by `system_id`) with optional
+    explicit runtime override.
 
 ### D2. Config scope split
 
@@ -65,16 +66,28 @@ Status legend:
 - Decision:
   - static:
     - chip metadata and topology (`chip.yaml`)
-    - physical wiring (`wiring.v2.yaml`: `control/readout` with `qubit_id/mux_id -> port_id`)
+    - reusable hardware inventory (`box.yaml`)
+    - physical wiring (`wiring.yaml`: `system_id -> control/readout` with
+      `qubit_id/mux_id -> port_id`)
   - runtime:
-    - backend selection and backend-specific runtime settings (`system.yaml`)
+    - deployment selection and backend-specific runtime settings
+      (`system.yaml`: `system_id -> chip_id, backend, backend runtime`)
     - endpoint, port, wait, ttl_ms, tentative_ttl_ms
 
 ### D2.1 System/chip cardinality
 
 - Status: `DECIDED`
 - Decision:
-  - one `system.yaml` maps to one `chip_id`.
+  - one `system.yaml` entry maps to one `chip_id`
+  - many system entries may reference the same `chip_id`
+
+### D2.2 Box selection policy
+
+- Status: `DECIDED`
+- Decision:
+  - Do not require a `boxes:` field in `system.yaml` for the baseline schema.
+  - Derive the active box set from `wiring.yaml[system_id]`.
+  - Validate that every referenced box id exists in `box.yaml`.
 
 ### D3. Alias and resource mapping policy
 

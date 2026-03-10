@@ -88,7 +88,8 @@ class Measurement:
     def __init__(
         self,
         *,
-        chip_id: str,
+        chip_id: str | None = None,
+        system_id: str | None = None,
         qubits: Collection[str],
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
@@ -104,8 +105,10 @@ class Measurement:
 
         Parameters
         ----------
-        chip_id : str
-            Chip identifier used to resolve configuration resources.
+        chip_id : str | None
+            Deprecated chip identifier compatibility input.
+        system_id : str | None
+            Canonical system identifier used to resolve configuration resources.
         qubits : Collection[str]
             Qubit labels managed by this measurement instance.
         config_dir : Path | str | None, optional
@@ -136,7 +139,10 @@ class Measurement:
         ...     qubits=["Q00", "Q01"],
         ... )
         """
-        self._chip_id: Final = chip_id
+        if chip_id is None and system_id is None:
+            raise ValueError("Either `system_id` or `chip_id` must be provided.")
+        self._chip_id = chip_id
+        self._system_id: Final[str | None] = system_id
         self._qubits: Final = list(qubits)
         self._execution_mode: Final[ExecutionMode | None] = _execution_mode
         self._clock_health_checks: Final[bool | None] = _clock_health_checks
@@ -171,6 +177,7 @@ class Measurement:
                 config_dir=config_dir,
                 params_dir=params_dir,
                 configuration_mode=configuration_mode,
+                system_id=system_id,
                 backend_kind=backend_kind,
             )
         if connect_devices:
@@ -181,6 +188,7 @@ class Measurement:
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: ConfigurationMode | None = None,
+        system_id: str | None = None,
         backend_kind: BackendKind | None = None,
     ) -> None:
         """
@@ -204,6 +212,7 @@ class Measurement:
         """
         self.session_service.load(
             chip_id=self._chip_id,
+            system_id=system_id or self._system_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,

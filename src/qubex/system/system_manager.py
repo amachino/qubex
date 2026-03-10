@@ -318,7 +318,8 @@ class SystemManager:
     def load(
         self,
         *,
-        chip_id: str,
+        chip_id: str | None = None,
+        system_id: str | None = None,
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         targets_to_exclude: list[str] | None = None,
@@ -332,8 +333,10 @@ class SystemManager:
 
         Parameters
         ----------
-        chip_id : str
-            Chip identifier.
+        chip_id : str | None, optional
+            Deprecated chip identifier compatibility input.
+        system_id : str | None, optional
+            Canonical system identifier.
         config_dir : Path | str, optional
             Directory containing configuration files.
         params_dir : Path | str, optional
@@ -351,6 +354,7 @@ class SystemManager:
         """
         next_config_loader = ConfigLoader(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
             params_dir=params_dir,
             autoload=False,

@@ -31,6 +31,26 @@ def test_measurement_session_service_load_forwards_backend_kind() -> None:
     assert called["backend_kind"] == "quel3"
 
 
+def test_measurement_session_service_load_forwards_system_id() -> None:
+    """Given system id input, when session service loads configs, then SystemManager receives the same system id."""
+    called: dict[str, Any] = {}
+
+    class _SystemManager:
+        def load(self, **kwargs: object) -> None:
+            called.update(kwargs)
+
+    session_service = MeasurementSessionService(
+        system_manager=cast(Any, _SystemManager()),
+        context=cast(Any, object()),
+    )
+    session_service.load_skew_file = lambda: None  # type: ignore[method-assign]
+    session_service.load(
+        system_id="SYS-A",
+    )
+
+    assert called["system_id"] == "SYS-A"
+
+
 def test_measurement_load_forwards_backend_kind() -> None:
     """Given backend kind input, when Measurement loads, then session service receives the same kind."""
     measurement = Measurement(
@@ -56,6 +76,31 @@ def test_measurement_load_forwards_backend_kind() -> None:
     assert called["backend_kind"] == "quel3"
 
 
+def test_measurement_load_forwards_system_id() -> None:
+    """Given system id input, when Measurement loads, then session service receives the same system id."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called: dict[str, Any] = {}
+
+    class _SessionService:
+        def load(self, **kwargs: object) -> None:
+            called.update(kwargs)
+
+    measurement.__dict__["_session_service"] = _SessionService()
+
+    measurement.load(
+        config_dir=None,
+        params_dir=None,
+        system_id="SYS-A",
+    )
+
+    assert called["system_id"] == "SYS-A"
+
+
 def test_measurement_init_forwards_backend_kind_to_load(
     monkeypatch,
 ) -> None:
@@ -68,6 +113,7 @@ def test_measurement_init_forwards_backend_kind_to_load(
         config_dir: object,
         params_dir: object,
         configuration_mode: object = None,
+        system_id: object = None,
         backend_kind: object = None,
     ) -> None:
         called["backend_kind"] = backend_kind

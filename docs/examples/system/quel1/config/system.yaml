@@ -2,16 +2,13 @@
 #
 # Notes
 # -----
-# - One system.yaml maps to one chip_id.
-# - backend selects the active backend section.
+# - system.yaml is a catalog keyed by system_id.
+# - backend selects the active backend section per system entry.
 # - quel1.clock_master is optional for single-box use, but required for
 #   multi-box synchronization and skew-related operations.
 
-schema_version: 1
-chip_id: 64Q
-backend: quel1
-
-quel1:
-  clock_master: 10.0.0.10
-
-quel3: {}
+64Q-A:
+  chip_id: 64Q
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10

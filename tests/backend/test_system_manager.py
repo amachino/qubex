@@ -955,6 +955,46 @@ def test_load_forwards_core_paths_to_config_loader(
     assert "wiring_file" not in captured_init_kwargs
 
 
+def test_load_forwards_system_id_to_config_loader(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given system_id input, when loading, then SystemManager forwards it to ConfigLoader."""
+    manager = SystemManager.shared()
+    captured_init_kwargs: dict[str, object] = {}
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir()
+    params_dir.mkdir()
+
+    class _FakeConfigLoader:
+        def __init__(self, **kwargs: object) -> None:
+            captured_init_kwargs.update(kwargs)
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        system_id="SYS-A",
+        config_dir=config_dir,
+        params_dir=params_dir,
+        backend_kind="quel3",
+        mock_mode=True,
+    )
+
+    assert captured_init_kwargs["system_id"] == "SYS-A"
+    assert captured_init_kwargs["chip_id"] is None
+
+
 def test_load_uses_provided_backend_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

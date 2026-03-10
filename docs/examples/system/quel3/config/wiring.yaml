@@ -2,14 +2,14 @@
 #
 # Format
 # ------
-# <chip_id>:
+# <system_id>:
 #   - mux: <mux_index>
 #     ctrl: [<port_id>, ...]
 #     read_out: <port_id>
 #     read_in: <port_id>
 #     pump: <port_id>  # optional
 
-64Q:
+64Q-B:
   - mux: 0
     ctrl: [QT1-4, QT1-2, QT1-11, QT1-9]
     read_out: QT1-1

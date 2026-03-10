@@ -129,7 +129,8 @@ class ExperimentContext:
     def __init__(
         self,
         *,
-        chip_id: str,
+        chip_id: str | None = None,
+        system_id: str | None = None,
         muxes: Collection[str | int] | None = None,
         qubits: Collection[str | int] | None = None,
         exclude_qubits: Collection[str | int] | None = None,
@@ -172,8 +173,12 @@ class ExperimentContext:
         if mock_mode is None:
             mock_mode = False
 
+        if chip_id is None and system_id is None:
+            raise ValueError("Either `system_id` or `chip_id` must be provided.")
+
         self._load_config(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
@@ -185,7 +190,8 @@ class ExperimentContext:
             qubits=qubits,
             exclude_qubits=exclude_qubits,
         )
-        self._chip_id: Final = chip_id
+        resolved_chip_id = self.system_manager.config_loader.chip_id
+        self._chip_id: Final = resolved_chip_id
         self._qubits: Final = qubits
         self._readout_duration: Final = readout_duration
         self._readout_pre_margin: Final = readout_pre_margin
@@ -198,7 +204,8 @@ class ExperimentContext:
         self._configuration_mode: Final = configuration_mode
         self._calibration_valid_days: Final = calibration_valid_days
         self._measurement = Measurement(
-            chip_id=chip_id,
+            chip_id=resolved_chip_id,
+            system_id=system_id,
             qubits=qubits,
             load_configs=False,
             connect_devices=False,
@@ -206,7 +213,7 @@ class ExperimentContext:
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
         self._system_note: Final = ExperimentNote(file_path=SYSTEM_NOTE_PATH)
         self._calib_note: Final = CalibrationNote(
-            chip_id=chip_id,
+            chip_id=resolved_chip_id,
             file_path=calib_note_path,
         )
         self._load_skew_file()
@@ -223,7 +230,8 @@ class ExperimentContext:
 
     def _load_config(
         self,
-        chip_id: str,
+        chip_id: str | None,
+        system_id: str | None,
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: ConfigurationMode,
@@ -235,6 +243,7 @@ class ExperimentContext:
             mock_mode = False
         self.system_manager.load(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,

@@ -77,20 +77,24 @@ PARAMS_MAP = {
 
 class ConfigLoader:
     """
-    Single-chip configuration loader that builds an ExperimentSystem.
+    System-aware configuration loader that builds an ExperimentSystem.
 
     Summary
     -------
-    ConfigLoader loads configuration and parameter YAML files for a specific
-    quantum chip and constructs the corresponding ExperimentSystem. It prefers
-    structured per-file parameter files under `params/<name>.yaml` with the
-    shape `{"meta": ..., "data": ...}`. When a per-file file exists, its
-    `data` is MERGED over the legacy maps in `params.yaml`/`props.yaml`
-    (per-file entries override legacy values; missing keys fall back to legacy).
-    If the per-file is completely absent, the legacy maps are used as-is. When
-    `meta.unit` is provided, numeric values in per-file `data` are converted
-    to the internal base units (GHz for frequency-like quantities, ns for
-    time-like quantities). `meta.unit` must be a string and is applied
+    ConfigLoader loads configuration and parameter YAML files for one selected
+    system and constructs the corresponding ExperimentSystem. The canonical
+    selector is `system_id`. The legacy `chip_id` input remains available as a
+    deprecated compatibility path and resolves to a system only when that chip
+    matches exactly one system entry.
+
+    It prefers structured per-file parameter files under `params/<name>.yaml`
+    with the shape `{"meta": ..., "data": ...}`. When a per-file file exists,
+    its `data` is MERGED over the legacy maps in `params.yaml`/`props.yaml`
+    (per-file entries override legacy values; missing keys fall back to
+    legacy). If the per-file is completely absent, the legacy maps are used
+    as-is. When `meta.unit` is provided, numeric values in per-file `data` are
+    converted to the internal base units (GHz for frequency-like quantities,
+    ns for time-like quantities). `meta.unit` must be a string and is applied
     uniformly to the values in per-file `data` only.
 
     `jpa_params` are resolved into effective per-mux values during load, so the
@@ -99,17 +103,19 @@ class ConfigLoader:
 
     Parameters
     ----------
-    chip_id : str
-        Quantum chip identifier (e.g., "64Q"). All configuration is loaded
-
-        for this specific chip.
+    system_id : str, optional
+        Canonical system identifier (for example, `"64Q-A"`). When provided,
+        `system.yaml` and `wiring.yaml` are resolved through this key.
+    chip_id : str, optional
+        Deprecated compatibility selector. The chip identifier must resolve to
+        exactly one system entry when `system.yaml` is a catalog.
     config_dir : Path | str | None, optional
         Directory containing configuration files (`chip.yaml`, `box.yaml`,
-        `wiring.yaml`). Defaults to `DEFAULT_CONFIG_DIR/<chip_id>/config`.
+        `system.yaml`, `wiring.yaml`).
     params_dir : Path | str | None, optional
         Directory containing parameter files (`params.yaml` and per-section
-        files under `params/`). Defaults to
-        `DEFAULT_CONFIG_DIR/<chip_id>/params`.
+        files under `params/`). When omitted, the default is derived from the
+        resolved chip id.
     chip_file, system_file, box_file, props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     wiring_file : str | None, optional
@@ -134,14 +140,15 @@ class ConfigLoader:
     Examples
     --------
     >>> from qubex.system import ConfigLoader
-    >>> cfg = ConfigLoader(chip_id="64Q")
+    >>> cfg = ConfigLoader(system_id="64Q-A")
     >>> system = cfg.get_experiment_system()
     """
 
     def __init__(
         self,
         *,
-        chip_id: str,
+        chip_id: str | None = None,
+        system_id: str | None = None,
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         chip_file: str = CHIP_FILE,
@@ -159,8 +166,10 @@ class ConfigLoader:
 
         Parameters
         ----------
-        chip_id : str
-            Chip identifier.
+        chip_id : str | None, optional
+            Deprecated chip identifier compatibility input.
+        system_id : str | None, optional
+            System identifier.
         config_dir : Path | str | None, optional
             Path to configuration directory.
         params_dir : Path | str | None, optional
@@ -184,13 +193,27 @@ class ConfigLoader:
         autoload : bool, optional
             If `True`, load configuration during initialization.
         """
+        if chip_id is None and system_id is None:
+            raise ValueError("Either `system_id` or `chip_id` must be provided.")
+        if chip_id is not None:
+            warnings.warn(
+                "`chip_id` is deprecated and will be removed in a future release. "
+                "Use `system_id` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if config_dir is None:
-            config_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
-        if params_dir is None:
+            default_config_key = system_id or chip_id
+            if default_config_key is None:
+                raise ValueError("Unable to derive the default config directory.")
+            config_dir = Path(DEFAULT_CONFIG_DIR) / default_config_key / "config"
+        if params_dir is None and chip_id is not None:
             params_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "params"
         if configuration_mode is None:
             configuration_mode = cast(ConfigurationMode, "ge-cr-cr")
-        self._chip_id = chip_id
+        self._requested_chip_id = chip_id
+        self._system_id = system_id
+        self._chip_id = chip_id or ""
         self._config_dir = config_dir
         self._params_dir = params_dir
         self._chip_file = chip_file
@@ -206,6 +229,7 @@ class ConfigLoader:
         self._is_loading = False
 
         self._chip_dict: dict = {}
+        self._system_catalog_dict: dict = {}
         self._system_dict: dict = {}
         self._box_dict: dict = {}
         self._wiring_dict: dict = {}
@@ -259,13 +283,20 @@ class ConfigLoader:
         self._is_loading = True
         try:
             self._chip_dict = self._load_config_file(self._chip_file)
-            self._system_dict = self._load_optional_config_file(self._system_file)
+            self._system_catalog_dict = self._load_optional_config_file(
+                self._system_file
+            )
+            self._system_id, self._system_dict = self._resolve_loaded_system_entry()
+            self._chip_id = self._resolve_loaded_chip_id()
+            if self._params_dir is None:
+                self._params_dir = Path(DEFAULT_CONFIG_DIR) / self._chip_id / "params"
             self._backend_kind = self._resolve_loaded_backend_kind(
                 backend_kind=backend_kind
             )
             self._resolved_wiring_file = self._resolve_wiring_file()
-            self._box_dict = self._load_config_file(self._box_file)
             self._wiring_dict = self._load_config_file(self._resolved_wiring_file)
+            self._wiring_rows = self._load_wiring_rows()
+            self._box_dict = self._load_box_dict()
             self._props_dict = self._load_legacy_params_file(self._props_file)  # legacy
             self._params_dict = self._load_legacy_params_file(
                 self._params_file
@@ -273,7 +304,6 @@ class ConfigLoader:
             self._system_loader = self._create_system_loader(self._backend_kind)
 
             self._quantum_system = self._load_quantum_system()
-            self._wiring_rows = self._load_wiring_rows()
             self._control_system = self._load_control_system()
             self._wiring_info = self._load_wiring_info()
             self._control_params = self._load_control_params()
@@ -293,6 +323,8 @@ class ConfigLoader:
     @property
     def params_path(self) -> Path:
         """Returns the absolute path to the parameters directory."""
+        if self._params_dir is None:
+            raise RuntimeError("Parameter path is not available before `load()`.")
         return Path(self._params_dir).resolve()
 
     @property
@@ -306,6 +338,20 @@ class ConfigLoader:
         """Return effective wiring file name selected for this load."""
         self._ensure_loaded()
         return self._resolved_wiring_file
+
+    @property
+    def chip_id(self) -> str:
+        """Return resolved chip identifier for the current configuration."""
+        self._ensure_loaded()
+        return self._chip_id
+
+    @property
+    def system_id(self) -> str:
+        """Return resolved system identifier for the current configuration."""
+        self._ensure_loaded()
+        if self._system_id is None:
+            raise RuntimeError("System identifier is not available for this load.")
+        return self._system_id
 
     def get_experiment_system(self, chip_id: str | None = None) -> ExperimentSystem:
         """
@@ -398,12 +444,99 @@ class ConfigLoader:
         return result
 
     def _validate_loaded_system_chip_id(self) -> None:
-        """Validate loaded system chip id against loader chip id."""
+        """Validate loaded system chip id against requested chip id."""
         configured_chip_id = self._system_dict.get("chip_id")
-        if configured_chip_id is not None and str(configured_chip_id) != self._chip_id:
+        if (
+            self._requested_chip_id is not None
+            and configured_chip_id is not None
+            and str(configured_chip_id) != self._requested_chip_id
+        ):
             raise ValueError(
-                f"`{self._system_file}` chip_id mismatch: expected `{self._chip_id}`, got `{configured_chip_id}`."
+                f"`{self._system_file}` chip_id mismatch: expected `{self._requested_chip_id}`, got `{configured_chip_id}`."
             )
+
+    def _looks_like_legacy_system_payload(self, payload: dict[str, Any]) -> bool:
+        """Return whether the loaded system payload uses the legacy single-entry shape."""
+        legacy_keys = {
+            "schema_version",
+            "chip_id",
+            "backend",
+            BACKEND_KIND_QUEL1,
+            BACKEND_KIND_QUEL3,
+        }
+        return any(key in payload for key in legacy_keys)
+
+    def _resolve_loaded_system_entry(self) -> tuple[str | None, dict[str, Any]]:
+        """Resolve the selected system entry from the loaded system payload."""
+        payload = self._system_catalog_dict
+        if not payload:
+            if self._requested_chip_id is None and self._system_id is not None:
+                raise ValueError(
+                    f"`{self._system_file}` is required when loading by `system_id={self._system_id}`."
+                )
+            return self._system_id or self._requested_chip_id, {}
+
+        if self._looks_like_legacy_system_payload(payload):
+            return self._resolve_legacy_system_entry(payload)
+
+        if self._system_id is not None:
+            entry = payload.get(self._system_id)
+            if entry is None:
+                raise KeyError(
+                    f"System `{self._system_id}` is missing in `{self._system_file}`."
+                )
+            if not isinstance(entry, dict):
+                raise TypeError(
+                    f"`{self._system_file}` entry `{self._system_id}` must be a mapping."
+                )
+            return self._system_id, dict(entry)
+
+        if self._requested_chip_id is None:
+            raise ValueError(
+                "Either `system_id` or `chip_id` must identify the target configuration."
+            )
+
+        matches = [
+            (system_id, cast(dict[str, Any], entry))
+            for system_id, entry in payload.items()
+            if isinstance(entry, dict)
+            and str(entry.get("chip_id")) == self._requested_chip_id
+        ]
+        if len(matches) == 1:
+            system_id, entry = matches[0]
+            return system_id, dict(entry)
+        if len(matches) == 0:
+            raise KeyError(
+                f"No system in `{self._system_file}` references `chip_id={self._requested_chip_id}`."
+            )
+        raise ValueError(
+            "Cannot resolve deprecated `chip_id` input because multiple systems share the same chip. "
+            "Use `system_id` instead."
+        )
+
+    def _resolve_legacy_system_entry(
+        self,
+        payload: dict[str, Any],
+    ) -> tuple[str | None, dict[str, Any]]:
+        """Resolve the legacy single-entry system payload."""
+        configured_chip_id = payload.get("chip_id")
+        resolved_system_id = self._system_id or (
+            str(configured_chip_id)
+            if configured_chip_id is not None
+            else self._requested_chip_id
+        )
+        return resolved_system_id, dict(payload)
+
+    def _resolve_loaded_chip_id(self) -> str:
+        """Return the effective chip id for the selected system entry."""
+        configured_chip_id = self._system_dict.get("chip_id")
+        if configured_chip_id is not None:
+            return str(configured_chip_id)
+        if self._requested_chip_id is not None:
+            return self._requested_chip_id
+        raise ValueError(
+            "Selected system entry does not define `chip_id`; cannot resolve chip-scoped parameters."
+        )
 
     def _resolve_loaded_backend_kind(
         self,
@@ -469,6 +602,8 @@ class ConfigLoader:
         )
 
     def _load_legacy_params_file(self, file_name: str) -> dict:
+        if self._params_dir is None:
+            raise RuntimeError("Parameter path is not available before `load()`.")
         path = Path(self._params_dir) / file_name
         try:
             with open(path) as file:
@@ -598,6 +733,8 @@ class ConfigLoader:
         """
         self._ensure_loaded()
         legacy_name, legacy_file = PARAMS_MAP[param_name]
+        if self._params_dir is None:
+            raise RuntimeError("Parameter path is not available before `load()`.")
         file_path = Path(self._params_dir) / f"{param_name}.yaml"
 
         legacy_root = self._params_dict if legacy_file == "params" else self._props_dict
@@ -735,23 +872,80 @@ class ConfigLoader:
 
     def _load_wiring_rows(self) -> list[dict[str, Any]] | None:
         """Return wiring rows in canonical legacy shape."""
-        chip_id = self._chip_id
-        if chip_id in self._wiring_dict:
-            wirings = self._wiring_dict[chip_id]
+        lookup_keys = [key for key in (self._system_id, self._chip_id) if key]
+        for key in lookup_keys:
+            if key not in self._wiring_dict:
+                continue
+            wirings = self._wiring_dict[key]
             if wirings is None:
                 logger.warning(
-                    f"Chip `{chip_id}` is missing in `{self._resolved_wiring_file}`. "
+                    "Configuration `%s` is missing in `%s`.",
+                    key,
+                    self._resolved_wiring_file,
                 )
                 return None
             if not isinstance(wirings, list):
                 raise TypeError(
-                    f"`{self._resolved_wiring_file}` must map chip id to a list of wiring entries."
+                    f"`{self._resolved_wiring_file}` must map configuration ids to a list of wiring entries."
                 )
             return [dict(wiring) for wiring in wirings]
         logger.warning(
-            f"Chip `{chip_id}` is missing in `{self._resolved_wiring_file}`. "
+            "Neither system `%s` nor chip `%s` is present in `%s`.",
+            self._system_id,
+            self._chip_id,
+            self._resolved_wiring_file,
         )
         return None
+
+    def _load_box_dict(self) -> dict[str, Any]:
+        """Load only box definitions referenced by the selected wiring."""
+        box_catalog = self._load_config_file(self._box_file)
+        if self._wiring_rows is None:
+            return {}
+        referenced_box_ids = self._collect_referenced_box_ids(self._wiring_rows)
+        if not referenced_box_ids:
+            return {}
+        missing_box_ids = [
+            box_id for box_id in referenced_box_ids if box_id not in box_catalog
+        ]
+        if missing_box_ids:
+            missing = ", ".join(sorted(missing_box_ids))
+            raise KeyError(
+                f"Boxes referenced by `{self._resolved_wiring_file}` are missing in `{self._box_file}`: {missing}."
+            )
+        return {box_id: box_catalog[box_id] for box_id in referenced_box_ids}
+
+    def _collect_referenced_box_ids(
+        self,
+        wiring_rows: list[dict[str, Any]],
+    ) -> list[str]:
+        """Return box ids referenced by the selected wiring entries."""
+        referenced_box_ids: list[str] = []
+        seen: set[str] = set()
+        for wiring in wiring_rows:
+            specifiers: list[str | None] = [
+                cast(str | None, wiring.get("read_out")),
+                cast(str | None, wiring.get("read_in")),
+                cast(str | None, wiring.get("pump")),
+            ]
+            ctrl = wiring.get("ctrl") or []
+            if isinstance(ctrl, list):
+                specifiers.extend(cast(list[str | None], ctrl))
+            for specifier in specifiers:
+                if specifier is None:
+                    continue
+                box_id, _ = self._split_box_port_specifier(specifier)
+                if box_id in seen:
+                    continue
+                seen.add(box_id)
+                referenced_box_ids.append(box_id)
+        return referenced_box_ids
+
+    @staticmethod
+    def _split_box_port_specifier(specifier: str) -> tuple[str, int]:
+        """Return box id and port number from a port specifier string."""
+        box_id, port = specifier.rsplit("-", 1)
+        return box_id, int(port)
 
     def _create_control_parameter_defaults(self) -> ControlParameterDefaults:
         """
