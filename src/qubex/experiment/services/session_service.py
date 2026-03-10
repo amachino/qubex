@@ -162,7 +162,7 @@ class SessionService:
 
         system_manager = self.ctx.system_manager
         system_manager.load(
-            chip_id=self.ctx.chip_id,
+            system_id=self.ctx.config_loader.system_id,
             config_dir=self.ctx.config_path,
             params_dir=self.ctx.params_path,
             targets_to_exclude=exclude,

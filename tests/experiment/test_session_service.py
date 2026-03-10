@@ -31,6 +31,11 @@ class _ExperimentSystemStub:
         return []
 
 
+class _ConfigLoaderStub:
+    def __init__(self, *, system_id: str) -> None:
+        self.system_id = system_id
+
+
 class _ContextStub:
     def __init__(
         self,
@@ -48,6 +53,7 @@ class _ContextStub:
         self.system_manager = system_manager
         self.measurement = measurement
         self.chip_id = "64Qv2"
+        self.config_loader = _ConfigLoaderStub(system_id="64Qv2-Q1")
         self.config_path = config_path
         self.params_path = params_path
         self.experiment_system = _ExperimentSystemStub()
@@ -181,7 +187,7 @@ def test_configure_uses_system_manager_and_sync_hook(monkeypatch) -> None:
         (
             "system_manager.load",
             {
-                "chip_id": "64Qv2",
+                "system_id": "64Qv2-Q1",
                 "config_dir": "config-dir",
                 "params_dir": "params-dir",
                 "targets_to_exclude": ["Q00"],
@@ -197,3 +203,41 @@ def test_configure_uses_system_manager_and_sync_hook(monkeypatch) -> None:
         ),
     ]
     assert sync_calls == ["sync", "sync"]
+
+
+def test_configure_reloads_with_active_system_id(monkeypatch) -> None:
+    """Given shared-chip systems, when configure runs, then SessionService reloads by active system_id."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    context = _ContextStub(
+        system_manager=_SystemManagerStub(calls),
+        measurement=_MeasurementStub(calls),
+        config_path="config-dir",
+        params_path="params-dir",
+        calls=calls,
+    )
+    context.config_loader.system_id = "144Q-LF-Q3"
+    context.chip_id = "144Q-LF"
+
+    monkeypatch.setattr(
+        SessionService,
+        "_sync_pulse_sampling_period",
+        lambda self: 0.4,
+    )
+
+    service = SessionService(
+        experiment_context=cast(ExperimentContext, context),
+    )
+
+    service.configure()
+
+    assert calls[0] == (
+        "system_manager.load",
+        {
+            "system_id": "144Q-LF-Q3",
+            "config_dir": "config-dir",
+            "params_dir": "params-dir",
+            "targets_to_exclude": None,
+            "configuration_mode": "ge-cr-cr",
+        },
+    )
