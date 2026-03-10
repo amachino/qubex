@@ -5,46 +5,30 @@
 # <box_id>:
 #   name: <unit_label>
 #   type: <box_type>
-#   address: <ip_address>
-#   adapter: <adapter_id>
+#   address: <ip_address>  # optional for quel3
+#   adapter: <adapter_id>  # optional for quel3
 
 QT1:
   name: "quel3-02-a01"
   type: "quel3"
-  address: ""
-  adapter: ""
 QT2:
   name: "QuEL-3 #2"
   type: "quel3"
-  address: ""
-  adapter: ""
 QT3:
   name: "QuEL-3 #3"
   type: "quel3"
-  address: ""
-  adapter: ""
 QT4:
   name: "QuEL-3 #4"
   type: "quel3"
-  address: ""
-  adapter: ""
 QT5:
   name: "QuEL-3 #5"
   type: "quel3"
-  address: ""
-  adapter: ""
 QT6:
   name: "QuEL-3 #6"
   type: "quel3"
-  address: ""
-  adapter: ""
 QT7:
   name: "QuEL-3 #7"
   type: "quel3"
-  address: ""
-  adapter: ""
 QT8:
   name: "QuEL-3 #8"
   type: "quel3"
-  address: ""
-  adapter: ""

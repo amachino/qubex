@@ -67,6 +67,7 @@ Status legend:
   - static:
     - chip metadata and topology (`chip.yaml`)
     - reusable hardware inventory (`box.yaml`)
+      - QuEL-3 `address` / `adapter` fields are optional
     - physical wiring (`wiring.yaml`: `system_id -> control/readout` with
       `qubit_id/mux_id -> port_id`)
   - runtime:

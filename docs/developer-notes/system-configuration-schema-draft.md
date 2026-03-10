@@ -28,7 +28,9 @@ system-specific deployment manifests (`system`, `wiring`).
   - `name`, `n_qubits`, `topology`
 - `box.yaml`: box catalog
   - reusable hardware inventory
-  - `type`, `address`, `adapter`, optional backend-specific box metadata
+  - `type`, optional backend-specific connection metadata
+  - `address` and `adapter` remain required for QuEL-1-family boxes
+  - `address` and `adapter` are optional for QuEL-3 boxes
 - `system.yaml`: system catalog
   - `system_id -> chip_id, backend, backend-specific runtime settings`
 - `wiring.yaml`: system wiring
@@ -89,8 +91,6 @@ BOX1:
 QT1:
   name: "QuEL-3 Unit 1"
   type: quel3
-  address: 10.0.1.10
-  adapter: dummy
 ```
 
 ### system.yaml

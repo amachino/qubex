@@ -10,6 +10,7 @@ from qubex.backend.backend_controller import (
     BACKEND_KIND_QUEL1,
     normalize_backend_kind,
 )
+from qubex.system.control_system import BoxType
 from qubex.system.wiring import split_box_port_specifier
 
 if TYPE_CHECKING:
@@ -80,8 +81,16 @@ class Quel1SystemLoader:
                 id=id,
                 name=box["name"],
                 type=box["type"],
-                address=box["address"],
-                adapter=box["adapter"],
+                address=self._resolve_box_address(
+                    id=id,
+                    box=box,
+                    box_type=BoxType(box["type"]),
+                ),
+                adapter=self._resolve_box_adapter(
+                    id=id,
+                    box=box,
+                    box_type=BoxType(box["type"]),
+                ),
                 port_numbers=box_ports[id],
                 options=box.get("options"),
             )
@@ -92,6 +101,34 @@ class Quel1SystemLoader:
             boxes=boxes,
             clock_master_address=clock_master_address,
         )
+
+    def _resolve_box_address(
+        self,
+        *,
+        id: str,
+        box: dict[str, Any],
+        box_type: BoxType,
+    ) -> str:
+        """Resolve one box address, allowing omission for QuEL-3."""
+        if box_type == BoxType.QUEL3:
+            return str(box.get("address", ""))
+        if "address" not in box:
+            raise KeyError(f"Box `{id}` requires `address` in `box.yaml`.")
+        return str(box["address"])
+
+    def _resolve_box_adapter(
+        self,
+        *,
+        id: str,
+        box: dict[str, Any],
+        box_type: BoxType,
+    ) -> str:
+        """Resolve one box adapter id, allowing omission for QuEL-3."""
+        if box_type == BoxType.QUEL3:
+            return str(box.get("adapter", ""))
+        if "adapter" not in box:
+            raise KeyError(f"Box `{id}` requires `adapter` in `box.yaml`.")
+        return str(box["adapter"])
 
     def load_wiring_info(
         self,

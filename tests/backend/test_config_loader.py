@@ -691,6 +691,61 @@ def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
     assert read_in_port.lo_freq is None
 
 
+def test_load_allows_quel3_box_without_address_or_adapter(tmp_path: Path) -> None:
+    """Given quel3 box yaml without address or adapter, when loading, then configuration still succeeds."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    box = loader.get_experiment_system().control_system.get_box("BOX1")
+
+    assert box.address == ""
+    assert box.adapter == ""
+
+
+def test_load_requires_address_for_non_quel3_box(tmp_path: Path) -> None:
+    """Given non-quel3 box yaml without address, when loading, then ConfigLoader raises KeyError."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "adapter": "dummy",
+            }
+        },
+    )
+
+    with pytest.raises(
+        KeyError,
+        match=r"requires `address` in `box\.yaml`",
+    ):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
 def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     tmp_path: Path,
 ) -> None:
