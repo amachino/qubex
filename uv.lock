@@ -4159,7 +4159,7 @@ requires-dist = [
 
 [[package]]
 name = "qubex"
-version = "1.5.0a3"
+version = "1.5.0a4"
 source = { editable = "." }
 dependencies = [
     { name = "cma" },
