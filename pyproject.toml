@@ -74,11 +74,24 @@ qubex = ["py.typed", "clifford/**/*.json"]
 
 [tool.uv]
 cache-dir = ".cache/uv"
+conflicts = [
+    [
+        { extra = "backend" },
+        { extra = "qubecalib" },
+    ],
+    [
+        { extra = "quel1" },
+        { extra = "qubecalib" },
+    ],
+]
 
 [tool.uv.sources]
-qubecalib = { path = "lib/qube-calib" }
+qubecalib = { path = "packages/qube-calib", extra = "qubecalib" }
 quelware_client = { workspace = true }
-qxdriver_quel1 = { workspace = true }
+qxdriver_quel1 = [
+    { path = "packages/qxdriver-quel1", extra = "backend" },
+    { path = "packages/qxdriver-quel1", extra = "quel1" },
+]
 qxcore = { workspace = true }
 qxfitting = { workspace = true }
 qxpulse = { workspace = true }
@@ -90,7 +103,6 @@ qxvisualizer = { workspace = true }
 members = [
     "packages/quelware-client/quelware-client",
     "packages/qxcore",
-    "packages/qxdriver-quel1",
     "packages/qxfitting",
     "packages/qxpulse",
     "packages/qxschema",

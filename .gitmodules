@@ -6,3 +6,6 @@
 	path = packages/quelware-client
 	url = https://github.com/quel-inc/quelware-client.git
 	branch = main
+[submodule "packages/qube-calib"]
+	path = packages/qube-calib
+	url = https://github.com/qiqb-osaka/qube-calib.git
