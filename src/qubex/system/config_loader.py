@@ -20,11 +20,14 @@ from qubex.backend.backend_controller import (
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
-    DEFAULT_CONFIG_DIR,
     PARAMS_FILE,
     PROPS_FILE,
     SYSTEM_FILE,
     WIRING_FILE,
+)
+from qubex.system.config_paths import (
+    resolve_default_config_dir,
+    resolve_default_params_dir,
 )
 from qubex.system.quel1.quel1_system_loader import Quel1SystemLoader
 from qubex.system.quel3.quel3_system_loader import Quel3SystemLoader
@@ -136,11 +139,15 @@ class ConfigLoader:
         exactly one system entry when `system.yaml` is a catalog.
     config_dir : Path | str | None, optional
         Directory containing configuration files (`chip.yaml`, `box.yaml`,
-        `system.yaml`, `wiring.yaml`).
+        `system.yaml`, `wiring.yaml`). When omitted, Qubex resolves the
+        default root by checking `QUBEX_CONFIG_ROOT`, then `~/qubex-config`,
+        then `/opt/qubex-config`, and finally the legacy
+        `/home/shared/qubex-config`.
     params_dir : Path | str | None, optional
         Directory containing parameter files (`params.yaml` and per-section
-        files under `params/`). When omitted, the default is derived from the
-        resolved chip id.
+        files under `params/`). When omitted, Qubex prefers
+        `<root>/params/<system_id>`, then `<root>/params/<chip_id>`, and
+        finally the legacy nested layout `<root>/<id>/params`.
     chip_file, system_file, box_file, props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     wiring_file : str | None, optional
@@ -228,12 +235,15 @@ class ConfigLoader:
                 stacklevel=2,
             )
         if config_dir is None:
-            default_config_key = system_id or chip_id
-            if default_config_key is None:
-                raise ValueError("Unable to derive the default config directory.")
-            config_dir = Path(DEFAULT_CONFIG_DIR) / default_config_key / "config"
-        if params_dir is None and chip_id is not None:
-            params_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "params"
+            config_dir = resolve_default_config_dir(
+                system_id=system_id,
+                chip_id=chip_id,
+            )
+        if params_dir is None and (system_id is not None or chip_id is not None):
+            params_dir = resolve_default_params_dir(
+                system_id=system_id,
+                chip_id=chip_id,
+            )
         if configuration_mode is None:
             configuration_mode = cast(ConfigurationMode, "ge-cr-cr")
         self._requested_chip_id = chip_id
@@ -314,7 +324,10 @@ class ConfigLoader:
             self._system_id, self._system_dict = self._resolve_loaded_system_entry()
             self._chip_id = self._resolve_loaded_chip_id()
             if self._params_dir is None:
-                self._params_dir = Path(DEFAULT_CONFIG_DIR) / self._chip_id / "params"
+                self._params_dir = resolve_default_params_dir(
+                    system_id=self._system_id,
+                    chip_id=self._chip_id,
+                )
             self._backend_kind = self._resolve_loaded_backend_kind(
                 backend_kind=backend_kind
             )
@@ -741,15 +754,16 @@ class ConfigLoader:
             return data
         return {k: apply(v, k) for k, v in data.items()}
 
-    def _normalize_param_keys(self, param_name: str, data: dict[Any, Any]) -> dict[Any, Any]:
+    def _normalize_param_keys(
+        self, param_name: str, data: dict[Any, Any]
+    ) -> dict[Any, Any]:
         """Normalize parameter-map keys to the canonical in-memory representation."""
         if not isinstance(data, dict):
             return data
         if param_name not in QUBIT_KEYED_PARAMS:
             return data
         return {
-            self._normalize_qubit_param_key(key): value
-            for key, value in data.items()
+            self._normalize_qubit_param_key(key): value for key, value in data.items()
         }
 
     def _normalize_qubit_param_key(self, key: Any) -> str:

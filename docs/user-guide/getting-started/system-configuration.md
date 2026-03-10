@@ -11,6 +11,15 @@ If you manage configuration files yourself, pass both `config_dir` and
 `params_dir` explicitly. This keeps the file layout under your control and
 avoids relying on legacy path conventions.
 
+When you omit them, Qubex resolves the config root in this order:
+
+1. `QUBEX_CONFIG_ROOT`
+2. `~/qubex-config`
+3. `/opt/qubex-config`
+4. legacy `/home/shared/qubex-config`
+
+If none of these paths exist, Qubex defaults to `~/qubex-config`.
+
 ## Recommended directory layout
 
 Keep shared catalogs in one config directory, and keep parameter files in a
@@ -23,7 +32,7 @@ qubex-config/
     box.yaml
     system.yaml
     wiring.yaml
-    skew.yaml
+    skew.yaml  # for QuEL-1/QuBE
   params/
     SYSTEM_A/
       control_frequency.yaml
@@ -32,11 +41,15 @@ qubex-config/
       readout_amplitude.yaml
       capture_delay.yaml
       jpa_params.yaml
+  calibration/
+    SYSTEM_A/
+      calib_note.json
 ```
 
-- `chip.yaml`, `box.yaml`, `system.yaml`, and `wiring.yaml` describe the static system definition.
-- `skew.yaml` is optional, but it is typically needed for QuEL-1 skew-calibration workflows.
+- `config/` stores the shared system catalogs.
 - Each file under `params/<system_id>/` stores one parameter family.
+- `calibration/<system_id>/calib_note.json` is the default calibration note location.
+- `skew.yaml` is optional, but it is typically needed for QuEL-1 skew-calibration workflows.
 
 ## Define the shared config files
 
@@ -47,7 +60,7 @@ Define chip metadata once per chip.
 ```yaml
 CHIP_A:
   name: "Example chip"
-  n_qubits: 8
+  n_qubits: 64
   topology:
     type: square_lattice
     mux_size: 4

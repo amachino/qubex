@@ -167,7 +167,9 @@ def test_print_chip_info_uses_active_system_id_for_chip_summary(
         params_path=tmp_path / "params",
     )
     fake_manager = FakeSystemManager(
-        experiment_system=type("FakeExperimentSystemWithChip", (), {"chip": fake_chip})(),
+        experiment_system=type(
+            "FakeExperimentSystemWithChip", (), {"chip": fake_chip}
+        )(),
         backend_controller=FakeBackendController(),
         config_loader=fake_loader,
     )

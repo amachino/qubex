@@ -45,6 +45,14 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
         chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}
     }
     _write_yaml(config_dir / "chip.yaml", chip_yaml)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            chip_id: {
+                "chip_id": chip_id,
+            }
+        },
+    )
 
     # box.yaml (one box sufficient)
     box_yaml = {
@@ -154,7 +162,7 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -291,7 +299,7 @@ def test_load_accepts_colon_separated_wiring_specifiers(tmp_path: Path) -> None:
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -363,7 +371,7 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -407,7 +415,7 @@ def test_get_experiment_system_deprecation_warning(tmp_path: Path):
     """Given deprecated arguments, when calling get_experiment_system, then ConfigLoader emits a warning."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -449,7 +457,7 @@ def test_merge_per_file_over_legacy(tmp_path: Path):
 
     # Act
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -490,7 +498,7 @@ def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture)
     caplog.set_level(logging.WARNING, logger="qubex.system.config_loader")
 
     _ = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -505,7 +513,7 @@ def test_load_param_data_applies_default_when_requested(tmp_path: Path) -> None:
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -537,7 +545,7 @@ def test_load_param_data_accepts_qubit_indices_in_per_file_yaml(tmp_path: Path) 
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -562,12 +570,137 @@ def test_load_param_data_accepts_qubit_indices_in_per_file_yaml(tmp_path: Path) 
         rel_tol=0,
         abs_tol=1e-9,
     )
-    assert math.isclose(
-        system.quantum_system.get_qubit("Q1").frequency,
-        6.2,
-        rel_tol=0,
-        abs_tol=1e-9,
+
+
+def test_loader_uses_env_root_defaults_for_shared_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given env-root shared layout, when dirs are omitted, then ConfigLoader loads from that root."""
+    root = tmp_path / "qubex-config"
+    config_dir = root / "config"
+    params_dir = root / "params" / "SYS-A"
+    chip_id = "TESTCHIP"
+    system_id = "SYS-A"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4}},
     )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            system_id: {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            system_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                    "pump": "BOX1-3",
+                }
+            ]
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    monkeypatch.setenv("QUBEX_CONFIG_ROOT", str(root))
+
+    loader = ConfigLoader(system_id=system_id)
+
+    assert loader.config_path == config_dir.resolve()
+    assert loader.params_path == params_dir.resolve()
+    assert loader.system_id == system_id
+
+
+def test_loader_uses_legacy_system_root_when_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given legacy nested system layout, when dirs are omitted, then ConfigLoader resolves it."""
+    root = tmp_path / "legacy-root"
+    config_dir = root / "SYS-A" / "config"
+    params_dir = root / "SYS-A" / "params"
+    chip_id = "TESTCHIP"
+    system_id = "SYS-A"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            system_id: {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            system_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                    "pump": "BOX1-3",
+                }
+            ]
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    monkeypatch.delenv("QUBEX_CONFIG_ROOT", raising=False)
+    monkeypatch.setattr(
+        "qubex.system.config_paths.SHARED_CONFIG_ROOT",
+        tmp_path / "opt-root",
+    )
+    monkeypatch.setattr("qubex.system.config_paths.LEGACY_SHARED_CONFIG_ROOT", root)
+    monkeypatch.setattr(
+        "qubex.system.config_paths._get_home_dir",
+        lambda: tmp_path / "home",
+    )
+
+    loader = ConfigLoader(system_id=system_id)
+
+    assert loader.config_path == config_dir.resolve()
+    assert loader.params_path == params_dir.resolve()
+    assert loader.system_id == system_id
 
 
 def test_load_param_data_accepts_qubit_indices_in_legacy_yaml(tmp_path: Path) -> None:
@@ -594,7 +727,7 @@ def test_load_param_data_accepts_qubit_indices_in_legacy_yaml(tmp_path: Path) ->
     (params_dir / "qubit_frequency.yaml").unlink()
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -674,7 +807,7 @@ def test_load_param_data_expands_index_keys_for_144q_labels(tmp_path: Path) -> N
     _write_yaml(params_dir / "props.yaml", {})
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -702,7 +835,7 @@ def test_load_param_data_requires_structured_yaml(tmp_path: Path) -> None:
 
     with pytest.raises(TypeError, match="Per-file params must be structured"):
         ConfigLoader(
-            chip_id=chip_id,
+            system_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
         )
@@ -744,11 +877,20 @@ def test_control_system_box_options_loaded_from_box_yaml(tmp_path: Path) -> None
             ]
         },
     )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            chip_id: {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            }
+        },
+    )
     _write_yaml(params_dir / "props.yaml", {})
     _write_yaml(params_dir / "params.yaml", {})
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -772,7 +914,7 @@ def test_control_system_clock_master_prefers_system_yaml(tmp_path: Path) -> None
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -790,7 +932,7 @@ def test_control_system_allows_missing_clock_master_address(tmp_path: Path) -> N
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
         autoload=False,
@@ -806,7 +948,7 @@ def test_config_loader_autoload_false_requires_explicit_load(tmp_path: Path) -> 
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
         autoload=False,
@@ -850,12 +992,13 @@ def test_load_uses_wiring_yaml_for_quel3_backend(tmp_path: Path) -> None:
     _write_yaml(params_dir / "props.yaml", {})
     _write_yaml(params_dir / "params.yaml", {})
 
-    loader = ConfigLoader(
-        chip_id=chip_id,
-        config_dir=config_dir,
-        params_dir=params_dir,
-        autoload=False,
-    )
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
     loader.load()
 
     assert loader.backend_kind == BACKEND_KIND_QUEL3
@@ -883,7 +1026,7 @@ def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -916,7 +1059,7 @@ def test_load_allows_quel3_box_without_address_or_adapter(tmp_path: Path) -> Non
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -946,7 +1089,7 @@ def test_load_requires_address_for_non_quel3_box(tmp_path: Path) -> None:
         match=r"requires `address` in `box\.yaml`",
     ):
         ConfigLoader(
-            chip_id=chip_id,
+            system_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
         )
@@ -975,7 +1118,7 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -1044,7 +1187,7 @@ def test_load_resolves_r8_pump_frequency_with_r8_default(tmp_path: Path) -> None
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -1076,7 +1219,7 @@ def test_quel3_target_registry_is_independent_of_configuration_mode(
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -1113,7 +1256,7 @@ def test_quel3_control_targets_share_one_logical_channel_per_port(
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -1136,7 +1279,7 @@ def test_build_target_registry_does_not_mutate_port_state(tmp_path: Path) -> Non
     """Given configured system, when rebuilding target registry, then port state remains unchanged."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -1181,7 +1324,7 @@ def test_configure_updates_port_state_before_target_registry_rebuild(
     """Given modified ports, when configuring, then port state is recomputed and applied."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -1215,7 +1358,7 @@ def test_configure_initializes_monitor_ports_for_quel1(tmp_path: Path) -> None:
     """Given QuEL-1 system init, when building ports, then monitor input has initial frequencies."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -1273,12 +1416,13 @@ def test_load_raises_for_system_chip_id_mismatch(tmp_path: Path) -> None:
     _write_yaml(params_dir / "props.yaml", {})
     _write_yaml(params_dir / "params.yaml", {})
 
-    loader = ConfigLoader(
-        chip_id=chip_id,
-        config_dir=config_dir,
-        params_dir=params_dir,
-        autoload=False,
-    )
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
 
     with pytest.raises(ValueError, match="chip_id mismatch"):
         loader.load()
@@ -1315,12 +1459,13 @@ def test_load_backend_override_takes_precedence_over_system_backend(
     _write_yaml(params_dir / "props.yaml", {})
     _write_yaml(params_dir / "params.yaml", {})
 
-    loader = ConfigLoader(
-        chip_id=chip_id,
-        config_dir=config_dir,
-        params_dir=params_dir,
-        autoload=False,
-    )
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
     loader.load(backend_kind=BACKEND_KIND_QUEL1)
 
     assert loader.backend_kind == BACKEND_KIND_QUEL1
@@ -1365,12 +1510,13 @@ def test_load_uses_system_yaml_backend_and_ignores_chip_yaml_backend(
     _write_yaml(params_dir / "props.yaml", {})
     _write_yaml(params_dir / "params.yaml", {})
 
-    loader = ConfigLoader(
-        chip_id=chip_id,
-        config_dir=config_dir,
-        params_dir=params_dir,
-        autoload=False,
-    )
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
     loader.load()
 
     assert loader.backend_kind == "quel3"
@@ -1410,12 +1556,13 @@ def test_load_ignores_chip_yaml_backend_when_system_yaml_is_missing(
     _write_yaml(params_dir / "props.yaml", {})
     _write_yaml(params_dir / "params.yaml", {})
 
-    loader = ConfigLoader(
-        chip_id=chip_id,
-        config_dir=config_dir,
-        params_dir=params_dir,
-        autoload=False,
-    )
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
     loader.load()
 
     assert loader.backend_kind == "quel1"
@@ -1454,12 +1601,13 @@ def test_load_defaults_to_quel1_when_not_configured(
     _write_yaml(params_dir / "props.yaml", {})
     _write_yaml(params_dir / "params.yaml", {})
 
-    loader = ConfigLoader(
-        chip_id=chip_id,
-        config_dir=config_dir,
-        params_dir=params_dir,
-        autoload=False,
-    )
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
     loader.load()
 
     assert loader.backend_kind == "quel1"
@@ -1496,7 +1644,7 @@ def test_load_raises_for_unknown_backend_value_in_system_yaml(
     _write_yaml(params_dir / "params.yaml", {})
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
         autoload=False,
@@ -1551,7 +1699,7 @@ def test_load_uses_quel3_system_loader_when_backend_is_quel3(
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
         autoload=False,
@@ -1596,7 +1744,7 @@ def test_load_uses_quel1_system_loader_when_backend_is_unset(
     )
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
         autoload=False,

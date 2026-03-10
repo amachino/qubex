@@ -1346,7 +1346,7 @@ def test_load_raises_for_unknown_backend_kind_in_system_config(
 
     with pytest.raises(ValueError, match="Unsupported backend"):
         manager.load(
-            chip_id="TEST",
+            system_id="TEST",
             config_dir=config_dir,
             params_dir=params_dir,
             mock_mode=True,

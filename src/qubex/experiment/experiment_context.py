@@ -47,6 +47,7 @@ from qubex.system import (
     SystemManager,
     Target,
 )
+from qubex.system.config_paths import resolve_default_calibration_note_path
 from qubex.system.target_type import TargetType
 from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
@@ -671,9 +672,9 @@ class ExperimentContext:
     def load_calib_note(self, path: Path | str | None = None) -> None:
         """Load the calibration data from a given path or the default calibration note file."""
         if path is None:
-            # TODO: Make this path configurable
-            path = (
-                f"/home/shared/qubex-config/{self.chip_id}/calibration/calib_note.json"
+            path = resolve_default_calibration_note_path(
+                system_id=self.config_loader.system_id,
+                chip_id=self.chip_id,
             )
         if not Path(path).exists():
             raise FileNotFoundError(f"Calibration file '{path}' does not exist.")

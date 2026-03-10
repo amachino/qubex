@@ -49,6 +49,7 @@ def _run_async(
     bridge = get_shared_async_bridge(key="quel3-execution")
     return bridge.run(factory, timeout=timeout)
 
+
 class Quel3ExecutionManager:
     """Handle backend execution entrypoints for QuEL-3 controller."""
 

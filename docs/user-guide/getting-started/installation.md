@@ -85,6 +85,5 @@ Development commands in this repository assume a `uv`-managed environment.
 ```bash
 git clone -b develop-next https://github.com/amachino/qubex.git
 cd qubex
-git submodule update --init --recursive
 make sync
 ```
