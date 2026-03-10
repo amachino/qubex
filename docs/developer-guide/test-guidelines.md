@@ -4,9 +4,11 @@ This project uses **pytest**. Tests are required for all code changes and new fe
 
 ## Commands
 
-- Run tests: `make test`
-- Full quality gate: `make check`
-- Optional coverage: `make coverage`
+- Run tests: `uv run pytest`
+- Lint: `uv run ruff check`
+- Format: `uv run ruff format`
+- Type check: `uv run pyright`
+- Full quality gate: `uv run ruff check && uv run pyright && uv run pytest`
 
 ## Principles
 
@@ -98,8 +100,20 @@ assert_allclose(actual, expected, rtol=1e-7, atol=1e-9)
 ## IO, network, and hardware
 
 - Prefer `tmp_path` for file IO and avoid writing to the repo.
+- Do not hard-code temporary paths such as `/tmp/...` in tests. Ruff flags these as `S108`.
+- Build temporary files and directories from `tmp_path` or `tmp_path_factory` instead.
 - Tests should not rely on network or hardware by default.
 - If external dependencies are unavoidable, **skip with a clear reason**.
+
+```python
+from pathlib import Path
+
+def test_example(tmp_path: Path) -> None:
+    """Given file output, when writing test data, then tmp_path should be used."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    assert config_dir.exists()
+```
 
 ```python
 import pytest
