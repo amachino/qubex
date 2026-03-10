@@ -49,3 +49,29 @@ def test_invalid_duration():
     """FlatTop should raise a ValueError if duration is not greater than `2 * tau`."""
     with pytest.raises(ValueError, match=r"duration must be greater than `2 \* tau`\."):
         FlatTop(duration=5 * dt, amplitude=1, tau=3 * dt)
+
+
+def test_shape_kwargs_do_not_leak_pulse_init_parameters(monkeypatch):
+    """FlatTop should not forward pulse-init kwargs into the shape sampler."""
+    captured: dict[str, object] = {}
+    original_func = FlatTop.func
+
+    def recording_func(*args, **kwargs):
+        captured.update(kwargs)
+        return original_func(*args, **kwargs)
+
+    monkeypatch.setattr(FlatTop, "func", staticmethod(recording_func))
+
+    pulse = FlatTop(
+        duration=5 * dt,
+        amplitude=1,
+        tau=2 * dt,
+        sampling_period=dt,
+        lazy=False,
+        window="hann",
+    )
+
+    assert pulse.length == 5
+    assert captured["window"] == "hann"
+    assert "sampling_period" not in captured
+    assert "lazy" not in captured

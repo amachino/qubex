@@ -46,9 +46,11 @@ __all__ = [
 ]
 
 
-def set_sampling_period(dt: float):
+def set_sampling_period(dt: float) -> None:
+    """Set the global waveform sampling period in ns."""
     Waveform.SAMPLING_PERIOD = dt
 
 
-def get_sampling_period():
+def get_sampling_period() -> float:
+    """Return the current global waveform sampling period in ns."""
     return Waveform.SAMPLING_PERIOD

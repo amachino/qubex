@@ -60,9 +60,17 @@ class FlatTop(Pulse):
         correction_factor: float | None = None,
         **kwargs,
     ):
+        pulse_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if key in {"scale", "detuning", "phase", "sampling_period", "lazy"}
+        }
+        shape_kwargs = {
+            key: value for key, value in kwargs.items() if key not in pulse_kwargs
+        }
         super().__init__(
             duration=duration,
-            **kwargs,
+            **pulse_kwargs,
         )
 
         self.amplitude: Final = amplitude
@@ -72,7 +80,7 @@ class FlatTop(Pulse):
         self.type: Final = type
         self.correction_type: Final = correction_type
         self.correction_factor: Final = correction_factor
-        self._shape_kwargs: Final = dict(kwargs)
+        self._shape_kwargs: Final = shape_kwargs
         if duration < 2 * tau:
             raise ValueError("duration must be greater than `2 * tau`.")
         self._finalize_initialization()

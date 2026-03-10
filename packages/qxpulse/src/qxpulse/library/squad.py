@@ -259,11 +259,8 @@ class Squad(Pulse):
         """
         Compute the full complex SQUAD pulse.
 
-        Full complex SQUAD pulse:
-            I(t) + i Q(t),
-
-        where I(t) is the flat-top envelope with chosen SQUAD ramps,
-        and Q(t) is the (scaled) counter-diabatic quadrature.
+        Returns `I(t) + i Q(t)`, where `I(t)` is the flat-top envelope with
+        chosen SQUAD ramps and `Q(t)` is the scaled counter-diabatic quadrature.
         """
         t = np.asarray(t, dtype=float)
 
