@@ -132,6 +132,33 @@ def test_calc_control_amplitude_resolves_qubit_for_ef_target() -> None:
     assert amplitude == 1.0
 
 
+def test_unavailable_target_rabi_params_still_support_control_amplitude() -> None:
+    """Given unavailable GE target, when using stored Rabi params, then control amplitude is still derived."""
+    ctx = SimpleNamespace(
+        ge_targets={},
+        ef_targets={},
+        targets={
+            "custom-target": SimpleNamespace(
+                is_ge=True,
+                is_ef=False,
+                type=TargetType.CTRL_GE,
+            )
+        },
+        get_rabi_param=lambda target: _make_rabi_param(target, 0.1),
+        resolve_qubit_label=lambda label: "Q17" if label == "custom-target" else label,
+        params=SimpleNamespace(
+            get_control_amplitude=lambda qubit: 0.5 if qubit == "Q17" else None,
+            get_ef_control_amplitude=lambda _qubit: None,
+        ),
+    )
+    service = PulseService(experiment_context=cast(Any, ctx))
+
+    assert service.rabi_params == {
+        "custom-target": _make_rabi_param("custom-target", 0.1)
+    }
+    assert service.calc_control_amplitude("custom-target", rabi_rate=0.2) == 1.0
+
+
 def test_ef_rabi_params_resolves_ge_labels_via_target_registry() -> None:
     """Given custom EF labels, when exposing EF Rabi params, then output keys use registry-resolved GE labels."""
 

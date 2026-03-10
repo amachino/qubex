@@ -60,7 +60,7 @@ Check available versions on the [Release Page](https://github.com/amachino/qubex
 Development in this repository assumes a `uv`-managed environment.
 
 ```bash
-git clone -b develop-next https://github.com/amachino/qubex.git
+git clone -b develop https://github.com/amachino/qubex.git
 cd qubex
 git submodule update --init --recursive
 make sync

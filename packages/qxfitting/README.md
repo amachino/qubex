@@ -23,10 +23,10 @@
 
 ```bash
 # pip
-pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxfitting"
+pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxfitting"
 
 # uv
-uv pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxfitting"
+uv pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxfitting"
 ```
 
 ## pyproject.toml
@@ -34,14 +34,14 @@ uv pip install "qxfitting @ git+https://github.com/amachino/qubex.git@develop-ne
 ```toml
 [project]
 dependencies = [
-  "qxfitting @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxfitting",
+  "qxfitting @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxfitting",
 ]
 ```
 
 ## Development
 
 ```bash
-git clone -b develop-next https://github.com/amachino/qubex.git
+git clone -b develop https://github.com/amachino/qubex.git
 
 cd qubex/packages/qxfitting
 

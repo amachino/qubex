@@ -74,12 +74,14 @@ class PulseService:
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
-        """Return stored Rabi parameters for available targets."""
-        params = {}
-        for target in self.ctx.ge_targets | self.ctx.ef_targets:
-            param = self.ctx.get_rabi_param(target)
+        """Return stored Rabi parameters for GE and EF targets."""
+        params: dict[str, RabiParam] = {}
+        for label, target in self.ctx.targets.items():
+            if not (getattr(target, "is_ge", False) or getattr(target, "is_ef", False)):
+                continue
+            param = self.ctx.get_rabi_param(label)
             if param is not None:
-                params[target] = param
+                params[label] = param
         return params
 
     @property
@@ -88,7 +90,7 @@ class PulseService:
         return {
             target: param
             for target, param in self.rabi_params.items()
-            if self.ctx.targets[target].is_ge
+            if getattr(self.ctx.targets[target], "is_ge", False)
         }
 
     @property
@@ -97,7 +99,7 @@ class PulseService:
         return {
             self.ctx.resolve_ge_label(target): param
             for target, param in self.rabi_params.items()
-            if self.ctx.targets[target].is_ef
+            if getattr(self.ctx.targets[target], "is_ef", False)
         }
 
     def validate_rabi_params(
@@ -146,7 +148,7 @@ class PulseService:
         """
         qubit = self.ctx.resolve_qubit_label(target)
         if rabi_amplitude_ratio is None:
-            rabi_param = self.rabi_params.get(target)
+            rabi_param = self.ctx.get_rabi_param(target)
             if self.ctx.targets[target].type == TargetType.CTRL_EF:
                 default_amplitude = self.ctx.params.get_ef_control_amplitude(qubit)
             else:

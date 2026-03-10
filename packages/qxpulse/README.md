@@ -16,10 +16,10 @@
 
 ```bash
 # pip
-pip install "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse"
+pip install "qxpulse @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxpulse"
 
 # uv
-uv pip install "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse"
+uv pip install "qxpulse @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxpulse"
 ```
 
 ## pyproject.toml
@@ -27,14 +27,14 @@ uv pip install "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next
 ```toml
 [project]
 dependencies = [
-  "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
+  "qxpulse @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxpulse",
 ]
 ```
 
 ## Development
 
 ```bash
-git clone -b develop-next https://github.com/amachino/qubex.git
+git clone -b develop https://github.com/amachino/qubex.git
 
 cd qubex/packages/qxpulse
 

@@ -16,10 +16,10 @@
 
 ```bash
 # pip
-pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer"
+pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxvisualizer"
 
 # uv
-uv pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer"
+uv pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxvisualizer"
 ```
 
 ## pyproject.toml
@@ -27,14 +27,14 @@ uv pip install "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop
 ```toml
 [project]
 dependencies = [
-  "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxvisualizer",
+  "qxvisualizer @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxvisualizer",
 ]
 ```
 
 ## Development
 
 ```bash
-git clone -b develop-next https://github.com/amachino/qubex.git
+git clone -b develop https://github.com/amachino/qubex.git
 
 cd qubex/packages/qxvisualizer
 

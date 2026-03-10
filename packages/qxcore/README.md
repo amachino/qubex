@@ -16,10 +16,10 @@
 
 ```bash
 # pip
-pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore"
+pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxcore"
 
 # uv
-uv pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore"
+uv pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxcore"
 ```
 
 ## pyproject.toml
@@ -27,14 +27,14 @@ uv pip install "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#
 ```toml
 [project]
 dependencies = [
-  "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
+  "qxcore @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxcore",
 ]
 ```
 
 ## Development
 
 ```bash
-git clone -b develop-next https://github.com/amachino/qubex.git
+git clone -b develop https://github.com/amachino/qubex.git
 
 cd qubex/packages/qxcore
 

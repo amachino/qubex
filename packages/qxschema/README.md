@@ -10,10 +10,10 @@
 
 ```bash
 # pip
-pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxschema"
+pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxschema"
 
 # uv
-uv pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxschema"
+uv pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxschema"
 ```
 
 ## pyproject.toml
@@ -21,14 +21,14 @@ uv pip install "qxschema @ git+https://github.com/amachino/qubex.git@develop-nex
 ```toml
 [project]
 dependencies = [
-  "qxschema @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxschema",
+  "qxschema @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxschema",
 ]
 ```
 
 ## Development
 
 ```bash
-git clone -b develop-next https://github.com/amachino/qubex.git
+git clone -b develop https://github.com/amachino/qubex.git
 
 cd qubex/packages/qxschema
 

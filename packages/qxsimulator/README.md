@@ -16,10 +16,10 @@
 
 ```bash
 # pip
-pip install "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator"
+pip install "qxsimulator @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxsimulator"
 
 # uv
-uv pip install "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator"
+uv pip install "qxsimulator @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxsimulator"
 ```
 
 ## pyproject.toml
@@ -27,14 +27,14 @@ uv pip install "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-
 ```toml
 [project]
 dependencies = [
-  "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator",
+  "qxsimulator @ git+https://github.com/amachino/qubex.git@develop#subdirectory=packages/qxsimulator",
 ]
 ```
 
 ## Development
 
 ```bash
-git clone -b develop-next https://github.com/amachino/qubex.git
+git clone -b develop https://github.com/amachino/qubex.git
 
 cd qubex/packages/qxsimulator
 
