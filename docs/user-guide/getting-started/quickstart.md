@@ -1,18 +1,19 @@
 # Quickstart
 
 This quickstart introduces the `Experiment` workflow.
-It assumes you already have configuration and parameter files for your chip.
+It assumes you already have configuration and parameter files for your system.
 
 > [!NOTE]
 > Qubex loads configuration and parameter files that describe your chip, wiring, and control settings.
 >
-> - Default location: `/home/shared/qubex-config/<chip_id>/`
-> - Custom locations: pass `config_dir` and `params_dir` when creating an `Experiment`
+> - Prefer `system_id` as the selector for one concrete instrument setup
+> - Pass both `config_dir` and `params_dir` explicitly when creating an `Experiment`
+> - Create these files by following [System configuration](system-configuration.md)
 > - Base units in `Experiment`: time-like values use `ns`, and frequency-like values use `GHz`
 
 ## 1. Create an experiment
 
-Create an `Experiment` by specifying the chip, target qubits, and the
+Create an `Experiment` by specifying the system, target qubits, and the
 configuration and parameter directories to use. Once you have `exp`, you can
 connect to the instruments, run measurements, execute pulse schedules, and
 sweep parameters through its methods.
@@ -22,10 +23,10 @@ import numpy as np
 import qubex as qx
 
 exp = qx.Experiment(
-    chip_id="64Q",
+    system_id="SYSTEM_A",
     qubits=[0, 1],
-    config_dir="/path/to/config",
-    params_dir="/path/to/params",
+    config_dir="/path/to/qubex-config/config",
+    params_dir="/path/to/qubex-config/params/SYSTEM_A",
 )
 
 Q0, Q1 = exp.qubit_labels[:2]

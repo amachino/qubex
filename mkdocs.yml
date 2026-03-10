@@ -60,6 +60,7 @@ nav:
   - Home: index.md
   - Getting started:
       - Installation: user-guide/getting-started/installation.md
+      - System configuration: user-guide/getting-started/system-configuration.md
       - Quickstart: user-guide/getting-started/quickstart.md
   - Examples: examples/index.md
   - Developer guide:
