@@ -488,6 +488,183 @@ def test_load_param_data_applies_default_when_requested(tmp_path: Path) -> None:
     assert without_default["Q1"] is None
 
 
+def test_load_param_data_accepts_qubit_indices_in_per_file_yaml(tmp_path: Path) -> None:
+    """Given indexed qubit keys in per-file params, when loading, then ConfigLoader resolves them to labels."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        params_dir / "control_amplitude.yaml",
+        {
+            "meta": {},
+            "data": {0: 0.15, 1: 0.25},
+        },
+    )
+    _write_yaml(
+        params_dir / "qubit_frequency.yaml",
+        {
+            "meta": {"unit": "MHz"},
+            "data": {0: 5100, 1: 6200},
+        },
+    )
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+    control_parameters = system.control_params
+
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q0"),
+        0.15,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q1"),
+        0.25,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        system.quantum_system.get_qubit("Q0").frequency,
+        5.1,
+        rel_tol=0,
+        abs_tol=1e-9,
+    )
+    assert math.isclose(
+        system.quantum_system.get_qubit("Q1").frequency,
+        6.2,
+        rel_tol=0,
+        abs_tol=1e-9,
+    )
+
+
+def test_load_param_data_accepts_qubit_indices_in_legacy_yaml(tmp_path: Path) -> None:
+    """Given indexed qubit keys in legacy params, when loading, then ConfigLoader resolves them to labels."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        params_dir / "params.yaml",
+        {
+            chip_id: {
+                "readout_amplitude": {0: 0.12, 1: 0.13},
+            }
+        },
+    )
+    _write_yaml(
+        params_dir / "props.yaml",
+        {
+            chip_id: {
+                "qubit_frequency": {0: 5.1, 1: 5.2},
+            }
+        },
+    )
+    (params_dir / "control_amplitude.yaml").unlink()
+    (params_dir / "qubit_frequency.yaml").unlink()
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+    control_parameters = system.control_params
+
+    assert math.isclose(
+        control_parameters.get_readout_amplitude("Q0"),
+        0.12,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        control_parameters.get_readout_amplitude("Q1"),
+        0.13,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        system.quantum_system.get_qubit("Q0").frequency,
+        5.1,
+        rel_tol=0,
+        abs_tol=1e-9,
+    )
+    assert math.isclose(
+        system.quantum_system.get_qubit("Q1").frequency,
+        5.2,
+        rel_tol=0,
+        abs_tol=1e-9,
+    )
+
+
+def test_load_param_data_expands_index_keys_for_144q_labels(tmp_path: Path) -> None:
+    """Given indexed qubit keys on a 144-qubit chip, when loading, then labels are zero-padded correctly."""
+    chip_id = "TEST144"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test 144Q Chip", "n_qubits": 144}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        params_dir / "control_amplitude.yaml",
+        {
+            "meta": {},
+            "data": {0: 0.21, 1: 0.22},
+        },
+    )
+    _write_yaml(params_dir / "params.yaml", {})
+    _write_yaml(params_dir / "props.yaml", {})
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    control_parameters = loader.get_experiment_system().control_params
+
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q000"),
+        0.21,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q001"),
+        0.22,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+
+
 def test_load_param_data_requires_structured_yaml(tmp_path: Path) -> None:
     """Given malformed per-file params, when loading params, then ValueError is raised."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)

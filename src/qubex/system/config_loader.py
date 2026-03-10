@@ -74,6 +74,27 @@ PARAMS_MAP = {
     "resonator_internal_linewidth": ("internal_loss_rate", "props"),
 }
 
+QUBIT_KEYED_PARAMS = frozenset(
+    {
+        "qubit_frequency",
+        "qubit_anharmonicity",
+        "resonator_frequency",
+        "control_frequency",
+        "control_frequency_ef",
+        "readout_frequency",
+        "control_amplitude",
+        "readout_amplitude",
+        "control_vatt",
+        "control_fsc",
+        "t1",
+        "t2_echo",
+        "t2_star",
+        "average_readout_fidelity",
+        "x90_gate_fidelity",
+        "x180_gate_fidelity",
+    }
+)
+
 
 class ConfigLoader:
     """
@@ -95,7 +116,10 @@ class ConfigLoader:
     as-is. When `meta.unit` is provided, numeric values in per-file `data` are
     converted to the internal base units (GHz for frequency-like quantities,
     ns for time-like quantities). `meta.unit` must be a string and is applied
-    uniformly to the values in per-file `data` only.
+    uniformly to the values in per-file `data` only. For qubit-scoped
+    parameter maps, integer indices such as `0`, `1`, and `2` are the
+    canonical on-disk keys; legacy qubit labels such as `Q001` remain
+    accepted for compatibility.
 
     `jpa_params` are resolved into effective per-mux values during load, so the
     resulting control-parameter object serializes concrete values rather than
@@ -716,6 +740,42 @@ class ConfigLoader:
             return data
         return {k: apply(v, k) for k, v in data.items()}
 
+    def _normalize_param_keys(self, param_name: str, data: dict[Any, Any]) -> dict[Any, Any]:
+        """Normalize parameter-map keys to the canonical in-memory representation."""
+        if not isinstance(data, dict):
+            return data
+        if param_name not in QUBIT_KEYED_PARAMS:
+            return data
+        return {
+            self._normalize_qubit_param_key(key): value
+            for key, value in data.items()
+        }
+
+    def _normalize_qubit_param_key(self, key: Any) -> str:
+        """Resolve one qubit-scoped parameter key from index or label to a label."""
+        chip_info = self._chip_dict.get(self._chip_id) or {}
+        n_qubits = chip_info.get("n_qubits")
+        if not isinstance(n_qubits, int) or n_qubits <= 0:
+            raise ValueError(
+                f"Chip `{self._chip_id}` must define a positive integer `n_qubits`."
+            )
+        digits = len(str(n_qubits - 1))
+        if isinstance(key, int):
+            index = key
+        elif isinstance(key, str) and key.isdigit():
+            index = int(key)
+        elif isinstance(key, str):
+            return key
+        else:
+            raise TypeError(
+                f"Unsupported qubit parameter key type `{type(key).__name__}` for chip `{self._chip_id}`."
+            )
+        if index < 0 or index >= n_qubits:
+            raise ValueError(
+                f"Qubit index {index} is out of range for chip `{self._chip_id}` with {n_qubits} qubits."
+            )
+        return f"Q{index:0{digits}d}"
+
     @deprecated("Use load_param_data() instead.")
     def _load_param_data(self, param_name: str, use_default: bool = True) -> dict:
         return self.load_param_data(param_name, use_default=use_default)
@@ -740,7 +800,10 @@ class ConfigLoader:
         legacy_root = self._params_dict if legacy_file == "params" else self._props_dict
         legacy_map = legacy_root.get(self._chip_id, {}) or {}
         legacy_key = legacy_name or param_name
-        legacy_data = legacy_map.get(legacy_key, {}) or {}
+        legacy_data = self._normalize_param_keys(
+            param_name,
+            legacy_map.get(legacy_key, {}) or {},
+        )
 
         if file_path.exists():
             payload = self._load_structured_params_yaml(file_path)
@@ -758,7 +821,10 @@ class ConfigLoader:
                     for k, v in data.items()
                 }
 
-            converted_data = self._convert_units_in_data(data, unit)
+            converted_data = self._normalize_param_keys(
+                param_name,
+                self._convert_units_in_data(data, unit),
+            )
 
             if not converted_data:
                 # Per-file exists but empty; return legacy as-is

@@ -67,6 +67,15 @@ system-specific deployment manifests (`system`, `wiring`).
   `boxes:` may be added later as an optional extension. It is not part of the
   baseline schema.
 
+### D6. Parameter key style
+
+- Qubit-scoped parameter files should use qubit indices as keys.
+- Example:
+  - preferred: `0: 4.123`
+  - compatibility: `Q000: 4.123`
+- Loader normalizes integer indices to the canonical qubit labels for the
+  selected chip.
+
 ## Proposed schema
 
 ### chip.yaml
