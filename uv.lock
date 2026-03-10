@@ -3264,7 +3264,7 @@ wheels = [
 
 [[package]]
 name = "qubex"
-version = "1.5.0a2"
+version = "1.5.0a3"
 source = { editable = "." }
 dependencies = [
     { name = "cma" },
