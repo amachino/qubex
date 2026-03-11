@@ -184,8 +184,8 @@ class FlatTop(Pulse):
             )
 
         if beta is not None:
+            dI = np.gradient(I, t)
             if correction_type is None and correction_factor is None:
-                dI = np.gradient(I, t)
                 Q = beta * dI
                 return I + 1j * Q
 
@@ -198,7 +198,6 @@ class FlatTop(Pulse):
         if correction_factor is None:
             correction_factor = 1.0
 
-        dI = np.gradient(I, t)
         Q = np.zeros_like(t, dtype=np.complex128)
         if correction_type == "DRAG":
             Q = -(correction_factor / delta) * dI

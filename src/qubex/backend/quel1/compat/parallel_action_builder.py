@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from logging import Logger
 from types import MappingProxyType
@@ -106,6 +107,7 @@ def _resolve_clock_health_checks(
     return ClockHealthCheckOptions() if options is None else options
 
 
+@lru_cache(maxsize=1)
 def _get_installed_quelware_version() -> str | None:
     """Return installed `quel_ic_config` version if available."""
     try:
