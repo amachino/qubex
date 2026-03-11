@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qxpulse"
-version = "0.2.0"
+version = "0.0.0.dev0"
 requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex pulse primitives and scheduling utilities"
