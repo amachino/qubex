@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 from qubex.patches.quel_ic_config import disable_quelware_filelock_patch as patch
@@ -55,6 +56,10 @@ class _FakeAbstractSyncAsyncCoapClient:
         self._target = target
         self._looping_timeout = looping_timeout
         self._locked = False
+        self._terminated = False
+
+    def terminate(self) -> None:
+        self._terminated = True
 
 
 class _FakeSyncAsyncCoapClientWithFileLock(_FakeAbstractSyncAsyncCoapClient):
@@ -135,7 +140,7 @@ def test_apply_patch_skips_for_quelware_0_8(monkeypatch) -> None:
 
 
 def test_apply_patch_replaces_filelock_classes(monkeypatch) -> None:
-    """Given quelware modules, when patch applies, then file-lock classes become dummy lock."""
+    """Given quelware modules, when patch applies, then file-lock classes reuse dummy lock."""
     sock_mod = SimpleNamespace(
         AbstractLockKeeper=_FakeAbstractLockKeeper,
         DummyLockKeeper=_FakeDummyLockKeeper,
@@ -162,6 +167,15 @@ def test_apply_patch_replaces_filelock_classes(monkeypatch) -> None:
 
     patch.apply_quelware_filelock_patch()
 
+    assert (
+        sock_mod.FileLockKeeper.has_lock.fget is sock_mod.DummyLockKeeper.has_lock.fget
+    )
+    assert sock_mod.FileLockKeeper._take_lock is sock_mod.DummyLockKeeper._take_lock
+    assert sock_mod.FileLockKeeper._keep_lock is sock_mod.DummyLockKeeper._keep_lock
+    assert (
+        sock_mod.FileLockKeeper._release_lock is sock_mod.DummyLockKeeper._release_lock
+    )
+
     sock_client = sock_mod.FileLockKeeper(
         target=("192.168.0.10", 1234), lock_directory="/missing"
     )
@@ -171,8 +185,45 @@ def test_apply_patch_replaces_filelock_classes(monkeypatch) -> None:
     sock_client._release_lock()
     assert sock_client.has_lock is False
 
+    assert (
+        coap_mod.SyncAsyncCoapClientWithFileLock._take_lock
+        is coap_mod.SyncAsyncCoapClientWithDummyLock._take_lock
+    )
+    assert (
+        coap_mod.SyncAsyncCoapClientWithFileLock._keep_lock
+        is coap_mod.SyncAsyncCoapClientWithDummyLock._keep_lock
+    )
+    assert (
+        coap_mod.SyncAsyncCoapClientWithFileLock._release_lock
+        is coap_mod.SyncAsyncCoapClientWithDummyLock._release_lock
+    )
+    assert (
+        coap_mod.SyncAsyncCoapClientWithFileLock._release_lock_body
+        is coap_mod.SyncAsyncCoapClientWithDummyLock._release_lock_body
+    )
+    assert (
+        coap_mod.SyncAsyncCoapClientWithFileLock._check_lock_at_host
+        is coap_mod.SyncAsyncCoapClientWithDummyLock._check_lock_at_host
+    )
+    assert (
+        coap_mod.SyncAsyncCoapClientWithFileLock._cleanup
+        is coap_mod.SyncAsyncCoapClientWithDummyLock._cleanup
+    )
+    assert (
+        coap_mod.SyncAsyncCoapClientWithFileLock._cleanup_at_exit
+        is coap_mod.SyncAsyncCoapClientWithDummyLock._cleanup_at_exit
+    )
+
     coap_client = coap_mod.SyncAsyncCoapClientWithFileLock(
         target=("192.168.0.11", 1234),
         lock_directory="/missing",
     )
+    assert coap_client._locked is False
+    asyncio.run(coap_client._take_lock(context=None, with_token=False))
+    assert coap_client._locked is True
+    assert asyncio.run(coap_client._keep_lock(context=None)) is True
+    assert asyncio.run(coap_client._release_lock(context=None)) is True
+    assert coap_client._locked is False
+    coap_client.terminate()
+    assert coap_client._terminated is True
     assert coap_client._locked is False
