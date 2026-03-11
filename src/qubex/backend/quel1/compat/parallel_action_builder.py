@@ -508,6 +508,7 @@ class QubexMultiAction:
     _clock_options: ClockHealthCheckOptions
     _logger: Logger
     _emit_triggered_boxes: bool = False
+    _arm_triggered_boxes_at_capture_start: bool = False
 
     SYSREF_PERIOD: Final[int] = 2_000
     TIMING_OFFSET: Final[int] = 0
@@ -524,8 +525,26 @@ class QubexMultiAction:
         """Return True if action has runit capture settings."""
         return bool(action._cprms)
 
-    def capture_start(self) -> dict[str, dict[PortType, Any]]:
+    def capture_start(
+        self,
+        *,
+        scheduled_times: Mapping[str, int] | None = None,
+    ) -> dict[str, dict[PortType, Any]]:
         """Start capture for boxes that include capture settings."""
+
+        def _start_capture(
+            name: str, action: SingleActionProtocol
+        ) -> dict[PortType, Any]:
+            if (
+                self._arm_triggered_boxes_at_capture_start
+                and scheduled_times is not None
+                and getattr(action, "_triggers", {})
+            ):
+                return cast(Any, action).capture_start(
+                    timecounter=scheduled_times[name]
+                )
+            return action.capture_start()
+
         capture_actions = [
             (name, action)
             for name, action in self._actions.items()
@@ -535,7 +554,7 @@ class QubexMultiAction:
             dict[str, dict[PortType, Any]],
             _run_per_box_parallel(
                 capture_actions,
-                lambda _name, action: action.capture_start(),
+                _start_capture,
             ),
         )
 
@@ -570,22 +589,23 @@ class QubexMultiAction:
         dict[tuple[str, PortType, int], Any],
     ]:
         """Run capture start -> timed emission reservation -> capture stop."""
-        futures = self.capture_start()
-        self.emit_at(displacement=self._system.displacement)
+        scheduled_times = self._build_scheduled_times(
+            displacement=self._system.displacement
+        )
+        futures = self.capture_start(scheduled_times=scheduled_times)
+        self.emit_at(
+            displacement=self._system.displacement,
+            scheduled_times=scheduled_times,
+        )
         return self.capture_stop(futures)
 
-    def emit_at(
+    def _build_scheduled_times(
         self,
         *,
         min_time_offset: int = MIN_TIME_OFFSET,
         displacement: int = 0,
-    ) -> None:
-        """
-        Reserve synchronized emission timing across boxes.
-
-        When clock validation is enabled, this method performs additional
-        latched-clock reads and fluctuation checks before scheduling emission.
-        """
+    ) -> dict[str, int]:
+        """Compute synchronized emission times for all boxes."""
         reference_box = adapt_quel1_box(self._system.box[self._reference_box_name])
 
         if self._clock_options.validate_sysref_fluctuation_on_emit:
@@ -607,22 +627,46 @@ class QubexMultiAction:
         else:
             current_time = reference_box.get_current_timecounter()
 
-        awgs_by_box = {
-            name: {(spec.port, spec.channel) for spec in action._wseqs}
-            for name, action in self._actions.items()
-        }
         base_time = current_time + min_time_offset
         align_offset = (16 - (base_time - self._ref_sysref_time_offset) % 16) % 16
         base_time += align_offset + displacement + self.TIMING_OFFSET
 
         timing_shift = self._system.timing_shift
+        return {
+            name: base_time + self._estimated_timediff[name] + timing_shift[name]
+            for name in self._actions
+        }
+
+    def emit_at(
+        self,
+        *,
+        min_time_offset: int = MIN_TIME_OFFSET,
+        displacement: int = 0,
+        scheduled_times: Mapping[str, int] | None = None,
+    ) -> None:
+        """
+        Reserve synchronized emission timing across boxes.
+
+        When clock validation is enabled, this method performs additional
+        latched-clock reads and fluctuation checks before scheduling emission.
+        """
+        awgs_by_box = {
+            name: {(spec.port, spec.channel) for spec in action._wseqs}
+            for name, action in self._actions.items()
+        }
+        resolved_scheduled_times = (
+            dict(scheduled_times)
+            if scheduled_times is not None
+            else self._build_scheduled_times(
+                min_time_offset=min_time_offset,
+                displacement=displacement,
+            )
+        )
         tasks: list[_WavegenTaskProtocol] = []
         for name, action in self._actions.items():
             if not self._emit_triggered_boxes and getattr(action, "_triggers", {}):
                 continue
-            scheduled_time = (
-                base_time + self._estimated_timediff[name] + timing_shift[name]
-            )
+            scheduled_time = resolved_scheduled_times[name]
             if awgs_by_box[name]:
                 tasks.append(
                     action.box.start_wavegen(
@@ -634,9 +678,11 @@ class QubexMultiAction:
                 "reserving emission of %s at %s : base_time=%s, timediff=%s, timing_shift=%s",
                 name,
                 scheduled_time,
-                base_time,
+                scheduled_time
+                - self._estimated_timediff[name]
+                - self._system.timing_shift[name],
                 self._estimated_timediff[name],
-                timing_shift[name],
+                self._system.timing_shift[name],
             )
         for task in tasks:
             task.result()
@@ -748,6 +794,7 @@ def build_parallel_multi_action(
         _clock_options=clock_health_checks,
         _logger=logger,
         _emit_triggered_boxes=driver_package_name == "qubecalib",
+        _arm_triggered_boxes_at_capture_start=driver_package_name != "qubecalib",
     )
     cprms = _collect_multi_action_cprms(actions=actions)
     return multi_action_instance, cprms

@@ -434,6 +434,17 @@ class _FakeTriggeredAction:
         _ = settings
         return cls(box=box, _wseqs=[], _triggers={})
 
+    def capture_start(self, *, timecounter: int | None = None) -> dict[str, str]:
+        _ = timecounter
+        return {"P0": "future"}
+
+    def capture_stop(
+        self,
+        futures: dict[str, str],
+    ) -> tuple[dict[str, str], dict[tuple[str, int], str]]:
+        _ = futures
+        return {"P0": "ok"}, {("P0", 0): "data"}
+
 
 @dataclass
 class _ConcurrencyProbe:
@@ -553,6 +564,153 @@ def test_qxdriver_emit_at_skips_triggered_boxes() -> None:
     multi_action.emit_at(min_time_offset=16)
 
     assert box.reservations == []
+
+
+@dataclass
+class _TimedTriggeredAction:
+    box: _FakeWavegenBox
+    _wseqs: list[SimpleNamespace]
+    _triggers: dict[str, SimpleNamespace]
+    _cprms: dict[str, object] = field(default_factory=lambda: {"P0": object()})
+    capture_start_timecounter: int | None = None
+
+    def capture_start(self, *, timecounter: int | None = None) -> dict[str, str]:
+        self.capture_start_timecounter = timecounter
+        return {"P0": "future"}
+
+    def capture_stop(
+        self,
+        futures: dict[str, str],
+    ) -> tuple[dict[str, str], dict[tuple[str, int], str]]:
+        _ = futures
+        return {"P0": "ok"}, {("P0", 0): "data"}
+
+
+@dataclass
+class _TimedAwgOnlyAction:
+    box: _FakeWavegenBox
+    _wseqs: list[SimpleNamespace]
+    _triggers: dict[str, object] = field(default_factory=dict)
+    _cprms: dict[str, object] = field(default_factory=dict)
+
+    def capture_start(self, *, timecounter: int | None = None) -> dict[str, str]:
+        _ = timecounter
+        return {}
+
+    def capture_stop(
+        self,
+        futures: dict[str, str],
+    ) -> tuple[dict[str, str], dict[tuple[str, int], str]]:
+        _ = futures
+        return {}, {}
+
+
+@dataclass
+class _LegacyTriggeredAction:
+    box: _FakeWavegenBox
+    _wseqs: list[SimpleNamespace]
+    _triggers: dict[str, SimpleNamespace]
+    _cprms: dict[str, object] = field(default_factory=lambda: {"P0": object()})
+
+    def capture_start(self, *, timeout: float | None = None) -> dict[str, str]:
+        _ = timeout
+        return {"P0": "future"}
+
+    def capture_stop(
+        self,
+        futures: dict[str, str],
+    ) -> tuple[dict[str, str], dict[tuple[str, int], str]]:
+        _ = futures
+        return {"P0": "ok"}, {("P0", 0): "data"}
+
+
+def test_qubecalib_action_keeps_legacy_triggered_capture_signature() -> None:
+    """Qubecalib compatibility should not pass qxdriver-only timecounter kwargs."""
+    monitor_box = _FakeWavegenBox()
+    target_box = _FakeWavegenBox()
+    monitor_action = _LegacyTriggeredAction(
+        box=monitor_box,
+        _wseqs=[SimpleNamespace(port="MON", channel=0)],
+        _triggers={"P0": SimpleNamespace(port="MON", channel=0)},
+    )
+    target_action = _TimedAwgOnlyAction(
+        box=target_box,
+        _wseqs=[SimpleNamespace(port="GEN", channel=1)],
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"MON": monitor_box, "GEN": target_box},
+                timing_shift={"MON": 0, "GEN": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"MON": monitor_action, "GEN": target_action}),
+        ),
+        _estimated_timediff=MappingProxyType({"MON": 0, "GEN": 0}),
+        _reference_box_name="MON",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=True,
+        _arm_triggered_boxes_at_capture_start=False,
+    )
+
+    status, data = multi_action.action()
+
+    assert len(monitor_box.reservations) == 1
+    assert target_box.reservations == [({("GEN", 1)}, monitor_box.reservations[0][1])]
+    assert status == {("MON", "P0"): "ok"}
+    assert data == {("MON", "P0", 0): "data"}
+
+
+def test_qxdriver_action_arms_triggered_boxes_at_shared_time() -> None:
+    """Qxdriver compatibility should arm triggered boxes at the shared schedule."""
+    monitor_box = _FakeWavegenBox()
+    target_box = _FakeWavegenBox()
+    monitor_action = _TimedTriggeredAction(
+        box=monitor_box,
+        _wseqs=[SimpleNamespace(port="MON", channel=0)],
+        _triggers={"P0": SimpleNamespace(port="MON", channel=0)},
+    )
+    target_action = _TimedAwgOnlyAction(
+        box=target_box,
+        _wseqs=[SimpleNamespace(port="GEN", channel=1)],
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"MON": monitor_box, "GEN": target_box},
+                timing_shift={"MON": 0, "GEN": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"MON": monitor_action, "GEN": target_action}),
+        ),
+        _estimated_timediff=MappingProxyType({"MON": 0, "GEN": 0}),
+        _reference_box_name="MON",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+        _arm_triggered_boxes_at_capture_start=True,
+    )
+
+    status, data = multi_action.action()
+
+    assert monitor_action.capture_start_timecounter is not None
+    assert target_box.reservations == [
+        ({("GEN", 1)}, monitor_action.capture_start_timecounter)
+    ]
+    assert monitor_box.reservations == []
+    assert status == {("MON", "P0"): "ok"}
+    assert data == {("MON", "P0", 0): "data"}
 
 
 def test_qubex_multi_action_capture_start_runs_box_calls_in_parallel() -> None:

@@ -1,4 +1,4 @@
-.PHONY: lock sync test coverage check fix lint lint-fix format format-check type-check clean build build-all publish-all docs docs-serve docs-build docs-clean
+.PHONY: update sync test coverage check fix lint lint-fix format format-check type-check clean build build-all publish-all docs docs-serve docs-build docs-clean
 
 BUILD_CMD := uv run --with build python -m build
 TWINE_CMD := uv run --with twine twine
@@ -13,10 +13,10 @@ PUBLISH_TARGETS := \
 	qxdriver-quel1:packages/qxdriver-quel1 \
 	qubex:.
 
-# Update uv.lock after dependency or submodule changes
-lock:
-	git submodule update --init --recursive
-	uv lock
+# Update all submodules to their latest remote commits and sync the backend development environment
+update:
+	git submodule update --init --recursive --remote
+	uv sync --all-groups --extra backend
 
 # Install the locked backend development environment
 sync:
