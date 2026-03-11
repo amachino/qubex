@@ -554,6 +554,7 @@ class BenchmarkingService:
                         seq[target].padded(
                             total_duration=max_duration,
                             pad_side="left",
+                            deepcopy=False,
                         )
                     )
             return ps

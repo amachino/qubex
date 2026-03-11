@@ -296,6 +296,7 @@ class PulseSchedule:
         self,
         total_duration: float,
         pad_side: Literal["right", "left"] = "right",
+        deepcopy: bool = True,
     ) -> PulseSchedule:
         """
         Return a copy of the pulse schedule with zero padding.
@@ -306,6 +307,10 @@ class PulseSchedule:
             Total duration of the pulse schedule in ns.
         pad_side : {"right", "left"}, optional
             Side of the zero padding.
+        deepcopy : bool, optional
+            If True, deep-copy nested waveform objects for full isolation.
+            If False, reuse nested waveform objects while detaching schedule
+            and sequence containers.
         """
         duration = total_duration - self.duration
         if duration < 0:
@@ -314,7 +319,18 @@ class PulseSchedule:
             )
         with PulseSchedule() as new_sched:
             for label, channel in self._channels.items():
-                new_sched.add(label, channel.sequence.padded(total_duration, pad_side))
+                new_sched.add(
+                    label,
+                    channel.sequence.padded(
+                        total_duration,
+                        pad_side,
+                        deepcopy=deepcopy,
+                    ),
+                )
+                new_channel = new_sched._channels[label]
+                new_channel.frequency = channel.frequency
+                new_channel.target = channel.target
+                new_channel.frame = channel.frame
         return new_sched
 
     def pad(
