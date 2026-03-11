@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qubex"
-version = "1.5.0a4"
+version = "1.5.0b1"
 requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex: Qubit experiment framework"
@@ -25,12 +25,12 @@ dependencies = [
     "pyserial >= 3.5",
     "pyyaml >= 6.0",
     "qctrl-visualizer >= 8.0",
-    "qxcore",
-    "qxfitting",
-    "qxpulse",
-    "qxschema",
-    "qxsimulator",
-    "qxvisualizer",
+    "qxcore == 0.0.0.dev0",
+    "qxfitting == 0.0.0.dev0",
+    "qxpulse == 0.0.0.dev0",
+    "qxschema == 0.0.0.dev0",
+    "qxsimulator == 0.0.0.dev0",
+    "qxvisualizer == 0.0.0.dev0",
     "rich >= 13.0",
     "scikit-learn >= 1.0",
     "scipy >= 1.0",
@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = ["quelware-client", "qxdriver-quel1"]
+backend = ["quelware-client", "qxdriver-quel1 == 0.0.0.dev0"]
 
 [project.scripts]
 qubex = "qubex.cli:main"

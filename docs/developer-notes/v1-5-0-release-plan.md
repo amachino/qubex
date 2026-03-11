@@ -2,27 +2,30 @@
 
 ## Release target
 
-- Beta release window: by 2026-03-05 (updated on 2026-03-02)
-- GA release window: by March 2026 (beta result dependent)
+- Internal beta target: `v1.5.0b1` for internal evaluation (`2026-03-11` planning baseline)
+- GA release window: March 2026 or later (internal beta result dependent)
 
-## Current decisions (2026-03-02)
+## Current decisions (2026-03-11)
 
-- Beta deadline is extended to `2026-03-05`.
-- Branch migration is performed at beta cut timing.
-- Publish scope uses `make publish-all` (all packages).
-- Hardware validation (`HV-001` to `HV-007`) is executed by release owner on `2026-03-05`.
-- Blocking clarifications with quelware side remain `pending`.
+- `v1.5.0b1` is an internal-only beta cut.
+- Internal beta go/no-go is based on existing QuEL-1 user backward compatibility.
+- QuEL-3 implementation work remains in scope for `v1.5.0`, but it is not part of the internal `b1` sign-off gate.
+- Internal companion packages (`qxcore`, `qxfitting`, `qxpulse`, `qxschema`, `qxsimulator`, `qxvisualizer`, `qxdriver-quel1`) remain at `0.0.0.dev0` for the internal beta bundle.
+- Internal beta artifact validation uses `make build-all`; public `publish-all` is deferred until external beta / GA planning.
 
 ## Dependency status
 
 - `quelware-client` API baseline in this workspace is confirmed (`InstrumentResolver`, `Sequencer`, `Session.trigger(instrument_ids=...)`).
 - QuEL-3 beta decision items `DF-01` to `DF-06` are fixed as of `2026-02-25`.
-- QuEL-3 execution/adapter resolver path changes are implemented in source and validated by local checks as of `2026-03-02` (`uv run ruff check`, `uv run pyright`, `uv run pytest`: `653 passed`).
+- Local internal beta checks are green as of `2026-03-11` (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `794 passed`; `make build-all`: passed).
+- QuEL-1 compatibility remains the only blocking compatibility gate for the internal `v1.5.0b1` cut.
 - Upstream clarification is still required for settings introspection and stable trigger/result contracts.
-- Remaining QuEL-3 beta risk is implementation completion, hardware validation, and closure of upstream clarification items.
+- Remaining QuEL-3 risk is implementation completion, hardware validation, and closure of upstream clarification items after the internal `b1` cut.
 
 ## Scope
 
+- Cut an internal `v1.5.0b1` focused on QuEL-1 backward compatibility for existing users
+- Keep internal workspace package versions unchanged at `0.0.0.dev0` for the tested bundle
 - Add support for QuEL-3 controller using new `quelware-client`
 - Keep backward compatibility with existing controllers
 - Primary compatibility target is `Measurement` facade level
@@ -37,6 +40,11 @@
 ## Prioritized TODO
 
 Legend: `P0` = highest, `P1` = important, `P2` = follow-up
+
+Internal `v1.5.0b1` interpretation:
+
+- Blocking: QuEL-1 compatibility, internal beta notes, internal artifact build validity
+- Non-blocking for `b1`: QuEL-3-specific implementation, hardware validation, and quelware clarification rows below
 
 | Priority | Task | Due | Dependency | Status |
 | --- | --- | --- | --- | --- |
@@ -71,46 +79,34 @@ Calendar note:
 - `2026-02-29` does not exist; end-of-February deadlines are normalized to `2026-02-28`.
 - Beta deadline is extended from `2026-02-28` to `2026-03-05` (decision on `2026-03-02`).
 
-## Execution order (as of 2026-03-02)
+## Execution order (as of 2026-03-11)
 
-1. Wave A (current): QuEL-3 beta-blocking implementation
-   - Migrate execution integration from `InstrumentMapper` to `InstrumentResolver`.
-   - Implement target-to-instrument auto resolution from wiring/port with fail-fast behavior.
-   - Implement `tx/rx/trx` convergence policy and remove one-alias-per-target restriction.
-   - Remove single-alias limitation and support multi-instrument, cross-unit synchronized trigger execution.
-   - Align `Measurement` mode mapping with quelware capture modes.
-   - Finalize QuEL-3 frequency-sweep strategy for `CharacterizationService` and remove direct QuEL-1 LO/CNCO/reset assumptions from QuEL-3 path.
-   - Apply capability gating for QuEL-1-only settings introspection paths on QuEL-3.
-2. Wave B (next): beta gate and validation evidence
-   - Close blocking clarification items with quelware team.
-   - Run required checks: `uv run ruff check`, `uv run ruff format`, `uv run pyright`, `uv run pytest`.
-   - Run hardware gate scenarios for QuEL-1 and QuEL-3 (including `SP-BETA-001`) on `2026-03-05` (owner: release owner).
-   - Apply branch migration at beta cut timing.
-   - Publish beta release notes + known limitations + migration notes.
-3. Wave C (2026-03-06 to 2026-03-25): GA hardening and release
-   - Triage beta feedback and close critical/high issues.
-   - Finalize sweep/async docs and compatibility notes.
-   - Finalize GA release notes and MkDocs guides.
+1. Wave A (current): internal `v1.5.0b1` sign-off
+   - Re-run required checks: `uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`.
+   - Validate internal artifact build with `make build-all`.
+   - Confirm QuEL-1 `Measurement` / `Experiment` compatibility smoke coverage remains green.
+   - Publish internal beta release notes + migration notes.
+2. Wave B (next): internal user validation
+   - Collect backward compatibility findings from existing QuEL-1 users.
+   - Triage any regressions that block the external beta / GA path.
+   - Decide whether package version pinning needs tightening before public publication.
+3. Wave C (after internal `b1`): resume non-blocking QuEL-3 work
+   - Continue QuEL-3 hardware validation and contract-test completion.
+   - Close remaining quelware clarification items.
+   - Re-plan external beta / GA criteria once QuEL-3 scope is ready.
 
 ## Beta exit criteria (must pass)
 
-- QuEL-3 basic control flow works on target environment
 - Existing controller regression tests all pass
-- QuEL-3 is API-compatible at measurement facade level (`Measurement`)
+- QuEL-1 is API-compatible at measurement facade level (`Measurement`)
 - `Experiment` core flows remain operational through delegation
-- QuEL-3 integration uses `InstrumentResolver`-based runtime resolution compatible with current `quelware-client`
-- Target-to-instrument alias resolution follows wiring/port policy and fails fast on unresolved/ambiguous mapping
-- QuEL-3 readout `tx/rx/trx` convergence policy is implemented and validated (`read_out`/`read_in` may map to one transceiver alias).
-- Multi-instrument and cross-unit synchronized trigger execution is validated on hardware
-- Capture-mode contract is preserved (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER`, waveform inspection uses `AVERAGED_WAVEFORM`)
-- QuEL-1-only settings introspection paths are capability-gated and fail clearly on QuEL-3 (no silent fallback).
-- Qubit-frequency identification flow is validated on QuEL-3 with documented sweep semantics (including out-of-range fail-fast behavior).
-- No blocking fixed `2 ns` assumptions remain in QuEL-3 code path
-- Core synchronized protocol path is executable
 - `mock_mode=True` compatibility path is covered by tests and remains operational
+- Internal companion packages remain at `0.0.0.dev0` and are validated as one tested bundle
+- Internal artifact build succeeds (`make build-all`)
 - Required tests are added and green (`uv run pytest`)
 - Required quality checks are green (`uv run ruff check`, `uv run ruff format`, `uv run pyright`)
-- Beta docs are available (how to run, known limitations)
+- Internal beta docs are available (how to run, known limitations, rollback)
+- QuEL-3 gaps are documented, but they do not block the internal `v1.5.0b1` cut
 
 ## GA exit criteria (must pass)
 
@@ -126,7 +122,8 @@ Calendar note:
 
 ### `Experiment` level (compatibility by delegation)
 
-- `Experiment` is not treated as the primary compatibility contract surface for QuEL-3
+- For internal `v1.5.0b1`, `Experiment` is a required QuEL-1 delegation smoke surface
+- QuEL-3 `Experiment` behavior is tracked separately and is not part of internal `b1` sign-off
 - Keep delegation behavior operational for core flows:
   - `connect`, `disconnect`, `reload`, `run`
   - `execute`, `measure`, `measure_state`, `measure_idle_states`
@@ -134,7 +131,7 @@ Calendar note:
   - `run_measurement`, `run_sweep_measurement`
   - Keep synchronous APIs as legacy compatibility surface during v1.5.x
 
-### Measurement facade level (must keep compatible for QuEL-3)
+### Measurement facade level (must keep compatible for QuEL-1 in internal `b1`)
 
 - Public facade stability (`Measurement`)
 - Constructor compatibility policy is practical/source-compatible:
@@ -187,15 +184,15 @@ Calendar note:
 - [ ] Run QuEL-3 hardware validation (`HV-001` to `HV-007`) and attach evidence.
 - [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
 
-## Current beta gate checklist (2026-03-02 to 2026-03-05)
+## Current beta gate checklist (internal `v1.5.0b1`)
 
-- [x] Re-run local quality gates on current `develop-next` (`uv run ruff check`, `uv run pyright`, `uv run pytest`: `653 passed`).
+- [x] Re-run local quality gates on current `develop` (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `794 passed`).
+- [x] Confirm internal artifact build succeeds on current `develop` (`make build-all`).
 - [x] Confirm async-first APIs exist on `Experiment` (`run_measurement`, `run_sweep_measurement`) and delegation tests are present.
 - [x] Confirm sweep execution APIs and NetCDF persistence are implemented in `measurement` layer.
-- [ ] Fill and publish beta release notes + migration notes.
-- [ ] Run QuEL-3 hardware validation (`HV-001` to `HV-007`) and attach evidence on `2026-03-05`.
-- [ ] Apply branch migration at beta cut timing.
-- [ ] Keep quelware clarification items as pending/open issues in release notes and adapter/config docs until resolved.
+- [ ] Fill and publish internal beta release notes + migration notes.
+- [ ] Complete QuEL-1 internal user smoke / backward compatibility confirmation.
+- [ ] Record QuEL-3 status as non-blocking follow-up items in beta notes.
 
 ## Sampling-period audit (2026-02-17)
 
