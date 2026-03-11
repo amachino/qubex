@@ -2979,7 +2979,6 @@ class MeasurementService:
                     control_qubit,
                     target_qubit,
                     zx90=zx90,
-                    only_low_to_high=True,
                 )
             )
 
