@@ -14,6 +14,7 @@ import yaml
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
+from typing_extensions import deprecated
 
 from qubex.diagnostics import ChipInspector
 from qubex.system import LatticeGraph, PortType, SystemManager
@@ -153,13 +154,16 @@ def reboot_fpga(box_id: str) -> None:
     subprocess.run(reboot_command, check=True)  # noqa: S603
 
 
-def relinkup_box(box_id: str, noise_threshold: int | None = None) -> None:
-    """Relink up the box."""
-    relinkup_boxes([box_id], noise_threshold=noise_threshold)
-
-
-def relinkup_boxes(box_ids: list[str], noise_threshold: int | None) -> None:
+def relinkup_box(
+    box_id: str | Collection[str],
+    noise_threshold: int | None = None,
+) -> None:
     """Relink up the boxes."""
+    if isinstance(box_id, str):
+        box_ids = [box_id]
+    else:
+        box_ids = list(box_id)
+
     confirmed = Confirm.ask(
         f"""
 You are going to relinkup the following boxes:
@@ -182,6 +186,12 @@ This operation will reset LO/NCO settings. Do you want to continue?
     )
     sync_clocks(box_ids)
     logger.info("Operation completed.")
+
+
+@deprecated("relinkup_box is deprecated, please use relinkup_boxes instead.")
+def relinkup_boxes(box_ids: list[str], noise_threshold: int | None = None) -> None:
+    """Relink up the boxes."""
+    relinkup_box(box_ids, noise_threshold=noise_threshold)
 
 
 def reset_clockmaster(
