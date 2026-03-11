@@ -103,6 +103,24 @@ def test_copy():
     assert ps2.values["Q00"] == pytest.approx([1, 1])
 
 
+def test_padded_can_skip_deepcopy_without_mutating_original_schedule() -> None:
+    """Given shallow padding, when mutating the padded sequence, then the original schedule stays unchanged."""
+    with PulseSchedule() as schedule:
+        schedule.add("Q00", Arbitrary([1, 2]))
+
+    padded = schedule.padded(4 * dt, deepcopy=False)
+
+    original_sequence = schedule.get_sequence("Q00", copy=False)
+    padded_sequence = padded.get_sequence("Q00", copy=False)
+    padded_sequence.pad(6 * dt)
+
+    assert padded_sequence is not original_sequence
+    assert original_sequence.values == pytest.approx([1, 2])
+    assert padded.get_sampled_sequence("Q00", copy=False) == pytest.approx(
+        [1, 2, 0, 0, 0, 0]
+    )
+
+
 def test_scaled():
     """PulseSchedule should be scaled by a given parameter."""
     with PulseSchedule() as ps:

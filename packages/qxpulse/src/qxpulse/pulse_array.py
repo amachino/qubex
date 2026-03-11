@@ -234,6 +234,10 @@ class PulseArray(Waveform):
             Total duration of the pulse array in ns.
         pad_side : {"right", "left"}, optional
             Side of the zero padding.
+        deepcopy : bool, optional
+            If True, deep-copy nested waveform objects for full isolation.
+            If False, reuse nested waveform objects while detaching the
+            pulse-array container.
         """
         duration = total_duration - self.duration
         if duration < 0:
