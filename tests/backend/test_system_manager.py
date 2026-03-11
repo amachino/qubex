@@ -376,6 +376,36 @@ def test_pull_merges_partial_backend_settings(
     }
 
 
+def test_pull_restores_full_cache_after_partial_fetch_when_cache_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given empty cache and partial pull, when applied, then cache is rebuilt from merged settings."""
+    manager = SystemManager.shared()
+    box_a = FakeBox(id="A", ports=())
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        FakeExperimentSystemForBackendSettings([box_a]),
+    )
+    backend_controller = FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}})
+    backend_controller.replace_box_config_cache({})
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    monkeypatch.setattr(
+        manager,
+        "_backend_settings",
+        {
+            "B": {"ports": {2: {"mode": "read"}}},
+        },
+    )
+
+    manager.pull(["A"], parallel=False)
+
+    assert backend_controller.get_box_config_cache() == {
+        "A": {"ports": {1: {"mode": "ctrl"}}},
+        "B": {"ports": {2: {"mode": "read"}}},
+    }
+
+
 def test_is_synced_compares_requested_box_subset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -724,6 +754,48 @@ def test_push_does_not_reconfigure_ports(
     manager.push(["A"], confirm=False)
 
     assert called_sync_hardware is True
+
+
+def test_push_restores_full_cache_after_partial_fetch_when_cache_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given empty cache and partial push, when applied, then cache is rebuilt from merged settings."""
+    manager = SystemManager.shared()
+    backend_controller = FakeBackendController({})
+    backend_controller.replace_box_config_cache({})
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    monkeypatch.setattr(
+        manager,
+        "_backend_settings",
+        {
+            "B": {"ports": {2: {"mode": "read"}}},
+        },
+    )
+
+    box = SimpleNamespace(id="A", name="Alpha")
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            get_box=lambda box_id: box,
+            hash=0,
+        ),
+    )
+    monkeypatch.setattr(
+        manager, "_sync_experiment_system_to_hardware", lambda **_: None
+    )
+    monkeypatch.setattr(
+        manager,
+        "_fetch_backend_settings_from_hardware",
+        lambda **_: {"A": {"ports": {1: {"mode": "ctrl"}}}},
+    )
+
+    manager.push(["A"], confirm=False)
+
+    assert backend_controller.get_box_config_cache() == {
+        "A": {"ports": {1: {"mode": "ctrl"}}},
+        "B": {"ports": {2: {"mode": "read"}}},
+    }
 
 
 def test_push_without_cache_sync_still_applies_hardware_sync(

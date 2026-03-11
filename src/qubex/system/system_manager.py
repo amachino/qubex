@@ -448,10 +448,14 @@ class SystemManager:
             patch_settings=fetched_backend_settings,
         )
         try:
+            # Keep manager state and backend cache as a full snapshot.
+            # `fetched_backend_settings` may contain only the requested boxes.
             self._set_backend_settings(merged_backend_settings)
             self._sync_backend_settings_to_backend_controller(
-                backend_settings=fetched_backend_settings
+                backend_settings=merged_backend_settings
             )
+            # Apply only fetched boxes to the in-memory model to avoid touching
+            # unrelated boxes during partial pull.
             self._sync_backend_settings_to_experiment_system(
                 backend_settings=fetched_backend_settings
             )
@@ -535,9 +539,11 @@ This operation will overwrite the existing backend settings. Do you want to cont
             patch_settings=fetched_backend_settings,
         )
         try:
+            # Rebuild backend cache from the merged full snapshot because push
+            # re-fetches only the selected boxes.
             self._set_backend_settings(merged_backend_settings)
             self._sync_backend_settings_to_backend_controller(
-                backend_settings=fetched_backend_settings
+                backend_settings=merged_backend_settings
             )
         except Exception:
             self._set_backend_settings(previous_backend_settings)
