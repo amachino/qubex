@@ -53,7 +53,7 @@ def test_legacy_measurement_model_module_exports_canonical_symbols(
     canonical_module = import_module(canonical_module_name)
 
     with warnings.catch_warnings(record=True) as captured:
-        warnings.simplefilter("always", DeprecationWarning)
+        warnings.simplefilter("always", FutureWarning)
         import_module(legacy_module_name)
 
     assert not captured
@@ -61,7 +61,7 @@ def test_legacy_measurement_model_module_exports_canonical_symbols(
     for exported_name in exported_names:
         _reset_legacy_shim_state(legacy_module_name)
         with warnings.catch_warnings(record=True) as captured:
-            warnings.simplefilter("always", DeprecationWarning)
+            warnings.simplefilter("always", FutureWarning)
             imported_symbol = _import_symbol(legacy_module_name, exported_name)
 
         assert imported_symbol is getattr(canonical_module, exported_name)
@@ -76,7 +76,7 @@ def test_legacy_measurement_record_module_exports_default_data_dir_alias() -> No
     canonical_module = import_module("qubex.measurement.models.measurement_record")
 
     with warnings.catch_warnings(record=True) as captured:
-        warnings.simplefilter("always", DeprecationWarning)
+        warnings.simplefilter("always", FutureWarning)
         imported_symbol = _import_symbol(
             "qubex.measurement.measurement_record",
             "DEFAULT_DATA_DIR",

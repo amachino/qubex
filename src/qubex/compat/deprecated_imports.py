@@ -20,8 +20,8 @@ def _warn_deprecated_import_once(*, legacy_module: str, canonical_module: str) -
             f"`{legacy_module}` is deprecated and will be removed in a future "
             f"release. Import from `{canonical_module}` instead."
         ),
-        DeprecationWarning,
-        stacklevel=3,
+        FutureWarning,
+        stacklevel=4,
     )
 
 
