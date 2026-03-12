@@ -29,16 +29,16 @@ from rich.console import Console
 from tqdm import tqdm
 
 import qubex.visualization as viz
-from qubex._deprecated_options import (
-    DeprecatedOptionSpec,
-    normalize_deprecated_options,
-    partition_deprecated_options,
-    resolve_deprecated_option,
-)
 from qubex.analysis import IQPlotter, fitting
 from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
+)
+from qubex.compat.deprecated_options import (
+    DeprecatedOptionSpec,
+    normalize_deprecated_options,
+    partition_deprecated_options,
+    resolve_deprecated_option,
 )
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 from qubex.core.sentinel import MISSING

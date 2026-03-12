@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from qubex._deprecated_options import (
+from qubex.compat.deprecated_options import (
     DeprecatedOptionSpec,
     normalize_deprecated_options,
     partition_deprecated_options,

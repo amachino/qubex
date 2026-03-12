@@ -23,10 +23,10 @@ from qxpulse import (
 )
 from typing_extensions import deprecated
 
-from qubex._deprecated_options import resolve_deprecated_option
 from qubex.backend.backend_controller import SystemBackendController
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
+from qubex.compat.deprecated_options import resolve_deprecated_option
 from qubex.core.sentinel import MISSING
 from qubex.measurement import (
     Measurement,

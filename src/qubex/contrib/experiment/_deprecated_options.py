@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from qubex._deprecated_options import (
+from qubex.compat.deprecated_options import (
     DeprecatedOptionSpec,
     normalize_deprecated_options,
 )
