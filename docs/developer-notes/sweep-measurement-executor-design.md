@@ -376,9 +376,12 @@ the builder must define one runtime policy.
 
 Recommended v1 policy:
 
-- capture channels are the keys of `data_acquisition.channel_to_averaging_window`
-- for each capture channel, capture windows are derived from pulse ranges on the
-  same channel
+- if active readout-target pulses are present (for example on `RQ00`), capture
+  channels are those readout targets
+- for each readout target, capture windows are derived from pulse start times on
+  the same target
+- if no active readout-target pulses are present, fall back to the keys of
+  `data_acquisition.channel_to_averaging_window`
 - each pulse range produces one capture
 - capture start time:
   - `pulse_start_time + data_acquisition_delay`
@@ -405,6 +408,20 @@ Recommended v1 behavior:
 - preserve both maps in result metadata
 - do not attempt backend-specific DSP/filter programming from these fields
 
+Current interpretation detail:
+
+- `channel_to_averaging_time`
+  - only the key set is used for fallback capture-channel consistency validation
+  - the time values themselves are unused because current runtime has no
+    backend/DSP API that accepts per-channel averaging-time programming from
+    this config
+- `channel_to_averaging_window`
+  - the key set and key order are used only when no active readout-target pulses
+    are present
+  - the window values themselves are unused because current runtime has no
+    backend/DSP API that accepts per-channel averaging-window programming from
+    this config
+
 This must be documented as accepted-but-non-execution-effective in v1.
 
 Silent dropping without documentation is not acceptable.
@@ -419,13 +436,46 @@ The builder should apply:
 
 by reusing `SweepMeasurementBuilder`.
 
-The following fields are accepted but not execution-effective in v1:
+The following field is unsupported in v1:
 
 - `frequency.channel_to_frequency_reference`
-- `frequency.keep_oscillator_relative_phase`
 
-These must be preserved in metadata and called out in the design and validation
-messages.
+Recommended v1 policy:
+
+- require `frequency.channel_to_frequency_reference == {}`
+- reject non-empty mappings with a fail-fast validation error
+
+`frequency.keep_oscillator_relative_phase` is also not execution-effective in
+v1.
+
+Recommended v1 policy:
+
+- require `frequency.keep_oscillator_relative_phase is True`
+- reject `False` with a fail-fast validation error
+
+The accepted `True` value may be preserved in result metadata for diagnostic
+visibility.
+
+## Currently unused fields and reasons
+
+The following fields are currently unused by runtime execution and validation.
+
+- `sequence.variable_list`
+  - reason: sequence-variable resolution is driven from
+    `sweep_parameter.sweep_content_list[*].sweep_target`, and command arguments
+    are resolved directly against that expanded variable map
+  - implication: the field is currently declarative only and does not constrain
+    execution
+- `data_acquisition.data_acquisition_timeout`
+  - reason: current `MeasurementConfig` and `measurement.run_measurement(...)`
+    path do not expose a timeout control to forward this value into runtime
+  - implication: the field has no execution landing zone in v1
+- `data_acquisition.delta_time`
+  - reason: current schedule sampling period is taken from
+    `sequence.delta_time`; the acquisition path does not implement an
+    independent sampling grid
+  - implication: differing acquisition `delta_time` values would have no
+    defined runtime behavior in v1
 
 ## Channel-name contract
 
@@ -521,7 +571,6 @@ Recommended metadata keys:
 - `sweep_axis`
 - `channel_to_averaging_time`
 - `channel_to_averaging_window`
-- `channel_to_frequency_reference`
 - `keep_oscillator_relative_phase`
 - `data_axis`:
   - `"after_sweep_axes"`

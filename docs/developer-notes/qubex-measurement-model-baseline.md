@@ -96,9 +96,51 @@ only part of it in `SweepMeasurementBuilder`.
 
 ### Currently accepted but not execution-effective in builder
 
-- `frequency.channel_to_frequency_reference`
-- `frequency.keep_oscillator_relative_phase`
 - `data_acquisition.*` (kept for compatibility, not consumed by current builder)
+
+In the current executor/runtime split, this should be read more precisely as:
+
+- `data_acquisition.channel_to_averaging_time`
+  - only the key set is used for fallback capture-channel consistency validation
+  - the values are unused because runtime has no per-channel averaging-time
+    programming path
+- `data_acquisition.channel_to_averaging_window`
+  - only the key set and key order are used when no active readout-target
+    pulses are present in the schedule
+  - the window values are unused because runtime has no per-channel
+    averaging-window programming path
+
+### Currently unsupported in executor/runtime
+
+- `frequency.channel_to_frequency_reference`
+- `frequency.keep_oscillator_relative_phase=False`
+
+Current runtime policy is:
+
+- require `channel_to_frequency_reference == {}`
+- require `keep_oscillator_relative_phase is True`
+- reject unsupported values during executor validation
+
+Reasons:
+
+- `frequency.channel_to_frequency_reference`
+  - current runtime has no model for shared oscillator/reference groups, so a
+    non-empty mapping would imply semantics it cannot preserve
+- `frequency.keep_oscillator_relative_phase=False`
+  - current runtime executes each sweep point as an independent schedule and has
+    no phase-reset or shared-oscillator-state control corresponding to `False`
+
+### Currently unused in executor/runtime
+
+- `sequence.variable_list`
+  - reason: variable resolution is driven from
+    `sweep_parameter.sweep_content_list[*].sweep_target`
+- `data_acquisition.data_acquisition_timeout`
+  - reason: current `MeasurementConfig` and execution path expose no timeout
+    field
+- `data_acquisition.delta_time`
+  - reason: runtime sampling period is taken from `sequence.delta_time`, not
+    from acquisition config
 
 ### Builder validation semantics (freeze target)
 

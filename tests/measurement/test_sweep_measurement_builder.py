@@ -53,7 +53,7 @@ def _make_config(
             channel_to_frequency={},
             channel_to_frequency_reference={},
             channel_to_frequency_shift={},
-            keep_oscillator_relative_phase=False,
+            keep_oscillator_relative_phase=True,
         ),
         data_acquisition=DataAcquisitionConfig(
             shot_count=16,
@@ -93,6 +93,46 @@ def test_build_measurement_schedule_uses_acquisition_delay_and_duration() -> Non
     assert capture.channels == ["Q00"]
     assert capture.start_time == 2.0
     assert capture.duration == 4.0
+
+
+def test_build_measurement_schedule_prefers_readout_target_pulse_starts() -> None:
+    """Given readout-target pulses, when building measurement schedule, then captures follow readout pulse start order."""
+    builder = SweepMeasurementBuilder(
+        config=_make_config(
+            channel_list=["Q00", "RQ00"],
+            command_list=[
+                ParametricSequencePulseCommand(
+                    name="Rect",
+                    channel_list=["Q00"],
+                    argument_list=[6.0, 0.1],
+                ),
+                ParametricSequencePulseCommand(
+                    name="Rect",
+                    channel_list=["RQ00"],
+                    argument_list=[8.0, 0.2],
+                ),
+                ParametricSequencePulseCommand(
+                    name="Blank",
+                    channel_list=["RQ00"],
+                    argument_list=[4.0],
+                ),
+                ParametricSequencePulseCommand(
+                    name="Rect",
+                    channel_list=["RQ00"],
+                    argument_list=[10.0, 0.3],
+                ),
+            ],
+            averaging_channels={"Q00": np.asarray([1.0 + 0.0j])},
+            averaging_times={"Q00": Time(4.0, "ns")},
+        )
+    )
+
+    schedule = builder.build_measurement_schedule(indices=(0,))
+
+    captures = schedule.capture_schedule.captures
+    assert [capture.channels for capture in captures] == [["RQ00"], ["RQ00"]]
+    assert [capture.start_time for capture in captures] == [2.0, 14.0]
+    assert [capture.duration for capture in captures] == [4.0, 4.0]
 
 
 def test_custom_command_registry_factory_receives_context() -> None:

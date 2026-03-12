@@ -24,7 +24,12 @@ from qubex.schema import (
 )
 
 
-def _make_config(*, channel: str = "Q00") -> SweepMeasurementConfig:
+def _make_config(
+    *,
+    channel: str = "Q00",
+    channel_to_frequency_reference: dict[str, str] | None = None,
+    keep_oscillator_relative_phase: bool = True,
+) -> SweepMeasurementConfig:
     return SweepMeasurementConfig(
         channel_list=[channel],
         sequence=ParametricSequenceConfig(
@@ -40,9 +45,9 @@ def _make_config(*, channel: str = "Q00") -> SweepMeasurementConfig:
         ),
         frequency=FrequencyConfig(
             channel_to_frequency={},
-            channel_to_frequency_reference={channel: "f_ref"},
+            channel_to_frequency_reference=channel_to_frequency_reference or {},
             channel_to_frequency_shift={},
-            keep_oscillator_relative_phase=False,
+            keep_oscillator_relative_phase=keep_oscillator_relative_phase,
         ),
         data_acquisition=DataAcquisitionConfig(
             shot_count=16,
@@ -223,6 +228,92 @@ def test_run_rejects_unknown_runtime_channel(monkeypatch) -> None:
         asyncio.run(
             SweepMeasurementExecutor(measurement=measurement).run(
                 _make_config(channel="Q01")
+            )
+        )
+
+    assert called["run_measurement"] == 0
+
+
+def test_run_rejects_channel_to_frequency_reference(monkeypatch) -> None:
+    """Given frequency reference mapping, when executor runs, then validation fails before execution."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called = {"run_measurement": 0}
+
+    monkeypatch.setattr(
+        Measurement,
+        "targets",
+        property(lambda self: {"Q00": object()}),
+    )
+    monkeypatch.setattr(
+        Measurement,
+        "backend_controller",
+        property(lambda self: object()),
+    )
+
+    async def _run_measurement(
+        self: Measurement,
+        schedule: object,
+        *,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        _ = (self, schedule, config)
+        called["run_measurement"] += 1
+        raise AssertionError("should not be called")
+
+    measurement.run_measurement = MethodType(_run_measurement, measurement)
+
+    with pytest.raises(ValueError, match="channel_to_frequency_reference"):
+        asyncio.run(
+            SweepMeasurementExecutor(measurement=measurement).run(
+                _make_config(channel_to_frequency_reference={"Q00": "f_ref"})
+            )
+        )
+
+    assert called["run_measurement"] == 0
+
+
+def test_run_rejects_false_keep_oscillator_relative_phase(monkeypatch) -> None:
+    """Given false oscillator-phase flag, when executor runs, then validation fails before execution."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called = {"run_measurement": 0}
+
+    monkeypatch.setattr(
+        Measurement,
+        "targets",
+        property(lambda self: {"Q00": object()}),
+    )
+    monkeypatch.setattr(
+        Measurement,
+        "backend_controller",
+        property(lambda self: object()),
+    )
+
+    async def _run_measurement(
+        self: Measurement,
+        schedule: object,
+        *,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        _ = (self, schedule, config)
+        called["run_measurement"] += 1
+        raise AssertionError("should not be called")
+
+    measurement.run_measurement = MethodType(_run_measurement, measurement)
+
+    with pytest.raises(ValueError, match="keep_oscillator_relative_phase"):
+        asyncio.run(
+            SweepMeasurementExecutor(measurement=measurement).run(
+                _make_config(keep_oscillator_relative_phase=False)
             )
         )
 

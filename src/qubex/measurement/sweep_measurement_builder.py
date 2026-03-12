@@ -31,6 +31,7 @@ from qubex.schema import (
     ParametricSequencePulseCommand,
     SweepMeasurementConfig,
 )
+from qubex.system import Target
 
 SweepCommandValue: TypeAlias = PulseSchedule | Waveform | PhaseShift
 
@@ -307,11 +308,42 @@ class SweepMeasurementBuilder:
     def _build_capture_schedule(self, pulse_schedule: PulseSchedule) -> CaptureSchedule:
         """Build capture schedule from acquisition settings and pulse ranges."""
         data_acquisition = self._config.data_acquisition
-        capture_channel_set = set(data_acquisition.channel_to_averaging_window)
+        capture_delay = self._to_float(data_acquisition.data_acquisition_delay)
+        capture_duration = self._to_float(data_acquisition.data_acquisition_duration)
+        if capture_duration <= 0:
+            raise ValueError("data_acquisition_duration must be positive.")
+
+        readout_targets = self._find_active_readout_targets(pulse_schedule)
+        if len(readout_targets) > 0:
+            return CaptureSchedule(
+                captures=self._build_captures_for_channels(
+                    pulse_schedule=pulse_schedule,
+                    channels=readout_targets,
+                    capture_delay=capture_delay,
+                    capture_duration=capture_duration,
+                )
+            )
+
+        capture_channels = self._resolve_fallback_capture_channels()
+        return CaptureSchedule(
+            captures=self._build_captures_for_channels(
+                pulse_schedule=pulse_schedule,
+                channels=capture_channels,
+                capture_delay=capture_delay,
+                capture_duration=capture_duration,
+            )
+        )
+
+    def _resolve_fallback_capture_channels(self) -> list[str]:
+        """Resolve fallback capture channels from acquisition metadata."""
+        data_acquisition = self._config.data_acquisition
+        capture_channels = list(data_acquisition.channel_to_averaging_window)
+        capture_channel_set = set(capture_channels)
         averaging_time_channel_set = set(data_acquisition.channel_to_averaging_time)
         if len(capture_channel_set) == 0:
             raise ValueError(
-                "data_acquisition must define at least one capture channel."
+                "data_acquisition must define at least one capture channel when no "
+                "readout-target pulses are present."
             )
         if capture_channel_set != averaging_time_channel_set:
             raise ValueError(
@@ -326,15 +358,36 @@ class SweepMeasurementBuilder:
             raise ValueError(
                 f"Capture channels must be included in channel_list: {joined}."
             )
+        return capture_channels
 
-        capture_delay = self._to_float(data_acquisition.data_acquisition_delay)
-        capture_duration = self._to_float(data_acquisition.data_acquisition_duration)
-        if capture_duration <= 0:
-            raise ValueError("data_acquisition_duration must be positive.")
+    def _find_active_readout_targets(self, pulse_schedule: PulseSchedule) -> list[str]:
+        """Return readout targets that actually contain pulse ranges."""
+        readout_targets = [
+            label
+            for label in dict.fromkeys(pulse_schedule.labels)
+            if self._is_readout_target(label)
+        ]
+        if len(readout_targets) == 0:
+            return []
+        pulse_ranges = pulse_schedule.get_pulse_ranges(readout_targets)
+        return [
+            target
+            for target in readout_targets
+            if len(pulse_ranges.get(target, [])) > 0
+        ]
 
-        pulse_ranges = pulse_schedule.get_pulse_ranges(list(capture_channel_set))
+    def _build_captures_for_channels(
+        self,
+        *,
+        pulse_schedule: PulseSchedule,
+        channels: Sequence[str],
+        capture_delay: float,
+        capture_duration: float,
+    ) -> list[Capture]:
+        """Build capture windows from pulse start times on the provided channels."""
+        pulse_ranges = pulse_schedule.get_pulse_ranges(list(channels))
         captures: list[Capture] = []
-        for channel in data_acquisition.channel_to_averaging_window:
+        for channel in channels:
             ranges = pulse_ranges.get(channel, [])
             if len(ranges) == 0:
                 raise ValueError(
@@ -355,7 +408,8 @@ class SweepMeasurementBuilder:
                         duration=capture_duration,
                     )
                 )
-        return CaptureSchedule(captures=captures)
+        captures.sort(key=lambda capture: capture.start_time)
+        return captures
 
     def _lookup_command_factory(
         self,
@@ -453,6 +507,14 @@ class SweepMeasurementBuilder:
     def _is_blank(name: str) -> bool:
         """Check whether a command name represents a blank/delay."""
         return name.lower() in {"blank", "delay", "wait"}
+
+    @staticmethod
+    def _is_readout_target(label: str) -> bool:
+        """Return whether the label is a canonical readout target."""
+        try:
+            return Target.read_label(label) == label
+        except ValueError:
+            return False
 
     @staticmethod
     def _to_float(value: Any) -> float:

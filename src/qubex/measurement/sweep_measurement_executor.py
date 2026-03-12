@@ -46,6 +46,7 @@ class SweepMeasurementExecutor:
             Sweep result exported in qxschema format.
         """
         runtime_targets = self._validate_runtime_targets()
+        self._validate_unsupported_frequency_fields(config)
         self._validate_config_channels(config, runtime_targets)
         builder = SweepMeasurementBuilder(
             config=config,
@@ -90,7 +91,6 @@ class SweepMeasurementExecutor:
         """Validate that all config channel references exist in runtime targets."""
         referenced_channels = set(config.channel_list)
         referenced_channels.update(config.frequency.channel_to_frequency)
-        referenced_channels.update(config.frequency.channel_to_frequency_reference)
         referenced_channels.update(config.frequency.channel_to_frequency_shift)
         referenced_channels.update(config.data_acquisition.channel_to_averaging_time)
         referenced_channels.update(config.data_acquisition.channel_to_averaging_window)
@@ -104,6 +104,18 @@ class SweepMeasurementExecutor:
         if unknown_channels:
             joined = ", ".join(unknown_channels)
             raise ValueError(f"Unknown channel(s) in sweep config: {joined}.")
+
+    @staticmethod
+    def _validate_unsupported_frequency_fields(config: SweepMeasurementConfig) -> None:
+        """Reject frequency fields that the current runtime does not support."""
+        if len(config.frequency.channel_to_frequency_reference) > 0:
+            raise ValueError(
+                "frequency.channel_to_frequency_reference is not supported."
+            )
+        if not config.frequency.keep_oscillator_relative_phase:
+            raise ValueError(
+                "frequency.keep_oscillator_relative_phase=False is not supported."
+            )
 
     def _create_measurement_config(
         self,
@@ -142,7 +154,6 @@ class SweepMeasurementExecutor:
             "sweep_axis": [list(axis) for axis in config.sweep_parameter.sweep_axis],
             "channel_to_averaging_time": config.data_acquisition.channel_to_averaging_time,
             "channel_to_averaging_window": config.data_acquisition.channel_to_averaging_window,
-            "channel_to_frequency_reference": config.frequency.channel_to_frequency_reference,
             "keep_oscillator_relative_phase": config.frequency.keep_oscillator_relative_phase,
             "data_axis": "after_sweep_axes",
         }
