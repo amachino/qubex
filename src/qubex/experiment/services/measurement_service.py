@@ -29,12 +29,19 @@ from rich.console import Console
 from tqdm import tqdm
 
 import qubex.visualization as viz
+from qubex._deprecated_options import (
+    DeprecatedOptionSpec,
+    normalize_deprecated_options,
+    partition_deprecated_options,
+    resolve_deprecated_option,
+)
 from qubex.analysis import IQPlotter, fitting
 from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
 )
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
+from qubex.core.sentinel import MISSING
 from qubex.core.unit_converter import (
     normalize_frequencies_to_ghz,
     normalize_time_to_ns,
@@ -103,8 +110,6 @@ def _run_async(
 
 class MeasurementService:
     """Service for running measurement routines."""
-
-    _MISSING = object()
 
     def __init__(
         self,
@@ -181,27 +186,50 @@ class MeasurementService:
         deprecated_options: dict[str, Any],
         deprecated_name: str,
         replacement_name: str,
-        default: Any = _MISSING,
+        default: Any = MISSING,
     ) -> Any:
         """Resolve a deprecated option alias and return the normalized value."""
-        legacy_value = deprecated_options.pop(deprecated_name, cls._MISSING)
-        if legacy_value is not cls._MISSING and legacy_value is not None:
-            warnings.warn(
-                f"`{deprecated_name}` is deprecated; use `{replacement_name}`.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-            if value is not None and value != legacy_value:
-                raise ValueError(
-                    f"`{deprecated_name}` conflicts with `{replacement_name}`. "
-                    f"Provide only `{replacement_name}`."
-                )
-            return legacy_value
+        return resolve_deprecated_option(
+            value=value,
+            deprecated_options=deprecated_options,
+            deprecated_name=deprecated_name,
+            replacement_name=replacement_name,
+            default=default,
+            stacklevel=3,
+        )
 
-        if value is None and default is not cls._MISSING:
-            return default
-
-        return value
+    @classmethod
+    def resolve_shot_options(
+        cls,
+        *,
+        n_shots: int | None,
+        shot_interval: float | None,
+        deprecated_options: dict[str, Any],
+        n_shots_default: Any = MISSING,
+        shot_interval_default: Any = MISSING,
+    ) -> tuple[int | None, float | None, dict[str, Any]]:
+        """Resolve deprecated shot aliases and preserve unresolved kwargs."""
+        normalized, remaining = partition_deprecated_options(
+            values={
+                "n_shots": n_shots,
+                "shot_interval": shot_interval,
+            },
+            deprecated_options=deprecated_options,
+            specs=(
+                DeprecatedOptionSpec(
+                    "shots",
+                    "n_shots",
+                    default=n_shots_default,
+                ),
+                DeprecatedOptionSpec(
+                    "interval",
+                    "shot_interval",
+                    default=shot_interval_default,
+                ),
+            ),
+            stacklevel=4,
+        )
+        return normalized["n_shots"], normalized["shot_interval"], remaining
 
     def build_measurement_schedule(
         self,
@@ -926,13 +954,13 @@ class MeasurementService:
         else:
             targets = list(targets)
 
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        normalized_options, deprecated_options = partition_deprecated_options(
+            values={"n_shots": n_shots},
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=10000,
+            specs=(DeprecatedOptionSpec("shots", "n_shots", default=10000),),
+            stacklevel=4,
         )
+        n_shots = normalized_options["n_shots"]
 
         result = self.measure_state(
             dict.fromkeys(targets, "g"),
@@ -1208,19 +1236,12 @@ class MeasurementService:
             is_damped = True
         if fit_threshold is None:
             fit_threshold = 0.5
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=CALIBRATION_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=CALIBRATION_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -1311,19 +1332,12 @@ class MeasurementService:
             time_range = DEFAULT_RABI_TIME_RANGE
         if is_damped is None:
             is_damped = True
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=CALIBRATION_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=CALIBRATION_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -1428,31 +1442,27 @@ class MeasurementService:
                 DeprecationWarning,
                 stacklevel=2,
             )
-
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        normalized_options = normalize_deprecated_options(
+            values={
+                "n_shots": n_shots,
+                "shot_interval": shot_interval,
+                "readout_amplification": readout_amplification,
+            },
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=None,
+            specs=(
+                DeprecatedOptionSpec("shots", "n_shots"),
+                DeprecatedOptionSpec("interval", "shot_interval"),
+                DeprecatedOptionSpec(
+                    "add_pump_pulses",
+                    "readout_amplification",
+                    default=False,
+                ),
+            ),
+            stacklevel=4,
         )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=None,
-        )
-        readout_amplification = self.resolve_deprecated_option(
-            value=readout_amplification,
-            deprecated_options=deprecated_options,
-            deprecated_name="add_pump_pulses",
-            replacement_name="readout_amplification",
-            default=False,
-        )
-        if deprecated_options:
-            joined = ", ".join(f"`{key}`" for key in sorted(deprecated_options))
-            raise TypeError(f"Unexpected keyword argument(s): {joined}")
+        n_shots = normalized_options["n_shots"]
+        shot_interval = normalized_options["shot_interval"]
+        readout_amplification = normalized_options["readout_amplification"]
 
         if plot is None:
             plot = True
@@ -1537,19 +1547,12 @@ class MeasurementService:
         """
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if store_params is None:
             store_params = False
@@ -1624,19 +1627,12 @@ class MeasurementService:
             is_damped = True
         if fit_threshold is None:
             fit_threshold = 0.5
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -1786,19 +1782,12 @@ class MeasurementService:
         # TODO: Integrate with rabi_experiment
         if is_damped is None:
             is_damped = True
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -2099,13 +2088,13 @@ class MeasurementService:
             targets = list(targets)
         if n_states is None:
             n_states = 2
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        normalized_options, deprecated_options = partition_deprecated_options(
+            values={"n_shots": n_shots},
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=10000,
+            specs=(DeprecatedOptionSpec("shots", "n_shots", default=10000),),
+            stacklevel=4,
         )
+        n_shots = normalized_options["n_shots"]
 
         # Refresh |g> reference phases before training so GMM phase alignment
         # and stored state_params use a drift-updated baseline.
@@ -2240,19 +2229,12 @@ class MeasurementService:
         """
         if target_state is None:
             target_state = "+"
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=CALIBRATION_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=CALIBRATION_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
@@ -2350,19 +2332,12 @@ class MeasurementService:
         method
             Measurement method to use.
         """
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
@@ -2509,19 +2484,12 @@ class MeasurementService:
         method
             Measurement method to use.
         """
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if reset_awg_and_capunits is None:
             reset_awg_and_capunits = True
@@ -2638,19 +2606,12 @@ class MeasurementService:
         """
         if n_samples is None:
             n_samples = 100
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if method is None:
             method = "measure"
@@ -2745,19 +2706,12 @@ class MeasurementService:
         """
         if fit_gmm is None:
             fit_gmm = False
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if self.ctx.classifiers is None:
             raise ValueError("Classifiers are not built. Run `build_classifier` first.")
@@ -2821,19 +2775,12 @@ class MeasurementService:
             scatter_mode = "lines+markers"
         if show_error is None:
             show_error = True
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if isinstance(params_list[0], int):
             x = params_list
@@ -2941,19 +2888,12 @@ class MeasurementService:
             control_basis = "Z"
         if target_basis is None:
             target_basis = "Z"
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True
@@ -3105,19 +3045,12 @@ class MeasurementService:
         """
         if readout_mitigation is None:
             readout_mitigation = True
-        n_shots = self.resolve_deprecated_option(
-            value=n_shots,
+        n_shots, shot_interval, deprecated_options = self.resolve_shot_options(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             deprecated_options=deprecated_options,
-            deprecated_name="shots",
-            replacement_name="n_shots",
-            default=DEFAULT_SHOTS,
-        )
-        shot_interval = self.resolve_deprecated_option(
-            value=shot_interval,
-            deprecated_options=deprecated_options,
-            deprecated_name="interval",
-            replacement_name="shot_interval",
-            default=DEFAULT_INTERVAL,
+            n_shots_default=DEFAULT_SHOTS,
+            shot_interval_default=DEFAULT_INTERVAL,
         )
         if plot is None:
             plot = True

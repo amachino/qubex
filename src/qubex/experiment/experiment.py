@@ -23,9 +23,11 @@ from qxpulse import (
 )
 from typing_extensions import deprecated
 
+from qubex._deprecated_options import resolve_deprecated_option
 from qubex.backend.backend_controller import SystemBackendController
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
+from qubex.core.sentinel import MISSING
 from qubex.measurement import (
     Measurement,
     MeasurementResult,
@@ -152,8 +154,6 @@ class Experiment:
     ... )
     """
 
-    _MISSING = object()
-
     def __init__(
         self,
         *,
@@ -276,20 +276,14 @@ class Experiment:
         replacement_name: str,
     ) -> Any:
         """Resolve a deprecated keyword and return the normalized value."""
-        legacy_value = deprecated_options.pop(deprecated_name, cls._MISSING)
-        if legacy_value is not cls._MISSING and legacy_value is not None:
-            warnings.warn(
-                f"`{deprecated_name}` is deprecated; use `{replacement_name}`.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-            if value is not None and value != legacy_value:
-                raise ValueError(
-                    f"`{deprecated_name}` conflicts with `{replacement_name}`. "
-                    f"Provide only `{replacement_name}`."
-                )
-            return legacy_value
-        return value
+        return resolve_deprecated_option(
+            value=value,
+            deprecated_options=deprecated_options,
+            deprecated_name=deprecated_name,
+            replacement_name=replacement_name,
+            default=MISSING,
+            stacklevel=3,
+        )
 
     def print_environment(self, verbose: bool | None = None) -> None:
         """Print runtime and configuration environment information."""

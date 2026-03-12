@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
+
+from qubex._deprecated_options import (
+    DeprecatedOptionSpec,
+    normalize_deprecated_options,
+)
 
 
 def resolve_shot_options(
@@ -14,30 +18,30 @@ def resolve_shot_options(
     function_name: str,
 ) -> tuple[int | None, float | None]:
     """Resolve deprecated shot option aliases for contrib APIs."""
-    if "shots" in deprecated_options:
-        warnings.warn(
-            f"`shots` is deprecated in `{function_name}`; use `n_shots`.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-        if n_shots is None:
-            n_shots = deprecated_options.pop("shots")
-        else:
-            deprecated_options.pop("shots")
+    normalized = normalize_deprecated_options(
+        values={
+            "n_shots": n_shots,
+            "shot_interval": shot_interval,
+        },
+        deprecated_options=deprecated_options,
+        specs=(
+            DeprecatedOptionSpec(
+                "shots",
+                "n_shots",
+                warning_message=(
+                    f"`shots` is deprecated in `{function_name}`; use `n_shots`."
+                ),
+            ),
+            DeprecatedOptionSpec(
+                "interval",
+                "shot_interval",
+                warning_message=(
+                    "`interval` is deprecated in "
+                    f"`{function_name}`; use `shot_interval`."
+                ),
+            ),
+        ),
+        stacklevel=4,
+    )
 
-    if "interval" in deprecated_options:
-        warnings.warn(
-            f"`interval` is deprecated in `{function_name}`; use `shot_interval`.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-        if shot_interval is None:
-            shot_interval = deprecated_options.pop("interval")
-        else:
-            deprecated_options.pop("interval")
-
-    if deprecated_options:
-        unknown = ", ".join(sorted(deprecated_options))
-        raise TypeError(f"Unexpected keyword arguments: {unknown}")
-
-    return n_shots, shot_interval
+    return normalized["n_shots"], normalized["shot_interval"]
