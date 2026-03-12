@@ -132,10 +132,9 @@ class IQPlotter:
 
         for qubit in data:
             for trace in self._widget.data:
-                scatter: go.Scatter = trace
-                if scatter.meta == qubit:
-                    scatter.x = np.real(data[qubit])
-                    scatter.y = np.imag(data[qubit])
+                if isinstance(trace, go.Scatter) and trace.meta == qubit:
+                    trace.x = np.real(data[qubit])
+                    trace.y = np.imag(data[qubit])
 
     def clear(self) -> None:
         """Clear and close the widget output."""
@@ -218,6 +217,7 @@ class IQPlotterPolar:
                 signals[qubit] = iq_array
 
         for idx, qubit in enumerate(data):
-            scatterpolar: go.Scatterpolar = self._widget.data[idx]
-            scatterpolar.r = np.abs(signals[qubit])
-            scatterpolar.theta = np.angle(signals[qubit], deg=True)
+            trace = self._widget.data[idx]
+            if isinstance(trace, go.Scatterpolar):
+                trace.r = np.abs(signals[qubit])
+                trace.theta = np.angle(signals[qubit], deg=True)

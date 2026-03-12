@@ -94,7 +94,7 @@ def test_deploy_instruments_calls_session_api(
     monkeypatch.setattr(
         manager,
         "_load_quelware_client_factory",
-        lambda: (lambda endpoint, port: fake_client),
+        lambda: lambda endpoint, port: fake_client,
     )
     monkeypatch.setattr(
         manager,
@@ -230,7 +230,7 @@ def test_deploy_instruments_groups_requests_by_port(
     monkeypatch.setattr(
         manager,
         "_load_quelware_client_factory",
-        lambda: (lambda endpoint, port: fake_client),
+        lambda: lambda endpoint, port: fake_client,
     )
     monkeypatch.setattr(
         manager,
@@ -366,7 +366,7 @@ def test_refresh_instrument_cache_loads_existing_instruments(
     monkeypatch.setattr(
         manager,
         "_load_quelware_client_factory",
-        lambda: (lambda endpoint, port: _FakeClient()),
+        lambda: lambda endpoint, port: _FakeClient(),
     )
 
     cached = manager.refresh_instrument_cache()

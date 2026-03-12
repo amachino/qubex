@@ -12,6 +12,7 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
+    "anywidget >= 0.9",
     "cma >= 4.0",
     "cvxpy >= 1.6",
     "jsonpickle >= 3.0",

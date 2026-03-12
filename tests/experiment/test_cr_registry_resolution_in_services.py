@@ -23,9 +23,10 @@ def test_calibrate_2q_uses_context_cr_pair_resolution() -> None:
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
-    service.__dict__["obtain_cr_params"] = lambda **kwargs: captured.append(
-        (kwargs["control_qubit"], kwargs["target_qubit"])
-    ) or {"ok": True}
+    service.__dict__["obtain_cr_params"] = lambda **kwargs: (
+        captured.append((kwargs["control_qubit"], kwargs["target_qubit"]))
+        or {"ok": True}
+    )
     service.__dict__["calibrate_zx90"] = lambda **kwargs: {"ok": kwargs}
 
     service.calibrate_2q(targets=["CR_CUSTOM"], plot=False)

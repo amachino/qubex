@@ -861,7 +861,7 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
                 ],
             )
         )
-    rows.sort(key=lambda x: (x[0]))
+    rows.sort(key=lambda x: x[0])
 
     current_qubit = None
     for qubit, row in rows:
@@ -936,7 +936,7 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
                 ],
             )
         )
-    rows.sort(key=lambda x: (x[0]))
+    rows.sort(key=lambda x: x[0])
 
     current_qubit = None
     for qubit, row in rows:
