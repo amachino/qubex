@@ -80,10 +80,25 @@ BOX_B:
   type: "quel1-a"
   address: "10.1.0.73"
   adapter: "500202A50TAAA"
+
+BOX_C:
+  name: "QuEL-1 SE R8 #1"
+  type: "quel1se-riken8"
+  address: "10.1.0.160"
+  adapter: "500202A800RAA"
+  options:
+    - "se8_mxfe1_awg2222"
 ```
 
 For QuEL-3 entries, `address` and `adapter` are optional. For QuBE and QuEL-1
 entries, they are required.
+
+`options` is optional and accepts a list of backend option labels for that box.
+Use it when a box needs a non-default hardware profile.
+
+For example, `quel1se-riken8` accepts an AWG profile label such as
+`se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. When no AWG
+profile is specified, Qubex uses `se8_mxfe1_awg2222`.
 
 ### `system.yaml`
 

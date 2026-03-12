@@ -7,6 +7,7 @@
 #   type: <box_type>
 #   address: <ip_address>  # required for QuBE and QuEL-1
 #   adapter: <adapter_id>  # required for QuBE and QuEL-1
+#   options: [<option_label>, ...]  # optional backend-specific box options
 
 Q2A:
   name: "QuBE OU #1-02"
@@ -93,6 +94,13 @@ S159A:
   type: "quel1se-fujitsu11-a"
   address: "10.1.0.159"
   adapter: "500202A800QAA"
+S160R:
+  name: "QuEL-1 SE R8 #1"
+  type: "quel1se-riken8"
+  address: "10.1.0.160"
+  adapter: "500202A800RAA"
+  options:
+    - "se8_mxfe1_awg2222"
 QT1:
   name: "quel3-02-a01"
   type: "quel3"
