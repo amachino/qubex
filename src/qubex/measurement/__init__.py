@@ -44,7 +44,12 @@ from .services import (
     MeasurementExecutionService,
     MeasurementSessionService,
 )
-from .sweep_measurement_builder import SweepMeasurementBuilder
+from .sweep_measurement_builder import (
+    SweepCommandContext,
+    SweepCommandFactory,
+    SweepMeasurementBuilder,
+)
+from .sweep_measurement_executor import SweepMeasurementExecutor
 
 __all__ = [
     "CaptureData",
@@ -76,8 +81,11 @@ __all__ = [
     "StateClassifierGMM",
     "StateClassifierKMeans",
     "SweepAxes",
+    "SweepCommandContext",
+    "SweepCommandFactory",
     "SweepKey",
     "SweepMeasurementBuilder",
+    "SweepMeasurementExecutor",
     "SweepMeasurementResult",
     "SweepPoint",
     "SweepValue",
