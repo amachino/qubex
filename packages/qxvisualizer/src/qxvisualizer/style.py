@@ -47,7 +47,7 @@ pio.templates["qubex"] = go.layout.Template(
             linewidth=1,
             ticks="inside",
             tickfont=dict(size=AXIS_TICKFONT_SIZE),
-            titlefont=dict(size=AXIS_TITLEFONT_SIZE),
+            title=dict(font=dict(size=AXIS_TITLEFONT_SIZE)),
             domain=[0.0, 1.0],
         ),
         yaxis=dict(
@@ -59,7 +59,7 @@ pio.templates["qubex"] = go.layout.Template(
             linewidth=1,
             ticks="inside",
             tickfont=dict(size=AXIS_TICKFONT_SIZE),
-            titlefont=dict(size=AXIS_TITLEFONT_SIZE),
+            title=dict(font=dict(size=AXIS_TITLEFONT_SIZE)),
             domain=[0.0, 1.0],
         ),
         legend=dict(
