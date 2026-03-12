@@ -304,6 +304,14 @@ def test_check_waveform_returns_legacy_measure_result() -> None:
     assert result.data["custom-target"].raw.shape == (1,)
 
 
+def test_check_waveform_rejects_unknown_keyword_arguments() -> None:
+    """Given unknown kwargs, when check_waveform is called, then it raises TypeError."""
+    service, _ = _make_service()
+
+    with pytest.raises(TypeError, match="Unexpected keyword argument"):
+        service.check_waveform(targets=["custom-target"], n_shot=1, plot=False)
+
+
 def test_check_noise_delegates_without_optional_noise_flags() -> None:
     """Given waveform-noise inspection, when check_noise is called, then it delegates with required args only."""
     service, captured = _make_service()

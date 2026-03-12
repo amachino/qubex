@@ -1450,6 +1450,9 @@ class MeasurementService:
             replacement_name="readout_amplification",
             default=False,
         )
+        if deprecated_options:
+            joined = ", ".join(f"`{key}`" for key in sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword argument(s): {joined}")
 
         if plot is None:
             plot = True
