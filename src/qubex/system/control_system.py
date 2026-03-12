@@ -5,12 +5,20 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final, Literal
+from typing import Final, Literal, TypeGuard, TypeVar, cast
 
 from pydantic import Field
-from typing_extensions import deprecated
+from typing_extensions import Sentinel, deprecated
 
 from qubex.core import MutableModel
+from qubex.core.sentinel import MISSING
+
+T = TypeVar("T")
+
+
+def _is_given(value: T | Sentinel) -> TypeGuard[T]:
+    """Return whether a value is not the shared missing sentinel."""
+    return value is not MISSING
 
 
 class BoxType(Enum):
@@ -920,13 +928,6 @@ class CapChannel(Channel):
 class ControlSystem:
     """Collection of boxes and access helpers for ports."""
 
-    class NotGivenType:
-        """Sentinel class for unset values."""
-
-        pass
-
-    NotGiven = NotGivenType()
-
     def __init__(
         self,
         boxes: Sequence[Box],
@@ -1003,11 +1004,11 @@ class ControlSystem:
         port_number: int,
         *,
         rfswitch: Literal["pass", "block", "open", "loop"] | None = None,
-        sideband: Literal["U", "L"] | None | NotGivenType = NotGiven,
-        lo_freq: int | None | NotGivenType = NotGiven,
+        sideband: Literal["U", "L"] | None | Sentinel = MISSING,
+        lo_freq: int | None | Sentinel = MISSING,
         cnco_freq: int | None = None,
         fnco_freqs: Sequence[int] | None = None,
-        vatt: int | None | NotGivenType = NotGiven,
+        vatt: int | None | Sentinel = MISSING,
         fullscale_current: int | None = None,
         nwait: int | None = None,
         ndelay: int | None = None,
@@ -1018,9 +1019,9 @@ class ControlSystem:
         if isinstance(port, GenPort):
             if rfswitch is not None:
                 port.rfswitch = rfswitch  # type: ignore
-            if not isinstance(sideband, self.NotGivenType):
-                port.sideband = sideband
-            if not isinstance(lo_freq, self.NotGivenType):
+            if _is_given(sideband):
+                port.sideband = cast(Literal["U", "L"] | None, sideband)
+            if _is_given(lo_freq):
                 port.lo_freq = lo_freq
             if cnco_freq is not None:
                 port.cnco_freq = cnco_freq
@@ -1034,7 +1035,7 @@ class ControlSystem:
                     port.channels, fnco_freqs, strict=True
                 ):
                     gen_channel.fnco_freq = fnco_freq
-            if not isinstance(vatt, self.NotGivenType):
+            if _is_given(vatt):
                 port.vatt = vatt
             if fullscale_current is not None:
                 port.fullscale_current = fullscale_current
@@ -1045,7 +1046,7 @@ class ControlSystem:
         elif isinstance(port, CapPort):
             if rfswitch is not None:
                 port.rfswitch = rfswitch  # type: ignore
-            if not isinstance(lo_freq, self.NotGivenType):
+            if _is_given(lo_freq):
                 port.lo_freq = lo_freq
             if cnco_freq is not None:
                 port.cnco_freq = cnco_freq

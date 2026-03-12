@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing_extensions import Sentinel
 
 
-def make_sentinel(name: str) -> object:
+def make_sentinel(name: str) -> Sentinel:
     """Create one named sentinel object."""
     return Sentinel(name)
 
