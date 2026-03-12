@@ -18,7 +18,8 @@ dependencies = [
     "jsonpickle >= 3.0",
     "ipykernel >= 6.0",
     "ipywidgets >= 7.7",
-    "kaleido >= 0.2",
+    # Keep Kaleido on v0.2.1 to avoid the Chrome runtime dependency introduced in v1+.
+    "kaleido == 0.2.1",
     "networkx >= 2.7",
     "nbformat >= 5.0",
     "numpy >= 1.22",
