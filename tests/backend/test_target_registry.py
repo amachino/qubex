@@ -126,6 +126,25 @@ def test_target_registry_resolves_cr_labels() -> None:
     assert registry.resolve_cr_pair("Q00-Q01") == ("Q00", "Q01")
 
 
+def test_target_registry_resolves_cr_pairs_independent_of_registration_order() -> None:
+    """Given CR targets before GE targets, when building the registry, then CR pairs still resolve."""
+    qubit0 = _make_qubit("Q00")
+    qubit1 = _make_qubit("Q01")
+    gen_channel = _make_gen_channel()
+    cr_pair = Target.new_cr_target(
+        control_qubit=qubit0,
+        target_qubit=qubit1,
+        channel=gen_channel,
+    )
+    ge0 = Target.new_ge_target(qubit=qubit0, channel=gen_channel)
+    ge1 = Target.new_ge_target(qubit=qubit1, channel=gen_channel)
+
+    registry = TargetRegistry(gen_targets=[cr_pair, ge0, ge1])
+
+    assert registry.resolve_cr_pair("Q00-Q01") == ("Q00", "Q01")
+    assert registry.resolve_cr_label("Q00", "Q01") == "Q00-Q01"
+
+
 def test_target_registry_legacy_resolution_is_opt_in() -> None:
     """Given parser-compatible labels, when legacy flag is enabled, then fallback resolution works."""
     registry = _build_registry()

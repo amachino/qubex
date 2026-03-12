@@ -82,17 +82,6 @@ class TargetRegistry:
                 self._ge_label_by_qubit.setdefault(qubit_label, label)
             if target.is_ef and qubit_label:
                 self._ef_label_by_qubit.setdefault(qubit_label, label)
-            if target.is_cr:
-                pair = self._extract_cr_pair_from_label(label)
-                if pair is not None:
-                    control_qubit, target_qubit = pair
-                    self._cr_pair_by_label[label] = pair
-                    if target_qubit == "CR":
-                        self._cr_default_label_by_control.setdefault(
-                            control_qubit, label
-                        )
-                    else:
-                        self._cr_pair_label_by_pair.setdefault(pair, label)
 
         for label, target in self._cap_target_dict.items():
             qubit_label = getattr(target.object, "qubit", None)
@@ -100,6 +89,19 @@ class TargetRegistry:
                 self._target_to_qubit[label] = qubit_label
                 self._qubit_labels.add(qubit_label)
                 self._read_label_by_qubit.setdefault(qubit_label, label)
+
+        for label, target in self._gen_target_dict.items():
+            if not target.is_cr:
+                continue
+            pair = self._extract_cr_pair_from_label(label)
+            if pair is None:
+                continue
+            control_qubit, target_qubit = pair
+            self._cr_pair_by_label[label] = pair
+            if target_qubit == "CR":
+                self._cr_default_label_by_control.setdefault(control_qubit, label)
+            else:
+                self._cr_pair_label_by_pair.setdefault(pair, label)
 
     def _extract_cr_pair_from_label(self, label: str) -> tuple[str, str] | None:
         """
