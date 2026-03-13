@@ -631,7 +631,9 @@ def ghz_state_tomography(
 
         if mle_fit:
             rho_mle = create_density_matrix(probs_mit, mle_fit=True)
-            fidelity_mle = float(np.real((ghz_state.T.conj() @ rho_mle @ ghz_state)[0, 0]))
+            fidelity_mle = float(
+                np.real((ghz_state.T.conj() @ rho_mle @ ghz_state)[0, 0])
+            )
 
     width, height = 800, 455
 
