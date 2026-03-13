@@ -217,11 +217,50 @@ Adopt the new contract in phases.
 - Prefer `"figure"` and `"figures"` when payload duplication is still needed.
 - Reduce internal reads of payload figure keys in favor of attribute access.
 
-### Phase 5: implementation cleanup
+### Phase 5: reduction of internal dict-style coupling
+
+- Reduce internal `result["key"]` and `fit_result["key"]` reads where the
+  concrete result type is already known.
+- Reduce `**result` and `**fit_result` expansion patterns that flatten result
+  objects back into plain dictionaries.
+- Prefer passing `Result` and `FitResult` objects through workflow boundaries
+  instead of rebuilding ad hoc mapping bundles.
+
+### Phase 6: implementation cleanup
 
 - Replace `UserDict` inheritance with an explicit mapping wrapper if it improves clarity and typing.
 - Preserve `.data` as the public payload property.
 - Preserve mapping-style payload access for compatibility where still required.
+
+### Phase 7: persistence model
+
+- Add JSON and NetCDF persistence only after the `UserDict`-compatibility phase
+  is substantially complete.
+- Treat `Result` and `FitResult` as runtime containers until that point.
+- Do not introduce temporary serialization-only helpers while the public API
+  still depends heavily on plain mapping behavior.
+- When persistence is added, serialize `.data`, `created_at`, and other
+  metadata fields, but keep `figure` and `figures` runtime-only.
+- If `DataModel` is adopted for persistence, use it after the result contract
+  is no longer centered on `UserDict`.
+
+## Deferred work
+
+The following work is intentionally deferred until after the migration away
+from `dict`-style compatibility has advanced further:
+
+- `Result.to_json()` and `Result.save_netcdf()`
+- `FitResult.to_json()` and `FitResult.save_netcdf()`
+- internal serialization schemas dedicated to `Result` and `FitResult`
+
+This deferral is intentional. Adding persistence while `Result` and
+`FitResult` are still primarily `UserDict`-compatible containers would require
+temporary schema adapters, duplicate compatibility logic, and extra handling
+for legacy figure payload keys. The preferred sequence is:
+
+1. stabilize the runtime object contract
+2. remove internal dependence on plain mapping patterns
+3. add persistence on top of the cleaned-up model
 
 ## Review checklist
 
