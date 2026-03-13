@@ -10,9 +10,7 @@ Develop new fitting APIs in `qxfitting`.
 from __future__ import annotations
 
 import logging
-from collections import UserDict
 from datetime import datetime
-from enum import Enum
 from typing import Any, Literal
 
 import numpy as np
@@ -20,6 +18,7 @@ import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 
 from qubex import visualization as viz
+from qubex.analysis.fit_result import FitResult, FitStatus
 
 COLORS = [
     "#0C5DA5",
@@ -56,35 +55,6 @@ def _PCA(*args, **kwargs):
     from sklearn.decomposition import PCA as sklearn_pca  # lazy import
 
     return sklearn_pca(*args, **kwargs)
-
-
-class FitStatus(Enum):
-    """Status values for fit operations."""
-
-    SUCCESS = "success"
-    WARNING = "warning"
-    ERROR = "error"
-
-
-class FitResult(UserDict):
-    """Result container for fit outputs and status."""
-
-    status: FitStatus = FitStatus.SUCCESS
-
-    def __init__(
-        self,
-        status: FitStatus,
-        message: str | None = None,
-        data: dict[str, Any] | None = None,
-    ) -> None:
-        super().__init__(data)
-        self.status = status
-        self.message = message
-        self.data["status"] = self.status.value
-
-    def __repr__(self) -> str:
-        """Return a compact representation of the fit result."""
-        return f"<FitResult status={self.status.value} message={self.message} data={{...}}>"
 
 
 def _plotly_config(filename: str) -> dict:
@@ -461,8 +431,10 @@ def fit_linear(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -576,8 +548,10 @@ def fit_polynomial(
             "fun": fun,
             "root": root,
             "roots": roots_in_range,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -772,8 +746,10 @@ def fit_cosine(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -953,8 +929,10 @@ def fit_delayed_cosine(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1103,8 +1081,10 @@ def fit_exp_decay(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1264,8 +1244,10 @@ def fit_lorentzian(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1433,8 +1415,10 @@ def fit_sqrt_lorentzian(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1645,6 +1629,7 @@ def fit_rabi(
         "reference_phase": reference_phase,
         "popt": popt,
         "pcov": pcov,
+        # TODO: Remove this legacy payload key after callers migrate to .figure.
         "fig": fig,
     }
 
@@ -1654,12 +1639,14 @@ def fit_rabi(
             status=FitStatus.WARNING,
             message="R² < 0.9",
             data=data_payload,
+            figure=fig,
         )
     else:
         return FitResult(
             status=FitStatus.SUCCESS,
             message="Fitting successful",
             data=data_payload,
+            figure=fig,
         )
 
 
@@ -1777,8 +1764,10 @@ def fit_detuned_rabi(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1954,8 +1943,10 @@ def fit_ramsey(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -2111,8 +2102,10 @@ def fit_rb(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -2400,8 +2393,10 @@ def fit_ampl_calib_data(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -2643,8 +2638,10 @@ def fit_reflection_coefficient(
             "phi": phi,
             "tau": tau,
             "r2": r2,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -2904,8 +2901,10 @@ def fit_reflection_coefficient_double(
             "phi": phi,
             "tau": tau,
             "r2": r2,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -3227,7 +3226,11 @@ def fit_rotation(
             "tau": tau,
             "r0": r0,
             "r2": r2,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
+            # TODO: Remove this legacy payload key after callers migrate to .figures.
             "fig3d": fig3d,
         },
+        figure=fig,
+        figures={"fig3d": fig3d},
     )

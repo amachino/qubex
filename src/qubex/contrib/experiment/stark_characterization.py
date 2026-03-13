@@ -229,7 +229,8 @@ def stark_t1_experiment(
             )
             data[qubit] = t1_data
             if save_image:
-                viz.save_figure(fit_result["fig"], name=f"t1_{qubit}")
+                fig = fit_result.get_figure()
+                viz.save_figure(fig, name=f"t1_{qubit}")
 
     return ExperimentResult(data=data)
 
@@ -433,6 +434,7 @@ def stark_ramsey_experiment(
             print("")
 
             if save_image:
-                viz.save_figure(fit_result["fig"], name=f"stark_ramsey_{qubit}")
+                fig = fit_result.get_figure()
+                viz.save_figure(fig, name=f"stark_ramsey_{qubit}")
 
     return ExperimentResult(data=data)

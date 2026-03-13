@@ -317,6 +317,7 @@ class CharacterizationService:
                 "signal": signal,
                 "noise": noise,
                 "snr": snr,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
                 "fig": figs,
             },
             figures=figs,
@@ -598,7 +599,7 @@ class CharacterizationService:
                         width=600,
                         height=400,
                     )
-                    fig_fit = fit_result["fig"]
+                    fig_fit = fit_result.figure
                     if fig_fit is not None:
                         viz.save_figure(
                             fig_fit,
@@ -619,6 +620,7 @@ class CharacterizationService:
                 "chevron_data": chevron_data,
                 "rabi_rates": rabi_rates,
                 "resonant_frequencies": resonant_frequencies,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
                 "fig": figs,
             },
             figures=figs,
@@ -997,12 +999,11 @@ class CharacterizationService:
             if "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
 
-            if "fig" in fit_result:
-                figs[target] = fit_result["fig"]
+            fig = fit_result.figure
+            if fig is not None:
+                figs[target] = fig
 
-            if save_image:
-                fig = fit_result["fig"]
-                if fig is not None:
+                if save_image:
                     viz.save_figure(
                         fig,
                         name=f"readout_frequency_{target}",
@@ -1015,7 +1016,11 @@ class CharacterizationService:
             print(f"{target}: {freq:.6f}")
 
         return Result(
-            data={"data": fit_data, "fig": figs},
+            data={
+                "data": fit_data,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
+                "fig": figs,
+            },
             figures=figs,
         )
 
@@ -1136,7 +1141,7 @@ class CharacterizationService:
                     )
                     data[target] = t1_data
 
-                    fig = fit_result["fig"]
+                    fig = fit_result.get_figure()
 
                     if save_image:
                         viz.save_figure(
@@ -1299,7 +1304,7 @@ class CharacterizationService:
                     )
                     data[target] = t2_data
 
-                    fig = fit_result["fig"]
+                    fig = fit_result.get_figure()
 
                     if save_image:
                         viz.save_figure(
@@ -1468,7 +1473,7 @@ class CharacterizationService:
                         print(f"  {target}: {ramsey_data.bare_freq:.6f}")
                         print("")
 
-                        fig = fit_result["fig"]
+                        fig = fit_result.get_figure()
 
                         if save_image:
                             viz.save_figure(
@@ -2386,6 +2391,7 @@ class CharacterizationService:
                 "frequency_range": frequency_range,
                 "power_range": power_range,
                 "data": np.array(result),
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
             },
             figure=fig,
@@ -2505,7 +2511,7 @@ class CharacterizationService:
             print(f"κ_e : {fit_result['kappa_ex'] * 1e3:.6f} MHz")
             print(f"κ_i : {fit_result['kappa_in'] * 1e3:.6f} MHz")
 
-        fig = fit_result["fig"]
+        fig = fit_result.get_figure()
 
         if save_image:
             viz.save_figure(
@@ -2794,6 +2800,7 @@ class CharacterizationService:
                 "signals": signals,
                 "amplitudes": amplitudes,
                 "phases": phases,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
             },
             figure=fig,
@@ -2863,7 +2870,7 @@ class CharacterizationService:
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
         if plot:
-            fig = result["fig"]
+            fig = result.get_figure()
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
@@ -2974,6 +2981,7 @@ class CharacterizationService:
                     "phases": data,
                     "rabi_rate": None,
                     "estimated_amplitude": None,
+                    # TODO: Remove this legacy payload key after callers migrate to .figure.
                     "fig": None,
                 },
                 figure=None,
@@ -2981,7 +2989,7 @@ class CharacterizationService:
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
         if plot:
-            fig = fit_result["fig"]
+            fig = fit_result.get_figure()
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
@@ -3011,6 +3019,7 @@ class CharacterizationService:
                 "phases": data,
                 "rabi_rate": rabi_rate,
                 "estimated_amplitude": estimated_amplitude,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
                 **fit_result,
             },
@@ -3118,6 +3127,7 @@ class CharacterizationService:
                 "frequency_range": result1d["frequency_range"],
                 "power_range": power_range,
                 "data": np.array(result2d),
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
             },
             figure=fig,
@@ -3302,6 +3312,7 @@ class CharacterizationService:
                 "signals_1": signals_1,
                 "phases_0": phases_0,
                 "phases_1": phases_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig1,
             },
             figure=fig1,
@@ -3423,6 +3434,7 @@ class CharacterizationService:
                 "frequency_range": frequency_range,
                 "signals_0": signals_0,
                 "signals_1": signals_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
             },
             figure=fig,
@@ -3539,6 +3551,7 @@ class CharacterizationService:
                 "amplitude_range": amplitude_range,
                 "signals_0": signals_0,
                 "signals_1": signals_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
             },
             figure=fig,

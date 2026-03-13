@@ -88,3 +88,37 @@ class Result(UserDict):
     def __repr__(self) -> str:
         """Return a concise string representation."""
         return f"<Result created_at={self.created_at} data={{...}}>"
+
+    def get_figure(self, key: str | None = None) -> Figure:
+        """
+        Return one figure stored on the result.
+
+        Parameters
+        ----------
+        key
+            Name of the figure to return from `figures`. When omitted, this
+            method returns the primary `figure`.
+
+        Returns
+        -------
+        Figure
+            Requested Plotly figure.
+
+        Raises
+        ------
+        ValueError
+            Raised when the primary figure is requested but `figure` is not set.
+        KeyError
+            Raised when a named figure is requested but `figures` does not
+            contain the specified key.
+        """
+        if key is None:
+            if self.figure is None:
+                raise ValueError("Result does not contain a primary figure.")
+            return self.figure
+
+        figures = self.figures or {}
+        try:
+            return figures[key]
+        except KeyError:
+            raise KeyError(f"Result does not contain a figure named `{key}`.") from None

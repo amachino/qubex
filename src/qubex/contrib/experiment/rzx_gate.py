@@ -224,6 +224,10 @@ def rzx_gate_property(
     fig.show()
 
     return Result(
-        data={"result_rzx_angle": result_rzx_angle, "fig": fig},
+        data={
+            "result_rzx_angle": result_rzx_angle,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
+            "fig": fig,
+        },
         figure=fig,
     )

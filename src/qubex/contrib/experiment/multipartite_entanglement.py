@@ -463,6 +463,7 @@ def measure_ghz_state(
             "raw": prob_arr_raw,
             "mitigated": prob_arr_mitigated,
             "result": result,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "figure": fig,
         },
         figure=fig,
@@ -682,6 +683,7 @@ def ghz_state_tomography(
             "probabilities": probs_raw,
             "density_matrix": rho_raw,
             "fidelity": fidelity_raw,
+            # TODO: Remove this legacy payload key after callers migrate to result.figures.
             "figure": fig_raw,
         },
     }
@@ -690,6 +692,7 @@ def ghz_state_tomography(
             "probabilities": probs_mit,
             "density_matrix": rho_mit,
             "fidelity": fidelity_mit,
+            # TODO: Remove this legacy payload key after callers migrate to result.figures.
             "figure": fig_mit,
         }
         if mle_fit:
@@ -697,6 +700,7 @@ def ghz_state_tomography(
                 "probabilities": probs_mit,
                 "density_matrix": rho_mle,
                 "fidelity": fidelity_mle,
+                # TODO: Remove this legacy payload key after callers migrate to result.figures.
                 "figure": fig_mle,
             }
 
@@ -1037,6 +1041,7 @@ def fourier_analysis(
 
     return Result(
         data={
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "figure": fig,
             "I": I,
             "C": C,
@@ -1756,6 +1761,7 @@ def _measure_1d_cluster_state(
             edge_sbits_result[edge][sbits]["partial_transpose"] = rho_pt
             edge_sbits_result[edge][sbits]["negativity"] = negativity
             edge_sbits_result[edge][sbits]["eigenvalues"] = eigvals
+            # TODO: Remove this legacy payload key after callers migrate to result.figures.
             edge_sbits_result[edge][sbits]["figure"] = fig
 
     result = {"best": {edge: {} for edge in edges}}
@@ -1935,6 +1941,7 @@ def measure_1d_cluster_state(
             "negativities_avg": negativities_avg,
             "negativities_std": negativities_std,
             "negativities": negativities,
+            # TODO: Remove this legacy payload key after callers migrate to .figures.
             "figures": figures,
         },
         figures=figures,
@@ -2907,6 +2914,7 @@ def _measure_graph_state(
             edge_sbits_result[edge][sbits]["partial_transpose"] = rho_pt
             edge_sbits_result[edge][sbits]["negativity"] = negativity
             edge_sbits_result[edge][sbits]["eigenvalues"] = eigvals
+            # TODO: Remove this legacy payload key after callers migrate to result.figures.
             edge_sbits_result[edge][sbits]["figure"] = fig
             edge_sbits_result[edge][sbits]["negativity_std"] = neg_std
             edge_sbits_result[edge][sbits]["negativity_ci"] = (neg_lo, neg_hi)
@@ -3236,6 +3244,7 @@ def measure_graph_state(
             "negativities_avg": negativities_avg,
             "negativities_std": negativities_std,
             "nonzero_edges": nonzero_edges,
+            # TODO: Remove this legacy payload key after callers migrate to .figures.
             "figures": figures,
         },
         figures=figures,
@@ -3657,6 +3666,7 @@ def measure_bell_states(
     return Result(
         data={
             "data": results,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "figure": fig,
         },
         figure=fig,

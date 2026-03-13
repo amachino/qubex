@@ -423,8 +423,9 @@ class BenchmarkingService:
                 )
 
                 if save_image:
+                    fig = fit_result.get_figure()
                     viz.save_figure(
-                        fit_result["fig"],
+                        fig,
                         name=f"rb_experiment_1q_{target}",
                     )
 
@@ -646,8 +647,9 @@ class BenchmarkingService:
                 )
 
                 if save_image:
+                    fig = fit_result.get_figure()
                     viz.save_figure(
-                        fit_result["fig"],
+                        fig,
                         name=f"rb_experiment_1q_{target}",
                     )
 
@@ -887,6 +889,7 @@ class BenchmarkingService:
                 "gate_fidelity_err": gate_fidelity_err,
                 "rb_fit_result": rb_fit_result,
                 "irb_fit_result": irb_fit_result,
+                # TODO: Remove this legacy payload key after callers migrate to result.figures.
                 "fig": fig,
             }
         return Result(

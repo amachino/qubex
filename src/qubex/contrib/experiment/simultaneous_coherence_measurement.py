@@ -224,8 +224,9 @@ def simultaneous_coherence_measurement(
         data_t1[target] = t1_data
 
         if save_image:
+            fig = fit_result_t1.get_figure()
             viz.save_figure(
-                fit_result_t1["fig"],
+                fig,
                 name=f"t1_{target}",
             )
 
@@ -252,8 +253,9 @@ def simultaneous_coherence_measurement(
         data_t2[target] = t2_data
 
         if save_image:
+            fig = fit_result_t2.get_figure()
             viz.save_figure(
-                fit_result_t2["fig"],
+                fig,
                 name=f"t2_echo_{target}",
             )
 
@@ -290,8 +292,9 @@ def simultaneous_coherence_measurement(
         data_ramsey[target] = ramsey_data
 
         if save_image:
+            fig = fit_result_ramsey.get_figure()
             viz.save_figure(
-                fit_result_ramsey["fig"],
+                fig,
                 name=f"ramsey_{target}",
             )
 

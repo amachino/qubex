@@ -438,8 +438,9 @@ def pb_experiment_1q(
             )
 
             if save_image:
+                fig = fit_result.get_figure()
                 viz.save_figure(
-                    fit_result["fig"],
+                    fig,
                     name=f"pb_experiment_1q_{target}",
                 )
 
@@ -669,8 +670,9 @@ def pb_experiment_2q(
             )
 
             if save_image:
+                fig = fit_result.get_figure()
                 viz.save_figure(
-                    fit_result["fig"],
+                    fig,
                     name=f"pb_experiment_2q_{target}",
                 )
 
@@ -905,6 +907,7 @@ def ipb_experiment(
             "gate_fidelity_err": gate_fidelity_err,
             "rb_fit_result": rb_fit_result,
             "irb_fit_result": irb_fit_result,
+            # TODO: Remove this legacy payload key after callers migrate to result.figures.
             "fig": fig,
         }
     return Result(

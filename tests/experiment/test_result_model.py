@@ -79,3 +79,28 @@ def test_result_should_prefer_explicit_figure_fields_over_legacy_payload_keys() 
         assert result["fig"] is legacy_figure
     with pytest.warns(DeprecationWarning, match="figures` attribute"):
         assert result["figures"] == legacy_figures
+
+
+def test_result_should_return_primary_and_named_figures_via_get_figure() -> None:
+    """Result should return primary and named figures via get_figure."""
+    figure = go.Figure()
+    figures = {"overview": go.Figure(), "detail": go.Figure()}
+    result = Result(
+        data={"value": 1},
+        figure=figure,
+        figures=figures,
+    )
+
+    assert result.get_figure() is figure
+    assert result.get_figure("overview") is figures["overview"]
+
+
+def test_result_should_raise_when_requested_figure_is_missing() -> None:
+    """Result should raise when the requested figure is missing."""
+    result = Result(data={"value": 1})
+
+    with pytest.raises(ValueError, match="primary figure"):
+        result.get_figure()
+
+    with pytest.raises(KeyError, match="overview"):
+        result.get_figure("overview")

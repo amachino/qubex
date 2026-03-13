@@ -3013,6 +3013,7 @@ class MeasurementService:
                 "raw": prob_arr_raw,
                 "mitigated": prob_arr_mitigated,
                 "result": result,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "figure": fig,
             },
             figure=fig,
@@ -3184,6 +3185,7 @@ class MeasurementService:
                 "expected_values": expected_values,
                 "density_matrix": rho,
                 "fidelity": fidelity,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "figure": fig,
             },
             figure=fig,
