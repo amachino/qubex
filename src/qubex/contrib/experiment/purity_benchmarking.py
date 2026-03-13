@@ -450,7 +450,10 @@ def pb_experiment_1q(
                 **fit_result,
             }
 
-    return Result(data=return_data)
+    return Result(
+        data=return_data,
+        figures={target: result["fig"] for target, result in return_data.items()},
+    )
 
 
 def pb_experiment_2q(
@@ -678,7 +681,10 @@ def pb_experiment_2q(
                 **fit_result,
             }
 
-    return Result(data=return_data)
+    return Result(
+        data=return_data,
+        figures={target: result["fig"] for target, result in return_data.items()},
+    )
 
 
 def ipb_experiment(
@@ -901,7 +907,10 @@ def ipb_experiment(
             "irb_fit_result": irb_fit_result,
             "fig": fig,
         }
-    return Result(data=results)
+    return Result(
+        data=results,
+        figures={target: result["fig"] for target, result in results.items()},
+    )
 
 
 def purity_benchmarking(
@@ -1045,6 +1054,12 @@ def interleaved_purity_benchmarking(
                 save_image=save_image,
             )
             results[target] = result[target]
-        result = Result(data=results)
+        result = Result(
+            data=results,
+            figures={target: entry["fig"] for target, entry in results.items()},
+        )
 
-    return Result(data=result.data)
+    return Result(
+        data=result.data,
+        figures=result.figures,
+    )

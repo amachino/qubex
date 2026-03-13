@@ -464,7 +464,8 @@ def measure_ghz_state(
             "mitigated": prob_arr_mitigated,
             "result": result,
             "figure": fig,
-        }
+        },
+        figure=fig,
     )
 
 
@@ -1026,7 +1027,8 @@ def fourier_analysis(
             "figure": fig,
             "I": I,
             "C": C,
-        }
+        },
+        figure=fig,
     )
 
 
@@ -1921,7 +1923,8 @@ def measure_1d_cluster_state(
             "negativities_std": negativities_std,
             "negativities": negativities,
             "figures": figures,
-        }
+        },
+        figures=figures,
     )
 
 
@@ -3221,7 +3224,8 @@ def measure_graph_state(
             "negativities_std": negativities_std,
             "nonzero_edges": nonzero_edges,
             "figures": figures,
-        }
+        },
+        figures=figures,
     )
 
 
@@ -3641,5 +3645,6 @@ def measure_bell_states(
         data={
             "data": results,
             "figure": fig,
-        }
+        },
+        figure=fig,
     )

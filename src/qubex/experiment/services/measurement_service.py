@@ -3014,7 +3014,8 @@ class MeasurementService:
                 "mitigated": prob_arr_mitigated,
                 "result": result,
                 "figure": fig,
-            }
+            },
+            figure=fig,
         )
 
     def bell_state_tomography(
@@ -3184,5 +3185,6 @@ class MeasurementService:
                 "density_matrix": rho,
                 "fidelity": fidelity,
                 "figure": fig,
-            }
+            },
+            figure=fig,
         )

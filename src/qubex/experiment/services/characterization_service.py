@@ -318,7 +318,8 @@ class CharacterizationService:
                 "noise": noise,
                 "snr": snr,
                 "fig": figs,
-            }
+            },
+            figures=figs,
         )
 
     def sweep_readout_duration(
@@ -619,7 +620,8 @@ class CharacterizationService:
                 "rabi_rates": rabi_rates,
                 "resonant_frequencies": resonant_frequencies,
                 "fig": figs,
-            }
+            },
+            figures=figs,
         )
 
     def obtain_freq_rabi_relation(
@@ -1012,7 +1014,10 @@ class CharacterizationService:
         for target, freq in fit_data.items():
             print(f"{target}: {freq:.6f}")
 
-        return Result(data={"data": fit_data, "fig": figs})
+        return Result(
+            data={"data": fit_data, "fig": figs},
+            figures=figs,
+        )
 
     def t1_experiment(
         self,
@@ -2382,7 +2387,8 @@ class CharacterizationService:
                 "power_range": power_range,
                 "data": np.array(result),
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def measure_reflection_coefficient(
@@ -2789,7 +2795,8 @@ class CharacterizationService:
                 "amplitudes": amplitudes,
                 "phases": phases,
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     @deprecated("Use `measure_qubit_resonance` instead.")
@@ -2968,7 +2975,8 @@ class CharacterizationService:
                     "rabi_rate": None,
                     "estimated_amplitude": None,
                     "fig": None,
-                }
+                },
+                figure=None,
             )
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
@@ -3005,7 +3013,8 @@ class CharacterizationService:
                 "estimated_amplitude": estimated_amplitude,
                 "fig": fig,
                 **fit_result,
-            }
+            },
+            figure=fig,
         )
 
     def qubit_spectroscopy(
@@ -3110,7 +3119,8 @@ class CharacterizationService:
                 "power_range": power_range,
                 "data": np.array(result2d),
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def measure_dispersive_shift(
@@ -3293,7 +3303,8 @@ class CharacterizationService:
                 "phases_0": phases_0,
                 "phases_1": phases_1,
                 "fig": fig1,
-            }
+            },
+            figure=fig1,
         )
 
     def find_optimal_readout_frequency(
@@ -3413,7 +3424,8 @@ class CharacterizationService:
                 "signals_0": signals_0,
                 "signals_1": signals_1,
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def find_optimal_readout_amplitude(
@@ -3528,7 +3540,8 @@ class CharacterizationService:
                 "signals_0": signals_0,
                 "signals_1": signals_1,
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def ckp_sequence(

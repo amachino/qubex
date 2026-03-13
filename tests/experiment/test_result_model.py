@@ -1,0 +1,81 @@
+"""Tests for the experiment Result model."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import plotly.graph_objects as go
+import pytest
+
+from qubex.experiment.models.result import Result
+
+
+def test_result_should_preserve_mapping_payload_access() -> None:
+    """Result should preserve mapping access for payload data."""
+    result = Result(data={"value": 1, "label": "Q00"})
+
+    assert result.data == {"value": 1, "label": "Q00"}
+    assert result["value"] == 1
+    assert result["label"] == "Q00"
+    assert dict(result) == {"value": 1, "label": "Q00"}
+    assert datetime.fromisoformat(result.created_at).tzinfo == timezone.utc
+    assert result.figure is None
+    assert result.figures is None
+
+
+def test_result_should_not_derive_figure_fields_from_legacy_payload_keys() -> None:
+    """Result should not derive figure attributes from legacy payload keys."""
+    figure = go.Figure()
+    figures = {"Q00": go.Figure()}
+
+    result = Result(
+        data={
+            "fig": figure,
+            "figures": figures,
+        }
+    )
+
+    assert result.figure is None
+    assert result.figures is None
+
+
+def test_result_should_warn_on_legacy_figure_key_access() -> None:
+    """Result should warn when legacy figure payload keys are accessed."""
+    figure = go.Figure()
+    figures = {"Q00": go.Figure()}
+    result = Result(
+        data={
+            "figure": figure,
+            "figures": figures,
+        }
+    )
+
+    with pytest.warns(DeprecationWarning, match="figure` attribute"):
+        assert result["figure"] is figure
+
+    with pytest.warns(DeprecationWarning, match="figures` attribute"):
+        assert result.data["figures"] == figures
+
+
+def test_result_should_prefer_explicit_figure_fields_over_legacy_payload_keys() -> None:
+    """Result should prefer explicit figure fields over legacy payload keys."""
+    explicit_figure = go.Figure()
+    explicit_figures = {"explicit": go.Figure()}
+    legacy_figure = go.Figure()
+    legacy_figures = {"legacy": go.Figure()}
+
+    result = Result(
+        data={
+            "fig": legacy_figure,
+            "figures": legacy_figures,
+        },
+        figure=explicit_figure,
+        figures=explicit_figures,
+    )
+
+    assert result.figure is explicit_figure
+    assert result.figures == explicit_figures
+    with pytest.warns(DeprecationWarning, match="figure` attribute"):
+        assert result["fig"] is legacy_figure
+    with pytest.warns(DeprecationWarning, match="figures` attribute"):
+        assert result["figures"] == legacy_figures

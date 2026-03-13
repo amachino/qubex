@@ -223,4 +223,7 @@ def rzx_gate_property(
     )
     fig.show()
 
-    return Result(data={"result_rzx_angle": result_rzx_angle, "fig": fig})
+    return Result(
+        data={"result_rzx_angle": result_rzx_angle, "fig": fig},
+        figure=fig,
+    )
