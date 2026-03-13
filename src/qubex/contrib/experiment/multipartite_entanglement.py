@@ -700,7 +700,20 @@ def ghz_state_tomography(
                 "figure": fig_mle,
             }
 
-    return Result(data=result)
+    figures = {"raw": fig_raw}
+    primary_figure = fig_raw
+    if readout_mitigation:
+        figures["mitigated"] = fig_mit
+        primary_figure = fig_mit
+        if mle_fit:
+            figures["mle"] = fig_mle
+            primary_figure = fig_mle
+
+    return Result(
+        data=result,
+        figure=primary_figure,
+        figures=figures,
+    )
 
 
 def create_mqc_sequence(
