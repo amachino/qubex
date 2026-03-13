@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 import qubex.visualization as viz
-from qubex.analysis import fitting
+from qubex.analysis import FitStatus, fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
@@ -219,7 +219,7 @@ def stark_t1_experiment(
                 xaxis_type=xaxis_type,
                 yaxis_type="linear",
             )
-            if fit_result["status"] != "success":
+            if fit_result.status is not FitStatus.SUCCESS:
                 continue
             t1_data = T1Data.new(
                 sweep_data,
@@ -408,7 +408,7 @@ def stark_ramsey_experiment(
                 offset_est=0.0,
                 plot=plot,
             )
-            if fit_result["status"] != "success":
+            if fit_result.status is not FitStatus.SUCCESS:
                 continue
 
             freq = exp.ctx.qubits[qubit].frequency

@@ -105,7 +105,6 @@ class FitResult(UserDict):
         self.figure = figure
         self.figures = figures
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
-        self.data["status"] = self.status.value
 
     def __repr__(self) -> str:
         """Return a compact representation of the fit result."""

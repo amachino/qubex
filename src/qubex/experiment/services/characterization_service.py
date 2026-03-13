@@ -26,7 +26,7 @@ from tqdm import tqdm
 from typing_extensions import deprecated
 
 import qubex.visualization as viz
-from qubex.analysis import fitting
+from qubex.analysis import FitStatus, fitting
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
@@ -1164,7 +1164,7 @@ class CharacterizationService:
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
-                if fit_result["status"] == "success":
+                if fit_result.status is FitStatus.SUCCESS:
                     t1 = fit_result["tau"]
                     t1_err = fit_result["tau_err"]
                     r2 = fit_result["r2"]
@@ -1327,7 +1327,7 @@ class CharacterizationService:
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
-                if fit_result["status"] == "success":
+                if fit_result.status is FitStatus.SUCCESS:
                     t2 = fit_result["tau"]
                     t2_err = fit_result["tau_err"]
                     r2 = fit_result["r2"]
@@ -1463,7 +1463,7 @@ class CharacterizationService:
                         offset_est=0.0,
                         plot=plot,
                     )
-                    if fit_result["status"] == "success":
+                    if fit_result.status is FitStatus.SUCCESS:
                         f = self.ctx.qubits[target].frequency
                         t2 = fit_result["tau"]
                         ramsey_freq = fit_result["f"]
@@ -1698,7 +1698,7 @@ class CharacterizationService:
             ylabel=f"Normalized value : {target_qubit}",
         )
 
-        if fit_result["status"] != "success":
+        if fit_result.status is not FitStatus.SUCCESS:
             raise RuntimeError("Fitting failed in JAZZ experiment.")
 
         xi = fit_result["f"] * 1e-3 - rotation_frequency

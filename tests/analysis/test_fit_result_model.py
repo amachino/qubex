@@ -21,10 +21,22 @@ def test_fit_result_should_preserve_payload_and_metadata() -> None:
     assert result.status is FitStatus.SUCCESS
     assert result.message == "ok"
     assert result["value"] == 1.0
-    assert result["status"] == FitStatus.SUCCESS.value
+    assert "status" not in result.data
     assert datetime.fromisoformat(result.created_at).tzinfo == timezone.utc
     assert result.figure is None
     assert result.figures is None
+
+
+def test_fit_result_should_not_expose_status_via_mapping_payload() -> None:
+    """FitResult should not expose status via mapping payload."""
+    result = FitResult(
+        status=FitStatus.SUCCESS,
+        message="ok",
+        data={"value": 1.0},
+    )
+
+    with pytest.raises(KeyError, match="status"):
+        _ = result["status"]
 
 
 def test_fit_result_should_not_derive_figure_fields_from_legacy_payload_keys() -> None:

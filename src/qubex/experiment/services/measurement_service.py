@@ -29,7 +29,7 @@ from rich.console import Console
 from tqdm import tqdm
 
 import qubex.visualization as viz
-from qubex.analysis import IQPlotter, fitting
+from qubex.analysis import FitStatus, IQPlotter, fitting
 from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
@@ -1711,7 +1711,7 @@ class MeasurementService:
                 plot=plot,
                 is_damped=is_damped,
             )
-            if fit_result["status"] == "error" or fit_result["r2"] < fit_threshold:
+            if fit_result.status is FitStatus.ERROR or fit_result["r2"] < fit_threshold:
                 rabi_params[target] = RabiParam.nan(target=target)
             else:
                 rabi_params[target] = RabiParam(
@@ -1866,7 +1866,7 @@ class MeasurementService:
                 plot=plot,
                 is_damped=is_damped,
             )
-            if fit_result["status"] != "success":
+            if fit_result.status is not FitStatus.SUCCESS:
                 ef_rabi_params[ef_label] = RabiParam.nan(target=ef_label)
             else:
                 ef_rabi_params[ef_label] = RabiParam(
