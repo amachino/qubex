@@ -623,15 +623,15 @@ def ghz_state_tomography(
     ghz_state[-1, 0] = 1 / np.sqrt(2)
 
     rho_raw = create_density_matrix(probs_raw)
-    fidelity_raw = float(np.real(ghz_state.T.conj() @ rho_raw @ ghz_state))
+    fidelity_raw = float(np.real((ghz_state.T.conj() @ rho_raw @ ghz_state)[0, 0]))
 
     if readout_mitigation:
         rho_mit = create_density_matrix(probs_mit, mle_fit=False)
-        fidelity_mit = float(np.real(ghz_state.T.conj() @ rho_mit @ ghz_state))
+        fidelity_mit = float(np.real((ghz_state.T.conj() @ rho_mit @ ghz_state)[0, 0]))
 
         if mle_fit:
             rho_mle = create_density_matrix(probs_mit, mle_fit=True)
-            fidelity_mle = float(np.real(ghz_state.T.conj() @ rho_mle @ ghz_state))
+            fidelity_mle = float(np.real((ghz_state.T.conj() @ rho_mle @ ghz_state)[0, 0]))
 
     width, height = 800, 455
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -88,9 +89,7 @@ def test_ghz_state_tomography_should_set_primary_and_named_figures(
     monkeypatch.setattr(
         me,
         "create_density_matrix",
-        lambda *_args, **_kwargs: np.diag([1.0, 0.0, 0.0, 0.0]).astype(
-            np.complex128
-        ),
+        lambda *_args, **_kwargs: np.diag([1.0, 0.0, 0.0, 0.0]).astype(np.complex128),
     )
 
     def _plot_ghz_state_tomography(**_kwargs):
@@ -119,3 +118,50 @@ def test_ghz_state_tomography_should_set_primary_and_named_figures(
         "mitigated": fig_mit,
         "mle": fig_mle,
     }
+
+
+def test_ghz_state_tomography_should_not_emit_numpy_scalar_conversion_warning(
+    monkeypatch,
+) -> None:
+    """GHZ state tomography should avoid NumPy scalar conversion deprecations."""
+    monkeypatch.setattr(
+        me,
+        "resolve_shot_options",
+        lambda **_kwargs: (32, 1_024.0),
+    )
+    monkeypatch.setattr(
+        me,
+        "measure_ghz_state",
+        lambda *_args, **_kwargs: {
+            "raw": [0.5, 0.0, 0.0, 0.5],
+            "mitigated": [0.5, 0.0, 0.0, 0.5],
+        },
+    )
+    monkeypatch.setattr(
+        me,
+        "create_density_matrix",
+        lambda *_args, **_kwargs: np.diag([1.0, 0.0, 0.0, 0.0]).astype(np.complex128),
+    )
+    monkeypatch.setattr(
+        me,
+        "plot_ghz_state_tomography",
+        lambda **_kwargs: {"figure": go.Figure()},
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        result = ghz_state_tomography(
+            exp=cast(Any, SimpleNamespace()),
+            entangle_steps=[("Q00", "Q01")],
+            plot=False,
+            show_sequence=False,
+            save_image=False,
+            readout_mitigation=True,
+            mle_fit=True,
+        )
+
+    np.testing.assert_allclose(result["raw"]["fidelity"], 0.5, rtol=0.0, atol=1e-12)
+    np.testing.assert_allclose(
+        result["mitigated"]["fidelity"], 0.5, rtol=0.0, atol=1e-12
+    )
+    np.testing.assert_allclose(result["mle"]["fidelity"], 0.5, rtol=0.0, atol=1e-12)
