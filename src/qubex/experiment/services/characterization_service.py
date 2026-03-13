@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from copy import deepcopy
 from typing import Literal
 
@@ -57,6 +57,42 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+
+
+def _build_ramsey_sequence(
+    pulse_service: PulseService,
+    qubit_labels: Collection[str],
+    spectator_state: str,
+    second_rotation_axis: Literal["X", "Y"],
+    target_list: list[str],
+    target_qubits: list[str],
+    spectator_qubits: list[str],
+) -> Callable[[int], PulseSchedule]:
+    """Build one Ramsey sequence callable for the current target selection."""
+
+    def ramsey_sequence(T: int) -> PulseSchedule:
+        with PulseSchedule(target_list) as ps:
+            if spectator_state != "0":
+                for spectator in spectator_qubits:
+                    if spectator in qubit_labels:
+                        pulse = pulse_service.get_pulse_for_state(
+                            target=spectator,
+                            state=spectator_state,
+                        )
+                        ps.add(spectator, pulse)
+                ps.barrier()
+
+            for target in target_qubits:
+                x90 = pulse_service.get_hpi_pulse(target)
+                ps.add(target, x90)
+                ps.add(target, Blank(T))
+                if second_rotation_axis == "X":
+                    ps.add(target, x90.shifted(np.pi))
+                else:
+                    ps.add(target, x90.shifted(-np.pi / 2))
+        return ps
+
+    return ramsey_sequence
 
 
 DEFAULT_ELECTRICAL_DELAY_INTERVAL = 0.0
@@ -1393,34 +1429,15 @@ class CharacterizationService:
             print(f"Target qubits: {target_qubits}")
             print(f"Spectator qubits: {spectator_qubits}")
 
-            def ramsey_sequence(
-                T: int,
-                target_list: list[str] = target_list,
-                target_qubits: list[str] = target_qubits,
-                spectator_qubits: list[str] = spectator_qubits,
-            ) -> PulseSchedule:
-                with PulseSchedule(target_list) as ps:
-                    # Excite spectator qubits if needed
-                    if spectator_state != "0":
-                        for spectator in spectator_qubits:
-                            if spectator in self.ctx.qubit_labels:
-                                pulse = self.pulse.get_pulse_for_state(
-                                    target=spectator,
-                                    state=spectator_state,
-                                )
-                                ps.add(spectator, pulse)
-                        ps.barrier()
-
-                    # Ramsey sequence for the target qubit
-                    for target in target_qubits:
-                        x90 = self.pulse.get_hpi_pulse(target)
-                        ps.add(target, x90)
-                        ps.add(target, Blank(T))
-                        if second_rotation_axis == "X":
-                            ps.add(target, x90.shifted(np.pi))
-                        else:
-                            ps.add(target, x90.shifted(-np.pi / 2))
-                return ps
+            ramsey_sequence = _build_ramsey_sequence(
+                pulse_service=self.pulse,
+                qubit_labels=self.ctx.qubit_labels,
+                spectator_state=spectator_state,
+                second_rotation_axis=second_rotation_axis,
+                target_list=list(target_list),
+                target_qubits=list(target_qubits),
+                spectator_qubits=list(spectator_qubits),
+            )
 
             detuned_frequencies = {
                 target: self.ctx.qubits[target].frequency + detuning
