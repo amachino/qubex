@@ -22,6 +22,7 @@ class MeasurementConstraintProfile:
     sampling_period_ns: float
     word_length_samples: int | None
     block_length_samples: int | None
+    final_readout_guard_length_samples: int
     extra_sum_section_length_samples: int
     extra_post_blank_length_samples: int
     require_workaround_capture: bool
@@ -39,6 +40,7 @@ class MeasurementConstraintProfile:
             sampling_period_ns=float(sampling_period_ns),
             word_length_samples=WORD_LENGTH,
             block_length_samples=BLOCK_LENGTH,
+            final_readout_guard_length_samples=BLOCK_LENGTH,
             extra_sum_section_length_samples=EXTRA_SUM_SECTION_LENGTH,
             extra_post_blank_length_samples=EXTRA_POST_BLANK_LENGTH,
             require_workaround_capture=True,
@@ -57,6 +59,7 @@ class MeasurementConstraintProfile:
             sampling_period_ns=float(sampling_period_ns),
             word_length_samples=None,
             block_length_samples=None,
+            final_readout_guard_length_samples=0,
             extra_sum_section_length_samples=0,
             extra_post_blank_length_samples=0,
             require_workaround_capture=False,
@@ -83,6 +86,11 @@ class MeasurementConstraintProfile:
     def workaround_capture_duration_ns(self) -> float:
         """Return workaround capture duration in ns."""
         return self.extra_sum_section_length_samples * self.sampling_period_ns
+
+    @property
+    def final_readout_guard_duration_ns(self) -> float:
+        """Return the guard blank inserted before appended final readout."""
+        return self.final_readout_guard_length_samples * self.sampling_period_ns
 
     @property
     def extra_capture_duration_ns(self) -> float:

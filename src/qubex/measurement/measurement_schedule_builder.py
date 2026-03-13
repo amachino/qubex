@@ -163,6 +163,13 @@ class MeasurementScheduleBuilder:
                 sequence_duration = (
                     math.ceil(sequence_duration / word_duration) * word_duration
                 )
+            if self.constraint_profile.final_readout_guard_duration_ns > 0.0:
+                # QuEL-1 capture start can drift by one block at runtime.
+                # Keep one block blank before appended final readout so it
+                # does not overlap trailing control even when that happens.
+                sequence_duration += (
+                    self.constraint_profile.final_readout_guard_duration_ns
+                )
             schedule.pad(total_duration=sequence_duration, pad_side="right")
 
             readout_targets = list(

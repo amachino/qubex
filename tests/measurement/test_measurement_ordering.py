@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
@@ -9,6 +10,9 @@ import pytest
 from qxpulse import FlatTop, PulseSchedule
 
 from qubex.measurement.adapters import Quel1MeasurementBackendAdapter
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
 from qubex.measurement.measurement_pulse_factory import MeasurementPulseFactory
 from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
 from qubex.measurement.models.capture_schedule import CaptureSchedule
@@ -310,6 +314,86 @@ def test_schedule_builder_keeps_frequency_overrides_after_final_measurement() ->
 
     assert result.pulse_schedule.get_frequency("Q00") == 5.2
     assert result.pulse_schedule.get_frequency("RQ00") == 9.9
+
+
+def test_schedule_builder_adds_default_final_readout_guard_for_quel1_profile() -> None:
+    """Given default QuEL-1 profile, when appending final measurement, then one block blank separates control and readout."""
+    profile = MeasurementConstraintProfile.quel1()
+    block_duration = cast(float, profile.block_duration_ns)
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParameters,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
+        ),
+        pulse_factory=cast(
+            MeasurementPulseFactory,
+            SimpleNamespace(
+                readout_pulse=lambda **_: FlatTop(duration=16, amplitude=0.1, tau=4)
+            ),
+        ),
+        targets=cast(
+            dict[str, Target],
+            {
+                "Q00": SimpleNamespace(is_pump=False, is_read=False),
+            },
+        ),
+        mux_dict={},
+        constraint_profile=profile,
+    )
+
+    with PulseSchedule(["Q00"]) as schedule:
+        schedule.add("Q00", FlatTop(duration=16, amplitude=0.1, tau=4))
+
+    result = builder.build(schedule=schedule, final_measurement=True)
+    pulse_ranges = result.pulse_schedule.get_pulse_ranges(["Q00", "RQ00"])
+    control_range = pulse_ranges["Q00"][0]
+    readout_range = pulse_ranges["RQ00"][0]
+    gap_duration = (
+        readout_range.start - control_range.stop
+    ) * profile.sampling_period_ns
+
+    assert gap_duration == pytest.approx(block_duration)
+
+
+def test_schedule_builder_skips_final_readout_guard_when_disabled() -> None:
+    """Given disabled guard, when appending final measurement, then control and readout remain adjacent."""
+    profile = replace(
+        MeasurementConstraintProfile.quel1(),
+        final_readout_guard_length_samples=0,
+    )
+    builder = MeasurementScheduleBuilder(
+        control_params=cast(
+            ControlParameters,
+            SimpleNamespace(readout_amplitude={"RQ00": 0.1}),
+        ),
+        pulse_factory=cast(
+            MeasurementPulseFactory,
+            SimpleNamespace(
+                readout_pulse=lambda **_: FlatTop(duration=16, amplitude=0.1, tau=4)
+            ),
+        ),
+        targets=cast(
+            dict[str, Target],
+            {
+                "Q00": SimpleNamespace(is_pump=False, is_read=False),
+            },
+        ),
+        mux_dict={},
+        constraint_profile=profile,
+    )
+
+    with PulseSchedule(["Q00"]) as schedule:
+        schedule.add("Q00", FlatTop(duration=16, amplitude=0.1, tau=4))
+
+    result = builder.build(schedule=schedule, final_measurement=True)
+    pulse_ranges = result.pulse_schedule.get_pulse_ranges(["Q00", "RQ00"])
+    control_range = pulse_ranges["Q00"][0]
+    readout_range = pulse_ranges["RQ00"][0]
+    gap_duration = (
+        readout_range.start - control_range.stop
+    ) * profile.sampling_period_ns
+
+    assert gap_duration == pytest.approx(0.0)
 
 
 def test_schedule_builder_rejects_unknown_frequency_override_targets() -> None:

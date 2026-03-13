@@ -61,3 +61,11 @@ def test_builder_skips_workaround_capture_for_relaxed_profile() -> None:
     assert len(result.capture_schedule.captures) == 1
     assert result.capture_schedule.captures[0].is_workaround is False
     assert result.pulse_schedule.duration == original_duration
+
+
+def test_quel1_profile_defaults_final_readout_guard_to_one_block() -> None:
+    """Given QuEL-1 profile, when reading final readout guard, then the default guard is one block."""
+    profile = MeasurementConstraintProfile.quel1()
+
+    assert profile.final_readout_guard_length_samples == profile.block_length_samples
+    assert profile.final_readout_guard_duration_ns == profile.block_duration_ns
