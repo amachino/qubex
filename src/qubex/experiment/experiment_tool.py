@@ -10,6 +10,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, cast
 
+import plotly.graph_objects as go
 import yaml
 from rich.console import Console
 from rich.prompt import Confirm
@@ -19,6 +20,7 @@ from typing_extensions import deprecated
 from qubex.diagnostics import ChipInspector
 from qubex.system import LatticeGraph, PortType, SystemManager
 from qubex.system.control_system import CapPort, GenPort
+from qubex.visualization import show_figure
 
 if TYPE_CHECKING:
     from qubex.backend.quel1.quel1_backend_controller import Quel1Box
@@ -39,10 +41,6 @@ class _FigureLike(Protocol):
 
     def update_layout(self, *, title: str, width: int) -> None:
         """Update figure layout."""
-        ...
-
-    def show(self) -> None:
-        """Render figure."""
         ...
 
 
@@ -115,7 +113,9 @@ Do you want to continue?
         title=f"Skew : {', '.join(box_ids)!s} (Ref. {ref_port})",
         width=800,
     )
-    figure.show()
+    rendered_figure = go.Figure(fig)
+    rendered_figure.update_layout(template="qubex")
+    show_figure(rendered_figure, filename="skew_check")
     return {
         "skew": skew,
         "fig": fig,
