@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Collection
-from typing import Literal, no_type_check
+from typing import Literal, cast, no_type_check
 
 import numpy as np
 import plotly.graph_objects as go
@@ -1451,8 +1451,10 @@ class CalibrationService:
             )
             qcv.display_bloch_sphere_from_bloch_vectors(control_states)
 
-            fit_result["fig"].show()
-            fit_result["fig3d"].show()
+            fig = fit_result.get_figure()
+            fig_3d = fit_result.get_figure("fig3d")
+            fig.show()
+            fig_3d.show()
             qcv.display_bloch_sphere_from_bloch_vectors(target_states)
 
         return Result(
@@ -1695,11 +1697,13 @@ class CalibrationService:
             shared_xaxes=True,
             vertical_spacing=0.1,
         )
-        fig_t_0 = result_0["fit_result"]["fig"]
-        fig_t_1 = result_1["fit_result"]["fig"]
+        target_fit_result_0 = cast(FitResult, result_0["fit_result"])
+        target_fit_result_1 = cast(FitResult, result_1["fit_result"])
+        fig_t_0 = target_fit_result_0.get_figure()
+        fig_t_1 = target_fit_result_1.get_figure()
 
-        for data in fig_t_0.data:
-            data: go.Scatter
+        for trace in fig_t_0.data:
+            data = cast(go.Scatter, trace)
             fig_t.add_trace(
                 go.Scatter(
                     x=data.x,
@@ -1713,8 +1717,8 @@ class CalibrationService:
                 row=1,
                 col=1,
             )
-        for data in fig_t_1.data:
-            data: go.Scatter
+        for trace in fig_t_1.data:
+            data = cast(go.Scatter, trace)
             fig_t.add_trace(
                 go.Scatter(
                     x=data.x,
@@ -1769,17 +1773,17 @@ class CalibrationService:
             specs=[[{"type": "scatter3d"}, {"type": "scatter3d"}]],
             horizontal_spacing=0.01,
         )
-        fig_t_3d_0 = result_0["fit_result"]["fig3d"]
-        fig_t_3d_1 = result_1["fit_result"]["fig3d"]
-        for data in fig_t_3d_0.data:
+        fig_t_3d_0 = target_fit_result_0.get_figure("fig3d")
+        fig_t_3d_1 = target_fit_result_1.get_figure("fig3d")
+        for trace in fig_t_3d_0.data:
             fig_t_3d.add_trace(
-                data,
+                trace,
                 row=1,
                 col=1,
             )
-        for data in fig_t_3d_1.data:
+        for trace in fig_t_3d_1.data:
             fig_t_3d.add_trace(
-                data,
+                trace,
                 row=1,
                 col=2,
             )
@@ -3005,13 +3009,17 @@ class CalibrationService:
             )
             qcv.display_bloch_sphere_from_bloch_vectors(control_states)
 
-            fit_result["fig"].show()
-            fit_result["fig3d"].show()
+            fig = fit_result.get_figure()
+            fig_3d = fit_result.get_figure("fig3d")
+            fig.show()
+            fig_3d.show()
             qcv.display_bloch_sphere_from_bloch_vectors(target_states)
 
             for spectator, fit_spectator in spectators_fit_result.items():
-                fit_spectator["fig"].show()
-                fit_spectator["fig3d"].show()
+                spectator_fig = fit_spectator.get_figure()
+                spectator_fig_3d = fit_spectator.get_figure("fig3d")
+                spectator_fig.show()
+                spectator_fig_3d.show()
                 qcv.display_bloch_sphere_from_bloch_vectors(
                     spectators_states[spectator]
                 )
@@ -3265,11 +3273,13 @@ class CalibrationService:
             shared_xaxes=True,
             vertical_spacing=0.1,
         )
-        fig_t_0 = result_0["fit_result"]["fig"]
-        fig_t_1 = result_1["fit_result"]["fig"]
+        target_fit_result_0 = cast(FitResult, result_0["fit_result"])
+        target_fit_result_1 = cast(FitResult, result_1["fit_result"])
+        fig_t_0 = target_fit_result_0.get_figure()
+        fig_t_1 = target_fit_result_1.get_figure()
 
-        for data in fig_t_0.data:
-            data: go.Scatter
+        for trace in fig_t_0.data:
+            data = cast(go.Scatter, trace)
             fig_t.add_trace(
                 go.Scatter(
                     x=data.x,
@@ -3283,8 +3293,8 @@ class CalibrationService:
                 row=1,
                 col=1,
             )
-        for data in fig_t_1.data:
-            data: go.Scatter
+        for trace in fig_t_1.data:
+            data = cast(go.Scatter, trace)
             fig_t.add_trace(
                 go.Scatter(
                     x=data.x,
@@ -3339,17 +3349,17 @@ class CalibrationService:
             specs=[[{"type": "scatter3d"}, {"type": "scatter3d"}]],
             horizontal_spacing=0.01,
         )
-        fig_t_3d_0 = result_0["fit_result"]["fig3d"]
-        fig_t_3d_1 = result_1["fit_result"]["fig3d"]
-        for data in fig_t_3d_0.data:
+        fig_t_3d_0 = target_fit_result_0.get_figure("fig3d")
+        fig_t_3d_1 = target_fit_result_1.get_figure("fig3d")
+        for trace in fig_t_3d_0.data:
             fig_t_3d.add_trace(
-                data,
+                trace,
                 row=1,
                 col=1,
             )
-        for data in fig_t_3d_1.data:
+        for trace in fig_t_3d_1.data:
             fig_t_3d.add_trace(
-                data,
+                trace,
                 row=1,
                 col=2,
             )
@@ -3372,8 +3382,14 @@ class CalibrationService:
             margin=dict(t=90, b=10, l=10, r=10),
         )
 
-        spectators_fit_results_0 = result_0["spectators_fit_result"]
-        spectators_fit_results_1 = result_1["spectators_fit_result"]
+        spectators_fit_results_0 = cast(
+            dict[str, FitResult],
+            result_0["spectators_fit_result"],
+        )
+        spectators_fit_results_1 = cast(
+            dict[str, FitResult],
+            result_1["spectators_fit_result"],
+        )
         figs_s = {}
         figs_s_3d = {}
         for label in spectators_fit_results_0:
@@ -3386,8 +3402,10 @@ class CalibrationService:
                 - self.ctx.qubits[target_qubit].frequency
             )
 
-            fig_s_0: go.Figure = spectators_fit_results_0[label]["fig"]
-            fig_s_1: go.Figure = spectators_fit_results_1[label]["fig"]
+            fit_result_s_0 = spectators_fit_results_0[label]
+            fit_result_s_1 = spectators_fit_results_1[label]
+            fig_s_0 = fit_result_s_0.get_figure()
+            fig_s_1 = fit_result_s_1.get_figure()
 
             fig_s = viz.make_figure()
             fig_s.set_subplots(
@@ -3460,8 +3478,8 @@ class CalibrationService:
                 margin=dict(t=90),
             )
 
-            fig_s_3d_0 = spectators_fit_results_0[label]["fig3d"]
-            fig_s_3d_1 = spectators_fit_results_1[label]["fig3d"]
+            fig_s_3d_0 = fit_result_s_0.get_figure("fig3d")
+            fig_s_3d_1 = fit_result_s_1.get_figure("fig3d")
 
             fig_s_3d = viz.make_figure()
             fig_s_3d.set_subplots(

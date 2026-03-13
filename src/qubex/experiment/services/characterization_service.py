@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from copy import deepcopy
 from typing import Literal
 
@@ -26,7 +26,7 @@ from tqdm import tqdm
 from typing_extensions import deprecated
 
 import qubex.visualization as viz
-from qubex.analysis import fitting
+from qubex.analysis import FitStatus, fitting
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
@@ -57,6 +57,42 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+
+
+def _build_ramsey_sequence(
+    pulse_service: PulseService,
+    qubit_labels: Collection[str],
+    spectator_state: str,
+    second_rotation_axis: Literal["X", "Y"],
+    target_list: list[str],
+    target_qubits: list[str],
+    spectator_qubits: list[str],
+) -> Callable[[int], PulseSchedule]:
+    """Build one Ramsey sequence callable for the current target selection."""
+
+    def ramsey_sequence(T: int) -> PulseSchedule:
+        with PulseSchedule(target_list) as ps:
+            if spectator_state != "0":
+                for spectator in spectator_qubits:
+                    if spectator in qubit_labels:
+                        pulse = pulse_service.get_pulse_for_state(
+                            target=spectator,
+                            state=spectator_state,
+                        )
+                        ps.add(spectator, pulse)
+                ps.barrier()
+
+            for target in target_qubits:
+                x90 = pulse_service.get_hpi_pulse(target)
+                ps.add(target, x90)
+                ps.add(target, Blank(T))
+                if second_rotation_axis == "X":
+                    ps.add(target, x90.shifted(np.pi))
+                else:
+                    ps.add(target, x90.shifted(-np.pi / 2))
+        return ps
+
+    return ramsey_sequence
 
 
 DEFAULT_ELECTRICAL_DELAY_INTERVAL = 0.0
@@ -317,8 +353,10 @@ class CharacterizationService:
                 "signal": signal,
                 "noise": noise,
                 "snr": snr,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
                 "fig": figs,
-            }
+            },
+            figures=figs,
         )
 
     def sweep_readout_duration(
@@ -597,7 +635,7 @@ class CharacterizationService:
                         width=600,
                         height=400,
                     )
-                    fig_fit = fit_result["fig"]
+                    fig_fit = fit_result.figure
                     if fig_fit is not None:
                         viz.save_figure(
                             fig_fit,
@@ -618,8 +656,10 @@ class CharacterizationService:
                 "chevron_data": chevron_data,
                 "rabi_rates": rabi_rates,
                 "resonant_frequencies": resonant_frequencies,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
                 "fig": figs,
-            }
+            },
+            figures=figs,
         )
 
     def obtain_freq_rabi_relation(
@@ -995,12 +1035,11 @@ class CharacterizationService:
             if "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
 
-            if "fig" in fit_result:
-                figs[target] = fit_result["fig"]
+            fig = fit_result.figure
+            if fig is not None:
+                figs[target] = fig
 
-            if save_image:
-                fig = fit_result["fig"]
-                if fig is not None:
+                if save_image:
                     viz.save_figure(
                         fig,
                         name=f"readout_frequency_{target}",
@@ -1012,7 +1051,14 @@ class CharacterizationService:
         for target, freq in fit_data.items():
             print(f"{target}: {freq:.6f}")
 
-        return Result(data={"data": fit_data, "fig": figs})
+        return Result(
+            data={
+                "data": fit_data,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
+                "fig": figs,
+            },
+            figures=figs,
+        )
 
     def t1_experiment(
         self,
@@ -1118,7 +1164,7 @@ class CharacterizationService:
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
-                if fit_result["status"] == "success":
+                if fit_result.status is FitStatus.SUCCESS:
                     t1 = fit_result["tau"]
                     t1_err = fit_result["tau_err"]
                     r2 = fit_result["r2"]
@@ -1131,7 +1177,7 @@ class CharacterizationService:
                     )
                     data[target] = t1_data
 
-                    fig = fit_result["fig"]
+                    fig = fit_result.get_figure()
 
                     if save_image:
                         viz.save_figure(
@@ -1281,7 +1327,7 @@ class CharacterizationService:
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
-                if fit_result["status"] == "success":
+                if fit_result.status is FitStatus.SUCCESS:
                     t2 = fit_result["tau"]
                     t2_err = fit_result["tau_err"]
                     r2 = fit_result["r2"]
@@ -1294,7 +1340,7 @@ class CharacterizationService:
                     )
                     data[target] = t2_data
 
-                    fig = fit_result["fig"]
+                    fig = fit_result.get_figure()
 
                     if save_image:
                         viz.save_figure(
@@ -1383,34 +1429,15 @@ class CharacterizationService:
             print(f"Target qubits: {target_qubits}")
             print(f"Spectator qubits: {spectator_qubits}")
 
-            def ramsey_sequence(
-                T: int,
-                target_list: list[str] = target_list,
-                target_qubits: list[str] = target_qubits,
-                spectator_qubits: list[str] = spectator_qubits,
-            ) -> PulseSchedule:
-                with PulseSchedule(target_list) as ps:
-                    # Excite spectator qubits if needed
-                    if spectator_state != "0":
-                        for spectator in spectator_qubits:
-                            if spectator in self.ctx.qubit_labels:
-                                pulse = self.pulse.get_pulse_for_state(
-                                    target=spectator,
-                                    state=spectator_state,
-                                )
-                                ps.add(spectator, pulse)
-                        ps.barrier()
-
-                    # Ramsey sequence for the target qubit
-                    for target in target_qubits:
-                        x90 = self.pulse.get_hpi_pulse(target)
-                        ps.add(target, x90)
-                        ps.add(target, Blank(T))
-                        if second_rotation_axis == "X":
-                            ps.add(target, x90.shifted(np.pi))
-                        else:
-                            ps.add(target, x90.shifted(-np.pi / 2))
-                return ps
+            ramsey_sequence = _build_ramsey_sequence(
+                pulse_service=self.pulse,
+                qubit_labels=self.ctx.qubit_labels,
+                spectator_state=spectator_state,
+                second_rotation_axis=second_rotation_axis,
+                target_list=list(target_list),
+                target_qubits=list(target_qubits),
+                spectator_qubits=list(spectator_qubits),
+            )
 
             detuned_frequencies = {
                 target: self.ctx.qubits[target].frequency + detuning
@@ -1436,7 +1463,7 @@ class CharacterizationService:
                         offset_est=0.0,
                         plot=plot,
                     )
-                    if fit_result["status"] == "success":
+                    if fit_result.status is FitStatus.SUCCESS:
                         f = self.ctx.qubits[target].frequency
                         t2 = fit_result["tau"]
                         ramsey_freq = fit_result["f"]
@@ -1463,7 +1490,7 @@ class CharacterizationService:
                         print(f"  {target}: {ramsey_data.bare_freq:.6f}")
                         print("")
 
-                        fig = fit_result["fig"]
+                        fig = fit_result.get_figure()
 
                         if save_image:
                             viz.save_figure(
@@ -1671,7 +1698,7 @@ class CharacterizationService:
             ylabel=f"Normalized value : {target_qubit}",
         )
 
-        if fit_result["status"] != "success":
+        if fit_result.status is not FitStatus.SUCCESS:
             raise RuntimeError("Fitting failed in JAZZ experiment.")
 
         xi = fit_result["f"] * 1e-3 - rotation_frequency
@@ -2381,8 +2408,10 @@ class CharacterizationService:
                 "frequency_range": frequency_range,
                 "power_range": power_range,
                 "data": np.array(result),
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def measure_reflection_coefficient(
@@ -2499,7 +2528,7 @@ class CharacterizationService:
             print(f"κ_e : {fit_result['kappa_ex'] * 1e3:.6f} MHz")
             print(f"κ_i : {fit_result['kappa_in'] * 1e3:.6f} MHz")
 
-        fig = fit_result["fig"]
+        fig = fit_result.get_figure()
 
         if save_image:
             viz.save_figure(
@@ -2788,8 +2817,10 @@ class CharacterizationService:
                 "signals": signals,
                 "amplitudes": amplitudes,
                 "phases": phases,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     @deprecated("Use `measure_qubit_resonance` instead.")
@@ -2856,7 +2887,7 @@ class CharacterizationService:
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
         if plot:
-            fig = result["fig"]
+            fig = result.get_figure()
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
@@ -2967,13 +2998,15 @@ class CharacterizationService:
                     "phases": data,
                     "rabi_rate": None,
                     "estimated_amplitude": None,
+                    # TODO: Remove this legacy payload key after callers migrate to .figure.
                     "fig": None,
-                }
+                },
+                figure=None,
             )
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
         if plot:
-            fig = fit_result["fig"]
+            fig = fit_result.get_figure()
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
@@ -3003,9 +3036,11 @@ class CharacterizationService:
                 "phases": data,
                 "rabi_rate": rabi_rate,
                 "estimated_amplitude": estimated_amplitude,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
                 **fit_result,
-            }
+            },
+            figure=fig,
         )
 
     def qubit_spectroscopy(
@@ -3109,8 +3144,10 @@ class CharacterizationService:
                 "frequency_range": result1d["frequency_range"],
                 "power_range": power_range,
                 "data": np.array(result2d),
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def measure_dispersive_shift(
@@ -3292,8 +3329,10 @@ class CharacterizationService:
                 "signals_1": signals_1,
                 "phases_0": phases_0,
                 "phases_1": phases_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig1,
-            }
+            },
+            figure=fig1,
         )
 
     def find_optimal_readout_frequency(
@@ -3412,8 +3451,10 @@ class CharacterizationService:
                 "frequency_range": frequency_range,
                 "signals_0": signals_0,
                 "signals_1": signals_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def find_optimal_readout_amplitude(
@@ -3527,8 +3568,10 @@ class CharacterizationService:
                 "amplitude_range": amplitude_range,
                 "signals_0": signals_0,
                 "signals_1": signals_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
                 "fig": fig,
-            }
+            },
+            figure=fig,
         )
 
     def ckp_sequence(

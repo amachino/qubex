@@ -228,9 +228,32 @@ class ExperimentContext:
         for qubit in self.qubit_labels:
             classifier_path = self.classifier_dir / self.chip_id / f"{qubit}.pkl"
             if classifier_path.exists():
-                self._measurement.classifiers[qubit] = StateClassifier.load(  # type: ignore
-                    classifier_path
-                )
+                try:
+                    classifier = StateClassifier.load(classifier_path)
+                except Exception as exc:
+                    if not self._is_classifier_compatibility_error(exc):
+                        raise
+                    logger.warning(
+                        (
+                            f"Failed to load state classifier for {qubit} from "
+                            f"`{classifier_path}` due to a compatibility issue: "
+                            f"{exc}. The classifier was skipped."
+                        ),
+                    )
+                    continue
+                self._measurement.update_classifiers({qubit: classifier})
+
+    @staticmethod
+    def _is_classifier_compatibility_error(exc: BaseException) -> bool:
+        """Return whether a classifier load failure looks compatibility-related."""
+        if isinstance(
+            exc, (ModuleNotFoundError, ImportError, AttributeError, TypeError)
+        ):
+            return True
+        next_exc = exc.__cause__ or exc.__context__
+        if next_exc is None:
+            return False
+        return ExperimentContext._is_classifier_compatibility_error(next_exc)
 
     def _load_config(
         self,

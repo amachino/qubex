@@ -1,4 +1,4 @@
-"""Lightweight result container for experiments."""
+"""Fit result models and compatibility helpers."""
 
 from __future__ import annotations
 
@@ -6,23 +6,34 @@ import warnings
 from collections import UserDict
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
 
-from plotly.graph_objects import Figure
+import plotly.graph_objects as go
 
-_LEGACY_FIGURE_KEYS = {
+_LEGACY_FIT_FIGURE_KEYS = {
     "fig": "the `figure` attribute",
     "figure": "the `figure` attribute",
     "figs": "the `figures` attribute",
     "figures": "the `figures` attribute",
+    "fig3d": "the `figures` attribute",
 }
 
 
-class _ResultData(dict[str, object]):
-    """
-    Payload mapping for `Result`.
+class FitStatus(Enum):
+    """Status values for fit operations."""
 
-    This wrapper preserves plain mapping behavior while warning when callers
-    read legacy figure keys such as `"fig"` and `"figures"`.
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class _FitResultData(dict[str, object]):
+    """
+    Payload mapping for `FitResult`.
+
+    This wrapper preserves mapping-style access while warning when callers read
+    legacy figure keys from the payload.
     """
 
     def __getitem__(self, key: str) -> object:
@@ -37,61 +48,74 @@ class _ResultData(dict[str, object]):
 
     def _warn_if_legacy(self, key: str) -> None:
         """Warn when a legacy figure payload key is accessed."""
-        target = _LEGACY_FIGURE_KEYS.get(key)
+        target = _LEGACY_FIT_FIGURE_KEYS.get(key)
         if target is None:
             return
         warnings.warn(
-            f"Accessing legacy figure payload key `{key}` is deprecated; use `{target}`.",
+            f"Accessing legacy figure payload key `{key}` is deprecated; use {target}.",
             DeprecationWarning,
             stacklevel=3,
         )
 
 
-class Result(UserDict):
+class FitResult(UserDict):
     """
-    Generic experiment result with payload, figures, and metadata.
+    Generic fit result with payload, figures, status, and metadata.
 
-    `data` stores the mapping-style payload exposed by existing experiment APIs.
-    `figure` and `figures` hold the preferred visualization fields outside the
-    payload, while `created_at` records when the result was created.
+    `data` stores the mapping-style fit payload. `figure` and `figures` hold
+    the preferred visualization fields outside the payload, while `status`,
+    `message`, and `created_at` store fit state and metadata.
     """
+
+    status: FitStatus = FitStatus.SUCCESS
 
     def __init__(
         self,
-        data: Mapping[str, object] | None = None,
+        status: FitStatus,
+        message: str | None = None,
+        data: Mapping[str, Any] | None = None,
         *,
-        figure: Figure | None = None,
-        figures: Mapping[str, Figure] | None = None,
+        figure: go.Figure | None = None,
+        figures: Mapping[str, go.Figure] | None = None,
         created_at: str | None = None,
     ) -> None:
         """
-        Initialize an experiment result container.
+        Initialize one fit result container.
 
         Parameters
         ----------
+        status
+            Outcome status of the fit operation.
+        message
+            Human-readable summary of the fit outcome.
         data
-            Payload mapping returned by the experiment API.
+            Payload mapping returned by the fitting routine.
         figure
-            Primary figure associated with the result.
+            Primary figure associated with the fit result.
         figures
-            Named figure collection associated with the result.
+            Named figure collection associated with the fit result.
         created_at
             Creation timestamp in ISO 8601 format. Defaults to the current UTC
             time when omitted.
         """
         super().__init__()
-        self.data = _ResultData(dict(data) if data is not None else {})
+        self.data = _FitResultData(dict(data) if data is not None else {})
+        self.status = status
+        self.message = message
         self.figure = figure
         self.figures = figures
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
 
     def __repr__(self) -> str:
-        """Return a concise string representation."""
-        return f"<Result created_at={self.created_at} data={{...}}>"
+        """Return a compact representation of the fit result."""
+        return (
+            f"<FitResult status={self.status.value} "
+            f"message={self.message} data={{...}}>"
+        )
 
-    def get_figure(self, key: str | None = None) -> Figure:
+    def get_figure(self, key: str | None = None) -> go.Figure:
         """
-        Return one figure stored on the result.
+        Return one figure stored on the fit result.
 
         Parameters
         ----------
@@ -101,7 +125,7 @@ class Result(UserDict):
 
         Returns
         -------
-        Figure
+        go.Figure
             Requested Plotly figure.
 
         Raises
@@ -114,11 +138,13 @@ class Result(UserDict):
         """
         if key is None:
             if self.figure is None:
-                raise ValueError("Result does not contain a primary figure.")
+                raise ValueError("FitResult does not contain a primary figure.")
             return self.figure
 
         figures = self.figures or {}
         try:
             return figures[key]
         except KeyError:
-            raise KeyError(f"Result does not contain a figure named `{key}`.") from None
+            raise KeyError(
+                f"FitResult does not contain a figure named `{key}`."
+            ) from None

@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 import qubex.visualization as viz
-from qubex.analysis import fitting
+from qubex.analysis import FitStatus, fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     DEFAULT_INTERVAL,
@@ -212,7 +212,7 @@ def simultaneous_coherence_measurement(
             ylabel="Normalized signal",
             xaxis_type="linear",
         )
-        if fit_result_t1["status"] != "success":
+        if fit_result_t1.status is not FitStatus.SUCCESS:
             continue
 
         t1_data = T1Data.new(
@@ -224,8 +224,9 @@ def simultaneous_coherence_measurement(
         data_t1[target] = t1_data
 
         if save_image:
+            fig = fit_result_t1.get_figure()
             viz.save_figure(
-                fit_result_t1["fig"],
+                fig,
                 name=f"t1_{target}",
             )
 
@@ -240,7 +241,7 @@ def simultaneous_coherence_measurement(
             ylabel="Normalized signal",
             xaxis_type="linear",
         )
-        if fit_result_t2["status"] != "success":
+        if fit_result_t2.status is not FitStatus.SUCCESS:
             continue
 
         t2_data = T2Data.new(
@@ -252,8 +253,9 @@ def simultaneous_coherence_measurement(
         data_t2[target] = t2_data
 
         if save_image:
+            fig = fit_result_t2.get_figure()
             viz.save_figure(
-                fit_result_t2["fig"],
+                fig,
                 name=f"t2_echo_{target}",
             )
 
@@ -266,7 +268,7 @@ def simultaneous_coherence_measurement(
             offset_est=0.0,
             plot=plot,
         )
-        if fit_result_ramsey["status"] != "success":
+        if fit_result_ramsey.status is not FitStatus.SUCCESS:
             continue
 
         freq = exp.ctx.qubits[target].frequency
@@ -290,8 +292,9 @@ def simultaneous_coherence_measurement(
         data_ramsey[target] = ramsey_data
 
         if save_image:
+            fig = fit_result_ramsey.get_figure()
             viz.save_figure(
-                fit_result_ramsey["fig"],
+                fig,
                 name=f"ramsey_{target}",
             )
 

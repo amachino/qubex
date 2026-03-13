@@ -423,8 +423,9 @@ class BenchmarkingService:
                 )
 
                 if save_image:
+                    fig = fit_result.get_figure()
                     viz.save_figure(
-                        fit_result["fig"],
+                        fig,
                         name=f"rb_experiment_1q_{target}",
                     )
 
@@ -435,7 +436,10 @@ class BenchmarkingService:
                     **fit_result,
                 }
 
-        return Result(data=return_data)
+        return Result(
+            data=return_data,
+            figures={target: result["fig"] for target, result in return_data.items()},
+        )
 
     def rb_experiment_2q(
         self,
@@ -643,8 +647,9 @@ class BenchmarkingService:
                 )
 
                 if save_image:
+                    fig = fit_result.get_figure()
                     viz.save_figure(
-                        fit_result["fig"],
+                        fig,
                         name=f"rb_experiment_1q_{target}",
                     )
 
@@ -655,7 +660,10 @@ class BenchmarkingService:
                     **fit_result,
                 }
 
-        return Result(data=return_data)
+        return Result(
+            data=return_data,
+            figures={target: result["fig"] for target, result in return_data.items()},
+        )
 
     def irb_experiment(
         self,
@@ -881,9 +889,13 @@ class BenchmarkingService:
                 "gate_fidelity_err": gate_fidelity_err,
                 "rb_fit_result": rb_fit_result,
                 "irb_fit_result": irb_fit_result,
+                # TODO: Remove this legacy payload key after callers migrate to result.figures.
                 "fig": fig,
             }
-        return Result(data=results)
+        return Result(
+            data=results,
+            figures={target: result["fig"] for target, result in results.items()},
+        )
 
     def randomized_benchmarking(
         self,
@@ -1009,9 +1021,15 @@ class BenchmarkingService:
                     save_image=save_image,
                 )
                 results[target] = result[target]
-            result = Result(data=results)
+            result = Result(
+                data=results,
+                figures={target: entry["fig"] for target, entry in results.items()},
+            )
 
-        return Result(data=result.data)
+        return Result(
+            data=result.data,
+            figures=result.figures,
+        )
 
     def benchmark_1q(
         self,
