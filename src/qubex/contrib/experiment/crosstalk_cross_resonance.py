@@ -195,27 +195,24 @@ def measure_cr_crosstalk(
     target_states = []
     spectators_states = defaultdict(list)
 
-    with exp.ctx.modified_frequencies(
-        frequencies=dict.fromkeys(spectator_qubits, exp.ctx.targets[cr_label].frequency)
-    ):
-        for drive_time in time_range:
-            result = exp.measurement_service.state_tomography(
-                sequence=sequence_func(
-                    targets=[control_qubit, target_qubit, *spectator_qubits],
-                    drive_time=drive_time,
-                ),
-                x90=x90,
-                initial_state={control_qubit: control_state},
-                n_shots=n_shots,
-                shot_interval=shot_interval,
-                reset_awg_and_capunits=False,
-                plot=False,
-            )
-            control_states.append(np.array(result[control_qubit]))
-            target_states.append(np.array(result[target_qubit]))
+    for drive_time in time_range:
+        result = exp.measurement_service.state_tomography(
+            sequence=sequence_func(
+                targets=[control_qubit, target_qubit, *spectator_qubits],
+                drive_time=drive_time,
+            ),
+            x90=x90,
+            initial_state={control_qubit: control_state},
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            reset_awg_and_capunits=False,
+            plot=False,
+        )
+        control_states.append(np.array(result[control_qubit]))
+        target_states.append(np.array(result[target_qubit]))
 
-            for spectator in spectator_qubits:
-                spectators_states[spectator].append(np.array(result[spectator]))
+        for spectator in spectator_qubits:
+            spectators_states[spectator].append(np.array(result[spectator]))
 
     control_states = np.array(control_states)
     target_states = np.array(target_states)
@@ -817,5 +814,7 @@ def cr_crosstalk_hamiltonian_tomography(
             "fig_c": fig_c,
             "fig_t": fig_t,
             "figs_s": figs_s,
+            "fig_t_3d": fig_t_3d,
+            "figs_s_3d": figs_s_3d,
         }
     )
