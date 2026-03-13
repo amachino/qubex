@@ -6,6 +6,10 @@ from typing import Final
 
 from qubex.backend.quel1.quel1_backend_constants import SAMPLING_PERIOD_NS, WORD_LENGTH
 
+# Workaround capture length for strict QuEL-1 measurement paths.
+# Keep 16 raw samples (4 capture words, 32 ns) so the first dummy capture
+# absorbs the DSP demodulation/decimation pipeline transient; shorter lengths
+# can lead to broken-data mismatches such as 64 captured samples vs 65 expected.
 EXTRA_SUM_SECTION_LENGTH: Final[int] = WORD_LENGTH * 4  # samples
 EXTRA_POST_BLANK_LENGTH: Final[int] = WORD_LENGTH  # samples
 EXTRA_CAPTURE_LENGTH: Final[int] = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH
