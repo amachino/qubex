@@ -104,7 +104,7 @@ testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
 
 [tool.pyright]
-include = ["src", "packages", "tests"]
+include = ["src", "packages", "scripts", "tests"]
 exclude = [
     ".venv",
     "**/node_modules",

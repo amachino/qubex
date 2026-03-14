@@ -74,5 +74,5 @@ def on_serve(
 ) -> LiveReloadServer:
     """Watch the source tree so API docs rebuild during mkdocs serve."""
     repo_root = Path(config.config_file_path).parent
-    server.watch(str(repo_root / "src"), builder)
+    server.watch(str(repo_root / "src"))
     return server
