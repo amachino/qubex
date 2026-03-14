@@ -11,6 +11,12 @@
 - **Randomized Benchmarking**
 - **Pulse-level experiments and simulations**
 
+## Choose your entry point
+
+- **Experiment**: For researchers who want to run pulse-level experiments on qubits through a high-level workflow. See the [Experiment guide](https://amachino.github.io/qubex/user-guide/experiment/).
+- **Measurement**: For advanced users who need direct control over hardware-backed measurement sessions, custom schedules, and low-level readout workflows. See the [Measurement guide](https://amachino.github.io/qubex/user-guide/measurement/).
+- **Simulator**: For researchers who want to study pulse-level Hamiltonian dynamics without using real hardware. See the [Simulator guide](https://amachino.github.io/qubex/user-guide/simulator/).
+
 ## Requirements
 
 - Python 3.10 or higher

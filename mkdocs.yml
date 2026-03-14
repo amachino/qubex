@@ -61,7 +61,18 @@ nav:
   - Getting started:
       - Installation: user-guide/getting-started/installation.md
       - System configuration: user-guide/getting-started/system-configuration.md
+      - Choose your entry point: user-guide/getting-started/choose-your-entry-point.md
+  - Experiment:
+      - Overview: user-guide/experiment/index.md
       - Quickstart: user-guide/getting-started/quickstart.md
+      - Example workflows: user-guide/experiment/examples.md
+      - Community-contributed workflows: user-guide/getting-started/contrib-workflows.md
+  - Measurement:
+      - Overview: user-guide/measurement/index.md
+      - Example workflows: user-guide/measurement/examples.md
+  - Simulator:
+      - Overview: user-guide/simulator/index.md
+      - Example workflows: user-guide/simulator/examples.md
   - Examples: examples/index.md
   - Developer guide:
       - Overview: developer-guide/index.md

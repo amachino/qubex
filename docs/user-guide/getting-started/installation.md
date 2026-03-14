@@ -1,6 +1,8 @@
 # Installation
 
 Qubex runs on Python 3.10+ and supports macOS and Linux. Hardware backends require additional dependencies and are typically Linux-only.
+During the `v1.5.0 beta` period and until the official release, installing Qubex requires `uv`.
+We plan to publish Qubex to PyPI for the official release, which will make `pip install` available.
 
 ## Prepare Python environment
 
@@ -33,29 +35,17 @@ This section introduces installation options for standard use, backend-enabled s
 
 Use this option when you want the newest Qubex features from the repository.
 
-=== "uv"
-    ```bash
-    uv pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
-    ```
-
-=== "pip"
-    ```bash
-    pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
-    ```
+```bash
+uv pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
+```
 
 ### Install with backend support (Linux)
 
 Use this variant when you need packaged hardware backend dependencies on Linux hosts.
 
-=== "uv"
-    ```bash
-    uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
-    ```
-
-=== "pip"
-    ```bash
-    pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
-    ```
+```bash
+uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
+```
 
 This installs packaged backend dependencies such as `qxdriver-quel1`.
 QuEL-3 support also requires compatible `quelware-client` sources or packages.
@@ -74,15 +64,9 @@ Available backend extras:
 
 Use this option when you need a pinned version for reproducibility.
 
-=== "uv"
-    ```bash
-    uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@<version>"
-    ```
-
-=== "pip"
-    ```bash
-    pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@<version>"
-    ```
+```bash
+uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@<version>"
+```
 
 ### Install for development
 
@@ -94,3 +78,8 @@ git clone -b develop https://github.com/amachino/qubex.git
 cd qubex
 make sync
 ```
+
+## Next steps
+
+- If you plan to use real hardware, continue with [System configuration](system-configuration.md).
+- Choose the workflow that matches your goal: [Choose your entry point](choose-your-entry-point.md).

@@ -1,4 +1,4 @@
-# Community-Contributed Workflows
+# Community-contributed workflows
 
 Some additional workflows in Qubex are provided as community-contributed
 functions under `qubex.contrib` rather than as core `Experiment` methods.

@@ -2,6 +2,12 @@
 
 This section links to the rendered Jupyter notebooks shipped with the documentation.
 
+If you are new to Qubex, start with [Choose your entry point](../user-guide/getting-started/choose-your-entry-point.md) and then continue with the corresponding guide:
+
+- [Experiment](../user-guide/experiment/index.md)
+- [Measurement](../user-guide/measurement/index.md)
+- [Simulator](../user-guide/simulator/index.md)
+
 ## Experiment
 
 - [Basic usage](experiment/0_basic_usage.ipynb)

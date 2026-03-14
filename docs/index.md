@@ -15,6 +15,11 @@ Lower-level `Measurement` APIs are available for advanced control.
 
 ## Documentation map
 
-- [Getting started](user-guide/getting-started/installation.md)
+- [Installation](user-guide/getting-started/installation.md)
+- [System configuration](user-guide/getting-started/system-configuration.md)
+- [Choose your entry point](user-guide/getting-started/choose-your-entry-point.md)
+- [Experiment guide](user-guide/experiment/index.md)
+- [Measurement guide](user-guide/measurement/index.md)
+- [Simulator guide](user-guide/simulator/index.md)
 - [Examples](examples/index.md)
 - [API reference](api-reference/qubex/index.md)
