@@ -18,6 +18,7 @@ from rich.table import Table
 from typing_extensions import deprecated
 
 from qubex.diagnostics import ChipInspector
+from qubex.experiment.models.result import Result
 from qubex.system import LatticeGraph, PortType, SystemManager
 from qubex.system.control_system import CapPort, GenPort
 from qubex.visualization import show_figure
@@ -58,7 +59,7 @@ def check_skew(
     config_dir: str | None = None,
     skew_file: str | None = None,
     box_file: str | None = None,
-) -> dict:
+) -> Result:
     """Check the skew of the boxes."""
     if estimate is None:
         estimate = True
@@ -97,7 +98,7 @@ Do you want to continue?
     )
     if not confirmed:
         logger.info("Operation cancelled.")
-        return {}
+        return Result()
 
     all_box_ids = list({*box_ids, ref_port})
     run_skew_measurement = _require_backend_callable("run_skew_measurement")
@@ -116,10 +117,13 @@ Do you want to continue?
     rendered_figure = go.Figure(fig)
     rendered_figure.update_layout(template="qubex")
     show_figure(rendered_figure, filename="skew_check")
-    return {
-        "skew": skew,
-        "fig": fig,
-    }
+    return Result(
+        data={
+            "skew": skew,
+            "fig": fig,
+        },
+        figure=fig,
+    )
 
 
 def get_quel1_box(box_id: str) -> Quel1Box:

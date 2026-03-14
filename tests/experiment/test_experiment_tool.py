@@ -8,8 +8,10 @@ from types import SimpleNamespace
 from typing import cast
 
 import plotly.graph_objects as go
+import pytest
 
 from qubex.experiment import experiment_tool
+from qubex.experiment.models.result import Result
 from qubex.system.control_system import PortType
 from qubex.visualization.style import FONT_FAMILY
 
@@ -224,7 +226,7 @@ def test_print_chip_info_uses_active_system_id_for_chip_summary(
 def test_check_skew_renders_figure_widget_via_plotly_figure(
     monkeypatch, tmp_path
 ) -> None:
-    """Given a FigureWidget skew plot, when check_skew renders it, then it uses a detached Plotly figure."""
+    """Given a FigureWidget skew plot, check_skew should return Result and preserve legacy fig access."""
     figure_widget = go.FigureWidget()
     figure_widget.add_scatter(y=[1, 2, 3])
     backend = FakeBackendControllerWithSkew(figure_widget)
@@ -256,7 +258,11 @@ def test_check_skew_renders_figure_widget_via_plotly_figure(
 
     rendered_figure = shown["figure"]
     assert isinstance(rendered_figure, go.Figure)
+    assert isinstance(result, Result)
     assert result == {"skew": {"status": "ok"}, "fig": figure_widget}
+    assert result.figure is figure_widget
+    with pytest.warns(DeprecationWarning, match="figure` attribute"):
+        assert result["fig"] is figure_widget
     rendered_layout = rendered_figure.to_dict()["layout"]
     assert rendered_layout["title"]["text"] == "Skew : BOX1 (Ref. REF)"
     assert rendered_layout["width"] == 800
