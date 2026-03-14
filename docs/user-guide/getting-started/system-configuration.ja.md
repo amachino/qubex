@@ -1,7 +1,7 @@
 # システム設定
 
 1 つの具体的な装置構成を選ぶ識別子として、`system_id` を使ってください。
-1 つの system には、チップのメタデータ、バックエンド種別、バックエンド固有の実行設定、そして mux と物理ポートの対応をまとめます。
+1 つの system には、チップのメタデータ、バックエンド種別、バックエンド固有の実行設定、そして読み出し MUX と物理ポートの対応をまとめます。
 
 `chip_id` と `system_id` はユーザー定義のラベルです。Qubex はどちらにも特定の命名規則を要求しません。
 
@@ -18,7 +18,7 @@
 
 ## 推奨ディレクトリ構成
 
-共有カタログは 1 つの config ディレクトリにまとめ、パラメータファイルは実行したい system ごとにディレクトリを分ける構成を推奨します。
+共有カタログは 1 つの config ディレクトリにまとめ、システム固有のパラメータファイルは実行したいシステムごとにディレクトリを分ける構成を推奨します。
 
 ```text
 qubex-config/
@@ -41,12 +41,12 @@ qubex-config/
       calib_note.json
 ```
 
-- `config/` には共有の system catalog を置きます。
+- `config/` には共有のシステム設定ファイルを置きます。
 - `params/<system_id>/` の各ファイルは、1 つのパラメータファミリを表します。
-- `calibration/<system_id>/calib_note.json` は既定の calibration note の保存先です。
-- `skew.yaml` は任意ですが、QuEL-1 の skew calibration ワークフローでは通常必要になります。
+- `calibration/<system_id>/calib_note.json` は既定の較正ファイルの保存先です。
+- `skew.yaml` は任意ですが、複数の QuEL-1 制御装置を用いた同期実験を行う場合に必要になります。
 
-## 共有 config ファイルを定義する
+## 共有設定ファイルを定義する
 
 ### `chip.yaml`
 
@@ -124,7 +124,7 @@ SYSTEM_A:
     read_in: BOX_A:7
 ```
 
-Qubex は `wiring.yaml` で `BOX:PORT` と `BOX-PORT` の両方を受け付けますが、保守しやすさのためにはどちらかに統一するのがよいです。
+Qubex は `wiring.yaml` で `BOX:PORT` と `BOX-PORT` の両方を受け付けますが、保守のしやすさのためにはどちらかに統一することを推奨します。
 
 ## パラメータファイルを定義する
 
@@ -142,7 +142,8 @@ data:
 
 - ファイルは、Qubex に渡す `params_dir` の下に置いてください。
 - qubit 単位のパラメータでは、キーに `0` や `1` のような整数インデックス、あるいは `Q000` や `Q001` のようなラベルを使えます。
-- `meta.unit` を設定すると、Qubex は値を内部の基底単位へ変換します。周波数系は `GHz`、時間系は `ns` です。
+- 文字列ラベルを使う場合は、チップの量子ビット数に応じて桁数が変わることに注意してください。
+- `meta.unit` を設定すると、Qubex は値を内部の基底単位 (`GHz`, `ns`) へ変換します。
 - `meta.default` を設定すると、`data` 中の `None` はその既定値にフォールバックします。
 
 旧来の `params.yaml` と `props.yaml` も互換入力としてサポートされています。旧形式の map と分割 YAML が両方ある場合、Qubex はまず分割 YAML を読み込み、足りないキーだけ旧形式ファイルから補います。
@@ -175,5 +176,3 @@ loader = ConfigLoader(
 
 system = loader.get_experiment_system()
 ```
-
-ファイルを用意したら、次は [クイックスタート](quickstart.md) に進んでください。

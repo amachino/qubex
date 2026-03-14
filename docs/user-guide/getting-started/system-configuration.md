@@ -192,5 +192,3 @@ loader = ConfigLoader(
 
 system = loader.get_experiment_system()
 ```
-
-After the files are in place, continue with [Quickstart](quickstart.md).

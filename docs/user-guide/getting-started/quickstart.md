@@ -223,6 +223,6 @@ pulse, and finally performs a second readout. Because `RQ0` is read out twice,
 
 ## Next steps
 
-- Explore the broader `Experiment` workflow: [Experiment overview](../experiment/index.md)
+- Explore the broader Experiment workflow: [Experiment](../experiment/index.md)
 - Continue with curated notebooks: [Experiment example workflows](../experiment/examples.md)
 - Use advanced contrib routines when needed: [Community-contributed workflows](contrib-workflows.md)

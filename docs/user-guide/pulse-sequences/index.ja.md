@@ -1,21 +1,20 @@
-# `PulseSchedule` の組み方
+# パルスシーケンスの組み方
 
-`PulseSchedule` は、Qubex でパルスレベル系列を表す共通コンテナです。
-`Experiment` と `Simulator` の両方で使われる共有概念であり、measurement 側でも
-パルス系列を capture や execution の要求に変換するときに登場します。
+`PulseSchedule` は、Qubex でパルスシーケンスを表す共通コンテナです。
+`Experiment` と `QuantumSimulator` の両方で使われる共有概念です。
 
-このページは、まずパルス系列の組み方を理解してから、
+このページは、まずパルスシーケンスの組み方を理解してから、
 それを実機で流すかオフラインで使うかを決めたいときの入口です。
 
 ## `PulseSchedule` は何に使うか
 
 - 1 つ以上の channel にまたがる時系列の pulse event を表現する
 - 実機ワークフローとシミュレーションワークフローのあいだで同じ pulse object や schedule パターンを再利用する
-- まず制御系列を組み立て、その後で実行方法や解析方法を選ぶ
+- まずパルスシーケンスを組み立て、その後で実行方法や解析方法を選ぶ
 
 ## 最小パターン
 
-schedule を作り、`with` ブロックの中で pulse を追加します。
+`PulseSchedule` インスタンスを作り、`with` ブロックの中で pulse を追加します。
 次の block に進む前に channel を揃えたいときは `barrier()` を使います。
 
 ```python
@@ -37,17 +36,19 @@ with schedule as s:
 schedule.plot()
 ```
 
-## 基本の考え方
+## 使い方
 
 - `add(channel, pulse)`: 1 つの channel に pulse event を配置する
 - `barrier()`: 次の block に入る前に channel を揃える
+- `barrier(labels=[...])`: 特定の channel だけに barrier を適用する
+- `call(schedule)`: 別の `PulseSchedule` オブジェクトをその場に挿入する
 - 自動 padding: `with` ブロックを抜けると、各 channel は同じ長さに揃えられる
 - pulse の再利用: `scaled()` や `shifted()` を使って、1 つの base pulse から派生 pulse を作れる
 
-## 次にどこで使うか
+## このあと使う場面
 
 - `Experiment`: 実機で流すワークフローには [クイックスタート](../getting-started/quickstart.md) から進む
-- `Simulator`: 同じ pulse object と schedule の組み方を [Simulator サンプルワークフロー](../simulator/examples.md) で再利用する
+- `QuantumSimulator`: 同じ pulse object と schedule の組み方を [QuantumSimulator サンプルワークフロー](../simulator/examples.md) で再利用する
 - `低レベル API`: [Measurement API 概要](../measurement/index.md) から measurement 側のフローに変換する
 
 ## さらに学ぶ

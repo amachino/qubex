@@ -1,6 +1,6 @@
-# Simulator サンプルワークフロー
+# QuantumSimulator サンプルワークフロー
 
-このページでは、`Simulator` ワークフローの主要な notebook 入口を紹介します。
+このページでは、`QuantumSimulator` ワークフローの主要な notebook 入口を紹介します。
 実機ベースの実行に進む前に、パルスレベルのダイナミクスをオフラインで確認したいときに使ってください。
 
 ## 推奨する出発点
@@ -20,5 +20,5 @@
 
 ## 関連ページ
 
-- [Simulator 概要](index.md)
+- [QuantumSimulator](index.md)
 - [サンプル集全体](../../examples/index.md)

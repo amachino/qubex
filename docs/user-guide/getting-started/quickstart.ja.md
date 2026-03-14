@@ -85,11 +85,11 @@ print("single:", result.data[Q0].kerneled)
 
 `sequence` に含まれる各 qubit に対して、Qubex は制御波形を適用し、対応する readout resonator へ readout pulse を送り、その反射信号を返します。`kerneled` は時間積分した反射信号を複素 I/Q データで表したものです。`avg` モードでは単一の複素数、`single` モードでは shot ごとの複素数配列になります。
 
-## 5. `PulseSchedule` でパルス系列を構築する
+## 5. `PulseSchedule` でパルスシーケンスを構築する
 
-再利用可能な pulse object から制御系列を明示的に組み立てたい場合は `PulseSchedule` を作成します。
+再利用可能な pulse object からパルスシーケンスを明示的に組み立てたい場合は `PulseSchedule` を作成します。
 
-ワークフローに依らない schedule 構築の説明は [PulseSchedule の組み方](../pulse-sequences/index.md) を参照してください。
+ワークフローに依らない schedule 構築の説明は [パルスシーケンスの組み方](../pulse-sequences/index.md) を参照してください。
 
 ```python
 pulse = qx.pulse.Gaussian(duration=64, amplitude=0.05, sigma=16)
@@ -105,7 +105,7 @@ with schedule as s:
 schedule.plot()
 ```
 
-`PulseSchedule` を作成したら、`with` ブロック内で各 channel に対して `add()` を呼び、pulse を追加します。次の block の前で channel を揃えたいときは `barrier()` を使います。`with` ブロックを抜けると、Qubex は全 channel を自動的に同じ長さまで pad します。この例では制御系列だけを構築しており、`scaled()` や `shifted()` で同じベース pulse から派生 pulse を作る方法も示しています。
+`PulseSchedule` を作成したら、`with` ブロック内で各 channel に対して `add()` を呼び、pulse を追加します。次の block の前で channel を揃えたいときは `barrier()` を使います。`with` ブロックを抜けると、Qubex は全 channel を自動的に同じ長さまで pad します。この例ではパルスシーケンスだけを構築しており、`scaled()` や `shifted()` で同じベース pulse から派生 pulse を作る方法も示しています。
 
 ## 6. `sweep_parameter` で parameter を掃引する
 
@@ -192,6 +192,6 @@ print("n_captures:", len(result.data[Q0]))
 
 ## 次のステップ
 
-- より広い `Experiment` ワークフローを見る: [Experiment 概要](../experiment/index.md)
+- より広い Experiment ワークフローを見る: [`Experiment` クラス](../experiment/index.md)
 - 整理された notebook 集へ進む: [Experiment サンプルワークフロー](../experiment/examples.md)
 - より高度な contrib ルーチンを使う: [コミュニティ提供ワークフロー](contrib-workflows.md)

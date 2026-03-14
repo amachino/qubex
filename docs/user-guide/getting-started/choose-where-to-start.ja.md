@@ -1,44 +1,54 @@
 # 始め方を選ぶ
 
-Qubex のドキュメントは、2 つの推奨ワークフロー、1 つの共有概念セクション、
-1 つの専門 API セクションで構成されています。
-多くの利用者は `Experiment` か `Simulator` から始めるのが適切です。
+Qubex の使い始め方は、まず環境を用意し、その後で目的に合う入口へ進む流れです。
+このページでは、実際の進み方に合わせてどのページから入るべきかを整理します。
 
-## まずはここから
+## 先に準備すること
 
-| 開始点 | こんなときに選ぶ | 次に見るページ |
-| --- | --- | --- |
-| `Experiment` | 実機実験を、セットアップから解析まで含む推奨ワークフローで進めたい | [Experiment 概要](../experiment/index.md) |
-| `Simulator` | 実機に接続せず、パルスレベルのダイナミクスをオフラインで扱いたい | [Simulator 概要](../simulator/index.md) |
+- すべての利用者は、まず [インストール](installation.md) を行います。
+- 実機を使う Experiment と 低レベル API では、続けて [システム設定](system-configuration.md) を用意します。
+- QuantumSimulator だけを使う場合は、実機向けの設定ファイルは不要です。
 
-## 共有の pulse 系列モデルを先に学ぶ
+## 実機実験を進めたいなら Experiment
 
-実機で流すか、オフラインで使うかを決める前に、Qubex で pulse 系列をどう組むか
-知りたい場合は `パルスシーケンス` から入ります。
+実機実験を高レベルなワークフローで進めたい場合の、推奨される入口です。
+装置接続、測定実行、量子デバイスの特性評価、較正、ベンチマークまでを一貫して扱えます。
 
 推奨する進み方:
 
-- [PulseSchedule の組み方](../pulse-sequences/index.md)
-- [Pulse tutorial notebook](../../examples/pulse/tutorial.ipynb)
+1. [`Experiment` クラス](../experiment/index.md) で全体像を確認する
+2. [クイックスタート](quickstart.md) で基本ワークフローを一通り試す
+3. [Experiment サンプルワークフロー](../experiment/examples.md) で notebook をたどる
+4. 必要に応じて [コミュニティ提供ワークフロー](contrib-workflows.md) を使う
 
-## 必要なときだけ低レベル API を使う
+## 実機なしで試したいなら QuantumSimulator
 
-session、schedule、capture/readout、sweep、backend 実行の詳細を主語にしたい場合は、
-`低レベル API` に進みます。
-このセクションの中心にある `Measurement` は、`Experiment` における session
-lifecycle と measurement execution を支える基盤でもあります。
+実機に接続せず、パルスレベルのダイナミクスやパルス設計をオフラインで試したい場合の入口です。
+モデルの振る舞いを確かめたいときや、実機投入前に試行錯誤したいときに向いています。
 
 推奨する進み方:
 
-- [低レベル API 概要](../low-level-apis/index.md)
-- [Measurement API 概要](../measurement/index.md)
-- [Measurement サンプルワークフロー](../measurement/examples.md)
+1. [QuantumSimulator](../simulator/index.md) で扱える範囲を確認する
+2. 必要に応じて [パルスシーケンスの組み方](../pulse-sequences/index.md) を読む
+3. [QuantumSimulator サンプルワークフロー](../simulator/examples.md) から notebook を始める
 
-## セットアップに関する補足
+## measurement 側を直接扱いたいなら 低レベル API
 
-- まず Qubex をインストールします: [インストール](installation.md)
-- `Experiment` と実機ベースの `低レベル API` では設定ファイルと parameter ファイルが必要です: [システム設定](system-configuration.md)
-- `Simulator` は実機向け設定ファイルを必要としません
+session、schedule、capture/readout、sweep、backend integration などを
+直接扱いたい場合の入口です。通常の実機実験では Experiment を使い、
+measurement 側の概念を主役にしたいときだけこちらを選びます。
+
+推奨する進み方:
+
+1. [低レベル API 概要](../low-level-apis/index.md) でこのセクションの役割を確認する
+2. 必要に応じて [パルスシーケンスの組み方](../pulse-sequences/index.md) を読む
+3. [Measurement API 概要](../measurement/index.md) で API の中心概念を確認する
+4. [Measurement サンプルワークフロー](../measurement/examples.md) から notebook を始める
+
+## 補助的に読むページ
+
+- [パルスシーケンスの組み方](../pulse-sequences/index.md): Experiment、QuantumSimulator、Measurement で共通して使う `PulseSchedule` の考え方を整理したいときに読みます。
+- [サンプル集](../../examples/index.md): 目的別に notebook を探したいときに使います。
 
 ## 利用者ではなく開発者として参加する
 

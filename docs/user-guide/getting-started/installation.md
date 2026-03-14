@@ -1,14 +1,12 @@
 # Installation
 
-Qubex runs on Python 3.10+ and supports macOS and Linux. Hardware backends require additional dependencies and are typically Linux-only.
+Qubex runs on Python 3.10+. When you are not using hardware backends, it is not tied to a specific operating system. Hardware backends require additional dependencies and typically assume a Linux host.
 During the `v1.5.0 beta` period and until the official release, installing Qubex requires `uv`.
 We plan to publish Qubex to PyPI for the official release, which will make `pip install` available.
 
 ## Prepare Python environment
 
-We recommend using [uv](https://docs.astral.sh/uv/) to manage your Python installation and virtual environments. `uv` is a fast, standalone tool that helps keep environments reproducible.
-
-Install Python first if it is not already available on your system.
+We recommend using [uv](https://docs.astral.sh/uv/) to manage your Python installation and virtual environments. `uv` is a tool that keeps Python installation, virtual-environment creation, and dependency management in one place.
 
 ## Create virtual environment
 
@@ -49,10 +47,6 @@ uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
 ```
 
 This installs the backend libraries required for hardware-backed execution.
-QuEL-3 support also requires compatible `quelware-client` sources or packages.
-For repository development, `packages/quelware-client` is fetched as a
-submodule, while a local `lib/quelware-client-internal` checkout takes
-precedence when present.
 
 ### Install specific version
 
@@ -75,5 +69,5 @@ make sync
 
 ## Next steps
 
-- If you plan to use real hardware, continue with [System configuration](system-configuration.md).
-- Choose the path that matches your goal: [Choose where to start](choose-where-to-start.md).
+- Start with [Choose where to start](choose-where-to-start.md) to pick the entry point that matches your goal.
+- If you are moving on to hardware-backed `Experiment` or `Low-level APIs`, continue with [System configuration](system-configuration.md).

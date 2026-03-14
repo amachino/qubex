@@ -23,14 +23,14 @@
 
 1. [インストール](../getting-started/installation.md) で Qubex を入れる
 2. [システム設定](../getting-started/system-configuration.md) で実機設定を用意する
-3. 必要に応じて共有の pulse 系列モデルを確認する: [PulseSchedule の組み方](../pulse-sequences/index.md)
+3. 必要に応じて共有のパルスシーケンスモデルを確認する: [パルスシーケンスの組み方](../pulse-sequences/index.md)
 4. [低レベル API 概要](../low-level-apis/index.md) を確認する
 5. [Measurement サンプルワークフロー](examples.md) から notebook を始める
 
 ## 次のような場合は Experiment を選ぶ
 
 - 実機実験の多くで推奨されるユーザー向けワークフローを使いたい
-- 評価、較正、ベンチマークの組み込みルーチンを使いたい
+- 量子デバイスの特性評価、較正、ベンチマークの組み込みルーチンを使いたい
 - measurement 側の語彙を前面に出さず、セットアップ、実行、解析まで 1 つの facade で扱いたい
 
-その場合は [Experiment 概要](../experiment/index.md) を参照してください。
+その場合は [`Experiment` クラス](../experiment/index.md) を参照してください。

@@ -5,7 +5,7 @@ This section links to the rendered Jupyter notebooks shipped with the documentat
 If you are new to Qubex, start with [Choose where to start](../user-guide/getting-started/choose-where-to-start.md) and then continue with the corresponding guide:
 
 - [Experiment](../user-guide/experiment/index.md)
-- [Simulator](../user-guide/simulator/index.md)
+- [QuantumSimulator](../user-guide/simulator/index.md)
 - [Low-level APIs](../user-guide/low-level-apis/index.md)
 
 ## Experiment
@@ -30,7 +30,7 @@ If you are new to Qubex, start with [Choose where to start](../user-guide/gettin
 - [Sweep measurement executor](measurement/sweep_measurement_executor.ipynb)
 - [QuEL-3 sequencer builder flow](measurement/quel3_sequencer_builder_flow.ipynb)
 
-## Simulator
+## QuantumSimulator
 
 - [Rabi oscillation](simulator/1_rabi_oscillation.ipynb)
 - [Two coupled qubits](simulator/2_coupled_qubits.ipynb)

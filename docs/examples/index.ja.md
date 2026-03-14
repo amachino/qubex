@@ -4,8 +4,8 @@
 
 Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-started/choose-where-to-start.md) から始めて、対応するガイドに進んでください。
 
-- [Experiment](../user-guide/experiment/index.md)
-- [Simulator](../user-guide/simulator/index.md)
+- [`Experiment` クラス](../user-guide/experiment/index.md)
+- [QuantumSimulator](../user-guide/simulator/index.md)
 - [低レベル API](../user-guide/low-level-apis/index.md)
 
 ## Experiment
@@ -30,7 +30,7 @@ Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-sta
 - [Sweep measurement executor](measurement/sweep_measurement_executor.ipynb)
 - [QuEL-3 sequencer builder flow](measurement/quel3_sequencer_builder_flow.ipynb)
 
-## Simulator
+## QuantumSimulator
 
 - [ラビ振動](simulator/1_rabi_oscillation.ipynb)
 - [結合した 2 量子ビット](simulator/2_coupled_qubits.ipynb)
@@ -44,7 +44,7 @@ Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-sta
 
 ## Pulse
 
-- [PulseSchedule の組み方](../user-guide/pulse-sequences/index.md)
+- [パルスシーケンスの組み方](../user-guide/pulse-sequences/index.md)
 - [Pulse チュートリアル](pulse/tutorial.ipynb)
 - [Shape hash と waveform 再利用](pulse/shape_hash_and_waveform_reuse.ipynb)
 

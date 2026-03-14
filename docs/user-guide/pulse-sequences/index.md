@@ -1,7 +1,7 @@
 # Build pulse sequences with `PulseSchedule`
 
 `PulseSchedule` is Qubex's shared container for pulse-level sequences.
-It is a cross-cutting concept used by both `Experiment` and `Simulator`, and it
+It is a cross-cutting concept used by both `Experiment` and `QuantumSimulator`, and it
 also appears in measurement-side workflows when pulse schedules are converted
 into capture or execution requests.
 
@@ -48,7 +48,7 @@ schedule.plot()
 ## Where to use it next
 
 - `Experiment`: pass a `PulseSchedule` to hardware-backed workflows such as the [Quickstart](../getting-started/quickstart.md)
-- `Simulator`: reuse the same pulse objects and schedule-building style in [Simulator example workflows](../simulator/examples.md)
+- `QuantumSimulator`: reuse the same pulse objects and schedule-building style in [QuantumSimulator example workflows](../simulator/examples.md)
 - `Low-level APIs`: convert pulse schedules into measurement-side flows from [Measurement API overview](../measurement/index.md)
 
 ## Learn more

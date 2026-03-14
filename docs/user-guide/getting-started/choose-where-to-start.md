@@ -1,45 +1,59 @@
 # Choose where to start
 
-Qubex documentation is organized around two recommended workflows, one shared
-concept area, and one specialized API area.
-For most users, the right place to start is either `Experiment` or `Simulator`.
+Getting started with Qubex is a two-step process: prepare the environment, then
+follow the entry point that matches your goal.
+This page lays out that flow in the same order you will actually use it.
 
-## Start with one of these
+## Prepare these first
 
-| Start here | Use it when you want to | Next step |
-| --- | --- | --- |
-| `Experiment` | Run hardware-backed experiments through the recommended user-facing workflow, from setup through analysis | [Experiment overview](../experiment/index.md) |
-| `Simulator` | Study pulse-level dynamics offline without connecting to hardware | [Simulator overview](../simulator/index.md) |
+- Every user should start with [Installation](installation.md).
+- Experiment and hardware-backed Low-level APIs also require [System configuration](system-configuration.md).
+- QuantumSimulator does not require hardware configuration files.
 
-## Learn the shared pulse-sequence model
+## Choose Experiment for hardware-backed experiments
 
-Choose `Pulse sequences` when you want to learn how Qubex builds pulse-level
-sequences before deciding whether to execute them on hardware or use them in
-offline studies.
-
-Recommended path:
-
-- [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
-- [Pulse tutorial notebook](../../examples/pulse/tutorial.ipynb)
-
-## Use Low-level APIs when needed
-
-Choose `Low-level APIs` when sessions, schedules, capture/readout behavior,
-sweeps, or backend execution details need to be your main abstraction.
-This section is centered on `Measurement`, which underpins session lifecycle
-and measurement execution in `Experiment`.
+This is the recommended entry point when you want a high-level workflow for real
+hardware experiments.
+Use it for connection, measurement execution, characterization, calibration,
+benchmarking, and result analysis in one path.
 
 Recommended path:
 
-- [Low-level APIs overview](../low-level-apis/index.md)
-- [Measurement API overview](../measurement/index.md)
-- [Measurement example workflows](../measurement/examples.md)
+1. Read the [Experiment](../experiment/index.md)
+2. Work through [Quickstart](quickstart.md)
+3. Continue with [Experiment example workflows](../experiment/examples.md)
+4. Use [Community-contributed workflows](contrib-workflows.md) when needed
 
-## Setup notes
+## Choose QuantumSimulator for offline studies
 
-- Install Qubex first: [Installation](installation.md)
-- `Experiment` and hardware-backed `Low-level APIs` require configuration and parameter files: [System configuration](system-configuration.md)
-- `Simulator` does not require hardware configuration files
+This is the entry point when you want to study pulse-level dynamics or iterate
+on pulse design without connecting to hardware.
+Use it for offline modeling and trial-and-error before moving to a real system.
+
+Recommended path:
+
+1. Read the [QuantumSimulator](../simulator/index.md)
+2. Learn the shared model if needed: [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
+3. Start with [QuantumSimulator example workflows](../simulator/examples.md)
+
+## Choose Low-level APIs when measurement concepts must be primary
+
+This is the entry point when you need sessions, schedules, capture/readout,
+sweeps, or backend integration to be the main abstraction.
+For most hardware-backed experiments, prefer Experiment and come here only
+when measurement-side control is the point.
+
+Recommended path:
+
+1. Read the [Low-level APIs overview](../low-level-apis/index.md)
+2. Learn the shared model if needed: [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
+3. Read the [Measurement API overview](../measurement/index.md)
+4. Start with [Measurement example workflows](../measurement/examples.md)
+
+## Supporting pages
+
+- [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md): use this when you want to understand the shared `PulseSchedule` model used across Experiment, QuantumSimulator, and Measurement.
+- [Examples](../../examples/index.md): use this when you want to browse notebooks by topic instead of by workflow.
 
 ## Contributing instead of using Qubex
 

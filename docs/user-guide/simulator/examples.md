@@ -1,6 +1,6 @@
-# Simulator example workflows
+# QuantumSimulator example workflows
 
-This page highlights the main notebook entry points for the `Simulator` workflow.
+This page highlights the main notebook entry points for the `QuantumSimulator` workflow.
 Use these notebooks to study pulse-level dynamics offline before moving to hardware-backed execution.
 
 ## Recommended starting points
@@ -20,5 +20,5 @@ Use these notebooks to study pulse-level dynamics offline before moving to hardw
 
 ## Related pages
 
-- [Simulator overview](index.md)
+- [QuantumSimulator](index.md)
 - [Full examples index](../../examples/index.md)

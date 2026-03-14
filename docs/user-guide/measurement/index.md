@@ -33,4 +33,4 @@ This page sits under [Low-level APIs](../low-level-apis/index.md).
 - You want built-in characterization, calibration, and benchmarking routines
 - You prefer one facade for setup, execution, and analysis without centering measurement-side vocabulary
 
-See [Experiment overview](../experiment/index.md) for that path.
+See [Experiment](../experiment/index.md) for that path.

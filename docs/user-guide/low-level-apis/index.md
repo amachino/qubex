@@ -4,7 +4,7 @@ This section is for developers who work on backend integration, readout
 utilities, measurement-side tooling, or sequencer-oriented execution paths.
 
 Most Qubex users should start with [Experiment](../experiment/index.md) on real
-hardware or [Simulator](../simulator/index.md) for offline work.
+hardware or [QuantumSimulator](../simulator/index.md) for offline work.
 Come here when you need measurement-side concepts such as sessions, schedules,
 capture/readout, sweeps, or backend execution details to be your primary
 abstraction.
