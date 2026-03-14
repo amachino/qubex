@@ -28,7 +28,7 @@ Lower-level `Measurement` APIs are available for advanced control.
 ## Explore examples and APIs
 
 - [Examples](examples/index.md)
-- [API reference](api-reference/qubex/index.md)
+- [API reference](https://amachino.github.io/qubex/api-reference/qubex/)
 
 ## Contribute to Qubex
 

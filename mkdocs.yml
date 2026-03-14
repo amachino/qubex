@@ -1,5 +1,6 @@
 site_name: Qubex
 site_description: "Qubex: Qubit experiment framework"
+site_url: https://amachino.github.io/qubex/
 repo_url: https://github.com/amachino/qubex
 repo_name: amachino/qubex
 
@@ -8,6 +9,7 @@ site_dir: site
 
 theme:
   name: material
+  language: en
   icon:
     logo: material/book 
   font:
@@ -17,7 +19,6 @@ theme:
     - scheme: default
       primary: black
   features:
-    - navigation.instant
     - navigation.footer
     - content.code.copy
 
@@ -40,6 +41,52 @@ plugins:
             docstring_style: numpy
             allow_inspection: false
             show_source: false
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: ja
+          name: 日本語
+          build: true
+          site_description: "Qubex: 量子ビット実験フレームワーク"
+          nav:
+            - ホーム: index.md
+            - はじめに:
+                - インストール: user-guide/getting-started/installation.md
+                - システム設定: user-guide/getting-started/system-configuration.md
+                - 入口を選ぶ: user-guide/getting-started/choose-your-entry-point.md
+            - Experiment:
+                - 概要: user-guide/experiment/index.md
+                - クイックスタート: user-guide/getting-started/quickstart.md
+                - サンプルワークフロー: user-guide/experiment/examples.md
+                - コミュニティ提供ワークフロー: user-guide/getting-started/contrib-workflows.md
+            - Measurement:
+                - 概要: user-guide/measurement/index.md
+                - サンプルワークフロー: user-guide/measurement/examples.md
+            - Simulator:
+                - 概要: user-guide/simulator/index.md
+                - サンプルワークフロー: user-guide/simulator/examples.md
+            - サンプル集: examples/index.md
+            - コントリビュート: CONTRIBUTING.md
+            - 開発ガイド:
+                - 概要: developer-guide/index.md
+                - 開発フロー: developer-guide/development-flow.md
+                - Experiment API 委譲ガイドライン: developer-guide/experiment-api-delegation-guidelines.md
+                - ドキュメントガイドライン: developer-guide/document-guidelines.md
+                - Docstring ガイドライン: developer-guide/docstring-guidelines.md
+                - 依存関係ガイドライン: developer-guide/dependency-guidelines.md
+                - テストガイドライン: developer-guide/test-guidelines.md
+                - contrib モジュールガイドライン: developer-guide/contrib-guidelines.md
+                - Issue ガイドライン: developer-guide/issue-guidelines.md
+                - Pull request ガイドライン: developer-guide/pull-request-guidelines.md
+                - コミットメッセージガイドライン: developer-guide/commit-guidelines.md
+            - API リファレンス: https://amachino.github.io/qubex/api-reference/qubex/
   - search
 
 markdown_extensions:
@@ -87,4 +134,4 @@ nav:
       - Issue guidelines: developer-guide/issue-guidelines.md
       - Pull request guidelines: developer-guide/pull-request-guidelines.md
       - Commit message guidelines: developer-guide/commit-guidelines.md
-  - API reference: api-reference/qubex/
+  - API reference: https://amachino.github.io/qubex/api-reference/qubex/

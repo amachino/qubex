@@ -65,6 +65,7 @@ docs = [
     "mkdocs-github-admonitions-plugin",
     "mkdocs-jupyter",
     "mkdocs-material",
+    "mkdocs-static-i18n",
     "mkdocstrings[python]",
     "pymdown-extensions",
 ]
