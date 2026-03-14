@@ -80,17 +80,17 @@ plugins:
             - サンプル集: examples/index.md
             - コントリビュート: CONTRIBUTING.md
             - 開発ガイド:
-                - 概要: developer-guide/index.md
-                - 開発フロー: developer-guide/development-flow.md
-                - Experiment API 委譲ガイドライン: developer-guide/experiment-api-delegation-guidelines.md
-                - ドキュメントガイドライン: developer-guide/document-guidelines.md
-                - Docstring ガイドライン: developer-guide/docstring-guidelines.md
-                - 依存関係ガイドライン: developer-guide/dependency-guidelines.md
-                - テストガイドライン: developer-guide/test-guidelines.md
-                - contrib モジュールガイドライン: developer-guide/contrib-guidelines.md
-                - Issue ガイドライン: developer-guide/issue-guidelines.md
-                - Pull request ガイドライン: developer-guide/pull-request-guidelines.md
-                - コミットメッセージガイドライン: developer-guide/commit-guidelines.md
+                - Overview: developer-guide/index.md
+                - Development flow: developer-guide/development-flow.md
+                - Experiment API delegation guidelines: developer-guide/experiment-api-delegation-guidelines.md
+                - Document guidelines: developer-guide/document-guidelines.md
+                - Docstring guidelines: developer-guide/docstring-guidelines.md
+                - Dependency guidelines: developer-guide/dependency-guidelines.md
+                - Test guidelines: developer-guide/test-guidelines.md
+                - Contrib module guidelines: developer-guide/contrib-guidelines.md
+                - Issue guidelines: developer-guide/issue-guidelines.md
+                - Pull request guidelines: developer-guide/pull-request-guidelines.md
+                - Commit message guidelines: developer-guide/commit-guidelines.md
             - API リファレンス: api-reference/qubex/index.md
   - search
 
