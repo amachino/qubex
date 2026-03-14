@@ -1,12 +1,10 @@
-# Build pulse sequences with `PulseSchedule`
+# Build pulse sequences with PulseSchedule
 
-`PulseSchedule` is Qubex's shared container for pulse-level sequences.
-It is a cross-cutting concept used by both `Experiment` and `QuantumSimulator`, and it
-also appears in measurement-side workflows when pulse schedules are converted
-into capture or execution requests.
+`PulseSchedule` is Qubex's shared container for representing pulse sequences.
+It is a shared concept used by both `Experiment` and `QuantumSimulator`.
 
 Use this page when you want to learn how to build pulse sequences before
-deciding whether they will be executed on hardware or used in offline studies.
+deciding whether to run them on hardware or use them offline.
 
 ## What `PulseSchedule` is for
 
@@ -16,8 +14,8 @@ deciding whether they will be executed on hardware or used in offline studies.
 
 ## Minimal pattern
 
-Create a schedule, add pulses inside the `with` block, and use `barrier()` when
-channels should align before the next block.
+Create a `PulseSchedule` instance, add pulses inside the `with` block, and use
+`barrier()` when channels should align before the next block.
 
 ```python
 import numpy as np
@@ -38,10 +36,12 @@ with schedule as s:
 schedule.plot()
 ```
 
-## Core ideas
+## How to use it
 
 - `add(channel, pulse)`: place one pulse event on a channel
 - `barrier()`: align channels before the next block of events
+- `barrier(labels=[...])`: apply a barrier only to specific channels
+- `call(schedule)`: insert another `PulseSchedule` at the current point
 - Automatic padding: when the `with` block exits, channels are padded to the same duration
 - Pulse reuse: derive related pulses from one base object with helpers such as `scaled()` and `shifted()`
 
@@ -49,7 +49,7 @@ schedule.plot()
 
 - `Experiment`: pass a `PulseSchedule` to hardware-backed workflows such as the [Quickstart](../getting-started/quickstart.md)
 - `QuantumSimulator`: reuse the same pulse objects and schedule-building style in [QuantumSimulator example workflows](../simulator/examples.md)
-- `Low-level APIs`: convert pulse schedules into measurement-side flows from [Measurement API overview](../measurement/index.md)
+- `Low-level APIs`: continue with [Low-level APIs](../low-level-apis/index.md) when the schedule needs to flow into `measurement` execution or backend-specific paths
 
 ## Learn more
 

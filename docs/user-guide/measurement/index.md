@@ -1,36 +1,44 @@
-# Measurement
+# `measurement` module
 
-`Measurement` is the measurement-centric entry point for hardware-backed execution.
-It is the measurement-side foundation that `Experiment` uses for session lifecycle and execution.
-Choose it when you want to work directly with sessions, schedules, capture/readout, sweeps, and backend integration as first-class concepts, not because it is a strictly more capable alternative to `Experiment`.
+`qubex.measurement` is the measurement-centric module for hardware-backed
+execution. It sits between [`system`](../system/index.md) and
+[`backend`](../backend/index.md): it consumes loaded system state and turns
+schedules into capture/readout and sweep execution flows.
 
 This page sits under [Low-level APIs](../low-level-apis/index.md).
 
-## Who should use Measurement
+## Use `measurement` when
 
-- Users who want measurement-side objects and contracts to be their main abstraction
-- Developers building backend integrations, readout utilities, or measurement-specific tooling
-- Users writing custom session, schedule, sweep, or sequencer flows without centering the broader experiment-analysis workflow
+- Sessions, schedules, capture/readout, sweeps, and measurement results should be first-class concepts
+- You want to work with `Measurement`, `MeasurementSchedule`, or sweep executors directly
+- You want backend-neutral execution flows before dropping to backend-specific controllers
 
-## What Measurement gives you
+## Key objects
 
-- A measurement-centric API surface for session lifecycle, schedule execution, capture/readout handling, and sweeps
-- Direct access to measurement-side data models and helpers
-- Readout classification utilities and backend-specific execution hooks
-- The same measurement foundation that `Experiment` delegates to internally
+- `Measurement`: facade for session lifecycle and execution
+- `MeasurementSchedule`, `MeasurementResult`, and sweep result models: canonical measurement-side contracts
+- Builders and executors: `MeasurementScheduleBuilder`, `SweepMeasurementBuilder`, and `SweepMeasurementExecutor`
+- Services and adapters: session/execution/classification services plus `MeasurementBackendAdapter` implementations
+
+## Relationship to the other modules
+
+- [`system`](../system/index.md): provides `ConfigLoader`, `ExperimentSystem`,
+  targets, and parameter state that `Measurement` depends on
+- [`backend`](../backend/index.md): provides the controller contracts and
+  concrete QuEL-1/QuEL-3 runtimes that measurement adapters target
 
 ## Recommended path
 
-1. Install Qubex: [Installation](../getting-started/installation.md)
-2. Prepare your hardware configuration: [System configuration](../getting-started/system-configuration.md)
-3. Learn the shared pulse-sequence model if needed: [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
-4. Read the section overview: [Low-level APIs](../low-level-apis/index.md)
-5. Start with curated notebooks: [Measurement example workflows](examples.md)
+1. Read the section overview: [Low-level APIs](../low-level-apis/index.md)
+2. Learn the shared pulse-sequence model if needed: [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
+3. Start with curated notebooks: [`measurement` example workflows](examples.md)
+4. Move to [`system`](../system/index.md) when configuration or synchronization is the main issue
+5. Move to [`backend`](../backend/index.md) when controller-level payloads or execution paths are the main issue
 
-## Choose Experiment instead when
+## Choose `Experiment` instead when
 
 - You want the recommended user-facing workflow for most hardware-backed experiments
 - You want built-in characterization, calibration, and benchmarking routines
 - You prefer one facade for setup, execution, and analysis without centering measurement-side vocabulary
 
-See [Experiment](../experiment/index.md) for that path.
+See [`Experiment`](../experiment/index.md) for that path.

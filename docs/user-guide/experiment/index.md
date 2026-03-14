@@ -17,10 +17,10 @@ It provides a high-level workflow for configuring systems, connecting to instrum
 4. Continue with curated notebooks: [Experiment example workflows](examples.md)
 5. Explore extra routines when needed: [Community-contributed workflows](../getting-started/contrib-workflows.md)
 
-## Choose Measurement instead when
+## Choose Low-level APIs instead when
 
-- You want measurement-side concepts such as sessions, schedules, capture/readout, or backend integration to be your primary abstraction
-- You are building measurement-specific tooling, readout utilities, or backend-facing flows
-- You want examples and APIs centered on measurement primitives rather than experiment workflows
+- You want `measurement`-side concepts such as sessions, schedules, capture/readout, or sweeps to be your primary abstraction
+- You want configuration loading, `ExperimentSystem`, or synchronization to be the primary abstraction
+- You are building backend integrations, controller-level execution paths, or QuEL-specific runtime tooling
 
-See [Measurement overview](../measurement/index.md) for that path.
+See [Low-level APIs overview](../low-level-apis/index.md) for the `measurement`, `system`, and `backend` paths.

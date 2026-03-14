@@ -1,13 +1,13 @@
 # Qubex
 
-Qubex is a unified pulse-level framework powered by [QuEL](https://quel-inc.com/) control hardware, streamlining device configuration, arbitrary pulse-sequence execution, characterization, calibration, benchmarking, and offline experimentation with a pulse-level simulator.
+Qubex is a qubit-control experimentation framework that unifies pulse-level experimental workflows on top of [QuEL](https://quel-inc.com/) control hardware. It supports everything from device configuration and arbitrary pulse-sequence execution to quantum-device characterization, quantum-gate calibration, benchmarking, and simulation experiments with a pulse-level simulator.
 
 ## Key features
 
 - **End-to-end workflow**: Handle experimental setup, pulse-sequence execution, and result analysis in a single, consistent flow.
-- **Backend-integrated setup**: Provide config files and let Qubex handle the setup for qubit-control experiments across multiple QuEL hardware models.
+- **Backend-integrated setup**: Provide configuration files and let Qubex handle the setup for qubit-control experiments built from multiple QuEL hardware models.
 - **Pulse-level control**: Run highly flexible experiments with arbitrary pulse sequences beyond circuit-level limits.
-- **Automated experiment routines**: Standardize characterization, calibration, and benchmarking workflows.
+- **Standardized experiment routines**: Standardize workflows for quantum-device characterization, calibration, and benchmarking.
 - **Pulse-level simulator**: Simulate the same pulse sequences as experiments at the Hamiltonian level.
 
 ## Start here
@@ -19,13 +19,15 @@ Qubex is a unified pulse-level framework powered by [QuEL](https://quel-inc.com/
 
 ## Recommended paths
 
-- [Experiment](user-guide/experiment/index.md): Use the recommended user-facing workflow for most hardware-backed experiments.
-- [QuantumSimulator](user-guide/simulator/index.md): Study pulse-level Hamiltonian dynamics offline without using real hardware.
+- [`Experiment`](user-guide/experiment/index.md): Recommended high-level entry point for most hardware-backed experiments.
+- [`QuantumSimulator`](user-guide/simulator/index.md): Entry point for studying pulse-level Hamiltonian dynamics without real hardware.
 
 ## Low-level APIs
 
-- [Overview](user-guide/low-level-apis/index.md): Start here when measurement-side abstractions are your main concern.
-- [Measurement API overview](user-guide/measurement/index.md): Work directly with sessions, schedules, capture/readout, sweeps, and backend integration.
+- [Overview](user-guide/low-level-apis/index.md): Start here to understand how `measurement`, `system`, and `backend` divide responsibility.
+- [`measurement` module](user-guide/measurement/index.md): Work directly with sessions, schedules, capture/readout, and sweeps.
+- [`system` module](user-guide/system/index.md): Load configuration, inspect `ExperimentSystem`, and synchronize runtime state.
+- [`backend` module](user-guide/backend/index.md): Work with backend controllers, execution requests, and QuEL-specific implementations.
 
 ## Explore examples and APIs
 

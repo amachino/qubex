@@ -71,8 +71,12 @@ plugins:
                 - サンプルワークフロー: user-guide/simulator/examples.md
             - 低レベル API:
                 - 概要: user-guide/low-level-apis/index.md
-                - Measurement API 概要: user-guide/measurement/index.md
-                - Measurement サンプルワークフロー: user-guide/measurement/examples.md
+                - measurement モジュール: user-guide/measurement/index.md
+                - measurement サンプルワークフロー: user-guide/measurement/examples.md
+                - system モジュール: user-guide/system/index.md
+                - system サンプルワークフロー: user-guide/system/examples.md
+                - backend モジュール: user-guide/backend/index.md
+                - backend サンプルワークフロー: user-guide/backend/examples.md
             - サンプル集: examples/index.md
             - コントリビュート: CONTRIBUTING.md
             - 開発ガイド:
@@ -113,17 +117,21 @@ nav:
   - Pulse sequences:
       - Build pulse sequences with PulseSchedule: user-guide/pulse-sequences/index.md
   - Experiment interface:
-      - Experiment interface: user-guide/experiment/index.md
+      - Experiment class: user-guide/experiment/index.md
       - Quickstart: user-guide/getting-started/quickstart.md
       - Example workflows: user-guide/experiment/examples.md
       - Community-contributed workflows: user-guide/getting-started/contrib-workflows.md
   - Pulse-level simulator:
-      - Pulse-level simulator: user-guide/simulator/index.md
+      - QuantumSimulator class: user-guide/simulator/index.md
       - Example workflows: user-guide/simulator/examples.md
   - Low-level APIs:
       - Overview: user-guide/low-level-apis/index.md
-      - Measurement API overview: user-guide/measurement/index.md
-      - Measurement example workflows: user-guide/measurement/examples.md
+      - measurement module: user-guide/measurement/index.md
+      - measurement example workflows: user-guide/measurement/examples.md
+      - system module: user-guide/system/index.md
+      - system example workflows: user-guide/system/examples.md
+      - backend module: user-guide/backend/index.md
+      - backend example workflows: user-guide/backend/examples.md
   - Examples: examples/index.md
   - Contributing: CONTRIBUTING.md
   - Developer guide:

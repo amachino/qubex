@@ -4,7 +4,7 @@
 `Experiment` と `QuantumSimulator` の両方で使われる共有概念です。
 
 このページは、まずパルスシーケンスの組み方を理解してから、
-それを実機で流すかオフラインで使うかを決めたいときの入口です。
+それを実機で実行するかオフラインで使うかを決めたいときの入口です。
 
 ## `PulseSchedule` は何に使うか
 
@@ -15,7 +15,7 @@
 ## 最小パターン
 
 `PulseSchedule` インスタンスを作り、`with` ブロックの中で pulse を追加します。
-次の block に進む前に channel を揃えたいときは `barrier()` を使います。
+次のブロックに進む前にチャンネルを揃えたいときは `barrier()` を使います。
 
 ```python
 import numpy as np
@@ -38,18 +38,18 @@ schedule.plot()
 
 ## 使い方
 
-- `add(channel, pulse)`: 1 つの channel に pulse event を配置する
-- `barrier()`: 次の block に入る前に channel を揃える
-- `barrier(labels=[...])`: 特定の channel だけに barrier を適用する
+- `add(channel, pulse)`: 1 つのチャンネルに pulse event を配置する
+- `barrier()`: 次のブロックに入る前にチャンネルを揃える
+- `barrier(labels=[...])`: 特定のチャンネルだけに barrier を適用する
 - `call(schedule)`: 別の `PulseSchedule` オブジェクトをその場に挿入する
-- 自動 padding: `with` ブロックを抜けると、各 channel は同じ長さに揃えられる
+- 自動 padding: `with` ブロックを抜けると、各チャンネルは同じ長さに揃えられる
 - pulse の再利用: `scaled()` や `shifted()` を使って、1 つの base pulse から派生 pulse を作れる
 
 ## このあと使う場面
 
 - `Experiment`: 実機で流すワークフローには [クイックスタート](../getting-started/quickstart.md) から進む
 - `QuantumSimulator`: 同じ pulse object と schedule の組み方を [QuantumSimulator サンプルワークフロー](../simulator/examples.md) で再利用する
-- `低レベル API`: [Measurement API 概要](../measurement/index.md) から measurement 側のフローに変換する
+- `低レベル API`: [低レベル API 概要](../low-level-apis/index.md) から、`measurement` 実行や backend 固有経路へ進む
 
 ## さらに学ぶ
 

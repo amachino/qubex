@@ -6,7 +6,7 @@ We plan to publish Qubex to PyPI for the official release, which will make `pip 
 
 ## Prepare Python environment
 
-We recommend using [uv](https://docs.astral.sh/uv/) to manage your Python installation and virtual environments. `uv` is a tool that keeps Python installation, virtual-environment creation, and dependency management in one place.
+We recommend using [uv](https://docs.astral.sh/uv/) to manage Python and virtual environments. `uv` is a unified tool for installing Python, creating virtual environments, and managing dependencies.
 
 ## Create virtual environment
 
@@ -40,7 +40,7 @@ uv pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
 ### Install with backend support for real hardware use (Linux)
 
 Use this variant when you plan to use Qubex with real hardware on a Linux host.
-If you only want to use the simulator, you do not need the `backend` extra.
+If you only want to use `QuantumSimulator`, you do not need the `backend` extra.
 
 ```bash
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"

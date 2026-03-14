@@ -1,7 +1,8 @@
-# Measurement example workflows
+# `measurement` example workflows
 
-This page highlights the main notebook entry points for the `Measurement` workflow.
-Use these notebooks when you want a measurement-centric workflow built around sessions, schedules, capture/readout, sweeps, or backend-facing execution details.
+This page highlights the main notebook entry points for `measurement`-driven workflows.
+Use these notebooks when you want a measurement-centric workflow built around
+sessions, schedules, capture/readout, or sweeps.
 
 ## Recommended starting points
 
@@ -13,10 +14,11 @@ Use these notebooks when you want a measurement-centric workflow built around se
 
 - [Measurement sweep builder](../../examples/measurement/sweep_measurement_builder.ipynb): Build `PulseSchedule` objects from sweep configuration models.
 - [Sweep measurement executor](../../examples/measurement/sweep_measurement_executor.ipynb): Execute structured sweep workflows from measurement-side abstractions.
-- [QuEL-3 sequencer builder flow](../../examples/measurement/quel3_sequencer_builder_flow.ipynb): Work with a backend-specific sequencer path.
 
 ## Related pages
 
 - [Low-level APIs](../low-level-apis/index.md)
-- [Measurement overview](index.md)
+- [`measurement` module](index.md)
+- [`system` module](../system/index.md)
+- [`backend` module](../backend/index.md)
 - [Full examples index](../../examples/index.md)

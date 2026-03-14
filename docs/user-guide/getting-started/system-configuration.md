@@ -2,7 +2,7 @@
 
 Use `system_id` as the canonical selector for one concrete instrument setup.
 A system ties together chip metadata, the backend kind, backend-specific runtime
-settings, and the wiring that maps muxes to physical ports.
+settings, and the mapping between readout MUXes and physical ports.
 
 `chip_id` and `system_id` are user-defined labels. Qubex does not require a
 specific naming convention for either of them.
@@ -22,8 +22,9 @@ If none of these paths exist, Qubex defaults to `~/qubex-config`.
 
 ## Recommended directory layout
 
-Keep shared catalogs in one config directory, and keep parameter files in a
-directory for the system you want to run.
+Keep shared configuration files in one config directory, and keep
+system-specific parameter files in separate directories for the systems you
+want to run.
 
 ```text
 qubex-config/
@@ -46,12 +47,12 @@ qubex-config/
       calib_note.json
 ```
 
-- `config/` stores the shared system catalogs.
+- `config/` stores the shared system configuration files.
 - Each file under `params/<system_id>/` stores one parameter family.
-- `calibration/<system_id>/calib_note.json` is the default calibration note location.
-- `skew.yaml` is optional, but it is typically needed for QuEL-1 skew-calibration workflows.
+- `calibration/<system_id>/calib_note.json` is the default calibration file location.
+- `skew.yaml` is optional, but it is required for synchronized experiments that use multiple QuEL-1 control units.
 
-## Define the shared config files
+## Define shared configuration files
 
 ### `chip.yaml`
 
@@ -155,15 +156,17 @@ data:
 - Put the file in the `params_dir` that you pass to Qubex.
 - For qubit-scoped parameters, keys may be integer indices such as `0` and `1`,
   or labels such as `Q000` and `Q001`.
-- When `meta.unit` is set, Qubex converts values into its internal base units:
-  `GHz` for frequency-like values and `ns` for time-like values.
+- When string labels are used, keep in mind that the zero-padding width depends
+  on the number of qubits on the chip.
+- When `meta.unit` is set, Qubex converts values into its internal base units
+  (`GHz`, `ns`).
 - When `meta.default` is set, `None` values in `data` fall back to that default.
 
 Legacy `params.yaml` and `props.yaml` are still supported as compatibility
 inputs. When both legacy maps and per-file YAMLs exist, Qubex loads the
 per-file YAML first and uses the legacy files only as fallback for missing keys.
 
-## Load the configuration in code
+## Load configuration from code
 
 Pass the concrete `system_id`, the shared config directory, and the selected
 parameter directory.

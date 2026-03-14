@@ -20,5 +20,5 @@ Use these notebooks to study pulse-level dynamics offline before moving to hardw
 
 ## Related pages
 
-- [QuantumSimulator](index.md)
+- [`QuantumSimulator`](index.md)
 - [Full examples index](../../examples/index.md)

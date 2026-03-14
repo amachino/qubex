@@ -20,5 +20,5 @@
 
 ## 関連ページ
 
-- [QuantumSimulator](index.md)
+- [`QuantumSimulator` クラス](index.md)
 - [サンプル集全体](../../examples/index.md)
