@@ -16,25 +16,39 @@ class _ApiReferenceNode:
 
 def generate_api_reference_docs(src_dir: Path, output_dir: Path) -> None:
     """Generate MkDocs API reference pages from Python source files."""
-    module_files = _collect_module_files(src_dir)
-
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    for relative_path, content in _build_relative_documents(src_dir).items():
+        doc_path = output_dir / relative_path
+        doc_path.parent.mkdir(parents=True, exist_ok=True)
+        doc_path.write_text(content, encoding="utf-8")
+
+
+def build_api_reference_documents(src_dir: Path) -> dict[str, str]:
+    """Build virtual MkDocs files for the API reference."""
+    documents: dict[str, str] = {}
+    for relative_path, content in _build_relative_documents(src_dir).items():
+        documents[(Path("api-reference") / relative_path).as_posix()] = content
+    return documents
+
+
+def _build_relative_documents(src_dir: Path) -> dict[Path, str]:
+    """Build API reference documents relative to the output root."""
+    module_files = _collect_module_files(src_dir)
     nav_root = _ApiReferenceNode(title="")
+    documents: dict[Path, str] = {}
+
     for module_parts, source_file in module_files.items():
         module_name = _get_module_name(module_parts, source_file)
         doc_relative_path = _get_doc_relative_path(module_parts, source_file)
-        doc_path = output_dir / doc_relative_path
-        doc_path.parent.mkdir(parents=True, exist_ok=True)
-        doc_path.write_text(f"::: {module_name}\n", encoding="utf-8")
+        documents[doc_relative_path] = f"::: {module_name}\n"
         _add_nav_entry(nav_root, module_parts, doc_relative_path)
 
     summary_lines = list(_render_summary_lines(nav_root))
-    (output_dir / "summary.md").write_text(
-        "\n".join(summary_lines) + "\n", encoding="utf-8"
-    )
+    documents[Path("summary.md")] = "\n".join(summary_lines) + "\n"
+    return documents
 
 
 def _collect_module_files(src_dir: Path) -> dict[tuple[str, ...], Path]:
