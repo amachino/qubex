@@ -42,3 +42,7 @@ Recommended path:
 
 - [Simulator overview](../simulator/index.md)
 - [Simulator example workflows](../simulator/examples.md)
+
+## Contributing instead of using Qubex
+
+If you want to extend Qubex or work on the codebase itself, start with [Contributing](../../CONTRIBUTING.md) and then continue with the [Developer guide](../../developer-guide/index.md).

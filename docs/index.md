@@ -13,13 +13,24 @@ Lower-level `Measurement` APIs are available for advanced control.
 - **Automated experiment routines**: Standardize characterization, calibration, and benchmarking workflows.
 - **Pulse-level simulator**: Simulate the same pulse sequences as experiments at the Hamiltonian level.
 
-## Documentation map
+## Start here
 
 - [Installation](user-guide/getting-started/installation.md)
 - [System configuration](user-guide/getting-started/system-configuration.md)
 - [Choose your entry point](user-guide/getting-started/choose-your-entry-point.md)
-- [Experiment guide](user-guide/experiment/index.md)
-- [Measurement guide](user-guide/measurement/index.md)
-- [Simulator guide](user-guide/simulator/index.md)
+
+## Choose your workflow
+
+- [Experiment guide](user-guide/experiment/index.md): Use the recommended high-level workflow for hardware-backed experiments.
+- [Measurement guide](user-guide/measurement/index.md): Work directly with measurement sessions, custom schedules, and lower-level readout flows.
+- [Simulator guide](user-guide/simulator/index.md): Study pulse-level Hamiltonian dynamics offline without using real hardware.
+
+## Explore examples and APIs
+
 - [Examples](examples/index.md)
 - [API reference](api-reference/qubex/index.md)
+
+## Contribute to Qubex
+
+- [Contributing](CONTRIBUTING.md)
+- [Developer guide](developer-guide/index.md)

@@ -74,6 +74,7 @@ nav:
       - Overview: user-guide/simulator/index.md
       - Example workflows: user-guide/simulator/examples.md
   - Examples: examples/index.md
+  - Contributing: CONTRIBUTING.md
   - Developer guide:
       - Overview: developer-guide/index.md
       - Development flow: developer-guide/development-flow.md

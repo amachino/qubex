@@ -39,26 +39,20 @@ Use this option when you want the newest Qubex features from the repository.
 uv pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
 ```
 
-### Install with backend support (Linux)
+### Install with backend support for real hardware use (Linux)
 
-Use this variant when you need packaged hardware backend dependencies on Linux hosts.
+Use this variant when you plan to use Qubex with real hardware on a Linux host.
+If you only want to use the simulator, you do not need the `backend` extra.
 
 ```bash
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
 ```
 
-This installs packaged backend dependencies such as `qxdriver-quel1`.
+This installs the backend libraries required for hardware-backed execution.
 QuEL-3 support also requires compatible `quelware-client` sources or packages.
 For repository development, `packages/quelware-client` is fetched as a
 submodule, while a local `lib/quelware-client-internal` checkout takes
 precedence when present.
-
-Available backend extras:
-
-- `backend`: install packaged QuEL-1 and QuEL-3 dependencies.
-- `quel1`: install `qxdriver-quel1` only.
-- `quel3`: install `quelware-client` only.
-- `qubecalib`: install `qubecalib` only.
 
 ### Install specific version
 

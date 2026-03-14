@@ -34,11 +34,14 @@ To install `uv`, see the official guide:
 uv pip install git+https://github.com/amachino/qubex.git
 ```
 
-### Install with backend support (Linux only)
+### Install with backend support for real hardware use (Linux only)
 
 ```bash
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
+
+Add the `backend` extra when you plan to use Qubex with real hardware.
+If you only want to use the simulator, you do not need this extra.
 
 ### Install specific version
 
@@ -61,4 +64,6 @@ make sync
 ## Documentation
 
 The documentation is available at [https://amachino.github.io/qubex/](https://amachino.github.io/qubex/).
-The source files live in [docs](https://github.com/amachino/qubex/tree/main/docs).
+
+- User guides: [Installation](https://amachino.github.io/qubex/user-guide/getting-started/installation/), [System configuration](https://amachino.github.io/qubex/user-guide/getting-started/system-configuration/), [Choose your entry point](https://amachino.github.io/qubex/user-guide/getting-started/choose-your-entry-point/), [Examples](https://amachino.github.io/qubex/examples/), and [API reference](https://amachino.github.io/qubex/api-reference/qubex/).
+- Contributors: [Contributing](https://amachino.github.io/qubex/CONTRIBUTING/), [Developer guide](https://amachino.github.io/qubex/developer-guide/), and the source files in [docs](https://github.com/amachino/qubex/tree/main/docs).
