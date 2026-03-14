@@ -15,9 +15,9 @@ Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-sta
 - [周波数較正](experiment/2_frequency_calibration.ipynb)
 - [パルス較正](experiment/3_pulse_calibration.ipynb)
 - [T1 / T2 実験](experiment/4_t1_t2_experiments.ipynb)
-- [ランダム化ベンチマーク](experiment/5_randomized_benchmarking.ipynb)
+- [乱択ベンチマーキング](experiment/5_randomized_benchmarking.ipynb)
 - [状態トモグラフィ](experiment/6_state_tomography.ipynb)
-- [EF 特性評価](experiment/7_ef_characterization.ipynb)
+- [ef 特性評価](experiment/7_ef_characterization.ipynb)
 - [状態分類](experiment/8_state_classification.ipynb)
 - [CR 較正](experiment/9_cr_calibration.ipynb)
 

@@ -13,9 +13,9 @@
 
 ## さらに進んだ Experiment ワークフロー
 
-- [ランダム化ベンチマーク](../../examples/experiment/5_randomized_benchmarking.ipynb): Clifford ベースのランダム系列で gate 性能を見積もります。
+- [乱択ベンチマーキング](../../examples/experiment/5_randomized_benchmarking.ipynb): Clifford ベースのランダム系列で gate 性能を見積もります。
 - [状態トモグラフィ](../../examples/experiment/6_state_tomography.ipynb): 繰り返し測定から量子状態を再構成します。
-- [EF 特性評価](../../examples/experiment/7_ef_characterization.ipynb): 計算基底を超えた transmon の高次準位を扱います。
+- [ef 特性評価](../../examples/experiment/7_ef_characterization.ipynb): 計算基底を超えた transmon の高次準位を扱います。
 - [状態分類](../../examples/experiment/8_state_classification.ipynb): readout state classifier を学習・確認します。
 - [CR 較正](../../examples/experiment/9_cr_calibration.ipynb): 2 量子ビット制御のための cross-resonance 相互作用を較正します。
 
