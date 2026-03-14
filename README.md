@@ -17,33 +17,26 @@
 
 ## Installation
 
+During the `v1.5.0 beta` period and until the official release, installing Qubex requires `uv`.
+We plan to publish Qubex to PyPI for the official release, which will make `pip install` available.
+To install `uv`, see the official guide:
+[https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/)
+
 ### Install latest release
 
 ```bash
-# pip
-pip install git+https://github.com/amachino/qubex.git
-
-# uv
 uv pip install git+https://github.com/amachino/qubex.git
 ```
 
 ### Install with backend support (Linux only)
 
 ```bash
-# pip
-pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
-
-# uv
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
 
 ### Install specific version
 
 ```bash
-# pip
-pip install "git+https://github.com/amachino/qubex.git@<version>"
-
-# uv
 uv pip install "git+https://github.com/amachino/qubex.git@<version>"
 ```
 
