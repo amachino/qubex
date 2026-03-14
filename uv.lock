@@ -3362,7 +3362,7 @@ wheels = [
 
 [[package]]
 name = "qubex"
-version = "1.5.0b3"
+version = "1.5.0b4"
 source = { editable = "." }
 dependencies = [
     { name = "anywidget" },
