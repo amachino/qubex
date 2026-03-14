@@ -9,7 +9,7 @@
 ## `system` を使うべき場面
 
 - 設定ファイルを直接読み込み、その結果できるモデルを確認したい
-- `ExperimentSystem`、`QuantumSystem`、`ControlSystem`、target、control parameter を主語にしたい
+- `ExperimentSystem`、`QuantumSystem`、`ControlSystem`、target、control parameter を直接扱いたい
 - ソフトウェア状態とハードウェア / コントローラ状態を比較・同期したい
 
 ## 主要なオブジェクト
@@ -22,7 +22,7 @@
 ## 他のモジュールとの関係
 
 - [`measurement`](../measurement/index.md): 読み込まれた system state を使って
-  session、schedule、実行フローを組み立てます
+  `MeasurementSchedule` や実行フローを組み立てます
 - [`backend`](../backend/index.md): `SystemManager` が同期対象にする
   コントローラ状態と実行先ランタイムを提供します
 
@@ -31,7 +31,7 @@
 1. [システム設定](../getting-started/system-configuration.md) で設定ファイルを用意する
 2. [低レベル API 概要](../low-level-apis/index.md) で全体像を確認する
 3. [`system` サンプルワークフロー](examples.md) から notebook を始める
-4. session や schedule が主題なら [`measurement`](../measurement/index.md) に進む
+4. `MeasurementSchedule` や `measurement` の実行フローを扱いたいなら [`measurement`](../measurement/index.md) に進む
 5. controller 実装が主題なら [`backend`](../backend/index.md) に進む
 
 ## 次のような場合は `Experiment` を選ぶ

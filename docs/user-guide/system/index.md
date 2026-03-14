@@ -22,7 +22,7 @@ This page sits under [Low-level APIs](../low-level-apis/index.md).
 ## Relationship to the other modules
 
 - [`measurement`](../measurement/index.md): consumes the loaded system state to
-  build sessions, schedules, and execution flows
+  build `MeasurementSchedule` objects and execution flows
 - [`backend`](../backend/index.md): provides the controller state and runtime
   endpoints that `SystemManager` synchronizes against
 
@@ -31,8 +31,8 @@ This page sits under [Low-level APIs](../low-level-apis/index.md).
 1. Prepare your configuration files: [System configuration](../getting-started/system-configuration.md)
 2. Read the section overview: [Low-level APIs](../low-level-apis/index.md)
 3. Start with curated notebooks: [`system` example workflows](examples.md)
-4. Move to [`measurement`](../measurement/index.md) when sessions or schedules are the primary abstraction
-5. Move to [`backend`](../backend/index.md) when controller implementations are the primary abstraction
+4. Move to [`measurement`](../measurement/index.md) when `MeasurementSchedule` objects or measurement execution flows are the main issue
+5. Move to [`backend`](../backend/index.md) when controller implementations are the main issue
 
 ## Choose `Experiment` instead when
 

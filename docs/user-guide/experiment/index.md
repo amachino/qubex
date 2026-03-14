@@ -19,8 +19,8 @@ It provides a high-level workflow for configuring systems, connecting to instrum
 
 ## Choose Low-level APIs instead when
 
-- You want `measurement`-side concepts such as sessions, schedules, capture/readout, or sweeps to be your primary abstraction
-- You want configuration loading, `ExperimentSystem`, or synchronization to be the primary abstraction
+- You want to work directly with `MeasurementSchedule`, capture/readout, sweeps, or other `measurement`-module execution flows
+- You want direct control over configuration loading, `ExperimentSystem`, or synchronization
 - You are building backend integrations, controller-level execution paths, or QuEL-specific runtime tooling
 
 See [Low-level APIs overview](../low-level-apis/index.md) for the `measurement`, `system`, and `backend` paths.

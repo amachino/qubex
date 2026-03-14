@@ -36,7 +36,7 @@ controller-level behavior itself is the subject.
 ## Choose another module instead when
 
 - [`system`](../system/index.md): configuration loading, in-memory models, and synchronization are the main concern
-- [`measurement`](../measurement/index.md): sessions, schedules, capture/readout, and sweeps are the main concern
+- [`measurement`](../measurement/index.md): `MeasurementSchedule`, capture/readout, sweeps, and measurement execution flows are the main concern
 
 ## Choose `Experiment` instead when
 

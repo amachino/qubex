@@ -7,7 +7,7 @@
 
 - [ラビ振動](../../examples/simulator/1_rabi_oscillation.ipynb): 単一の駆動された transmon から始めて、そのダイナミクスを確認します。
 - [結合した 2 量子ビット](../../examples/simulator/2_coupled_qubits.ipynb): 結合した多体系での相互作用をシミュレーションします。
-- [量子ビットと共振器](../../examples/simulator/3_qubit_resonator.ipynb): qubit-resonator 系の振る舞いをハミルトニアンレベルで調べます。
+- [量子ビットと共振器](../../examples/simulator/3_qubit_resonator.ipynb): 量子ビット-共振器系の振る舞いをハミルトニアンレベルで調べます。
 - [複数制御](../../examples/simulator/4_multi_control.ipynb): 1 つの simulation setup で複数 control channel を扱います。
 
 ## 較正寄りの解析

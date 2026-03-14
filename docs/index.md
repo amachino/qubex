@@ -25,7 +25,7 @@ Qubex is a qubit-control experimentation framework that unifies pulse-level expe
 ## Low-level APIs
 
 - [Overview](user-guide/low-level-apis/index.md): Start here to understand how `measurement`, `system`, and `backend` divide responsibility.
-- [`measurement` module](user-guide/measurement/index.md): Work directly with sessions, schedules, capture/readout, and sweeps.
+- [`measurement` module](user-guide/measurement/index.md): Work directly with `MeasurementSchedule`, capture/readout, sweeps, and measurement execution flows.
 - [`system` module](user-guide/system/index.md): Load configuration, inspect `ExperimentSystem`, and synchronize runtime state.
 - [`backend` module](user-guide/backend/index.md): Work with backend controllers, execution requests, and QuEL-specific implementations.
 

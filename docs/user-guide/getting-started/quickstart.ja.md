@@ -51,7 +51,7 @@ exp.configure()
 
 ## 4. `measure` で基本測定を実行する
 
-制御波形を直接与え、readout を Qubex に自動付与させたい場合は `measure()` を使います。
+制御波形を直接与え、読み出し波形およびキャプチャ設定を Qubex に自動付与させたい場合は `measure()` を使います。
 
 ```python
 waveform = np.array([
@@ -83,13 +83,13 @@ result.plot()
 print("single:", result.data[Q0].kerneled)
 ```
 
-`sequence` に含まれる各 qubit に対して、Qubex は制御波形を適用し、対応する readout resonator へ readout pulse を送り、その反射信号を返します。`kerneled` は時間積分した反射信号を複素 I/Q データで表したものです。`avg` モードでは単一の複素数、`single` モードでは shot ごとの複素数配列になります。
+`sequence` に含まれる各量子ビットに対して、Qubex は制御波形を適用し、対応する読み出し共振器へ読み出しパルスを送り、その反射信号を返します。`kerneled` は時間積分した反射信号を複素 I/Q データで表したものです。`avg` モードでは単一の複素数、`single` モードでは shot ごとの複素数配列になります。
 
 ## 5. `PulseSchedule` でパルスシーケンスを構築する
 
-再利用可能な pulse object からパルスシーケンスを明示的に組み立てたい場合は `PulseSchedule` を作成します。
+再利用可能な `Pulse` オブジェクトからパルスシーケンスを明示的に組み立てたい場合は `PulseSchedule` を作成します。
 
-ワークフローに依らない schedule 構築の説明は [パルスシーケンスの組み方](../pulse-sequences/index.md) を参照してください。
+ワークフローに依らないスケジュール構築の説明は [パルスシーケンスの組み方](../pulse-sequences/index.md) を参照してください。
 
 ```python
 pulse = qx.pulse.Gaussian(duration=64, amplitude=0.05, sigma=16)
@@ -105,7 +105,7 @@ with schedule as s:
 schedule.plot()
 ```
 
-`PulseSchedule` を作成したら、`with` ブロック内で各 channel に対して `add()` を呼び、pulse を追加します。次の block の前で channel を揃えたいときは `barrier()` を使います。`with` ブロックを抜けると、Qubex は全 channel を自動的に同じ長さまで pad します。この例ではパルスシーケンスだけを構築しており、`scaled()` や `shifted()` で同じベース pulse から派生 pulse を作る方法も示しています。
+`PulseSchedule` を作成したら、`with` ブロック内で各 channel に対して `add()` を呼び、Pulse を追加します。次の block の前で channel を揃えたいときは `barrier()` を使います。`with` ブロックを抜けると、Qubex は全 channel を自動的に同じ長さまで pad します。この例ではパルスシーケンスだけを構築しており、`scaled()` や `shifted()` で同じベース `Pulse` から派生 `Pulse` を作る方法も示しています。
 
 ## 6. `sweep_parameter` で parameter を掃引する
 
@@ -160,7 +160,7 @@ print("data:", result.data[Q0].data)
 
 ## 7. `execute` で schedule を実行する
 
-`PulseSchedule` をそのまま実行し、custom readout pulse を resonator channel に直接配置したい場合は `execute()` を使います。1 つの schedule に複数の readout event を含めたいときに便利です。
+`PulseSchedule` をそのまま実行し、カスタム読み出しパルスを共振器チャネルに直接配置したい場合は `execute()` を使います。1 つの schedule に複数の読み出しイベントを含めたいときに便利です。
 
 ```python
 control_pulse = qx.pulse.Gaussian(duration=64, amplitude=0.05, sigma=16)
@@ -188,7 +188,7 @@ result.plot()
 print("n_captures:", len(result.data[Q0]))
 ```
 
-この例では、`control_pulse` と `readout_pulse` を schedule 内で再利用しています。最初に 1 回 readout を行い、その後 blank interval と control pulse を入れ、最後にもう 1 回 readout を行います。`RQ0` は 2 回 readout されるため、`result.data[Q0]` には 2 つの capture 結果が入ります。
+この例では、`control_pulse` と `readout_pulse` を schedule 内で再利用しています。最初に 1 回読み出しを行い、その後 blank interval と control pulse を入れ、最後にもう 1 回読み出しを行います。`RQ0` は 2 回読み出しされるため、`result.data[Q0]` には 2 つのキャプチャ結果が入ります。
 
 ## 次のステップ
 

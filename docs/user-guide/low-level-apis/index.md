@@ -6,8 +6,8 @@ beneath `Experiment`. It is organized around three modules:
 
 Most Qubex users should start with [`Experiment`](../experiment/index.md) on
 real hardware or [`QuantumSimulator`](../simulator/index.md) for offline work.
-Come here when sessions, system models, or backend controllers need to be the
-primary abstraction.
+Come here when measurement execution flows, system models, or backend
+controllers are the primary abstraction.
 
 ## Module map
 
@@ -21,15 +21,16 @@ primary abstraction.
 
 1. [`system`](../system/index.md) loads configuration files and assembles the
    software-side `ExperimentSystem`.
-2. [`measurement`](../measurement/index.md) builds sessions, schedules,
-   capture/readout, and sweep flows on top of that state.
+2. [`measurement`](../measurement/index.md) builds `MeasurementSchedule`
+   objects, capture/readout, and sweep flows on top of that state.
 3. [`backend`](../backend/index.md) controllers execute the prepared requests
    on concrete QuEL runtimes.
 
 ## Recommended paths
 
-- [`measurement`](../measurement/index.md): start here for session lifecycle,
-  `MeasurementSchedule`, capture/readout, and sweeps. Then continue with
+- [`measurement`](../measurement/index.md): start here for
+  `MeasurementSchedule`, capture/readout, sweeps, and related execution flows.
+  Then continue with
   [`measurement` example workflows](../measurement/examples.md).
 - [`system`](../system/index.md): start here for `ConfigLoader`,
   `ExperimentSystem`, `SystemManager`, and synchronization. Then continue with

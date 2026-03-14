@@ -1,30 +1,30 @@
-# 開発ガイド
+# Developer guide
 
-このセクションには、コントリビュータ向けガイドラインと内部開発メモへの入口があります。
+This section contains contributor-facing guidelines and internal development notes.
 
-## まず読む
+## Start here
 
 - [Contributing](../CONTRIBUTING.md)
-- [開発フロー](development-flow.md)
-- [テストガイドライン](test-guidelines.md)
-- [Pull request ガイドライン](pull-request-guidelines.md)
-- [コミットメッセージガイドライン](commit-guidelines.md)
+- [Development flow](development-flow.md)
+- [Test guidelines](test-guidelines.md)
+- [Pull request guidelines](pull-request-guidelines.md)
+- [Commit message guidelines](commit-guidelines.md)
 
-## コードと API 設計
+## Code and API design
 
-- [命名ガイドライン](naming-guidelines.md)
-- [Experiment API 委譲ガイドライン](experiment-api-delegation-guidelines.md)
-- [Typing ガイドライン](typing-guidelines.md)
-- [依存関係ガイドライン](dependency-guidelines.md)
-- [contrib モジュールガイドライン](contrib-guidelines.md)
+- [Naming guidelines](naming-guidelines.md)
+- [Experiment API delegation guidelines](experiment-api-delegation-guidelines.md)
+- [Typing guidelines](typing-guidelines.md)
+- [Dependency guidelines](dependency-guidelines.md)
+- [Contrib module guidelines](contrib-guidelines.md)
 - [quel_ic_config 0.10 migration plan](quel-ic-config-0-10-migration.md)
 
-## ドキュメントと可視化
+## Documentation and visualization
 
-- [ドキュメントガイドライン](document-guidelines.md)
-- [Docstring ガイドライン](docstring-guidelines.md)
-- [可視化ガイドライン](visualization-guidelines.md)
+- [Document guidelines](document-guidelines.md)
+- [Docstring guidelines](docstring-guidelines.md)
+- [Visualization guidelines](visualization-guidelines.md)
 
-## コラボレーション
+## Collaboration
 
-- [Issue ガイドライン](issue-guidelines.md)
+- [Issue guidelines](issue-guidelines.md)

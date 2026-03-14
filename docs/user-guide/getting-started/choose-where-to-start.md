@@ -41,7 +41,7 @@ Recommended path:
 This is the entry point when you want to work below the `Experiment` facade.
 The section is organized around three modules:
 
-- [`measurement`](../measurement/index.md): sessions, schedules, capture/readout, and sweeps
+- [`measurement`](../measurement/index.md): `MeasurementSchedule`, capture/readout, sweeps, and measurement execution flows
 - [`system`](../system/index.md): configuration loading, system models, and synchronization
 - [`backend`](../backend/index.md): backend controllers, execution requests, and QuEL-specific runtimes
 

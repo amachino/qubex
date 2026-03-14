@@ -2,7 +2,7 @@
 
 This page highlights the main notebook entry points for `measurement`-driven workflows.
 Use these notebooks when you want a measurement-centric workflow built around
-sessions, schedules, capture/readout, or sweeps.
+`MeasurementSchedule`, capture/readout, or sweeps.
 
 ## Recommended starting points
 

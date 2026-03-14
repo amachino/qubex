@@ -1,7 +1,8 @@
 # `measurement` module
 
-`qubex.measurement` is the measurement-centric module for hardware-backed
-execution. It sits between [`system`](../system/index.md) and
+`qubex.measurement` is the module that assembles hardware-backed execution
+flows from the models exposed by the measurement layer. It sits between
+[`system`](../system/index.md) and
 [`backend`](../backend/index.md): it consumes loaded system state and turns
 schedules into capture/readout and sweep execution flows.
 
@@ -9,16 +10,16 @@ This page sits under [Low-level APIs](../low-level-apis/index.md).
 
 ## Use `measurement` when
 
-- Sessions, schedules, capture/readout, sweeps, and measurement results should be first-class concepts
+- You want to work directly with `MeasurementSchedule`, capture/readout, sweeps, and measurement results
 - You want to work with `Measurement`, `MeasurementSchedule`, or sweep executors directly
 - You want backend-neutral execution flows before dropping to backend-specific controllers
 
 ## Key objects
 
-- `Measurement`: facade for session lifecycle and execution
-- `MeasurementSchedule`, `MeasurementResult`, and sweep result models: canonical measurement-side contracts
+- `Measurement`: facade for the overall measurement execution flow
+- `MeasurementSchedule`, `MeasurementResult`, and sweep result models: canonical contracts in the `measurement` module
 - Builders and executors: `MeasurementScheduleBuilder`, `SweepMeasurementBuilder`, and `SweepMeasurementExecutor`
-- Services and adapters: session/execution/classification services plus `MeasurementBackendAdapter` implementations
+- Services and adapters: execution/classification services plus `MeasurementBackendAdapter` implementations
 
 ## Relationship to the other modules
 
@@ -39,6 +40,6 @@ This page sits under [Low-level APIs](../low-level-apis/index.md).
 
 - You want the recommended user-facing workflow for most hardware-backed experiments
 - You want built-in characterization, calibration, and benchmarking routines
-- You prefer one facade for setup, execution, and analysis without centering measurement-side vocabulary
+- You prefer one facade for setup, execution, and analysis without centering `measurement`-module vocabulary
 
 See [`Experiment`](../experiment/index.md) for that path.

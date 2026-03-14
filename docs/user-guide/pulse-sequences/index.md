@@ -3,9 +3,6 @@
 `PulseSchedule` is Qubex's shared container for representing pulse sequences.
 It is a shared concept used by both `Experiment` and `QuantumSimulator`.
 
-Use this page when you want to learn how to build pulse sequences before
-deciding whether to run them on hardware or use them offline.
-
 ## What `PulseSchedule` is for
 
 - Describing time-ordered pulse events across one or more channels

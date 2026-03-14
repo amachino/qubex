@@ -1,25 +1,25 @@
 # `measurement` モジュール
 
-`qubex.measurement` は、実機ベースの実行を measurement 側の概念で扱う
-モジュールです。[`system`](../system/index.md) と
+`qubex.measurement` は、実機ベースの実行フローを `measurement` モジュールの
+モデルで組み立てるモジュールです。[`system`](../system/index.md) と
 [`backend`](../backend/index.md) のあいだに位置し、読み込まれた
-システム状態を使って schedule から capture/readout や sweep の実行フローを
+システム状態を使って schedule からキャプチャ/読み出しや sweep の実行フローを
 組み立てます。
 
 このページは [低レベル API](../low-level-apis/index.md) セクションの一部です。
 
 ## `measurement` を使うべき場面
 
-- session、schedule、capture/readout、sweep、測定結果を主語にしたい
+- `MeasurementSchedule`、キャプチャ/読み出し、sweep、測定結果を直接扱いたい
 - `Measurement`、`MeasurementSchedule`、`SweepMeasurementExecutor` を直接使いたい
 - backend 固有 controller に落ちる前の、backend 非依存な実行フローを扱いたい
 
 ## 主要なオブジェクト
 
-- `Measurement`: session lifecycle と実行処理の facade
-- `MeasurementSchedule`、`MeasurementResult`、sweep result 系: measurement 側の標準モデル
+- `Measurement`: `measurement` の実行フロー全体を扱う facade
+- `MeasurementSchedule`、`MeasurementResult`、sweep result 系: `measurement` モジュールの標準モデル
 - builder / executor: `MeasurementScheduleBuilder`、`SweepMeasurementBuilder`、`SweepMeasurementExecutor`
-- service / adapter: session / execution / classification service と `MeasurementBackendAdapter` 実装
+- service / adapter: 実行 / 分類 service と `MeasurementBackendAdapter` 実装
 
 ## 他のモジュールとの関係
 
@@ -40,6 +40,6 @@
 
 - 実機実験の多くで推奨されるユーザー向けワークフローを使いたい
 - 量子デバイスの特性評価、較正、ベンチマークの組み込みルーチンを使いたい
-- measurement 側の語彙を前面に出さず、セットアップ、実行、解析まで 1 つの facade で扱いたい
+- `measurement` モジュールの語彙を前面に出さず、セットアップ、実行、解析まで 1 つの facade で扱いたい
 
 その場合は [`Experiment` クラス](../experiment/index.md) を参照してください。
