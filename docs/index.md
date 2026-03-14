@@ -1,6 +1,6 @@
 # Qubex
 
-Qubex brings pulse-level workflows into a single framework for configuring heterogeneous devices, building and running arbitrary pulse sequences, applying standard characterization, calibration, and benchmarking routines, and iterating offline with a Pulse-level simulator.
+Qubex is a unified pulse-level framework powered by [QuEL](https://quel-inc.com/) control hardware, streamlining device configuration, arbitrary pulse-sequence execution, characterization, calibration, benchmarking, and offline iteration with a pulse-level simulator.
 
 The recommended user workflow is `Experiment`-first.
 Lower-level `Measurement` APIs are available for advanced control.
@@ -8,7 +8,7 @@ Lower-level `Measurement` APIs are available for advanced control.
 ## Key features
 
 - **End-to-end workflow**: Go from setup to execution to analysis in a single, consistent flow.
-- **Automated multi-hardware setup**: Define devices in config files and let Qubex set up mixed control stacks automatically.
+- **Backend-integrated setup**: Define devices in config files and let Qubex prepare QuEL-backed control resources automatically.
 - **Pulse-level control**: Run highly flexible experiments with arbitrary pulse sequences beyond circuit-level limits.
 - **Automated experiment routines**: Standardize characterization, calibration, and benchmarking workflows.
 - **Pulse-level simulator**: Simulate the same pulse sequences as experiments at the Hamiltonian level.
