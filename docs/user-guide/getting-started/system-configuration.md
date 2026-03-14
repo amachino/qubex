@@ -40,7 +40,7 @@ qubex-config/
       control_amplitude.yaml
       readout_amplitude.yaml
       capture_delay.yaml
-      jpa_params.yaml
+      ...
   calibration/
     SYSTEM_A/
       calib_note.json
