@@ -48,7 +48,7 @@ jobs:
           github_token: ${{ github.token }}
 
       - name: Install dependencies
-        run: uv sync --locked --dev --extra backend
+        run: uv sync --locked --dev --group docs --extra backend
 
       # TODO: Remove once quelware-client ships generated pb.
       - name: Generate quelware-core protobufs
