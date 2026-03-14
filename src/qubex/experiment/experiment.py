@@ -1,7 +1,7 @@
 """
-Provide the Experiment facade for notebook users.
+Provide the recommended user-facing Experiment facade.
 
-It manages which methods act as the public interface for conducting experiments.
+It composes measurement-side primitives into experiment-oriented workflows.
 """
 
 from __future__ import annotations
@@ -100,7 +100,12 @@ T = TypeVar("T", bound=ExperimentTaskResult)
 
 class Experiment:
     """
-    Class representing an experiment.
+    User-facing experiment facade for hardware-backed workflows.
+
+    `Experiment` is the recommended starting point for most users.
+    It builds on measurement-side session and execution primitives while
+    providing experiment-oriented setup, calibration, characterization,
+    benchmarking, and analysis flows.
 
     Parameters
     ----------

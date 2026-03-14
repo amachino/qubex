@@ -11,11 +11,12 @@
 - **Randomized Benchmarking**
 - **Pulse-level experiments and simulations**
 
-## Choose your entry point
+## Recommended docs paths
 
-- **Experiment**: For researchers who want to run pulse-level experiments on qubits through a high-level workflow. See the [Experiment guide](https://amachino.github.io/qubex/user-guide/experiment/).
-- **Measurement**: For advanced users who need direct control over hardware-backed measurement sessions, custom schedules, and low-level readout workflows. See the [Measurement guide](https://amachino.github.io/qubex/user-guide/measurement/).
+- **Experiment**: The recommended user-facing workflow for most hardware-backed qubit experiments, from setup through analysis. See the [Experiment guide](https://amachino.github.io/qubex/user-guide/experiment/).
 - **Simulator**: For researchers who want to study pulse-level Hamiltonian dynamics without using real hardware. See the [Simulator guide](https://amachino.github.io/qubex/user-guide/simulator/).
+- **Pulse sequences**: Learn the shared `PulseSchedule` model used across hardware and simulation workflows. See the [PulseSchedule guide](https://amachino.github.io/qubex/user-guide/pulse-sequences/).
+- **Low-level APIs**: Start here when you need measurement-side abstractions such as sessions, schedules, readout, sweeps, and backend integration. See the [overview](https://amachino.github.io/qubex/user-guide/low-level-apis/).
 
 ## Requirements
 
@@ -65,5 +66,5 @@ make sync
 
 The documentation is available at [https://amachino.github.io/qubex/](https://amachino.github.io/qubex/).
 
-- User guides: [Installation](https://amachino.github.io/qubex/user-guide/getting-started/installation/), [System configuration](https://amachino.github.io/qubex/user-guide/getting-started/system-configuration/), [Choose your entry point](https://amachino.github.io/qubex/user-guide/getting-started/choose-your-entry-point/), [Examples](https://amachino.github.io/qubex/examples/), and [API reference](https://amachino.github.io/qubex/api-reference/qubex/).
+- User guides: [Installation](https://amachino.github.io/qubex/user-guide/getting-started/installation/), [System configuration](https://amachino.github.io/qubex/user-guide/getting-started/system-configuration/), [Choose where to start](https://amachino.github.io/qubex/user-guide/getting-started/choose-where-to-start/), [Examples](https://amachino.github.io/qubex/examples/), and [API reference](https://amachino.github.io/qubex/api-reference/qubex/).
 - Contributors: [Contributing](https://amachino.github.io/qubex/CONTRIBUTING/), [Developer guide](https://amachino.github.io/qubex/developer-guide/), and the source files in [docs](https://github.com/amachino/qubex/tree/main/docs).

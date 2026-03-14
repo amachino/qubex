@@ -1,4 +1,4 @@
-"""Measurement facade for end-to-end measurement workflows."""
+"""Measurement facade for measurement-centric hardware workflows."""
 
 from __future__ import annotations
 
@@ -66,13 +66,18 @@ logger = logging.getLogger(__name__)
 
 class Measurement:
     """
-    Facade class for end-to-end measurement workflows.
+    Measurement-centric facade for hardware-backed session and execution flows.
 
-    `Measurement` owns the high-level workflow while delegating concrete
-    responsibilities to focused collaborators: context access
-    (`MeasurementContext`), configuration/backend lifecycle
+    `Measurement` is the measurement-side foundation that `Experiment`
+    delegates to for session lifecycle and measurement execution.
+    Choose it when sessions, schedules, capture/readout, sweeps, and
+    backend-facing concepts should be the main abstraction, not because it is
+    a strictly more capable alternative to `Experiment`.
+
+    Concrete responsibilities are delegated to focused collaborators:
+    context access (`MeasurementContext`), configuration/backend lifecycle
     (`MeasurementSessionService`), schedule assembly
-    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), and execution
+    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), execution
     orchestration (`MeasurementExecutionService`), classifier state
     (`MeasurementClassificationService`), and temporary DC operations
     (`MeasurementAmplificationService`).

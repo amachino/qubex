@@ -18,7 +18,8 @@
 ## 推奨する進み方
 
 1. [インストール](../getting-started/installation.md) で Qubex を入れる
-2. [Simulator サンプルワークフロー](examples.md) から notebook を始める
+2. 必要に応じて共有の pulse 系列モデルを確認する: [PulseSchedule の組み方](../pulse-sequences/index.md)
+3. [Simulator サンプルワークフロー](examples.md) から notebook を始める
 
 Simulator notebook を始めるのに、実機向けの設定ファイルは不要です。
 

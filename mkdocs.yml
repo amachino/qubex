@@ -60,18 +60,21 @@ plugins:
             - はじめに:
                 - インストール: user-guide/getting-started/installation.md
                 - システム設定: user-guide/getting-started/system-configuration.md
-                - 入口を選ぶ: user-guide/getting-started/choose-your-entry-point.md
+                - 始め方を選ぶ: user-guide/getting-started/choose-where-to-start.md
+            - パルスシーケンス:
+                - PulseSchedule の組み方: user-guide/pulse-sequences/index.md
             - Experiment:
                 - 概要: user-guide/experiment/index.md
                 - クイックスタート: user-guide/getting-started/quickstart.md
                 - サンプルワークフロー: user-guide/experiment/examples.md
                 - コミュニティ提供ワークフロー: user-guide/getting-started/contrib-workflows.md
-            - Measurement:
-                - 概要: user-guide/measurement/index.md
-                - サンプルワークフロー: user-guide/measurement/examples.md
             - Simulator:
                 - 概要: user-guide/simulator/index.md
                 - サンプルワークフロー: user-guide/simulator/examples.md
+            - 低レベル API:
+                - 概要: user-guide/low-level-apis/index.md
+                - Measurement API 概要: user-guide/measurement/index.md
+                - Measurement サンプルワークフロー: user-guide/measurement/examples.md
             - サンプル集: examples/index.md
             - コントリビュート: CONTRIBUTING.md
             - 開発ガイド:
@@ -108,18 +111,21 @@ nav:
   - Getting started:
       - Installation: user-guide/getting-started/installation.md
       - System configuration: user-guide/getting-started/system-configuration.md
-      - Choose your entry point: user-guide/getting-started/choose-your-entry-point.md
+      - Choose where to start: user-guide/getting-started/choose-where-to-start.md
+  - Pulse sequences:
+      - Build pulse sequences with PulseSchedule: user-guide/pulse-sequences/index.md
   - Experiment:
       - Overview: user-guide/experiment/index.md
       - Quickstart: user-guide/getting-started/quickstart.md
       - Example workflows: user-guide/experiment/examples.md
       - Community-contributed workflows: user-guide/getting-started/contrib-workflows.md
-  - Measurement:
-      - Overview: user-guide/measurement/index.md
-      - Example workflows: user-guide/measurement/examples.md
   - Simulator:
       - Overview: user-guide/simulator/index.md
       - Example workflows: user-guide/simulator/examples.md
+  - Low-level APIs:
+      - Overview: user-guide/low-level-apis/index.md
+      - Measurement API overview: user-guide/measurement/index.md
+      - Measurement example workflows: user-guide/measurement/examples.md
   - Examples: examples/index.md
   - Contributing: CONTRIBUTING.md
   - Developer guide:

@@ -19,8 +19,8 @@ It provides a high-level workflow for configuring systems, connecting to instrum
 
 ## Choose Measurement instead when
 
-- You need lower-level access to measurement sessions and backend execution
-- You want to build or run measurement schedules directly
-- You are working on readout-specific or sequencer-level workflows
+- You want measurement-side concepts such as sessions, schedules, capture/readout, or backend integration to be your primary abstraction
+- You are building measurement-specific tooling, readout utilities, or backend-facing flows
+- You want examples and APIs centered on measurement primitives rather than experiment workflows
 
 See [Measurement overview](../measurement/index.md) for that path.

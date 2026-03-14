@@ -18,7 +18,8 @@ Use it when you want to model quantum systems, drive them with pulses, and itera
 ## Recommended path
 
 1. Install Qubex: [Installation](../getting-started/installation.md)
-2. Start with curated notebooks: [Simulator example workflows](examples.md)
+2. Learn the shared pulse-sequence model if needed: [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
+3. Start with curated notebooks: [Simulator example workflows](examples.md)
 
 You do not need hardware configuration files to begin with the simulator notebooks.
 

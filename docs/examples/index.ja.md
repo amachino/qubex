@@ -2,11 +2,11 @@
 
 このセクションでは、ドキュメントに同梱されているレンダリング済み Jupyter Notebook へのリンクをまとめています。
 
-Qubex が初めてなら、まず [入口を選ぶ](../user-guide/getting-started/choose-your-entry-point.md) から始めて、対応するガイドに進んでください。
+Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-started/choose-where-to-start.md) から始めて、対応するガイドに進んでください。
 
 - [Experiment](../user-guide/experiment/index.md)
-- [Measurement](../user-guide/measurement/index.md)
 - [Simulator](../user-guide/simulator/index.md)
+- [低レベル API](../user-guide/low-level-apis/index.md)
 
 ## Experiment
 
@@ -21,7 +21,7 @@ Qubex が初めてなら、まず [入口を選ぶ](../user-guide/getting-starte
 - [状態分類](experiment/8_state_classification.ipynb)
 - [CR 較正](experiment/9_cr_calibration.ipynb)
 
-## Measurement
+## 低レベル API (`Measurement`)
 
 - [Measurement config](measurement/measurement_config.ipynb)
 - [Measurement session](measurement/measurement_client.ipynb)
@@ -44,6 +44,7 @@ Qubex が初めてなら、まず [入口を選ぶ](../user-guide/getting-starte
 
 ## Pulse
 
+- [PulseSchedule の組み方](../user-guide/pulse-sequences/index.md)
 - [Pulse チュートリアル](pulse/tutorial.ipynb)
 - [Shape hash と waveform 再利用](pulse/shape_hash_and_waveform_reuse.ipynb)
 

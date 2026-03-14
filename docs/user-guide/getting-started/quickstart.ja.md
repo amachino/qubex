@@ -89,6 +89,8 @@ print("single:", result.data[Q0].kerneled)
 
 再利用可能な pulse object から制御系列を明示的に組み立てたい場合は `PulseSchedule` を作成します。
 
+ワークフローに依らない schedule 構築の説明は [PulseSchedule の組み方](../pulse-sequences/index.md) を参照してください。
+
 ```python
 pulse = qx.pulse.Gaussian(duration=64, amplitude=0.05, sigma=16)
 pulse.plot()

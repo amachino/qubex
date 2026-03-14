@@ -1,7 +1,7 @@
 # Measurement サンプルワークフロー
 
 このページでは、`Measurement` ワークフローの主要な notebook 入口を紹介します。
-`Experiment` よりも直接的に実機実行を制御したい場合に使ってください。
+session、schedule、capture/readout、sweep、backend 実行を measurement の語彙で扱いたい場合に使ってください。
 
 ## 推奨する出発点
 
@@ -13,9 +13,10 @@
 
 - [Measurement sweep builder](../../examples/measurement/sweep_measurement_builder.ipynb): sweep 設定モデルから `PulseSchedule` を組み立てます。
 - [Sweep measurement executor](../../examples/measurement/sweep_measurement_executor.ipynb): measurement 側の抽象化を使って構造化 sweep workflow を実行します。
-- [QuEL-3 sequencer builder flow](../../examples/measurement/quel3_sequencer_builder_flow.ipynb): バックエンド固有の低レベル sequencer 経路を扱います。
+- [QuEL-3 sequencer builder flow](../../examples/measurement/quel3_sequencer_builder_flow.ipynb): バックエンド固有の sequencer 経路を扱います。
 
 ## 関連ページ
 
+- [低レベル API 概要](../low-level-apis/index.md)
 - [Measurement 概要](index.md)
 - [サンプル集全体](../../examples/index.md)

@@ -2,8 +2,7 @@
 
 Qubex is a unified pulse-level framework powered by [QuEL](https://quel-inc.com/) control hardware, streamlining device configuration, arbitrary pulse-sequence execution, characterization, calibration, benchmarking, and offline iteration with a pulse-level simulator.
 
-The recommended user workflow is `Experiment`-first.
-Lower-level `Measurement` APIs are available for advanced control.
+For most users, the recommended place to start is `Experiment`.
 
 ## Key features
 
@@ -17,13 +16,18 @@ Lower-level `Measurement` APIs are available for advanced control.
 
 - [Installation](user-guide/getting-started/installation.md)
 - [System configuration](user-guide/getting-started/system-configuration.md)
-- [Choose your entry point](user-guide/getting-started/choose-your-entry-point.md)
+- [Choose where to start](user-guide/getting-started/choose-where-to-start.md)
+- [Build pulse sequences with PulseSchedule](user-guide/pulse-sequences/index.md)
 
-## Choose your workflow
+## Recommended paths
 
-- [Experiment guide](user-guide/experiment/index.md): Use the recommended high-level workflow for hardware-backed experiments.
-- [Measurement guide](user-guide/measurement/index.md): Work directly with measurement sessions, custom schedules, and lower-level readout flows.
+- [Experiment guide](user-guide/experiment/index.md): Use the recommended user-facing workflow for most hardware-backed experiments.
 - [Simulator guide](user-guide/simulator/index.md): Study pulse-level Hamiltonian dynamics offline without using real hardware.
+
+## Low-level APIs
+
+- [Overview](user-guide/low-level-apis/index.md): Start here when measurement-side abstractions are your main concern.
+- [Measurement API overview](user-guide/measurement/index.md): Work directly with sessions, schedules, capture/readout, sweeps, and backend integration.
 
 ## Explore examples and APIs
 

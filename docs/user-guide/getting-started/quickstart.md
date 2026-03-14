@@ -102,6 +102,9 @@ as complex I/Q data: in `avg` mode it is a single complex value, and in
 Create a `PulseSchedule` when you want to build a control sequence explicitly
 from reusable pulse objects.
 
+For a workflow-agnostic introduction to schedule construction, see
+[Build pulse sequences with PulseSchedule](../pulse-sequences/index.md).
+
 ```python
 pulse = qx.pulse.Gaussian(duration=64, amplitude=0.05, sigma=16)
 pulse.plot()

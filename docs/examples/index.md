@@ -2,11 +2,11 @@
 
 This section links to the rendered Jupyter notebooks shipped with the documentation.
 
-If you are new to Qubex, start with [Choose your entry point](../user-guide/getting-started/choose-your-entry-point.md) and then continue with the corresponding guide:
+If you are new to Qubex, start with [Choose where to start](../user-guide/getting-started/choose-where-to-start.md) and then continue with the corresponding guide:
 
 - [Experiment](../user-guide/experiment/index.md)
-- [Measurement](../user-guide/measurement/index.md)
 - [Simulator](../user-guide/simulator/index.md)
+- [Low-level APIs](../user-guide/low-level-apis/index.md)
 
 ## Experiment
 
@@ -21,7 +21,7 @@ If you are new to Qubex, start with [Choose your entry point](../user-guide/gett
 - [State classification](experiment/8_state_classification.ipynb)
 - [CR calibration](experiment/9_cr_calibration.ipynb)
 
-## Measurement
+## Low-level APIs (`Measurement`)
 
 - [Measurement config](measurement/measurement_config.ipynb)
 - [Measurement session](measurement/measurement_client.ipynb)
@@ -44,6 +44,7 @@ If you are new to Qubex, start with [Choose your entry point](../user-guide/gett
 
 ## Pulse
 
+- [Build pulse sequences with PulseSchedule](../user-guide/pulse-sequences/index.md)
 - [Pulse tutorial](pulse/tutorial.ipynb)
 - [Shape hash and waveform reuse](pulse/shape_hash_and_waveform_reuse.ipynb)
 

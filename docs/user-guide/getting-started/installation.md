@@ -76,4 +76,4 @@ make sync
 ## Next steps
 
 - If you plan to use real hardware, continue with [System configuration](system-configuration.md).
-- Choose the workflow that matches your goal: [Choose your entry point](choose-your-entry-point.md).
+- Choose the path that matches your goal: [Choose where to start](choose-where-to-start.md).

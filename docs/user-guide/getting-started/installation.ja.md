@@ -74,4 +74,4 @@ make sync
 ## 次のステップ
 
 - 実機を使うなら、次に [システム設定](system-configuration.md) を進めてください。
-- 自分の目的に合うワークフローは [入口を選ぶ](choose-your-entry-point.md) から確認できます。
+- 自分の目的に合う始め方は [始め方を選ぶ](choose-where-to-start.md) から確認できます。
