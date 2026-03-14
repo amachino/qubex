@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import Any, cast
 
 import numpy as np
 import plotly.graph_objects as go
 import pytest
 from qxpulse import Blank, Gaussian, PulseSchedule
 
+import qubex.visualization as viz
+from qubex.measurement.classifiers import StateClassifierGMM, StateClassifierKMeans
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.visualization.schedule_visualizer import (
@@ -18,6 +22,156 @@ from qubex.visualization.schedule_visualizer import (
     plot_measurement_schedule,
     plot_sequencer_timeline,
 )
+
+
+def _make_kmeans_classifier() -> StateClassifierKMeans:
+    """Return a minimal k-means classifier for plotting tests."""
+    return StateClassifierKMeans(
+        dataset={
+            0: np.array([0.0 + 0.0j]),
+            1: np.array([1.0 + 0.0j]),
+        },
+        model=cast(
+            Any,
+            SimpleNamespace(
+                cluster_centers_=np.array(
+                    [
+                        [0.0, 0.0],
+                        [1.0, 0.0],
+                    ]
+                )
+            ),
+        ),
+        label_map={0: 0, 1: 1},
+        confusion_matrix=np.eye(2),
+        scale=1.0,
+        phase=0.0,
+        created_at="",
+    )
+
+
+def _make_gmm_classifier() -> StateClassifierGMM:
+    """Return a minimal GMM classifier for plotting tests."""
+    return StateClassifierGMM(
+        dataset={
+            0: np.array([0.0 + 0.0j]),
+            1: np.array([1.0 + 0.0j]),
+        },
+        model=cast(
+            Any,
+            SimpleNamespace(
+                means_=np.array(
+                    [
+                        [0.0, 0.0],
+                        [1.0, 0.0],
+                    ]
+                ),
+                covariances_=np.array([0.25, 0.5]),
+                weights_=np.array([0.5, 0.5]),
+            ),
+        ),
+        label_map={0: 0, 1: 1},
+        confusion_matrix=np.eye(2),
+        scale=1.0,
+        phase=0.0,
+        created_at="",
+    )
+
+
+def test_make_classification_figure_adds_points_centers_and_sigma_bands() -> None:
+    """Given classified IQ data, when making a classification figure, then the expected traces are present."""
+    data = np.array(
+        [
+            0.0 + 0.0j,
+            0.1 + 0.1j,
+            1.0 + 0.0j,
+            1.1 + 0.1j,
+        ]
+    )
+    labels = np.array([0, 0, 1, 1])
+
+    figure = viz.make_classification_figure(
+        target="Q00",
+        data=data,
+        labels=labels,
+        centers={0: 0.0 + 0.0j, 1: 1.0 + 0.0j},
+        stddevs={0: 0.2, 1: 0.3},
+    )
+
+    assert isinstance(figure, go.Figure)
+    traces = tuple(cast(Any, figure.data))
+    assert len(traces) == 6
+    assert figure.layout.title.text == "State classification : Q00"
+    trace_names = {str(trace.name) for trace in traces}
+    assert {"|0⟩", "|1⟩", "|0⟩ ± 2σ", "|1⟩ ± 2σ"} <= trace_names
+
+
+@pytest.mark.parametrize(
+    ("classifier_factory", "expects_stddevs"),
+    [
+        (_make_kmeans_classifier, False),
+        (_make_gmm_classifier, True),
+    ],
+    ids=["kmeans", "gmm"],
+)
+def test_classifier_plot_uses_classification_figure_helper(
+    monkeypatch: pytest.MonkeyPatch,
+    classifier_factory: Callable[[], StateClassifierGMM | StateClassifierKMeans],
+    expects_stddevs: bool,
+) -> None:
+    """Given a state classifier, when plotting, then it delegates figure construction to the visualization helper."""
+    classifier = classifier_factory()
+    data = np.array([0.0 + 0.0j, 1.0 + 0.0j])
+    labels = np.array([0, 1])
+    figure = go.Figure()
+    captured: dict[str, object] = {}
+
+    def fake_make_classification_figure(
+        *,
+        target: str,
+        data: np.ndarray,
+        labels: np.ndarray,
+        centers: dict[int, complex],
+        stddevs: dict[int, float] | None = None,
+        n_samples: int = 1000,
+    ) -> go.Figure:
+        captured["target"] = target
+        captured["data"] = data
+        captured["labels"] = labels
+        captured["centers"] = centers
+        captured["stddevs"] = stddevs
+        captured["n_samples"] = n_samples
+        return figure
+
+    def fake_show_figure(
+        shown_figure: go.Figure,
+        *,
+        filename: str,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
+        captured["shown_figure"] = shown_figure
+        captured["filename"] = filename
+        captured["width"] = width
+        captured["height"] = height
+
+    monkeypatch.setattr(
+        viz, "make_classification_figure", fake_make_classification_figure
+    )
+    monkeypatch.setattr(viz, "show_figure", fake_show_figure)
+
+    classifier.plot("Q00", data, labels)
+
+    assert captured["target"] == "Q00"
+    assert np.array_equal(cast(np.ndarray, captured["data"]), data)
+    assert np.array_equal(cast(np.ndarray, captured["labels"]), labels)
+    assert captured["centers"] == classifier.centers
+    assert captured["shown_figure"] is figure
+    assert captured["filename"] == "state_classification_Q00"
+    if expects_stddevs:
+        assert captured["stddevs"] == classifier.stddevs
+    else:
+        assert captured["stddevs"] is None
 
 
 def test_make_measurement_schedule_figure_adds_capture_overlay() -> None:

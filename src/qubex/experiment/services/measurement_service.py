@@ -108,6 +108,16 @@ def _run_async(
     return bridge.run(factory, timeout=timeout)
 
 
+def _get_classifier_stddevs(
+    classifier: StateClassifier,
+) -> dict[int, float] | None:
+    """Return classifier standard deviations when the implementation exposes them."""
+    try:
+        return classifier.stddevs
+    except (AttributeError, NotImplementedError):
+        return None
+
+
 class MeasurementService:
     """Service for running measurement routines."""
 
@@ -2029,6 +2039,8 @@ class MeasurementService:
             average_fidelities = {}
             data = {}
             classifiers = {}
+            figures: dict[str, go.Figure] = {}
+            figure: go.Figure | None = None
             for target in targets:
                 result = self._build_classifier(
                     targets=target,
@@ -2049,6 +2061,10 @@ class MeasurementService:
                 average_fidelities[target] = result["average_readout_fidelity"][target]
                 data[target] = result["data"]
                 classifiers[target] = result["classifiers"][target]
+                if figure is None:
+                    figure = result.figure
+                if result.figures is not None:
+                    figures.update(result.figures)
 
             return Result(
                 data={
@@ -2056,7 +2072,9 @@ class MeasurementService:
                     "average_readout_fidelity": average_fidelities,
                     "data": data,
                     "classifiers": classifiers,
-                }
+                },
+                figure=figure,
+                figures=figures or None,
             )
 
     def _build_classifier(
@@ -2151,18 +2169,28 @@ class MeasurementService:
 
         fidelities = {}
         average_fidelities = {}
+        figures: dict[str, go.Figure] = {}
         for target in targets:
             clf = classifiers[target]
             classified = []
             for state in range(n_states):
+                predicted_labels = clf.predict(data[target][state])
+                figure = viz.make_classification_figure(
+                    target=target,
+                    data=data[target][state],
+                    labels=predicted_labels,
+                    centers=clf.centers,
+                    stddevs=_get_classifier_stddevs(clf),
+                )
+                figures[f"{target}_prepared_{state}"] = figure
                 if plot:
                     print(f"{target} prepared as |{state}⟩:")
-                result = clf.classify(
-                    target,
-                    data[target][state],
-                    plot=plot,
-                )
-                classified.append(result)
+                    viz.show_figure(
+                        figure,
+                        filename=f"state_classification_{target}_{state}",
+                    )
+                count = np.bincount(predicted_labels, minlength=clf.n_states)
+                classified.append({label: count[label] for label in range(len(count))})
             fidelity = [
                 classified[state][state] / sum(classified[state].values())
                 for state in range(n_states)
@@ -2199,7 +2227,9 @@ class MeasurementService:
                 "average_readout_fidelity": average_fidelities,
                 "data": data,
                 "classifiers": classifiers,
-            }
+            },
+            figure=next(iter(figures.values()), None),
+            figures=figures or None,
         )
 
     def measure_1q_state_fidelity(

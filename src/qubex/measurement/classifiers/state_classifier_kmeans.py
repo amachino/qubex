@@ -6,13 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import numpy as np
-import plotly.graph_objects as go
 from numpy.typing import NDArray
 from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix
 
 import qubex.visualization as viz
-from qubex.visualization import get_colors, get_config
 
 from .state_classifier import StateClassifier
 
@@ -320,79 +318,18 @@ class StateClassifierKMeans(StateClassifier):
             Number of samples to plot, by default 1000.
 
         """
-        if len(data) > n_samples:
-            data = data[:n_samples]
-            labels = labels[:n_samples]
-        x = data.real
-        y = data.imag
-        unique_labels = np.unique(labels)
-        colors = get_colors(alpha=0.8)
-
-        max_val = np.max(np.abs(data))
-        axis_range = [-max_val * 1.1, max_val * 1.1]
-        dtick = max_val / 2
-
-        fig = viz.make_figure()
-        for idx, label in enumerate(unique_labels):
-            color = colors[idx % len(colors)]
-            mask = labels == label
-            fig.add_trace(
-                go.Scatter(
-                    x=x[mask],
-                    y=y[mask],
-                    mode="markers",
-                    name=f"|{label}⟩",
-                    marker=dict(
-                        size=4,
-                        color=f"rgba{color}",
-                    ),
-                )
-            )
-        for label, center in self.centers.items():
-            fig.add_trace(
-                go.Scatter(
-                    x=[center.real],
-                    y=[center.imag],
-                    mode="markers",
-                    name=f"|{label}⟩",
-                    showlegend=True,
-                    marker=dict(
-                        size=10,
-                        color="black",
-                        symbol="x",
-                    ),
-                )
-            )
-        fig.update_layout(
-            title=f"State classification : {target}",
-            xaxis_title="In-Phase (arb. units)",
-            yaxis_title="Quadrature (arb. units)",
-            showlegend=True,
-            width=500,
-            height=400,
-            margin=dict(l=120, r=120),
-            xaxis=dict(
-                range=axis_range,
-                dtick=dtick,
-                tickformat=".2g",
-                showticklabels=True,
-                zeroline=True,
-                zerolinecolor="black",
-                showgrid=True,
-            ),
-            yaxis=dict(
-                range=axis_range,
-                scaleanchor="x",
-                scaleratio=1,
-                dtick=dtick,
-                tickformat=".2g",
-                showticklabels=True,
-                zeroline=True,
-                zerolinecolor="black",
-                showgrid=True,
-            ),
+        fig = viz.make_classification_figure(
+            target=target,
+            data=data,
+            labels=labels,
+            centers=self.centers,
+            stddevs=None,
+            n_samples=n_samples,
         )
-        fig.show(config=get_config())
+        viz.show_figure(
+            fig,
+            filename=f"state_classification_{target}",
+        )
 
     def estimate_weights(
         self,

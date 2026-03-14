@@ -18,6 +18,7 @@ from qxvisualizer.figure import (
 from .plotting import (
     make_bloch_vectors_figure,
     make_cdf_figure,
+    make_classification_figure,
     make_fft_figure,
     make_iq_scatter_figure,
     make_plot_figure,
@@ -66,6 +67,7 @@ __all__ = [
     "get_config",
     "make_bloch_vectors_figure",
     "make_cdf_figure",
+    "make_classification_figure",
     "make_fft_figure",
     "make_figure",
     "make_iq_scatter_figure",
