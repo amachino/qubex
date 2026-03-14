@@ -6,6 +6,8 @@ repo_name: amachino/qubex
 
 docs_dir: docs
 site_dir: site
+hooks:
+  - scripts/mkdocs_hooks.py
 
 theme:
   name: material
@@ -24,10 +26,6 @@ theme:
 
 plugins:
   - gh-admonitions
-  - mkdocs-autoapi:
-      autoapi_dir: src
-      autoapi_root: api-reference
-      autoapi_add_nav_entry: false
   - mkdocs-jupyter:
       execute: false
       include_source: true
@@ -89,7 +87,7 @@ plugins:
                 - Issue ガイドライン: developer-guide/issue-guidelines.md
                 - Pull request ガイドライン: developer-guide/pull-request-guidelines.md
                 - コミットメッセージガイドライン: developer-guide/commit-guidelines.md
-            - API リファレンス: https://amachino.github.io/qubex/api-reference/qubex/
+            - API リファレンス: api-reference/qubex/index.md
   - search
 
 markdown_extensions:
@@ -140,4 +138,4 @@ nav:
       - Issue guidelines: developer-guide/issue-guidelines.md
       - Pull request guidelines: developer-guide/pull-request-guidelines.md
       - Commit message guidelines: developer-guide/commit-guidelines.md
-  - API reference: https://amachino.github.io/qubex/api-reference/qubex/
+  - API reference: api-reference/qubex/index.md

@@ -30,7 +30,7 @@ Qubex is a unified pulse-level framework powered by [QuEL](https://quel-inc.com/
 ## Explore examples and APIs
 
 - [Examples](examples/index.md)
-- [API reference](https://amachino.github.io/qubex/api-reference/qubex/)
+- [API reference](api-reference/qubex/index.md)
 
 ## Contribute to Qubex
 
