@@ -153,7 +153,8 @@ You can also return a `PulseSchedule` from a factory function and sweep that
 schedule directly. This is useful for wait-time sweeps in T1-like sequences,
 where the blank duration should follow the pulse sampling period. Here,
 the log-spaced wait values are discretized onto the valid time grid before the
-sweep.
+sweep. The example below uses `2 ns` as one concrete value, but you should
+replace it with the sampling period required by the hardware you are using.
 
 ```python
 wait_range = exp.util.discretize_time_range(
@@ -220,6 +221,34 @@ This example reuses `control_pulse` and `readout_pulse` inside the schedule.
 It first performs a readout, then inserts a blank interval and a control
 pulse, and finally performs a second readout. Because `RQ0` is read out twice,
 `result.data[Q0]` contains two capture results.
+
+## 8. Experimental async `run_*` methods
+
+`Experiment` also exposes async-first measurement entry points such as
+`run_measurement()`, `run_sweep_measurement()`, and `run_ndsweep_measurement()`.
+Treat them as Experimental features: they are public, but their signature and
+behavior may still change in future releases.
+
+Use them when your application is already async. In scripts, wrap them with
+`asyncio.run(...)`. In notebooks, call them with `await`.
+
+```python
+import asyncio
+
+
+async def main() -> None:
+    result = await exp.run_measurement(
+        schedule=schedule,
+        n_shots=1024,
+    )
+    print(type(result).__name__)
+
+
+asyncio.run(main())
+```
+
+If you want the most stable path today, prefer the legacy synchronous methods
+introduced above (`measure()`, `execute()`, `sweep_parameter()`).
 
 ## Next steps
 

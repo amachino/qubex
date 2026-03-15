@@ -2,22 +2,24 @@
 
 ## Release target
 
-- Internal beta target: `v1.5.0b1` for internal evaluation (`2026-03-11` planning baseline)
+- Current workspace pre-release: `v1.5.0b4` (`2026-03-15` snapshot)
+- Internal beta sign-off scope remains the contract frozen for `v1.5.0b1`
 - GA release window: March 2026 or later (internal beta result dependent)
 
-## Current decisions (2026-03-11)
+## Current decisions (2026-03-15)
 
-- `v1.5.0b1` is an internal-only beta cut.
+- Current source version is `v1.5.0b4`; internal beta compatibility scope is still interpreted using the original `v1.5.0b1` sign-off contract.
 - Internal beta go/no-go is based on existing QuEL-1 user backward compatibility.
 - QuEL-3 implementation work remains in scope for `v1.5.0`, but it is not part of the internal `b1` sign-off gate.
 - Internal companion packages (`qxcore`, `qxfitting`, `qxpulse`, `qxschema`, `qxsimulator`, `qxvisualizer`, `qxdriver-quel1`) remain at `0.0.0.dev0` for the internal beta bundle.
 - Internal beta artifact validation uses `make build-all`; public `publish-all` is deferred until external beta / GA planning.
+- QuEL-3 compatibility fallback now treats legacy `reset_awg_and_capunits()` and `SystemManager.modified_backend_settings(...)` requests as no-op when the backend does not expose the corresponding QuEL-1-only capability.
 
 ## Dependency status
 
 - `quelware-client` API baseline in this workspace is confirmed (`InstrumentResolver`, `Sequencer`, `Session.trigger(instrument_ids=...)`).
 - QuEL-3 beta decision items `DF-01` to `DF-06` are fixed as of `2026-02-25`.
-- Local internal beta checks are green as of `2026-03-11` (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `794 passed`; `make build-all`: passed).
+- Local internal beta checks are green as of `2026-03-15` (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `882 passed`; `make build-all`: passed).
 - QuEL-1 compatibility remains the only blocking compatibility gate for the internal `v1.5.0b1` cut.
 - Upstream clarification is still required for settings introspection and stable trigger/result contracts.
 - Remaining QuEL-3 risk is implementation completion, hardware validation, and closure of upstream clarification items after the internal `b1` cut.
@@ -55,8 +57,8 @@ Internal `v1.5.0b1` interpretation:
 | P0 | Align capture-mode contract (`avg`=`AVERAGED_VALUE`, `single`=`VALUES_PER_ITER`) | 2026-03-05 | quelware directive support (`SetCaptureMode`) | IN_PROGRESS (mode mapping done, waveform-contract validation pending) |
 | P0 | Implement QuEL-3 `tx/rx/trx` convergence rule (`read_out`/`read_in` -> one transceiver alias/resource when consistent) | 2026-02-28 | wiring.v2 + resolver + adapter payload semantics | DONE (2026-02-27) |
 | P0 | Remove adapter limitation that rejects multiple logical targets per one alias | 2026-02-28 | `trx` convergence rule and synchronized trigger flow | DONE (2026-02-27) |
-| P0 | Add capability-gated behavior for QuEL-1-only settings introspection paths (`dump_box`-dependent utilities) on QuEL-3 | 2026-03-05 | `system` package boundary decision | IN_PROGRESS (core optional-capability guards are in source; final verification pending) |
-| P0 | Define and implement QuEL-3 frequency-sweep contract for `CharacterizationService` (`scan_qubit_frequencies`, `scan_resonator_frequencies`, `measure_electrical_delay`) without QuEL-1-only LO/CNCO reset assumptions | 2026-03-05 | QuEL-3 tuning/introspection API contract + capability profile | TODO |
+| P0 | Add capability-gated behavior for QuEL-1-only settings introspection paths (`dump_box`-dependent utilities) on QuEL-3 | 2026-03-05 | `system` package boundary decision | IN_PROGRESS (optional-capability guards and no-op compatibility fallbacks are in source; final verification pending) |
+| P0 | Define and implement QuEL-3 frequency-sweep contract for `CharacterizationService` (`scan_qubit_frequencies`, `scan_resonator_frequencies`, `measure_electrical_delay`) without QuEL-1-only LO/CNCO reset assumptions | 2026-03-05 | QuEL-3 tuning/introspection API contract + capability profile | IN_PROGRESS (legacy retune/reset hard-fail was removed; valid coarse/fine sweep contract is still unresolved) |
 | P0 | Prepare compatibility contract tests at `Measurement` level (and `Experiment` facade delegation smoke checks) | 2026-03-05 | Existing controller APIs | IN_PROGRESS (core matrix covered; `partial/gap` items remain in contract scope) |
 | P0 | Implement synchronized measurement protocol execution path (SP-BETA-001) | 2026-03-05 | Multi-instrument and cross-unit trigger support | IN_PROGRESS (software path done, hardware evidence pending) |
 | P0 | Track and close blocking clarifications with quelware team (alias uniqueness, trigger guarantees, settings introspection path) | 2026-03-05 | Coordination with quelware team | PENDING |
@@ -79,7 +81,7 @@ Calendar note:
 - `2026-02-29` does not exist; end-of-February deadlines are normalized to `2026-02-28`.
 - Beta deadline is extended from `2026-02-28` to `2026-03-05` (decision on `2026-03-02`).
 
-## Execution order (as of 2026-03-11)
+## Execution order (as of 2026-03-15)
 
 1. Wave A (current): internal `v1.5.0b1` sign-off
    - Re-run required checks: `uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`.
@@ -184,12 +186,13 @@ Calendar note:
 - [ ] Run QuEL-3 hardware validation (`HV-001` to `HV-007`) and attach evidence.
 - [ ] Continue with non-QuEL-3 P1 implementation (`async primitives`, `sweep API`, remaining `2 ns` removals).
 
-## Current beta gate checklist (internal `v1.5.0b1`)
+## Current beta gate checklist (internal beta line; scope frozen at `v1.5.0b1`)
 
-- [x] Re-run local quality gates on current `develop` (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `794 passed`).
+- [x] Re-run local quality gates on current `develop` (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `882 passed`).
 - [x] Confirm internal artifact build succeeds on current `develop` (`make build-all`).
 - [x] Confirm async-first APIs exist on `Experiment` (`run_measurement`, `run_sweep_measurement`) and delegation tests are present.
 - [x] Confirm sweep execution APIs and NetCDF persistence are implemented in `measurement` layer.
+- [x] Confirm QuEL-3 compatibility fallback keeps legacy reset/backend-settings override requests from raising (`reset_awg_and_capunits()` and `SystemManager.modified_backend_settings(...)` no-op when unsupported).
 - [ ] Fill and publish internal beta release notes + migration notes.
 - [ ] Complete QuEL-1 internal user smoke / backward compatibility confirmation.
 - [ ] Record QuEL-3 status as non-blocking follow-up items in beta notes.
@@ -258,6 +261,8 @@ Calendar note:
 - 2026-02-18: Returned QuEL-3 decision items (`DF-01` to `DF-04`) to `PROPOSED` and deferred finalization until `quelware-client` completion.
 - 2026-02-18: Switched execution order to prioritize non-QuEL-3 tasks while QuEL-3 dependency remains incomplete.
 - 2026-02-24: Fixed DF-01 (`instrument_alias` explicit resolution required; fallback to target label prohibited) and DF-02 (capture key standardized as `{target}:{capture_index}` with deterministic per-target ordering). DF-03/DF-04 remain deferred.
+- 2026-03-15: QuEL-3 compatibility fallback was relaxed so `ExperimentContext.reset_awg_and_capunits()` and `SystemManager.modified_backend_settings(...)` no-op instead of raising when the active backend lacks the QuEL-1-only capability; spectroscopy contract definition remains follow-up work.
+- 2026-03-15: Re-ran local quality/build gates on current `quel3` branch (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `882 passed`; `make build-all`: passed).
 - 2026-02-24: Updated QuEL-3 runtime integration to follow latest `quelware-client-internal` APIs (`Session.trigger(instrument_ids=...)` and `ResultContainer.iq_result`), and made workspace import fallback prefer `packages/quelware-client-internal`.
 - 2026-02-24: Updated sequencer capture-window key generation/lookup to `{target}:{capture_index}` in both export and result-fetch paths.
 - 2026-02-24: Updated QuEL-3 adapter contract to require explicit alias mapping (`instrument_alias_map`) at payload-build time.

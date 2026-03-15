@@ -128,6 +128,8 @@ print("data:", result.data[Q0].data)
 ```
 
 factory function から `PulseSchedule` を返して、その schedule 自体を直接 sweep することもできます。これは T1 系列の待ち時間 sweep のように、blank duration を pulse sampling period に合わせたいときに便利です。以下では、対数間隔の待ち時間を有効な時間グリッドに離散化してから sweep しています。
+以下の例では具体値として `2 ns` を使っていますが、実際には使用する装置に
+合わせた sampling period を指定してください。
 
 ```python
 wait_range = exp.util.discretize_time_range(
@@ -189,6 +191,34 @@ print("n_captures:", len(result.data[Q0]))
 ```
 
 この例では、`control_pulse` と `readout_pulse` を schedule 内で再利用しています。最初に 1 回読み出しを行い、その後 blank interval と control pulse を入れ、最後にもう 1 回読み出しを行います。`RQ0` は 2 回読み出しされるため、`result.data[Q0]` には 2 つのキャプチャ結果が入ります。
+
+## 8. Experimental な `run_*` 非同期メソッド
+
+`Experiment` には、`run_measurement()`、`run_sweep_measurement()`、
+`run_ndsweep_measurement()` のような async-first な測定 API もあります。
+これらは Experimental な機能として扱ってください。公開 API ではありますが、
+将来のリリースでシグネチャや挙動が変わる可能性があります。
+
+アプリケーション全体がすでに async で動いている場合に使ってください。
+script では `asyncio.run(...)`、notebook では `await` を使います。
+
+```python
+import asyncio
+
+
+async def main() -> None:
+    result = await exp.run_measurement(
+        schedule=schedule,
+        n_shots=1024,
+    )
+    print(type(result).__name__)
+
+
+asyncio.run(main())
+```
+
+現時点で安定性を優先するなら、ここまでで紹介した従来の同期メソッド
+（`measure()`、`execute()`、`sweep_parameter()`）を使ってください。
 
 ## 次のステップ
 
