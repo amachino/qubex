@@ -101,15 +101,30 @@ class Quel3ExecutionManager:
         """Return configured standalone unit label."""
         return self._standalone_unit_label
 
-    def execute_sync(self, *, request: object) -> Quel3BackendExecutionResult:
+    def execute_sync(
+        self,
+        *,
+        request: object,
+        parallel: bool = True,
+    ) -> Quel3BackendExecutionResult:
         """Execute a QuEL-3 backend request synchronously."""
-        return _run_async(lambda: self.execute_async(request=request))
+        return _run_async(lambda: self.execute_async(request=request, parallel=parallel))
 
-    async def execute_async(self, *, request: object) -> Quel3BackendExecutionResult:
+    async def execute_async(
+        self,
+        *,
+        request: object,
+        parallel: bool = True,
+    ) -> Quel3BackendExecutionResult:
         """Execute a QuEL-3 backend request asynchronously."""
-        return await self.execute(request=request)
+        return await self.execute(request=request, parallel=parallel)
 
-    async def execute(self, *, request: object) -> Quel3BackendExecutionResult:
+    async def execute(
+        self,
+        *,
+        request: object,
+        parallel: bool = True,
+    ) -> Quel3BackendExecutionResult:
         """
         Execute a QuEL-3 backend request asynchronously.
 
@@ -117,17 +132,21 @@ class Quel3ExecutionManager:
         ----------
         request : object
             Backend execution request with `payload`.
+        parallel : bool, optional
+            Whether to parallelize per-instrument phases, by default `True`.
         """
         payload = getattr(request, "payload", None)
         if not isinstance(payload, Quel3ExecutionPayload):
             raise TypeError(
                 "Quel3ExecutionManager expects request payload to be `Quel3ExecutionPayload`."
             )
-        return await self._execute(payload)
+        return await self._execute(payload, parallel=parallel)
 
     async def _execute(
         self,
         payload: Quel3ExecutionPayload,
+        *,
+        parallel: bool,
     ) -> Quel3BackendExecutionResult:
         """Execute one fixed-timeline measurement flow via quelware."""
         if len(payload.fixed_timelines) == 0:
@@ -214,9 +233,6 @@ class Quel3ExecutionManager:
                     iterations=timeline_iterations,
                 )
 
-                await asyncio.gather(
-                    *(driver.initialize() for driver in alias_to_driver.values())
-                )
                 alias_to_directives = {
                     alias: self._build_driver_directives(
                         alias=alias,
@@ -227,26 +243,22 @@ class Quel3ExecutionManager:
                     )
                     for alias in alias_to_driver
                 }
-                await asyncio.gather(
-                    *(
-                        driver.apply(alias_to_directives[alias])
-                        for alias, driver in alias_to_driver.items()
-                    )
+                await self._initialize_drivers(
+                    drivers=tuple(alias_to_driver.values()),
+                    parallel=parallel,
+                )
+                await self._apply_drivers(
+                    alias_to_driver=alias_to_driver,
+                    alias_to_directives=alias_to_directives,
+                    parallel=parallel,
                 )
 
                 shot_samples = self._initialize_shot_samples(resolved_payload)
                 await session.trigger(instrument_ids=instrument_ids)
-                alias_results = dict(
-                    zip(
-                        aliases,
-                        await asyncio.gather(
-                            *(
-                                alias_to_driver[alias].fetch_result()
-                                for alias in aliases
-                            )
-                        ),
-                        strict=True,
-                    )
+                alias_results = await self._fetch_alias_results(
+                    aliases=aliases,
+                    alias_to_driver=alias_to_driver,
+                    parallel=parallel,
                 )
                 for alias, timeline in resolved_payload.fixed_timelines.items():
                     result = alias_results[alias]
@@ -289,6 +301,56 @@ class Quel3ExecutionManager:
             directives.append(capture_mode_directive)
         directives.append(sequencer.export_set_fixed_timeline_directive(alias))
         return directives
+
+    @staticmethod
+    async def _initialize_drivers(
+        *,
+        drivers: tuple[InstrumentDriverProtocol, ...],
+        parallel: bool,
+    ) -> None:
+        """Initialize drivers with optional per-driver parallelism."""
+        if parallel:
+            await asyncio.gather(*(driver.initialize() for driver in drivers))
+            return
+        for driver in drivers:
+            await driver.initialize()
+
+    @staticmethod
+    async def _apply_drivers(
+        *,
+        alias_to_driver: dict[str, InstrumentDriverProtocol],
+        alias_to_directives: dict[str, list[DirectiveProtocol]],
+        parallel: bool,
+    ) -> None:
+        """Apply directives with optional per-driver parallelism."""
+        if parallel:
+            await asyncio.gather(
+                *(
+                    driver.apply(alias_to_directives[alias])
+                    for alias, driver in alias_to_driver.items()
+                )
+            )
+            return
+        for alias, driver in alias_to_driver.items():
+            await driver.apply(alias_to_directives[alias])
+
+    @staticmethod
+    async def _fetch_alias_results(
+        *,
+        aliases: list[str],
+        alias_to_driver: dict[str, InstrumentDriverProtocol],
+        parallel: bool,
+    ) -> dict[str, object]:
+        """Fetch results with optional per-driver parallelism."""
+        if parallel:
+            results = await asyncio.gather(
+                *(alias_to_driver[alias].fetch_result() for alias in aliases)
+            )
+            return dict(zip(aliases, results, strict=True))
+        alias_results: dict[str, object] = {}
+        for alias in aliases:
+            alias_results[alias] = await alias_to_driver[alias].fetch_result()
+        return alias_results
 
     @staticmethod
     def _resolve_alias_to_id_map(

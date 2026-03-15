@@ -695,6 +695,51 @@ class _ParallelInstrumentDriver:
         return _ParallelResultContainer(self._alias, self._value)
 
 
+class _ConcurrencyProbe:
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+
+    async def step(self) -> None:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        await asyncio.sleep(0)
+        self.active -= 1
+
+
+class _SerialProbeInstrumentDriver:
+    def __init__(
+        self,
+        *,
+        alias: str,
+        value: complex,
+        initialize_probe: _ConcurrencyProbe,
+        apply_probe: _ConcurrencyProbe,
+        fetch_probe: _ConcurrencyProbe,
+    ) -> None:
+        self.instrument_config = _FakeInstrumentConfig(
+            sampling_period_fs=400_000,
+            timeline_step_samples=64,
+        )
+        self._alias = alias
+        self._value = value
+        self._initialize_probe = initialize_probe
+        self._apply_probe = apply_probe
+        self._fetch_probe = fetch_probe
+        self.apply_calls: list[object] = []
+
+    async def apply(self, directive: object) -> None:
+        self.apply_calls.append(directive)
+        await self._apply_probe.step()
+
+    async def initialize(self) -> None:
+        await self._initialize_probe.step()
+
+    async def fetch_result(self) -> object:
+        await self._fetch_probe.step()
+        return _ParallelResultContainer(self._alias, self._value)
+
+
 class _FakeSession:
     def __init__(self) -> None:
         self.trigger_calls: list[list[str]] = []
@@ -869,3 +914,122 @@ def test_execute_parallelizes_driver_phases(
         result.data["alias-rq01"][0],
         np.array([2.0 + 0.0j], dtype=np.complex128),
     )
+
+
+def test_execute_serializes_driver_phases_when_parallel_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given parallel disabled, execute should keep driver phases sequential."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-rq00": payload.fixed_timelines["alias-rq00"],
+            "alias-rq01": payload.fixed_timelines["alias-rq00"],
+        },
+    )
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq00",
+            ),
+            "alias-rq01": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p01",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq01",
+            ),
+        }
+    )
+    initialize_probe = _ConcurrencyProbe()
+    apply_probe = _ConcurrencyProbe()
+    fetch_probe = _ConcurrencyProbe()
+    drivers = {
+        "alias-rq00": _SerialProbeInstrumentDriver(
+            alias="alias-rq00",
+            value=1.0 + 0.0j,
+            initialize_probe=initialize_probe,
+            apply_probe=apply_probe,
+            fetch_probe=fetch_probe,
+        ),
+        "alias-rq01": _SerialProbeInstrumentDriver(
+            alias="alias-rq01",
+            value=2.0 + 0.0j,
+            initialize_probe=initialize_probe,
+            apply_probe=apply_probe,
+            fetch_probe=fetch_probe,
+        ),
+    }
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, instrument_info: drivers[instrument_info.alias],
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(
+            request=BackendExecutionRequest(payload=payload),
+            parallel=False,
+        )
+    )
+
+    assert initialize_probe.max_active == 1
+    assert apply_probe.max_active == 1
+    assert fetch_probe.max_active == 1
+    assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+    assert np.array_equal(
+        result.data["alias-rq01"][0],
+        np.array([2.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_execute_sync_forwards_parallel_flag_to_execution_manager() -> None:
+    """Given parallel override, controller execute_sync should forward it."""
+    captured: dict[str, object] = {}
+
+    def _execute_sync(*, request: object, parallel: bool) -> object:
+        captured["request"] = request
+        captured["parallel"] = parallel
+        return "ok"
+
+    controller = Quel3BackendController(
+        execution_manager=cast(
+            Any,
+            SimpleNamespace(
+                quelware_endpoint="localhost",
+                quelware_port=50051,
+                sampling_period_ns=0.4,
+                client_mode="server",
+                standalone_unit_label=None,
+                execute_sync=_execute_sync,
+                execute_async=None,
+            ),
+        )
+    )
+    request = BackendExecutionRequest(payload=object())
+
+    result = controller.execute_sync(request=request, parallel=False)
+
+    assert result == "ok"
+    assert captured == {"request": request, "parallel": False}

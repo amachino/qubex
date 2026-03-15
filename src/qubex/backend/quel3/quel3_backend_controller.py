@@ -330,10 +330,14 @@ class Quel3BackendController(BackendController):
         request: BackendExecutionRequest,
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
+        parallel: bool = True,
     ) -> BackendExecutionResult:
         """Execute a backend request synchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
-        return self._execution_manager.execute_sync(request=request)
+        return self._execution_manager.execute_sync(
+            request=request,
+            parallel=parallel,
+        )
 
     async def execute_async(
         self,
@@ -341,7 +345,11 @@ class Quel3BackendController(BackendController):
         request: BackendExecutionRequest,
         execution_mode: str | None = None,
         clock_health_checks: bool | None = None,
+        parallel: bool = True,
     ) -> BackendExecutionResult:
         """Execute a backend request asynchronously using QuEL-3 defaults."""
         del execution_mode, clock_health_checks
-        return await self._execution_manager.execute_async(request=request)
+        return await self._execution_manager.execute_async(
+            request=request,
+            parallel=parallel,
+        )
