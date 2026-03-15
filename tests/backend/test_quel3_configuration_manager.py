@@ -819,7 +819,9 @@ def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
             self.role = role
 
     class _InstrumentInfo:
-        def __init__(self, resource_id: str, alias: str, port_id: str, role: str) -> None:
+        def __init__(
+            self, resource_id: str, alias: str, port_id: str, role: str
+        ) -> None:
             self.id = resource_id
             self.port_id = port_id
             self.definition = _Definition(alias, _Role(role))

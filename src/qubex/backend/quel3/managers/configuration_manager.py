@@ -201,7 +201,9 @@ class Quel3ConfigurationManager:
             if not isinstance(instruments, dict):
                 continue
             for alias, instrument_config in instruments.items():
-                if not isinstance(alias, str) or not isinstance(instrument_config, dict):
+                if not isinstance(alias, str) or not isinstance(
+                    instrument_config, dict
+                ):
                     continue
                 resource_id = instrument_config.get("resource_id")
                 port_id = instrument_config.get("port_id")
