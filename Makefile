@@ -1,4 +1,4 @@
-.PHONY: upgrade sync test coverage check fix lint lint-fix format format-check type-check clean build build-all publish-all docs docs-serve docs-build docs-clean
+.PHONY: upgrade sync test coverage check fix lint lint-fix format format-check type-check clean build build-all publish-all docs docs-serve docs-build docs-clean sync-release-version check-release-version
 
 BUILD_CMD := uv run --with build python -m build
 TWINE_CMD := uv run --with twine twine
@@ -32,7 +32,7 @@ coverage:
 	uv run pytest --cov=qubex --cov-report=term-missing
 
 # Run type, lint, and format checks
-check: type-check lint format-check
+check: check-release-version type-check lint format-check
 
 # Auto-fix formatting and lint issues
 fix: format lint-fix
@@ -57,6 +57,14 @@ format-check:
 type-check:
 	uv run pyright
 
+# Synchronize workspace package versions from VERSION
+sync-release-version:
+	uv run python scripts/sync_release_version.py $(if $(VERSION),--version $(VERSION),)
+
+# Check workspace package versions against VERSION
+check-release-version:
+	uv run python scripts/check_release_version.py
+
 # Remove caches and build artifacts
 clean:
 	rm -rf .cache .coverage .pytest_cache .ruff_cache .venv dist site
@@ -68,7 +76,7 @@ build:
 	$(BUILD_CMD)
 
 # Build all publishable packages in dependency order
-build-all:
+build-all: check-release-version
 	rm -rf dist/publish
 	mkdir -p dist/publish
 	@set -e; \

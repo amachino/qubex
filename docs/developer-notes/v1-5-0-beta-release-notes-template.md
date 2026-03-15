@@ -12,7 +12,7 @@
 - QuEL-1 backward compatibility is the primary sign-off target.
 - `Measurement` and `Experiment` compatibility contracts are preserved for core QuEL-1 flows.
 - Sampling-period handling shifted from fixed `2 ns` assumptions toward backend-derived `dt`.
-- Internal artifact bundle is validated with companion packages kept at `0.0.0.dev0`.
+- Internal artifact bundle is validated with companion packages aligned to the same release line as `qubex`.
 - QuEL-3 work remains in progress and is explicitly out of scope for internal `v1.5.0b1` sign-off.
 
 ## Compatibility contract (beta scope)
@@ -24,7 +24,7 @@
 ## Versioning and packaging
 
 - `qubex` is versioned as `1.5.0b1`.
-- Internal companion packages remain at `0.0.0.dev0`:
+- Internal companion packages share the current `qubex` release line in this workspace snapshot:
   - `qxcore`
   - `qxfitting`
   - `qxpulse`
@@ -50,7 +50,7 @@
 
 - QuEL-3 compatibility and hardware validation are tracked separately and are not part of internal `v1.5.0b1` sign-off.
 - QuEL-3 compatibility fallback currently prefers continuing execution over raising for unsupported reset/backend-settings override requests; this does not by itself guarantee that a requested sweep range is valid on hardware.
-- Internal companion packages remain `0.0.0.dev0`, so bundle-level validation is required whenever artifacts are rebuilt.
+- Internal companion packages are released as one aligned bundle, so bundle-level validation is required whenever artifacts are rebuilt.
 - Some contrib/visualization paths may still rely on legacy sampling-period assumptions.
 
 ## Validation status

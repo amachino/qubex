@@ -28,12 +28,12 @@ dependencies = [
     "pyserial >= 3.5",
     "pyyaml >= 6.0",
     "qctrl-visualizer >= 8.0",
-    "qxcore == 0.0.0.dev0",
-    "qxfitting == 0.0.0.dev0",
-    "qxpulse == 0.0.0.dev0",
-    "qxschema == 0.0.0.dev0",
-    "qxsimulator == 0.0.0.dev0",
-    "qxvisualizer == 0.0.0.dev0",
+    "qxcore == 1.5.0b4",
+    "qxfitting == 1.5.0b4",
+    "qxpulse == 1.5.0b4",
+    "qxschema == 1.5.0b4",
+    "qxsimulator == 1.5.0b4",
+    "qxvisualizer == 1.5.0b4",
     "rich >= 13.0",
     "scikit-learn >= 1.0",
     "scipy >= 1.0",
@@ -43,7 +43,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = ["quelware-client", "qxdriver-quel1 == 0.0.0.dev0"]
+backend = ["quelware-client", "qxdriver-quel1 == 1.5.0b4"]
 
 [project.scripts]
 qubex = "qubex.cli:main"

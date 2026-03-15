@@ -50,6 +50,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --dev --group docs --extra backend
 
+      - name: Check release version drift
+        run: uv run python scripts/check_release_version.py
+
       # TODO: Remove once quelware-client ships generated pb.
       - name: Generate quelware-core protobufs
         run: make -C packages/quelware-client/quelware-core generate
