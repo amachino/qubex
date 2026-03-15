@@ -59,6 +59,15 @@ In short:
 
 - public PyPI bundle: companion packages match the `qubex` release line
 
+Operational commands:
+
+- Set and synchronize the shared release version:
+  - `make sync-release-version VERSION=1.5.0b5`
+- Check that package versions, exact pins, and `uv.lock` are aligned:
+  - `make check-release-version`
+
+The shared source of truth is the repository-root `VERSION` file.
+
 ## Documentation updates
 
 Whenever you add, remove, or move a dependency:
