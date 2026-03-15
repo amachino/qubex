@@ -32,6 +32,7 @@ Qubex is a qubit-control experimentation framework that unifies pulse-level expe
 ## Explore examples and APIs
 
 - [Examples](examples/index.md)
+- [Release notes](release-notes/index.md)
 - [API reference](api-reference/qubex/index.md)
 
 ## Contribute to Qubex

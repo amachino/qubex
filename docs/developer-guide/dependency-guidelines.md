@@ -39,6 +39,26 @@ Examples:
 - `plotly >= 5.23, <6` (only when needed to avoid a known break)
 - `kaleido == 0.2.1` (exact pin for stable exports)
 
+## Workspace companion package versioning
+
+This repository contains companion packages such as `qxcore`, `qxpulse`,
+`qxschema`, `qxsimulator`, `qxvisualizer`, `qxfitting`, and
+`qxdriver-quel1`. Treat them as one tested bundle with `qubex`, not as
+independently supported products by default.
+
+Rules:
+
+1. For public PyPI releases, companion packages that remain runtime
+   dependencies of `qubex` must use the same release line as `qubex`
+   (for example `1.5.0b4`, `1.5.0`, `1.5.1`).
+2. Publish the companion packages first, then publish `qubex`.
+3. "Not intended for standalone use" must be stated in docs and support
+   policy.
+
+In short:
+
+- public PyPI bundle: companion packages match the `qubex` release line
+
 ## Documentation updates
 
 Whenever you add, remove, or move a dependency:
