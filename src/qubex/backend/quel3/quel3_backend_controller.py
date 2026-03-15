@@ -51,7 +51,7 @@ class Quel3BackendController(BackendController):
         *,
         quelware_endpoint: str | None = None,
         quelware_port: int | None = None,
-        client_mode: str | None = None,
+        client_mode: Quel3ClientMode | None = None,
         standalone_unit_label: str | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,

@@ -3,28 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import Any, TypeVar
+from typing import TypeGuard, TypeVar
 
 import numpy as np
 
 from qubex.backend.quel3.builders.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.infra.quelware_imports import (
     Quel3ClientMode,
-    import_module_with_workspace_fallback,
     load_quelware_client_factory,
     validate_quelware_client_runtime,
 )
 from qubex.backend.quel3.interfaces import (
+    CaptureModeNamespaceProtocol,
+    CaptureModeValue,
     DirectiveProtocol,
     InstrumentDriverFactory,
     InstrumentDriverProtocol,
     InstrumentResolverFactory,
     InstrumentResolverProtocol,
+    IqWaveformResultProtocol,
     QuelwareClientFactory,
     ResourceIdProtocol,
+    ResultContainerProtocol,
     SequencerProtocol,
     SetCaptureModeFactory,
 )
@@ -51,6 +55,16 @@ def _run_async(
     return bridge.run(factory, timeout=timeout)
 
 
+def _is_capture_mode_value(value: object) -> TypeGuard[CaptureModeValue]:
+    """Return whether one runtime value behaves like quelware capture mode."""
+    return isinstance(value, str) or isinstance(getattr(value, "name", None), str)
+
+
+def _has_iq_array(value: object) -> TypeGuard[IqWaveformResultProtocol]:
+    """Return whether one runtime value exposes waveform IQ samples."""
+    return hasattr(value, "iq_array")
+
+
 class Quel3ExecutionManager:
     """Handle backend execution entrypoints for QuEL-3 controller."""
 
@@ -61,7 +75,7 @@ class Quel3ExecutionManager:
         quelware_port: int,
         sampling_period_ns: float,
         capture_decimation_factor: int,
-        client_mode: str = "server",
+        client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
@@ -289,7 +303,7 @@ class Quel3ExecutionManager:
         alias: str,
         sequencer: SequencerProtocol,
         capture_mode: Quel3CaptureMode,
-        capture_mode_enum: object,
+        capture_mode_enum: CaptureModeNamespaceProtocol,
         set_capture_mode_factory: SetCaptureModeFactory,
     ) -> list[DirectiveProtocol]:
         """Build the directives applied to one instrument driver."""
@@ -342,14 +356,14 @@ class Quel3ExecutionManager:
         aliases: list[str],
         alias_to_driver: dict[str, InstrumentDriverProtocol],
         parallel: bool,
-    ) -> dict[str, object]:
+    ) -> dict[str, ResultContainerProtocol]:
         """Fetch results with optional per-driver parallelism."""
         if parallel:
             results = await asyncio.gather(
                 *(alias_to_driver[alias].fetch_result() for alias in aliases)
             )
             return dict(zip(aliases, results, strict=True))
-        alias_results: dict[str, object] = {}
+        alias_results: dict[str, ResultContainerProtocol] = {}
         for alias in aliases:
             alias_results[alias] = await alias_to_driver[alias].fetch_result()
         return alias_results
@@ -511,7 +525,7 @@ class Quel3ExecutionManager:
     def _build_capture_mode_directive(
         *,
         capture_mode: Quel3CaptureMode,
-        capture_mode_enum: Any,
+        capture_mode_enum: CaptureModeNamespaceProtocol,
         set_capture_mode_factory: SetCaptureModeFactory,
     ) -> DirectiveProtocol | None:
         """Build one capture-mode directive from payload capture mode."""
@@ -524,10 +538,11 @@ class Quel3ExecutionManager:
         candidates = candidates_by_mode.get(capture_mode)
         if candidates is None:
             raise ValueError(f"Unsupported capture mode: {capture_mode}.")
-        mode = None
+        mode: CaptureModeValue | None = None
         for candidate in candidates:
-            if hasattr(capture_mode_enum, candidate):
-                mode = getattr(capture_mode_enum, candidate)
+            resolved_mode = getattr(capture_mode_enum, candidate, None)
+            if _is_capture_mode_value(resolved_mode):
+                mode = resolved_mode
                 break
         if mode is None:
             return None
@@ -562,23 +577,19 @@ class Quel3ExecutionManager:
 
     @staticmethod
     def _extract_capture_samples(
-        result: object,
+        result: ResultContainerProtocol,
         window_key: str,
     ) -> np.ndarray | None:
         """Extract one capture sample-array from a result container entry."""
-        iq_result = getattr(result, "iq_result", None)
-        if not isinstance(iq_result, dict):
-            return None
-        values = iq_result.get(window_key, [])
-        if not isinstance(values, list) or len(values) == 0:
+        values = result.iq_result.get(window_key)
+        if values is None or len(values) == 0:
             return None
         first = values[0]
-        if hasattr(first, "iq_array"):
+        if _has_iq_array(first):
             latest = values[-1]
-            iq_array = getattr(latest, "iq_array", None)
-            if iq_array is None:
+            if not _has_iq_array(latest):
                 return None
-            return np.asarray(iq_array, dtype=np.complex128)
+            return np.asarray(latest.iq_array, dtype=np.complex128)
         return np.asarray(values, dtype=np.complex128)
 
     @staticmethod
@@ -641,20 +652,18 @@ class Quel3ExecutionManager:
         InstrumentResolverFactory,
         Callable[..., SequencerProtocol],
         InstrumentDriverFactory,
-        Any,
+        CaptureModeNamespaceProtocol,
         SetCaptureModeFactory,
     ]:
         """Import quelware helpers lazily and return required symbols."""
-        resolver_module = import_module_with_workspace_fallback(
+        resolver_module = importlib.import_module(
             "quelware_client.client.helpers.instrument_resolver"
         )
-        sequencer_module = import_module_with_workspace_fallback(
+        sequencer_module = importlib.import_module(
             "quelware_client.client.helpers.sequencer"
         )
-        directive_module = import_module_with_workspace_fallback(
-            "quelware_core.entities.directives"
-        )
-        driver_module = import_module_with_workspace_fallback(
+        directive_module = importlib.import_module("quelware_core.entities.directives")
+        driver_module = importlib.import_module(
             "quelware_client.core.instrument_driver"
         )
         create_quelware_client: QuelwareClientFactory = load_quelware_client_factory(
@@ -668,7 +677,7 @@ class Quel3ExecutionManager:
         create_instrument_driver_fixed_timeline: InstrumentDriverFactory = (
             driver_module.create_instrument_driver_fixed_timeline
         )
-        capture_mode_enum = directive_module.CaptureMode
+        capture_mode_enum: CaptureModeNamespaceProtocol = directive_module.CaptureMode
         set_capture_mode_factory: SetCaptureModeFactory = (
             directive_module.SetCaptureMode
         )

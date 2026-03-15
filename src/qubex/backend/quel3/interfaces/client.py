@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol
+from typing import Protocol, TypeAlias
 
-
-class ResourceIdProtocol(Protocol):
-    """Marker protocol for quelware instrument resource IDs."""
+ResourceIdProtocol: TypeAlias = str
+UnitLabelProtocol: TypeAlias = str
 
 
 class InstrumentDefinitionProtocol(Protocol):
@@ -29,12 +28,12 @@ class InstrumentInfoProtocol(Protocol):
     """Minimal instrument-info protocol."""
 
     @property
-    def id(self) -> object:
+    def id(self) -> ResourceIdProtocol:
         """Return instrument resource identifier."""
         ...
 
     @property
-    def port_id(self) -> object:
+    def port_id(self) -> ResourceIdProtocol:
         """Return instrument port identifier."""
         ...
 
@@ -53,6 +52,15 @@ class ResourceCategoryProtocol(Protocol):
         ...
 
 
+class PortRoleProtocol(Protocol):
+    """Minimal port-role protocol."""
+
+    @property
+    def name(self) -> str:
+        """Return port role name."""
+        ...
+
+
 class ResourceInfoProtocol(Protocol):
     """Minimal resource-info protocol."""
 
@@ -62,8 +70,27 @@ class ResourceInfoProtocol(Protocol):
         ...
 
     @property
-    def category(self) -> ResourceCategoryProtocol | object:
+    def category(self) -> ResourceCategoryProtocol | str:
         """Return resource category."""
+        ...
+
+
+class PortInfoProtocol(Protocol):
+    """Minimal port-info protocol."""
+
+    @property
+    def id(self) -> ResourceIdProtocol:
+        """Return port identifier."""
+        ...
+
+    @property
+    def role(self) -> PortRoleProtocol:
+        """Return port role."""
+        ...
+
+    @property
+    def depends_on(self) -> list[ResourceIdProtocol]:
+        """Return dependent resource IDs."""
         ...
 
 
@@ -72,7 +99,7 @@ class SessionProtocol(Protocol):
 
     async def deploy_instruments(
         self,
-        port_id: ResourceIdProtocol | str,
+        port_id: ResourceIdProtocol,
         definitions: Iterable[InstrumentDefinitionProtocol],
         append: bool = False,
     ) -> list[InstrumentInfoProtocol]:
@@ -91,7 +118,7 @@ class SessionProtocol(Protocol):
 class QuelwareClientProtocol(Protocol):
     """Minimal quelware client protocol for execution."""
 
-    def list_unit_labels(self) -> object:
+    def list_unit_labels(self) -> list[UnitLabelProtocol]:
         """List available QuEL-3 unit labels."""
         ...
 
@@ -105,7 +132,7 @@ class QuelwareClientProtocol(Protocol):
         """Get instrument info for one resource ID."""
         ...
 
-    async def get_port_info(self, resource_id: ResourceIdProtocol) -> object:
+    async def get_port_info(self, resource_id: ResourceIdProtocol) -> PortInfoProtocol:
         """Get port info for one resource ID."""
         ...
 

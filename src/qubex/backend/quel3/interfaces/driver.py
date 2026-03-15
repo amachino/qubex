@@ -2,14 +2,37 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Protocol
+from collections.abc import Mapping, Sequence
+from typing import Protocol, TypeAlias
+
+import numpy.typing as npt
 
 from qubex.backend.quel3.interfaces.client import (
     InstrumentInfoProtocol,
     SessionProtocol,
 )
 from qubex.backend.quel3.interfaces.directives import DirectiveProtocol
+
+
+class IqWaveformResultProtocol(Protocol):
+    """Minimal waveform result protocol."""
+
+    @property
+    def iq_array(self) -> npt.ArrayLike:
+        """Return captured IQ waveform array."""
+        ...
+
+
+CaptureResultValues: TypeAlias = Sequence[complex] | Sequence[IqWaveformResultProtocol]
+
+
+class ResultContainerProtocol(Protocol):
+    """Minimal fixed-timeline result container protocol."""
+
+    @property
+    def iq_result(self) -> Mapping[str, CaptureResultValues]:
+        """Return capture-window IQ results keyed by window name."""
+        ...
 
 
 class InstrumentConfigProtocol(Protocol):
@@ -45,7 +68,7 @@ class InstrumentDriverProtocol(Protocol):
         """Initialize instrument state before apply/trigger flow."""
         ...
 
-    async def fetch_result(self) -> object:
+    async def fetch_result(self) -> ResultContainerProtocol:
         """Fetch one fixed-timeline execution result."""
         ...
 

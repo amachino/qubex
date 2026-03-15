@@ -34,7 +34,7 @@ class Quel3ConnectionManager:
         *,
         quelware_endpoint: str,
         quelware_port: int,
-        client_mode: str = "server",
+        client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(

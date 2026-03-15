@@ -34,8 +34,8 @@ def test_load_client_factory_returns_server_client(
     """Given server mode, loading the client factory should return the quelware server client."""
     create_quelware_client = object()
     monkeypatch.setattr(
-        quelware_imports_module,
-        "import_module_with_workspace_fallback",
+        quelware_imports_module.importlib,
+        "import_module",
         lambda _: SimpleNamespace(
             create_quelware_client=create_quelware_client,
             create_standalone_client=object(),
@@ -68,8 +68,8 @@ def test_load_client_factory_binds_unit_label_for_standalone_mode(
         return (endpoint, port, unit_label)
 
     monkeypatch.setattr(
-        quelware_imports_module,
-        "import_module_with_workspace_fallback",
+        quelware_imports_module.importlib,
+        "import_module",
         lambda _: SimpleNamespace(
             create_quelware_client=object(),
             create_standalone_client=_create_standalone_client,

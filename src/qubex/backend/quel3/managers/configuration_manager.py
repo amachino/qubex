@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -10,7 +11,6 @@ from typing import Protocol, TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import (
     Quel3ClientMode,
-    import_module_with_workspace_fallback,
     load_quelware_client_factory,
     validate_quelware_client_runtime,
 )
@@ -89,7 +89,7 @@ class Quel3ConfigurationManager:
         *,
         quelware_endpoint: str,
         quelware_port: int,
-        client_mode: str = "server",
+        client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
@@ -328,9 +328,7 @@ class Quel3ConfigurationManager:
         _EnumNamespace,
     ]:
         """Import instrument entities lazily from quelware core package."""
-        instrument_module = import_module_with_workspace_fallback(
-            "quelware_core.entities.instrument"
-        )
+        instrument_module = importlib.import_module("quelware_core.entities.instrument")
         return (
             instrument_module.FixedTimelineProfile,
             instrument_module.InstrumentDefinition,

@@ -1,6 +1,7 @@
 """QuEL-3 specific backend components."""
 
 from .builders import Quel3SequencerBuilder
+from .infra import Quel3ClientMode
 from .managers import Quel3ConfigurationManager
 from .models import (
     InstrumentDeployRequest,
@@ -20,6 +21,7 @@ __all__ = [
     "Quel3BackendExecutionResult",
     "Quel3CaptureMode",
     "Quel3CaptureWindow",
+    "Quel3ClientMode",
     "Quel3ConfigurationManager",
     "Quel3ExecutionPayload",
     "Quel3FixedTimeline",
