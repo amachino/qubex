@@ -1,59 +1,38 @@
-# ruff: noqa: SLF001
-
 """Tests for quelware import helpers."""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from qubex.backend.quel3.infra import quelware_imports
 
 
-def test_candidate_local_quelware_paths_include_packages_and_lib_layouts(
-    tmp_path: Path,
-) -> None:
-    """Yields packages and lib quelware source directories."""
-    candidates = quelware_imports._candidate_local_quelware_paths(tmp_path)
-
-    expected = (
-        tmp_path / "lib" / "quelware-client-internal" / "quelware-client" / "src",
-        tmp_path
-        / "lib"
-        / "quelware-client-internal"
-        / "quelware-core"
-        / "python"
-        / "src",
-        tmp_path / "packages" / "quelware-client" / "quelware-client" / "src",
-        tmp_path / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
-    )
-
-    assert candidates == expected
-
-
-def test_append_local_quelware_paths_adds_only_existing_once(
+def test_import_module_with_workspace_fallback_uses_standard_import(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
-    """Given existing candidates, helper prepends each path without duplicates."""
-    existing = tmp_path / "existing"
-    existing.mkdir()
-    already_present = tmp_path / "already-present"
-    already_present.mkdir()
-    missing = tmp_path / "missing"
+    """Given one module name, helper should delegate to the standard importer."""
+    imported = SimpleNamespace(name="quelware_client.client")
+    captured: dict[str, object] = {}
 
-    monkeypatch.setattr(
-        quelware_imports,
-        "_candidate_local_quelware_paths",
-        lambda _: (existing, missing, already_present),
+    def _import_module(module_name: str) -> object:
+        captured["module_name"] = module_name
+        return imported
+
+    monkeypatch.setattr(quelware_imports.importlib, "import_module", _import_module)
+
+    module = quelware_imports.import_module_with_workspace_fallback(
+        "quelware_client.client"
     )
-    monkeypatch.setattr(sys, "path", [str(already_present)])
 
-    quelware_imports._append_local_quelware_paths()
+    assert module is imported
+    assert captured == {"module_name": "quelware_client.client"}
 
-    assert str(existing) in sys.path
-    assert str(missing) not in sys.path
-    assert sys.path.count(str(existing)) == 1
-    assert sys.path.count(str(already_present)) == 1
+
+def test_import_module_with_workspace_fallback_propagates_import_errors() -> None:
+    """Given missing quelware module, helper should propagate ModuleNotFoundError."""
+    with pytest.raises(ModuleNotFoundError, match="quelware_client"):
+        quelware_imports.import_module_with_workspace_fallback(
+            "quelware_client.missing"
+        )
