@@ -17,6 +17,21 @@ It provides a high-level workflow for configuring systems, connecting to instrum
 4. Continue with curated notebooks: [Experiment example workflows](examples.md)
 5. Explore extra routines when needed: [Community-contributed workflows](../getting-started/contrib-workflows.md)
 
+## Experimental async APIs
+
+`Experiment` also exposes async-first methods:
+
+- `run_measurement()`
+- `run_sweep_measurement()`
+- `run_ndsweep_measurement()`
+
+Treat these as Experimental features. They are public, but the signature,
+behavior, and result-handling details may change in future releases while the
+async workflow is still settling.
+
+Prefer the legacy synchronous methods (`measure()`, `execute()`,
+`sweep_parameter()`) when API stability is the priority today.
+
 ## Choose Low-level APIs instead when
 
 - You want to work directly with `MeasurementSchedule`, capture/readout, sweeps, or other `measurement`-module execution flows
