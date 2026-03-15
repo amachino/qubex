@@ -14,6 +14,7 @@
 - Internal companion packages (`qxcore`, `qxfitting`, `qxpulse`, `qxschema`, `qxsimulator`, `qxvisualizer`, `qxdriver-quel1`) remain at `0.0.0.dev0` for the internal beta bundle.
 - Internal beta artifact validation uses `make build-all`; public `publish-all` is deferred until external beta / GA planning.
 - QuEL-3 compatibility fallback now treats legacy `reset_awg_and_capunits()` and `SystemManager.modified_backend_settings(...)` requests as no-op when the backend does not expose the corresponding QuEL-1-only capability.
+- For public PyPI publication, the companion packages that stay as runtime dependencies of `qubex` must move onto the same release line as `qubex`.
 
 ## Dependency status
 
@@ -28,6 +29,7 @@
 
 - Cut an internal `v1.5.0b1` focused on QuEL-1 backward compatibility for existing users
 - Keep internal workspace package versions unchanged at `0.0.0.dev0` for the tested bundle
+- Define public PyPI publication policy for companion packages: bundle-aligned release versions
 - Add support for QuEL-3 controller using new `quelware-client`
 - Keep backward compatibility with existing controllers
 - Primary compatibility target is `Measurement` facade level
@@ -71,6 +73,7 @@ Internal `v1.5.0b1` interpretation:
 | P1 | Prepare branch migration for beta cut timing | 2026-03-05 | Beta go/no-go decision | TODO |
 | P1 | GA hardening: bug fixes from beta feedback | 2026-03-20 | Beta feedback | TODO |
 | P1 | GA release notes and documentation finalization | 2026-03-25 | GA scope frozen | TODO |
+| P1 | Finalize companion package public versioning policy and apply release-line versions before PyPI publication | 2026-03-25 | PyPI publication scope confirmed | TODO |
 | P1 | Publish v1.5.0 packages to PyPI via `make publish-all` (build and upload distribution artifacts for all packages) | 2026-03-25 | GA release notes finalized and required checks green | TODO |
 | P1 | Finalize MkDocs user-guide and developer-guide for v1.5.0 (sufficient for experiment users and developers) | 2026-03-25 | GA scope frozen and config/runtime behavior stabilized | TODO |
 | P2 | Developer ergonomics improvements (logs/errors/examples) for new flows | 2026-03-25 | Main features implemented | TODO |
@@ -263,6 +266,7 @@ Calendar note:
 - 2026-02-24: Fixed DF-01 (`instrument_alias` explicit resolution required; fallback to target label prohibited) and DF-02 (capture key standardized as `{target}:{capture_index}` with deterministic per-target ordering). DF-03/DF-04 remain deferred.
 - 2026-03-15: QuEL-3 compatibility fallback was relaxed so `ExperimentContext.reset_awg_and_capunits()` and `SystemManager.modified_backend_settings(...)` no-op instead of raising when the active backend lacks the QuEL-1-only capability; spectroscopy contract definition remains follow-up work.
 - 2026-03-15: Re-ran local quality/build gates on current `quel3` branch (`uv run ruff check`, `uv run ruff format --check`, `uv run pyright`, `uv run pytest`: `882 passed`; `make build-all`: passed).
+- 2026-03-15: Fixed public PyPI versioning policy for companion packages: companion packages that remain runtime dependencies of `qubex` must move onto the same release line as `qubex`.
 - 2026-02-24: Updated QuEL-3 runtime integration to follow latest `quelware-client-internal` APIs (`Session.trigger(instrument_ids=...)` and `ResultContainer.iq_result`), and made workspace import fallback prefer `packages/quelware-client-internal`.
 - 2026-02-24: Updated sequencer capture-window key generation/lookup to `{target}:{capture_index}` in both export and result-fetch paths.
 - 2026-02-24: Updated QuEL-3 adapter contract to require explicit alias mapping (`instrument_alias_map`) at payload-build time.

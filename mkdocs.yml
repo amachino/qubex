@@ -77,6 +77,10 @@ plugins:
                 - system サンプルワークフロー: user-guide/system/examples.md
                 - backend モジュール: user-guide/backend/index.md
                 - backend サンプルワークフロー: user-guide/backend/examples.md
+            - リリースノート:
+                - 概要: release-notes/index.md
+                - v1.5.0 リリースノート: release-notes/v1-5-0.md
+                - v1.5.0 移行ガイド: release-notes/v1-5-0-migration.md
             - サンプル集: examples/index.md
             - コントリビュート: CONTRIBUTING.md
             - 開発ガイド:
@@ -132,6 +136,10 @@ nav:
       - system example workflows: user-guide/system/examples.md
       - backend module: user-guide/backend/index.md
       - backend example workflows: user-guide/backend/examples.md
+  - Release notes:
+      - Overview: release-notes/index.md
+      - v1.5.0 release notes: release-notes/v1-5-0.md
+      - v1.5.0 migration guide: release-notes/v1-5-0-migration.md
   - Examples: examples/index.md
   - Contributing: CONTRIBUTING.md
   - Developer guide:
