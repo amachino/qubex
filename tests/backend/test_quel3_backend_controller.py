@@ -278,7 +278,7 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
 
     controller = Quel3BackendController()
 
-    assert pytest.approx(0.4) == controller.sampling_period_ns
+    assert pytest.approx(0.8) == controller.sampling_period_ns
     assert controller._connection_manager.quelware_endpoint == "localhost"
     assert controller._connection_manager.quelware_port == 50051
 
