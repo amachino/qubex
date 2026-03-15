@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -213,27 +214,40 @@ class Quel3ExecutionManager:
                     iterations=timeline_iterations,
                 )
 
-                for alias, driver in alias_to_driver.items():
-                    await driver.initialize()
-                    directives: list[DirectiveProtocol] = []
-                    capture_mode_directive = self._build_capture_mode_directive(
+                await asyncio.gather(
+                    *(driver.initialize() for driver in alias_to_driver.values())
+                )
+                alias_to_directives = {
+                    alias: self._build_driver_directives(
+                        alias=alias,
+                        sequencer=sequencer,
                         capture_mode=payload.capture_mode,
                         capture_mode_enum=capture_mode_enum,
                         set_capture_mode_factory=set_capture_mode_factory,
                     )
-                    if capture_mode_directive is not None:
-                        directives.append(capture_mode_directive)
-                    directives.append(
-                        sequencer.export_set_fixed_timeline_directive(alias)
+                    for alias in alias_to_driver
+                }
+                await asyncio.gather(
+                    *(
+                        driver.apply(alias_to_directives[alias])
+                        for alias, driver in alias_to_driver.items()
                     )
-                    await driver.apply(directives)
+                )
 
                 shot_samples = self._initialize_shot_samples(resolved_payload)
                 await session.trigger(instrument_ids=instrument_ids)
-                alias_results = {
-                    alias: await driver.fetch_result()
-                    for alias, driver in alias_to_driver.items()
-                }
+                alias_results = dict(
+                    zip(
+                        aliases,
+                        await asyncio.gather(
+                            *(
+                                alias_to_driver[alias].fetch_result()
+                                for alias in aliases
+                            )
+                        ),
+                        strict=True,
+                    )
+                )
                 for alias, timeline in resolved_payload.fixed_timelines.items():
                     result = alias_results[alias]
                     for window in timeline.capture_windows:
@@ -253,6 +267,28 @@ class Quel3ExecutionManager:
             backend_sampling_period_ns=self._sampling_period_ns,
             capture_decimation_factor=self._capture_decimation_factor,
         )
+
+    @classmethod
+    def _build_driver_directives(
+        cls,
+        *,
+        alias: str,
+        sequencer: SequencerProtocol,
+        capture_mode: Quel3CaptureMode,
+        capture_mode_enum: object,
+        set_capture_mode_factory: SetCaptureModeFactory,
+    ) -> list[DirectiveProtocol]:
+        """Build the directives applied to one instrument driver."""
+        directives: list[DirectiveProtocol] = []
+        capture_mode_directive = cls._build_capture_mode_directive(
+            capture_mode=capture_mode,
+            capture_mode_enum=capture_mode_enum,
+            set_capture_mode_factory=set_capture_mode_factory,
+        )
+        if capture_mode_directive is not None:
+            directives.append(capture_mode_directive)
+        directives.append(sequencer.export_set_fixed_timeline_directive(alias))
+        return directives
 
     @staticmethod
     def _resolve_alias_to_id_map(

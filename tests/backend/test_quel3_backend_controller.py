@@ -37,6 +37,7 @@ class _FakeInstrumentDefinition:
 class _FakeInstrumentInfo:
     port_id: str
     definition: _FakeInstrumentDefinition
+    alias: str | None = None
 
 
 class _FakeInstrumentResolver:
@@ -641,6 +642,59 @@ class _FakeSequencer:
         return ("timeline", instrument_alias)
 
 
+class _PhaseBarrier:
+    def __init__(self, expected: int) -> None:
+        self._expected = expected
+        self._arrived = 0
+        self._event = asyncio.Event()
+
+    async def wait(self) -> None:
+        self._arrived += 1
+        if self._arrived >= self._expected:
+            self._event.set()
+        await asyncio.wait_for(self._event.wait(), timeout=0.2)
+
+
+class _ParallelResultContainer:
+    def __init__(self, alias: str, value: complex) -> None:
+        self.iq_result = {
+            f"{alias}:0": [_FakeWaveformResult(np.array([value], dtype=np.complex128))]
+        }
+
+
+class _ParallelInstrumentDriver:
+    def __init__(
+        self,
+        *,
+        alias: str,
+        value: complex,
+        initialize_barrier: _PhaseBarrier,
+        apply_barrier: _PhaseBarrier,
+        fetch_barrier: _PhaseBarrier,
+    ) -> None:
+        self.instrument_config = _FakeInstrumentConfig(
+            sampling_period_fs=400_000,
+            timeline_step_samples=64,
+        )
+        self._alias = alias
+        self._value = value
+        self._initialize_barrier = initialize_barrier
+        self._apply_barrier = apply_barrier
+        self._fetch_barrier = fetch_barrier
+        self.apply_calls: list[object] = []
+
+    async def apply(self, directive: object) -> None:
+        self.apply_calls.append(directive)
+        await self._apply_barrier.wait()
+
+    async def initialize(self) -> None:
+        await self._initialize_barrier.wait()
+
+    async def fetch_result(self) -> object:
+        await self._fetch_barrier.wait()
+        return _ParallelResultContainer(self._alias, self._value)
+
+
 class _FakeSession:
     def __init__(self) -> None:
         self.trigger_calls: list[list[str]] = []
@@ -726,4 +780,92 @@ def test_execute_batches_capture_mode_with_timeline_directive(
     assert np.array_equal(
         result.data["alias-rq00"][0],
         np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_execute_parallelizes_driver_phases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given multiple instruments, execute should parallelize driver phases."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-rq00": payload.fixed_timelines["alias-rq00"],
+            "alias-rq01": payload.fixed_timelines["alias-rq00"],
+        },
+    )
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq00",
+            ),
+            "alias-rq01": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p01",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq01",
+            ),
+        }
+    )
+    initialize_barrier = _PhaseBarrier(expected=2)
+    apply_barrier = _PhaseBarrier(expected=2)
+    fetch_barrier = _PhaseBarrier(expected=2)
+    drivers = {
+        "alias-rq00": _ParallelInstrumentDriver(
+            alias="alias-rq00",
+            value=1.0 + 0.0j,
+            initialize_barrier=initialize_barrier,
+            apply_barrier=apply_barrier,
+            fetch_barrier=fetch_barrier,
+        ),
+        "alias-rq01": _ParallelInstrumentDriver(
+            alias="alias-rq01",
+            value=2.0 + 0.0j,
+            initialize_barrier=initialize_barrier,
+            apply_barrier=apply_barrier,
+            fetch_barrier=fetch_barrier,
+        ),
+    }
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, instrument_info: drivers[instrument_info.alias],
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=payload))
+    )
+
+    assert drivers["alias-rq00"].apply_calls == [
+        [("capture_mode", "avg"), ("timeline", "alias-rq00")]
+    ]
+    assert drivers["alias-rq01"].apply_calls == [
+        [("capture_mode", "avg"), ("timeline", "alias-rq01")]
+    ]
+    assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+    assert np.array_equal(
+        result.data["alias-rq01"][0],
+        np.array([2.0 + 0.0j], dtype=np.complex128),
     )
