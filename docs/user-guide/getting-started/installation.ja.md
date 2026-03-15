@@ -37,16 +37,29 @@ Python 本体と仮想環境の管理には [uv](https://docs.astral.sh/uv/) を
 uv pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
 ```
 
-### 実機利用向けのバックエンド付きでインストールする（Linux）
+### QuEL-1 バックエンド付きでインストールする（Linux）
 
 Linux ホスト上で Qubex を実機と組み合わせて使う予定なら、この構成を使ってください。
-`QuantumSimulator` だけを使う場合は、`backend` extra は不要です。
+`QuantumSimulator` だけを使う場合は、`backend` / `quel1` extra は不要です。
 
 ```bash
 uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
 ```
 
-これにより、実機実行に必要なバックエンドライブラリがインストールされます。
+これにより、公開されている QuEL-1 向けバックエンドライブラリがインストールされます。
+`qubex[quel1]` も同等の explicit な extra 名として使えます。
+
+### QuEL-3 向けにインストールする
+
+QuEL-3 の runtime support を使う予定なら、この構成を使ってください。
+
+```bash
+uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git@main"
+```
+
+`quel3` は `quelware-client` に依存します。これが PyPI に公開されていない
+場合は、利用する環境で指定された package source や index から追加で
+インストールしてください。
 
 ### 特定バージョンをインストールする
 
