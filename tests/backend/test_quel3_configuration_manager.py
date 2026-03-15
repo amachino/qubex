@@ -789,6 +789,165 @@ def test_refresh_instrument_cache_loads_existing_instruments(
     assert set(manager.last_deployed_instrument_infos.keys()) == {"Q00", "RQ00"}
 
 
+def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quelware instruments, hardware fetch should normalize them per box."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    class _InstrumentCategory:
+        name = "INSTRUMENT"
+
+    class _PortCategory:
+        name = "PORT"
+
+    class _ResourceInfo:
+        def __init__(self, resource_id: str, category: object) -> None:
+            self.id = resource_id
+            self.category = category
+
+    class _Role:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _Definition:
+        def __init__(self, alias: str, role: object) -> None:
+            self.alias = alias
+            self.role = role
+
+    class _InstrumentInfo:
+        def __init__(self, resource_id: str, alias: str, port_id: str, role: str) -> None:
+            self.id = resource_id
+            self.port_id = port_id
+            self.definition = _Definition(alias, _Role(role))
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+
+        async def list_resource_infos(self) -> list[object]:
+            return [
+                _ResourceInfo("inst-q00", _InstrumentCategory()),
+                _ResourceInfo("inst-rq00", _InstrumentCategory()),
+                _ResourceInfo("inst-other", _InstrumentCategory()),
+                _ResourceInfo("port-q00", _PortCategory()),
+            ]
+
+        async def get_instrument_info(self, resource_id: str) -> object:
+            infos = {
+                "inst-q00": _InstrumentInfo(
+                    "inst-q00",
+                    "Q00",
+                    "quel3-02-a01:tx_p04",
+                    "TRANSMITTER",
+                ),
+                "inst-rq00": _InstrumentInfo(
+                    "inst-rq00",
+                    "RQ00",
+                    "quel3-02-a02:trx_p00p04",
+                    "TRANSCEIVER",
+                ),
+                "inst-other": _InstrumentInfo(
+                    "inst-other",
+                    "Q99",
+                    "quel3-02-a99:tx_p01",
+                    "TRANSMITTER",
+                ),
+            }
+            return infos[resource_id]
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_client_factory",
+        lambda: lambda endpoint, port: _FakeClient(),
+    )
+
+    fetched = manager.fetch_backend_settings_from_hardware(
+        unit_labels_by_box_id={
+            "BOX1": "quel3-02-a01",
+            "BOX2": "quel3-02-a02",
+            "BOX3": "quel3-02-a03",
+        },
+        parallel=False,
+    )
+
+    assert fetched == {
+        "BOX1": {
+            "instruments": {
+                "Q00": {
+                    "resource_id": "inst-q00",
+                    "port_id": "quel3-02-a01:tx_p04",
+                    "role": "TRANSMITTER",
+                }
+            }
+        },
+        "BOX2": {
+            "instruments": {
+                "RQ00": {
+                    "resource_id": "inst-rq00",
+                    "port_id": "quel3-02-a02:trx_p00p04",
+                    "role": "TRANSCEIVER",
+                }
+            }
+        },
+        "BOX3": {"instruments": {}},
+    }
+
+
+def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -> None:
+    """Given hardware snapshot, cache sync should restore alias mappings."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    manager.sync_backend_settings_to_cache(
+        backend_settings={
+            "BOX1": {
+                "instruments": {
+                    "Q00": {
+                        "resource_id": "inst-q00",
+                        "port_id": "quel3-02-a01:tx_p04",
+                        "role": "TRANSMITTER",
+                    }
+                }
+            },
+            "BOX2": {
+                "instruments": {
+                    "RQ00": {
+                        "resource_id": "inst-rq00",
+                        "port_id": "quel3-02-a02:trx_p00p04",
+                        "role": "TRANSCEIVER",
+                    }
+                }
+            },
+        }
+    )
+
+    assert manager.target_alias_map == {"Q00": "Q00", "RQ00": "RQ00"}
+    assert manager.last_deployed_instrument_infos["Q00"][0].id == "inst-q00"
+    assert (
+        manager.last_deployed_instrument_infos["Q00"][0].port_id
+        == "quel3-02-a01:tx_p04"
+    )
+    assert manager.last_deployed_instrument_infos["Q00"][0].definition.alias == "Q00"
+    assert (
+        manager.last_deployed_instrument_infos["RQ00"][0].definition.role
+        == "TRANSCEIVER"
+    )
+
+
 def test_deploy_instruments_replaces_cached_alias(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

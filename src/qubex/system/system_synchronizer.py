@@ -19,6 +19,16 @@ class SystemSynchronizer(Protocol):
         """Return backend controller bound to this synchronizer."""
         ...
 
+    @property
+    def supports_backend_settings_sync(self) -> bool:
+        """Return whether hardware snapshot synchronization is supported."""
+        ...
+
+    @property
+    def supports_mutable_backend_settings_cache(self) -> bool:
+        """Return whether mutable backend-settings cache writes are supported."""
+        ...
+
     def sync_experiment_system_to_backend_controller(
         self,
         experiment_system: ExperimentSystem,
@@ -62,4 +72,12 @@ class SystemSynchronizer(Protocol):
         backend_settings: dict[str, dict],
     ) -> None:
         """Apply backend-settings snapshots to in-memory experiment system."""
+        ...
+
+    def get_box_config_cache_snapshot(self) -> dict[str, dict]:
+        """Return a snapshot of mutable backend cache state when supported."""
+        ...
+
+    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Replace mutable backend cache state when supported."""
         ...

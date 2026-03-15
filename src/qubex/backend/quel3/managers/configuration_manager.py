@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
@@ -18,6 +18,7 @@ from qubex.backend.quel3.interfaces.client import (
     InstrumentDefinitionProtocol,
     InstrumentInfoProtocol,
     QuelwareClientFactory,
+    QuelwareClientProtocol,
     ResourceInfoProtocol,
     SessionProtocol,
 )
@@ -61,6 +62,23 @@ class _EnumNamespace(Protocol):
     def __getattr__(self, name: str) -> object:
         """Return one enum-like member by attribute name."""
         ...
+
+
+@dataclass(frozen=True)
+class _CachedInstrumentDefinition:
+    """Cached instrument definition restored from hardware snapshot."""
+
+    alias: str
+    role: str
+
+
+@dataclass(frozen=True)
+class _CachedInstrumentInfo:
+    """Cached instrument info restored from hardware snapshot."""
+
+    id: str
+    port_id: str
+    definition: _CachedInstrumentDefinition
 
 
 @dataclass(frozen=True)
@@ -154,6 +172,57 @@ class Quel3ConfigurationManager:
     def refresh_instrument_cache(self) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
         """Refresh cached alias mappings from existing quelware instruments."""
         return _run_async(self._refresh_instrument_cache)
+
+    def fetch_backend_settings_from_hardware(
+        self,
+        *,
+        unit_labels_by_box_id: Mapping[str, str],
+        parallel: bool | None = None,
+    ) -> dict[str, dict]:
+        """Fetch normalized QuEL-3 instrument snapshots keyed by box ID."""
+        return _run_async(
+            lambda: self._fetch_backend_settings_from_hardware(
+                unit_labels_by_box_id=dict(unit_labels_by_box_id),
+                parallel=True if parallel is None else parallel,
+            )
+        )
+
+    def sync_backend_settings_to_cache(
+        self,
+        *,
+        backend_settings: Mapping[str, dict],
+    ) -> None:
+        """Restore instrument alias caches from normalized backend settings."""
+        deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
+        target_alias_map: dict[str, str] = {}
+
+        for box_config in backend_settings.values():
+            instruments = box_config.get("instruments")
+            if not isinstance(instruments, dict):
+                continue
+            for alias, instrument_config in instruments.items():
+                if not isinstance(alias, str) or not isinstance(instrument_config, dict):
+                    continue
+                resource_id = instrument_config.get("resource_id")
+                port_id = instrument_config.get("port_id")
+                role = instrument_config.get("role")
+                if not isinstance(resource_id, str) or not isinstance(port_id, str):
+                    continue
+                role_name = self._normalize_role_name(role)
+                deployed[alias] = (
+                    _CachedInstrumentInfo(
+                        id=resource_id,
+                        port_id=port_id,
+                        definition=_CachedInstrumentDefinition(
+                            alias=alias,
+                            role=role_name,
+                        ),
+                    ),
+                )
+                target_alias_map[alias] = alias
+
+        self._last_deployed_instrument_infos = deployed
+        self._target_alias_map = target_alias_map
 
     async def _deploy_instruments(
         self,
@@ -285,17 +354,9 @@ class Quel3ConfigurationManager:
             self._quelware_endpoint,
             self._quelware_port,
         ) as client:
-            resource_infos = await client.list_resource_infos()
-            instrument_resource_ids = [
-                resource_info.id
-                for resource_info in resource_infos
-                if self._is_instrument_resource(resource_info)
-            ]
-            instrument_infos = await asyncio.gather(
-                *(
-                    client.get_instrument_info(resource_id)
-                    for resource_id in instrument_resource_ids
-                )
+            instrument_infos = await self._list_instrument_infos(
+                client=client,
+                parallel=True,
             )
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
@@ -312,6 +373,47 @@ class Quel3ConfigurationManager:
         self._target_alias_map = target_alias_map
         return dict(deployed)
 
+    async def _fetch_backend_settings_from_hardware(
+        self,
+        *,
+        unit_labels_by_box_id: dict[str, str],
+        parallel: bool,
+    ) -> dict[str, dict]:
+        """Fetch normalized instrument snapshots for selected QuEL-3 boxes."""
+        box_id_by_unit_label = {
+            unit_label: box_id for box_id, unit_label in unit_labels_by_box_id.items()
+        }
+        fetched: dict[str, dict] = {
+            box_id: {"instruments": {}} for box_id in unit_labels_by_box_id
+        }
+        if len(unit_labels_by_box_id) == 0:
+            return fetched
+
+        client_factory = self._load_quelware_client_factory()
+        async with client_factory(
+            self._quelware_endpoint,
+            self._quelware_port,
+        ) as client:
+            instrument_infos = await self._list_instrument_infos(
+                client=client,
+                parallel=parallel,
+            )
+
+        for instrument_info in instrument_infos:
+            unit_label = self._extract_unit_label(str(instrument_info.port_id))
+            box_id = box_id_by_unit_label.get(unit_label)
+            if box_id is None:
+                continue
+            alias = instrument_info.definition.alias.strip()
+            if len(alias) == 0:
+                continue
+            fetched[box_id]["instruments"][alias] = {
+                "resource_id": str(instrument_info.id),
+                "port_id": str(instrument_info.port_id),
+                "role": self._normalize_role_name(instrument_info.definition.role),
+            }
+        return fetched
+
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
         return load_quelware_client_factory(
@@ -327,6 +429,46 @@ class Quel3ConfigurationManager:
         if isinstance(category_name, str):
             return category_name == "INSTRUMENT"
         return str(category) == "INSTRUMENT"
+
+    async def _list_instrument_infos(
+        self,
+        *,
+        client: QuelwareClientProtocol,
+        parallel: bool,
+    ) -> list[InstrumentInfoProtocol]:
+        """List instrument infos from one quelware client session."""
+        resource_infos = await client.list_resource_infos()
+        instrument_resource_ids = [
+            resource_info.id
+            for resource_info in resource_infos
+            if self._is_instrument_resource(resource_info)
+        ]
+        if parallel:
+            return list(
+                await asyncio.gather(
+                    *(
+                        client.get_instrument_info(resource_id)
+                        for resource_id in instrument_resource_ids
+                    )
+                )
+            )
+        return [
+            await client.get_instrument_info(resource_id)
+            for resource_id in instrument_resource_ids
+        ]
+
+    @staticmethod
+    def _extract_unit_label(resource_id: str) -> str:
+        """Extract unit label prefix from one quelware resource ID."""
+        return resource_id.split(":", maxsplit=1)[0]
+
+    @staticmethod
+    def _normalize_role_name(role: object) -> str:
+        """Normalize one runtime instrument role value to a comparable string."""
+        role_name = getattr(role, "name", role)
+        if isinstance(role_name, str):
+            return role_name
+        return str(role_name)
 
     @staticmethod
     def _load_instrument_entities() -> tuple[

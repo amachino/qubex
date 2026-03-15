@@ -37,6 +37,16 @@ class Quel3SystemSynchronizer:
         """Return QuEL-3 deploy planner used for push-time configuration."""
         return self._deploy_planner
 
+    @property
+    def supports_backend_settings_sync(self) -> bool:
+        """Return whether QuEL-3 supports hardware snapshot synchronization."""
+        return True
+
+    @property
+    def supports_mutable_backend_settings_cache(self) -> bool:
+        """Return whether QuEL-3 supports mutable backend-settings cache writes."""
+        return False
+
     def sync_experiment_system_to_backend_controller(
         self,
         experiment_system: ExperimentSystem,
@@ -73,17 +83,24 @@ class Quel3SystemSynchronizer:
         box_ids: Sequence[str],
         parallel: bool | None = None,
     ) -> dict[str, dict]:
-        """Fetch raw backend settings from hardware for selected boxes."""
-        del experiment_system, box_ids, parallel
-        return {}
+        """Fetch normalized instrument snapshots from hardware for selected boxes."""
+        unit_labels_by_box_id = {
+            box_id: experiment_system.get_box(box_id).name for box_id in box_ids
+        }
+        return self._backend_controller.configuration_manager.fetch_backend_settings_from_hardware(
+            unit_labels_by_box_id=unit_labels_by_box_id,
+            parallel=parallel,
+        )
 
     def sync_backend_settings_to_backend_controller(
         self,
         *,
         backend_settings: dict[str, dict],
     ) -> None:
-        """Apply backend-settings snapshots to backend controller cache."""
-        del backend_settings
+        """Apply hardware snapshot data to QuEL-3 alias caches."""
+        self._backend_controller.configuration_manager.sync_backend_settings_to_cache(
+            backend_settings=backend_settings,
+        )
 
     def sync_backend_settings_to_experiment_system(
         self,
@@ -93,3 +110,11 @@ class Quel3SystemSynchronizer:
     ) -> None:
         """Apply backend-settings snapshots to the in-memory experiment system."""
         del experiment_system, backend_settings
+
+    def get_box_config_cache_snapshot(self) -> dict[str, dict]:
+        """Return empty cache snapshot because QuEL-3 cache mutation is unsupported."""
+        return {}
+
+    def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
+        """Ignore cache replacement because QuEL-3 cache mutation is unsupported."""
+        del box_configs

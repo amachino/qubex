@@ -609,23 +609,42 @@ This operation will overwrite the existing backend settings. Do you want to cont
         self._backend_settings = BackendSettings(backend_settings)
 
     def _supports_box_settings_cache_sync(self) -> bool:
-        """Return whether backend supports dump/cache synchronization APIs."""
+        """Return whether backend supports hardware snapshot synchronization APIs."""
         system_synchronizer = self._resolve_system_synchronizer()
         if system_synchronizer is None:
             return False
-        return isinstance(system_synchronizer, Quel1SystemSynchronizer)
+        return bool(
+            getattr(system_synchronizer, "supports_backend_settings_sync", False)
+        )
+
+    def _supports_mutable_backend_settings_cache(self) -> bool:
+        """Return whether backend supports mutable backend-settings cache writes."""
+        system_synchronizer = self._resolve_system_synchronizer()
+        if system_synchronizer is None:
+            return False
+        return bool(
+            getattr(
+                system_synchronizer,
+                "supports_mutable_backend_settings_cache",
+                False,
+            )
+        )
 
     def _get_box_config_cache_snapshot(self) -> dict[str, dict]:
         """Return a snapshot of backend box-config cache when supported."""
+        if not self._supports_mutable_backend_settings_cache():
+            return {}
         system_synchronizer = self._resolve_system_synchronizer()
-        if not isinstance(system_synchronizer, Quel1SystemSynchronizer):
+        if system_synchronizer is None:
             return {}
         return system_synchronizer.get_box_config_cache_snapshot()
 
     def _replace_box_config_cache(self, box_configs: Mapping[str, dict]) -> None:
         """Replace backend box-config cache when supported."""
+        if not self._supports_mutable_backend_settings_cache():
+            return
         system_synchronizer = self._resolve_system_synchronizer()
-        if not isinstance(system_synchronizer, Quel1SystemSynchronizer):
+        if system_synchronizer is None:
             return
         system_synchronizer.replace_box_config_cache(dict(box_configs))
 
@@ -829,7 +848,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         ... ):
         ...     ...
         """
-        if not self._supports_box_settings_cache_sync():
+        if not self._supports_mutable_backend_settings_cache():
             raise NotImplementedError(
                 "Active backend does not support backend-settings cache operations."
             )
