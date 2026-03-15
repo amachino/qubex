@@ -527,7 +527,7 @@ class Quel3ExecutionManager:
         capture_mode: Quel3CaptureMode,
         capture_mode_enum: CaptureModeNamespaceProtocol,
         set_capture_mode_factory: SetCaptureModeFactory,
-    ) -> DirectiveProtocol | None:
+    ) -> DirectiveProtocol:
         """Build one capture-mode directive from payload capture mode."""
         candidates_by_mode: dict[Quel3CaptureMode, tuple[str, ...]] = {
             Quel3CaptureMode.RAW_WAVEFORMS: ("RAW_WAVEFORMS",),
@@ -545,7 +545,10 @@ class Quel3ExecutionManager:
                 mode = resolved_mode
                 break
         if mode is None:
-            return None
+            raise RuntimeError(
+                "quelware runtime does not expose required "
+                f"`CaptureMode.{candidates[0]}`."
+            )
         return set_capture_mode_factory(mode=mode)
 
     @staticmethod

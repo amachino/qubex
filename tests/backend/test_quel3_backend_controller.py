@@ -868,6 +868,48 @@ def test_execute_batches_capture_mode_with_timeline_directive(
     )
 
 
+def test_execute_rejects_runtime_without_required_capture_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given missing runtime capture mode, execute raises RuntimeError."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="AVERAGED_VALUE"):
+        asyncio.run(
+            manager.execute_async(request=BackendExecutionRequest(payload=payload))
+        )
+
+
 def test_execute_parallelizes_driver_phases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
