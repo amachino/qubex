@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
 from qubex.backend.quel3.interfaces.client import (
@@ -33,8 +34,11 @@ class InstrumentDriverProtocol(Protocol):
         """Return instrument runtime configuration."""
         ...
 
-    async def apply(self, directive: DirectiveProtocol) -> None:
-        """Apply one fixed-timeline directive."""
+    async def apply(
+        self,
+        directive: DirectiveProtocol | Sequence[DirectiveProtocol],
+    ) -> None:
+        """Apply one or more fixed-timeline directives."""
         ...
 
     async def initialize(self) -> None:

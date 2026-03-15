@@ -215,15 +215,18 @@ class Quel3ExecutionManager:
 
                 for alias, driver in alias_to_driver.items():
                     await driver.initialize()
+                    directives: list[DirectiveProtocol] = []
                     capture_mode_directive = self._build_capture_mode_directive(
                         capture_mode=payload.capture_mode,
                         capture_mode_enum=capture_mode_enum,
                         set_capture_mode_factory=set_capture_mode_factory,
                     )
                     if capture_mode_directive is not None:
-                        await driver.apply(capture_mode_directive)
-                    directive = sequencer.export_set_fixed_timeline_directive(alias)
-                    await driver.apply(directive)
+                        directives.append(capture_mode_directive)
+                    directives.append(
+                        sequencer.export_set_fixed_timeline_directive(alias)
+                    )
+                    await driver.apply(directives)
 
                 shot_samples = self._initialize_shot_samples(resolved_payload)
                 await session.trigger(instrument_ids=instrument_ids)

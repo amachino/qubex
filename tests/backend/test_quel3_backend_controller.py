@@ -554,3 +554,176 @@ def test_resolve_payload_accepts_alias_binding() -> None:
     )
 
     assert set(resolved.fixed_timelines.keys()) == {"inst-q00"}
+
+
+@dataclass(frozen=True)
+class _FakeInstrumentConfig:
+    sampling_period_fs: int
+    timeline_step_samples: int
+
+
+class _FakeWaveformResult:
+    def __init__(self, values: np.ndarray) -> None:
+        self.iq_array = values
+
+
+class _FakeResultContainer:
+    def __init__(self) -> None:
+        self.iq_result = {
+            "alias-rq00:0": [
+                _FakeWaveformResult(np.array([1.0 + 0.0j], dtype=np.complex128))
+            ]
+        }
+
+
+class _FakeInstrumentDriver:
+    def __init__(self) -> None:
+        self.instrument_config = _FakeInstrumentConfig(
+            sampling_period_fs=400_000,
+            timeline_step_samples=64,
+        )
+        self.apply_calls: list[object] = []
+        self.initialized = False
+
+    async def apply(self, directive: object) -> None:
+        self.apply_calls.append(directive)
+
+    async def initialize(self) -> None:
+        self.initialized = True
+
+    async def fetch_result(self) -> object:
+        return _FakeResultContainer()
+
+
+class _FakeSequencer:
+    def __init__(self, default_sampling_period_ns: float) -> None:
+        self.default_sampling_period_ns = default_sampling_period_ns
+
+    def bind(
+        self,
+        alias: str,
+        sampling_period_fs: int,
+        step_samples: int,
+    ) -> None:
+        del alias, sampling_period_fs, step_samples
+
+    def register_waveform(
+        self,
+        name: str,
+        waveform: object,
+        sampling_period_ns: float | None = None,
+    ) -> None:
+        del name, waveform, sampling_period_ns
+
+    def add_event(
+        self,
+        instrument_alias: str,
+        waveform_name: str,
+        start_offset_ns: float,
+        gain: float = 1.0,
+        phase_offset_deg: float = 0.0,
+    ) -> None:
+        del instrument_alias, waveform_name, start_offset_ns, gain, phase_offset_deg
+
+    def add_capture_window(
+        self,
+        instrument_alias: str,
+        window_name: str,
+        start_offset_ns: float,
+        length_ns: float,
+    ) -> None:
+        del instrument_alias, window_name, start_offset_ns, length_ns
+
+    def set_iterations(self, iterations: int) -> None:
+        del iterations
+
+    def export_set_fixed_timeline_directive(self, instrument_alias: str) -> object:
+        return ("timeline", instrument_alias)
+
+
+class _FakeSession:
+    def __init__(self) -> None:
+        self.trigger_calls: list[list[str]] = []
+
+    async def __aenter__(self) -> _FakeSession:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, exc, tb
+
+    async def trigger(self, instrument_ids: list[str]) -> None:
+        self.trigger_calls.append(list(instrument_ids))
+
+
+class _FakeClient:
+    def __init__(self, session: _FakeSession) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> _FakeClient:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, exc, tb
+
+    def create_session(self, resource_ids: list[str]) -> _FakeSession:
+        del resource_ids
+        return self._session
+
+
+def test_execute_batches_capture_mode_with_timeline_directive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given fixed-timeline execution, execute batches directives per instrument."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=payload))
+    )
+
+    assert driver.initialized is True
+    assert driver.apply_calls == [[("capture_mode", "avg"), ("timeline", "alias-rq00")]]
+    assert session.trigger_calls == [["alias-rq00"]]
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
