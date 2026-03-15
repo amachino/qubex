@@ -848,6 +848,12 @@ This operation will overwrite the existing backend settings. Do you want to cont
         ... ):
         ...     ...
         """
+        if self.backend_kind == BACKEND_KIND_QUEL3:
+            # QuEL-3 does not expose the QuEL-1 mutable backend-settings cache
+            # path. Keep this context manager as a compatibility no-op and rely
+            # on direct per-target frequency overrides inside the caller.
+            yield
+            return
         if not self._supports_mutable_backend_settings_cache():
             raise NotImplementedError(
                 "Active backend does not support backend-settings cache operations."

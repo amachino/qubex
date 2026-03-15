@@ -20,6 +20,7 @@ from typing_extensions import deprecated
 
 from qubex.backend.backend_controller import (
     BACKEND_KIND_QUEL1,
+    BACKEND_KIND_QUEL3,
     SystemBackendController,
 )
 from qubex.measurement import (
@@ -935,6 +936,18 @@ class ExperimentContext:
         qubits: Collection[str] | None = None,
     ) -> None:
         """Reset AWG and capture units for specified boxes or qubits."""
+        initialize_awg_and_capunits = getattr(
+            self.backend_controller, "initialize_awg_and_capunits", None
+        )
+        if not callable(initialize_awg_and_capunits):
+            # QuEL-3 currently has no explicit reset capability. Treat reset
+            # requests as a compatibility no-op and let execution continue.
+            if self.config_loader.backend_kind == BACKEND_KIND_QUEL3:
+                return
+            raise NotImplementedError(
+                "Active backend does not support AWG/CAP unit reset."
+            )
+
         selected_box_ids: list[str] = []
         if qubits is not None:
             boxes = self.experiment_system.get_boxes_for_qubits(qubits)
@@ -946,14 +959,6 @@ class ExperimentContext:
                 selected_box_ids = list(box_ids)
             else:
                 selected_box_ids = self.box_ids
-
-        initialize_awg_and_capunits = getattr(
-            self.backend_controller, "initialize_awg_and_capunits", None
-        )
-        if not callable(initialize_awg_and_capunits):
-            raise NotImplementedError(
-                "Active backend does not support AWG/CAP unit reset."
-            )
         initialize_awg_and_capunits(selected_box_ids)
 
     def _resolve_custom_target_qubit_label(

@@ -116,3 +116,30 @@ def test_load_skew_file_skips_warning_for_missing_quel3(
     context.load_skew_file()
 
     assert "Skew file not found" not in caplog.text
+
+
+def test_reset_awg_and_capunits_is_noop_for_quel3_without_reset_capability(
+    tmp_path: Path,
+) -> None:
+    """Given QuEL-3 without reset capability, reset_awg_and_capunits should no-op."""
+    context = _TestExperimentContext(
+        config_path=tmp_path,
+        backend_kind="quel3",
+        box_count=2,
+    )
+
+    context.reset_awg_and_capunits(box_ids="BOX0")
+
+
+def test_reset_awg_and_capunits_stays_unsupported_for_quel1_without_reset_capability(
+    tmp_path: Path,
+) -> None:
+    """Given QuEL-1 without reset capability, reset_awg_and_capunits should still raise."""
+    context = _TestExperimentContext(
+        config_path=tmp_path,
+        backend_kind="quel1",
+        box_count=2,
+    )
+
+    with pytest.raises(NotImplementedError, match="AWG/CAP unit reset"):
+        context.reset_awg_and_capunits(box_ids="BOX0")

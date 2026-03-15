@@ -964,6 +964,29 @@ def test_modified_backend_settings_rejects_snapshot_only_backend(
         pass
 
 
+def test_modified_backend_settings_is_noop_for_quel3_without_cache_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given QuEL-3 without cache support, modified_backend_settings should no-op."""
+    manager = SystemManager.shared()
+    monkeypatch.setattr(manager, "_backend_kind", BACKEND_KIND_QUEL3)
+    monkeypatch.setattr(manager, "_system_synchronizer", SimpleNamespace())
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace())
+    monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace(hash=0))
+
+    entered = False
+
+    with manager.modified_backend_settings(
+        "Q00",
+        lo_freq=10_000_000_000,
+        cnco_freq=1_500,
+        fnco_freq=750,
+    ):
+        entered = True
+
+    assert entered is True
+
+
 def test_create_backend_controller_supports_quel3() -> None:
     """Given Quel3 kind, when creating backend controller, then Quel3 controller is returned."""
     controller = SystemManager._create_backend_controller("quel3")  # noqa: SLF001
