@@ -15,6 +15,11 @@ class InstrumentDefinitionProtocol(Protocol):
     """Minimal instrument-definition protocol."""
 
     @property
+    def alias(self) -> str:
+        """Return instrument alias."""
+        ...
+
+    @property
     def role(self) -> object:
         """Return instrument role enum-like value."""
         ...
@@ -22,6 +27,11 @@ class InstrumentDefinitionProtocol(Protocol):
 
 class InstrumentInfoProtocol(Protocol):
     """Minimal instrument-info protocol."""
+
+    @property
+    def id(self) -> object:
+        """Return instrument resource identifier."""
+        ...
 
     @property
     def port_id(self) -> object:
@@ -34,8 +44,40 @@ class InstrumentInfoProtocol(Protocol):
         ...
 
 
+class ResourceCategoryProtocol(Protocol):
+    """Minimal resource-category protocol."""
+
+    @property
+    def name(self) -> str:
+        """Return category name."""
+        ...
+
+
+class ResourceInfoProtocol(Protocol):
+    """Minimal resource-info protocol."""
+
+    @property
+    def id(self) -> ResourceIdProtocol:
+        """Return resource identifier."""
+        ...
+
+    @property
+    def category(self) -> ResourceCategoryProtocol | object:
+        """Return resource category."""
+        ...
+
+
 class SessionProtocol(Protocol):
     """Minimal quelware session protocol."""
+
+    async def deploy_instruments(
+        self,
+        port_id: ResourceIdProtocol | str,
+        definitions: Iterable[InstrumentDefinitionProtocol],
+        append: bool = False,
+    ) -> list[InstrumentInfoProtocol]:
+        """Deploy one or more instruments to one port."""
+        ...
 
     async def trigger(
         self,
@@ -53,7 +95,7 @@ class QuelwareClientProtocol(Protocol):
         """List available QuEL-3 unit labels."""
         ...
 
-    async def list_resource_infos(self) -> object:
+    async def list_resource_infos(self) -> list[ResourceInfoProtocol]:
         """List available resources."""
         ...
 

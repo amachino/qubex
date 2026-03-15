@@ -53,7 +53,6 @@ class Quel3SystemSynchronizer:
         target_labels: Sequence[str] | None = None,
     ) -> None:
         """Deploy instruments for selected boxes from the current target registry."""
-        del parallel
         box_ids = [box.id for box in boxes]
         if len(box_ids) == 0:
             return
@@ -62,7 +61,10 @@ class Quel3SystemSynchronizer:
             box_ids=box_ids,
             target_labels=target_labels,
         )
-        self._backend_controller.deploy_instruments(requests=requests)
+        self._backend_controller.deploy_instruments(
+            requests=requests,
+            parallel=True if parallel is None else parallel,
+        )
 
     def fetch_backend_settings_from_hardware(
         self,

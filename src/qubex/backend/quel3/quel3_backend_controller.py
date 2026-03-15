@@ -20,6 +20,7 @@ from qubex.backend.quel3.infra import (
     normalize_quel3_client_mode,
     validate_quelware_client_runtime,
 )
+from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
 from .managers import (
     Quel3ConfigurationManager,
@@ -290,7 +291,9 @@ class Quel3BackendController(BackendController):
         return self._configuration_manager.target_alias_map
 
     @property
-    def last_deployed_instrument_infos(self) -> dict[str, tuple[object, ...]]:
+    def last_deployed_instrument_infos(
+        self,
+    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
         """Return deployed instrument infos from backend runtime state."""
         return self._configuration_manager.last_deployed_instrument_infos
 
@@ -315,9 +318,13 @@ class Quel3BackendController(BackendController):
         self,
         *,
         requests: Sequence[InstrumentDeployRequest],
-    ) -> dict[str, tuple[object, ...]]:
+        parallel: bool = True,
+    ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
         """Deploy QuEL-3 instruments for the provided requests."""
-        return self._configuration_manager.deploy_instruments(requests=requests)
+        return self._configuration_manager.deploy_instruments(
+            requests=requests,
+            parallel=parallel,
+        )
 
     @property
     def sampling_period_ns(self) -> float:

@@ -108,7 +108,9 @@ class Quel3ExecutionManager:
         parallel: bool = True,
     ) -> Quel3BackendExecutionResult:
         """Execute a QuEL-3 backend request synchronously."""
-        return _run_async(lambda: self.execute_async(request=request, parallel=parallel))
+        return _run_async(
+            lambda: self.execute_async(request=request, parallel=parallel)
+        )
 
     async def execute_async(
         self,

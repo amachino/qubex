@@ -166,7 +166,7 @@ def test_build_deploy_requests_raises_when_frequency_margin_reaches_nyquist() ->
 def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> None:
     """Given push input, synchronizer should plan requests from that experiment system."""
     planner_calls: list[tuple[object, tuple[str, ...], tuple[str, ...]]] = []
-    deploy_calls: list[tuple[InstrumentDeployRequest, ...]] = []
+    deploy_calls: list[tuple[tuple[InstrumentDeployRequest, ...], bool]] = []
     requests = (
         InstrumentDeployRequest(
             port_id="quel3-02-a01:tx_p02",
@@ -196,8 +196,9 @@ def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> Non
             self,
             *,
             requests: tuple[InstrumentDeployRequest, ...],
+            parallel: bool = True,
         ) -> dict[str, tuple[object, ...]]:
-            deploy_calls.append(requests)
+            deploy_calls.append((requests, parallel))
             return {}
 
     backend_controller = cast(Any, _FakeBackendController())
@@ -217,7 +218,57 @@ def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> Non
     )
 
     assert planner_calls == [(experiment_system, ("BOX1", "BOX2"), ("Q00", "RQ00"))]
-    assert deploy_calls == [requests]
+    assert deploy_calls == [(requests, True)]
+
+
+def test_quel3_synchronizer_defaults_parallel_deploy_to_true() -> None:
+    """Given missing parallel flag, synchronizer should default deploy to parallel true."""
+    deploy_calls: list[bool] = []
+    expected_requests = (
+        InstrumentDeployRequest(
+            port_id="quel3-02-a01:tx_p02",
+            role="TRANSMITTER",
+            frequency_range_min_hz=4.1e9,
+            frequency_range_max_hz=4.3e9,
+            alias="Q00",
+            target_labels=("Q00",),
+        ),
+    )
+
+    class _FakeDeployPlanner:
+        def build_deploy_requests(
+            self,
+            *,
+            experiment_system: object,
+            box_ids: list[str],
+            target_labels: list[str] | None = None,
+        ) -> tuple[InstrumentDeployRequest, ...]:
+            del experiment_system, box_ids, target_labels
+            return expected_requests
+
+    class _FakeBackendController:
+        def deploy_instruments(
+            self,
+            *,
+            requests: tuple[InstrumentDeployRequest, ...],
+            parallel: bool = True,
+        ) -> dict[str, tuple[object, ...]]:
+            assert requests == expected_requests
+            deploy_calls.append(parallel)
+            return {}
+
+    synchronizer = Quel3SystemSynchronizer(
+        backend_controller=cast(Any, _FakeBackendController()),
+        deploy_planner=cast(Any, _FakeDeployPlanner()),
+    )
+
+    synchronizer.sync_experiment_system_to_hardware(
+        experiment_system=cast(Any, object()),
+        boxes=cast(Any, [SimpleNamespace(id="BOX1")]),
+        parallel=None,
+    )
+
+    assert deploy_calls == [True]
 
 
 def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
@@ -241,7 +292,9 @@ def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
             self,
             *,
             requests: tuple[InstrumentDeployRequest, ...],
+            parallel: bool = True,
         ) -> dict[str, tuple[object, ...]]:
+            _ = parallel
             assert requests == ()
             return {}
 

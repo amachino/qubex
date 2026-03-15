@@ -384,6 +384,46 @@ def test_connect_refreshes_existing_instrument_cache() -> None:
     assert calls == ["connect", "refresh"]
 
 
+def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() -> None:
+    """Given parallel override, controller deploy_instruments should forward it."""
+    captured: dict[str, object] = {}
+
+    def _deploy_instruments(*, requests: object, parallel: bool) -> object:
+        captured["requests"] = requests
+        captured["parallel"] = parallel
+        return {"Q00": ()}
+
+    controller = Quel3BackendController(
+        configuration_manager=cast(
+            Any,
+            SimpleNamespace(
+                quelware_endpoint="host-a",
+                quelware_port=50051,
+                client_mode="server",
+                standalone_unit_label=None,
+                target_alias_map={},
+                last_deployed_instrument_infos={},
+                deploy_instruments=_deploy_instruments,
+            ),
+        )
+    )
+    requests = (
+        SimpleNamespace(
+            port_id="quel3-02-a01:tx_p02",
+            role="TRANSMITTER",
+            frequency_range_min_hz=4.1e9,
+            frequency_range_max_hz=4.3e9,
+            alias="Q00",
+            target_labels=("Q00",),
+        ),
+    )
+
+    result = controller.deploy_instruments(requests=cast(Any, requests), parallel=False)
+
+    assert result == {"Q00": ()}
+    assert captured == {"requests": requests, "parallel": False}
+
+
 def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> None:
     """Given mismatched injected manager runtime values, constructor should fail fast."""
     connection_manager = SimpleNamespace(
