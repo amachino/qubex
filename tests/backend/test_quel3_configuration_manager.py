@@ -97,7 +97,7 @@ def test_deploy_instruments_calls_session_api(
             definitions: list[_Definition],
             append: bool = False,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             deploy_calls.append((port_id, definitions))
             return [
                 _InstrumentInfo(
@@ -309,7 +309,7 @@ def test_deploy_instruments_groups_requests_by_port(
     assert create_session_calls == [("quel3-02-a01:tx_p04",)]
     assert len(deploy_calls) == 1
     assert deploy_calls[0][0] == "quel3-02-a01:tx_p04"
-    assert deploy_calls[0][2] is False
+    assert deploy_calls[0][2] is True
     assert [definition.alias for definition in deploy_calls[0][1]] == [
         "Q00",
         "Q00-CR",
@@ -378,7 +378,7 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
             definitions: list[_Definition],
             append: bool = False,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             deploy_calls.append(port_id)
             return [
                 _InstrumentInfo(
@@ -503,7 +503,7 @@ def test_deploy_instruments_parallelizes_ports_by_default(
             definitions: list[_Definition],
             append: bool = False,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             probe.active += 1
             probe.max_active = max(probe.max_active, probe.active)
             await asyncio.sleep(0)
@@ -627,7 +627,7 @@ def test_deploy_instruments_parallel_false_serializes_ports(
             definitions: list[_Definition],
             append: bool = False,
         ) -> list[_InstrumentInfo]:
-            assert append is False
+            assert append is True
             probe.active += 1
             probe.max_active = max(probe.max_active, probe.active)
             await asyncio.sleep(0)
@@ -1060,7 +1060,7 @@ def test_deploy_instruments_replaces_cached_alias(
     )
 
     assert len(deploy_calls) == 1
-    assert deploy_calls[0][2] is False
+    assert deploy_calls[0][2] is True
     assert deployed == {"Q00": (returned_info,)}
     assert manager.target_alias_map == {"Q00": "Q00"}
 
@@ -1195,6 +1195,6 @@ def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
     )
 
     assert len(deploy_calls) == 1
-    assert deploy_calls[0][2] is False
+    assert deploy_calls[0][2] is True
     assert [definition.alias for definition in deploy_calls[0][1]] == ["Q00", "Q00-CR"]
     assert set(deployed) == {"Q00", "Q00-CR"}
