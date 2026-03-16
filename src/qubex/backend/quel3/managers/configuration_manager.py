@@ -70,6 +70,16 @@ class _CachedInstrumentDefinition:
 
     alias: str
     role: str
+    mode: str | None = None
+    profile: object | None = None
+
+
+@dataclass(frozen=True)
+class _CachedFixedTimelineProfile:
+    """Cached fixed-timeline profile restored from hardware snapshot."""
+
+    frequency_range_min: float | None = None
+    frequency_range_max: float | None = None
 
 
 @dataclass(frozen=True)
@@ -210,15 +220,16 @@ class Quel3ConfigurationManager:
                 role = instrument_config.get("role")
                 if not isinstance(resource_id, str) or not isinstance(port_id, str):
                     continue
-                role_name = self._normalize_role_name(role)
+                definition = self._build_cached_definition(
+                    alias=alias,
+                    role=role,
+                    definition_config=instrument_config.get("definition"),
+                )
                 deployed[alias] = (
                     _CachedInstrumentInfo(
                         id=resource_id,
                         port_id=port_id,
-                        definition=_CachedInstrumentDefinition(
-                            alias=alias,
-                            role=role_name,
-                        ),
+                        definition=definition,
                     ),
                 )
                 target_alias_map[alias] = alias
@@ -405,10 +416,14 @@ class Quel3ConfigurationManager:
             alias = instrument_info.definition.alias.strip()
             if len(alias) == 0:
                 continue
+            definition = self._serialize_instrument_definition(
+                instrument_info.definition,
+            )
             fetched[box_id]["instruments"][alias] = {
                 "resource_id": str(instrument_info.id),
                 "port_id": str(instrument_info.port_id),
                 "role": self._normalize_role_name(instrument_info.definition.role),
+                "definition": definition,
             }
         return fetched
 
@@ -467,6 +482,77 @@ class Quel3ConfigurationManager:
         if isinstance(role_name, str):
             return role_name
         return str(role_name)
+
+    @classmethod
+    def _normalize_enum_name(cls, value: object) -> str:
+        """Normalize one enum-like runtime value to a comparable string."""
+        return cls._normalize_role_name(value)
+
+    @classmethod
+    def _serialize_instrument_definition(cls, definition: object) -> dict[str, object]:
+        """Serialize stable instrument-definition fields into plain data."""
+        serialized = {
+            "alias": getattr(definition, "alias", ""),
+            "role": cls._normalize_enum_name(getattr(definition, "role", None)),
+        }
+        mode = getattr(definition, "mode", None)
+        if mode is not None:
+            serialized["mode"] = cls._normalize_enum_name(mode)
+        profile = cls._serialize_profile(getattr(definition, "profile", None))
+        if profile:
+            serialized["profile"] = profile
+        return serialized
+
+    @staticmethod
+    def _serialize_profile(profile: object) -> dict[str, object]:
+        """Serialize stable fixed-timeline profile fields into plain data."""
+        if profile is None:
+            return {}
+        serialized: dict[str, object] = {}
+        for attr in ("frequency_range_min", "frequency_range_max"):
+            value = getattr(profile, attr, None)
+            if isinstance(value, int | float):
+                serialized[attr] = float(value)
+        return serialized
+
+    @classmethod
+    def _build_cached_definition(
+        cls,
+        *,
+        alias: str,
+        role: object,
+        definition_config: object,
+    ) -> _CachedInstrumentDefinition:
+        """Build cached instrument-definition object from one backend snapshot."""
+        role_name = cls._normalize_role_name(role)
+        if not isinstance(definition_config, Mapping):
+            return _CachedInstrumentDefinition(alias=alias, role=role_name)
+
+        mode = definition_config.get("mode")
+        mode_name = None
+        if mode is not None:
+            mode_name = cls._normalize_enum_name(mode)
+
+        profile = None
+        profile_config = definition_config.get("profile")
+        if isinstance(profile_config, Mapping):
+            freq_min = profile_config.get("frequency_range_min")
+            freq_max = profile_config.get("frequency_range_max")
+            profile = _CachedFixedTimelineProfile(
+                frequency_range_min=(
+                    float(freq_min) if isinstance(freq_min, int | float) else None
+                ),
+                frequency_range_max=(
+                    float(freq_max) if isinstance(freq_max, int | float) else None
+                ),
+            )
+
+        return _CachedInstrumentDefinition(
+            alias=alias,
+            role=role_name,
+            mode=mode_name,
+            profile=profile,
+        )
 
     @staticmethod
     def _load_instrument_entities() -> tuple[

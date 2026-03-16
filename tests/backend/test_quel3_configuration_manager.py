@@ -813,18 +813,56 @@ def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
         def __init__(self, name: str) -> None:
             self.name = name
 
+    class _Mode:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _Profile:
+        def __init__(
+            self,
+            *,
+            frequency_range_min: float,
+            frequency_range_max: float,
+        ) -> None:
+            self.frequency_range_min = frequency_range_min
+            self.frequency_range_max = frequency_range_max
+
     class _Definition:
-        def __init__(self, alias: str, role: object) -> None:
+        def __init__(
+            self,
+            alias: str,
+            role: object,
+            *,
+            mode: object,
+            profile: object,
+        ) -> None:
             self.alias = alias
             self.role = role
+            self.mode = mode
+            self.profile = profile
 
     class _InstrumentInfo:
         def __init__(
-            self, resource_id: str, alias: str, port_id: str, role: str
+            self,
+            resource_id: str,
+            alias: str,
+            port_id: str,
+            role: str,
+            *,
+            frequency_range_min: float,
+            frequency_range_max: float,
         ) -> None:
             self.id = resource_id
             self.port_id = port_id
-            self.definition = _Definition(alias, _Role(role))
+            self.definition = _Definition(
+                alias,
+                _Role(role),
+                mode=_Mode("FIXED_TIMELINE"),
+                profile=_Profile(
+                    frequency_range_min=frequency_range_min,
+                    frequency_range_max=frequency_range_max,
+                ),
+            )
 
     class _FakeClient:
         async def __aenter__(self) -> _FakeClient:
@@ -853,18 +891,24 @@ def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
                     "Q00",
                     "quel3-02-a01:tx_p04",
                     "TRANSMITTER",
+                    frequency_range_min=4.1e9,
+                    frequency_range_max=4.3e9,
                 ),
                 "inst-rq00": _InstrumentInfo(
                     "inst-rq00",
                     "RQ00",
                     "quel3-02-a02:trx_p00p04",
                     "TRANSCEIVER",
+                    frequency_range_min=5.9e9,
+                    frequency_range_max=6.1e9,
                 ),
                 "inst-other": _InstrumentInfo(
                     "inst-other",
                     "Q99",
                     "quel3-02-a99:tx_p01",
                     "TRANSMITTER",
+                    frequency_range_min=4.0e9,
+                    frequency_range_max=4.5e9,
                 ),
             }
             return infos[resource_id]
@@ -891,6 +935,15 @@ def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
                     "resource_id": "inst-q00",
                     "port_id": "quel3-02-a01:tx_p04",
                     "role": "TRANSMITTER",
+                    "definition": {
+                        "alias": "Q00",
+                        "role": "TRANSMITTER",
+                        "mode": "FIXED_TIMELINE",
+                        "profile": {
+                            "frequency_range_min": 4.1e9,
+                            "frequency_range_max": 4.3e9,
+                        },
+                    },
                 }
             }
         },
@@ -900,6 +953,15 @@ def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
                     "resource_id": "inst-rq00",
                     "port_id": "quel3-02-a02:trx_p00p04",
                     "role": "TRANSCEIVER",
+                    "definition": {
+                        "alias": "RQ00",
+                        "role": "TRANSCEIVER",
+                        "mode": "FIXED_TIMELINE",
+                        "profile": {
+                            "frequency_range_min": 5.9e9,
+                            "frequency_range_max": 6.1e9,
+                        },
+                    },
                 }
             }
         },
@@ -922,6 +984,15 @@ def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -
                         "resource_id": "inst-q00",
                         "port_id": "quel3-02-a01:tx_p04",
                         "role": "TRANSMITTER",
+                        "definition": {
+                            "alias": "Q00",
+                            "role": "TRANSMITTER",
+                            "mode": "FIXED_TIMELINE",
+                            "profile": {
+                                "frequency_range_min": 4.1e9,
+                                "frequency_range_max": 4.3e9,
+                            },
+                        },
                     }
                 }
             },
@@ -931,6 +1002,15 @@ def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -
                         "resource_id": "inst-rq00",
                         "port_id": "quel3-02-a02:trx_p00p04",
                         "role": "TRANSCEIVER",
+                        "definition": {
+                            "alias": "RQ00",
+                            "role": "TRANSCEIVER",
+                            "mode": "FIXED_TIMELINE",
+                            "profile": {
+                                "frequency_range_min": 5.9e9,
+                                "frequency_range_max": 6.1e9,
+                            },
+                        },
                     }
                 }
             },
@@ -948,6 +1028,14 @@ def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -
         manager.last_deployed_instrument_infos["RQ00"][0].definition.role
         == "TRANSCEIVER"
     )
+    assert (
+        manager.last_deployed_instrument_infos["Q00"][0].definition.mode
+        == "FIXED_TIMELINE"
+    )
+    profile = manager.last_deployed_instrument_infos["Q00"][0].definition.profile
+    assert profile is not None
+    assert profile.frequency_range_min == pytest.approx(4.1e9)
+    assert profile.frequency_range_max == pytest.approx(4.3e9)
 
 
 def test_deploy_instruments_replaces_cached_alias(
