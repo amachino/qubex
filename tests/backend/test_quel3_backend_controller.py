@@ -61,6 +61,20 @@ class _FakeInstrumentResolver:
         return self._alias_to_info[alias]
 
 
+class _CountingInstrumentResolver(_FakeInstrumentResolver):
+    def __init__(
+        self,
+        *,
+        alias_to_info: dict[str, _FakeInstrumentInfo],
+    ) -> None:
+        super().__init__(alias_to_info=alias_to_info)
+        self.refresh_calls = 0
+
+    async def refresh(self, client: object) -> None:
+        del client
+        self.refresh_calls += 1
+
+
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
     waveform_name = "wf0"
     timeline = Quel3FixedTimeline(
@@ -279,8 +293,10 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     controller = Quel3BackendController()
 
     assert pytest.approx(0.4) == controller.sampling_period_ns
-    assert controller._connection_manager.quelware_endpoint == "localhost"
-    assert controller._connection_manager.quelware_port == 50051
+    assert controller.connection_manager.quelware_endpoint == "localhost"
+    assert controller.connection_manager.quelware_port == 50051
+    assert controller.session_manager.quelware_endpoint == "localhost"
+    assert controller.session_manager.quelware_port == 50051
 
 
 def test_constructor_accepts_standalone_runtime_options() -> None:
@@ -293,6 +309,7 @@ def test_constructor_accepts_standalone_runtime_options() -> None:
     assert controller.client_mode == "standalone"
     assert controller.standalone_unit_label == "quel3-02-a01"
     assert controller.connection_manager.client_mode == "standalone"
+    assert controller.session_manager.client_mode == "standalone"
     assert controller.configuration_manager.client_mode == "standalone"
     assert controller.execution_manager.client_mode == "standalone"
 
@@ -306,7 +323,7 @@ def test_constructor_rejects_standalone_mode_without_unit_label() -> None:
 def test_constructor_accepts_injected_managers() -> None:
     """Given injected managers, controller should use those manager instances."""
     connection_manager = SimpleNamespace(
-        hash=11,
+        hash=7,
         is_connected=True,
         quelware_endpoint="injected-host",
         quelware_port=61000,
@@ -314,6 +331,15 @@ def test_constructor_accepts_injected_managers() -> None:
         standalone_unit_label="quel3-02-a01",
         connect=lambda box_names=None, parallel=None: None,
         disconnect=lambda: None,
+    )
+    session_manager = SimpleNamespace(
+        hash=11,
+        quelware_endpoint="injected-host",
+        quelware_port=61000,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+        open=lambda box_names=None, parallel=None: None,
+        close=lambda: None,
     )
     configuration_manager = SimpleNamespace(
         quelware_endpoint="injected-host",
@@ -336,11 +362,13 @@ def test_constructor_accepts_injected_managers() -> None:
 
     controller = Quel3BackendController(
         connection_manager=cast(Any, connection_manager),
+        session_manager=cast(Any, session_manager),
         configuration_manager=cast(Any, configuration_manager),
         execution_manager=cast(Any, execution_manager),
     )
 
     assert controller.connection_manager is connection_manager
+    assert controller.session_manager is session_manager
     assert controller.configuration_manager is configuration_manager
     assert controller.execution_manager is execution_manager
     assert controller.quelware_endpoint == "injected-host"
@@ -348,6 +376,25 @@ def test_constructor_accepts_injected_managers() -> None:
     assert controller.sampling_period_ns == pytest.approx(0.8)
     assert controller.client_mode == "standalone"
     assert controller.standalone_unit_label == "quel3-02-a01"
+
+
+def test_constructor_accepts_injected_session_manager() -> None:
+    """Given session manager injection, controller should expose it."""
+    session_manager = SimpleNamespace(
+        hash=11,
+        quelware_endpoint="injected-host",
+        quelware_port=61000,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+        open=lambda box_names=None, parallel=None: None,
+        close=lambda: None,
+    )
+
+    controller = Quel3BackendController(
+        session_manager=cast(Any, session_manager),
+    )
+
+    assert controller.session_manager is session_manager
 
 
 def test_connect_refreshes_existing_instrument_cache() -> None:
@@ -996,6 +1043,66 @@ def test_execute_parallelizes_driver_phases(
         result.data["alias-rq01"][0],
         np.array([2.0 + 0.0j], dtype=np.complex128),
     )
+
+
+def test_execute_batch_async_reuses_one_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given multiple requests, execute_batch_async should reuse one session and resolver refresh."""
+    payload_a = _make_payload()
+    payload_b = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=1,
+    )
+    resolver = _CountingInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    create_session_calls: list[tuple[str, ...]] = []
+
+    class _CountingClient(_FakeClient):
+        def create_session(self, resource_ids: list[str]) -> _FakeSession:
+            create_session_calls.append(tuple(resource_ids))
+            return super().create_session(resource_ids)
+
+    client = _CountingClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    results = asyncio.run(
+        manager.execute_batch_async(
+            requests=[
+                BackendExecutionRequest(payload=payload_a),
+                BackendExecutionRequest(payload=payload_b),
+            ]
+        )
+    )
+
+    assert resolver.refresh_calls == 1
+    assert create_session_calls == [("alias-rq00",)]
+    assert len(session.trigger_calls) == 2
+    assert len(driver.apply_calls) == 2
+    assert len(results) == 2
 
 
 def test_execute_serializes_driver_phases_when_parallel_disabled(

@@ -402,6 +402,69 @@ def test_execute_async_returns_backend_measurement_result_directly() -> None:
     assert result is expected
 
 
+def test_execute_many_async_uses_backend_batch_api_when_available() -> None:
+    """Given backend batch support, execute_many_async should use it once for all schedules."""
+    called: dict[str, object] = {}
+    request_a = BackendExecutionRequest(payload=object())
+    request_b = BackendExecutionRequest(payload=object())
+    backend_result_a = Quel1BackendExecutionResult(status={}, data={}, config={})
+    backend_result_b = Quel1BackendExecutionResult(status={}, data={}, config={})
+    expected = MeasurementResultConverter.from_multiple(
+        _make_multiple_result(),
+        measurement_config=_make_config(),
+    )
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            _ = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            _ = config
+            return request_a if schedule is schedules[0] else request_b
+
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period: float,
+        ) -> MeasurementResult:
+            _ = (backend_result, measurement_config, device_config, sampling_period)
+            return expected
+
+    class _BackendController:
+        sampling_period_ns: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
+
+        async def execute_batch_async(
+            self, *, requests: list[BackendExecutionRequest]
+        ) -> list[Quel1BackendExecutionResult]:
+            called["requests"] = requests
+            return [backend_result_a, backend_result_b]
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+    schedules = [_make_schedule(), _make_schedule()]
+
+    results = asyncio.run(
+        runner.execute_many_async(
+            schedules=schedules,
+            config=_make_config(),
+        )
+    )
+
+    assert called["requests"] == [request_a, request_b]
+    assert results == [expected, expected]
+
+
 def test_execute_async_prefers_adapter_measurement_result_builder_when_available() -> (
     None
 ):

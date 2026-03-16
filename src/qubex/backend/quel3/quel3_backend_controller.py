@@ -26,6 +26,7 @@ from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
+    Quel3SessionManager,
 )
 from .models import InstrumentDeployRequest
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
@@ -54,6 +55,7 @@ class Quel3BackendController(BackendController):
         client_mode: Quel3ClientMode | None = None,
         standalone_unit_label: str | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
+        session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
     ) -> None:
@@ -68,6 +70,8 @@ class Quel3BackendController(BackendController):
             quelware API port. Defaults to 50051.
         connection_manager : Quel3ConnectionManager | None, optional
             Injected connection manager for testing or customization.
+        session_manager : Quel3SessionManager | None, optional
+            Injected session manager for testing or customization.
         configuration_manager : Quel3ConfigurationManager | None, optional
             Injected configuration manager for testing or customization.
         execution_manager : Quel3ExecutionManager | None, optional
@@ -80,6 +84,7 @@ class Quel3BackendController(BackendController):
                 manager.quelware_endpoint
                 for manager in (
                     connection_manager,
+                    session_manager,
                     configuration_manager,
                     execution_manager,
                 )
@@ -94,6 +99,7 @@ class Quel3BackendController(BackendController):
                 manager.quelware_port
                 for manager in (
                     connection_manager,
+                    session_manager,
                     configuration_manager,
                     execution_manager,
                 )
@@ -115,6 +121,7 @@ class Quel3BackendController(BackendController):
                     manager.client_mode
                     for manager in (
                         connection_manager,
+                        session_manager,
                         configuration_manager,
                         execution_manager,
                     )
@@ -130,6 +137,7 @@ class Quel3BackendController(BackendController):
                 manager.standalone_unit_label
                 for manager in (
                     connection_manager,
+                    session_manager,
                     configuration_manager,
                     execution_manager,
                 )
@@ -161,6 +169,16 @@ class Quel3BackendController(BackendController):
                 standalone_unit_label=resolved_standalone_unit_label,
             )
         )
+        self._session_manager = (
+            session_manager
+            if session_manager is not None
+            else Quel3SessionManager(
+                quelware_endpoint=endpoint,
+                quelware_port=port,
+                client_mode=resolved_client_mode,
+                standalone_unit_label=resolved_standalone_unit_label,
+            )
+        )
         self._configuration_manager = (
             configuration_manager
             if configuration_manager is not None
@@ -181,6 +199,7 @@ class Quel3BackendController(BackendController):
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 client_mode=resolved_client_mode,
                 standalone_unit_label=resolved_standalone_unit_label,
+                session_manager=self._session_manager,
             )
         )
 
@@ -281,6 +300,11 @@ class Quel3BackendController(BackendController):
         return self._connection_manager
 
     @property
+    def session_manager(self) -> Quel3SessionManager:
+        """Return backend-side QuEL-3 session manager."""
+        return self._session_manager
+
+    @property
     def execution_manager(self) -> Quel3ExecutionManager:
         """Return backend-side QuEL-3 execution manager."""
         return self._execution_manager
@@ -358,5 +382,20 @@ class Quel3BackendController(BackendController):
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_async(
             request=request,
+            parallel=parallel,
+        )
+
+    async def execute_batch_async(
+        self,
+        *,
+        requests: Sequence[BackendExecutionRequest],
+        execution_mode: str | None = None,
+        clock_health_checks: bool | None = None,
+        parallel: bool = True,
+    ) -> list[BackendExecutionResult]:
+        """Execute multiple backend requests while reusing one QuEL-3 session."""
+        del execution_mode, clock_health_checks
+        return await self._execution_manager.execute_batch_async(
+            requests=tuple(requests),
             parallel=parallel,
         )
