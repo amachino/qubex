@@ -16,12 +16,12 @@ PUBLISH_TARGETS := \
 # Upgrade locked dependencies and sync the backend development environment
 upgrade:
 	git submodule update --init --recursive --remote
-	uv sync --all-groups --extra backend --upgrade
+	uv sync --all-groups --all-extras --upgrade
 
 # Install the locked backend development environment
 sync:
 	git submodule update --init --recursive
-	uv sync --all-groups --extra backend --locked
+	uv sync --all-groups --all-extras --locked
 
 # Run unit tests
 test:
