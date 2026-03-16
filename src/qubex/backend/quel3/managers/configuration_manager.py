@@ -321,11 +321,7 @@ class Quel3ConfigurationManager:
         inst_infos = await session.deploy_instruments(
             port_id,
             definitions=definitions,
-            # Temporary compatibility guard:
-            # quelware `append=True` is currently broken, so use replacement
-            # deploys for now. Once quelware is fixed, switch this back to
-            # append mode so target-scoped deploys can preserve siblings.
-            append=False,
+            append=True,
         )
         infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
         for inst_info in inst_infos:
