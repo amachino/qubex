@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, ClassVar, cast
+
+import pytest
+import yaml
 
 from qubex.backend.quel1.managers.skew_manager import Quel1SkewManager
 from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
@@ -22,6 +26,7 @@ class _FakeSysDb:
     def __init__(self) -> None:
         self.create_box_calls: list[tuple[str, bool]] = []
         self.created_boxes: dict[str, _FakeBox] = {}
+        self.load_skew_yaml_calls: list[str] = []
 
     def create_box(self, box_name: str, *, reconnect: bool = True) -> _FakeBox:
         self.create_box_calls.append((box_name, reconnect))
@@ -29,10 +34,14 @@ class _FakeSysDb:
         self.created_boxes[box_name] = box
         return box
 
+    def load_skew_yaml(self, path: str) -> None:
+        self.load_skew_yaml_calls.append(path)
+
 
 class _FakeQubeCalib:
     def __init__(self, *, sysdb: _FakeSysDb) -> None:
         self.system_config_database = sysdb
+        self.sysdb = sysdb
 
 
 class _FakeSkewSystem:
@@ -303,3 +312,84 @@ def test_run_skew_measurement_passes_empty_boxes_when_system_is_provided() -> No
 
     from_yaml_call = _FakeSkewClass.from_yaml_calls[-1]
     assert from_yaml_call["boxes"] == []
+
+
+def test_update_skew_updates_selected_boxes_and_creates_backup(
+    tmp_path: Path,
+) -> None:
+    """Given selected boxes, when updating skew, then only those waits change and a backup is created."""
+    sysdb = _FakeSysDb()
+    runtime_context = _FakeRuntimeContext(
+        available_boxes=[],
+        is_connected=False,
+        connected_system=None,
+        sysdb=sysdb,
+    )
+    manager = Quel1SkewManager(runtime_context=cast(Any, runtime_context))
+    path = tmp_path / "skew.yaml"
+    path.write_text(
+        """
+box_setting:
+  A:
+    slot: 0
+    wait: 0
+  B:
+    slot: 1
+    wait: 1
+time_to_start: 0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = manager.update_skew(
+        file_path=path,
+        wait=250,
+        box_names=["B"],
+        backup=True,
+    )
+
+    backup_path = path.with_suffix(f"{path.suffix}.bak")
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    backup_payload = yaml.safe_load(backup_path.read_text(encoding="utf-8"))
+    assert result == {
+        "file_path": path,
+        "backup_path": backup_path,
+        "box_names": ["B"],
+        "wait": 250,
+    }
+    assert payload["box_setting"]["A"]["wait"] == 0
+    assert payload["box_setting"]["B"]["wait"] == 250
+    assert backup_payload["box_setting"]["A"]["wait"] == 0
+    assert backup_payload["box_setting"]["B"]["wait"] == 1
+    assert sysdb.load_skew_yaml_calls == [str(path)]
+
+
+def test_update_skew_rejects_unknown_box_name(tmp_path: Path) -> None:
+    """Given an unknown box, when updating skew, then the YAML file is not modified."""
+    sysdb = _FakeSysDb()
+    runtime_context = _FakeRuntimeContext(
+        available_boxes=[],
+        is_connected=False,
+        connected_system=None,
+        sysdb=sysdb,
+    )
+    manager = Quel1SkewManager(runtime_context=cast(Any, runtime_context))
+    path = tmp_path / "skew.yaml"
+    original = (
+        """
+box_setting:
+  A:
+    slot: 0
+    wait: 0
+time_to_start: 0
+""".strip()
+        + "\n"
+    )
+    path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unknown box names in skew yaml: B"):
+        manager.update_skew(file_path=path, wait=250, box_names=["B"])
+
+    assert path.read_text(encoding="utf-8") == original
+    assert sysdb.load_skew_yaml_calls == []

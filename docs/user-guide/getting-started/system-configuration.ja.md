@@ -108,6 +108,16 @@ SYSTEM_A:
 - `backend` で、この system が使うバックエンド種別を選びます。
 - バックエンド固有セクションの名前は `backend` と同じにします。
 
+skew 測定やクロック同期を使う QuEL-1 system では、`quel1.clock_master` を定義してください。
+
+```yaml
+SYSTEM_B:
+  chip_id: CHIP_A
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10
+```
+
 ### `wiring.yaml`
 
 `system_id` をキーにし、mux ごとに 1 行ずつ wiring を定義します。
@@ -125,6 +135,47 @@ SYSTEM_A:
 ```
 
 Qubex は `wiring.yaml` で `BOX:PORT` と `BOX-PORT` の両方を受け付けますが、保守のしやすさのためにはどちらかに統一することを推奨します。
+
+### `skew.yaml`
+
+箱間タイミングの調整が必要な同期 QuEL-1 / QuBE 構成では、`skew.yaml` を使います。
+
+```yaml
+box_setting:
+  BOX_A:
+    slot: 0
+    wait: 0
+  BOX_B:
+    slot: 1
+    wait: 0
+monitor_port: BOX_A-12
+reference_port: BOX_A-1
+scale:
+  BOX_A-1: 0.125
+target_port:
+  BOX_A-1: null
+  BOX_B-8: null
+time_to_start: 0
+trigger_nport: 10
+```
+
+- `box_setting.<box>.slot` は各 box の粗いタイミング slot を表します。
+- `box_setting.<box>.wait` は skew 調整時に更新する細かい wait 値です。
+- `reference_port` は基準信号源を選びます。
+- `monitor_port` と `trigger_nport` は monitor capture 経路を定義します。
+- `target_port` は skew scan に含める port を列挙します。
+
+同じ config を `Experiment` から読み込んだあと、QuEL-1 skew helper で確認と更新ができます。
+
+```python
+result = exp.tool.check_skew(["BOX_A", "BOX_B"])
+exp.tool.update_skew(250, ["BOX_A", "BOX_B"], backup=True)
+result = exp.tool.check_skew(["BOX_A", "BOX_B"])
+```
+
+`exp.tool.update_skew(...)` は `skew.yaml` を上書きします。更新前のファイルを残したい場合は `backup=True` を指定してください。
+
+手順全体は [QuEL-1 skew 調整ワークフロー](../../examples/system/quel1_skew_adjustment.md) を参照してください。
 
 ## パラメータファイルを定義する
 

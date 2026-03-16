@@ -98,6 +98,7 @@ class FakeBackendControllerWithSkew(FakeBackendController):
         super().__init__()
         self.figure = figure
         self.run_skew_measurement_calls: list[dict[str, object]] = []
+        self.update_skew_calls: list[dict[str, object]] = []
 
     def run_skew_measurement(
         self,
@@ -119,6 +120,30 @@ class FakeBackendControllerWithSkew(FakeBackendController):
             }
         )
         return {"status": "ok"}, self.figure
+
+    def update_skew(
+        self,
+        *,
+        file_path: Path,
+        wait: int,
+        box_names: list[str] | None,
+        backup: bool,
+    ) -> dict[str, object]:
+        """Record skew-update requests and return a fake result."""
+        self.update_skew_calls.append(
+            {
+                "file_path": file_path,
+                "wait": wait,
+                "box_names": box_names,
+                "backup": backup,
+            }
+        )
+        return {
+            "file_path": file_path,
+            "backup_path": file_path.with_suffix(".yaml.bak") if backup else None,
+            "box_names": box_names if box_names is not None else [],
+            "wait": wait,
+        }
 
 
 @dataclass
@@ -274,3 +299,47 @@ def test_check_skew_renders_figure_widget_via_plotly_figure(
     assert call["clockmaster_ip"] == "192.0.2.10"
     assert set(cast(list[str], call["box_names"])) == {"BOX1", "REF"}
     assert call["estimate"] is True
+
+
+def test_update_skew_uses_backend_and_returns_result(monkeypatch, tmp_path) -> None:
+    """Given a skew file, when update_skew is called, then backend update is delegated and wrapped in Result."""
+    backend = FakeBackendControllerWithSkew(go.FigureWidget())
+    fake_manager = FakeSystemManager(
+        experiment_system=SimpleNamespace(),
+        backend_controller=backend,
+        config_loader=SimpleNamespace(config_path=tmp_path),
+    )
+    (tmp_path / "skew.yaml").write_text(
+        """
+box_setting:
+  BOX1:
+    slot: 0
+    wait: 0
+time_to_start: 0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(experiment_tool, "system_manager", fake_manager)
+
+    result = experiment_tool.update_skew(
+        250,
+        ["BOX1"],
+        config_dir=str(tmp_path),
+        backup=True,
+    )
+
+    assert isinstance(result, Result)
+    assert result["wait"] == 250
+    assert result["file_path"] == tmp_path / "skew.yaml"
+    assert result["backup_path"] == tmp_path / "skew.yaml.bak"
+    assert result["box_names"] == ["BOX1"]
+    assert backend.update_skew_calls == [
+        {
+            "file_path": tmp_path / "skew.yaml",
+            "wait": 250,
+            "box_names": ["BOX1"],
+            "backup": True,
+        }
+    ]

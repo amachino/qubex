@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+import yaml
 
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
@@ -124,7 +125,7 @@ def test_define_helpers_delegate_to_qubecalib() -> None:
 def test_load_skew_yaml_delegates_to_sysdb(tmp_path: Path) -> None:
     """Given a path, when loading skew yaml, then sysdb.load_skew_yaml is called once."""
     controller = _make_controller()
-    path = _write_skew_yaml(tmp_path, wait=0)
+    path = _write_skew_yaml(tmp_path, wait=250)
 
     controller.load_skew_yaml(path)
 
@@ -132,17 +133,53 @@ def test_load_skew_yaml_delegates_to_sysdb(tmp_path: Path) -> None:
     assert qubecalib.sysdb.load_skew_yaml_calls == [str(path)]
 
 
-@pytest.mark.parametrize("wait", [-1, 128])
-def test_load_skew_yaml_rejects_wait_out_of_range(tmp_path: Path, wait: int) -> None:
-    """Given out-of-range wait, when loading skew yaml, then ValueError is raised before delegation."""
+def test_load_skew_yaml_rejects_negative_wait(tmp_path: Path) -> None:
+    """Given a negative wait, when loading skew yaml, then ValueError is raised before delegation."""
     controller = _make_controller()
-    path = _write_skew_yaml(tmp_path, wait=wait)
+    path = _write_skew_yaml(tmp_path, wait=-1)
 
-    with pytest.raises(ValueError, match="wait must satisfy 0 <= wait < 128"):
+    with pytest.raises(ValueError, match="wait must be non-negative"):
         controller.load_skew_yaml(path)
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
     assert qubecalib.sysdb.load_skew_yaml_calls == []
+
+
+def test_update_skew_updates_yaml_and_reloads_sysdb(tmp_path: Path) -> None:
+    """Given a skew file, when update_skew is called, then waits are updated and sysdb reloads the file."""
+    controller = _make_controller()
+    path = tmp_path / "skew.yaml"
+    path.write_text(
+        """
+box_setting:
+  Q00:
+    slot: 0
+    wait: 0
+  Q01:
+    slot: 1
+    wait: 1
+time_to_start: 0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = controller.update_skew(
+        file_path=path,
+        wait=250,
+        box_names=["Q01"],
+        backup=True,
+    )
+
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
+    assert result["wait"] == 250
+    assert result["file_path"] == path
+    assert result["backup_path"] == path.with_suffix(".yaml.bak")
+    assert result["box_names"] == ["Q01"]
+    assert payload["box_setting"]["Q00"]["wait"] == 0
+    assert payload["box_setting"]["Q01"]["wait"] == 250
+    assert qubecalib.sysdb.load_skew_yaml_calls == [str(path)]
 
 
 def test_add_channel_target_relation_is_idempotent() -> None:

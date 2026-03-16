@@ -126,6 +126,43 @@ Do you want to continue?
     )
 
 
+def update_skew(
+    wait: int,
+    box_ids: Collection[str] | None = None,
+    *,
+    config_dir: str | None = None,
+    skew_file: str | None = None,
+    backup: bool | None = None,
+) -> Result:
+    """Update skew waits in one skew YAML file and reload backend settings."""
+    if skew_file is None:
+        skew_file = "skew.yaml"
+    if backup is None:
+        backup = False
+
+    if config_dir is not None:
+        config_path = Path(config_dir)
+    else:
+        config_path = system_manager.config_loader.config_path
+
+    if box_ids is None:
+        resolved_box_ids = None
+    else:
+        resolved_box_ids = list(box_ids)
+
+    update_skew_impl = _require_backend_callable("update_skew")
+    result = cast(
+        dict[str, object],
+        update_skew_impl(
+            file_path=config_path / skew_file,
+            wait=wait,
+            box_names=resolved_box_ids,
+            backup=backup,
+        ),
+    )
+    return Result(data=result)
+
+
 def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
     get_box = _require_backend_callable("get_box")
