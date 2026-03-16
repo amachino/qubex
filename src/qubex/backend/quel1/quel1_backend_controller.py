@@ -769,6 +769,41 @@ class Quel1BackendController(BackendController):
         """
         self._skew_manager.load_skew_yaml(file_path)
 
+    def update_skew(
+        self,
+        *,
+        file_path: str | Path,
+        wait: int,
+        box_names: list[str] | None = None,
+        backup: bool = False,
+    ) -> dict[str, object]:
+        """
+        Update skew waits in one YAML file and reload backend skew settings.
+
+        Parameters
+        ----------
+        file_path : str | Path
+            Path to the skew calibration YAML file.
+        wait : int
+            New skew wait value applied to the selected boxes.
+        box_names : list[str] | None, optional
+            Box names to update. When omitted, all boxes in the file are
+            updated.
+        backup : bool, optional
+            Whether to save the original file as `*.bak` before overwriting it.
+
+        Returns
+        -------
+        dict[str, object]
+            Summary of the updated skew file.
+        """
+        return self._skew_manager.update_skew(
+            file_path=file_path,
+            wait=wait,
+            box_names=box_names,
+            backup=backup,
+        )
+
     def run_skew_measurement(
         self,
         *,
