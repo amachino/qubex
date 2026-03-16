@@ -471,6 +471,70 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
     assert event_b.phase_offset_deg == pytest.approx(30.0)
 
 
+def test_quel3_adapter_keeps_distinct_waveforms_for_different_sampling_periods() -> None:
+    """Given matching shapes with different sampling periods, when building payload, then waveform entries remain distinct."""
+    target_a = "RQ00"
+    target_b = "RQ01"
+    base = np.zeros(8, dtype=np.complex128)
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=3.2,
+            sequences={
+                target_a: _pulse_array(values=base, sampling_period=0.4),
+                target_b: _pulse_array(values=base, sampling_period=0.8),
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target_a: "alias-RQ00", target_b: "alias-RQ01"},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert len(payload.waveform_library) == 2
+    event_a = payload.fixed_timelines[target_a].events[0]
+    event_b = payload.fixed_timelines[target_b].events[0]
+    assert event_a.waveform_name != event_b.waveform_name
+    assert payload.waveform_library[event_a.waveform_name].sampling_period_ns == 0.4
+    assert payload.waveform_library[event_b.waveform_name].sampling_period_ns == 0.8
+
+
+def test_quel3_adapter_omits_empty_waveforms_from_payload() -> None:
+    """Given empty control waveforms, when building payload, then no hardware waveform events are emitted."""
+    target = "Q00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=0.0,
+            sequences={
+                target: _pulse_array(
+                    values=np.zeros(0, dtype=np.complex128),
+                    sampling_period=0.8,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: "alias-Q00"},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.fixed_timelines[target].events == ()
+    assert payload.waveform_library == {}
+
+
 def test_quel3_adapter_rejects_missing_alias_mapping() -> None:
     """Given missing alias mapping, when building payload, then it fails fast."""
     target = "RQ00"

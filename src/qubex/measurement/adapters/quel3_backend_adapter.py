@@ -308,6 +308,9 @@ class Quel3MeasurementBackendAdapter:
                 sampling_period_ns = waveform.sampling_period
                 scale = waveform.scale
                 shape = np.asarray(waveform.shape_values, dtype=np.complex128)
+                if shape.size == 0:
+                    current_offset_ns += duration_ns
+                    continue
                 shape_hash = waveform.shape_hash
                 waveform_name = waveform_name_by_shape_key.get(shape_hash)
                 if waveform_name is None:

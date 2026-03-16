@@ -170,7 +170,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         shot_samples=shot_samples,
         sampling_period_ns=0.4,
         backend_sampling_period_ns=0.4,
-        capture_decimation_factor=4,
+        capture_decimation_factor=1,
     )
 
     assert isinstance(result, Quel3BackendExecutionResult)
@@ -180,7 +180,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         result.data["alias-rq00"][0],
         np.array([2.0 + 2.0j, 4.0 + 4.0j], dtype=np.complex128),
     )
-    assert result.config["sampling_period_ns"] == pytest.approx(1.6)
+    assert result.config["sampling_period_ns"] == pytest.approx(0.4)
 
 
 def test_build_measurement_result_keeps_backend_alias_labels() -> None:
