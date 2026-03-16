@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import importlib
-from typing import Final, Literal, cast
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any, Final, Literal, cast
 
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
 
@@ -11,6 +14,48 @@ Quel3ClientMode = Literal["server", "standalone"]
 SUPPORTED_QUEL3_CLIENT_MODES: Final[frozenset[Quel3ClientMode]] = frozenset(
     {"server", "standalone"}
 )
+_STANDALONE_NOTICE_LOGGER: Final[str] = "quelware_client.client._standalone_grpc"
+_STANDALONE_NOTICE_MESSAGE: Final[str] = (
+    "NOTE: Standalone client is for testing purposes."
+)
+
+
+class _StandaloneNoticeFilter(logging.Filter):
+    """Suppress only the repeated standalone-client testing notice."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (
+            record.name == _STANDALONE_NOTICE_LOGGER
+            and record.getMessage() == _STANDALONE_NOTICE_MESSAGE
+        )
+
+
+@contextmanager
+def _suppress_standalone_notice() -> Iterator[None]:
+    """Temporarily suppress the standalone-client testing notice."""
+    logger = logging.getLogger(_STANDALONE_NOTICE_LOGGER)
+    log_filter = _StandaloneNoticeFilter()
+    logger.addFilter(log_filter)
+    try:
+        yield
+    finally:
+        logger.removeFilter(log_filter)
+
+
+def _create_standalone_client_safely(
+    *,
+    client_module: Any,
+    endpoint: str,
+    port: int,
+    unit_label: str | None,
+):
+    """Create standalone client while suppressing the repeated testing notice."""
+    with _suppress_standalone_notice():
+        return client_module.create_standalone_client(
+            endpoint,
+            port,
+            unit_label=unit_label,
+        )
 
 
 def normalize_quel3_client_mode(value: object) -> Quel3ClientMode | None:
@@ -58,9 +103,10 @@ def load_quelware_client_factory(
     unit_label = standalone_unit_label
     return cast(
         QuelwareClientFactory,
-        lambda endpoint, port: client_module.create_standalone_client(
-            endpoint,
-            port,
+        lambda endpoint, port: _create_standalone_client_safely(
+            client_module=client_module,
+            endpoint=endpoint,
+            port=port,
             unit_label=unit_label,
         ),
     )

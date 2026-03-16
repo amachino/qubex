@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -88,3 +89,46 @@ def test_load_client_factory_binds_unit_label_for_standalone_mode(
         "port": 61000,
         "unit_label": "quel3-02-a01",
     }
+
+
+def test_load_client_factory_suppresses_only_standalone_notice(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Standalone factory should suppress only the noisy testing notice."""
+
+    def _create_standalone_client(
+        endpoint: str,
+        port: int,
+        *,
+        unit_label: str,
+    ) -> tuple[str, int, str]:
+        del endpoint, port, unit_label
+        logging.getLogger("quelware_client.client._standalone_grpc").warning(
+            "NOTE: Standalone client is for testing purposes."
+        )
+        logging.getLogger("quelware_client.client._standalone_grpc").warning(
+            "another standalone warning"
+        )
+        return ("ok", 0, "unit")
+
+    monkeypatch.setattr(
+        quelware_imports_module.importlib,
+        "import_module",
+        lambda _: SimpleNamespace(
+            create_quelware_client=object(),
+            create_standalone_client=_create_standalone_client,
+        ),
+    )
+
+    client_factory = quelware_imports_module.load_quelware_client_factory(
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        _ = client_factory("worker-host", 61000)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "NOTE: Standalone client is for testing purposes." not in messages
+    assert "another standalone warning" in messages
