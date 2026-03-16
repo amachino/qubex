@@ -168,7 +168,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
     result = Quel3ExecutionManager._build_measurement_result(
         payload=payload,
         shot_samples=shot_samples,
-        sampling_period_ns=0.4,
+        sampling_period_ns=0.8,
         backend_sampling_period_ns=0.4,
         capture_decimation_factor=1,
     )
@@ -180,7 +180,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         result.data["alias-rq00"][0],
         np.array([2.0 + 2.0j, 4.0 + 4.0j], dtype=np.complex128),
     )
-    assert result.config["sampling_period_ns"] == pytest.approx(0.4)
+    assert result.config["sampling_period_ns"] == pytest.approx(0.8)
 
 
 def test_build_measurement_result_keeps_backend_alias_labels() -> None:
@@ -278,7 +278,7 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
 
     controller = Quel3BackendController()
 
-    assert pytest.approx(0.8) == controller.sampling_period_ns
+    assert pytest.approx(0.4) == controller.sampling_period_ns
     assert controller._connection_manager.quelware_endpoint == "localhost"
     assert controller._connection_manager.quelware_port == 50051
 

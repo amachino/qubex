@@ -51,6 +51,15 @@ Out of scope for this draft:
   - `PulseSchedule.length`/`is_valid` semantics
   - mixed-`dt` backend acceptance behavior
 
+## Temporary QuEL-3 Workaround (2026-03-16)
+
+While `PulseSchedule` still behaves as single-`dt`, the QuEL-3 path keeps
+control waveforms on `0.4 ns` and normalizes readout waveforms to `0.8 ns`
+inside the QuEL-3 measurement adapter before quelware registration.
+
+This is a temporary backend-local workaround, not the intended long-term
+sampling-period model.
+
 ## Requirements
 
 ### R-001 Channel sampling-period registry

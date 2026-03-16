@@ -204,7 +204,7 @@ class Quel3ExecutionManager:
             async with client.create_session(instrument_ids) as session:
                 alias_to_driver: dict[str, InstrumentDriverProtocol] = {}
                 alias_bindings: dict[str, tuple[int, int]] = {}
-                sampling_period_ns: float | None = None
+                capture_sampling_period_ns: float | None = None
                 for alias in aliases:
                     instrument_info = resolver.find_inst_info_by_alias(alias)
                     driver = create_instrument_driver_fixed_timeline(
@@ -234,8 +234,17 @@ class Quel3ExecutionManager:
                         sampling_period_fs,
                         timeline_step_samples,
                     )
-                    if isinstance(sampling_period_fs, int):
-                        sampling_period_ns = sampling_period_fs / 1e6
+                    if resolved_payload.fixed_timelines[alias].capture_windows:
+                        alias_sampling_period_ns = sampling_period_fs / 1e6
+                        if capture_sampling_period_ns is None:
+                            capture_sampling_period_ns = alias_sampling_period_ns
+                        elif not np.isclose(
+                            capture_sampling_period_ns,
+                            alias_sampling_period_ns,
+                        ):
+                            raise ValueError(
+                                "Capture aliases must agree on sampling period."
+                            )
 
                 timeline_iterations = self._resolve_timeline_iterations(
                     capture_mode=payload.capture_mode,
@@ -291,7 +300,7 @@ class Quel3ExecutionManager:
         return self._build_measurement_result(
             payload=resolved_payload,
             shot_samples=shot_samples,
-            sampling_period_ns=sampling_period_ns,
+            sampling_period_ns=capture_sampling_period_ns,
             backend_sampling_period_ns=self._sampling_period_ns,
             capture_decimation_factor=self._capture_decimation_factor,
         )

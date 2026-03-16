@@ -22,6 +22,7 @@ from qubex.backend.quel3 import (
     Quel3Waveform,
     Quel3WaveformEvent,
 )
+from qubex.backend.quel3.quel3_backend_constants import READOUT_SAMPLING_PERIOD_NS
 from qubex.measurement.measurement_constraint_profile import (
     MeasurementConstraintProfile,
 )
@@ -31,6 +32,7 @@ from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.system import ExperimentSystem
+from qubex.system.target_type import TargetType
 
 
 def _as_read_only_array(data: object) -> np.ndarray:
@@ -108,7 +110,7 @@ class Quel3MeasurementBackendAdapter:
         pulse_schedule = schedule.pulse_schedule
         channel_captures = schedule.capture_schedule.channels
         waveform_library: dict[str, Quel3Waveform] = {}
-        waveform_name_by_shape_key: dict[str, str] = {}
+        waveform_name_by_shape_key: dict[tuple[str, int], str] = {}
         waveform_index = 0
         fixed_timelines: dict[str, Quel3FixedTimeline] = {}
         output_target_labels_by_target: dict[str, str] = {}
@@ -126,7 +128,9 @@ class Quel3MeasurementBackendAdapter:
             instrument_bindings[target] = f"alias:{configured_alias}"
 
             sequence = pulse_schedule.get_sequence(target, copy=False)
+            target_type = self._experiment_system.get_target(target).type
             events, waveform_index = self._create_waveform_events(
+                target_is_read=(target_type is TargetType.READ),
                 sequence=sequence,
                 waveform_name_by_shape_key=waveform_name_by_shape_key,
                 waveform_library=waveform_library,
@@ -290,8 +294,9 @@ class Quel3MeasurementBackendAdapter:
     def _create_waveform_events(
         cls,
         *,
+        target_is_read: bool,
         sequence: PulseArray,
-        waveform_name_by_shape_key: dict[str, str],
+        waveform_name_by_shape_key: dict[tuple[str, int], str],
         waveform_library: dict[str, Quel3Waveform],
         waveform_index: int,
     ) -> tuple[tuple[Quel3WaveformEvent, ...], int]:
@@ -311,8 +316,16 @@ class Quel3MeasurementBackendAdapter:
                 if shape.size == 0:
                     current_offset_ns += duration_ns
                     continue
-                shape_hash = waveform.shape_hash
-                waveform_name = waveform_name_by_shape_key.get(shape_hash)
+                shape, sampling_period_ns = cls._normalize_waveform_for_target(
+                    target_is_read=target_is_read,
+                    shape=shape,
+                    sampling_period_ns=sampling_period_ns,
+                )
+                shape_key = (
+                    waveform.shape_hash,
+                    round(float(sampling_period_ns) * 1e6),
+                )
+                waveform_name = waveform_name_by_shape_key.get(shape_key)
                 if waveform_name is None:
                     waveform_name = f"waveform_{waveform_index:04d}"
                     waveform_index += 1
@@ -320,7 +333,7 @@ class Quel3MeasurementBackendAdapter:
                         iq_array=shape,
                         sampling_period_ns=sampling_period_ns,
                     )
-                    waveform_name_by_shape_key[shape_hash] = waveform_name
+                    waveform_name_by_shape_key[shape_key] = waveform_name
                 events.append(
                     Quel3WaveformEvent(
                         waveform_name=waveform_name,
@@ -336,3 +349,43 @@ class Quel3MeasurementBackendAdapter:
                 f"Unsupported waveform type in PulseArray: {type(waveform).__name__}."
             )
         return tuple(events), waveform_index
+
+    @staticmethod
+    def _normalize_waveform_for_target(
+        *,
+        target_is_read: bool,
+        shape: np.ndarray,
+        sampling_period_ns: float,
+    ) -> tuple[np.ndarray, float]:
+        """
+        Normalize waveform sampling periods for QuEL-3 target classes.
+
+        This is a temporary QuEL-3 workaround while Qubex still carries one
+        backend-level sampling period instead of per-channel `dt`.
+        Control waveforms stay on the shared QuEL-3 control grid (0.4 ns).
+        Readout waveforms are normalized here to the readout grid
+        (`READOUT_SAMPLING_PERIOD_NS`)
+        before registration so mixed control/readout schedules can still be
+        executed through the current single-`dt` stack.
+        """
+        if not target_is_read:
+            return shape, sampling_period_ns
+
+        readout_sampling_period_ns = READOUT_SAMPLING_PERIOD_NS
+        if np.isclose(sampling_period_ns, readout_sampling_period_ns):
+            return shape, sampling_period_ns
+
+        ratio = readout_sampling_period_ns / sampling_period_ns
+        rounded_ratio = round(ratio)
+        if rounded_ratio <= 0 or not np.isclose(ratio, rounded_ratio):
+            raise ValueError(
+                "Readout waveform sampling period must divide the QuEL-3 readout "
+                "sampling period exactly: "
+                f"sampling_period_ns={sampling_period_ns}."
+            )
+        remainder = shape.size % rounded_ratio
+        if remainder != 0:
+            pad_width = rounded_ratio - remainder
+            shape = np.pad(shape, (0, pad_width), mode="edge")
+        reshaped = shape.reshape(-1, rounded_ratio)
+        return reshaped.mean(axis=1), readout_sampling_period_ns
