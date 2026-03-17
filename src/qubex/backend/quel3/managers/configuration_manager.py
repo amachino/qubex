@@ -65,21 +65,21 @@ class _EnumNamespace(Protocol):
 
 
 @dataclass(frozen=True)
+class _CachedFixedTimelineProfile:
+    """Cached fixed-timeline profile restored from hardware snapshot."""
+
+    frequency_range_min: float | None = None
+    frequency_range_max: float | None = None
+
+
+@dataclass(frozen=True)
 class _CachedInstrumentDefinition:
     """Cached instrument definition restored from hardware snapshot."""
 
     alias: str
     role: str
     mode: str | None = None
-    profile: object | None = None
-
-
-@dataclass(frozen=True)
-class _CachedFixedTimelineProfile:
-    """Cached fixed-timeline profile restored from hardware snapshot."""
-
-    frequency_range_min: float | None = None
-    frequency_range_max: float | None = None
+    profile: _CachedFixedTimelineProfile | None = None
 
 
 @dataclass(frozen=True)

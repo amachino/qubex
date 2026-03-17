@@ -10,6 +10,20 @@ ResourceIdProtocol: TypeAlias = str
 UnitLabelProtocol: TypeAlias = str
 
 
+class FixedTimelineProfileProtocol(Protocol):
+    """Minimal fixed-timeline profile protocol."""
+
+    @property
+    def frequency_range_min(self) -> float | None:
+        """Return lower bound of the supported frequency range."""
+        ...
+
+    @property
+    def frequency_range_max(self) -> float | None:
+        """Return upper bound of the supported frequency range."""
+        ...
+
+
 class InstrumentDefinitionProtocol(Protocol):
     """Minimal instrument-definition protocol."""
 
@@ -21,6 +35,16 @@ class InstrumentDefinitionProtocol(Protocol):
     @property
     def role(self) -> object:
         """Return instrument role enum-like value."""
+        ...
+
+    @property
+    def mode(self) -> object | None:
+        """Return instrument mode enum-like value when available."""
+        ...
+
+    @property
+    def profile(self) -> FixedTimelineProfileProtocol | None:
+        """Return instrument profile when available."""
         ...
 
 

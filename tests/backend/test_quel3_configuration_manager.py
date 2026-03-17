@@ -28,8 +28,9 @@ class _CachedRole:
 @dataclass(frozen=True)
 class _CachedDefinition:
     alias: str
+    mode: object | None = None
     role: object | None = None
-    profile: object | None = None
+    profile: _CachedProfile | None = None
 
 
 @dataclass(frozen=True)
