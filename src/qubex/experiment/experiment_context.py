@@ -499,7 +499,20 @@ class ExperimentContext:
             target.label: target
             for target in self.experiment_system.targets
             if target.is_related_to_qubits(self.qubit_labels)
+            and self._is_visible_target_for_active_qubits(target)
         }
+
+    def _is_visible_target_for_active_qubits(self, target: Target) -> bool:
+        """Return whether one target should be exposed for the active qubits."""
+        if not target.is_cr:
+            return True
+        try:
+            _control_qubit, target_qubit = self.experiment_system.resolve_cr_pair(
+                target.label
+            )
+        except ValueError:
+            return True
+        return target_qubit == "CR" or target_qubit in self.qubit_labels
 
     @property
     def available_targets(self) -> dict[str, Target]:
