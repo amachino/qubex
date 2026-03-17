@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -124,6 +125,45 @@ def test_build_deploy_requests_filters_by_target_labels() -> None:
         experiment_system=cast(Any, experiment_system),
         box_ids=["BOX1"],
         target_labels=["Q00"],
+    )
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.target_labels == ("Q00",)
+    assert request.frequency_range_min_hz == pytest.approx(4.10e9)
+    assert request.frequency_range_max_hz == pytest.approx(4.30e9)
+
+
+def test_build_deploy_requests_skips_targets_with_non_finite_frequency() -> None:
+    """Given non-finite target frequency, planner should skip that target and continue."""
+    planner = Quel3TargetDeployPlanner()
+    ctrl_port = SimpleNamespace(id="BOX1.CTRL0", box_id="BOX1", number=2)
+    experiment_system = SimpleNamespace(
+        gen_targets={
+            "Q00": SimpleNamespace(
+                label="Q00",
+                frequency=4.20,
+                type=TargetType.CTRL_GE,
+                channel=SimpleNamespace(port=ctrl_port),
+            ),
+            "Q00-CR": SimpleNamespace(
+                label="Q00-CR",
+                frequency=math.nan,
+                type=TargetType.CTRL_CR,
+                channel=SimpleNamespace(port=ctrl_port),
+            ),
+        },
+        wiring_info=SimpleNamespace(read_in=[]),
+        control_params=SimpleNamespace(
+            get_frequency_margin=lambda _target_type: 0.1,
+        ),
+        get_box=lambda _box_id: SimpleNamespace(id="BOX1", name="quel3-02-a01"),
+        get_mux_by_readout_port=lambda _port: None,
+    )
+
+    requests = planner.build_deploy_requests(
+        experiment_system=cast(Any, experiment_system),
+        box_ids=["BOX1"],
     )
 
     assert len(requests) == 1

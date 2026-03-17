@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     from qubex.system.target import Target
 
 FIXED_TIMELINE_SAMPLING_RATE_HZ = 2.5e9
+logger = logging.getLogger(__name__)
 
 
 class Quel3TargetDeployPlanner:
@@ -42,6 +44,14 @@ class Quel3TargetDeployPlanner:
                 selected_target_labels is not None
                 and target.label not in selected_target_labels
             ):
+                continue
+            if not self._has_finite_target_frequency(target=target):
+                logger.warning(
+                    "Skipping QuEL-3 deploy target with non-finite frequency: "
+                    "label=%s frequency=%s",
+                    target.label,
+                    target.frequency,
+                )
                 continue
             role = self._resolve_instrument_role(target.type)
             port_id = self._resolve_port_id(
@@ -145,6 +155,11 @@ class Quel3TargetDeployPlanner:
         ):
             return "TRANSMITTER"
         raise ValueError(f"Unsupported target type for deployment: {target_type}.")
+
+    @staticmethod
+    def _has_finite_target_frequency(*, target: Target) -> bool:
+        """Return whether the target frequency can be deployed to hardware."""
+        return math.isfinite(float(target.frequency) * 1e9)
 
     @staticmethod
     def _resolve_target_frequency_hz(*, target: Target) -> float:
