@@ -11,6 +11,9 @@ from qubex.backend.quel3.interfaces.client import (
     SessionProtocol,
 )
 from qubex.backend.quel3.interfaces.directives import (
+    CaptureModeNamespaceProtocol,
+    CaptureModeProtocol,
+    CaptureModeValue,
     DirectiveProtocol,
     SetCaptureModeFactory,
 )
@@ -18,6 +21,8 @@ from qubex.backend.quel3.interfaces.driver import (
     InstrumentConfigProtocol,
     InstrumentDriverFactory,
     InstrumentDriverProtocol,
+    IqWaveformResultProtocol,
+    ResultContainerProtocol,
 )
 from qubex.backend.quel3.interfaces.resolver import (
     InstrumentResolverFactory,
@@ -26,6 +31,9 @@ from qubex.backend.quel3.interfaces.resolver import (
 from qubex.backend.quel3.interfaces.sequencer import SequencerProtocol
 
 __all__ = [
+    "CaptureModeNamespaceProtocol",
+    "CaptureModeProtocol",
+    "CaptureModeValue",
     "DirectiveProtocol",
     "InstrumentConfigProtocol",
     "InstrumentDefinitionProtocol",
@@ -34,9 +42,11 @@ __all__ = [
     "InstrumentInfoProtocol",
     "InstrumentResolverFactory",
     "InstrumentResolverProtocol",
+    "IqWaveformResultProtocol",
     "QuelwareClientFactory",
     "QuelwareClientProtocol",
     "ResourceIdProtocol",
+    "ResultContainerProtocol",
     "SequencerProtocol",
     "SessionProtocol",
     "SetCaptureModeFactory",

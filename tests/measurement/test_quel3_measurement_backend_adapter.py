@@ -30,6 +30,7 @@ from qubex.measurement.models import (
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.pulse import Arbitrary, PulseArray
 from qubex.system import TargetRegistry
+from qubex.system.target_type import TargetType
 from qubex.typing import MeasurementMode
 
 
@@ -64,6 +65,10 @@ class _FakeExperimentSystem:
     capture_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
     box_names: dict[str, str] = field(default_factory=dict)
 
+    @staticmethod
+    def _target_type_for_label(label: str) -> TargetType:
+        return TargetType.READ if label.startswith("R") else TargetType.UNKNOWN
+
     def get_awg_frequency(self, _: str) -> float:
         return self.awg_frequency
 
@@ -81,14 +86,17 @@ class _FakeExperimentSystem:
     def get_target(self, label: str) -> Any:
         box_id, port_number = self.target_port_bindings.get(label, ("BOX", 0))
         port_id = self.target_port_ids.get(label, f"box-{label}")
+        target_type = self._target_type_for_label(label)
         return SimpleNamespace(
+            type=target_type,
+            is_read=(target_type is TargetType.READ),
             channel=SimpleNamespace(
                 port=SimpleNamespace(
                     id=port_id,
                     box_id=box_id,
                     number=port_number,
                 )
-            )
+            ),
         )
 
     def get_read_in_target(self, label: str) -> Any:
@@ -248,10 +256,10 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert event.phase_offset_deg == pytest.approx(0.0)
     assert event.waveform_name in payload.waveform_library
     waveform_def = payload.waveform_library[event.waveform_name]
-    assert waveform_def.sampling_period_ns == pytest.approx(0.4)
+    assert waveform_def.sampling_period_ns == pytest.approx(0.8)
     assert np.array_equal(
         waveform_def.iq_array,
-        shape,
+        np.array([0.5 + 0.0j, 0.0 + 0.0j], dtype=np.complex128),
     )
     assert timeline.length_ns == pytest.approx(1.2)
     assert len(timeline.capture_windows) == 1
@@ -293,12 +301,10 @@ def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:
     assert event.gain == pytest.approx(1.0)
     assert event.phase_offset_deg == pytest.approx(0.0)
     waveform_def = payload.waveform_library[event.waveform_name]
+    assert waveform_def.sampling_period_ns == pytest.approx(0.8)
     assert np.array_equal(
         waveform_def.iq_array,
-        np.array(
-            [0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j, 0.5 + 0.0j, 0.0 + 0.0j],
-            dtype=np.complex128,
-        ),
+        np.array([0.5 + 0.0j, 0.25 + 0.0j, 0.0 + 0.0j], dtype=np.complex128),
     )
 
 
@@ -471,6 +477,110 @@ def test_quel3_adapter_reuses_shared_shape_with_scale_and_phase() -> None:
     assert event_b.phase_offset_deg == pytest.approx(30.0)
 
 
+def test_quel3_adapter_keeps_distinct_waveforms_for_different_sampling_periods() -> (
+    None
+):
+    """Given matching shapes with different sampling periods, when building payload, then waveform entries remain distinct."""
+    target_a = "RQ00"
+    target_b = "RQ01"
+    base = np.zeros(8, dtype=np.complex128)
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=3.2,
+            sequences={
+                target_a: _pulse_array(values=base, sampling_period=0.4),
+                target_b: _pulse_array(values=base, sampling_period=0.8),
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target_a: "alias-RQ00", target_b: "alias-RQ01"},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert len(payload.waveform_library) == 2
+    event_a = payload.fixed_timelines[target_a].events[0]
+    event_b = payload.fixed_timelines[target_b].events[0]
+    assert event_a.waveform_name != event_b.waveform_name
+    assert payload.waveform_library[event_a.waveform_name].sampling_period_ns == 0.8
+    assert payload.waveform_library[event_b.waveform_name].sampling_period_ns == 0.8
+
+
+def test_quel3_adapter_downsamples_readout_waveforms_to_0p8ns() -> None:
+    """Given 0.4 ns readout waveforms, when building payload, then adapter downsamples them to 0.8 ns."""
+    target = "RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.6,
+            sequences={
+                target: _pulse_array(
+                    values=np.array(
+                        [1.0 + 0.0j, 3.0 + 0.0j, 5.0 + 0.0j, 7.0 + 0.0j],
+                        dtype=np.complex128,
+                    ),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: "alias-RQ00"},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    timeline = payload.fixed_timelines[target]
+    waveform_def = payload.waveform_library[timeline.events[0].waveform_name]
+    assert waveform_def.sampling_period_ns == pytest.approx(0.8)
+    assert np.array_equal(
+        waveform_def.iq_array,
+        np.array([2.0 + 0.0j, 6.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_quel3_adapter_omits_empty_waveforms_from_payload() -> None:
+    """Given empty control waveforms, when building payload, then no hardware waveform events are emitted."""
+    target = "Q00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=0.0,
+            sequences={
+                target: _pulse_array(
+                    values=np.zeros(0, dtype=np.complex128),
+                    sampling_period=0.8,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: "alias-Q00"},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.fixed_timelines[target].events == ()
+    assert payload.waveform_library == {}
+
+
 def test_quel3_adapter_rejects_missing_alias_mapping() -> None:
     """Given missing alias mapping, when building payload, then it fails fast."""
     target = "RQ00"
@@ -606,7 +716,7 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     backend_result = Quel3BackendExecutionResult(
         status={},
         data={alias: [np.array([2.0 + 0.0j], dtype=np.complex128)]},
-        config={"sampling_period_ns": 0.4},
+        config={"sampling_period_ns": 0.8},
     )
     adapter = Quel3MeasurementBackendAdapter(
         backend_controller=_make_backend_controller(),
@@ -627,7 +737,7 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     assert result.measurement_config.shot_averaging is True
     assert result.device_config == {}
     assert result.measurement_config == config
-    assert result.data["Q00"][0].sampling_period == pytest.approx(0.4)
+    assert result.data["Q00"][0].sampling_period == pytest.approx(0.8)
     assert np.array_equal(
         result.data["Q00"][0].data,
         np.array([2.0 + 0.0j], dtype=np.complex128),

@@ -46,6 +46,7 @@ class _ContextStub:
         params_path: str,
         calls: list[tuple[str, dict[str, object]]],
     ) -> None:
+        self._calls = calls
         self.configuration_mode: ConfigurationMode = "ge-cr-cr"
         self.box_ids = ["Q2A", "Q2B"]
         self.targets = {"Q00": object(), "RQ00": object()}
@@ -57,6 +58,10 @@ class _ContextStub:
         self.config_path = config_path
         self.params_path = params_path
         self.experiment_system = _ExperimentSystemStub()
+
+    def reset_awg_and_capunits(self, **kwargs: object) -> None:
+        """Record reset delegation on the context stub."""
+        self._calls.append(("context.reset_awg_and_capunits", dict(kwargs)))
 
 
 class _MeasurementStub:
@@ -243,3 +248,36 @@ def test_configure_reloads_with_active_system_id(monkeypatch) -> None:
             "configuration_mode": "ge-cr-cr",
         },
     )
+
+
+def test_reset_awg_and_capunits_delegates_to_experiment_context(
+    monkeypatch,
+) -> None:
+    """Given reset request, SessionService should delegate to ExperimentContext."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    context = _ContextStub(
+        system_manager=_SystemManagerStub(calls),
+        measurement=_MeasurementStub(calls),
+        config_path="config-dir",
+        params_path="params-dir",
+        calls=calls,
+    )
+    monkeypatch.setattr(
+        SessionService,
+        "_sync_pulse_sampling_period",
+        lambda self: 0.4,
+    )
+
+    service = SessionService(
+        experiment_context=cast(ExperimentContext, context),
+    )
+
+    service.reset_awg_and_capunits(box_ids="Q2A", qubits=["Q00"])
+
+    assert calls == [
+        (
+            "context.reset_awg_and_capunits",
+            {"box_ids": "Q2A", "qubits": ["Q00"]},
+        )
+    ]

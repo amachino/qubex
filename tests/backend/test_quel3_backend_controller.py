@@ -37,6 +37,7 @@ class _FakeInstrumentDefinition:
 class _FakeInstrumentInfo:
     port_id: str
     definition: _FakeInstrumentDefinition
+    alias: str | None = None
 
 
 class _FakeInstrumentResolver:
@@ -58,6 +59,20 @@ class _FakeInstrumentResolver:
         if alias not in self._alias_to_info:
             raise ValueError(alias)
         return self._alias_to_info[alias]
+
+
+class _CountingInstrumentResolver(_FakeInstrumentResolver):
+    def __init__(
+        self,
+        *,
+        alias_to_info: dict[str, _FakeInstrumentInfo],
+    ) -> None:
+        super().__init__(alias_to_info=alias_to_info)
+        self.refresh_calls = 0
+
+    async def refresh(self, client: object) -> None:
+        del client
+        self.refresh_calls += 1
 
 
 def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
@@ -167,9 +182,9 @@ def test_build_measurement_result_averages_shot_samples() -> None:
     result = Quel3ExecutionManager._build_measurement_result(
         payload=payload,
         shot_samples=shot_samples,
-        sampling_period_ns=0.4,
+        sampling_period_ns=0.8,
         backend_sampling_period_ns=0.4,
-        capture_decimation_factor=4,
+        capture_decimation_factor=1,
     )
 
     assert isinstance(result, Quel3BackendExecutionResult)
@@ -179,7 +194,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
         result.data["alias-rq00"][0],
         np.array([2.0 + 2.0j, 4.0 + 4.0j], dtype=np.complex128),
     )
-    assert result.config["sampling_period_ns"] == pytest.approx(1.6)
+    assert result.config["sampling_period_ns"] == pytest.approx(0.8)
 
 
 def test_build_measurement_result_keeps_backend_alias_labels() -> None:
@@ -278,8 +293,10 @@ def test_constructor_uses_builtin_quelware_defaults_ignoring_environment(
     controller = Quel3BackendController()
 
     assert pytest.approx(0.4) == controller.sampling_period_ns
-    assert controller._connection_manager.quelware_endpoint == "localhost"
-    assert controller._connection_manager.quelware_port == 50051
+    assert controller.connection_manager.quelware_endpoint == "localhost"
+    assert controller.connection_manager.quelware_port == 50051
+    assert controller.session_manager.quelware_endpoint == "localhost"
+    assert controller.session_manager.quelware_port == 50051
 
 
 def test_constructor_accepts_standalone_runtime_options() -> None:
@@ -292,6 +309,7 @@ def test_constructor_accepts_standalone_runtime_options() -> None:
     assert controller.client_mode == "standalone"
     assert controller.standalone_unit_label == "quel3-02-a01"
     assert controller.connection_manager.client_mode == "standalone"
+    assert controller.session_manager.client_mode == "standalone"
     assert controller.configuration_manager.client_mode == "standalone"
     assert controller.execution_manager.client_mode == "standalone"
 
@@ -305,7 +323,7 @@ def test_constructor_rejects_standalone_mode_without_unit_label() -> None:
 def test_constructor_accepts_injected_managers() -> None:
     """Given injected managers, controller should use those manager instances."""
     connection_manager = SimpleNamespace(
-        hash=11,
+        hash=7,
         is_connected=True,
         quelware_endpoint="injected-host",
         quelware_port=61000,
@@ -313,6 +331,15 @@ def test_constructor_accepts_injected_managers() -> None:
         standalone_unit_label="quel3-02-a01",
         connect=lambda box_names=None, parallel=None: None,
         disconnect=lambda: None,
+    )
+    session_manager = SimpleNamespace(
+        hash=11,
+        quelware_endpoint="injected-host",
+        quelware_port=61000,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+        open=lambda box_names=None, parallel=None: None,
+        close=lambda: None,
     )
     configuration_manager = SimpleNamespace(
         quelware_endpoint="injected-host",
@@ -335,11 +362,13 @@ def test_constructor_accepts_injected_managers() -> None:
 
     controller = Quel3BackendController(
         connection_manager=cast(Any, connection_manager),
+        session_manager=cast(Any, session_manager),
         configuration_manager=cast(Any, configuration_manager),
         execution_manager=cast(Any, execution_manager),
     )
 
     assert controller.connection_manager is connection_manager
+    assert controller.session_manager is session_manager
     assert controller.configuration_manager is configuration_manager
     assert controller.execution_manager is execution_manager
     assert controller.quelware_endpoint == "injected-host"
@@ -347,6 +376,25 @@ def test_constructor_accepts_injected_managers() -> None:
     assert controller.sampling_period_ns == pytest.approx(0.8)
     assert controller.client_mode == "standalone"
     assert controller.standalone_unit_label == "quel3-02-a01"
+
+
+def test_constructor_accepts_injected_session_manager() -> None:
+    """Given session manager injection, controller should expose it."""
+    session_manager = SimpleNamespace(
+        hash=11,
+        quelware_endpoint="injected-host",
+        quelware_port=61000,
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+        open=lambda box_names=None, parallel=None: None,
+        close=lambda: None,
+    )
+
+    controller = Quel3BackendController(
+        session_manager=cast(Any, session_manager),
+    )
+
+    assert controller.session_manager is session_manager
 
 
 def test_connect_refreshes_existing_instrument_cache() -> None:
@@ -381,6 +429,46 @@ def test_connect_refreshes_existing_instrument_cache() -> None:
     controller.connect(["A"])
 
     assert calls == ["connect", "refresh"]
+
+
+def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() -> None:
+    """Given parallel override, controller deploy_instruments should forward it."""
+    captured: dict[str, object] = {}
+
+    def _deploy_instruments(*, requests: object, parallel: bool) -> object:
+        captured["requests"] = requests
+        captured["parallel"] = parallel
+        return {"Q00": ()}
+
+    controller = Quel3BackendController(
+        configuration_manager=cast(
+            Any,
+            SimpleNamespace(
+                quelware_endpoint="host-a",
+                quelware_port=50051,
+                client_mode="server",
+                standalone_unit_label=None,
+                target_alias_map={},
+                last_deployed_instrument_infos={},
+                deploy_instruments=_deploy_instruments,
+            ),
+        )
+    )
+    requests = (
+        SimpleNamespace(
+            port_id="quel3-02-a01:tx_p02",
+            role="TRANSMITTER",
+            frequency_range_min_hz=4.1e9,
+            frequency_range_max_hz=4.3e9,
+            alias="Q00",
+            target_labels=("Q00",),
+        ),
+    )
+
+    result = controller.deploy_instruments(requests=cast(Any, requests), parallel=False)
+
+    assert result == {"Q00": ()}
+    assert captured == {"requests": requests, "parallel": False}
 
 
 def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> None:
@@ -554,3 +642,583 @@ def test_resolve_payload_accepts_alias_binding() -> None:
     )
 
     assert set(resolved.fixed_timelines.keys()) == {"inst-q00"}
+
+
+@dataclass(frozen=True)
+class _FakeInstrumentConfig:
+    sampling_period_fs: int
+    timeline_step_samples: int
+
+
+class _FakeWaveformResult:
+    def __init__(self, values: np.ndarray) -> None:
+        self.iq_array = values
+
+
+class _FakeResultContainer:
+    def __init__(self) -> None:
+        self.iq_result = {
+            "alias-rq00:0": [
+                _FakeWaveformResult(np.array([1.0 + 0.0j], dtype=np.complex128))
+            ]
+        }
+
+
+class _FakeInstrumentDriver:
+    def __init__(self) -> None:
+        self.instrument_config = _FakeInstrumentConfig(
+            sampling_period_fs=400_000,
+            timeline_step_samples=64,
+        )
+        self.apply_calls: list[object] = []
+        self.initialized = False
+
+    async def apply(self, directive: object) -> None:
+        self.apply_calls.append(directive)
+
+    async def initialize(self) -> None:
+        self.initialized = True
+
+    async def fetch_result(self) -> object:
+        return _FakeResultContainer()
+
+
+class _FakeSequencer:
+    def __init__(self, default_sampling_period_ns: float) -> None:
+        self.default_sampling_period_ns = default_sampling_period_ns
+
+    def bind(
+        self,
+        alias: str,
+        sampling_period_fs: int,
+        step_samples: int,
+    ) -> None:
+        del alias, sampling_period_fs, step_samples
+
+    def register_waveform(
+        self,
+        name: str,
+        waveform: object,
+        sampling_period_ns: float | None = None,
+    ) -> None:
+        del name, waveform, sampling_period_ns
+
+    def add_event(
+        self,
+        instrument_alias: str,
+        waveform_name: str,
+        start_offset_ns: float,
+        gain: float = 1.0,
+        phase_offset_deg: float = 0.0,
+    ) -> None:
+        del instrument_alias, waveform_name, start_offset_ns, gain, phase_offset_deg
+
+    def add_capture_window(
+        self,
+        instrument_alias: str,
+        window_name: str,
+        start_offset_ns: float,
+        length_ns: float,
+    ) -> None:
+        del instrument_alias, window_name, start_offset_ns, length_ns
+
+    def set_iterations(self, iterations: int) -> None:
+        del iterations
+
+    def export_set_fixed_timeline_directive(self, instrument_alias: str) -> object:
+        return ("timeline", instrument_alias)
+
+
+class _PhaseBarrier:
+    def __init__(self, expected: int) -> None:
+        self._expected = expected
+        self._arrived = 0
+        self._event = asyncio.Event()
+
+    async def wait(self) -> None:
+        self._arrived += 1
+        if self._arrived >= self._expected:
+            self._event.set()
+        await asyncio.wait_for(self._event.wait(), timeout=0.2)
+
+
+class _ParallelResultContainer:
+    def __init__(self, alias: str, value: complex) -> None:
+        self.iq_result = {
+            f"{alias}:0": [_FakeWaveformResult(np.array([value], dtype=np.complex128))]
+        }
+
+
+class _ParallelInstrumentDriver:
+    def __init__(
+        self,
+        *,
+        alias: str,
+        value: complex,
+        initialize_barrier: _PhaseBarrier,
+        apply_barrier: _PhaseBarrier,
+        fetch_barrier: _PhaseBarrier,
+    ) -> None:
+        self.instrument_config = _FakeInstrumentConfig(
+            sampling_period_fs=400_000,
+            timeline_step_samples=64,
+        )
+        self._alias = alias
+        self._value = value
+        self._initialize_barrier = initialize_barrier
+        self._apply_barrier = apply_barrier
+        self._fetch_barrier = fetch_barrier
+        self.apply_calls: list[object] = []
+
+    async def apply(self, directive: object) -> None:
+        self.apply_calls.append(directive)
+        await self._apply_barrier.wait()
+
+    async def initialize(self) -> None:
+        await self._initialize_barrier.wait()
+
+    async def fetch_result(self) -> object:
+        await self._fetch_barrier.wait()
+        return _ParallelResultContainer(self._alias, self._value)
+
+
+class _ConcurrencyProbe:
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+
+    async def step(self) -> None:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        await asyncio.sleep(0)
+        self.active -= 1
+
+
+class _SerialProbeInstrumentDriver:
+    def __init__(
+        self,
+        *,
+        alias: str,
+        value: complex,
+        initialize_probe: _ConcurrencyProbe,
+        apply_probe: _ConcurrencyProbe,
+        fetch_probe: _ConcurrencyProbe,
+    ) -> None:
+        self.instrument_config = _FakeInstrumentConfig(
+            sampling_period_fs=400_000,
+            timeline_step_samples=64,
+        )
+        self._alias = alias
+        self._value = value
+        self._initialize_probe = initialize_probe
+        self._apply_probe = apply_probe
+        self._fetch_probe = fetch_probe
+        self.apply_calls: list[object] = []
+
+    async def apply(self, directive: object) -> None:
+        self.apply_calls.append(directive)
+        await self._apply_probe.step()
+
+    async def initialize(self) -> None:
+        await self._initialize_probe.step()
+
+    async def fetch_result(self) -> object:
+        await self._fetch_probe.step()
+        return _ParallelResultContainer(self._alias, self._value)
+
+
+class _FakeSession:
+    def __init__(self) -> None:
+        self.trigger_calls: list[list[str]] = []
+
+    async def __aenter__(self) -> _FakeSession:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, exc, tb
+
+    async def trigger(self, instrument_ids: list[str]) -> None:
+        self.trigger_calls.append(list(instrument_ids))
+
+
+class _FakeClient:
+    def __init__(self, session: _FakeSession) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> _FakeClient:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, exc, tb
+
+    def create_session(self, resource_ids: list[str]) -> _FakeSession:
+        del resource_ids
+        return self._session
+
+
+def test_execute_batches_capture_mode_with_timeline_directive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given fixed-timeline execution, execute batches directives per instrument."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=payload))
+    )
+
+    assert driver.initialized is True
+    assert driver.apply_calls == [[("capture_mode", "avg"), ("timeline", "alias-rq00")]]
+    assert session.trigger_calls == [["alias-rq00"]]
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_execute_rejects_runtime_without_required_capture_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given missing runtime capture mode, execute raises RuntimeError."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="AVERAGED_VALUE"):
+        asyncio.run(
+            manager.execute_async(request=BackendExecutionRequest(payload=payload))
+        )
+
+
+def test_execute_parallelizes_driver_phases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given multiple instruments, execute should parallelize driver phases."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-rq00": payload.fixed_timelines["alias-rq00"],
+            "alias-rq01": payload.fixed_timelines["alias-rq00"],
+        },
+    )
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq00",
+            ),
+            "alias-rq01": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p01",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq01",
+            ),
+        }
+    )
+    initialize_barrier = _PhaseBarrier(expected=2)
+    apply_barrier = _PhaseBarrier(expected=2)
+    fetch_barrier = _PhaseBarrier(expected=2)
+    drivers = {
+        "alias-rq00": _ParallelInstrumentDriver(
+            alias="alias-rq00",
+            value=1.0 + 0.0j,
+            initialize_barrier=initialize_barrier,
+            apply_barrier=apply_barrier,
+            fetch_barrier=fetch_barrier,
+        ),
+        "alias-rq01": _ParallelInstrumentDriver(
+            alias="alias-rq01",
+            value=2.0 + 0.0j,
+            initialize_barrier=initialize_barrier,
+            apply_barrier=apply_barrier,
+            fetch_barrier=fetch_barrier,
+        ),
+    }
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, instrument_info: drivers[instrument_info.alias],
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=payload))
+    )
+
+    assert drivers["alias-rq00"].apply_calls == [
+        [("capture_mode", "avg"), ("timeline", "alias-rq00")]
+    ]
+    assert drivers["alias-rq01"].apply_calls == [
+        [("capture_mode", "avg"), ("timeline", "alias-rq01")]
+    ]
+    assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+    assert np.array_equal(
+        result.data["alias-rq01"][0],
+        np.array([2.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_execute_batch_async_reuses_one_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given multiple requests, execute_batch_async should reuse one session and resolver refresh."""
+    payload_a = _make_payload()
+    payload_b = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=1,
+    )
+    resolver = _CountingInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    create_session_calls: list[tuple[str, ...]] = []
+
+    class _CountingClient(_FakeClient):
+        def create_session(self, resource_ids: list[str]) -> _FakeSession:
+            create_session_calls.append(tuple(resource_ids))
+            return super().create_session(resource_ids)
+
+    client = _CountingClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    results = asyncio.run(
+        manager.execute_batch_async(
+            requests=[
+                BackendExecutionRequest(payload=payload_a),
+                BackendExecutionRequest(payload=payload_b),
+            ]
+        )
+    )
+
+    assert resolver.refresh_calls == 1
+    assert create_session_calls == [("alias-rq00",)]
+    assert len(session.trigger_calls) == 2
+    assert len(driver.apply_calls) == 2
+    assert len(results) == 2
+
+
+def test_execute_serializes_driver_phases_when_parallel_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given parallel disabled, execute should keep driver phases sequential."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-rq00": payload.fixed_timelines["alias-rq00"],
+            "alias-rq01": payload.fixed_timelines["alias-rq00"],
+        },
+    )
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq00",
+            ),
+            "alias-rq01": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p01",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                alias="alias-rq01",
+            ),
+        }
+    )
+    initialize_probe = _ConcurrencyProbe()
+    apply_probe = _ConcurrencyProbe()
+    fetch_probe = _ConcurrencyProbe()
+    drivers = {
+        "alias-rq00": _SerialProbeInstrumentDriver(
+            alias="alias-rq00",
+            value=1.0 + 0.0j,
+            initialize_probe=initialize_probe,
+            apply_probe=apply_probe,
+            fetch_probe=fetch_probe,
+        ),
+        "alias-rq01": _SerialProbeInstrumentDriver(
+            alias="alias-rq01",
+            value=2.0 + 0.0j,
+            initialize_probe=initialize_probe,
+            apply_probe=apply_probe,
+            fetch_probe=fetch_probe,
+        ),
+    }
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, instrument_info: drivers[instrument_info.alias],
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(
+            request=BackendExecutionRequest(payload=payload),
+            parallel=False,
+        )
+    )
+
+    assert initialize_probe.max_active == 1
+    assert apply_probe.max_active == 1
+    assert fetch_probe.max_active == 1
+    assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+    assert np.array_equal(
+        result.data["alias-rq01"][0],
+        np.array([2.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_execute_sync_forwards_parallel_flag_to_execution_manager() -> None:
+    """Given parallel override, controller execute_sync should forward it."""
+    captured: dict[str, object] = {}
+
+    def _execute_sync(*, request: object, parallel: bool) -> object:
+        captured["request"] = request
+        captured["parallel"] = parallel
+        return "ok"
+
+    controller = Quel3BackendController(
+        execution_manager=cast(
+            Any,
+            SimpleNamespace(
+                quelware_endpoint="localhost",
+                quelware_port=50051,
+                sampling_period_ns=0.4,
+                client_mode="server",
+                standalone_unit_label=None,
+                execute_sync=_execute_sync,
+                execute_async=None,
+            ),
+        )
+    )
+    request = BackendExecutionRequest(payload=object())
+
+    result = controller.execute_sync(request=request, parallel=False)
+
+    assert result == "ok"
+    assert captured == {"request": request, "parallel": False}

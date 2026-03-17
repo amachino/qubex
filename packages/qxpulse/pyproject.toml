@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qxpulse"
-version = "0.0.0.dev0"
+version = "1.5.0b4"
 requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex pulse primitives and scheduling utilities"
@@ -14,7 +14,7 @@ license-files = ["LICENSE"]
 dependencies = [
     "numpy >= 1.22",
     "plotly >= 5.23",
-    "qxvisualizer",
+    "qxvisualizer == 1.5.0b4",
     "scipy >= 1.0",
     "typing_extensions >= 4.5",
 ]

@@ -6,6 +6,7 @@ from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 from qxpulse import PulseSchedule, Rect
 
 import qubex.visualization as viz
@@ -175,3 +176,47 @@ def test_ramsey_experiment_discretization_uses_measurement_sampling_period() -> 
 
     assert isinstance(result, ExperimentResult)
     assert captured["sampling_period"] == 0.4
+
+
+def test_rabi_experiment_builds_control_pulse_with_measurement_sampling_period() -> (
+    None
+):
+    """Given measurement dt, when building a Rabi sweep, then control pulses use that sampling period."""
+    target = "Q00"
+    service = cast(Any, object.__new__(MeasurementService))
+    service.__dict__["_ctx"] = SimpleNamespace(
+        targets={target: SimpleNamespace(frequency=5.0)},
+        measurement=SimpleNamespace(sampling_period=0.4),
+    )
+
+    def _obtain_reference_points(
+        self: MeasurementService,
+        targets: list[str],
+        **_: object,
+    ) -> dict[str, dict[str, complex]]:
+        return {"iq": dict.fromkeys(targets, 0j)}
+
+    def _sweep_parameter(
+        self: MeasurementService,
+        *,
+        sequence: Any,
+        **_: object,
+    ) -> Any:
+        schedule = sequence(8.0)
+        pulse_array = schedule.get_sequence(target, copy=False)
+        waveforms = pulse_array.get_flattened_waveforms(apply_frame_shifts=True)
+        pulse = waveforms[0]
+        assert pulse.sampling_period == pytest.approx(0.4)
+        raise RuntimeError("stop after sampling-period check")
+
+    service.obtain_reference_points = MethodType(_obtain_reference_points, service)
+    service.sweep_parameter = MethodType(_sweep_parameter, service)
+
+    with pytest.raises(RuntimeError, match="sampling-period check"):
+        service.rabi_experiment(
+            amplitudes={target: 0.1},
+            time_range=np.array([8.0], dtype=float),
+            n_shots=1,
+            shot_interval=1.0,
+            plot=False,
+        )

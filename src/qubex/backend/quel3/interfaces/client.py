@@ -4,19 +4,47 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from contextlib import AbstractAsyncContextManager
-from typing import Protocol
+from typing import Protocol, TypeAlias
+
+ResourceIdProtocol: TypeAlias = str
+UnitLabelProtocol: TypeAlias = str
 
 
-class ResourceIdProtocol(Protocol):
-    """Marker protocol for quelware instrument resource IDs."""
+class FixedTimelineProfileProtocol(Protocol):
+    """Minimal fixed-timeline profile protocol."""
+
+    @property
+    def frequency_range_min(self) -> float | None:
+        """Return lower bound of the supported frequency range."""
+        ...
+
+    @property
+    def frequency_range_max(self) -> float | None:
+        """Return upper bound of the supported frequency range."""
+        ...
 
 
 class InstrumentDefinitionProtocol(Protocol):
     """Minimal instrument-definition protocol."""
 
     @property
+    def alias(self) -> str:
+        """Return instrument alias."""
+        ...
+
+    @property
     def role(self) -> object:
         """Return instrument role enum-like value."""
+        ...
+
+    @property
+    def mode(self) -> object | None:
+        """Return instrument mode enum-like value when available."""
+        ...
+
+    @property
+    def profile(self) -> FixedTimelineProfileProtocol | None:
+        """Return instrument profile when available."""
         ...
 
 
@@ -24,7 +52,12 @@ class InstrumentInfoProtocol(Protocol):
     """Minimal instrument-info protocol."""
 
     @property
-    def port_id(self) -> object:
+    def id(self) -> ResourceIdProtocol:
+        """Return instrument resource identifier."""
+        ...
+
+    @property
+    def port_id(self) -> ResourceIdProtocol:
         """Return instrument port identifier."""
         ...
 
@@ -34,8 +67,68 @@ class InstrumentInfoProtocol(Protocol):
         ...
 
 
+class ResourceCategoryProtocol(Protocol):
+    """Minimal resource-category protocol."""
+
+    @property
+    def name(self) -> str:
+        """Return category name."""
+        ...
+
+
+class PortRoleProtocol(Protocol):
+    """Minimal port-role protocol."""
+
+    @property
+    def name(self) -> str:
+        """Return port role name."""
+        ...
+
+
+class ResourceInfoProtocol(Protocol):
+    """Minimal resource-info protocol."""
+
+    @property
+    def id(self) -> ResourceIdProtocol:
+        """Return resource identifier."""
+        ...
+
+    @property
+    def category(self) -> ResourceCategoryProtocol | str:
+        """Return resource category."""
+        ...
+
+
+class PortInfoProtocol(Protocol):
+    """Minimal port-info protocol."""
+
+    @property
+    def id(self) -> ResourceIdProtocol:
+        """Return port identifier."""
+        ...
+
+    @property
+    def role(self) -> PortRoleProtocol:
+        """Return port role."""
+        ...
+
+    @property
+    def depends_on(self) -> list[ResourceIdProtocol]:
+        """Return dependent resource IDs."""
+        ...
+
+
 class SessionProtocol(Protocol):
     """Minimal quelware session protocol."""
+
+    async def deploy_instruments(
+        self,
+        port_id: ResourceIdProtocol,
+        definitions: Iterable[InstrumentDefinitionProtocol],
+        append: bool = False,
+    ) -> list[InstrumentInfoProtocol]:
+        """Deploy one or more instruments to one port."""
+        ...
 
     async def trigger(
         self,
@@ -49,11 +142,11 @@ class SessionProtocol(Protocol):
 class QuelwareClientProtocol(Protocol):
     """Minimal quelware client protocol for execution."""
 
-    def list_unit_labels(self) -> object:
+    def list_unit_labels(self) -> list[UnitLabelProtocol]:
         """List available QuEL-3 unit labels."""
         ...
 
-    async def list_resource_infos(self) -> object:
+    async def list_resource_infos(self) -> list[ResourceInfoProtocol]:
         """List available resources."""
         ...
 
@@ -63,7 +156,7 @@ class QuelwareClientProtocol(Protocol):
         """Get instrument info for one resource ID."""
         ...
 
-    async def get_port_info(self, resource_id: ResourceIdProtocol) -> object:
+    async def get_port_info(self, resource_id: ResourceIdProtocol) -> PortInfoProtocol:
         """Get port info for one resource ID."""
         ...
 

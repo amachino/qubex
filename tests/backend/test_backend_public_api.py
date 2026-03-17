@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import get_args
 
 import qubex.backend as backend
@@ -62,3 +64,91 @@ def test_backend_quel3_module_hides_migrated_system_defaults() -> None:
     import qubex.backend.quel3 as quel3
 
     assert not hasattr(quel3, "DEFAULT_PUMP_FREQUENCY_GHZ")
+
+
+def test_quel3_import_and_controller_init_do_not_require_qxdriver_dependency() -> None:
+    """Given missing qxdriver dependency, QuEL-3 import and init should still succeed."""
+    code = """
+import builtins
+
+original_import = builtins.__import__
+
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name.startswith("qxdriver_quel1"):
+        raise ModuleNotFoundError(name)
+    return original_import(name, globals, locals, fromlist, level)
+
+builtins.__import__ = guarded_import
+
+import qubex.backend.quel3 as quel3
+
+controller = quel3.Quel3BackendController()
+assert controller.sampling_period_ns > 0
+"""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_quel1_import_and_controller_init_do_not_require_quelware_client() -> None:
+    """Given missing quelware-client dependency, QuEL-1 import and init should still succeed."""
+    code = """
+import builtins
+
+original_import = builtins.__import__
+
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name.startswith("quelware_client"):
+        raise ModuleNotFoundError(name)
+    return original_import(name, globals, locals, fromlist, level)
+
+builtins.__import__ = guarded_import
+
+import qubex.backend.quel1 as quel1
+
+controller = quel1.Quel1BackendController()
+assert controller.sampling_period_ns > 0
+"""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_quantum_simulator_import_does_not_require_quel1_or_quel3_dependencies() -> (
+    None
+):
+    """Given missing backend extras, QuantumSimulator import should still succeed."""
+    code = """
+import builtins
+
+original_import = builtins.__import__
+
+def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name.startswith("qxdriver_quel1") or name.startswith("quelware_client"):
+        raise ModuleNotFoundError(name)
+    return original_import(name, globals, locals, fromlist, level)
+
+builtins.__import__ = guarded_import
+
+from qubex.simulator import QuantumSimulator
+
+assert QuantumSimulator.__name__ == "QuantumSimulator"
+"""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr

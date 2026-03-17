@@ -38,6 +38,23 @@ This means pulses with the same shape but different scale/phase should reuse one
 - QuEL-3 default sampling period in Qubex path: `0.4 ns`.
 - Readout path downsampling behavior is delegated to `Sequencer`/quelware contract.
 
+### 4) Temporary mixed-`dt` workaround in current implementation
+
+Current Qubex execution still assumes one backend-level sampling period in the
+QuEL-3 path. It does not yet model per-channel `dt` in `PulseSchedule` or in
+backend execution contracts.
+
+Until that design is implemented:
+
+- control waveforms stay on the shared QuEL-3 control grid (`0.4 ns`)
+- readout waveforms are normalized in the QuEL-3 measurement adapter to the
+  readout grid (`0.8 ns`) before quelware registration
+- waveform registration deduplicates by normalized registered waveform hash plus
+  sampling period, not by original pulse-library hash alone
+
+This workaround is intentionally local to the QuEL-3 adapter and should be
+removed once per-channel sampling-period support becomes a first-class feature.
+
 ## Shape equivalence policy
 
 Two pulses are considered equivalent for shared registration when:

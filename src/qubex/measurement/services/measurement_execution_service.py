@@ -655,15 +655,32 @@ class MeasurementExecutionService:
         """
         resolved_config = self.create_measurement_config() if config is None else config
         normalized_values = cast(list[SweepValue], np.asarray(sweep_values).tolist())
-        results: list[MeasurementResult] = []
-        for sweep_value in normalized_values:
-            measurement_schedule = schedule(sweep_value)
-            result = await self.run_measurement(
-                schedule=measurement_schedule,
+        if self._can_use_batch_execution():
+            measurement_schedules = [
+                schedule(sweep_value) for sweep_value in normalized_values
+            ]
+            results = await self.measurement_schedule_runner.execute_many_async(
+                schedules=measurement_schedules,
                 config=resolved_config,
             )
-            results.append(result)
-            if on_point is not None:
+        else:
+            results: list[MeasurementResult] = []
+            for sweep_value in normalized_values:
+                measurement_schedule = schedule(sweep_value)
+                result = await self.run_measurement(
+                    schedule=measurement_schedule,
+                    config=resolved_config,
+                )
+                results.append(result)
+                if on_point is not None:
+                    on_point(sweep_value, result)
+            return SweepMeasurementResult(
+                sweep_values=normalized_values,
+                config=resolved_config,
+                results=results,
+            )
+        if on_point is not None:
+            for sweep_value, result in zip(normalized_values, results, strict=True):
                 on_point(sweep_value, result)
         return SweepMeasurementResult(
             sweep_values=normalized_values,
@@ -717,19 +734,32 @@ class MeasurementExecutionService:
 
         normalized_axes_points = {axis: [*sweep_points[axis]] for axis in resolved_axes}
         shape = tuple(len(normalized_axes_points[axis]) for axis in resolved_axes)
-
-        results: list[MeasurementResult] = []
-        for ndindex in np.ndindex(shape):
-            point: SweepPoint = {
-                axis: normalized_axes_points[axis][axis_index]
-                for axis, axis_index in zip(resolved_axes, ndindex, strict=True)
-            }
-            measurement_schedule = schedule(point)
-            result = await self.run_measurement(
-                schedule=measurement_schedule,
+        if self._can_use_batch_execution():
+            points: list[SweepPoint] = [
+                {
+                    axis: normalized_axes_points[axis][axis_index]
+                    for axis, axis_index in zip(resolved_axes, ndindex, strict=True)
+                }
+                for ndindex in np.ndindex(shape)
+            ]
+            measurement_schedules = [schedule(point) for point in points]
+            results = await self.measurement_schedule_runner.execute_many_async(
+                schedules=measurement_schedules,
                 config=resolved_config,
             )
-            results.append(result)
+        else:
+            results: list[MeasurementResult] = []
+            for ndindex in np.ndindex(shape):
+                point: SweepPoint = {
+                    axis: normalized_axes_points[axis][axis_index]
+                    for axis, axis_index in zip(resolved_axes, ndindex, strict=True)
+                }
+                measurement_schedule = schedule(point)
+                result = await self.run_measurement(
+                    schedule=measurement_schedule,
+                    config=resolved_config,
+                )
+                results.append(result)
 
         return NDSweepMeasurementResult(
             sweep_points=normalized_axes_points,
@@ -738,6 +768,22 @@ class MeasurementExecutionService:
             config=resolved_config,
             results=results,
         )
+
+    def _can_use_batch_execution(self) -> bool:
+        """Return whether backend batch execution can be used safely."""
+        execute_batch_async = getattr(
+            self.backend_controller, "execute_batch_async", None
+        )
+        if not callable(execute_batch_async):
+            return False
+        run_measurement_func = getattr(self.run_measurement, "__func__", None)
+        if run_measurement_func is not MeasurementExecutionService.run_measurement:
+            return False
+        try:
+            _ = self.experiment_system
+        except ValueError:
+            return False
+        return True
 
     async def measure_noise(
         self,

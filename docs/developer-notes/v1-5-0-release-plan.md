@@ -11,7 +11,7 @@
 - Current source version is `v1.5.0b4`; internal beta compatibility scope is still interpreted using the original `v1.5.0b1` sign-off contract.
 - Internal beta go/no-go is based on existing QuEL-1 user backward compatibility.
 - QuEL-3 implementation work remains in scope for `v1.5.0`, but it is not part of the internal `b1` sign-off gate.
-- Internal companion packages (`qxcore`, `qxfitting`, `qxpulse`, `qxschema`, `qxsimulator`, `qxvisualizer`, `qxdriver-quel1`) remain at `0.0.0.dev0` for the internal beta bundle.
+- Internal companion packages (`qxcore`, `qxfitting`, `qxpulse`, `qxschema`, `qxsimulator`, `qxvisualizer`, `qxdriver-quel1`) are aligned to the current workspace release line `1.5.0b4` and validated as one tested bundle.
 - Internal beta artifact validation uses `make build-all`; public `publish-all` is deferred until external beta / GA planning.
 - QuEL-3 compatibility fallback now treats legacy `reset_awg_and_capunits()` and `SystemManager.modified_backend_settings(...)` requests as no-op when the backend does not expose the corresponding QuEL-1-only capability.
 - For public PyPI publication, the companion packages that stay as runtime dependencies of `qubex` must move onto the same release line as `qubex`.
@@ -28,7 +28,7 @@
 ## Scope
 
 - Cut an internal `v1.5.0b1` focused on QuEL-1 backward compatibility for existing users
-- Keep internal workspace package versions unchanged at `0.0.0.dev0` for the tested bundle
+- Keep publishable workspace package versions aligned to the current release line for the tested bundle
 - Define public PyPI publication policy for companion packages: bundle-aligned release versions
 - Add support for QuEL-3 controller using new `quelware-client`
 - Keep backward compatibility with existing controllers
@@ -106,7 +106,7 @@ Calendar note:
 - QuEL-1 is API-compatible at measurement facade level (`Measurement`)
 - `Experiment` core flows remain operational through delegation
 - `mock_mode=True` compatibility path is covered by tests and remains operational
-- Internal companion packages remain at `0.0.0.dev0` and are validated as one tested bundle
+- Internal companion packages share the current release line and are validated as one tested bundle
 - Internal artifact build succeeds (`make build-all`)
 - Required tests are added and green (`uv run pytest`)
 - Required quality checks are green (`uv run ruff check`, `uv run ruff format`, `uv run pyright`)

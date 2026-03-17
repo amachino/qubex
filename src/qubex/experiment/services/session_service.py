@@ -182,25 +182,5 @@ class SessionService:
         box_ids: str | Collection[str] | None = None,
         qubits: Collection[str] | None = None,
     ) -> None:
-        """Reset AWG and CAP units using backend optional capability."""
-        resolved_box_ids: list[str] = []
-        if qubits is not None:
-            boxes = self.ctx.experiment_system.get_boxes_for_qubits(qubits)
-            resolved_box_ids += [box.id for box in boxes]
-        if len(resolved_box_ids) == 0:
-            if isinstance(box_ids, str):
-                resolved_box_ids = [box_ids]
-            elif box_ids is not None:
-                resolved_box_ids = list(box_ids)
-            else:
-                resolved_box_ids = self.ctx.box_ids
-
-        backend_controller = self.ctx.backend_controller
-        initialize_awg_and_capunits = getattr(
-            backend_controller, "initialize_awg_and_capunits", None
-        )
-        if not callable(initialize_awg_and_capunits):
-            raise NotImplementedError(
-                "Active backend does not support AWG/CAP unit reset."
-            )
-        initialize_awg_and_capunits(resolved_box_ids)
+        """Reset AWG and CAP units through the experiment-context policy."""
+        self.ctx.reset_awg_and_capunits(box_ids=box_ids, qubits=qubits)

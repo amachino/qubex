@@ -1675,6 +1675,7 @@ class MeasurementService:
             frequencies = {
                 target: self.ctx.targets[target].frequency for target in amplitudes
             }
+        control_sampling_period = self.ctx.measurement.sampling_period
 
         # rabi sequence with rect pulses of duration T
         def rabi_sequence(T: float) -> PulseSchedule:
@@ -1686,6 +1687,7 @@ class MeasurementService:
                             duration=T + 2 * ramptime,
                             amplitude=amplitudes[target],
                             tau=ramptime,
+                            sampling_period=control_sampling_period,
                         ),
                     )
             return ps
@@ -1824,6 +1826,7 @@ class MeasurementService:
             frequencies = {
                 target: self.ctx.targets[target].frequency for target in amplitudes
             }
+        control_sampling_period = self.ctx.measurement.sampling_period
 
         # ef rabi sequence with rect pulses of duration T
         def ef_rabi_sequence(T: int) -> PulseSchedule:
@@ -1840,6 +1843,7 @@ class MeasurementService:
                             duration=T + 2 * ramptime,
                             amplitude=amplitudes[ef],
                             tau=ramptime,
+                            sampling_period=control_sampling_period,
                         ),
                     )
             return ps

@@ -29,6 +29,16 @@ class Quel1SystemSynchronizer:
         """Return backend controller bound to this synchronizer."""
         return self._backend_controller
 
+    @property
+    def supports_backend_settings_sync(self) -> bool:
+        """Return whether QuEL-1 supports hardware snapshot synchronization."""
+        return True
+
+    @property
+    def supports_mutable_backend_settings_cache(self) -> bool:
+        """Return whether QuEL-1 supports mutable backend-settings cache writes."""
+        return True
+
     def sync_experiment_system_to_backend_controller(
         self,
         experiment_system: ExperimentSystem,

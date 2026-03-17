@@ -854,6 +854,139 @@ def test_push_forwards_target_labels_to_hardware_sync(
     assert captured["target_labels"] == ["Q00", "RQ00"]
 
 
+def test_pull_applies_snapshot_sync_without_mutable_box_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given snapshot-only support, pull should still merge and sync backend settings."""
+    manager = SystemManager.shared()
+    box_a = FakeBox(id="A", ports=())
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        FakeExperimentSystemForBackendSettings([box_a]),
+    )
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=0))
+    monkeypatch.setattr(
+        manager,
+        "_backend_settings",
+        {"B": {"instruments": {"Q01": {"resource_id": "inst-q01"}}}},
+    )
+
+    synced_settings: list[dict[str, dict]] = []
+
+    class _SnapshotSynchronizer:
+        supports_backend_settings_sync = True
+        supports_mutable_backend_settings_cache = False
+
+        def fetch_backend_settings_from_hardware(
+            self,
+            *,
+            experiment_system: object,
+            box_ids: Sequence[str],
+            parallel: bool | None = None,
+        ) -> dict[str, dict]:
+            del experiment_system, parallel
+            assert list(box_ids) == ["A"]
+            return {
+                "A": {
+                    "instruments": {
+                        "Q00": {
+                            "resource_id": "inst-q00",
+                            "port_id": "quel3-02-a01:tx_p04",
+                            "role": "TRANSMITTER",
+                        }
+                    }
+                }
+            }
+
+        def sync_backend_settings_to_backend_controller(
+            self,
+            *,
+            backend_settings: dict[str, dict],
+        ) -> None:
+            synced_settings.append(deepcopy(backend_settings))
+
+        def sync_backend_settings_to_experiment_system(
+            self,
+            *,
+            experiment_system: object,
+            backend_settings: dict[str, dict],
+        ) -> None:
+            del experiment_system, backend_settings
+
+    monkeypatch.setattr(manager, "_system_synchronizer", _SnapshotSynchronizer())
+
+    manager.pull(["A"], parallel=False)
+
+    assert manager.backend_settings == {
+        "A": {
+            "instruments": {
+                "Q00": {
+                    "resource_id": "inst-q00",
+                    "port_id": "quel3-02-a01:tx_p04",
+                    "role": "TRANSMITTER",
+                }
+            }
+        },
+        "B": {"instruments": {"Q01": {"resource_id": "inst-q01"}}},
+    }
+    assert synced_settings == [manager.backend_settings]
+
+
+def test_modified_backend_settings_rejects_snapshot_only_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given snapshot-only support, modified_backend_settings should remain unsupported."""
+    manager = SystemManager.shared()
+    monkeypatch.setattr(manager, "_system_synchronizer", SimpleNamespace())
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace())
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(
+            get_target=lambda label: label,
+            hash=0,
+        ),
+    )
+
+    with (
+        pytest.raises(
+            NotImplementedError,
+            match="backend-settings cache operations",
+        ),
+        manager.modified_backend_settings(
+            "Q00",
+            lo_freq=10_000_000_000,
+            cnco_freq=1_500,
+            fnco_freq=750,
+        ),
+    ):
+        pass
+
+
+def test_modified_backend_settings_is_noop_for_quel3_without_cache_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given QuEL-3 without cache support, modified_backend_settings should no-op."""
+    manager = SystemManager.shared()
+    monkeypatch.setattr(manager, "_backend_kind", BACKEND_KIND_QUEL3)
+    monkeypatch.setattr(manager, "_system_synchronizer", SimpleNamespace())
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace())
+    monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace(hash=0))
+
+    entered = False
+
+    with manager.modified_backend_settings(
+        "Q00",
+        lo_freq=10_000_000_000,
+        cnco_freq=1_500,
+        fnco_freq=750,
+    ):
+        entered = True
+
+    assert entered is True
+
+
 def test_create_backend_controller_supports_quel3() -> None:
     """Given Quel3 kind, when creating backend controller, then Quel3 controller is returned."""
     controller = SystemManager._create_backend_controller("quel3")  # noqa: SLF001

@@ -1,12 +1,12 @@
-"""Shared helpers for importing quelware modules with workspace fallback."""
+"""Shared helpers for loading quelware runtime dependencies."""
 
 from __future__ import annotations
 
 import importlib
-import sys
-from pathlib import Path
-from types import ModuleType
-from typing import Final, Literal, cast
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any, Final, Literal, cast
 
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
 
@@ -14,34 +14,48 @@ Quel3ClientMode = Literal["server", "standalone"]
 SUPPORTED_QUEL3_CLIENT_MODES: Final[frozenset[Quel3ClientMode]] = frozenset(
     {"server", "standalone"}
 )
+_STANDALONE_NOTICE_LOGGER: Final[str] = "quelware_client.client._standalone_grpc"
+_STANDALONE_NOTICE_MESSAGE: Final[str] = (
+    "NOTE: Standalone client is for testing purposes."
+)
 
 
-def _candidate_local_quelware_paths(root: Path) -> tuple[Path, ...]:
-    """Return local quelware source directories checked for fallback import."""
-    return (
-        root / "lib" / "quelware-client-internal" / "quelware-client" / "src",
-        root / "lib" / "quelware-client-internal" / "quelware-core" / "python" / "src",
-        root / "packages" / "quelware-client" / "quelware-client" / "src",
-        root / "packages" / "quelware-client" / "quelware-core" / "python" / "src",
-    )
+class _StandaloneNoticeFilter(logging.Filter):
+    """Suppress only the repeated standalone-client testing notice."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (
+            record.name == _STANDALONE_NOTICE_LOGGER
+            and record.getMessage() == _STANDALONE_NOTICE_MESSAGE
+        )
 
 
-def _append_local_quelware_paths() -> None:
-    """Append local quelware source paths when present in the workspace."""
-    root = Path(__file__).resolve().parents[5]
-    for path in _candidate_local_quelware_paths(root):
-        path_str = str(path)
-        if path.exists() and path_str not in sys.path:
-            sys.path.insert(0, path_str)
-
-
-def import_module_with_workspace_fallback(module_name: str) -> ModuleType:
-    """Import one module, retrying after local quelware path injection."""
+@contextmanager
+def _suppress_standalone_notice() -> Iterator[None]:
+    """Temporarily suppress the standalone-client testing notice."""
+    logger = logging.getLogger(_STANDALONE_NOTICE_LOGGER)
+    log_filter = _StandaloneNoticeFilter()
+    logger.addFilter(log_filter)
     try:
-        return importlib.import_module(module_name)
-    except (ModuleNotFoundError, SyntaxError):
-        _append_local_quelware_paths()
-        return importlib.import_module(module_name)
+        yield
+    finally:
+        logger.removeFilter(log_filter)
+
+
+def _create_standalone_client_safely(
+    *,
+    client_module: Any,
+    endpoint: str,
+    port: int,
+    unit_label: str | None,
+):
+    """Create standalone client while suppressing the repeated testing notice."""
+    with _suppress_standalone_notice():
+        return client_module.create_standalone_client(
+            endpoint,
+            port,
+            unit_label=unit_label,
+        )
 
 
 def normalize_quel3_client_mode(value: object) -> Quel3ClientMode | None:
@@ -75,7 +89,7 @@ def validate_quelware_client_runtime(
 
 def load_quelware_client_factory(
     *,
-    client_mode: str,
+    client_mode: Quel3ClientMode,
     standalone_unit_label: str | None,
 ) -> QuelwareClientFactory:
     """Load one quelware client factory for the configured runtime mode."""
@@ -83,15 +97,16 @@ def load_quelware_client_factory(
         client_mode=client_mode,
         standalone_unit_label=standalone_unit_label,
     )
-    client_module = import_module_with_workspace_fallback("quelware_client.client")
+    client_module = importlib.import_module("quelware_client.client")
     if normalized_client_mode == "server":
         return cast(QuelwareClientFactory, client_module.create_quelware_client)
     unit_label = standalone_unit_label
     return cast(
         QuelwareClientFactory,
-        lambda endpoint, port: client_module.create_standalone_client(
-            endpoint,
-            port,
+        lambda endpoint, port: _create_standalone_client_safely(
+            client_module=client_module,
+            endpoint=endpoint,
+            port=port,
             unit_label=unit_label,
         ),
     )
