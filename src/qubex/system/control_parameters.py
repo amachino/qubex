@@ -45,7 +45,7 @@ class ControlParameters(MutableModel):
     control_fsc: dict[str, int | None]
     readout_fsc: dict[int, int | None]
     pump_fsc: dict[int, int | None]
-    capture_delay: dict[int, int | None]
+    capture_delay: dict[int, int | float | None]
     capture_delay_word: dict[int, int | None]
     jpa_params: dict[int, JPAParameters]
 
@@ -114,7 +114,7 @@ class ControlParameters(MutableModel):
             field_name="Pump FSC",
         )
 
-    def get_capture_delay(self, mux: int) -> int:
+    def get_capture_delay(self, mux: int) -> int | float:
         """Return the effective capture delay for a mux."""
         return self._require_mux_value(
             values=self.capture_delay,

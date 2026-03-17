@@ -83,6 +83,10 @@ class Quel1SystemSynchronizer:
                         if mux is None:
                             continue
                         ndelay_or_nwait = control_params.get_capture_delay(mux.index)
+                        if not isinstance(ndelay_or_nwait, int):
+                            raise TypeError(
+                                "QuEL-1 capture delay must be configured as integer `ndelay`."
+                            )
                     elif port_type == "MNTR_IN":
                         ndelay_or_nwait = DEFAULT_CAPTURE_DELAY
                     else:

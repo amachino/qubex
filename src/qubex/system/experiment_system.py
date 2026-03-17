@@ -627,9 +627,18 @@ class ExperimentSystem:
         )
         port.lo_freq = config["lo"]
         port.cnco_freq = config["cnco"]
+        if box.type == BoxType.QUEL3:
+            for cap_channel in port.channels:
+                cap_channel.fnco_freq = config["fnco"]
+            return
         for cap_channel in port.channels:
             cap_channel.fnco_freq = config["fnco"]
-            cap_channel.ndelay = params.get_capture_delay(mux.index)
+            capture_delay = params.get_capture_delay(mux.index)
+            if not isinstance(capture_delay, int):
+                raise TypeError(
+                    "QuEL-1 capture delay must be configured as integer `ndelay`."
+                )
+            cap_channel.ndelay = capture_delay
 
     def _configure_monitor_port(
         self,

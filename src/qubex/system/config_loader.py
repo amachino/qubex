@@ -99,6 +99,17 @@ QUBIT_KEYED_PARAMS = frozenset(
     }
 )
 
+_CAPTURE_DELAY_ALLOWED_UNITS: dict[BackendKind, dict[str, frozenset[str]]] = {
+    BACKEND_KIND_QUEL1: {
+        "capture_delay": frozenset({"ndelay"}),
+        "capture_delay_word": frozenset({"word", "words"}),
+    },
+    BACKEND_KIND_QUEL3: {
+        "capture_delay": frozenset({"ns"}),
+        "capture_delay_word": frozenset(),
+    },
+}
+
 
 class ConfigLoader:
     """
@@ -163,10 +174,13 @@ class ConfigLoader:
 
     Notes
     -----
-    - Per-file parameter YAML must be structured as `{"meta": ..., "data": ...}`.
+        - Per-file parameter YAML must be structured as `{"meta": ..., "data": ...}`.
         - `meta.unit` is a string (applied to all numeric values in per-file `data`).
             Supported units are case-insensitive and include Hz/kHz/MHz/GHz (converted
             to GHz) and s/ms/us/µs/ns (converted to ns).
+        - `capture_delay*.yaml` additionally require backend-compatible `meta.unit`.
+          QuEL-1 accepts `ndelay`/`word`; QuEL-3 accepts `ns` for
+          `capture_delay.yaml` and rejects `capture_delay_word.yaml`.
     - `get_experiment_system(chip_id)` accepts an optional argument for backward
       compatibility, but the argument is deprecated and ignored; call
       `get_experiment_system()` with no arguments.
@@ -762,6 +776,35 @@ class ConfigLoader:
             return data
         return {k: apply(v, k) for k, v in data.items()}
 
+    def _validate_param_unit(
+        self,
+        *,
+        param_name: str,
+        unit: object,
+        path: Path,
+    ) -> None:
+        """Validate backend-specific `meta.unit` requirements for one param file."""
+        allowed_units = _CAPTURE_DELAY_ALLOWED_UNITS.get(
+            self._backend_kind,
+            {},
+        ).get(param_name)
+        if allowed_units is None:
+            return
+        if len(allowed_units) == 0:
+            raise ValueError(
+                f"`{path.name}` is not supported for `{self._backend_kind}`. "
+                "Use `capture_delay.yaml` with `meta.unit: ns`."
+            )
+        if not isinstance(unit, str) or len(unit.strip()) == 0:
+            raise ValueError(f"`{path.name}` must define `meta.unit`.")
+        normalized_unit = unit.strip().lower()
+        if normalized_unit not in allowed_units:
+            allowed_text = ", ".join(sorted(allowed_units))
+            raise ValueError(
+                f"`{path.name}` uses unsupported unit `{unit}` for "
+                f"`{self._backend_kind}`. Allowed units: {allowed_text}."
+            )
+
     def _normalize_param_keys(
         self, param_name: str, data: dict[Any, Any]
     ) -> dict[Any, Any]:
@@ -833,6 +876,11 @@ class ConfigLoader:
             data = payload.get("data", {}) or {}
             meta = payload.get("meta", {}) or {}
             unit = meta.get("unit")
+            self._validate_param_unit(
+                param_name=param_name,
+                unit=unit,
+                path=file_path,
+            )
             default = meta.get("default")
             if use_default and default is not None:
                 data = {

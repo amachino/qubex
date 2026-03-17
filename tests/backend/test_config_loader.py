@@ -841,6 +841,99 @@ def test_load_param_data_requires_structured_yaml(tmp_path: Path) -> None:
         )
 
 
+def test_load_capture_delay_requires_meta_unit(tmp_path: Path) -> None:
+    """Given capture_delay without meta.unit, when loading, then ValueError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        params_dir / "capture_delay.yaml",
+        {
+            "meta": {},
+            "data": {0: 0.8},
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"capture_delay\.yaml.*meta\.unit"):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_load_rejects_quel1_capture_delay_ns_unit(tmp_path: Path) -> None:
+    """Given quel1 capture_delay in ns, when loading, then ValueError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        params_dir / "capture_delay.yaml",
+        {
+            "meta": {"unit": "ns"},
+            "data": {0: 8.0},
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"capture_delay\.yaml.*quel1.*ndelay"):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_load_rejects_quel3_capture_delay_word_file(tmp_path: Path) -> None:
+    """Given quel3 capture_delay_word data, when loading, then ValueError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        params_dir / "capture_delay_word.yaml",
+        {
+            "meta": {"unit": "word"},
+            "data": {0: 1},
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"capture_delay_word\.yaml.*quel3",
+    ):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
 def test_control_system_box_options_loaded_from_box_yaml(tmp_path: Path) -> None:
     """Given box options in box.yaml, when loading config, then box options are preserved."""
     chip_id = "TESTCHIP"
@@ -1145,6 +1238,46 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     assert control_parameters.get_dc_voltage(1) == pytest.approx(
         DEFAULT_QUEL3_DC_VOLTAGE
     )
+
+
+def test_load_preserves_quel3_capture_delay_ns_without_ndelay_side_effect(
+    tmp_path: Path,
+) -> None:
+    """Given quel3 capture_delay in ns, when loading, then control params keep ns and capture ports do not set ndelay."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        params_dir / "capture_delay.yaml",
+        {
+            "meta": {"unit": "ns"},
+            "data": {0: 0.8},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert system.control_params.capture_delay[0] == pytest.approx(0.8)
+    assert system.wiring_info.read_in[0][1].channels[0].ndelay is None
 
 
 def test_load_resolves_r8_pump_frequency_with_r8_default(tmp_path: Path) -> None:

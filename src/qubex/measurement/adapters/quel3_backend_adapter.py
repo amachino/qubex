@@ -139,18 +139,31 @@ class Quel3MeasurementBackendAdapter:
             captures = sorted(
                 channel_captures.get(target, []), key=lambda c: c.start_time
             )
+            capture_delay_ns = self._resolve_capture_delay_ns(
+                target=target,
+                target_type=target_type,
+            )
             capture_windows = tuple(
                 Quel3CaptureWindow(
                     name=f"{target}:{index}",
-                    start_offset_ns=capture.start_time,
+                    start_offset_ns=capture.start_time + capture_delay_ns,
                     length_ns=capture.duration,
                 )
                 for index, capture in enumerate(captures)
             )
+            timeline_length_ns = pulse_schedule.duration
+            if len(capture_windows) > 0:
+                timeline_length_ns = max(
+                    timeline_length_ns,
+                    max(
+                        window.start_offset_ns + window.length_ns
+                        for window in capture_windows
+                    ),
+                )
             fixed_timelines[target] = Quel3FixedTimeline(
                 events=events,
                 capture_windows=capture_windows,
-                length_ns=pulse_schedule.duration,
+                length_ns=timeline_length_ns,
             )
             try:
                 output_target_labels_by_target[target] = str(
@@ -252,6 +265,47 @@ class Quel3MeasurementBackendAdapter:
         if config.time_integration:
             return Quel3CaptureMode.VALUES_PER_ITER
         return Quel3CaptureMode.RAW_WAVEFORMS
+
+    def _resolve_capture_delay_ns(
+        self,
+        *,
+        target: str,
+        target_type: TargetType,
+    ) -> float:
+        """Resolve one QuEL-3 capture delay in ns for a readout target."""
+        if target_type is not TargetType.READ:
+            return 0.0
+        control_params = getattr(self._experiment_system, "control_params", None)
+        capture_delays = getattr(control_params, "capture_delay", None)
+        if not isinstance(capture_delays, Mapping):
+            return 0.0
+        try:
+            qubit_label = str(self._experiment_system.resolve_qubit_label(target))
+            mux = self._experiment_system.get_mux_by_qubit(qubit_label)
+        except (AttributeError, KeyError, ValueError):
+            return 0.0
+
+        mux_index = getattr(mux, "index", None)
+        if not isinstance(mux_index, int):
+            return 0.0
+        capture_delay = capture_delays.get(mux_index)
+        if capture_delay is None:
+            return 0.0
+        if not isinstance(capture_delay, (int, float)):
+            raise TypeError(
+                "QuEL-3 capture delay must be configured as a numeric ns value."
+            )
+        capture_delay_ns = float(capture_delay)
+        if capture_delay_ns < 0:
+            raise ValueError("QuEL-3 capture delay must be non-negative.")
+        samples = capture_delay_ns / READOUT_SAMPLING_PERIOD_NS
+        rounded_samples = round(samples)
+        if not np.isclose(samples, rounded_samples):
+            raise ValueError(
+                "QuEL-3 capture delay must be a multiple of "
+                f"{READOUT_SAMPLING_PERIOD_NS} ns."
+            )
+        return capture_delay_ns
 
     @staticmethod
     def _resolve_n_iterations(*, capture_mode: Quel3CaptureMode, shots: int) -> int:

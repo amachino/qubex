@@ -64,6 +64,13 @@ class _FakeExperimentSystem:
     target_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
     capture_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
     box_names: dict[str, str] = field(default_factory=dict)
+    mux_by_qubit: dict[str, int] = field(default_factory=dict)
+    control_params: Any = field(
+        default_factory=lambda: SimpleNamespace(
+            capture_delay={},
+            capture_delay_word={},
+        )
+    )
 
     @staticmethod
     def _target_type_for_label(label: str) -> TargetType:
@@ -116,6 +123,9 @@ class _FakeExperimentSystem:
 
     def get_box(self, box_id: str) -> Any:
         return SimpleNamespace(name=self.box_names.get(box_id, box_id.lower()))
+
+    def get_mux_by_qubit(self, label: str) -> Any:
+        return SimpleNamespace(index=self.mux_by_qubit[label])
 
 
 def _make_backend_controller() -> Quel3BackendController:
@@ -266,6 +276,97 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert timeline.capture_windows[0].name == f"{target}:0"
     assert timeline.capture_windows[0].start_offset_ns == pytest.approx(0.4)
     assert timeline.capture_windows[0].length_ns == pytest.approx(0.4)
+
+
+def test_quel3_adapter_applies_mux_capture_delay_to_capture_windows() -> None:
+    """Given quel3 mux capture delay, when building payload, then capture windows are shifted in ns."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.4,
+                ),
+            ]
+        ),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(
+            Any,
+            _FakeExperimentSystem(
+                mux_by_qubit={"Q00": 0},
+                control_params=SimpleNamespace(
+                    capture_delay={0: 0.8},
+                    capture_delay_word={},
+                ),
+            ),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    timeline = request.payload.fixed_timelines[target]
+    assert timeline.capture_windows[0].start_offset_ns == pytest.approx(1.2)
+    assert timeline.length_ns == pytest.approx(1.6)
+
+
+def test_quel3_adapter_rejects_capture_delay_off_sampling_grid() -> None:
+    """Given off-grid quel3 capture delay, when building payload, then ValueError is raised."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.4,
+                ),
+            ]
+        ),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(
+            Any,
+            _FakeExperimentSystem(
+                mux_by_qubit={"Q00": 0},
+                control_params=SimpleNamespace(
+                    capture_delay={0: 0.4},
+                    capture_delay_word={},
+                ),
+            ),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+
+    with pytest.raises(ValueError, match=r"0\.8 ns"):
+        adapter.build_execution_request(schedule=schedule, config=_make_config())
 
 
 def test_quel3_adapter_keeps_zero_regions_inside_one_waveform_event() -> None:

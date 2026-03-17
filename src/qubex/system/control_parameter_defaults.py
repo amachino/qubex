@@ -40,7 +40,7 @@ class ControlParameterDefaults:
     control_fsc: int | None
     readout_fsc: int | None
     pump_fsc: int | None
-    capture_delay: int | None
+    capture_delay: int | float | None
     capture_delay_word: int | None
     pump_frequency: float
     pump_amplitude: float
@@ -60,7 +60,7 @@ class ControlParameterDefaults:
         control_fsc: Mapping[str, int | None],
         readout_fsc: Mapping[int, int | None],
         pump_fsc: Mapping[int, int | None],
-        capture_delay: Mapping[int, int | None],
+        capture_delay: Mapping[int, int | float | None],
         capture_delay_word: Mapping[int, int | None],
         jpa_params: Mapping[int, Mapping[str, Any] | None],
         pump_frequency_by_mux: Mapping[int, float] | None = None,
@@ -90,7 +90,7 @@ class ControlParameterDefaults:
             Explicit readout FSC overrides by mux index.
         pump_fsc : Mapping[int, int | None]
             Explicit pump FSC overrides by mux index.
-        capture_delay : Mapping[int, int | None]
+        capture_delay : Mapping[int, int | float | None]
             Explicit capture-delay overrides by mux index.
         capture_delay_word : Mapping[int, int | None]
             Explicit capture-delay-word overrides by mux index.
