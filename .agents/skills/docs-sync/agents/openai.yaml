@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docs Sync"
+  short_description: "Audit qubex docs for stale coverage"
+  default_prompt: "Use $docs-sync to compare this code change against the current docs and list the required updates."

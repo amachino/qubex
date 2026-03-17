@@ -1,0 +1,4 @@
+interface:
+  display_name: "Examples Auto Run"
+  short_description: "Run qubex examples and capture reruns"
+  default_prompt: "Use $examples-auto-run to execute the relevant qubex examples and summarize failures with rerun commands."
