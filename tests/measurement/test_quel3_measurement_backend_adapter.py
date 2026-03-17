@@ -243,8 +243,8 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
 
     payload = request.payload
     assert isinstance(payload, Quel3ExecutionPayload)
-    assert payload.interval_ns == 102
-    assert payload.repeats == 16
+    assert payload.shot_interval_ns == 100
+    assert payload.n_iterations == 16
     assert payload.capture_mode is Quel3CaptureMode.AVERAGED_WAVEFORM
     assert target in payload.fixed_timelines
     assert payload.instrument_bindings[target] == f"alias:{alias}"

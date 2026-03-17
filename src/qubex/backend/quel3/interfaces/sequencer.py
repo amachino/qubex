@@ -55,6 +55,10 @@ class SequencerProtocol(Protocol):
         """Set timeline iteration count for one trigger execution."""
         ...
 
+    def extend_length_ns(self, additional_ns: float) -> None:
+        """Extend timeline length by one additional duration in ns."""
+        ...
+
     def export_set_fixed_timeline_directive(
         self,
         instrument_alias: str,

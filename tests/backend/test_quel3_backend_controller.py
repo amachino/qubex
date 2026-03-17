@@ -75,7 +75,7 @@ class _CountingInstrumentResolver(_FakeInstrumentResolver):
         self.refresh_calls += 1
 
 
-def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPayload:
+def _make_payload(*, mode: str = "avg", n_iterations: int = 2) -> Quel3ExecutionPayload:
     waveform_name = "wf0"
     timeline = Quel3FixedTimeline(
         events=(
@@ -97,8 +97,8 @@ def _make_payload(*, mode: str = "avg", repeats: int = 2) -> Quel3ExecutionPaylo
             )
         },
         fixed_timelines={"alias-rq00": timeline},
-        interval_ns=100.0,
-        repeats=repeats,
+        n_iterations=n_iterations,
+        shot_interval_ns=100.0,
         capture_mode=(
             Quel3CaptureMode.AVERAGED_VALUE
             if mode == "avg"
@@ -169,7 +169,7 @@ def test_execute_surfaces_missing_quelware_dependency(
 
 def test_build_measurement_result_averages_shot_samples() -> None:
     """Given avg mode shots, result samples are averaged."""
-    payload = _make_payload(mode="avg", repeats=2)
+    payload = _make_payload(mode="avg", n_iterations=2)
     shot_samples = {
         "alias-rq00": {
             "capture_0": [
@@ -199,7 +199,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
 
 def test_build_measurement_result_keeps_backend_alias_labels() -> None:
     """Given backend flow result, measurement labels remain instrument aliases."""
-    payload = _make_payload(mode="single", repeats=1)
+    payload = _make_payload(mode="single", n_iterations=1)
     timeline = payload.fixed_timelines["alias-rq00"]
     payload = replace(
         payload,
@@ -223,24 +223,6 @@ def test_build_measurement_result_keeps_backend_alias_labels() -> None:
 
     assert isinstance(result, Quel3BackendExecutionResult)
     assert "alias-raw" in result.data
-
-
-def test_resolve_timeline_iterations_uses_repeats_for_iterative_modes() -> None:
-    """Given iterative capture mode, timeline iterations follow repeats."""
-    iterations = Quel3ExecutionManager._resolve_timeline_iterations(
-        capture_mode=Quel3CaptureMode.VALUES_PER_ITER,
-        repeats=16,
-    )
-    assert iterations == 16
-
-
-def test_resolve_timeline_iterations_uses_single_for_raw_waveforms() -> None:
-    """Given raw waveform mode, timeline iterations stay at one."""
-    iterations = Quel3ExecutionManager._resolve_timeline_iterations(
-        capture_mode=Quel3CaptureMode.RAW_WAVEFORMS,
-        repeats=16,
-    )
-    assert iterations == 1
 
 
 def test_extract_capture_samples_from_waveform_result_container() -> None:
@@ -724,6 +706,9 @@ class _FakeSequencer:
 
     def set_iterations(self, iterations: int) -> None:
         del iterations
+
+    def extend_length_ns(self, additional_ns: float) -> None:
+        del additional_ns
 
     def export_set_fixed_timeline_directive(self, instrument_alias: str) -> object:
         return ("timeline", instrument_alias)

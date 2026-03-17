@@ -162,13 +162,16 @@ class Quel3MeasurementBackendAdapter:
                 )
 
         self._output_target_labels_by_target = output_target_labels_by_target
-        interval_ns = math.ceil(pulse_schedule.duration + config.shot_interval)
         capture_mode = self._resolve_capture_mode(config)
+        n_iterations = self._resolve_n_iterations(
+            capture_mode=capture_mode,
+            shots=config.n_shots,
+        )
         payload = Quel3ExecutionPayload(
             waveform_library=waveform_library,
             fixed_timelines=fixed_timelines,
-            interval_ns=interval_ns,
-            repeats=config.n_shots,
+            n_iterations=n_iterations,
+            shot_interval_ns=math.ceil(config.shot_interval),
             capture_mode=capture_mode,
             instrument_bindings=instrument_bindings,
         )
@@ -249,6 +252,19 @@ class Quel3MeasurementBackendAdapter:
         if config.time_integration:
             return Quel3CaptureMode.VALUES_PER_ITER
         return Quel3CaptureMode.RAW_WAVEFORMS
+
+    @staticmethod
+    def _resolve_n_iterations(*, capture_mode: Quel3CaptureMode, shots: int) -> int:
+        """Resolve fixed-timeline iterations from measurement capture mode."""
+        if shots <= 1:
+            return 1
+        if capture_mode in (
+            Quel3CaptureMode.AVERAGED_VALUE,
+            Quel3CaptureMode.AVERAGED_WAVEFORM,
+            Quel3CaptureMode.VALUES_PER_ITER,
+        ):
+            return shots
+        return 1
 
     @staticmethod
     def _build_capture_targets_by_alias(

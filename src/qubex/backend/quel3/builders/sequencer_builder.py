@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from typing import TypeVar
 
@@ -10,9 +11,21 @@ from qubex.backend.quel3.models import Quel3ExecutionPayload
 
 T = TypeVar("T", bound=SequencerProtocol)
 
+_QUEL3_CLOCK_FREQUENCY_HZ = 312_500_000
+_TRIGGER_GRID_TICKS = 32
+_TRIGGER_GRID_NS = _TRIGGER_GRID_TICKS * (1e9 / _QUEL3_CLOCK_FREQUENCY_HZ)
+_MIN_SHOT_INTERVAL_NS = 1_024.0
+
 
 class Quel3SequencerBuilder:
     """Build sequencer events and waveforms from `Quel3ExecutionPayload`."""
+
+    @staticmethod
+    def _resolve_effective_shot_interval_ns(shot_interval_ns: float) -> float:
+        effective_shot_interval_ns = max(shot_interval_ns, _MIN_SHOT_INTERVAL_NS)
+        return (
+            math.ceil(effective_shot_interval_ns / _TRIGGER_GRID_NS) * _TRIGGER_GRID_NS
+        )
 
     def build(
         self,
@@ -21,7 +34,6 @@ class Quel3SequencerBuilder:
         sequencer_factory: Callable[..., T],
         default_sampling_period_ns: float,
         alias_bindings: Mapping[str, tuple[int, int]],
-        iterations: int,
     ) -> T:
         """
         Build one sequencer instance from a QuEL-3 execution payload.
@@ -36,8 +48,6 @@ class Quel3SequencerBuilder:
             Sequencer default sampling period in ns.
         alias_bindings : Mapping[str, tuple[int, int]]
             Per-alias binding of (`sampling_period_fs`, `timeline_step_samples`).
-        iterations : int
-            Fixed-timeline iteration count for one trigger execution.
 
         Returns
         -------
@@ -47,7 +57,7 @@ class Quel3SequencerBuilder:
         sequencer = sequencer_factory(
             default_sampling_period_ns=default_sampling_period_ns
         )
-        sequencer.set_iterations(iterations)
+        sequencer.set_iterations(payload.n_iterations)
 
         for instrument_alias in payload.fixed_timelines:
             binding = alias_bindings.get(instrument_alias)
@@ -90,5 +100,10 @@ class Quel3SequencerBuilder:
                     start_offset_ns=capture_window.start_offset_ns,
                     length_ns=capture_window.length_ns,
                 )
+
+        if payload.shot_interval_ns > 0:
+            sequencer.extend_length_ns(
+                self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
+            )
 
         return sequencer

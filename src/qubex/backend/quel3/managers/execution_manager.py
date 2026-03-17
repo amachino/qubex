@@ -410,16 +410,11 @@ class Quel3ExecutionManager:
             )
             instrument_ids.append(runtime.alias_to_id[alias])
 
-        timeline_iterations = self._resolve_timeline_iterations(
-            capture_mode=payload.capture_mode,
-            repeats=payload.repeats,
-        )
         sequencer = self._sequencer_builder.build(
             payload=payload,
             sequencer_factory=sequencer_factory,
             default_sampling_period_ns=self._sampling_period_ns,
             alias_bindings=alias_bindings,
-            iterations=timeline_iterations,
         )
 
         alias_to_directives = {
@@ -646,8 +641,8 @@ class Quel3ExecutionManager:
         return Quel3ExecutionPayload(
             waveform_library=payload.waveform_library,
             fixed_timelines=resolved_timelines,
-            interval_ns=payload.interval_ns,
-            repeats=payload.repeats,
+            n_iterations=payload.n_iterations,
+            shot_interval_ns=payload.shot_interval_ns,
             capture_mode=payload.capture_mode,
             instrument_bindings={},
             capture_port_bindings={},
@@ -723,23 +718,6 @@ class Quel3ExecutionManager:
                 f"`CaptureMode.{candidates[0]}`."
             )
         return set_capture_mode_factory(mode=mode)
-
-    @staticmethod
-    def _resolve_timeline_iterations(
-        *,
-        capture_mode: Quel3CaptureMode,
-        repeats: int,
-    ) -> int:
-        """Resolve timeline iteration count from capture mode and repeats."""
-        if repeats <= 1:
-            return 1
-        if capture_mode in (
-            Quel3CaptureMode.AVERAGED_VALUE,
-            Quel3CaptureMode.AVERAGED_WAVEFORM,
-            Quel3CaptureMode.VALUES_PER_ITER,
-        ):
-            return repeats
-        return 1
 
     @staticmethod
     def _initialize_shot_samples(

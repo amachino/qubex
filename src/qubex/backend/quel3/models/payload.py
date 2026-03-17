@@ -61,8 +61,8 @@ class Quel3ExecutionPayload:
 
     waveform_library: dict[str, Quel3Waveform]
     fixed_timelines: dict[str, Quel3FixedTimeline]
-    interval_ns: float
-    repeats: int
+    n_iterations: int
+    shot_interval_ns: float
     capture_mode: Quel3CaptureMode
     instrument_bindings: dict[str, str] = field(default_factory=dict)
     capture_port_bindings: dict[str, str] = field(default_factory=dict)

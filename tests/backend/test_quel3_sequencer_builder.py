@@ -57,6 +57,7 @@ class _RecordingSequencer:
         self.capture_windows: list[_CaptureWindow] = []
         self.bindings: list[_Binding] = []
         self.iterations: int = 1
+        self.extended_by_ns: float = 0.0
 
     def bind(
         self,
@@ -120,6 +121,9 @@ class _RecordingSequencer:
     def set_iterations(self, iterations: int) -> None:
         self.iterations = iterations
 
+    def extend_length_ns(self, additional_ns: float) -> None:
+        self.extended_by_ns += additional_ns
+
     def export_set_fixed_timeline_directive(
         self,
         instrument_alias: str,
@@ -132,12 +136,14 @@ def _make_payload(
     *,
     waveform_library: dict[str, Quel3Waveform],
     fixed_timelines: dict[str, Quel3FixedTimeline],
+    n_iterations: int = 16,
+    shot_interval_ns: float = 0.0,
 ) -> Quel3ExecutionPayload:
     return Quel3ExecutionPayload(
         waveform_library=waveform_library,
         fixed_timelines=fixed_timelines,
-        interval_ns=100.0,
-        repeats=16,
+        n_iterations=n_iterations,
+        shot_interval_ns=shot_interval_ns,
         capture_mode=Quel3CaptureMode.AVERAGED_VALUE,
     )
 
@@ -176,7 +182,6 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
         sequencer_factory=_RecordingSequencer,
         default_sampling_period_ns=0.4,
         alias_bindings={"alias-RQ00": (400_000, 64)},
-        iterations=8,
     )
 
     assert set(sequencer.registered_waveforms.keys()) == {waveform_name}
@@ -203,7 +208,8 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
     assert sequencer.bindings == [
         _Binding(alias="alias-RQ00", sampling_period_fs=400_000, step_samples=64)
     ]
-    assert sequencer.iterations == 8
+    assert sequencer.extended_by_ns == pytest.approx(0.0)
+    assert sequencer.iterations == 16
 
 
 def test_builder_reuses_payload_waveform_across_targets() -> None:
@@ -246,7 +252,6 @@ def test_builder_reuses_payload_waveform_across_targets() -> None:
             "alias-RQ00": (400_000, 64),
             "alias-RQ01": (400_000, 64),
         },
-        iterations=4,
     )
 
     assert len(sequencer.registered_waveforms) == 1
@@ -286,7 +291,6 @@ def test_builder_rejects_event_with_unknown_waveform_name() -> None:
             sequencer_factory=_RecordingSequencer,
             default_sampling_period_ns=0.4,
             alias_bindings={"alias-RQ00": (400_000, 64)},
-            iterations=1,
         )
 
 
@@ -320,5 +324,76 @@ def test_builder_rejects_missing_alias_binding() -> None:
             sequencer_factory=_RecordingSequencer,
             default_sampling_period_ns=0.4,
             alias_bindings={},
-            iterations=1,
         )
+
+
+def test_builder_extends_timeline_length_to_match_interval() -> None:
+    """Given longer shot interval, builder extends sequencer length to match it."""
+    payload = _make_payload(
+        waveform_library={
+            "wf_known": Quel3Waveform(
+                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.4,
+            )
+        },
+        fixed_timelines={
+            "alias-RQ00": Quel3FixedTimeline(
+                events=(
+                    Quel3WaveformEvent(
+                        waveform_name="wf_known",
+                        start_offset_ns=0.0,
+                    ),
+                ),
+                capture_windows=(),
+                length_ns=10.0,
+            )
+        },
+        n_iterations=1,
+        shot_interval_ns=2048.0,
+    )
+
+    builder = Quel3SequencerBuilder()
+    sequencer = builder.build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=0.4,
+        alias_bindings={"alias-RQ00": (400_000, 64)},
+    )
+
+    assert sequencer.extended_by_ns == pytest.approx(2048.0)
+
+
+def test_builder_applies_minimum_shot_interval_floor() -> None:
+    """Given tiny shot interval, builder extends by aligned minimum floor."""
+    payload = _make_payload(
+        waveform_library={
+            "wf_known": Quel3Waveform(
+                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.4,
+            )
+        },
+        fixed_timelines={
+            "alias-RQ00": Quel3FixedTimeline(
+                events=(
+                    Quel3WaveformEvent(
+                        waveform_name="wf_known",
+                        start_offset_ns=0.0,
+                    ),
+                ),
+                capture_windows=(),
+                length_ns=10.0,
+            )
+        },
+        n_iterations=1,
+        shot_interval_ns=1.0,
+    )
+
+    builder = Quel3SequencerBuilder()
+    sequencer = builder.build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=0.4,
+        alias_bindings={"alias-RQ00": (400_000, 64)},
+    )
+
+    assert sequencer.extended_by_ns == pytest.approx(1024.0)
