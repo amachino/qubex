@@ -34,6 +34,7 @@ qubex-config/
       readout_frequency.yaml
       control_amplitude.yaml
       readout_amplitude.yaml
+      measurement_defaults.yaml
       capture_delay.yaml
       ...
   calibration/
@@ -198,6 +199,31 @@ data:
 - `meta.default` を設定すると、`data` 中の `None` はその既定値にフォールバックします。
 
 旧来の `params.yaml` と `props.yaml` も互換入力としてサポートされています。旧形式の map と分割 YAML が両方ある場合、Qubex はまず分割 YAML を読み込み、足りないキーだけ旧形式ファイルから補います。
+
+### `measurement_defaults.yaml`
+
+system ごとに既定の measurement 実行条件や readout timing を変えたい場合は、`measurement_defaults.yaml` を使います。
+
+```yaml
+schema_version: 1
+
+execution:
+  n_shots: 2048
+  shot_interval_ns: 200000.0
+
+readout:
+  duration_ns: 512.0
+  ramp_time_ns: 24.0
+  pre_margin_ns: 16.0
+  post_margin_ns: 96.0
+```
+
+- ファイルは `params/<system_id>/` の直下に置いてください。
+- このファイルは任意です。無い場合は、Qubex の組み込み既定値を使います。
+- `execution.n_shots` と `execution.shot_interval_ns` は、measurement API で対応引数を省略したときの既定値になります。
+- `readout.*` は、明示 override が無い場合の readout pulse 生成と `ExperimentContext` の readout timing の既定値になります。
+- API に明示的に渡した引数は、常に `measurement_defaults.yaml` より優先されます。
+- 時間値はすべて `ns` です。
 
 ## コードから設定を読み込む
 

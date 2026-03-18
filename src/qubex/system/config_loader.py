@@ -20,6 +20,7 @@ from qubex.backend.backend_controller import (
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
+    MEASUREMENT_DEFAULTS_FILE,
     PARAMS_FILE,
     PROPS_FILE,
     SYSTEM_FILE,
@@ -29,6 +30,7 @@ from qubex.system.config_paths import (
     resolve_default_config_dir,
     resolve_default_params_dir,
 )
+from qubex.system.measurement_defaults import MeasurementDefaults
 from qubex.system.quel1.quel1_system_loader import Quel1SystemLoader
 from qubex.system.quel3.quel3_system_loader import Quel3SystemLoader
 from qubex.system.wiring import split_box_port_specifier
@@ -286,6 +288,7 @@ class ConfigLoader:
         self._wiring_dict: dict = {}
         self._props_dict: dict = {}
         self._params_dict: dict = {}
+        self._measurement_defaults: MeasurementDefaults = MeasurementDefaults()
         self._quantum_system: QuantumSystem | None = None
         self._wiring_rows: list[dict[str, Any]] | None = None
         self._control_system: ControlSystem | None = None
@@ -355,6 +358,7 @@ class ConfigLoader:
             self._params_dict = self._load_legacy_params_file(
                 self._params_file
             )  # legacy
+            self._measurement_defaults = self._load_measurement_defaults()
             self._system_loader = self._create_system_loader(self._backend_kind)
 
             self._quantum_system = self._load_quantum_system()
@@ -386,6 +390,12 @@ class ConfigLoader:
         """Return backend family used for this loaded configuration."""
         self._ensure_loaded()
         return self._backend_kind
+
+    @property
+    def measurement_defaults(self) -> MeasurementDefaults:
+        """Return parsed partial measurement defaults for the loaded system."""
+        self._ensure_loaded()
+        return self._measurement_defaults
 
     @property
     def wiring_file(self) -> str:
@@ -720,6 +730,27 @@ class ConfigLoader:
         raise TypeError(
             f"Per-file params must be structured with 'meta'/'data' mappings: {path}"
         )
+
+    def _load_measurement_defaults(self) -> MeasurementDefaults:
+        """Load optional measurement defaults from the parameters directory."""
+        if self._params_dir is None:
+            raise RuntimeError("Parameter path is not available before `load()`.")
+
+        path = Path(self._params_dir) / MEASUREMENT_DEFAULTS_FILE
+        try:
+            with open(path) as file:
+                payload = yaml.safe_load(file)
+        except FileNotFoundError:
+            return MeasurementDefaults()
+        except yaml.YAMLError:
+            logger.exception(f"Error loading parameter file: {path}")
+            raise
+
+        if payload is None:
+            return MeasurementDefaults()
+        if not isinstance(payload, dict):
+            raise TypeError(f"`{path.name}` must be a mapping at top level.")
+        return MeasurementDefaults.model_validate(payload)
 
     def _unit_scale_to_internal(self, unit: str) -> float:
         """
@@ -1168,6 +1199,7 @@ class ConfigLoader:
             control_system=self._control_system,
             wiring_info=self._wiring_info,
             control_params=self._control_params,
+            measurement_defaults=self._measurement_defaults,
             targets_to_exclude=targets_to_exclude,
             configuration_mode=configuration_mode,
         )

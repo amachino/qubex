@@ -27,11 +27,7 @@ from qubex.measurement import (
     Measurement,
     StateClassifier,
 )
-from qubex.measurement.measurement_defaults import (
-    DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_POST_MARGIN,
-    DEFAULT_READOUT_PRE_MARGIN,
-)
+from qubex.measurement.measurement_defaults import resolve_measurement_defaults
 from qubex.system import (
     Box,
     Chip,
@@ -161,12 +157,6 @@ class ExperimentContext:
             drag_hpi_duration = DRAG_HPI_DURATION
         if drag_pi_duration is None:
             drag_pi_duration = DRAG_PI_DURATION
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
-        if readout_pre_margin is None:
-            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if readout_post_margin is None:
-            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
         if property_dir is None:
             property_dir = PROPERTY_DIR
         if classifier_dir is None:
@@ -190,6 +180,15 @@ class ExperimentContext:
             backend_controller=backend_controller,
             mock_mode=mock_mode,
         )
+        measurement_defaults = resolve_measurement_defaults(
+            self.experiment_system.measurement_defaults
+        )
+        if readout_duration is None:
+            readout_duration = measurement_defaults.readout.duration_ns
+        if readout_pre_margin is None:
+            readout_pre_margin = measurement_defaults.readout.pre_margin_ns
+        if readout_post_margin is None:
+            readout_post_margin = measurement_defaults.readout.post_margin_ns
         qubits = self._create_qubit_labels(
             muxes=muxes,
             qubits=qubits,

@@ -45,6 +45,38 @@ def test_readout_pulse_uses_defaults_from_control_params() -> None:
     assert pulse.waveforms[1].tau == DEFAULT_READOUT_RAMP_TIME
 
 
+def test_readout_pulse_uses_configured_measurement_defaults() -> None:
+    """Given measurement defaults overrides, when readout pulse is built, then configured timings are applied."""
+    control_params = cast(
+        ControlParameters,
+        SimpleNamespace(
+            get_readout_amplitude=lambda qubit: 0.25 if qubit == "Q00" else 0.0
+        ),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+        measurement_defaults={
+            "readout": {
+                "duration_ns": 512.0,
+                "ramp_time_ns": 24.0,
+                "pre_margin_ns": 16.0,
+                "post_margin_ns": 96.0,
+            }
+        },
+    )
+
+    pulse = factory.readout_pulse(target="RQ00")
+
+    assert len(pulse.waveforms) == 2
+    assert isinstance(pulse.waveforms[0], Blank)
+    assert isinstance(pulse.waveforms[1], FlatTop)
+    assert pulse.waveforms[0].duration == 16.0
+    assert pulse.waveforms[1].duration == 512.0 + 96.0
+    assert pulse.waveforms[1].amplitude == 0.25
+    assert pulse.waveforms[1].tau == 24.0
+
+
 def test_readout_pulse_accepts_renamed_ramp_parameters() -> None:
     """Given renamed ramp args, when readout pulse is built, then they are applied."""
     control_params = cast(
@@ -136,6 +168,31 @@ def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
     assert pulse.duration == DEFAULT_READOUT_DURATION
     assert pulse.amplitude == pytest.approx(0.3)
     assert pulse.tau == DEFAULT_READOUT_RAMP_TIME
+
+
+def test_pump_pulse_uses_configured_measurement_defaults() -> None:
+    """Given measurement defaults overrides, when pump pulse is built, then configured timings are applied."""
+    control_params = cast(
+        ControlParameters,
+        SimpleNamespace(get_pump_amplitude=lambda index: 0.1 * (index + 1)),
+    )
+    factory = MeasurementPulseFactory(
+        control_params=control_params,
+        mux_dict={},
+        measurement_defaults={
+            "readout": {
+                "duration_ns": 512.0,
+                "ramp_time_ns": 24.0,
+            }
+        },
+    )
+
+    pulse = factory.pump_pulse(mux_index=2)
+
+    assert isinstance(pulse, FlatTop)
+    assert pulse.duration == 512.0
+    assert pulse.amplitude == pytest.approx(0.3)
+    assert pulse.tau == 24.0
 
 
 def test_pump_pulse_accepts_renamed_ramp_parameters() -> None:

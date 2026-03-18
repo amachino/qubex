@@ -12,6 +12,7 @@ import yaml
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.system.config_loader import ConfigLoader
 from qubex.system.control_system import CapPort, GenPort, PortType
+from qubex.system.measurement_defaults import MeasurementDefaults
 from qubex.system.quel1.quel1_control_parameter_defaults import (
     DEFAULT_CAPTURE_DELAY,
     DEFAULT_PUMP_FREQUENCY_GHZ,
@@ -204,6 +205,59 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     assert ro_port.number == 1
     assert ri_port.number == 0
     assert mux_ro.index == mux_ri.index == 0
+
+
+def test_load_uses_empty_measurement_defaults_when_file_is_missing(
+    tmp_path: Path,
+) -> None:
+    """Given no measurement defaults file, when loading, then ExperimentSystem keeps an empty mapping."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.get_experiment_system().measurement_defaults == MeasurementDefaults()
+
+
+def test_load_applies_measurement_defaults_file_to_experiment_system(
+    tmp_path: Path,
+) -> None:
+    """Given measurement defaults yaml, when loading, then ExperimentSystem stores the parsed defaults."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "measurement_defaults.yaml",
+        {
+            "schema_version": 1,
+            "execution": {
+                "n_shots": 2048,
+                "shot_interval_ns": 200000.0,
+            },
+            "readout": {
+                "duration_ns": 512.0,
+                "ramp_time_ns": 24.0,
+                "pre_margin_ns": 16.0,
+                "post_margin_ns": 96.0,
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    measurement_defaults = loader.get_experiment_system().measurement_defaults
+
+    assert measurement_defaults.execution.n_shots == 2048
+    assert measurement_defaults.execution.shot_interval_ns == 200000.0
+    assert measurement_defaults.readout.duration_ns == 512.0
+    assert measurement_defaults.readout.ramp_time_ns == 24.0
+    assert measurement_defaults.readout.pre_margin_ns == 16.0
+    assert measurement_defaults.readout.post_margin_ns == 96.0
 
 
 def test_load_resolves_system_id_and_system_keyed_wiring(tmp_path: Path) -> None:

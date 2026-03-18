@@ -22,6 +22,7 @@ from .control_system import (
     GenPort,
     PortType,
 )
+from .measurement_defaults import MeasurementDefaults
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 from .quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
 from .quel1.quel1_port_configurator import (
@@ -69,6 +70,7 @@ class ExperimentSystem:
         control_system: ControlSystem,
         wiring_info: WiringInfo,
         control_params: ControlParameters,
+        measurement_defaults: MeasurementDefaults | None = None,
         targets_to_exclude: list[str] | None = None,
         configuration_mode: ConfigurationMode = "ge-cr-cr",
     ):
@@ -76,6 +78,9 @@ class ExperimentSystem:
         self._control_system: Final = control_system
         self._wiring_info: Final = wiring_info
         self._control_params: Final = control_params
+        self._measurement_defaults: Final = (
+            measurement_defaults or MeasurementDefaults()
+        )
         self._targets_to_exclude: Final = targets_to_exclude or []
         self._configuration_mode: ConfigurationMode = configuration_mode
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
@@ -90,6 +95,7 @@ class ExperimentSystem:
                 self.control_system.hash,
                 self.wiring_info.hash,
                 self.control_params.hash,
+                self.measurement_defaults.model_dump_json(),
             )
         )
 
@@ -112,6 +118,11 @@ class ExperimentSystem:
     def control_params(self) -> ControlParameters:
         """Return the control parameters."""
         return self._control_params
+
+    @property
+    def measurement_defaults(self) -> MeasurementDefaults:
+        """Return parsed partial measurement defaults for the active system."""
+        return self._measurement_defaults
 
     @property
     def chip(self) -> Chip:

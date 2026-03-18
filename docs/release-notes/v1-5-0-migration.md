@@ -142,11 +142,16 @@ qubex-config/
       readout_frequency.yaml
       control_amplitude.yaml
       readout_amplitude.yaml
+      measurement_defaults.yaml
 ```
 
 Legacy `params.yaml` and `props.yaml` are still supported as fallback inputs in
 `v1.5.0`. You do not need to migrate every parameter file at once, but new
 work should use the structured per-file format.
+
+Use `measurement_defaults.yaml` under `params/<system_id>/` when you want one
+system to carry different default values for `n_shots`, `shot_interval`, or
+readout timing.
 
 ## API and import changes
 

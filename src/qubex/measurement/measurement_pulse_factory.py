@@ -9,14 +9,13 @@ from typing import Any
 from qxpulse import Blank, FlatTop, PulseArray, RampType
 
 from qubex.system import ControlParameters, Mux, TargetRegistry
+from qubex.system.measurement_defaults import MeasurementDefaults
 
 from .measurement_defaults import (
     DEFAULT_READOUT_DRAG_COEFF,
-    DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_POST_MARGIN,
-    DEFAULT_READOUT_PRE_MARGIN,
-    DEFAULT_READOUT_RAMP_TIME,
     DEFAULT_READOUT_RAMP_TYPE,
+    ResolvedMeasurementDefaults,
+    resolve_measurement_defaults,
 )
 
 
@@ -29,6 +28,7 @@ class MeasurementPulseFactory:
         control_params: ControlParameters,
         mux_dict: Mapping[str, Mux],
         target_registry: TargetRegistry | None = None,
+        measurement_defaults: Mapping[str, Any] | MeasurementDefaults | None = None,
     ) -> None:
         """
         Initialize a measurement pulse factory.
@@ -43,6 +43,9 @@ class MeasurementPulseFactory:
         self._control_params = control_params
         self._mux_dict = mux_dict
         self._target_registry = target_registry or TargetRegistry()
+        self._measurement_defaults: ResolvedMeasurementDefaults = (
+            resolve_measurement_defaults(measurement_defaults)
+        )
 
     def _resolve_qubit_label(self, target: str) -> str:
         """Resolve qubit label using target registry (legacy fallback enabled)."""
@@ -144,15 +147,15 @@ class MeasurementPulseFactory:
 
         qubit = self._resolve_qubit_label(target)
         if duration is None:
-            duration = DEFAULT_READOUT_DURATION
+            duration = self._measurement_defaults.readout.duration_ns
         if amplitude is None:
             amplitude = self._control_params.get_readout_amplitude(qubit)
         if pre_margin is None:
-            pre_margin = DEFAULT_READOUT_PRE_MARGIN
+            pre_margin = self._measurement_defaults.readout.pre_margin_ns
         if post_margin is None:
-            post_margin = DEFAULT_READOUT_POST_MARGIN
+            post_margin = self._measurement_defaults.readout.post_margin_ns
         if ramp_time is None:
-            ramp_time = DEFAULT_READOUT_RAMP_TIME
+            ramp_time = self._measurement_defaults.readout.ramp_time_ns
         if ramp_type is None:
             ramp_type = DEFAULT_READOUT_RAMP_TYPE
         if drag_coeff is None:
@@ -223,11 +226,11 @@ class MeasurementPulseFactory:
         )
 
         if duration is None:
-            duration = DEFAULT_READOUT_DURATION
+            duration = self._measurement_defaults.readout.duration_ns
         if amplitude is None:
             amplitude = self._control_params.get_pump_amplitude(mux_index)
         if ramp_time is None:
-            ramp_time = DEFAULT_READOUT_RAMP_TIME
+            ramp_time = self._measurement_defaults.readout.ramp_time_ns
         if ramp_type is None:
             ramp_type = DEFAULT_READOUT_RAMP_TYPE
         return FlatTop(

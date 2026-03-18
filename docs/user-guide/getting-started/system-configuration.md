@@ -40,6 +40,7 @@ qubex-config/
       readout_frequency.yaml
       control_amplitude.yaml
       readout_amplitude.yaml
+      measurement_defaults.yaml
       capture_delay.yaml
       ...
   calibration/
@@ -221,6 +222,34 @@ data:
 Legacy `params.yaml` and `props.yaml` are still supported as compatibility
 inputs. When both legacy maps and per-file YAMLs exist, Qubex loads the
 per-file YAML first and uses the legacy files only as fallback for missing keys.
+
+### `measurement_defaults.yaml`
+
+Use `measurement_defaults.yaml` when one system should carry different default
+measurement execution or readout timing values.
+
+```yaml
+schema_version: 1
+
+execution:
+  n_shots: 2048
+  shot_interval_ns: 200000.0
+
+readout:
+  duration_ns: 512.0
+  ramp_time_ns: 24.0
+  pre_margin_ns: 16.0
+  post_margin_ns: 96.0
+```
+
+- Put the file directly under `params/<system_id>/`.
+- The file is optional. If it is missing, Qubex keeps the built-in defaults.
+- `execution.n_shots` and `execution.shot_interval_ns` become the defaults for
+  measurement APIs when those arguments are omitted.
+- `readout.*` becomes the default timing source for readout pulse generation
+  and `ExperimentContext` readout timing when explicit overrides are omitted.
+- Explicit API arguments still take precedence over `measurement_defaults.yaml`.
+- All time values are in `ns`.
 
 ## Load configuration from code
 

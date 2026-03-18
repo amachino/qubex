@@ -140,11 +140,15 @@ qubex-config/
       readout_frequency.yaml
       control_amplitude.yaml
       readout_amplitude.yaml
+      measurement_defaults.yaml
 ```
 
 `params.yaml` と `props.yaml` は `v1.5.0` でも fallback input として読まれます。
 一度に全部移行する必要はありませんが、新規更新分は per-file 形式へ寄せるのが
 推奨です。
+
+system ごとに `n_shots`、`shot_interval`、readout timing の既定値を変えたい場合は、
+`params/<system_id>/measurement_defaults.yaml` を使ってください。
 
 ## API と import の変更
 

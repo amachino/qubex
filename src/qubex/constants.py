@@ -11,6 +11,7 @@ BOX_FILE: Final = "box.yaml"
 WIRING_FILE: Final = "wiring.yaml"
 PROPS_FILE: Final = "props.yaml"  # legacy
 PARAMS_FILE: Final = "params.yaml"  # legacy
+MEASUREMENT_DEFAULTS_FILE: Final = "measurement_defaults.yaml"
 
 MUX_SIZE: Final = 4
 

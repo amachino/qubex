@@ -149,6 +149,9 @@ class MeasurementExecutionService:
             control_params=self.control_params,
             mux_dict=self.mux_dict,
             target_registry=target_registry,
+            measurement_defaults=getattr(
+                self.experiment_system, "measurement_defaults", None
+            ),
         )
 
     @property

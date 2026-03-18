@@ -55,6 +55,34 @@ def test_factory_applies_context_defaults() -> None:
     assert config.state_classification is False
 
 
+def test_factory_applies_measurement_defaults_overrides() -> None:
+    """Given measurement defaults overrides, when factory builds config, then execution defaults use them."""
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {
+                "execution": {
+                    "n_shots": 2048,
+                    "shot_interval_ns": 200000.0,
+                }
+            },
+        },
+    )()
+    factory = MeasurementConfigFactory(
+        experiment_system=cast(ExperimentSystem, experiment_system)
+    )
+
+    config = factory.create()
+
+    assert config.n_shots == 2048
+    assert config.shot_interval == 200000.0
+    assert config.shot_averaging is True
+    assert config.time_integration is True
+    assert config.state_classification is False
+
+
 def test_legacy_default_aliases_match_renamed_constants() -> None:
     """Given legacy aliases, when imported, then they match renamed defaults."""
     assert DEFAULT_SHOTS == DEFAULT_N_SHOTS
