@@ -170,7 +170,10 @@ class ConfigLoader:
     targets_to_exclude : list[str] | None, optional
         Qubit/resonator labels to exclude when assembling the ExperimentSystem.
     configuration_mode : ConfigurationMode | None, optional
-        Control configuration style. Defaults to "ge-cr-cr" if not provided.
+        Priority-ordered control layout. `"ge-ef-cr"` assigns channels to GE,
+        then EF, then CR. `"ge-cr-cr"` assigns GE, then two CR channels.
+        Ports with fewer channels keep the leftmost roles. Defaults to
+        `"ge-cr-cr"` if not provided.
     autoload : bool, optional
         If `True`, configuration is loaded during initialization.
 
@@ -239,7 +242,8 @@ class ConfigLoader:
         targets_to_exclude : list[str] | None, optional
             Target labels to exclude in experiment-system assembly.
         configuration_mode : ConfigurationMode | None, optional
-            Configuration mode used for experiment-system assembly.
+            Priority-ordered control layout used for experiment-system
+            assembly.
         autoload : bool, optional
             If `True`, load configuration during initialization.
         """
@@ -319,7 +323,8 @@ class ConfigLoader:
         targets_to_exclude : list[str] | None, optional
             Target labels to exclude in experiment-system assembly.
         configuration_mode : ConfigurationMode | None, optional
-            Configuration mode used for experiment-system assembly.
+            Priority-ordered control layout used for experiment-system
+            assembly.
         backend_kind : BackendKind | None, optional
             Backend family override. If omitted, backend is resolved from
             `system.yaml`.

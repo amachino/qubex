@@ -153,6 +153,20 @@ Use `measurement_defaults.yaml` under `params/<system_id>/` when you want one
 system to carry different default values for `n_shots`, `shot_interval`, or
 readout timing.
 
+### Recheck `configuration_mode` against control-port channel counts
+
+`configuration_mode` is now interpreted as a priority-ordered channel layout.
+
+- `ge-ef-cr` means `ge`, then `ef`, then `cr`
+- `ge-cr-cr` means `ge`, then `cr`, then `cr`
+- control ports with fewer channels keep only the leftmost roles
+
+If your hardware profile changes control-port channel counts, the realized
+targets change with it. For example, QuEL-1 SE R8 `se8_mxfe1_awg2222` gives
+`2-2-2-2` on the four profile-controlled ports, so
+`configuration_mode="ge-ef-cr"` now builds `ge-ef` targets there. If you need
+CR targets on those ports, use `configuration_mode="ge-cr-cr"` instead.
+
 ## API and import changes
 
 ### Move system-side imports out of `qubex.backend`

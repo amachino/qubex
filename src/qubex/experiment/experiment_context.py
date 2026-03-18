@@ -116,7 +116,10 @@ class ExperimentContext:
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : ConfigurationMode, optional
-        Configuration mode of the experiment. Defaults to "ge-cr-cr".
+        Priority-ordered control layout. `"ge-ef-cr"` assigns channels to GE,
+        then EF, then CR. `"ge-cr-cr"` assigns GE, then two CR channels.
+        Ports with fewer channels keep the leftmost roles. Defaults to
+        `"ge-cr-cr"`.
 
     Examples
     --------

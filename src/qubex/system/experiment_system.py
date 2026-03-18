@@ -745,91 +745,7 @@ class ExperimentSystem:
         gen_targets: dict[str, Target],
     ) -> None:
         """Build mode-aware control targets for one QuEL-1-family port."""
-        if port.n_channels == 1:
-            ge_target = Target.new_ge_target(
-                qubit=qubit,
-                channel=port.channels[0],
-            )
-            gen_targets[ge_target.label] = ge_target
-            return
-
-        if port.n_channels == 2:
-            ge_target = Target.new_ge_target(
-                qubit=qubit,
-                channel=port.channels[0],
-            )
-            gen_targets[ge_target.label] = ge_target
-            traits = box.traits
-            config = create_control_configuration(
-                mode=mode,
-                qubit=qubit,
-                n_channels=port.n_channels,
-                get_spectator_qubits=self.get_spectator_qubits,
-                excluded_targets=self.targets_to_exclude,
-                ssb=traits.ctrl_ssb,
-                min_frequency=traits.ctrl_min_frequency_hz,
-            )
-            cr_target = self._new_default_cr_target(
-                control_qubit=qubit,
-                channel=port.channels[1],
-                lo=config["lo"],
-                cnco=config["cnco"],
-                fnco=config["channels"][1]["fnco"],
-                ssb=traits.ctrl_ssb,
-            )
-            gen_targets[cr_target.label] = cr_target
-            for spectator in self.get_spectator_qubits(qubit.label):
-                cr_target = Target.new_cr_target(
-                    control_qubit=qubit,
-                    target_qubit=spectator,
-                    channel=port.channels[1],
-                )
-                gen_targets[cr_target.label] = cr_target
-            return
-
-        if port.n_channels != 3:
-            return
-
-        if mode == "ge-ef-cr":
-            ge_target = Target.new_ge_target(
-                qubit=qubit,
-                channel=port.channels[0],
-            )
-            ef_target = Target.new_ef_target(
-                qubit=qubit,
-                channel=port.channels[1],
-            )
-            traits = box.traits
-            config = create_control_configuration(
-                mode=mode,
-                qubit=qubit,
-                n_channels=port.n_channels,
-                get_spectator_qubits=self.get_spectator_qubits,
-                excluded_targets=self.targets_to_exclude,
-                ssb=traits.ctrl_ssb,
-                min_frequency=traits.ctrl_min_frequency_hz,
-            )
-            cr_target = self._new_default_cr_target(
-                control_qubit=qubit,
-                channel=port.channels[2],
-                lo=config["lo"],
-                cnco=config["cnco"],
-                fnco=config["channels"][2]["fnco"],
-                ssb=traits.ctrl_ssb,
-            )
-            gen_targets[ge_target.label] = ge_target
-            gen_targets[ef_target.label] = ef_target
-            gen_targets[cr_target.label] = cr_target
-            for spectator in self.get_spectator_qubits(qubit.label):
-                cr_target = Target.new_cr_target(
-                    control_qubit=qubit,
-                    target_qubit=spectator,
-                    channel=port.channels[2],
-                )
-                gen_targets[cr_target.label] = cr_target
-            return
-
-        if mode != "ge-cr-cr":
+        if port.n_channels not in {1, 2, 3}:
             return
 
         traits = box.traits
@@ -844,23 +760,56 @@ class ExperimentSystem:
         )
         for channel_idx, channel_config in config["channels"].items():
             for target_label in channel_config["targets"]:
-                if match := re.match(r"^(Q\d+)$", target_label):
-                    ge_qubit = self.get_qubit(match.group(1))
-                    target = Target.new_ge_target(
-                        qubit=ge_qubit,
-                        channel=port.channels[channel_idx],
-                    )
-                elif match := re.match(r"^(Q\d+)-(Q\d+)$", target_label):
-                    control_qubit = self.get_qubit(match.group(1))
-                    target_qubit = self.get_qubit(match.group(2))
-                    target = Target.new_cr_target(
-                        control_qubit=control_qubit,
-                        target_qubit=target_qubit,
-                        channel=port.channels[channel_idx],
-                    )
-                else:
-                    raise ValueError(f"Invalid target label `{target_label}`.")
+                target = self._build_quel1_control_target(
+                    target_label=target_label,
+                    channel=port.channels[channel_idx],
+                    lo=config["lo"],
+                    cnco=config["cnco"],
+                    fnco=channel_config["fnco"],
+                    ssb=traits.ctrl_ssb,
+                )
                 gen_targets[target.label] = target
+
+    def _build_quel1_control_target(
+        self,
+        *,
+        target_label: str,
+        channel: GenChannel,
+        lo: int | None,
+        cnco: int,
+        fnco: int,
+        ssb: Literal["U", "L"] | None,
+    ) -> Target:
+        """Build one QuEL-1 control target from a resolved per-channel label."""
+        if match := re.match(r"^(Q\d+)$", target_label):
+            qubit = self.get_qubit(match.group(1))
+            return Target.new_ge_target(qubit=qubit, channel=channel)
+
+        if match := re.match(r"^(Q\d+)-ef$", target_label):
+            qubit = self.get_qubit(match.group(1))
+            return Target.new_ef_target(qubit=qubit, channel=channel)
+
+        if match := re.match(r"^(Q\d+)-CR$", target_label):
+            control_qubit = self.get_qubit(match.group(1))
+            return self._new_default_cr_target(
+                control_qubit=control_qubit,
+                channel=channel,
+                lo=lo,
+                cnco=cnco,
+                fnco=fnco,
+                ssb=ssb,
+            )
+
+        if match := re.match(r"^(Q\d+)-(Q\d+)$", target_label):
+            control_qubit = self.get_qubit(match.group(1))
+            target_qubit = self.get_qubit(match.group(2))
+            return Target.new_cr_target(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                channel=channel,
+            )
+
+        raise ValueError(f"Invalid target label `{target_label}`.")
 
     def _build_quel3_control_targets(
         self,

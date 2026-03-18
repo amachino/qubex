@@ -92,6 +92,23 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
 
 例えば `quel1se-riken8` は `se8_mxfe1_awg1331`、`se8_mxfe1_awg2222`、`se8_mxfe1_awg3113` のような AWG プロファイルラベルを受け取れます。AWG プロファイルが指定されない場合、Qubex は `se8_mxfe1_awg2222` を使います。
 
+### 制御レイアウトの解決規則
+
+`configuration_mode` は固定の channel 数を保証する指定ではなく、優先順を表します。
+
+- `ge-ef-cr` は `ge`、`ef`、`cr` の順に channel を割り当てます。
+- `ge-cr-cr` は `ge`、`cr`、`cr` の順に channel を割り当てます。
+- control port の channel 数が足りない場合は、左から必要な役割だけを残します。
+
+`quel1se-riken8` では、AWG プロファイルが 4 本の profile-dependent control port を決めます。
+
+- `se8_mxfe1_awg1331` では、これらの port は `1-3-3-1` になります。
+  `configuration_mode="ge-ef-cr"` のとき、解決後のレイアウトは
+  `ge`、`ge-ef-cr`、`ge-ef-cr`、`ge` です。
+- `se8_mxfe1_awg2222` では、これらの port は `2-2-2-2` になります。
+  `configuration_mode="ge-ef-cr"` のときは各 port が `ge-ef` に、
+  `configuration_mode="ge-cr-cr"` のときは各 port が `ge-cr` に解決されます。
+
 ### `system.yaml`
 
 実行可能な構成ごとに 1 エントリを作成します。複数の system が同じ `chip_id` を参照しても構いません。
