@@ -62,21 +62,49 @@ def test_iq_plotter_legendrank_follows_input_order(monkeypatch) -> None:
     assert data_trace_ranks == {"Q00": 0, "Q05": 1}
 
 
-def test_iq_plotter_rebuilds_data_traces_when_labels_change(monkeypatch) -> None:
-    """Given changed labels, when updating twice, then the live data traces follow the latest labels."""
+def test_iq_plotter_does_not_reassign_widget_data_on_initial_update(
+    monkeypatch,
+) -> None:
+    """Given state traces, when first updating, then the widget trace collection is not reassigned."""
     monkeypatch.setattr(iq_plotter, "display", lambda *_args, **_kwargs: None)
 
-    plotter = IQPlotter()
+    class _FakeFigureWidget:
+        def __init__(self) -> None:
+            self._data = []
 
-    plotter.update({"Q00": np.array([1.0 + 0.0j])})
-    plotter.update({"Q17": np.array([0.0 + 1.0j])})
+        @property
+        def data(self):
+            return tuple(self._data)
+
+        @data.setter
+        def data(self, _value) -> None:
+            raise AssertionError("FigureWidget.data should not be reassigned")
+
+        def update_layout(self, **_kwargs) -> None:
+            return None
+
+        def add_trace(self, trace) -> None:
+            self._data.append(trace)
+
+        def add_scatter(self, **kwargs) -> None:
+            self._data.append(iq_plotter.go.Scatter(**kwargs))
+
+    monkeypatch.setattr(iq_plotter.go, "FigureWidget", _FakeFigureWidget)
+
+    plotter = IQPlotter(
+        state_centers={
+            "Q05": {0: 0.0 + 0.0j, 1: 1.0 + 0.0j},
+        }
+    )
+
+    plotter.update({"Q05": np.array([0.0 + 1.0j])})
 
     widget = plotter.__dict__["_widget"]
     data_traces = [
-        trace for trace in widget.data if getattr(trace, "meta", None) is not None
+        trace for trace in widget.data if getattr(trace, "meta", None) == "Q05"
     ]
 
-    assert [trace.meta for trace in data_traces] == ["Q17"]
+    assert len(data_traces) == 1
     assert np.array_equal(np.asarray(data_traces[0].x), np.array([0.0]))
     assert np.array_equal(np.asarray(data_traces[0].y), np.array([1.0]))
 
