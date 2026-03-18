@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import numpy as np
@@ -10,6 +10,9 @@ from numpy.testing import assert_allclose
 
 from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.adapters.backend_adapter import Quel1MeasurementBackendAdapter
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.typing import MeasurementMode
 
@@ -110,4 +113,37 @@ def test_build_measurement_result_converts_avg_mode_with_shot_scaling() -> None:
     assert_allclose(
         result.data["Q00"][0].data,
         np.array([2.0 + 1.0j, 3.0 + 1.5j], dtype=np.complex128) * norm_factor,
+    )
+
+
+def test_build_measurement_result_converts_single_point_avg_mode_to_scalar() -> None:
+    """Given one averaged point, conversion should squeeze the payload to a scalar."""
+    norm_factor = 2 ** (-32)
+    backend_result = Quel1BackendExecutionResult(
+        status={},
+        data={"RQ00": [np.array([8.0 + 4.0j], dtype=np.complex128)]},
+        config={},
+    )
+    adapter = Quel1MeasurementBackendAdapter(
+        backend_controller=cast(Any, object()),
+        experiment_system=cast(
+            Any,
+            _ExperimentSystemStub(sideband_by_target={"RQ00": "U"}),
+        ),
+        constraint_profile=replace(
+            MeasurementConstraintProfile.quel1(),
+            require_workaround_capture=False,
+        ),
+    )
+
+    result = adapter.build_measurement_result(
+        backend_result=backend_result,
+        measurement_config=_make_config(mode="avg", shots=4),
+        device_config={"kind": "quel1"},
+        sampling_period=2.0,
+    )
+
+    assert_allclose(
+        result.data["Q00"][0].data,
+        np.array(2.0 + 1.0j, dtype=np.complex128) * norm_factor,
     )

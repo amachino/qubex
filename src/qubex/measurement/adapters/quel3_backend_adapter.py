@@ -34,6 +34,8 @@ from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementO
 from qubex.system import ExperimentSystem
 from qubex.system.target_type import TargetType
 
+from ._capture_shape import normalize_shot_averaged_capture_array
+
 
 def _as_read_only_array(data: object) -> np.ndarray:
     """Return read-only NumPy array view for capture payloads."""
@@ -221,7 +223,11 @@ class Quel3MeasurementBackendAdapter:
                     [
                         CaptureData.from_primary_data(
                             target=output_target,
-                            data=_as_read_only_array(value),
+                            data=_as_read_only_array(
+                                normalize_shot_averaged_capture_array(value)
+                                if measurement_config.shot_averaging
+                                else value
+                            ),
                             config=measurement_config,
                             sampling_period=resolved_sampling_period,
                         )
@@ -244,7 +250,11 @@ class Quel3MeasurementBackendAdapter:
                 converted_data.setdefault(output_target, []).append(
                     CaptureData.from_primary_data(
                         target=output_target,
-                        data=_as_read_only_array(capture_value),
+                        data=_as_read_only_array(
+                            normalize_shot_averaged_capture_array(capture_value)
+                            if measurement_config.shot_averaging
+                            else capture_value
+                        ),
                         config=measurement_config,
                         sampling_period=resolved_sampling_period,
                     )

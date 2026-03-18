@@ -26,6 +26,8 @@ from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.system import ExperimentSystem, TargetRegistry
 
+from ._capture_shape import normalize_shot_averaged_capture_array
+
 if TYPE_CHECKING:
     import numpy.typing as npt
 
@@ -361,7 +363,7 @@ class Quel1MeasurementBackendAdapter:
                         CaptureData.from_primary_data(
                             target=qubit,
                             data=_as_read_only_array(
-                                np.asarray(iq, dtype=np.complex128).squeeze()
+                                normalize_shot_averaged_capture_array(iq)
                                 * norm_factor
                                 / measurement_config.n_shots
                             ),

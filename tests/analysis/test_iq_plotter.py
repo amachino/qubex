@@ -60,3 +60,46 @@ def test_iq_plotter_legendrank_follows_input_order(monkeypatch) -> None:
         if getattr(trace, "meta", None) in {"Q00", "Q05"}
     }
     assert data_trace_ranks == {"Q00": 0, "Q05": 1}
+
+
+def test_iq_plotter_rebuilds_data_traces_when_labels_change(monkeypatch) -> None:
+    """Given changed labels, when updating twice, then the live data traces follow the latest labels."""
+    monkeypatch.setattr(iq_plotter, "display", lambda *_args, **_kwargs: None)
+
+    plotter = IQPlotter()
+
+    plotter.update({"Q00": np.array([1.0 + 0.0j])})
+    plotter.update({"Q17": np.array([0.0 + 1.0j])})
+
+    widget = plotter.__dict__["_widget"]
+    data_traces = [
+        trace for trace in widget.data if getattr(trace, "meta", None) is not None
+    ]
+
+    assert [trace.meta for trace in data_traces] == ["Q17"]
+    assert np.array_equal(np.asarray(data_traces[0].x), np.array([0.0]))
+    assert np.array_equal(np.asarray(data_traces[0].y), np.array([1.0]))
+
+
+def test_iq_plotter_flattens_non_1d_inputs(monkeypatch) -> None:
+    """Given non-1D IQ input, when updating, then scatter coordinates are flattened."""
+    monkeypatch.setattr(iq_plotter, "display", lambda *_args, **_kwargs: None)
+
+    plotter = IQPlotter()
+
+    plotter.update(
+        {
+            "Q00": np.array(
+                [[1.0 + 2.0j], [3.0 + 4.0j]],
+                dtype=np.complex128,
+            )
+        }
+    )
+
+    widget = plotter.__dict__["_widget"]
+    trace = next(
+        trace for trace in widget.data if getattr(trace, "meta", None) == "Q00"
+    )
+
+    assert np.array_equal(np.asarray(trace.x), np.array([1.0, 3.0]))
+    assert np.array_equal(np.asarray(trace.y), np.array([2.0, 4.0]))
