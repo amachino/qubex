@@ -7,7 +7,7 @@ It composes measurement-side primitives into experiment-oriented workflows.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, TypeVar
@@ -1489,6 +1489,9 @@ class Experiment:
         -------
         SweepMeasurementResult
             Sweep result aligned with input `sweep_values` order.
+            `result.data[target][capture]` has shape
+            `(len(sweep_values), *capture_shape)`, where `capture_shape` follows
+            the canonical `CaptureData` payload contract.
 
         Examples
         --------
@@ -1525,7 +1528,7 @@ class Experiment:
         self,
         schedule: Callable[[SweepPoint], PulseSchedule | MeasurementSchedule],
         *,
-        sweep_points: dict[str, Sequence[SweepValue]],
+        sweep_points: Mapping[str, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
         n_shots: int | None = None,
         shot_interval: TimeLike | None = None,
@@ -1552,10 +1555,11 @@ class Experiment:
         ----------
         schedule : Callable[[SweepPoint], PulseSchedule | MeasurementSchedule]
             Callback that builds one schedule per resolved sweep point.
-        sweep_points : dict[str, Sequence[SweepValue]]
+        sweep_points : Mapping[str, Sequence[SweepValue]]
             Axis-value table (`axis -> ordered values`).
         sweep_axes : SweepAxes | None, optional
-            Axis order for Cartesian expansion.
+            Axis order for Cartesian expansion. Non-`dict` mapping inputs must
+            provide this explicitly.
         n_shots : int | None, optional
             Number of shots.
         shot_interval : TimeLike | None, optional
@@ -1596,6 +1600,9 @@ class Experiment:
         -------
         NDSweepMeasurementResult
             N-dimensional sweep result in C-order flattening.
+            `result.data[target][capture]` has shape
+            `(*result.shape, *capture_shape)`, where `capture_shape` follows
+            the canonical `CaptureData` payload contract.
 
         Examples
         --------

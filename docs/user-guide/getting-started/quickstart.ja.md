@@ -203,18 +203,18 @@ print("n_captures:", len(result.data[Q0]))
 script では `asyncio.run(...)`、notebook では `await` を使います。
 
 ```python
-import asyncio
+schedule = qx.PulseSchedule()
+with schedule as s:
+    s.add(Q0, control_pulse)
 
+result = await exp.run_measurement(
+    schedule=schedule,
+    n_shots=1024,
+    shot_averaging=False,
+    time_integration=True,
+)
 
-async def main() -> None:
-    result = await exp.run_measurement(
-        schedule=schedule,
-        n_shots=1024,
-    )
-    print(type(result).__name__)
-
-
-asyncio.run(main())
+result.plot()
 ```
 
 現時点で安定性を優先するなら、ここまでで紹介した従来の同期メソッド

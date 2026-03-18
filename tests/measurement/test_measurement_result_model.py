@@ -72,12 +72,17 @@ def test_legacy_multiple_measure_result_does_not_warn_on_init() -> None:
     )
 
 
-def _make_config(*, mode: MeasurementMode = "avg", shots: int = 2) -> MeasurementConfig:
+def _make_config(
+    *,
+    mode: MeasurementMode = "avg",
+    shots: int = 2,
+    time_integration: bool = False,
+) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
         shot_interval=100.0,
         shot_averaging=(mode == "avg"),
-        time_integration=False,
+        time_integration=time_integration,
         state_classification=False,
     )
 
@@ -481,8 +486,9 @@ def test_capture_data_accepts_structured_waveform_payload() -> None:
         sampling_period=0.4,
     )
 
-    assert capture.payload.waveform_series is waveform
-    assert capture.data is waveform
+    assert capture.payload.waveform_series is not None
+    assert np.array_equal(capture.payload.waveform_series, waveform)
+    assert np.array_equal(capture.data, waveform)
 
 
 def test_capture_data_from_primary_data_populates_mode_field() -> None:
@@ -503,8 +509,9 @@ def test_capture_data_from_primary_data_populates_mode_field() -> None:
         sampling_period=0.4,
     )
 
-    assert capture.payload.averaged_waveform is raw
-    assert capture.data is raw
+    assert capture.payload.averaged_waveform is not None
+    assert np.array_equal(capture.payload.averaged_waveform, raw)
+    assert np.array_equal(capture.data, raw)
 
 
 def test_capture_data_payload_properties_allow_none() -> None:
@@ -527,7 +534,8 @@ def test_capture_data_payload_properties_allow_none() -> None:
     assert capture.waveform_series is None
     assert capture.iq_series is None
     assert capture.state_series is None
-    assert capture.averaged_waveform is raw
+    assert capture.averaged_waveform is not None
+    assert np.array_equal(capture.averaged_waveform, raw)
     assert capture.averaged_iq is None
 
 
@@ -551,8 +559,9 @@ def test_capture_data_data_returns_waveform_payload() -> None:
         sampling_period=0.4,
     )
 
-    assert capture.data is waveform
-    assert capture.waveform_series is waveform
+    assert np.array_equal(capture.data, waveform)
+    assert capture.waveform_series is not None
+    assert np.array_equal(capture.waveform_series, waveform)
 
 
 def test_capture_data_waveform_series_is_none_for_iq_primary_payload() -> None:
@@ -573,7 +582,76 @@ def test_capture_data_waveform_series_is_none_for_iq_primary_payload() -> None:
     )
 
     assert capture.waveform_series is None
-    assert capture.data is iq_series
+    assert np.array_equal(capture.data, iq_series)
+
+
+def test_capture_data_normalizes_iq_series_singleton_axis() -> None:
+    """Given singleton IQ axis, capture data should normalize to one value per shot."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=False,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([[1.0 + 0.0j], [2.0 + 0.0j]], dtype=np.complex128),
+        config=config,
+        sampling_period=0.4,
+    )
+
+    assert capture.data.shape == (2,)
+    assert np.array_equal(
+        capture.data,
+        np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_capture_data_normalizes_one_shot_waveform_to_2d_series() -> None:
+    """Given one-shot waveform vector, capture data should keep explicit shot and time axes."""
+    config = MeasurementConfig(
+        n_shots=1,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=False,
+        state_classification=False,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+        config=config,
+        sampling_period=0.4,
+    )
+
+    assert capture.data.shape == (1, 2)
+    assert np.array_equal(
+        capture.data,
+        np.array([[1.0 + 0.0j, 2.0 + 0.0j]], dtype=np.complex128),
+    )
+
+
+def test_capture_data_normalizes_averaged_iq_to_scalar() -> None:
+    """Given singleton averaged IQ axis, capture data should normalize to a scalar."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=True,
+        time_integration=True,
+        state_classification=False,
+    )
+    capture = CaptureData.from_primary_data(
+        target="Q00",
+        data=np.array([[1.0 + 0.0j]], dtype=np.complex128),
+        config=config,
+        sampling_period=0.4,
+    )
+
+    assert np.asarray(capture.data).shape == ()
+    assert np.array_equal(
+        np.asarray(capture.data),
+        np.array(1.0 + 0.0j, dtype=np.complex128),
+    )
 
 
 def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> None:
@@ -595,9 +673,10 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
         sampling_period=0.4,
     )
 
-    assert capture.payload.iq_series is raw
+    assert capture.payload.iq_series is not None
+    assert np.array_equal(capture.payload.iq_series, raw)
     assert capture.payload.state_series is None
-    assert capture.data is raw
+    assert np.array_equal(capture.data, raw)
 
 
 def test_capture_data_state_series_returns_payload_when_available() -> None:
@@ -665,6 +744,31 @@ def test_capture_data_rejects_payload_not_requested_by_return_items() -> None:
                     dtype=np.complex128,
                 ),
             ),
+            sampling_period=0.4,
+        )
+
+
+def test_capture_data_rejects_multiple_iq_values_per_shot() -> None:
+    """Given non-singleton integrated IQ payload, capture validation should fail."""
+    config = MeasurementConfig(
+        n_shots=2,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=False,
+    )
+
+    with pytest.raises(ValidationError, match="iq_series must contain exactly one"):
+        _ = CaptureData.from_primary_data(
+            target="Q00",
+            data=np.array(
+                [
+                    [1.0 + 0.0j, 2.0 + 0.0j],
+                    [3.0 + 0.0j, 4.0 + 0.0j],
+                ],
+                dtype=np.complex128,
+            ),
+            config=config,
             sampling_period=0.4,
         )
 
@@ -1018,7 +1122,7 @@ def test_measurement_result_figure_uses_time_average_scatter_by_default(
 
 
 def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
-    """Given time-integrated canonical data, plot should call IQ scatter with kerneled values."""
+    """Given canonical IQ series data, plot should call IQ scatter with one value per shot."""
     config = MeasurementConfig(
         n_shots=2,
         shot_interval=100.0,
@@ -1031,12 +1135,7 @@ def test_plot_calls_iq_scatter_for_single_mode(monkeypatch) -> None:
             "Q00": [
                 _make_capture(
                     target="Q00",
-                    raw=np.array(
-                        [
-                            [1.0 + 2.0j, 3.0 + 4.0j],
-                            [5.0 + 6.0j, 7.0 + 8.0j],
-                        ]
-                    ),
+                    raw=np.array([4.0 + 6.0j, 12.0 + 14.0j]),
                     measurement_config=config,
                     sampling_period=2.0,
                 )
@@ -1193,7 +1292,7 @@ def test_plot_calls_iq_scatter_for_averaged_integrated_mode(monkeypatch) -> None
             "Q00": [
                 _make_capture(
                     target="Q00",
-                    raw=np.array([1.0 + 2.0j, 3.0 + 4.0j]),
+                    raw=np.array([1.0 + 2.0j]),
                     measurement_config=config,
                     sampling_period=2.0,
                 )
@@ -1228,7 +1327,7 @@ def test_plot_calls_iq_scatter_for_averaged_integrated_mode(monkeypatch) -> None
     assert called["save_image"] is False
     plotted = called["data"]
     assert isinstance(plotted, dict)
-    assert np.array_equal(plotted["Q00"], np.array([1.0 + 2.0j, 3.0 + 4.0j]))
+    assert np.array_equal(plotted["Q00"], np.array([1.0 + 2.0j]))
 
 
 def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:

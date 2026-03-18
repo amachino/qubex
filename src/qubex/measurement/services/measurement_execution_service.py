@@ -695,7 +695,7 @@ class MeasurementExecutionService:
         self,
         schedule: Callable[[SweepPoint], MeasurementSchedule],
         *,
-        sweep_points: dict[SweepKey, Sequence[SweepValue]],
+        sweep_points: Mapping[SweepKey, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
         config: MeasurementConfig | None = None,
     ) -> NDSweepMeasurementResult:
@@ -706,11 +706,12 @@ class MeasurementExecutionService:
         ----------
         schedule : Callable[[SweepPoint], MeasurementSchedule]
             Callback that builds one measurement schedule per resolved sweep point.
-        sweep_points : dict[SweepKey, Sequence[SweepValue]]
+        sweep_points : Mapping[SweepKey, Sequence[SweepValue]]
             Axis-value table (`axis key -> ordered values`).
         sweep_axes : SweepAxes | None, optional
             Axis order for Cartesian product. If omitted, insertion order of
-            `sweep_points` is used.
+            `sweep_points` is used for `dict` inputs. Other mapping inputs must
+            provide this explicitly.
         config : MeasurementConfig | None, optional
             Shared measurement configuration for all points.
 
@@ -722,12 +723,19 @@ class MeasurementExecutionService:
         Raises
         ------
         ValueError
-            If `sweep_axes` does not match `sweep_points` keys exactly.
+            If `sweep_axes` does not match `sweep_points` keys exactly, or if
+            `sweep_axes` is omitted for a non-`dict` mapping input.
         """
         resolved_config = self.create_measurement_config() if config is None else config
-        resolved_axes = (
-            tuple(sweep_points.keys()) if sweep_axes is None else tuple(sweep_axes)
-        )
+        if sweep_axes is None:
+            if not isinstance(sweep_points, dict):
+                raise ValueError(
+                    "sweep_axes must be provided when sweep_points is not a "
+                    "dict-derived insertion-ordered mapping."
+                )
+            resolved_axes = tuple(sweep_points.keys())
+        else:
+            resolved_axes = tuple(sweep_axes)
         if len(set(resolved_axes)) != len(resolved_axes):
             raise ValueError("sweep_axes must not contain duplicate keys.")
         if set(resolved_axes) != set(sweep_points.keys()):
@@ -738,7 +746,7 @@ class MeasurementExecutionService:
         normalized_axes_points = {axis: [*sweep_points[axis]] for axis in resolved_axes}
         shape = tuple(len(normalized_axes_points[axis]) for axis in resolved_axes)
         if self._can_use_batch_execution():
-            points: list[SweepPoint] = [
+            points: list[dict[SweepKey, SweepValue]] = [
                 {
                     axis: normalized_axes_points[axis][axis_index]
                     for axis, axis_index in zip(resolved_axes, ndindex, strict=True)
@@ -753,7 +761,7 @@ class MeasurementExecutionService:
         else:
             results: list[MeasurementResult] = []
             for ndindex in np.ndindex(shape):
-                point: SweepPoint = {
+                point: dict[SweepKey, SweepValue] = {
                     axis: normalized_axes_points[axis][axis_index]
                     for axis, axis_index in zip(resolved_axes, ndindex, strict=True)
                 }

@@ -136,12 +136,13 @@ def _make_config(
     *,
     mode: MeasurementMode = "avg",
     shots: int = 16,
+    time_integration: bool = False,
 ) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
         shot_interval=100.0,
         shot_averaging=(mode == "avg"),
-        time_integration=False,
+        time_integration=time_integration,
         state_classification=False,
     )
 
@@ -790,7 +791,7 @@ def test_quel3_adapter_build_measurement_result_rejects_measurement_result() -> 
 
 
 def test_quel3_adapter_build_measurement_result_converts_backend_result() -> None:
-    """Given QuEL-3 backend result, when adapter builds result, then it converts to canonical model."""
+    """Given one averaged waveform sample, adapter conversion should keep a length-one waveform axis."""
     target = "RQ00"
     alias = "alias-RQ00"
     schedule = MeasurementSchedule.model_construct(
@@ -841,7 +842,7 @@ def test_quel3_adapter_build_measurement_result_converts_backend_result() -> Non
     assert result.data["Q00"][0].sampling_period == pytest.approx(0.8)
     assert np.array_equal(
         result.data["Q00"][0].data,
-        np.array(2.0 + 0.0j, dtype=np.complex128),
+        np.array([2.0 + 0.0j], dtype=np.complex128),
     )
 
 
@@ -874,6 +875,67 @@ def test_quel3_adapter_build_measurement_result_squeezes_avg_mode_waveform() -> 
         status={},
         data={
             alias: [np.array([[8.0 + 4.0j, 12.0 + 6.0j]], dtype=np.complex128)],
+        },
+        config={"sampling_period_ns": 0.8},
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+    _ = adapter.build_execution_request(schedule=schedule, config=config)
+
+    result = adapter.build_measurement_result(
+        backend_result=backend_result,
+        measurement_config=config,
+        device_config={},
+        sampling_period=1.0,
+    )
+
+    assert np.array_equal(
+        result.data["Q00"][0].data,
+        np.array([8.0 + 4.0j, 12.0 + 6.0j], dtype=np.complex128),
+    )
+
+
+def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> None:
+    """Given integrated single-shot data, adapter conversion should expose one IQ value per shot."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.8,
+                ),
+            ]
+        ),
+    )
+    config = _make_config(mode="single", shots=2, time_integration=True)
+    backend_result = Quel3BackendExecutionResult(
+        status={},
+        data={
+            alias: [
+                np.array(
+                    [
+                        [8.0 + 4.0j],
+                        [12.0 + 6.0j],
+                    ],
+                    dtype=np.complex128,
+                )
+            ],
         },
         config={"sampling_period_ns": 0.8},
     )
@@ -974,5 +1036,5 @@ def test_quel3_adapter_build_measurement_result_splits_shared_alias_targets() ->
         sampling_period=0.4,
     )
 
-    assert np.array_equal(result.data["Q00"][0].data, np.array(1.0 + 0.0j))
-    assert np.array_equal(result.data["Q01"][0].data, np.array(2.0 + 0.0j))
+    assert np.array_equal(result.data["Q00"][0].data, np.array([1.0 + 0.0j]))
+    assert np.array_equal(result.data["Q01"][0].data, np.array([2.0 + 0.0j]))

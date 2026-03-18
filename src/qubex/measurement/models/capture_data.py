@@ -33,6 +33,78 @@ def _format_array_preview(raw: NDArray) -> str:
     return f"array({preview}, shape={array.shape})"
 
 
+def _normalize_payload_array(
+    *,
+    item: ReturnItem,
+    data: NDArray[Any],
+    n_shots: int,
+) -> NDArray[Any]:
+    """Return one payload array in canonical shape for its return-item kind."""
+    array = np.asarray(data)
+
+    match item:
+        case ReturnItem.WAVEFORM_SERIES:
+            if array.ndim == 0:
+                raise ValueError("waveform_series must include a shot axis.")
+            if array.ndim == 1:
+                if n_shots != 1:
+                    raise ValueError(
+                        "waveform_series must include one waveform per shot."
+                    )
+                return array.reshape(1, -1)
+            if array.shape[0] != n_shots:
+                raise ValueError(
+                    "waveform_series shot axis length must match config.n_shots."
+                )
+            return array.reshape(n_shots, -1)
+
+        case ReturnItem.IQ_SERIES:
+            squeezed = np.squeeze(array)
+            if squeezed.ndim == 0:
+                if n_shots != 1:
+                    raise ValueError(
+                        "iq_series must include one integrated IQ value per shot."
+                    )
+                squeezed = squeezed.reshape(1)
+            if squeezed.ndim != 1:
+                raise ValueError(
+                    "iq_series must contain exactly one integrated IQ value per shot."
+                )
+            if squeezed.shape[0] != n_shots:
+                raise ValueError("iq_series length must match config.n_shots.")
+            return squeezed
+
+        case ReturnItem.STATE_SERIES:
+            squeezed = np.squeeze(array)
+            if squeezed.ndim == 0:
+                if n_shots != 1:
+                    raise ValueError(
+                        "state_series must include one classified state per shot."
+                    )
+                squeezed = squeezed.reshape(1)
+            if squeezed.ndim != 1:
+                raise ValueError(
+                    "state_series must contain exactly one classified state per shot."
+                )
+            if squeezed.shape[0] != n_shots:
+                raise ValueError("state_series length must match config.n_shots.")
+            return squeezed
+
+        case ReturnItem.AVERAGED_WAVEFORM:
+            squeezed = np.squeeze(array)
+            if squeezed.ndim == 0:
+                return squeezed.reshape(1)
+            return squeezed.reshape(-1)
+
+        case ReturnItem.AVERAGED_IQ:
+            squeezed = np.squeeze(array)
+            if squeezed.ndim == 0:
+                return squeezed
+            if squeezed.size != 1:
+                raise ValueError("averaged_iq must contain exactly one complex value.")
+            return squeezed.reshape(())
+
+
 class CapturePayload(DataModel):
     """Structured payload fields for capture data arrays."""
 
@@ -69,6 +141,12 @@ class CaptureData(DataModel):
     - This model stores device-returned payloads and metadata only.
     - At least one entry must be present in `payload`.
     - Payload fields must be consistent with `config.return_items`.
+    - Payload arrays are normalized to canonical shapes at model construction:
+      `waveform_series -> (n_shots, capture_length)`,
+      `iq_series -> (n_shots,)`,
+      `state_series -> (n_shots,)`,
+      `averaged_waveform -> (capture_length,)`,
+      `averaged_iq -> ()`.
     - The `data` property returns the primary payload selected by
       `config.primary_return_item`.
     """
@@ -156,6 +234,27 @@ class CaptureData(DataModel):
                 f"config.return_items: {joined}."
             )
 
+        normalized_payload = self.payload
+        for item, field_name in (
+            (ReturnItem.WAVEFORM_SERIES, "waveform_series"),
+            (ReturnItem.IQ_SERIES, "iq_series"),
+            (ReturnItem.STATE_SERIES, "state_series"),
+            (ReturnItem.AVERAGED_WAVEFORM, "averaged_waveform"),
+            (ReturnItem.AVERAGED_IQ, "averaged_iq"),
+        ):
+            value = getattr(normalized_payload, field_name)
+            if value is None:
+                continue
+            object.__setattr__(
+                normalized_payload,
+                field_name,
+                _normalize_payload_array(
+                    item=item,
+                    data=value,
+                    n_shots=self.config.n_shots,
+                ),
+            )
+
         data = np.asarray(self.data)
         if config.shot_averaging:
             return self
@@ -168,11 +267,7 @@ class CaptureData(DataModel):
                 "data first-axis length must match config.n_shots "
                 "when time_integration is enabled and shot_averaging is disabled."
             )
-        if (
-            not config.time_integration
-            and data.ndim >= 2
-            and data.shape[0] != config.n_shots
-        ):
+        if not config.time_integration and data.shape[0] != config.n_shots:
             raise ValueError(
                 "data shot-axis length must match config.n_shots "
                 "when waveform shots are retained."

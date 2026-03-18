@@ -22,7 +22,7 @@ Design intent:
 ```python
 SweepKey = str
 SweepValue = Value | int | float | str
-SweepPoint = dict[SweepKey, SweepValue]
+SweepPoint = Mapping[SweepKey, SweepValue]
 SweepAxes = tuple[SweepKey, ...]
 ```
 
@@ -42,7 +42,7 @@ async def run_ndsweep_measurement(
     self,
     schedule: Callable[[SweepPoint], MeasurementSchedule],
     *,
-    sweep_points: dict[SweepKey, Sequence[SweepValue]],
+    sweep_points: Mapping[SweepKey, Sequence[SweepValue]],
     sweep_axes: SweepAxes | None = None,
     config: MeasurementConfig | None = None,
 ) -> NDSweepMeasurementResult: ...
@@ -60,6 +60,8 @@ For ND sweep:
 - `sweep_points`: axis-value table (`axis key -> ordered values`).
 - `sweep_axes`: axis order for Cartesian product.
 - if `sweep_axes is None`, axis order is resolved from `sweep_points` insertion order.
+- non-`dict` mapping inputs must provide `sweep_axes` explicitly because order is
+  not treated as part of the generic `Mapping` contract.
 - `sweep_axes` must contain each key in `sweep_points` exactly once.
 
 ## Result models
@@ -83,7 +85,20 @@ Notes:
 
 - `shape` is derivable from `sweep_points` and `sweep_axes`, but stored explicitly for fast access and integrity checks.
 - dedicated per-point wrapper models (`SweepPointResult`, `NDSweepPointResult`) are intentionally omitted in this draft.
-- `measurement` layer uses strict contracts (`list[SweepValue]` for 1D, `dict`/`tuple` for ND); future `Experiment` layer can provide a more flexible facade.
+- `measurement` layer uses strict contracts (`list[SweepValue]` for 1D, `Mapping` plus explicit axis-order rules for ND); future `Experiment` layer can provide a more flexible facade.
+
+Derived aggregation contract:
+
+- `SweepMeasurementResult.data[target][capture_index]` has shape
+  `(len(sweep_values), *capture_shape)`
+- `NDSweepMeasurementResult.data[target][capture_index]` has shape
+  `(*shape, *capture_shape)`
+- canonical `capture_shape` is determined by `MeasurementConfig.primary_return_item`:
+  - `WAVEFORM_SERIES`: `(n_shots, capture_length)`
+  - `IQ_SERIES`: `(n_shots,)`
+  - `STATE_SERIES`: `(n_shots,)`
+  - `AVERAGED_WAVEFORM`: `(capture_length,)`
+  - `AVERAGED_IQ`: `()`
 
 ## Ordering and indexing rules
 

@@ -30,25 +30,36 @@ class _ExperimentSystemStub:
         return _Target(sideband=self.sideband_by_target[target])
 
 
-def _make_config(*, mode: MeasurementMode, shots: int) -> MeasurementConfig:
+def _make_config(
+    *,
+    mode: MeasurementMode,
+    shots: int,
+    time_integration: bool = False,
+) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
         shot_interval=100.0,
         shot_averaging=(mode == "avg"),
-        time_integration=False,
+        time_integration=time_integration,
         state_classification=False,
     )
 
 
 def test_build_measurement_result_converts_single_mode_to_qubit_labels() -> None:
-    """Given QuEL-1 raw result, when converting single mode, then qubit labels and normalization are applied."""
+    """Given QuEL-1 waveform shots, conversion should expose canonical waveform-series data."""
     norm_factor = 2 ** (-32)
     backend_result = Quel1BackendExecutionResult(
         status={},
         data={
             "RQ00": [
-                np.array([9.0 + 3.0j], dtype=np.complex128),
-                np.array([4.0 + 2.0j], dtype=np.complex128),
+                np.array(
+                    [[9.0 + 3.0j], [10.0 + 4.0j], [11.0 + 5.0j], [12.0 + 6.0j]],
+                    dtype=np.complex128,
+                ),
+                np.array(
+                    [[4.0 + 2.0j], [5.0 + 3.0j], [6.0 + 4.0j], [7.0 + 5.0j]],
+                    dtype=np.complex128,
+                ),
             ]
         },
         config={},
@@ -75,7 +86,11 @@ def test_build_measurement_result_converts_single_mode_to_qubit_labels() -> None
     assert result.data["Q00"][0].sampling_period == 2.0
     assert_allclose(
         result.data["Q00"][0].data,
-        np.array([4.0 - 2.0j], dtype=np.complex128) * norm_factor,
+        np.array(
+            [[4.0 - 2.0j], [5.0 - 3.0j], [6.0 - 4.0j], [7.0 - 5.0j]],
+            dtype=np.complex128,
+        )
+        * norm_factor,
     )
 
 
@@ -116,8 +131,10 @@ def test_build_measurement_result_converts_avg_mode_with_shot_scaling() -> None:
     )
 
 
-def test_build_measurement_result_converts_single_point_avg_mode_to_scalar() -> None:
-    """Given one averaged point, conversion should squeeze the payload to a scalar."""
+def test_build_measurement_result_keeps_single_point_avg_mode_as_length_one_waveform() -> (
+    None
+):
+    """Given one averaged waveform sample, conversion should keep a length-one waveform axis."""
     norm_factor = 2 ** (-32)
     backend_result = Quel1BackendExecutionResult(
         status={},
@@ -145,5 +162,54 @@ def test_build_measurement_result_converts_single_point_avg_mode_to_scalar() -> 
 
     assert_allclose(
         result.data["Q00"][0].data,
-        np.array(2.0 + 1.0j, dtype=np.complex128) * norm_factor,
+        np.array([2.0 + 1.0j], dtype=np.complex128) * norm_factor,
+    )
+
+
+def test_build_measurement_result_normalizes_time_integrated_single_mode_to_1d() -> (
+    None
+):
+    """Given integrated single-shot data, conversion should expose one IQ value per shot."""
+    norm_factor = 2 ** (-32)
+    backend_result = Quel1BackendExecutionResult(
+        status={},
+        data={
+            "RQ00": [
+                np.array(
+                    [
+                        [8.0 + 4.0j],
+                        [12.0 + 6.0j],
+                    ],
+                    dtype=np.complex128,
+                )
+            ]
+        },
+        config={},
+    )
+    adapter = Quel1MeasurementBackendAdapter(
+        backend_controller=cast(Any, object()),
+        experiment_system=cast(
+            Any,
+            _ExperimentSystemStub(sideband_by_target={"RQ00": "U"}),
+        ),
+        constraint_profile=replace(
+            MeasurementConstraintProfile.quel1(),
+            require_workaround_capture=False,
+        ),
+    )
+
+    result = adapter.build_measurement_result(
+        backend_result=backend_result,
+        measurement_config=_make_config(
+            mode="single",
+            shots=2,
+            time_integration=True,
+        ),
+        device_config={"kind": "quel1"},
+        sampling_period=2.0,
+    )
+
+    assert_allclose(
+        result.data["Q00"][0].data,
+        np.array([8.0 + 4.0j, 12.0 + 6.0j], dtype=np.complex128) * norm_factor,
     )

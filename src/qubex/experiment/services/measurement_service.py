@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from itertools import product
 from pathlib import Path
 from typing import Any, Literal, TypeVar
@@ -442,7 +442,7 @@ class MeasurementService:
         self,
         schedule: Callable[[SweepPoint], PulseSchedule | MeasurementSchedule],
         *,
-        sweep_points: dict[str, Sequence[SweepValue]],
+        sweep_points: Mapping[str, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
         n_shots: int | None = None,
         shot_interval: TimeLike | None = None,

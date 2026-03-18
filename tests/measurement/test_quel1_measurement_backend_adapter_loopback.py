@@ -114,12 +114,24 @@ def test_build_measurement_result_keeps_monitor_labels() -> None:
         status={},
         data={
             "RQ00": [
-                np.array([1.0 + 0.0j], dtype=np.complex128),
-                np.array([4.0 + 2.0j], dtype=np.complex128),
+                np.array(
+                    [[1.0 + 0.0j], [2.0 + 1.0j], [3.0 + 2.0j], [4.0 + 3.0j]],
+                    dtype=np.complex128,
+                ),
+                np.array(
+                    [[4.0 + 2.0j], [5.0 + 3.0j], [6.0 + 4.0j], [7.0 + 5.0j]],
+                    dtype=np.complex128,
+                ),
             ],
             "B0.MNTR0.IN": [
-                np.array([9.0 + 3.0j], dtype=np.complex128),
-                np.array([3.0 + 1.0j], dtype=np.complex128),
+                np.array(
+                    [[9.0 + 3.0j], [10.0 + 4.0j], [11.0 + 5.0j], [12.0 + 6.0j]],
+                    dtype=np.complex128,
+                ),
+                np.array(
+                    [[3.0 + 1.0j], [4.0 + 2.0j], [5.0 + 3.0j], [6.0 + 4.0j]],
+                    dtype=np.complex128,
+                ),
             ],
         },
         config={},
@@ -158,11 +170,19 @@ def test_build_measurement_result_keeps_monitor_labels() -> None:
     assert set(result.data.keys()) == {"Q00", "B0.MNTR0.IN"}
     assert_allclose(
         result.data["Q00"][0].data,
-        np.array([4.0 + 2.0j], dtype=np.complex128) * norm_factor,
+        np.array(
+            [[4.0 + 2.0j], [5.0 + 3.0j], [6.0 + 4.0j], [7.0 + 5.0j]],
+            dtype=np.complex128,
+        )
+        * norm_factor,
     )
     assert_allclose(
         result.data["B0.MNTR0.IN"][0].data,
-        np.array([3.0 + 1.0j], dtype=np.complex128) * norm_factor,
+        np.array(
+            [[3.0 + 1.0j], [4.0 + 2.0j], [5.0 + 3.0j], [6.0 + 4.0j]],
+            dtype=np.complex128,
+        )
+        * norm_factor,
     )
 
 

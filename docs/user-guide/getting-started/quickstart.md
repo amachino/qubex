@@ -233,18 +233,18 @@ Use them when your application is already async. In scripts, wrap them with
 `asyncio.run(...)`. In notebooks, call them with `await`.
 
 ```python
-import asyncio
+schedule = qx.PulseSchedule()
+with schedule as s:
+    s.add(Q0, control_pulse)
 
+result = await exp.run_measurement(
+    schedule=schedule,
+    n_shots=1024,
+    shot_averaging=False,
+    time_integration=True,
+)
 
-async def main() -> None:
-    result = await exp.run_measurement(
-        schedule=schedule,
-        n_shots=1024,
-    )
-    print(type(result).__name__)
-
-
-asyncio.run(main())
+result.plot()
 ```
 
 If you want the most stable path today, prefer the legacy synchronous methods

@@ -712,7 +712,10 @@ class Measurement:
         Returns
         -------
         SweepMeasurementResult
-            Sweep result with one flattened entry per sweep value.
+            Sweep result with one point result per sweep value.
+            `result.data[target][capture]` has shape
+            `(len(sweep_values), *capture_shape)`, where `capture_shape` follows
+            the canonical `CaptureData` payload contract.
         """
         return await self.execution_service.run_sweep_measurement(
             schedule,
@@ -726,7 +729,7 @@ class Measurement:
         schedule: Callable[[SweepPoint], MeasurementSchedule],
         *,
         config: MeasurementConfig,
-        sweep_points: dict[SweepKey, Sequence[SweepValue]],
+        sweep_points: Mapping[SweepKey, Sequence[SweepValue]],
         sweep_axes: SweepAxes | None = None,
     ) -> NDSweepMeasurementResult:
         """
@@ -738,17 +741,20 @@ class Measurement:
             Factory that builds one schedule from one expanded sweep point.
         config : MeasurementConfig
             Runtime acquisition configuration.
-        sweep_points : dict[SweepKey, Sequence[SweepValue]]
+        sweep_points : Mapping[SweepKey, Sequence[SweepValue]]
             Sweep axes and candidate values for each axis.
         sweep_axes : SweepAxes | None, optional
             Axis order used for Cartesian expansion and index mapping. If
-            `None`, dictionary insertion order is used.
+            `None`, insertion order from `sweep_points` is used. Non-`dict`
+            mapping inputs must provide `sweep_axes` explicitly.
 
         Returns
         -------
         NDSweepMeasurementResult
             N-dimensional sweep result stored as flattened point results with
-            shape metadata.
+            shape metadata. `result.data[target][capture]` has shape
+            `(*result.shape, *capture_shape)`, where `capture_shape` follows
+            the canonical `CaptureData` payload contract.
         """
         return await self.execution_service.run_ndsweep_measurement(
             schedule,

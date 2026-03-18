@@ -89,6 +89,18 @@ Result ordering rules:
 
 - `results[i]` corresponds to `sweep_values[i]`.
 
+Derived aggregation contract:
+
+- `result.data[target][capture_index]` prepends the sweep axis to the canonical
+  per-point capture payload shape
+- shape = `(len(sweep_values), *capture_shape)`
+- canonical `capture_shape` is determined by `MeasurementConfig.primary_return_item`:
+  - `WAVEFORM_SERIES`: `(n_shots, capture_length)`
+  - `IQ_SERIES`: `(n_shots,)`
+  - `STATE_SERIES`: `(n_shots,)`
+  - `AVERAGED_WAVEFORM`: `(capture_length,)`
+  - `AVERAGED_IQ`: `()`
+
 ## Execution behavior
 
 ### Dispatch mode

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from types import MethodType, SimpleNamespace
 from typing import Any, ClassVar, cast
@@ -44,12 +44,13 @@ def _make_config(
     *,
     mode: MeasurementMode = "avg",
     shots: int = 2,
+    time_integration: bool = False,
 ) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
         shot_interval=100.0,
         shot_averaging=(mode == "avg"),
-        time_integration=False,
+        time_integration=time_integration,
         state_classification=False,
     )
 
@@ -1889,6 +1890,71 @@ def test_run_sweep_measurement_data_property_returns_pointwise_data() -> None:
     )
 
 
+def test_run_sweep_measurement_data_property_uses_canonical_iq_series_shape() -> None:
+    """Given time-integrated single-shot data, sweep arrays should expose one IQ value per shot."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config(mode="single", shots=2, time_integration=True)
+
+    def schedule(point: SweepValue) -> MeasurementSchedule:
+        step = int(point)
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self
+        step = int(schedule.pulse_schedule.labels[0][-1])
+        return _make_measurement_result(
+            data={
+                "Q00": [
+                    np.array(
+                        [
+                            [step + 1.0 + 0.0j],
+                            [step + 2.0 + 0.0j],
+                        ]
+                    )
+                ]
+            },
+            measurement_config=config,
+            sampling_period=2.0,
+        )
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_sweep_measurement(
+            schedule,
+            sweep_values=[0, 1],
+            config=config,
+        )
+    )
+
+    assert result.data["Q00"][0].shape == (2, 2)
+    assert np.array_equal(
+        result.data["Q00"][0],
+        np.array(
+            [
+                [1.0 + 0.0j, 2.0 + 0.0j],
+                [2.0 + 0.0j, 3.0 + 0.0j],
+            ]
+        ),
+    )
+
+
 def test_run_sweep_measurement_resolves_default_config() -> None:
     """Given omitted sweep config, when running, then default config is resolved once and reused."""
     measurement = Measurement(
@@ -2226,6 +2292,76 @@ def test_run_ndsweep_measurement_data_property_returns_flattened_pointwise_data(
     )
 
 
+def test_run_ndsweep_measurement_data_property_uses_canonical_iq_series_shape() -> None:
+    """Given time-integrated sweep data, ND arrays should expose one IQ value per shot."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config(mode="single", shots=2, time_integration=True)
+    sweep_points: dict[str, Sequence[SweepValue]] = {
+        "amp": [0.1, 0.2],
+        "step": [0, 1],
+    }
+
+    def schedule(point: SweepPoint) -> MeasurementSchedule:
+        step = int(point["step"])
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule([f"RQ0{step}"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def fake_run_measurement(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        del self
+        step = int(schedule.pulse_schedule.labels[0][-1])
+        return _make_measurement_result(
+            data={
+                "Q00": [
+                    np.array(
+                        [
+                            [step + 1.0 + 0.0j],
+                            [step + 2.0 + 0.0j],
+                        ]
+                    )
+                ]
+            },
+            measurement_config=config,
+            sampling_period=2.0,
+        )
+
+    execution_service.run_measurement = MethodType(
+        fake_run_measurement, execution_service
+    )
+
+    result = asyncio.run(
+        execution_service.run_ndsweep_measurement(
+            schedule,
+            sweep_points=sweep_points,
+            sweep_axes=("amp", "step"),
+            config=config,
+        )
+    )
+
+    assert result.data["Q00"][0].shape == (2, 2, 2)
+    assert np.array_equal(
+        result.data["Q00"][0],
+        np.array(
+            [
+                [[1.0 + 0.0j, 2.0 + 0.0j], [2.0 + 0.0j, 3.0 + 0.0j]],
+                [[1.0 + 0.0j, 2.0 + 0.0j], [2.0 + 0.0j, 3.0 + 0.0j]],
+            ]
+        ),
+    )
+
+
 def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
     """Given omitted ndsweep axes, when running, then dict insertion order is used."""
     measurement = Measurement(
@@ -2272,6 +2408,57 @@ def test_run_ndsweep_measurement_uses_input_axis_order_by_default() -> None:
 
     assert result.sweep_axes == ("z", "x")
     assert result.shape == (2, 1)
+
+
+def test_run_ndsweep_measurement_requires_explicit_axes_for_non_dict_mapping() -> None:
+    """Given non-dict sweep_points, when axes are omitted, then the call fails fast."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    config = _make_config()
+
+    class _SweepPoints(Mapping[str, Sequence[SweepValue]]):
+        def __init__(self, data: dict[str, Sequence[SweepValue]]) -> None:
+            self._data = data
+
+        def __getitem__(self, key: str) -> Sequence[SweepValue]:
+            return self._data[key]
+
+        def __iter__(self):
+            return iter(self._data)
+
+        def __len__(self) -> int:
+            return len(self._data)
+
+    sweep_points: Mapping[str, Sequence[SweepValue]] = _SweepPoints(
+        {"z": [10, 20], "x": [1]}
+    )
+
+    def schedule(point: Mapping[str, SweepValue]) -> MeasurementSchedule:
+        del point
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule(["RQ00"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"sweep_axes must be provided when sweep_points is not a "
+            r"dict-derived insertion-ordered mapping\."
+        ),
+    ):
+        asyncio.run(
+            execution_service.run_ndsweep_measurement(
+                schedule,
+                sweep_points=sweep_points,
+                config=config,
+            )
+        )
 
 
 def test_disconnect_delegates_to_session_service() -> None:

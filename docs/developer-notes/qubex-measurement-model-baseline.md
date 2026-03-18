@@ -77,6 +77,27 @@ This document is the source of truth for "what qubex currently executes and guar
   `MeasurementConfig.to_dict()`).
 - `device_config` is backend/device snapshot payload.
 
+### Canonical payload shape contract
+
+`CaptureData` is the owner of payload-shape normalization. Backend adapters may
+receive extra singleton axes from hardware/runtime libraries, but they must be
+normalized before a payload is exposed through the canonical model.
+
+Canonical shapes by `MeasurementConfig.primary_return_item`:
+
+- `WAVEFORM_SERIES`: `(n_shots, capture_length)`
+- `IQ_SERIES`: `(n_shots,)`
+- `STATE_SERIES`: `(n_shots,)`
+- `AVERAGED_WAVEFORM`: `(capture_length,)`
+- `AVERAGED_IQ`: `()`
+
+Implications:
+
+- singleton trailing axes such as `(n_shots, 1)` for integrated IQ are not part
+  of the canonical contract and are removed at the `CaptureData` boundary
+- sweep aggregation prepends sweep axes to the canonical per-capture shape
+  rather than preserving backend-specific singleton axes
+
 ## 3) `SweepMeasurementConfig` baseline (as consumed by qubex)
 
 ### Important distinction
@@ -190,5 +211,5 @@ Open items that remain for later phases:
 
 1. Decide if `MeasurementResult.measurement_config` remains dict snapshot or is
    replaced by a typed internal snapshot model.
-2. Define a strict qubex internal axis order contract for future tensor-style
-   sweep result aggregation.
+2. Keep the canonical payload-shape contract aligned with future tensor-style
+   sweep/export work if new return-item kinds are introduced.

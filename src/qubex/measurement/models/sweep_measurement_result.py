@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,10 +14,10 @@ from qubex.core import DataModel, Value
 from .measurement_config import MeasurementConfig
 from .measurement_result import MeasurementResult
 
-SweepKey = str
-SweepValue = Value | int | float | str
-SweepPoint = dict[SweepKey, SweepValue]
-SweepAxes = tuple[SweepKey, ...]
+SweepKey: TypeAlias = str
+SweepValue: TypeAlias = Value | int | float | str
+SweepPoint: TypeAlias = Mapping[SweepKey, SweepValue]
+SweepAxes: TypeAlias = tuple[SweepKey, ...]
 
 
 def _build_sweep_data(
@@ -73,7 +74,7 @@ def _build_sweep_data(
 
 
 class SweepMeasurementResult(DataModel):
-    """Sweep measurement result."""
+    """Sweep measurement result with target-keyed arrays over one sweep axis."""
 
     sweep_values: list[SweepValue] = Field(default_factory=list)
     config: MeasurementConfig
@@ -81,7 +82,7 @@ class SweepMeasurementResult(DataModel):
 
     @property
     def data(self) -> dict[str, list[NDArray[Any]]]:
-        """Return target-keyed capture arrays in sweep order."""
+        """Return `target -> [capture arrays]` with shape `(n_points, *capture_shape)`."""
         return _build_sweep_data(
             results=self.results,
             sweep_shape=(len(self.sweep_values),),
@@ -99,7 +100,7 @@ class NDSweepMeasurementResult(DataModel):
 
     @property
     def data(self) -> dict[str, list[NDArray[Any]]]:
-        """Return target-keyed capture arrays in flattened C-order."""
+        """Return `target -> [capture arrays]` with shape `(*shape, *capture_shape)`."""
         return _build_sweep_data(
             results=self.results,
             sweep_shape=self.shape,
