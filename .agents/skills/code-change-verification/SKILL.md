@@ -14,7 +14,10 @@ handoff unless the user explicitly asks for a smaller pass.
 ## Workflow
 
 1. Decide whether the full code gate is needed.
-   - If only docs or prose changed, prefer `docs-sync` and `uv run mkdocs build`.
+   - If only docs or prose changed, prefer `docs-sync`.
+   - Defer `uv run mkdocs build` for docs-only changes until just before
+     `git push`, unless the user asks to run it earlier or the edits are likely
+     to break docs generation immediately.
    - Otherwise run the normal code gate.
 2. Run normalization checks first.
    - `uv run ruff check --fix`
@@ -31,7 +34,8 @@ handoff unless the user explicitly asks for a smaller pass.
 5. Escalate build checks when needed.
    - For release or packaging work, add `make build` or `make build-all`.
    - For docs changes that affect generated API pages or navigation, add
-     `uv run mkdocs build`.
+     `uv run mkdocs build` before handoff if the current task is the final
+     pre-push pass, or earlier if the user explicitly requests it.
 6. Report results clearly.
    - List every command you ran.
    - Separate auto-fixed changes from failing checks.

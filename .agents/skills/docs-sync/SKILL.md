@@ -47,6 +47,10 @@ the required documentation changes before editing.
    - Ask before patching docs unless the user explicitly requested doc edits in
      the current task.
 7. Validate.
-   - Run `uv run mkdocs build` when docs changed or generated API pages could be
-     affected.
+   - For docs-only changes, defer `uv run mkdocs build` until just before
+     `git push`, unless the user asks to run it earlier or the edits are likely
+     to break docs generation immediately.
+   - Run `uv run mkdocs build` earlier when generated API pages, navigation, or
+     docs tooling are part of the current change and you need immediate
+     validation.
    - Mention any docs you intentionally left untouched and why.
