@@ -344,7 +344,7 @@ class SystemManager:
         targets_to_exclude : list[str], optional
             Target labels to exclude from the loaded model.
         configuration_mode : ConfigurationMode, optional
-            Configuration mode passed to `ConfigLoader`.
+            Priority-ordered control layout passed to `ConfigLoader`.
         backend_kind : BackendKind | None, optional
             Backend family used for this experiment session.
         backend_controller : SystemBackendController | None, optional

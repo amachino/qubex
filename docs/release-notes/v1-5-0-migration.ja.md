@@ -150,6 +150,21 @@ qubex-config/
 system ごとに `n_shots`、`shot_interval`、readout timing の既定値を変えたい場合は、
 `params/<system_id>/measurement_defaults.yaml` を使ってください。
 
+### `configuration_mode` と control port の channel 数を見直す
+
+`configuration_mode` は channel role の優先順として解釈されるようになりました。
+
+- `ge-ef-cr` は `ge`、`ef`、`cr`
+- `ge-cr-cr` は `ge`、`cr`、`cr`
+- control port の channel 数が足りない場合は左側の役割だけを残します
+
+そのため、ハードウェアプロファイルが control port の channel 数を変えると、
+実際に生成される target も変わります。例えば QuEL-1 SE R8 の
+`se8_mxfe1_awg2222` は profile-controlled port を `2-2-2-2` にするため、
+`configuration_mode="ge-ef-cr"` はそこで `ge-ef` target を生成します。
+その port で CR target が必要なら、
+`configuration_mode="ge-cr-cr"` を使ってください。
+
 ## API と import の変更
 
 ### system 側の import を `qubex.backend` から外す

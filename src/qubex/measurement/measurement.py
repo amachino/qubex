@@ -127,8 +127,10 @@ class Measurement:
             Whether to call `connect` during initialization. If `None`,
             `DEFAULT_CONNECT_DEVICES` is used.
         configuration_mode : ConfigurationMode | None, optional
-            Configuration variant passed to `load`. If `None`,
-            `DEFAULT_CONFIGURATION_MODE` is used.
+            Priority-ordered control layout passed to `load`. `"ge-ef-cr"`
+            assigns channels to GE, then EF, then CR. `"ge-cr-cr"` assigns
+            GE, then two CR channels. Ports with fewer channels keep the
+            leftmost roles. If `None`, `DEFAULT_CONFIGURATION_MODE` is used.
         backend_kind : BackendKind | None, optional
             Backend family to initialize through configuration loading.
         _execution_mode : ExecutionMode | None, optional
@@ -206,7 +208,10 @@ class Measurement:
         params_dir : Path | str | None
             Directory that contains control parameter files.
         configuration_mode : ConfigurationMode | None, optional
-            Configuration variant. If `None`, backend defaults are used.
+            Priority-ordered control layout. `"ge-ef-cr"` assigns channels to
+            GE, then EF, then CR. `"ge-cr-cr"` assigns GE, then two CR
+            channels. Ports with fewer channels keep the leftmost roles. If
+            `None`, backend defaults are used.
         backend_kind : BackendKind | None, optional
             Backend family used when creating the backend controller.
 
@@ -258,8 +263,11 @@ class Measurement:
         Parameters
         ----------
         configuration_mode : ConfigurationMode | None, optional
-            Configuration variant passed to `load`. If `None`, the previously
-            configured variant is reused by the loader/service.
+            Priority-ordered control layout passed to `load`. `"ge-ef-cr"`
+            assigns channels to GE, then EF, then CR. `"ge-cr-cr"` assigns
+            GE, then two CR channels. Ports with fewer channels keep the
+            leftmost roles. If `None`, the previously configured value is
+            reused by the loader/service.
 
         Notes
         -----

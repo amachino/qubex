@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -28,6 +29,7 @@ from qubex.system.quel3.quel3_control_parameter_defaults import (
     DEFAULT_PUMP_FREQUENCY_GHZ as DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ,
     DEFAULT_READOUT_AMPLITUDE as DEFAULT_QUEL3_READOUT_AMPLITUDE,
 )
+from qubex.typing import ConfigurationMode
 
 
 def _write_yaml(path: Path, data: dict) -> None:
@@ -156,6 +158,76 @@ def _write_system_catalog(
     if system_section is not None:
         payload[system_id][backend] = system_section
     _write_yaml(config_dir / "system.yaml", payload)
+
+
+def _load_r8_experiment_system(
+    tmp_path: Path,
+    *,
+    awg_option: str,
+    configuration_mode: ConfigurationMode,
+) -> Any:
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1se-riken8",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+                "options": [awg_option],
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-6", "BOX1-7", "BOX1-8", "BOX1-9"],
+                    "pump": "BOX1-2",
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        params_dir / "qubit_frequency.yaml",
+        {
+            "meta": {"unit": "MHz"},
+            "data": {"Q0": 5000, "Q1": 5100, "Q2": 5200, "Q3": 5300},
+        },
+    )
+    _write_yaml(
+        params_dir / "resonator_frequency.yaml",
+        {
+            "meta": {"unit": "MHz"},
+            "data": {"Q0": 8000, "Q1": 8100, "Q2": 8200, "Q3": 8300},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        configuration_mode=configuration_mode,
+    )
+    return loader.get_experiment_system()
+
+
+def _assert_target_channel(
+    system: Any,
+    label: str,
+    *,
+    port_number: int,
+    channel_number: int,
+) -> None:
+    target = system.get_target(label)
+    assert target.channel.port.number == port_number
+    assert target.channel.number == channel_number
 
 
 def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
@@ -1381,6 +1453,100 @@ def test_load_resolves_r8_pump_frequency_with_r8_default(tmp_path: Path) -> None
     control_parameters = loader.get_experiment_system().control_params
 
     assert control_parameters.get_pump_frequency(0) == pytest.approx(6.0)
+
+
+def test_r8_awg1331_with_ge_ef_cr_uses_prefix_layouts(tmp_path: Path) -> None:
+    """Given awg1331 and ge-ef-cr, when building targets, then 1-channel ports keep GE and 3-channel ports keep GE/EF/CR."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg1331",
+        configuration_mode="ge-ef-cr",
+    )
+
+    assert "Q0" in system.gen_targets
+    assert "Q0-ef" not in system.gen_targets
+    assert "Q0-CR" not in system.gen_targets
+    _assert_target_channel(system, "Q0", port_number=6, channel_number=0)
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(system, "Q1-ef", port_number=7, channel_number=1)
+    _assert_target_channel(system, "Q1-CR", port_number=7, channel_number=2)
+
+    _assert_target_channel(system, "Q2", port_number=8, channel_number=0)
+    _assert_target_channel(system, "Q2-ef", port_number=8, channel_number=1)
+    _assert_target_channel(system, "Q2-CR", port_number=8, channel_number=2)
+
+    assert "Q3" in system.gen_targets
+    assert "Q3-ef" not in system.gen_targets
+    assert "Q3-CR" not in system.gen_targets
+    _assert_target_channel(system, "Q3", port_number=9, channel_number=0)
+
+
+def test_r8_awg1331_with_ge_cr_cr_keeps_two_cr_channels(tmp_path: Path) -> None:
+    """Given awg1331 and ge-cr-cr, when building targets, then 3-channel ports dedicate both extra channels to CR targets."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg1331",
+        configuration_mode="ge-cr-cr",
+    )
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(system, "Q1-CR", port_number=7, channel_number=1)
+    assert "Q1-ef" not in system.gen_targets
+
+    cr_channels = {
+        system.get_target(f"Q1-{spectator.label}").channel.number
+        for spectator in system.get_spectator_qubits("Q1")
+    }
+    assert cr_channels == {1, 2}
+
+    assert "Q0-CR" not in system.gen_targets
+    assert "Q3-CR" not in system.gen_targets
+
+
+@pytest.mark.parametrize(
+    ("configuration_mode", "expected_extra_label", "missing_label"),
+    [
+        ("ge-ef-cr", "Q0-ef", "Q0-CR"),
+        ("ge-cr-cr", "Q0-CR", "Q0-ef"),
+    ],
+)
+def test_r8_awg2222_uses_two_channel_prefix_for_each_mode(
+    tmp_path: Path,
+    configuration_mode: ConfigurationMode,
+    expected_extra_label: str,
+    missing_label: str,
+) -> None:
+    """Given awg2222, when building targets, then each control port keeps the 2-channel prefix of the requested mode."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg2222",
+        configuration_mode=configuration_mode,
+    )
+
+    _assert_target_channel(system, "Q0", port_number=6, channel_number=0)
+    _assert_target_channel(
+        system, expected_extra_label, port_number=6, channel_number=1
+    )
+    assert missing_label not in system.gen_targets
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(
+        system, f"Q1{expected_extra_label[2:]}", port_number=7, channel_number=1
+    )
+    assert f"Q1{missing_label[2:]}" not in system.gen_targets
+
+    _assert_target_channel(system, "Q2", port_number=8, channel_number=0)
+    _assert_target_channel(
+        system, f"Q2{expected_extra_label[2:]}", port_number=8, channel_number=1
+    )
+    assert f"Q2{missing_label[2:]}" not in system.gen_targets
+
+    _assert_target_channel(system, "Q3", port_number=9, channel_number=0)
+    _assert_target_channel(
+        system, f"Q3{expected_extra_label[2:]}", port_number=9, channel_number=1
+    )
+    assert f"Q3{missing_label[2:]}" not in system.gen_targets
 
 
 def test_quel3_target_registry_is_independent_of_configuration_mode(

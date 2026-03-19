@@ -102,6 +102,25 @@ For example, `quel1se-riken8` accepts an AWG profile label such as
 `se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. When no AWG
 profile is specified, Qubex uses `se8_mxfe1_awg2222`.
 
+### Control Layout Resolution
+
+`configuration_mode` is a priority-ordered request, not a fixed channel-count
+guarantee.
+
+- `ge-ef-cr` resolves channels in the order `ge`, `ef`, `cr`.
+- `ge-cr-cr` resolves channels in the order `ge`, `cr`, `cr`.
+- A control port with fewer channels keeps only the leftmost roles.
+
+For `quel1se-riken8`, the AWG profile controls the four profile-dependent
+control ports.
+
+- `se8_mxfe1_awg1331` resolves those ports as `1-3-3-1`. With
+  `configuration_mode="ge-ef-cr"`, the resolved layouts are
+  `ge`, `ge-ef-cr`, `ge-ef-cr`, `ge`.
+- `se8_mxfe1_awg2222` resolves those ports as `2-2-2-2`. With
+  `configuration_mode="ge-ef-cr"`, each port resolves to `ge-ef`. With
+  `configuration_mode="ge-cr-cr"`, each port resolves to `ge-cr`.
+
 ### `system.yaml`
 
 Create one entry per runnable setup. Multiple systems may point to the same
