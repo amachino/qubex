@@ -1025,10 +1025,22 @@ class CharacterizationService:
         figs = {}
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
+            values_array = np.array(values, dtype=np.float64)
+            y_med = np.median(values_array)
+            f0_guess = detuning_range[np.argmax(values_array)] + freq
+            gamma_guess = (
+                np.max(detuning_range + freq) - np.min(detuning_range + freq)
+            ) / 4
+            A_guess = max(np.max(values_array) - y_med, np.finfo(np.float64).eps)
             fit_result = fitting.fit_lorentzian(
                 target=target,
                 x=detuning_range + freq,
-                y=np.array(values),
+                y=values_array,
+                p0=(A_guess, f0_guess, gamma_guess, y_med),
+                bounds=(
+                    (0, np.min(detuning_range + freq), 0, -np.inf),
+                    (np.inf, np.max(detuning_range + freq), np.inf, np.inf),
+                ),
                 plot=plot,
                 title="Readout frequency calibration",
                 xlabel="Readout frequency (GHz)",
