@@ -579,6 +579,7 @@ class CharacterizationService:
                             times=data.sweep_range,
                             data=data.data,
                             plot=False,
+                            warn_low_r2=False,
                         )
                         rabi_rates_buffer[target].append(
                             fit_result.get("frequency", np.nan)

@@ -1431,6 +1431,7 @@ def fit_rabi(
     reference_point: complex | None = None,
     plot: bool = True,
     is_damped: bool = False,
+    warn_low_r2: bool = True,
     ylabel: str | None = None,
     yaxis_range: tuple[float, float] | None = None,
 ) -> FitResult:
@@ -1453,6 +1454,8 @@ def fit_rabi(
         Whether to plot the data and the fit.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
+    warn_low_r2 : bool, optional
+        Whether to emit a warning log when the fit quality is low.
     ylabel : str | None, optional
         Label for the y-axis.
     yaxis_range : tuple[float, float] | None, optional
@@ -1634,7 +1637,8 @@ def fit_rabi(
     }
 
     if r2 < 0.9:
-        logger.warning("R² < 0.9")
+        if warn_low_r2:
+            logger.warning("R² < 0.9")
         return FitResult(
             status=FitStatus.WARNING,
             message="R² < 0.9",

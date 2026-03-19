@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pytest
 
@@ -33,3 +35,41 @@ def test_qxfitting_is_placeholder_for_now() -> None:
 
     assert not hasattr(qxfitting_impl, "fit_linear")
     assert not hasattr(qxfitting_impl, "func_cos")
+
+
+def test_fit_rabi_can_suppress_low_r2_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Given low-r2 Rabi data, when warning suppression is enabled, then no warning log is emitted."""
+
+    class _DummyPCA:
+        mean_ = np.array([0.0, 0.0])
+        components_ = np.array([[0.0, -1.0], [1.0, 0.0]])
+
+        def fit(self, _data: np.ndarray) -> _DummyPCA:
+            return self
+
+    monkeypatch.setattr(qubex_fitting, "_PCA", lambda *args, **kwargs: _DummyPCA())
+    monkeypatch.setattr(
+        qubex_fitting,
+        "_curve_fit",
+        lambda *args, **kwargs: (
+            np.array([1.0, 2 * np.pi, 0.0, 0.0]),
+            np.eye(4),
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="qubex.analysis.fitting"):
+        result = qubex_fitting.fit_rabi(
+            target="Q00",
+            times=np.array([0.0, 1.0, 2.0, 3.0]),
+            data=1j * np.array([0.0, 1.0, 2.0, 3.0]),
+            reference_point=1j,
+            plot=False,
+            warn_low_r2=False,
+        )
+
+    assert result.status is qubex_fitting.FitStatus.WARNING
+    assert result.message == "R² < 0.9"
+    assert "R² < 0.9" not in caplog.text
