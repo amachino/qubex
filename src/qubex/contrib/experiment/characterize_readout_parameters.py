@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 import plotly.graph_objects as go
 import qxvisualizer as viz
-import scipy.optimize as opt
 from scipy.optimize import curve_fit
 
 from qubex.experiment.experiment import Experiment
@@ -71,7 +69,6 @@ class CharacterizeReadoutParametersResult:
         a: float | None = None,
         b: float | None = None,
         split_freq_width: float = 0.15,
-        mode: Literal["least_squares", "curve_fit"] = "curve_fit",
     ):
         if a is None:
             a = (self.phases[-1] - self.phases[0]) / (
@@ -98,28 +95,16 @@ class CharacterizeReadoutParametersResult:
             [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf],  # Upper bounds
         ]
 
-        if mode == "least_squares":
+        initial_guess = [kappa_p, J, f_p, f_r, a, b]
+        popt, pcov = curve_fit(
+            _fit_func,
+            _frequency_range,
+            _phases,
+            p0=initial_guess,
+            bounds=bounds_params,
+        )
 
-            def residuals(params, x, y):
-                return y - _fit_func(x, *params)
-
-            initial_guess = [kappa_p, J, f_p, f_r, a, b]
-            res = opt.least_squares(
-                residuals,
-                initial_guess,
-                args=(_frequency_range, _phases),
-                bounds=bounds_params,
-            )
-            popt = res.x
-        elif mode == "curve_fit":
-            initial_guess = [kappa_p, J, f_p, f_r, a, b]
-            popt, _ = curve_fit(
-                _fit_func,
-                _frequency_range,
-                _phases,
-                p0=initial_guess,
-                bounds=bounds_params,
-            )
+        perr = np.sqrt(np.diag(pcov))
 
         def _calc_r2_score(data, fit_data):
             ss_res = np.sum((data - fit_data) ** 2)
@@ -180,15 +165,21 @@ class CharacterizeReadoutParametersResult:
         fig.show()
         print("Fitted parameters:")
         print(f"R² score: {r2_score:.4f}")
-        print(f"kappa_p/2π: {popt[0] / (2 * np.pi) * 1e3:.8f} MHz")
-        print(f"J/2π: {popt[1] / (2 * np.pi) * 1e3:.8f} MHz")
-        print(f"f_p: {popt[2]:.8f} GHz")
-        print(f"f_r: {popt[3]:.8f} GHz")
-        print(f"a: {popt[4]:.8f} /GHz")
-        print(f"b: {popt[5]:.8f} rad")
+        print(
+            f"kappa_p/2π: {popt[0] / (2 * np.pi) * 1e3:.8f} ± {perr[0] / (2 * np.pi) * 1e3:.8f} MHz"
+        )
+        print(
+            f"J/2π: {popt[1] / (2 * np.pi) * 1e3:.8f} ± {perr[1] / (2 * np.pi) * 1e3:.8f} MHz"
+        )
+        print(f"f_p: {popt[2]:.8f} ± {perr[2]:.8f} GHz")
+        print(f"f_r: {popt[3]:.8f} ± {perr[3]:.8f} GHz")
+        print(f"a: {popt[4]:.8f} ± {perr[4]:.8f} /GHz")
+        print(f"b: {popt[5]:.8f} ± {perr[5]:.8f} rad")
 
         return {
             "popt": popt,
+            "pcov": pcov,
+            "perr": perr,
             "r2_score": r2_score,
             "y_pred": y_pred,
         }
