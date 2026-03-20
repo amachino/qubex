@@ -147,14 +147,24 @@ class CharacterizeReadoutParametersResult:
             )
         )
         fig.add_vline(
-            x=popt[2],  # f_p
+            x=popt[2],
             line=dict(color="red", dash="dash"),
-            annotation_text="purcell",
+            annotation=dict(
+                text="",
+                hovertext=f"purcell: {popt[2]:.8f} GHz",
+                showarrow=False,
+                hoverlabel=dict(bgcolor="red", font=dict(color="white")),
+            ),
         )
         fig.add_vline(
-            x=popt[3],  # f_r
+            x=popt[3],
             line=dict(color="green", dash="dash"),
-            annotation_text="resonator",
+            annotation=dict(
+                text="",
+                hovertext=f"resonator: {popt[3]:.8f} GHz",
+                showarrow=False,
+                hoverlabel=dict(bgcolor="green", font=dict(color="white")),
+            ),
         )
         fig.update_layout(
             title=dict(
