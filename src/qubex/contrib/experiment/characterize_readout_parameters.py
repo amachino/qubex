@@ -16,14 +16,15 @@ from qubex.experiment.models.result import Result
 def characterize_readout_parameters(
     exp: Experiment,
     *,
-    mux: int,
+    target: str | None = None,
     frequency_range: np.ndarray,
-    readout_amplitude: float,
+    readout_amplitude: float | None = None,
     n_shots: int = 1024,
     save_image: bool = True,
 ) -> CharacterizeReadoutParametersResult:
 
-    target = f"Q{4 * mux}"
+    if target is None:
+        target = exp.qubit_labels[0]
 
     if readout_amplitude is None:
         readout_amplitude = 0.01
@@ -35,6 +36,8 @@ def characterize_readout_parameters(
         save_image=save_image,
         n_shots=n_shots,
     )
+    _mux = target.replace("Q", "")
+    mux = int(int(_mux) // 4)
     return CharacterizeReadoutParametersResult(
         result=result,
         mux=mux,
@@ -52,22 +55,23 @@ class CharacterizeReadoutParametersResult:
 
     @property
     def phases(self) -> np.ndarray:
-        return self.result.data.get("phase_unwrap", np.nan)
+        return self.result.data.get("phases_unwrap", np.nan)
 
     @property
     def signals(self) -> np.ndarray:
-        return self.result.data.get("signal", np.nan)
+        return self.result.data.get("signals", np.nan)
 
     def fit(
         self,
+        *,
         f_r: float,
         f_p: float | None = None,
         kappa_p: float | None = None,
         J: float | None = None,
-        a: float | None = None,  # 1/GHz
-        b: float | None = None,  # rad
-        split_freq_width: float = 0.15,  # GHz
-        mode: Literal["least squares", "curve fit"] = "curve fit",
+        a: float | None = None,
+        b: float | None = None,
+        split_freq_width: float = 0.15,
+        mode: Literal["least_squares", "curve_fit"] = "curve_fit",
     ):
         if a is None:
             a = (self.phases[-1] - self.phases[0]) / (
@@ -78,13 +82,13 @@ class CharacterizeReadoutParametersResult:
         if f_p is None:
             f_p = f_r
         if kappa_p is None:
-            kappa_p = 0.01  # GHz
+            kappa_p = 2 * np.pi * 0.01  # GHz
         if J is None:
-            J = 0.01  # GHz
+            J = 2 * np.pi * 0.01  # GHz
 
         idx = np.where(
-            (self.frequency_range >= f_r - split_freq_width)
-            & (self.frequency_range <= f_r + split_freq_width)
+            (self.frequency_range >= f_r - split_freq_width / 2)
+            & (self.frequency_range <= f_r + split_freq_width / 2)
         )[0]
         _frequency_range = self.frequency_range[idx]
         _phases = self.phases[idx]
@@ -94,7 +98,7 @@ class CharacterizeReadoutParametersResult:
             [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf],  # Upper bounds
         ]
 
-        if mode == "least squares":
+        if mode == "least_squares":
 
             def residuals(params, x, y):
                 return y - _fit_func(x, *params)
@@ -107,7 +111,7 @@ class CharacterizeReadoutParametersResult:
                 bounds=bounds_params,
             )
             popt = res.x
-        elif mode == "curve fit":
+        elif mode == "curve_fit":
             initial_guess = [kappa_p, J, f_p, f_r, a, b]
             popt, _ = curve_fit(
                 _fit_func,
@@ -142,6 +146,16 @@ class CharacterizeReadoutParametersResult:
                 name="Fit",
             )
         )
+        fig.add_vline(
+            x=popt[2],  # f_p
+            line=dict(color="red", dash="dash"),
+            annotation_text="purcell",
+        )
+        fig.add_vline(
+            x=popt[3],  # f_r
+            line=dict(color="green", dash="dash"),
+            annotation_text="resonator",
+        )
         fig.update_layout(
             title=dict(
                 text="Characterization Readout Parameters",
@@ -155,13 +169,13 @@ class CharacterizeReadoutParametersResult:
         )
         fig.show()
         print("Fitted parameters:")
-        print(f"R² score: {np.round(r2_score, 6)}")
-        print(f"kappa_p/2π: {np.round(popt[0] / (2 * np.pi) * 1e3, 8)} MHz")
-        print(f"J/2π: {np.round(popt[1] / (2 * np.pi) * 1e3, 8)} MHz")
-        print(f"f_p: {np.round(popt[2], 8)} GHz")
-        print(f"f_r: {np.round(popt[3], 8)} GHz")
-        print(f"a: {np.round(popt[4], 10)} /GHz")
-        print(f"b: {np.round(popt[5], 8)} rad")
+        print(f"R² score: {r2_score:.4f}")
+        print(f"kappa_p/2π: {popt[0] / (2 * np.pi) * 1e3:.8f} MHz")
+        print(f"J/2π: {popt[1] / (2 * np.pi) * 1e3:.8f} MHz")
+        print(f"f_p: {popt[2]:.8f} GHz")
+        print(f"f_r: {popt[3]:.8f} GHz")
+        print(f"a: {popt[4]:.8f} /GHz")
+        print(f"b: {popt[5]:.8f} rad")
 
         return {
             "popt": popt,
@@ -170,48 +184,46 @@ class CharacterizeReadoutParametersResult:
         }
 
 
-def _Gamma(kappa_p, gamma_p, J, gamma_r, f_d, f_p, f_r):
+def _Gamma(kappa_p, gamma_p, J, gamma_r, omega_d, omega_p, omega_r):
     """
     Reflection coefficient when Purcell filter is present.
 
     Parameters
     ----------
     kappa_p : float
-        Coupling strength between Purcell filter and transmission line [Hz]
+        Coupling strength between Purcell filter and transmission line [rad/ns]
     gamma_p : float
-        Internal loss rate of Purcell filter [Hz]
+        Internal loss rate of Purcell filter [rad/ns]
     J : float
-        Coupling strength between Purcell filter and resonator [Hz]
+        Coupling strength between Purcell filter and resonator [rad/ns]
     gamma_r : float
-        Internal loss rate of resonator [Hz]
-    f_d : float
-        Frequency of incident wave [Hz]
-    f_p : float
-        Resonant frequency of Purcell filter [Hz]
-    f_r : float
-        Resonant frequency of resonator [Hz]
+        Internal loss rate of resonator [rad/ns]
+    omega_d : float
+        Angular frequency of incident wave [rad/ns]
+    omega_p : float
+        Angular frequency of Purcell filter [rad/ns]
+    omega_r : float
+        Angular frequency of resonator [rad/ns]
 
     Returns
     -------
     Gamma : complex
         Reflection coefficient
     """
-    omega_r = 2 * np.pi * f_r
-    omega_p = 2 * np.pi * f_p
-    omega_d = 2 * np.pi * f_d
-    kappa_p = 2 * np.pi * kappa_p
-    gamma_p = 2 * np.pi * gamma_p
-    J = 2 * np.pi * J
-
-    numerator = 4j * kappa_p * (2 * np.pi * (omega_r - omega_d) - 1j * gamma_r / 2)
-    denominator = (2j * 2 * np.pi * (omega_p - omega_d) + kappa_p + gamma_p) * (
-        2j * 2 * np.pi * (omega_r - omega_d) + gamma_r
+    numerator = 4j * kappa_p * ((omega_r - omega_d) - 1j * gamma_r / 2)
+    denominator = (2j * (omega_p - omega_d) + kappa_p + gamma_p) * (
+        2j * (omega_r - omega_d) + gamma_r
     ) + 4 * J**2
     return 1 - numerator / denominator
 
 
 def _fit_func(f_d, kappa_p, J, f_p, f_r, a, b):
+    omega_d = 2 * np.pi * f_d
+    omega_p = 2 * np.pi * f_p
+    omega_r = 2 * np.pi * f_r
     gamma_purcell = 2 * np.pi * 0  # Purcell: filterのinternal loss rate [GHz]
     gamma_resonator = 2 * np.pi * 0  # Resonator: internal loss rate [GHz]
-    angle = np.angle(_Gamma(kappa_p, gamma_purcell, J, gamma_resonator, f_d, f_p, f_r))
+    angle = np.angle(
+        _Gamma(kappa_p, gamma_purcell, J, gamma_resonator, omega_d, omega_p, omega_r)
+    )
     return -np.unwrap(angle) + a * f_d + b
