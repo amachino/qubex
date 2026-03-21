@@ -849,6 +849,52 @@ class Experiment:
             update_lsi=update_lsi,
         )
 
+    def stark_target(
+        self,
+        target: str,
+    ):
+        return f"{target}_stark"
+
+    def insitu_target(
+        self,
+        target: str,
+    ):
+        return f"{target}_insitu"
+
+    def make_stark_channel(
+        self,
+        target: str,
+        detuning: float,
+        lsi: bool,
+        channel: int,
+    ):
+        qubit = self.targets[target]
+        self.register_custom_target(
+            label=self.stark_target(target=target),
+            frequency=qubit.frequency + detuning,
+            box_id=qubit.channel._port.box_id,
+            port_number=qubit.channel._port.number,
+            channel_number=qubit.channel.number + channel,
+            update_lsi=lsi,
+        )
+
+    def make_insitu_channel(
+        self,
+        target: str,
+        detuning: float,
+        lsi: bool,
+        channel: int,
+    ):
+        qubit = self.targets[target]
+        self.register_custom_target(
+            label=self.insitu_target(target=target),
+            frequency=qubit.frequency + detuning,
+            box_id=qubit.channel._port.box_id,
+            port_number=qubit.channel._port.number,
+            channel_number=qubit.channel.number + channel,
+            update_lsi=lsi,
+        )
+
     @contextmanager
     def modified_frequencies(
         self,
