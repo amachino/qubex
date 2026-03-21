@@ -1,37 +1,87 @@
-import logging
+"""Top-level package exports for qubex."""
 
-from .style import apply_template
+from __future__ import annotations
 
-logger = logging.getLogger(__name__)
+import importlib
+from typing import TYPE_CHECKING, Any
 
-try:
-    import qubex.patches.quel_ic_config.abstract_nco_ftw_patch  # noqa: F401
-    import qubex.patches.quel_ic_config.linkup_fpga_mxfe_patch  # noqa: F401
-except ImportError:
-    logger.info("Failed to import abstract_nco_ftw_patch.")
+import qxpulse as pulse
+from qxpulse import (
+    Blank,
+    Pulse,
+    PulseArray,
+    PulseChannel,
+    PulseSchedule,
+    VirtualZ,
+)
 
+from .logging import set_log_level
 
-try:
-    from . import pulse
+if TYPE_CHECKING:
+    from . import contrib, core, visualization as viz
     from .analysis import fitting as fit
-    from .analysis import visualization as viz
+    from .core import Frequency, FrequencyArray, Time, TimeArray, units
     from .experiment import Experiment
-    from .pulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
-except ImportError as e:
-    logger.error(f"Import error: {e}")
+    from .measurement import Measurement
 
-apply_template("qubex")
+# Set default log level to INFO
+set_log_level("INFO")
 
 
 __all__ = [
-    "fit",
-    "viz",
-    "pulse",
-    "Experiment",
     "Blank",
+    "Experiment",
+    "Frequency",
+    "FrequencyArray",
+    "Measurement",
     "Pulse",
     "PulseArray",
     "PulseChannel",
     "PulseSchedule",
+    "Time",
+    "TimeArray",
     "VirtualZ",
+    "contrib",
+    "core",
+    "fit",
+    "pulse",
+    "set_log_level",
+    "units",
+    "viz",
 ]
+
+
+_LAZY_MODULE_ALIASES: dict[str, str] = {
+    "contrib": "qubex.contrib",
+    "core": "qubex.core",
+    "fit": "qubex.analysis.fitting",
+    "viz": "qubex.visualization",
+}
+
+
+_LAZY_ATTR_TO_MODULE: dict[str, str] = {
+    "Experiment": "qubex.experiment",
+    "Measurement": "qubex.measurement",
+    "Frequency": "qubex.core",
+    "FrequencyArray": "qubex.core",
+    "Time": "qubex.core",
+    "TimeArray": "qubex.core",
+    "units": "qubex.core",
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily load heavyweight top-level exports on first access."""
+    module_name = _LAZY_MODULE_ALIASES.get(name)
+    if module_name is not None:
+        module = importlib.import_module(module_name)
+        globals()[name] = module
+        return module
+
+    module_name = _LAZY_ATTR_TO_MODULE.get(name)
+    if module_name is None:
+        raise AttributeError(name)
+    module = importlib.import_module(module_name)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

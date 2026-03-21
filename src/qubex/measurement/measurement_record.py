@@ -1,124 +1,40 @@
+"""Compatibility exports for legacy measurement record imports."""
+
 from __future__ import annotations
 
-import datetime
-import os
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Final, Generic, TypeVar
+from typing import TYPE_CHECKING, Any
 
-import jsonpickle
-import jsonpickle.ext.numpy as jsonpickle_numpy
+from qubex.compat.deprecated_imports import (
+    deprecated_module_dir,
+    load_deprecated_module_attr,
+)
 
-jsonpickle_numpy.register_handlers()
+# TODO: Remove this compatibility shim after downstream imports migrate to
+# `qubex.measurement.models.measurement_record`.
+if TYPE_CHECKING:
+    from .models.measurement_record import DEFAULT_RAWDATA_DIR, MeasurementRecord
+
+    DEFAULT_DATA_DIR = DEFAULT_RAWDATA_DIR
+
+_EXPORTS = {
+    "DEFAULT_DATA_DIR": "DEFAULT_RAWDATA_DIR",
+    "DEFAULT_RAWDATA_DIR": "DEFAULT_RAWDATA_DIR",
+    "MeasurementRecord": "MeasurementRecord",
+}
+
+__all__ = ["DEFAULT_DATA_DIR", "DEFAULT_RAWDATA_DIR", "MeasurementRecord"]
 
 
-DEFAULT_DATA_DIR: Final[str] = ".rawdata"
+def __getattr__(name: str) -> Any:
+    """Resolve legacy exports lazily."""
+    return load_deprecated_module_attr(
+        name=name,
+        legacy_module="qubex.measurement.measurement_record",
+        canonical_module="qubex.measurement.models.measurement_record",
+        exports=_EXPORTS,
+    )
 
-T = TypeVar("T")
 
-
-@dataclass
-class MeasurementRecord(Generic[T]):
-    """
-    A dataclass to store the results of a measurement.
-
-    Attributes
-    ----------
-    data : T
-        The data to be saved in the record.
-    created_at : str
-        The date and time when the record was created.
-    """
-
-    data: T
-    file_name: str = ""
-    created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def save(
-        self,
-        data_dir: Path | str | None = None,
-    ):
-        """
-        Save the experiment record to a pickle file.
-
-        Parameters
-        ----------
-        datadata_dir: Path | str | None
-            Path to the directory where the record will be saved.
-        """
-        if data_dir is None:
-            data_dir = DEFAULT_DATA_DIR
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
-
-        extension = ".json"
-        current_date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        file_name = f"{current_date}{extension}"
-        file_path = os.path.join(
-            data_dir,
-            file_name,
-        )
-        self.file_name = file_name
-        with open(file_path, "w") as f:
-            encoded = jsonpickle.encode(self, unpicklable=True)
-            f.write(encoded)  # type: ignore
-
-    @staticmethod
-    def create(
-        data: Any,
-        data_dir: Path | str | None = None,
-    ) -> MeasurementRecord:
-        """
-        Create and save a new experiment record.
-
-        Parameters
-        ----------
-        data : Any
-            Data to be saved in the record.
-        data_dir : Path | str | None
-            Path to the directory where the record will be saved.
-
-        Returns
-        -------
-        MeasurementRecord
-            The newly created and saved MeasurementRecord instance.
-        """
-        record = MeasurementRecord(data=data)
-        record.save(data_dir=data_dir)
-        return record
-
-    @staticmethod
-    def load(
-        name: str,
-        data_dir: Path | str | None = None,
-    ) -> MeasurementRecord:
-        """
-        Load an experiment record from a file.
-
-        Parameters
-        ----------
-        name : str
-            Name of the experiment record to load.
-        data_dir : Path | str | None
-            Path to the directory where the record is saved.
-
-        Returns
-        -------
-        MeasurementRecord
-            The loaded MeasurementRecord instance.
-
-        Raises
-        ------
-        FileNotFoundError
-            If the specified file does not exist.
-        """
-        if data_dir is None:
-            data_dir = DEFAULT_DATA_DIR
-        if not name.endswith(".json"):
-            name = name + ".json"
-        path = os.path.join(data_dir, name)
-        with open(path, "r") as f:
-            data = jsonpickle.decode(f.read())
-            if not isinstance(data, MeasurementRecord):
-                raise TypeError(f"Expected MeasurementRecord, got {type(data)}")
-        return data
+def __dir__() -> list[str]:
+    """Return the public names exposed by this compatibility shim."""
+    return deprecated_module_dir(exports=_EXPORTS)

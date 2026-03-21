@@ -1,3 +1,5 @@
+"""Numerical utilities for analysis workflows."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -17,20 +19,26 @@ def hamiltonian(
     Parameters
     ----------
     qubit_frequency : float
-        The frequency of the qubit.
+        Frequency of the qubit.
+
     qubit_anharmonicity : float
-        The anharmonicity of the qubit.
+        Anharmonicity of the qubit.
+
     drive_frequency : float
-        The frequency of the drive.
+        Frequency of the drive.
+
     drive_amplitude : complex
-        The complex amplitude of the drive.
+        Complex amplitude of the drive.
+
     dimension : int
-        The dimension of the Hilbert space.
+        Dimension of the Hilbert space.
+
 
     Returns
     -------
     NDArray[np.complex128]
-        The Hamiltonian matrix.
+        Hamiltonian matrix.
+
     """
     H0 = np.diag(
         [
@@ -62,22 +70,29 @@ def adiabatic_coefficients(
     Parameters
     ----------
     qubit_frequency : float
-        The frequency of the qubit.
+        Frequency of the qubit.
+
     qubit_anharmonicity : float
-        The anharmonicity of the qubit.
+        Anharmonicity of the qubit.
+
     drive_frequency : float
-        The frequency of the drive.
+        Frequency of the drive.
+
     drive_waveform : NDArray[np.complex128]
-        The complex amplitude of the drive at each time step.
+        Complex amplitude of the drive at each time step.
+
     sampling_period : float
-        The time interval between samples in the drive waveform.
+        Time interval between samples in the drive waveform.
+
     dimension : int
-        The dimension of the Hilbert space.
+        Dimension of the Hilbert space.
+
 
     Returns
     -------
     NDArray[np.float64]
-        The adiabatic coefficients for the drive waveform.
+        Adiabatic coefficients for the drive waveform.
+
     """
     H = np.array(
         [
@@ -139,11 +154,14 @@ def calc_1q_gate_coherence_limit(
     Parameters
     ----------
     gate_time : float
-        The time duration of the gate.
+        Time duration of the gate.
+
     t1 : float
-        The T1 time of the qubit.
+        T1 time of the qubit.
+
     t2 : float
-        The T2 time of the qubit.
+        T2 time of the qubit.
+
 
     Returns
     -------
@@ -170,11 +188,14 @@ def calc_2q_gate_coherence_limit(
     Parameters
     ----------
     gate_time : float
-        The time duration of the gate.
+        Time duration of the gate.
+
     t1 : tuple[float, float]
-        The T1 times of the qubits.
+        T1 times of the qubits.
+
     t2 : tuple[float, float]
-        The T2 times of the qubits.
+        T2 times of the qubits.
+
 
     Returns
     -------

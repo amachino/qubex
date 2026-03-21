@@ -1,14 +1,35 @@
+"""Tests for system config loader."""
+
 from __future__ import annotations
 
 import logging
 import math
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
 
-from qubex.backend.config_loader import ConfigLoader
-from qubex.backend.experiment_system import DEFAULT_PUMP_FREQUENCY
+from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
+from qubex.system.config_loader import ConfigLoader
+from qubex.system.control_system import CapPort, GenPort, PortType
+from qubex.system.measurement_defaults import MeasurementDefaults
+from qubex.system.quel1.quel1_control_parameter_defaults import (
+    DEFAULT_CAPTURE_DELAY,
+    DEFAULT_PUMP_FREQUENCY_GHZ,
+)
+from qubex.system.quel1.quel1_system_constants import (
+    DEFAULT_CNCO_FREQUENCY_HZ,
+    DEFAULT_FNCO_FREQUENCY_HZ,
+    DEFAULT_LO_FREQUENCY_HZ,
+)
+from qubex.system.quel3.quel3_control_parameter_defaults import (
+    DEFAULT_CONTROL_AMPLITUDE as DEFAULT_QUEL3_CONTROL_AMPLITUDE,
+    DEFAULT_DC_VOLTAGE as DEFAULT_QUEL3_DC_VOLTAGE,
+    DEFAULT_PUMP_FREQUENCY_GHZ as DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ,
+    DEFAULT_READOUT_AMPLITUDE as DEFAULT_QUEL3_READOUT_AMPLITUDE,
+)
+from qubex.typing import ConfigurationMode
 
 
 def _write_yaml(path: Path, data: dict) -> None:
@@ -27,6 +48,14 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
         chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}
     }
     _write_yaml(config_dir / "chip.yaml", chip_yaml)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            chip_id: {
+                "chip_id": chip_id,
+            }
+        },
+    )
 
     # box.yaml (one box sufficient)
     box_yaml = {
@@ -76,6 +105,13 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
             "data": {"Q0": 0.05},
         },
     )
+    _write_yaml(
+        params_dir / "frequency_margin.yaml",
+        {
+            "meta": {"unit": "GHz", "default": 0.1},
+            "data": {"READ": 0.2},
+        },
+    )
 
     # jpa_params per-file: pass-through
     _write_yaml(
@@ -105,11 +141,101 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
     return config_dir, params_dir, chip_id
 
 
+def _write_system_catalog(
+    config_dir: Path,
+    *,
+    system_id: str,
+    chip_id: str,
+    backend: str,
+    system_section: dict | None = None,
+) -> None:
+    payload: dict[str, dict[str, object]] = {
+        system_id: {
+            "chip_id": chip_id,
+            "backend": backend,
+        }
+    }
+    if system_section is not None:
+        payload[system_id][backend] = system_section
+    _write_yaml(config_dir / "system.yaml", payload)
+
+
+def _load_r8_experiment_system(
+    tmp_path: Path,
+    *,
+    awg_option: str,
+    configuration_mode: ConfigurationMode,
+) -> Any:
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1se-riken8",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+                "options": [awg_option],
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-6", "BOX1-7", "BOX1-8", "BOX1-9"],
+                    "pump": "BOX1-2",
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        params_dir / "qubit_frequency.yaml",
+        {
+            "meta": {"unit": "MHz"},
+            "data": {"Q0": 5000, "Q1": 5100, "Q2": 5200, "Q3": 5300},
+        },
+    )
+    _write_yaml(
+        params_dir / "resonator_frequency.yaml",
+        {
+            "meta": {"unit": "MHz"},
+            "data": {"Q0": 8000, "Q1": 8100, "Q2": 8200, "Q3": 8300},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        configuration_mode=configuration_mode,
+    )
+    return loader.get_experiment_system()
+
+
+def _assert_target_channel(
+    system: Any,
+    label: str,
+    *,
+    port_number: int,
+    channel_number: int,
+) -> None:
+    target = system.get_target(label)
+    assert target.channel.port.number == port_number
+    assert target.channel.number == channel_number
+
+
 def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
+    """Given ConfigLoader, when building ExperimentSystem, then units are converted correctly."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -148,18 +274,230 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     assert first_ctrl_port.number == 2
     (mux_ro, ro_port) = w.read_out[0]
     (mux_ri, ri_port) = w.read_in[0]
-    assert (
-        ro_port.number == 1
-        and ri_port.number == 0
-        and mux_ro.index == mux_ri.index == 0
-    )
+    assert ro_port.number == 1
+    assert ri_port.number == 0
+    assert mux_ro.index == mux_ri.index == 0
 
 
-def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
+def test_load_uses_empty_measurement_defaults_when_file_is_missing(
+    tmp_path: Path,
+) -> None:
+    """Given no measurement defaults file, when loading, then ExperimentSystem keeps an empty mapping."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.get_experiment_system().measurement_defaults == MeasurementDefaults()
+
+
+def test_load_applies_measurement_defaults_file_to_experiment_system(
+    tmp_path: Path,
+) -> None:
+    """Given measurement defaults yaml, when loading, then ExperimentSystem stores the parsed defaults."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "measurement_defaults.yaml",
+        {
+            "schema_version": 1,
+            "execution": {
+                "n_shots": 2048,
+                "shot_interval_ns": 200000.0,
+            },
+            "readout": {
+                "duration_ns": 512.0,
+                "ramp_time_ns": 24.0,
+                "pre_margin_ns": 16.0,
+                "post_margin_ns": 96.0,
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    measurement_defaults = loader.get_experiment_system().measurement_defaults
+
+    assert measurement_defaults.execution.n_shots == 2048
+    assert measurement_defaults.execution.shot_interval_ns == 200000.0
+    assert measurement_defaults.readout.duration_ns == 512.0
+    assert measurement_defaults.readout.ramp_time_ns == 24.0
+    assert measurement_defaults.readout.pre_margin_ns == 16.0
+    assert measurement_defaults.readout.post_margin_ns == 96.0
+
+
+def test_load_resolves_system_id_and_system_keyed_wiring(tmp_path: Path) -> None:
+    """Given system catalog entries, when loading by system_id, then system wiring and boxes are selected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            },
+            "BOX2": {
+                "name": "Box Two",
+                "type": "quel1-a",
+                "address": "10.0.0.3",
+                "adapter": "dummy",
+            },
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "SYS-A": {
+                "chip_id": chip_id,
+                "backend": "quel1",
+                "quel1": {"clock_master": "10.0.0.9"},
+            },
+            "SYS-B": {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            },
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            "SYS-A": [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                    "pump": "BOX1-3",
+                }
+            ],
+            "SYS-B": [
+                {
+                    "mux": 0,
+                    "read_out": "BOX2-1",
+                    "read_in": "BOX2-0",
+                    "ctrl": ["BOX2-2", "BOX2-4", "BOX2-9", "BOX2-11"],
+                    "pump": "BOX2-3",
+                }
+            ],
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id="SYS-A",
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert loader.system_id == "SYS-A"
+    assert loader.chip_id == chip_id
+    assert system.control_system.clock_master_address == "10.0.0.9"
+    assert [box.id for box in system.control_system.boxes] == ["BOX1"]
+    assert system.control_system.get_gen_port("BOX1", 1).number == 1
+    with pytest.raises(KeyError, match="Box `BOX2` not found"):
+        system.control_system.get_box("BOX2")
+
+
+def test_load_accepts_colon_separated_wiring_specifiers(tmp_path: Path) -> None:
+    """Given colon-based wiring specifiers, when loading, then ConfigLoader resolves ports correctly."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1:1",
+                    "read_in": "BOX1:0",
+                    "ctrl": ["BOX1:2", "BOX1:4", "BOX1:9", "BOX1:11"],
+                    "pump": "BOX1:3",
+                }
+            ]
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert system.control_system.get_gen_port("BOX1", 1).number == 1
+    assert system.control_system.get_cap_port("BOX1", 0).number == 0
+
+
+def test_load_warns_for_deprecated_chip_id_when_system_match_is_unique(
+    tmp_path: Path,
+) -> None:
+    """Given a unique system match, when loading by chip_id, then ConfigLoader warns and resolves that system."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_system_catalog(
+        config_dir,
+        system_id="SYS-A",
         chip_id=chip_id,
+        backend="quel1",
+        system_section={"clock_master": "10.0.0.9"},
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {"SYS-A": (yaml.safe_load((config_dir / "wiring.yaml").read_text()))[chip_id]},
+    )
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+    assert loader.system_id == "SYS-A"
+    assert loader.chip_id == chip_id
+
+
+def test_load_raises_for_ambiguous_chip_id_in_system_catalog(tmp_path: Path) -> None:
+    """Given multiple system matches, when loading by chip_id, then ConfigLoader raises ValueError."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "SYS-A": {"chip_id": chip_id, "backend": "quel1"},
+            "SYS-B": {"chip_id": chip_id, "backend": "quel3"},
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            "SYS-A": [],
+            "SYS-B": [],
+        },
+    )
+
+    with (
+        pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"),
+        pytest.raises(ValueError, match="multiple systems share the same chip"),
+    ):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
+    """Given ConfigLoader, when loading control params, then JPA params are passed through."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -168,38 +506,58 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
 
     # Per-file control_amplitude overrides default for Q0; others fallback to DEFAULT_CONTROL_AMPLITUDE
     assert math.isclose(cp.get_control_amplitude("Q0"), 0.05, rel_tol=0, abs_tol=1e-12)
-    assert math.isclose(cp.get_control_amplitude("Q3"), 0.03, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(cp.get_control_amplitude("Q3"), 0.1, rel_tol=0, abs_tol=1e-12)
 
     # Legacy readout_amplitude used when per-file is absent
     assert math.isclose(cp.get_readout_amplitude("Q0"), 0.02, rel_tol=0, abs_tol=1e-12)
-    assert math.isclose(cp.get_readout_amplitude("Q1"), 0.01, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(cp.get_readout_amplitude("Q1"), 0.1, rel_tol=0, abs_tol=1e-12)
 
-    # jpa_params are passed through, getters reflect provided/None/default
+    # jpa_params are resolved to effective values during load.
     assert cp.jpa_params.get(0) == {
         "pump_frequency": 12.3,
         "pump_amplitude": 0.1,
         "dc_voltage": 0.2,
     }
-    assert cp.jpa_params.get(1) is None
+    assert cp.jpa_params.get(1) == {
+        "pump_frequency": DEFAULT_PUMP_FREQUENCY_GHZ,
+        "pump_amplitude": 0.0,
+        "dc_voltage": 0.0,
+    }
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
-        cp.get_pump_frequency(1), DEFAULT_PUMP_FREQUENCY, rel_tol=0, abs_tol=1e-12
+        cp.get_pump_frequency(1),
+        DEFAULT_PUMP_FREQUENCY_GHZ,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert "CTRL_GE" not in cp.frequency_margin
+    assert math.isclose(cp.get_frequency_margin("READ"), 0.2, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(
+        cp.get_frequency_margin("CTRL_GE"), 0.1, rel_tol=0, abs_tol=1e-12
     )
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
+    """Given deprecated arguments, when calling get_experiment_system, then ConfigLoader emits a warning."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=(
+            r"get_experiment_system\(chip_id\) is deprecated; the argument is ignored\. "
+            r"Use get_experiment_system\(\) instead\."
+        ),
+    ):
         sys = loader.get_experiment_system(chip_id="IGNORED")
     assert sys is not None
 
 
 def test_merge_per_file_over_legacy(tmp_path: Path):
+    """Given per-file and legacy params, when loading params, then per-file values override legacy values."""
     # Arrange: start from minimal files, then add per-file readout_amplitude only for Q1
     # and set legacy props.yaml to provide qubit_frequency for Q2.
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
@@ -225,7 +583,7 @@ def test_merge_per_file_over_legacy(tmp_path: Path):
 
     # Act
     loader = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -235,7 +593,7 @@ def test_merge_per_file_over_legacy(tmp_path: Path):
     # Assert: readout_amplitude is merged: Q0 from legacy, Q1 from per-file, others default
     assert math.isclose(cp.get_readout_amplitude("Q0"), 0.02, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(cp.get_readout_amplitude("Q1"), 0.04, rel_tol=0, abs_tol=1e-12)
-    assert math.isclose(cp.get_readout_amplitude("Q2"), 0.01, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(cp.get_readout_amplitude("Q2"), 0.1, rel_tol=0, abs_tol=1e-12)
 
     # Assert: qubit_frequency merged: per-file for Q0/Q1 (with unit conversion and default),
     # legacy provides Q2 (GHz, no conversion), Q3 remains NaN
@@ -251,6 +609,7 @@ def test_merge_per_file_over_legacy(tmp_path: Path):
 
 
 def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    """Given per-file overrides, when loading params, then ConfigLoader logs an override warning."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     # Per-file readout_amplitude overrides legacy value for Q0 (legacy is 0.02)
@@ -262,10 +621,10 @@ def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture)
         },
     )
 
-    caplog.set_level(logging.WARNING, logger="qubex.backend.config_loader")
+    caplog.set_level(logging.WARNING, logger="qubex.system.config_loader")
 
     _ = ConfigLoader(
-        chip_id=chip_id,
+        system_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -273,3 +632,1520 @@ def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture)
     # Assert a warning was logged indicating override
     messages = [rec.getMessage() for rec in caplog.records]
     assert any(("overrides legacy" in m and "readout_amplitude" in m) for m in messages)
+
+
+def test_load_param_data_applies_default_when_requested(tmp_path: Path) -> None:
+    """Given per-file default values, when defaults are requested, then default values are applied."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    with_default = loader.load_param_data("qubit_frequency", use_default=True)
+    without_default = loader.load_param_data("qubit_frequency", use_default=False)
+
+    assert math.isclose(with_default["Q1"], 6.0, rel_tol=0, abs_tol=1e-9)
+    assert without_default["Q1"] is None
+
+
+def test_load_param_data_accepts_qubit_indices_in_per_file_yaml(tmp_path: Path) -> None:
+    """Given indexed qubit keys in per-file params, when loading, then ConfigLoader resolves them to labels."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        params_dir / "control_amplitude.yaml",
+        {
+            "meta": {},
+            "data": {0: 0.15, 1: 0.25},
+        },
+    )
+    _write_yaml(
+        params_dir / "qubit_frequency.yaml",
+        {
+            "meta": {"unit": "MHz"},
+            "data": {0: 5100, 1: 6200},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+    control_parameters = system.control_params
+
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q0"),
+        0.15,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q1"),
+        0.25,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        system.quantum_system.get_qubit("Q0").frequency,
+        5.1,
+        rel_tol=0,
+        abs_tol=1e-9,
+    )
+
+
+def test_loader_uses_env_root_defaults_for_shared_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given env-root shared layout, when dirs are omitted, then ConfigLoader loads from that root."""
+    root = tmp_path / "qubex-config"
+    config_dir = root / "config"
+    params_dir = root / "params" / "SYS-A"
+    chip_id = "TESTCHIP"
+    system_id = "SYS-A"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            system_id: {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            system_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                    "pump": "BOX1-3",
+                }
+            ]
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    monkeypatch.setenv("QUBEX_CONFIG_ROOT", str(root))
+
+    loader = ConfigLoader(system_id=system_id)
+
+    assert loader.config_path == config_dir.resolve()
+    assert loader.params_path == params_dir.resolve()
+    assert loader.system_id == system_id
+
+
+def test_loader_uses_legacy_system_root_when_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given legacy nested system layout, when dirs are omitted, then ConfigLoader resolves it."""
+    root = tmp_path / "legacy-root"
+    config_dir = root / "SYS-A" / "config"
+    params_dir = root / "SYS-A" / "params"
+    chip_id = "TESTCHIP"
+    system_id = "SYS-A"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            system_id: {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            system_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                    "pump": "BOX1-3",
+                }
+            ]
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    monkeypatch.delenv("QUBEX_CONFIG_ROOT", raising=False)
+    monkeypatch.setattr(
+        "qubex.system.config_paths.SHARED_CONFIG_ROOT",
+        tmp_path / "opt-root",
+    )
+    monkeypatch.setattr("qubex.system.config_paths.LEGACY_SHARED_CONFIG_ROOT", root)
+    monkeypatch.setattr(
+        "qubex.system.config_paths._get_home_dir",
+        lambda: tmp_path / "home",
+    )
+
+    loader = ConfigLoader(system_id=system_id)
+
+    assert loader.config_path == config_dir.resolve()
+    assert loader.params_path == params_dir.resolve()
+    assert loader.system_id == system_id
+
+
+def test_load_param_data_accepts_qubit_indices_in_legacy_yaml(tmp_path: Path) -> None:
+    """Given indexed qubit keys in legacy params, when loading, then ConfigLoader resolves them to labels."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        params_dir / "params.yaml",
+        {
+            chip_id: {
+                "readout_amplitude": {0: 0.12, 1: 0.13},
+            }
+        },
+    )
+    _write_yaml(
+        params_dir / "props.yaml",
+        {
+            chip_id: {
+                "qubit_frequency": {0: 5.1, 1: 5.2},
+            }
+        },
+    )
+    (params_dir / "control_amplitude.yaml").unlink()
+    (params_dir / "qubit_frequency.yaml").unlink()
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+    control_parameters = system.control_params
+
+    assert math.isclose(
+        control_parameters.get_readout_amplitude("Q0"),
+        0.12,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        control_parameters.get_readout_amplitude("Q1"),
+        0.13,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        system.quantum_system.get_qubit("Q0").frequency,
+        5.1,
+        rel_tol=0,
+        abs_tol=1e-9,
+    )
+    assert math.isclose(
+        system.quantum_system.get_qubit("Q1").frequency,
+        5.2,
+        rel_tol=0,
+        abs_tol=1e-9,
+    )
+
+
+def test_load_param_data_expands_index_keys_for_144q_labels(tmp_path: Path) -> None:
+    """Given indexed qubit keys on a 144-qubit chip, when loading, then labels are zero-padded correctly."""
+    chip_id = "TEST144"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test 144Q Chip", "n_qubits": 144}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-2", "BOX1-4", "BOX1-9", "BOX1-11"],
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        params_dir / "control_amplitude.yaml",
+        {
+            "meta": {},
+            "data": {0: 0.21, 1: 0.22},
+        },
+    )
+    _write_yaml(params_dir / "params.yaml", {})
+    _write_yaml(params_dir / "props.yaml", {})
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    control_parameters = loader.get_experiment_system().control_params
+
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q000"),
+        0.21,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+    assert math.isclose(
+        control_parameters.get_control_amplitude("Q001"),
+        0.22,
+        rel_tol=0,
+        abs_tol=1e-12,
+    )
+
+
+def test_load_param_data_requires_structured_yaml(tmp_path: Path) -> None:
+    """Given malformed per-file params, when loading params, then ValueError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(params_dir / "control_amplitude.yaml", {"unexpected": 1})
+
+    with pytest.raises(TypeError, match="Per-file params must be structured"):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_load_capture_delay_requires_meta_unit(tmp_path: Path) -> None:
+    """Given capture_delay without meta.unit, when loading, then ValueError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        params_dir / "capture_delay.yaml",
+        {
+            "meta": {},
+            "data": {0: 0.8},
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"capture_delay\.yaml.*meta\.unit"):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_load_rejects_quel1_capture_delay_ns_unit(tmp_path: Path) -> None:
+    """Given quel1 capture_delay in ns, when loading, then ValueError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        params_dir / "capture_delay.yaml",
+        {
+            "meta": {"unit": "ns"},
+            "data": {0: 8.0},
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"capture_delay\.yaml.*quel1.*ndelay"):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_load_rejects_quel3_capture_delay_word_file(tmp_path: Path) -> None:
+    """Given quel3 capture_delay_word data, when loading, then ValueError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        params_dir / "capture_delay_word.yaml",
+        {
+            "meta": {"unit": "word"},
+            "data": {0: 1},
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"capture_delay_word\.yaml.*quel3",
+    ):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_control_system_box_options_loaded_from_box_yaml(tmp_path: Path) -> None:
+    """Given box options in box.yaml, when loading config, then box options are preserved."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1se-riken8",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+                "options": ["se8_mxfe1_awg1331", "refclk_corrected_mxfe1"],
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-3", "BOX1-6", "BOX1-7", "BOX1-8"],
+                    "pump": "BOX1-2",
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            chip_id: {
+                "chip_id": chip_id,
+                "backend": "quel1",
+            }
+        },
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+    box = system.control_system.get_box("BOX1")
+
+    assert box.options == ("se8_mxfe1_awg1331", "refclk_corrected_mxfe1")
+
+
+def test_control_system_clock_master_prefers_system_yaml(tmp_path: Path) -> None:
+    """Given system.yaml and chip.yaml clock-master values, when loading control system config, then system.yaml value is used."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": "quel1",
+            "quel1": {"clock_master": "10.0.0.9"},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert system.control_system.clock_master_address == "10.0.0.9"
+
+
+def test_control_system_allows_missing_clock_master_address(tmp_path: Path) -> None:
+    """Given no clock-master config, when loading QuEL-1 control system, then clock master remains unset."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4}},
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+
+    loader.load()
+
+    assert loader.get_experiment_system().control_system.clock_master_address is None
+
+
+def test_config_loader_autoload_false_requires_explicit_load(tmp_path: Path) -> None:
+    """Given autoload disabled, when accessing system before load, then RuntimeError is raised."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+
+    with pytest.raises(RuntimeError, match="call `load\\(\\)` first"):
+        loader.get_experiment_system()
+
+    loader.load()
+
+    system = loader.get_experiment_system()
+    assert system is not None
+
+
+def test_load_uses_wiring_yaml_for_quel3_backend(tmp_path: Path) -> None:
+    """Given quel3 backend, when loading, then ConfigLoader uses wiring.yaml."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
+    loader.load()
+
+    assert loader.backend_kind == BACKEND_KIND_QUEL3
+    assert loader.wiring_file == "wiring.yaml"
+
+
+def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
+    """Given quel3 backend, when loading, then readout ports are configured without LO."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    control_system = experiment_system.control_system
+    read_out_port = control_system.get_gen_port("BOX1", 1)
+    read_in_port = control_system.get_cap_port("BOX1", 0)
+
+    assert read_out_port.sideband is None
+    assert read_out_port.lo_freq is None
+    assert read_in_port.lo_freq is None
+
+
+def test_load_allows_quel3_box_without_address_or_adapter(tmp_path: Path) -> None:
+    """Given quel3 box yaml without address or adapter, when loading, then configuration still succeeds."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    box = loader.get_experiment_system().control_system.get_box("BOX1")
+
+    assert box.address == ""
+    assert box.adapter == ""
+
+
+def test_load_requires_address_for_non_quel3_box(tmp_path: Path) -> None:
+    """Given non-quel3 box yaml without address, when loading, then ConfigLoader raises KeyError."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1-a",
+                "adapter": "dummy",
+            }
+        },
+    )
+
+    with pytest.raises(
+        KeyError,
+        match=r"requires `address` in `box\.yaml`",
+    ):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
+def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
+    tmp_path: Path,
+) -> None:
+    """Given quel3 backend, when loading control parameters, then quel3 defaults are materialized."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    control_parameters = loader.get_experiment_system().control_params
+
+    assert control_parameters.get_control_amplitude("Q3") == pytest.approx(
+        DEFAULT_QUEL3_CONTROL_AMPLITUDE
+    )
+    assert control_parameters.get_readout_amplitude("Q1") == pytest.approx(
+        DEFAULT_QUEL3_READOUT_AMPLITUDE
+    )
+    assert control_parameters.control_vatt["Q0"] is None
+    assert control_parameters.readout_vatt[0] is None
+    assert control_parameters.capture_delay[0] is None
+    with pytest.raises(ValueError, match="Control VATT"):
+        control_parameters.get_control_vatt("Q0")
+    with pytest.raises(ValueError, match="Readout VATT"):
+        control_parameters.get_readout_vatt(0)
+    with pytest.raises(ValueError, match="Capture delay"):
+        control_parameters.get_capture_delay(0)
+    assert control_parameters.get_pump_frequency(1) == pytest.approx(
+        DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ
+    )
+    assert control_parameters.get_dc_voltage(1) == pytest.approx(
+        DEFAULT_QUEL3_DC_VOLTAGE
+    )
+
+
+def test_load_preserves_quel3_capture_delay_ns_without_ndelay_side_effect(
+    tmp_path: Path,
+) -> None:
+    """Given quel3 capture_delay in ns, when loading, then control params keep ns and capture ports do not set ndelay."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(
+        params_dir / "capture_delay.yaml",
+        {
+            "meta": {"unit": "ns"},
+            "data": {0: 0.8},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    system = loader.get_experiment_system()
+
+    assert system.control_params.capture_delay[0] == pytest.approx(0.8)
+    assert system.wiring_info.read_in[0][1].channels[0].ndelay is None
+
+
+def test_load_resolves_r8_pump_frequency_with_r8_default(tmp_path: Path) -> None:
+    """Given R8 boxes, when loading control parameters, then pump frequency defaults to 6.0 GHz."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel1se-riken8",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "wiring.yaml",
+        {
+            chip_id: [
+                {
+                    "mux": 0,
+                    "read_out": "BOX1-1",
+                    "read_in": "BOX1-0",
+                    "ctrl": ["BOX1-3", "BOX1-6", "BOX1-7", "BOX1-8"],
+                    "pump": "BOX1-2",
+                }
+            ]
+        },
+    )
+    _write_yaml(
+        params_dir / "jpa_params.yaml",
+        {
+            "meta": {},
+            "data": {
+                0: None,
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    control_parameters = loader.get_experiment_system().control_params
+
+    assert control_parameters.get_pump_frequency(0) == pytest.approx(6.0)
+
+
+def test_r8_awg1331_with_ge_ef_cr_uses_prefix_layouts(tmp_path: Path) -> None:
+    """Given awg1331 and ge-ef-cr, when building targets, then 1-channel ports keep GE and 3-channel ports keep GE/EF/CR."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg1331",
+        configuration_mode="ge-ef-cr",
+    )
+
+    assert "Q0" in system.gen_targets
+    assert "Q0-ef" not in system.gen_targets
+    assert "Q0-CR" not in system.gen_targets
+    _assert_target_channel(system, "Q0", port_number=6, channel_number=0)
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(system, "Q1-ef", port_number=7, channel_number=1)
+    _assert_target_channel(system, "Q1-CR", port_number=7, channel_number=2)
+
+    _assert_target_channel(system, "Q2", port_number=8, channel_number=0)
+    _assert_target_channel(system, "Q2-ef", port_number=8, channel_number=1)
+    _assert_target_channel(system, "Q2-CR", port_number=8, channel_number=2)
+
+    assert "Q3" in system.gen_targets
+    assert "Q3-ef" not in system.gen_targets
+    assert "Q3-CR" not in system.gen_targets
+    _assert_target_channel(system, "Q3", port_number=9, channel_number=0)
+
+
+def test_r8_awg1331_with_ge_cr_cr_keeps_two_cr_channels(tmp_path: Path) -> None:
+    """Given awg1331 and ge-cr-cr, when building targets, then 3-channel ports dedicate both extra channels to CR targets."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg1331",
+        configuration_mode="ge-cr-cr",
+    )
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(system, "Q1-CR", port_number=7, channel_number=1)
+    assert "Q1-ef" not in system.gen_targets
+
+    cr_channels = {
+        system.get_target(f"Q1-{spectator.label}").channel.number
+        for spectator in system.get_spectator_qubits("Q1")
+    }
+    assert cr_channels == {1, 2}
+
+    assert "Q0-CR" not in system.gen_targets
+    assert "Q3-CR" not in system.gen_targets
+
+
+@pytest.mark.parametrize(
+    ("configuration_mode", "expected_extra_label", "missing_label"),
+    [
+        ("ge-ef-cr", "Q0-ef", "Q0-CR"),
+        ("ge-cr-cr", "Q0-CR", "Q0-ef"),
+    ],
+)
+def test_r8_awg2222_uses_two_channel_prefix_for_each_mode(
+    tmp_path: Path,
+    configuration_mode: ConfigurationMode,
+    expected_extra_label: str,
+    missing_label: str,
+) -> None:
+    """Given awg2222, when building targets, then each control port keeps the 2-channel prefix of the requested mode."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg2222",
+        configuration_mode=configuration_mode,
+    )
+
+    _assert_target_channel(system, "Q0", port_number=6, channel_number=0)
+    _assert_target_channel(
+        system, expected_extra_label, port_number=6, channel_number=1
+    )
+    assert missing_label not in system.gen_targets
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(
+        system, f"Q1{expected_extra_label[2:]}", port_number=7, channel_number=1
+    )
+    assert f"Q1{missing_label[2:]}" not in system.gen_targets
+
+    _assert_target_channel(system, "Q2", port_number=8, channel_number=0)
+    _assert_target_channel(
+        system, f"Q2{expected_extra_label[2:]}", port_number=8, channel_number=1
+    )
+    assert f"Q2{missing_label[2:]}" not in system.gen_targets
+
+    _assert_target_channel(system, "Q3", port_number=9, channel_number=0)
+    _assert_target_channel(
+        system, f"Q3{expected_extra_label[2:]}", port_number=9, channel_number=1
+    )
+    assert f"Q3{missing_label[2:]}" not in system.gen_targets
+
+
+def test_quel3_target_registry_is_independent_of_configuration_mode(
+    tmp_path: Path,
+) -> None:
+    """Given QuEL-3 backend, when rebuilding registry with different modes, then logical targets stay unchanged."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+
+    ge_cr_cr_labels = set(experiment_system.gen_targets)
+    ge_ef_cr_labels = set(
+        experiment_system._build_target_registry(mode="ge-ef-cr").gen_targets  # noqa: SLF001
+    )
+
+    assert ge_cr_cr_labels == ge_ef_cr_labels
+
+
+def test_quel3_control_targets_share_one_logical_channel_per_port(
+    tmp_path: Path,
+) -> None:
+    """Given QuEL-3 backend, when building targets, then one port reuses one logical channel for GE and CR."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+
+    ge_target = experiment_system.get_target("Q1")
+    default_cr_target = experiment_system.get_target("Q1-CR")
+    pair_cr_label = next(
+        label
+        for label in experiment_system.gen_targets
+        if label.startswith("Q1-") and label not in {"Q1-CR", "Q1-ef"}
+    )
+    pair_cr_target = experiment_system.get_target(pair_cr_label)
+
+    assert ge_target.channel.id == default_cr_target.channel.id
+    assert ge_target.channel.id == pair_cr_target.channel.id
+
+
+def test_build_target_registry_does_not_mutate_port_state(tmp_path: Path) -> None:
+    """Given configured system, when rebuilding target registry, then port state remains unchanged."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    read_out_port = experiment_system.control_system.get_gen_port("BOX1", 1)
+    read_in_port = experiment_system.control_system.get_cap_port("BOX1", 0)
+
+    read_out_snapshot = (
+        read_out_port.lo_freq,
+        read_out_port.cnco_freq,
+        read_out_port.sideband,
+        read_out_port.channels[0].fnco_freq,
+        read_out_port.rfswitch,
+    )
+    read_in_snapshot = (
+        read_in_port.lo_freq,
+        read_in_port.cnco_freq,
+        tuple(channel.fnco_freq for channel in read_in_port.channels),
+        read_in_port.rfswitch,
+    )
+
+    _ = experiment_system._build_target_registry(mode="ge-cr-cr")  # noqa: SLF001
+
+    assert (
+        read_out_port.lo_freq,
+        read_out_port.cnco_freq,
+        read_out_port.sideband,
+        read_out_port.channels[0].fnco_freq,
+        read_out_port.rfswitch,
+    ) == read_out_snapshot
+    assert (
+        read_in_port.lo_freq,
+        read_in_port.cnco_freq,
+        tuple(channel.fnco_freq for channel in read_in_port.channels),
+        read_in_port.rfswitch,
+    ) == read_in_snapshot
+
+
+def test_configure_updates_port_state_before_target_registry_rebuild(
+    tmp_path: Path,
+) -> None:
+    """Given modified ports, when configuring, then port state is recomputed and applied."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    read_out_port = experiment_system.control_system.get_gen_port("BOX1", 1)
+    read_in_port = experiment_system.control_system.get_cap_port("BOX1", 0)
+
+    read_out_port.lo_freq = None
+    read_out_port.cnco_freq = None
+    read_out_port.channels[0].fnco_freq = None
+    read_in_port.lo_freq = None
+    read_in_port.cnco_freq = None
+    for channel in read_in_port.channels:
+        channel.fnco_freq = None
+
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"Use `SystemManager\.load\(\.\.\., configuration_mode=\.\.\.\)` to rebuild configuration\.",
+    ):
+        experiment_system.configure(mode="ge-cr-cr")
+
+    assert read_out_port.lo_freq is not None
+    assert read_out_port.cnco_freq is not None
+    assert read_out_port.channels[0].fnco_freq is not None
+    assert read_in_port.lo_freq is not None
+    assert read_in_port.cnco_freq is not None
+    assert all(channel.fnco_freq is not None for channel in read_in_port.channels)
+
+
+def test_configure_initializes_monitor_ports_for_quel1(tmp_path: Path) -> None:
+    """Given QuEL-1 system init, when building ports, then monitor input has initial frequencies."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    experiment_system = loader.get_experiment_system()
+    box = experiment_system.control_system.get_box("BOX1")
+    monitor_out_port = next(
+        port for port in box.ports if port.type == PortType.MNTR_OUT
+    )
+    monitor_in_port = next(port for port in box.ports if port.type == PortType.MNTR_IN)
+    assert isinstance(monitor_out_port, GenPort)
+    assert isinstance(monitor_in_port, CapPort)
+
+    assert monitor_out_port.lo_freq is None
+    assert monitor_out_port.cnco_freq is None
+    assert all(channel.fnco_freq is None for channel in monitor_out_port.channels)
+    assert monitor_out_port.rfswitch == "pass"
+    assert monitor_in_port.lo_freq == DEFAULT_LO_FREQUENCY_HZ
+    assert monitor_in_port.cnco_freq == DEFAULT_CNCO_FREQUENCY_HZ
+    assert all(
+        channel.fnco_freq == DEFAULT_FNCO_FREQUENCY_HZ
+        for channel in monitor_in_port.channels
+    )
+    assert all(
+        channel.ndelay == DEFAULT_CAPTURE_DELAY for channel in monitor_in_port.channels
+    )
+    assert monitor_in_port.rfswitch == "open"
+
+
+def test_load_raises_for_system_chip_id_mismatch(tmp_path: Path) -> None:
+    """Given mismatched system chip id, when loading, then ConfigLoader raises ValueError."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": "OTHER", "backend": BACKEND_KIND_QUEL1},
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
+
+    with pytest.raises(ValueError, match="chip_id mismatch"):
+        loader.load()
+
+
+def test_load_backend_override_takes_precedence_over_system_backend(
+    tmp_path: Path,
+) -> None:
+    """Given explicit backend override, when loading, then ConfigLoader selects override backend kind."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {chip_id: {"name": "Test Chip", "n_qubits": 4, "clock_master": "10.0.0.1"}},
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": BACKEND_KIND_QUEL3},
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
+    loader.load(backend_kind=BACKEND_KIND_QUEL1)
+
+    assert loader.backend_kind == BACKEND_KIND_QUEL1
+    assert loader.wiring_file == "wiring.yaml"
+
+
+def test_load_uses_system_yaml_backend_and_ignores_chip_yaml_backend(
+    tmp_path: Path,
+) -> None:
+    """Given backend in system.yaml and chip.yaml, when loading, then system.yaml value is selected."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 4,
+                "backend": "unknown",
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": "quel3"},
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
+    loader.load()
+
+    assert loader.backend_kind == "quel3"
+
+
+def test_load_ignores_chip_yaml_backend_when_system_yaml_is_missing(
+    tmp_path: Path,
+) -> None:
+    """Given backend only in chip.yaml, when loading, then quel1 default is selected."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 4,
+                "backend": "quel3",
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
+    loader.load()
+
+    assert loader.backend_kind == "quel1"
+
+
+def test_load_allows_system_id_when_system_yaml_is_missing(tmp_path: Path) -> None:
+    """Given system_id without system.yaml, when loading, then chip-scoped config still loads."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 4,
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert loader.system_id == chip_id
+    assert loader.chip_id == chip_id
+    assert loader.backend_kind == "quel1"
+
+
+def test_load_defaults_to_quel1_when_not_configured(
+    tmp_path: Path,
+) -> None:
+    """Given no backend config, when loading, then quel1 is selected."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 4,
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    with pytest.warns(DeprecationWarning, match="`chip_id` is deprecated"):
+        loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            autoload=False,
+        )
+    loader.load()
+
+    assert loader.backend_kind == "quel1"
+
+
+def test_load_raises_for_unknown_backend_value_in_system_yaml(
+    tmp_path: Path,
+) -> None:
+    """Given unknown backend in system.yaml, when loading, then ValueError is raised."""
+    chip_id = "TESTCHIP"
+    config_dir = tmp_path / "config"
+    params_dir = tmp_path / "params"
+    config_dir.mkdir(parents=True)
+    _write_yaml(
+        config_dir / "chip.yaml", {chip_id: {"name": "Test Chip", "n_qubits": 4}}
+    )
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "unit-a": {
+                "name": "Unit A",
+                "type": "quel1-a",
+                "address": "10.0.0.2",
+                "adapter": "dummy",
+            }
+        },
+    )
+    _write_yaml(config_dir / "wiring.yaml", {chip_id: []})
+    _write_yaml(
+        config_dir / "system.yaml",
+        {"schema_version": 1, "chip_id": chip_id, "backend": "unknown"},
+    )
+    _write_yaml(params_dir / "props.yaml", {})
+    _write_yaml(params_dir / "params.yaml", {})
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+
+    with pytest.raises(ValueError, match="Unsupported backend"):
+        loader.load()
+
+
+def test_load_uses_quel3_system_loader_when_backend_is_quel3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quel3 backend config, when loading, then ConfigLoader delegates assembly to Quel3SystemLoader."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": "quel3",
+        },
+    )
+    called: list[str] = []
+
+    class _FailQuel1SystemLoader:
+        def __init__(self) -> None:
+            raise AssertionError(
+                "Quel1SystemLoader must not be used for quel3 backend."
+            )
+
+    class _FakeQuel3SystemLoader:
+        def resolve_clock_master_address(self, **_: object) -> str | None:
+            called.append("clock")
+            return None
+
+        def load_control_system(self, **_: object) -> object:
+            called.append("control")
+            return None
+
+        def load_wiring_info(self, **_: object) -> object:
+            called.append("wiring")
+            return None
+
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel1SystemLoader",
+        _FailQuel1SystemLoader,
+    )
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel3SystemLoader",
+        _FakeQuel3SystemLoader,
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert called == ["clock", "control", "wiring"]
+
+
+def test_load_uses_quel1_system_loader_when_backend_is_unset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given no backend config, when loading, then ConfigLoader delegates assembly to Quel1SystemLoader."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    called: list[str] = []
+
+    class _FakeQuel1SystemLoader:
+        def resolve_clock_master_address(self, **_: object) -> str | None:
+            called.append("clock")
+            return None
+
+        def load_control_system(self, **_: object) -> object:
+            called.append("control")
+            return None
+
+        def load_wiring_info(self, **_: object) -> object:
+            called.append("wiring")
+            return None
+
+    class _FailQuel3SystemLoader:
+        def __init__(self) -> None:
+            raise AssertionError("Quel3SystemLoader must not be used by default.")
+
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel1SystemLoader",
+        _FakeQuel1SystemLoader,
+    )
+    monkeypatch.setattr(
+        "qubex.system.config_loader.Quel3SystemLoader",
+        _FailQuel3SystemLoader,
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+        autoload=False,
+    )
+    loader.load()
+
+    assert called == ["clock", "control", "wiring"]

@@ -1,35 +1,45 @@
-from .config_loader import DEFAULT_CONFIG_DIR, ConfigLoader
-from .control_system import Box, BoxType, Channel, ControlSystem, Port, PortType
-from .device_controller import SAMPLING_PERIOD, DeviceController, RawResult
-from .experiment_system import ControlParams, ExperimentSystem, MixingUtil, WiringInfo
-from .lattice_graph import LatticeGraph
-from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .system_manager import SystemManager
-from .target import Target, TargetType
+"""Backend hardware controller contracts and implementations."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from qubex.compat.deprecated_imports import (
+    deprecated_module_dir,
+    load_deprecated_module_attr,
+)
+
+from .backend_controller import (
+    BackendController,
+    BackendExecutionRequest,
+    BackendExecutionResult,
+    BackendKind,
+)
 
 __all__ = [
-    "Box",
-    "BoxType",
-    "Channel",
-    "Chip",
-    "ConfigLoader",
-    "ControlParams",
-    "ControlSystem",
-    "DEFAULT_CONFIG_DIR",
-    "DeviceController",
-    "ExperimentSystem",
-    "LatticeGraph",
-    "MixingUtil",
-    "Mux",
-    "Port",
-    "PortType",
-    "QuantumSystem",
-    "Qubit",
-    "RawResult",
-    "Resonator",
-    "SystemManager",
-    "SAMPLING_PERIOD",
-    "Target",
-    "TargetType",
-    "WiringInfo",
+    "BackendController",
+    "BackendExecutionRequest",
+    "BackendExecutionResult",
+    "BackendKind",
 ]
+
+_LEGACY_EXPORTS = ["Target", "TargetType"]
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve deprecated backend aliases lazily."""
+    if name not in _LEGACY_EXPORTS:
+        raise AttributeError(name)
+    value = load_deprecated_module_attr(
+        name=name,
+        legacy_module="qubex.backend",
+        canonical_module="qubex.system",
+        exports=_LEGACY_EXPORTS,
+    )
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    """Return the public names exposed by this package."""
+    return deprecated_module_dir(exports=[*__all__, *_LEGACY_EXPORTS])

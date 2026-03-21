@@ -1,43 +1,77 @@
+"""Experiment utility functions and helpers."""
+
 from __future__ import annotations
 
+import logging
 import math
 import subprocess
 from collections import defaultdict
+from collections.abc import Collection
 from pathlib import Path
-from typing import Collection, Literal
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, Protocol, cast
 
+import plotly.graph_objects as go
 import yaml
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
+from typing_extensions import deprecated
 
-try:
-    import quel_clock_master as qcm
-    from qubecalib import QubeCalib
-    from qubecalib.instrument.quel.quel1.tool.skew import Skew
-    from quel_ic_config import Quel1Box
-except ImportError:
-    pass
+from qubex.diagnostics import ChipInspector
+from qubex.experiment.models.result import Result
+from qubex.system import LatticeGraph, PortType, SystemManager
+from qubex.system.control_system import CapPort, GenPort
+from qubex.visualization import show_figure
 
+if TYPE_CHECKING:
+    from qubex.backend.quel1.quel1_backend_controller import Quel1Box
 
-from ..backend import LatticeGraph, SystemManager
-from ..diagnostics import ChipInspector
+logger = logging.getLogger(__name__)
+
 
 console = Console()
 system_manager = SystemManager.shared()
 
 
+def _raise_unknown_method(method: str) -> NoReturn:
+    raise ValueError(f"Unknown method: {method}")
+
+
+class _FigureLike(Protocol):
+    """Minimal plotting protocol for skew-check helper output."""
+
+    def update_layout(self, *, title: str, width: int) -> None:
+        """Update figure layout."""
+        ...
+
+
+def _require_backend_callable(method_name: str) -> Any:
+    """Return one backend method or raise if unavailable."""
+    method = getattr(system_manager.backend_controller, method_name, None)
+    if not callable(method):
+        raise NotImplementedError(f"Active backend does not support `{method_name}`.")
+    return method
+
+
 def check_skew(
     box_ids: Collection[str],
-    estimate: bool = True,
+    estimate: bool | None = None,
     config_dir: str | None = None,
-    skew_file: str = "skew.yaml",
-    box_file: str = "box.yaml",
-) -> dict:
+    skew_file: str | None = None,
+    box_file: str | None = None,
+) -> Result:
     """Check the skew of the boxes."""
+    if estimate is None:
+        estimate = True
+    if skew_file is None:
+        skew_file = "skew.yaml"
+    if box_file is None:
+        box_file = "box.yaml"
     clock_master_address = (
         system_manager.experiment_system.control_system.clock_master_address
     )
+    if clock_master_address is None:
+        raise ValueError("Clock master address is required to check skew.")
 
     if config_dir is not None:
         config_path = Path(config_dir)
@@ -49,7 +83,7 @@ def check_skew(
     box_file_path = config_path / box_file
     skew_file_path = config_path / skew_file
 
-    with open(skew_file_path, "r") as file:
+    with open(skew_file_path) as file:
         config = yaml.safe_load(file)
     ref_port = config["reference_port"].split("-")[0]
 
@@ -63,54 +97,90 @@ Do you want to continue?
 """
     )
     if not confirmed:
-        print("Operation cancelled.")
-        return {}
+        logger.info("Operation cancelled.")
+        return Result()
 
-    all_box_ids = list(set(list(box_ids) + [ref_port]))
-    skew = Skew.from_yaml(
-        str(skew_file_path),
-        box_yaml=str(box_file_path),
+    all_box_ids = list({*box_ids, ref_port})
+    run_skew_measurement = _require_backend_callable("run_skew_measurement")
+    skew, fig = run_skew_measurement(
+        skew_yaml_path=skew_file_path,
+        box_yaml_path=box_file_path,
         clockmaster_ip=clock_master_address,
-        boxes=all_box_ids,
+        box_names=all_box_ids,
+        estimate=estimate,
     )
-    skew.system.resync()
-    skew.measure()
-    if estimate:
-        skew.estimate()
-    fig = skew.plot()
-    fig.update_layout(
-        title=f"Skew : {str(', '.join(box_ids))} (Ref. {ref_port})",
+    figure = cast(_FigureLike, fig)
+    figure.update_layout(
+        title=f"Skew : {', '.join(box_ids)!s} (Ref. {ref_port})",
         width=800,
     )
-    fig.show()
-    return {
-        "skew": skew,
-        "fig": fig,
-    }
+    rendered_figure = go.Figure(fig)
+    rendered_figure.update_layout(template="qubex")
+    show_figure(rendered_figure, filename="skew_check")
+    return Result(
+        data={
+            "skew": skew,
+            "fig": fig,
+        },
+        figure=fig,
+    )
 
 
-def get_qubecalib() -> QubeCalib:
-    """Get the QubeCalib instance."""
-    return system_manager.device_controller.qubecalib
+def update_skew(
+    wait: int,
+    box_ids: Collection[str] | None = None,
+    *,
+    config_dir: str | None = None,
+    skew_file: str | None = None,
+    backup: bool | None = None,
+) -> Result:
+    """Update skew waits in one skew YAML file and reload backend settings."""
+    if skew_file is None:
+        skew_file = "skew.yaml"
+    if backup is None:
+        backup = False
+
+    if config_dir is not None:
+        config_path = Path(config_dir)
+    else:
+        config_path = system_manager.config_loader.config_path
+
+    if box_ids is None:
+        resolved_box_ids = None
+    else:
+        resolved_box_ids = list(box_ids)
+
+    update_skew_impl = _require_backend_callable("update_skew")
+    result = cast(
+        dict[str, object],
+        update_skew_impl(
+            file_path=config_path / skew_file,
+            wait=wait,
+            box_names=resolved_box_ids,
+            backup=backup,
+        ),
+    )
+    return Result(data=result)
 
 
 def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
-    qc = system_manager.device_controller.qubecalib
-    box = qc.create_box(box_id, reconnect=False)
-    # TODO: use appropriate noise threshold
-    box.reconnect(background_noise_threshold=10000)
+    get_box = _require_backend_callable("get_box")
+    box = cast("Quel1Box", get_box(box_id))
+    box.reconnect(background_noise_threshold=50_000)
     return box
 
 
 def dump_box(box_id: str) -> dict:
     """Dump the information of a box."""
-    return system_manager.device_controller.dump_box(box_id)
+    dump_box_impl = _require_backend_callable("dump_box")
+    return cast(dict, dump_box_impl(box_id))
 
 
 def dump_port(box_id: str, port_number: int) -> dict:
     """Dump the information of a port."""
-    return system_manager.device_controller.dump_port(box_id, port_number)
+    dump_port_impl = _require_backend_callable("dump_port")
+    return cast(dict, dump_port_impl(box_id, port_number))
 
 
 def reboot_fpga(box_id: str) -> None:
@@ -121,17 +191,20 @@ def reboot_fpga(box_id: str) -> None:
     experiment_system = system_manager.experiment_system
     box = experiment_system.get_box(box_id)
     adapter = box.adapter
-    reboot_command = f"quel_reboot_fpga --port 3121 --adapter {adapter}"
-    subprocess.run(reboot_command.split())
+    reboot_command = ["quel_reboot_fpga", "--port", "3121", "--adapter", adapter]
+    subprocess.run(reboot_command, check=True)  # noqa: S603
 
 
-def relinkup_box(box_id: str, noise_threshold: int | None = None) -> None:
-    """Relink up the box."""
-    relinkup_boxes([box_id], noise_threshold=noise_threshold)
-
-
-def relinkup_boxes(box_ids: list[str], noise_threshold: int | None) -> None:
+def relinkup_box(
+    box_id: str | Collection[str],
+    noise_threshold: int | None = None,
+) -> None:
     """Relink up the boxes."""
+    if isinstance(box_id, str):
+        box_ids = [box_id]
+    else:
+        box_ids = list(box_id)
+
     confirmed = Confirm.ask(
         f"""
 You are going to relinkup the following boxes:
@@ -142,16 +215,24 @@ This operation will reset LO/NCO settings. Do you want to continue?
 """
     )
     if not confirmed:
-        print("Operation cancelled.")
+        logger.info("Operation cancelled.")
         return
 
-    print("Relinking up the boxes...")
-    system_manager.device_controller.relinkup_boxes(
+    logger.info("Relinking up the boxes...")
+    relinkup_boxes_impl = _require_backend_callable("relinkup_boxes")
+    sync_clocks = _require_backend_callable("sync_clocks")
+    relinkup_boxes_impl(
         box_ids,
         noise_threshold=noise_threshold,
     )
-    system_manager.device_controller.sync_clocks(box_ids)
-    print("Operation completed.")
+    sync_clocks(box_ids)
+    logger.info("Operation completed.")
+
+
+@deprecated("relinkup_box is deprecated, please use relinkup_boxes instead.")
+def relinkup_boxes(box_ids: list[str], noise_threshold: int | None = None) -> None:
+    """Relink up the boxes."""
+    relinkup_box(box_ids, noise_threshold=noise_threshold)
 
 
 def reset_clockmaster(
@@ -160,13 +241,17 @@ def reset_clockmaster(
     """Reset the clock master."""
     if ipaddr is None:
         ipaddr = system_manager.experiment_system.control_system.clock_master_address
+    if ipaddr is None:
+        raise ValueError("Clock master address is required to reset the clock master.")
 
-    return qcm.QuBEMasterClient(ipaddr).reset()
+    reset_clockmaster_impl = _require_backend_callable("reset_clockmaster")
+    return cast(bool, reset_clockmaster_impl(ipaddr))
 
 
 def resync_clocks(box_ids: Collection[str]) -> bool:
     """Resync the clocks of the boxes."""
-    return system_manager.device_controller.resync_clocks(list(box_ids))
+    resync_clocks_impl = _require_backend_callable("resync_clocks")
+    return cast(bool, resync_clocks_impl(list(box_ids)))
 
 
 def print_chip_info(
@@ -187,10 +272,14 @@ def print_chip_info(
         "x180_gate_fidelity",
         "zx90_gate_fidelity",
     ],
-    directed: bool = False,
-    save_image: bool = False,
+    directed: bool | None = None,
+    save_image: bool | None = None,
 ) -> None:
     """Print the information of the chip."""
+    if directed is None:
+        directed = False
+    if save_image is None:
+        save_image = False
     chip = system_manager.experiment_system.chip
     loader = system_manager.config_loader
     graph = LatticeGraph(chip.n_qubits)
@@ -231,11 +320,15 @@ def print_chip_info(
 
     try:
         if "chip_summary" in info_type:
-            inspector = ChipInspector(
-                chip_id=chip.id,
-                config_dir=system_manager.config_loader._config_dir,
-                props_dir=system_manager.config_loader._params_dir,
-            )
+            active_system_id = system_manager.config_loader.system_id
+            inspector_kwargs: dict[str, Any] = {
+                "chip_id": chip.id,
+                "config_dir": system_manager.config_loader.config_path,
+                "params_dir": system_manager.config_loader.params_path,
+            }
+            if active_system_id is not None:
+                inspector_kwargs["system_id"] = active_system_id
+            inspector = ChipInspector(**inspector_kwargs)
             if chip.n_qubits == 144:
                 inspection_params = {
                     "max_frequency": 5.8,
@@ -252,7 +345,7 @@ def print_chip_info(
             )
 
         if "resonator_frequency" in info_type:
-            if values := loader._load_param_data("resonator_frequency"):
+            if values := loader.load_param_data("resonator_frequency"):
                 graph.plot_lattice_data(
                     title="Resonator frequency (GHz)",
                     values=list(values.values()),
@@ -271,7 +364,7 @@ def print_chip_info(
                 )
 
         if "qubit_frequency" in info_type:
-            if values := loader._load_param_data("qubit_frequency"):
+            if values := loader.load_param_data("qubit_frequency"):
                 graph.plot_lattice_data(
                     title="Qubit frequency (GHz)",
                     values=list(values.values()),
@@ -290,7 +383,7 @@ def print_chip_info(
                 )
 
         if "qubit_anharmonicity" in info_type:
-            if values := loader._load_param_data("qubit_anharmonicity"):
+            if values := loader.load_param_data("qubit_anharmonicity"):
                 graph.plot_lattice_data(
                     title="Qubit anharmonicity (MHz)",
                     values=list(values.values()),
@@ -311,7 +404,7 @@ def print_chip_info(
                 )
 
         if "t1" in info_type:
-            if values := loader._load_param_data("t1"):
+            if values := loader.load_param_data("t1"):
                 graph.plot_lattice_data(
                     title="T1 (μs)",
                     values=list(values.values()),
@@ -332,7 +425,7 @@ def print_chip_info(
                 )
 
         if "t2_star" in info_type:
-            if values := loader._load_param_data("t2_star"):
+            if values := loader.load_param_data("t2_star"):
                 graph.plot_lattice_data(
                     title="T2* (μs)",
                     values=list(values.values()),
@@ -353,7 +446,7 @@ def print_chip_info(
                 )
 
         if "t2_echo" in info_type:
-            if values := loader._load_param_data("t2_echo"):
+            if values := loader.load_param_data("t2_echo"):
                 graph.plot_lattice_data(
                     title="T2 echo (μs)",
                     values=list(values.values()),
@@ -395,15 +488,13 @@ def print_chip_info(
                     elif method == "min":
                         result[inv_key] = min(result[inv_key], value)
                     else:
-                        raise ValueError(f"Unknown method: {method}")
+                        _raise_unknown_method(method)
                 else:
                     result[key] = float(value)
             return result
 
         if "static_zz_interaction" in info_type:
-            if static_zz_interaction := loader._load_param_data(
-                "static_zz_interaction"
-            ):
+            if static_zz_interaction := loader.load_param_data("static_zz_interaction"):
                 values = (
                     static_zz_interaction
                     if directed
@@ -415,7 +506,7 @@ def print_chip_info(
                 graph.plot_graph_data(
                     directed=directed,
                     title="Static ZZ interaction (kHz)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value * 1e6:.0f}" if not math.isnan(value) else None
                         for key, value in values.items()
@@ -431,7 +522,7 @@ def print_chip_info(
                 )
 
         if "qubit_qubit_coupling_strength" in info_type:
-            if qubit_qubit_coupling_strength := loader._load_param_data(
+            if qubit_qubit_coupling_strength := loader.load_param_data(
                 "qubit_qubit_coupling_strength"
             ):
                 values = (
@@ -445,7 +536,7 @@ def print_chip_info(
                 graph.plot_graph_data(
                     directed=directed,
                     title="Qubit-qubit coupling strength (MHz)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value * 1e3:.1f}" if not math.isnan(value) else None
                         for key, value in values.items()
@@ -461,7 +552,7 @@ def print_chip_info(
                 )
 
         if "average_readout_fidelity" in info_type:
-            if values := loader._load_param_data("average_readout_fidelity"):
+            if values := loader.load_param_data("average_readout_fidelity"):
                 graph.plot_lattice_data(
                     title="Average readout fidelity (%)",
                     values=list(values.values()),
@@ -478,7 +569,7 @@ def print_chip_info(
                 )
 
         if "x90_gate_fidelity" in info_type:
-            if values := loader._load_param_data("x90_gate_fidelity"):
+            if values := loader.load_param_data("x90_gate_fidelity"):
                 graph.plot_lattice_data(
                     title="X90 gate fidelity (%)",
                     values=list(values.values()),
@@ -495,7 +586,7 @@ def print_chip_info(
                 )
 
         if "x180_gate_fidelity" in info_type:
-            if values := loader._load_param_data("x180_gate_fidelity"):
+            if values := loader.load_param_data("x180_gate_fidelity"):
                 graph.plot_lattice_data(
                     title="X180 gate fidelity (%)",
                     values=list(values.values()),
@@ -512,11 +603,11 @@ def print_chip_info(
                 )
 
         if "zx90_gate_fidelity" in info_type:
-            if values := loader._load_param_data("zx90_gate_fidelity"):
+            if values := loader.load_param_data("zx90_gate_fidelity"):
                 graph.plot_graph_data(
                     directed=True,
                     title="ZX90 gate fidelity (%)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value:.2%}" if _is_valid(value) else None
                         for key, value in values.items()
@@ -536,7 +627,7 @@ def print_chip_info(
                 graph.plot_graph_data(
                     directed=False,
                     title="ZX90 gate fidelity (%)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value * 1e2:.1f}" if _is_valid(value) else None
                         for key, value in values.items()
@@ -549,13 +640,12 @@ def print_chip_info(
                     image_name="zx90_gate_fidelity",
                 )
 
-    except Exception as e:
-        print(f"Error occurred while printing chip info: {e}")
+    except Exception:
+        logger.exception("Error occurred while printing chip info")
 
 
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     """Print the wiring information of the chip."""
-
     experiment_system = system_manager.experiment_system
 
     table = Table(
@@ -621,6 +711,7 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
             ctrl_port_labels,
             read_out_port_labels,
             read_in_port_labels,
+            strict=True,
         )
     ]
     graph.plot_lattice_data(
@@ -631,9 +722,123 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     )
 
 
-def print_box_info(box_id: str, fetch: bool = True) -> None:
+def print_box_info(box_id: str, fetch: bool | None = None) -> None:
     """Print the information of a box."""
-    system_manager.print_box_info(box_id, fetch=fetch)
+    if fetch is None:
+        fetch = True
+    experiment_system = system_manager.experiment_system
+    box_ids = [box.id for box in experiment_system.boxes]
+    if box_id not in box_ids:
+        logger.warning(f"Box {box_id} is not found.")
+        return
+    box = experiment_system.get_box(box_id)
+
+    table1 = Table(
+        show_header=True,
+        header_style="bold",
+        title=f"BOX INFO ({box.id})",
+    )
+    table2 = Table(
+        show_header=True,
+        header_style="bold",
+    )
+    table1.add_column("PORT", justify="center")
+    table1.add_column("TYPE", justify="center")
+    table1.add_column("SSB", justify="center")
+    table1.add_column("LO", justify="right")
+    table1.add_column("CNCO", justify="right")
+    table1.add_column("VATT", justify="right")
+    table1.add_column("FSC", justify="right")
+    table2.add_column("PORT", justify="center")
+    table2.add_column("TYPE", justify="center")
+    table2.add_column("SSB", justify="center")
+    table2.add_column("FNCO-0", justify="right")
+    table2.add_column("FNCO-1", justify="right")
+    table2.add_column("FNCO-2", justify="right")
+
+    if fetch:
+        dump_box_impl = _require_backend_callable("dump_box")
+        box_config = dump_box_impl(box_id)
+        if not isinstance(box_config, dict):
+            raise TypeError("Backend `dump_box` must return dict.")
+        ports_config = box_config.get("ports", {})
+        for port in box.ports:
+            if port.type == PortType.MNTR_OUT:
+                continue
+            if not isinstance(port.number, int):
+                continue
+            config = ports_config.get(port.number, ports_config.get(str(port.number)))
+            if config is None:
+                continue
+
+            number = str(port.number)
+            type = port.type.value
+            direction = config.get("direction")
+            lo_freq = config.get("lo_freq")
+            cnco_freq = config.get("cnco_freq")
+
+            if direction == "in":
+                ssb = ""
+                lo = f"{int(lo_freq):_}" if lo_freq is not None else ""
+                cnco = f"{int(cnco_freq):_}" if cnco_freq is not None else ""
+                vatt = ""
+                fsc = ""
+            else:
+                sideband = config.get("sideband")
+                ssb = sideband if sideband is not None else ""
+                lo = f"{int(lo_freq):_}" if lo_freq is not None else ""
+                cnco = f"{int(cnco_freq):_}" if cnco_freq is not None else ""
+                vatt_value = config.get("vatt")
+                vatt = str(vatt_value) if vatt_value is not None else ""
+                fsc_value = config.get("fullscale_current")
+                fsc = str(fsc_value) if fsc_value is not None else ""
+
+            table1.add_row(number, type, ssb, lo, cnco, vatt, fsc)
+
+            if direction != "in":
+                channels = config.get("channels", {})
+                fnco_values = [
+                    f"{int(ch['fnco_freq']):_}"
+                    for _, ch in sorted(channels.items(), key=lambda item: int(item[0]))
+                ]
+                table2.add_row(number, type, ssb, *fnco_values)
+    else:
+        for port in box.ports:
+            number = str(port.number)
+            type = port.type.value
+            if port.type == PortType.MNTR_OUT:
+                continue
+            if isinstance(port, CapPort):
+                ssb = ""
+                lo = f"{port.lo_freq:_}" if port.lo_freq is not None else ""
+                cnco = f"{port.cnco_freq:_}" if port.cnco_freq is not None else ""
+                vatt = ""
+                fsc = ""
+            elif isinstance(port, GenPort):
+                ssb = port.sideband if port.sideband is not None else ""
+                lo = f"{port.lo_freq:_}" if port.lo_freq is not None else ""
+                cnco = f"{port.cnco_freq:_}" if port.cnco_freq is not None else ""
+                vatt = str(port.vatt) if port.vatt is not None else ""
+                fsc = (
+                    str(port.fullscale_current)
+                    if port.fullscale_current is not None
+                    else ""
+                )
+
+            table1.add_row(number, type, ssb, lo, cnco, vatt, fsc)
+            if isinstance(port, GenPort):
+                table2.add_row(
+                    number,
+                    type,
+                    ssb,
+                    *[
+                        f"{ch.fnco_freq:_}" if ch.fnco_freq is not None else ""
+                        for ch in port.channels
+                    ],
+                )
+
+    console.print(table1)
+    console.print(table2)
 
 
 def print_target_frequencies(qubits: Collection[str] | str | None = None) -> None:
@@ -689,7 +894,7 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
                     f"{lo * 1e-6:.0f}" if lo is not None else "",
                     f"{nco * 1e-6:.3f}",
                     f"{cnco * 1e-6:.3f}",
-                    f"{fnco * 1e-6:+.3f}",
+                    f"{fnco * 1e-6:+.3f}" if fnco is not None else "",
                     f"{ffreq * 1e3:.3f}",
                     f"{tfreq * 1e3:.3f}",
                     f"{diff * 1e3:+.3f}",
@@ -697,7 +902,7 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
                 ],
             )
         )
-    rows.sort(key=lambda x: (x[0]))
+    rows.sort(key=lambda x: x[0])
 
     current_qubit = None
     for qubit, row in rows:
@@ -765,14 +970,14 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
                     f"{lo * 1e-6:.0f}",
                     f"{nco * 1e-6:.3f}",
                     f"{cnco * 1e-6:.3f}",
-                    f"{fnco * 1e-6:+.3f}",
+                    f"{fnco * 1e-6:+.3f}" if fnco is not None else "",
                     f"{ffreq * 1e3:.3f}",
                     f"{tfreq * 1e3:.3f}",
                     f"{diff * 1e3:+.3f}",
                 ],
             )
         )
-    rows.sort(key=lambda x: (x[0]))
+    rows.sort(key=lambda x: x[0])
 
     current_qubit = None
     for qubit, row in rows:
@@ -797,7 +1002,7 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
 
 def _configure_loopback(mux: str | int, *, enable: bool) -> None:
     """
-    Internal helper: configure RF switches for all qubits in the given MUX.
+    Configure RF switches for all qubits in the given MUX.
 
     Mapping when enable is True:
         read_in  -> loop
@@ -811,7 +1016,7 @@ def _configure_loopback(mux: str | int, *, enable: bool) -> None:
     """
     qubits = system_manager.experiment_system.quantum_system.get_qubits_in_mux(mux)
 
-    boxes: dict[str, Quel1Box] = {}
+    boxes: dict[str, Any] = {}
     box_confs: dict[str, dict] = defaultdict(dict)
 
     # Switch configuration pattern
@@ -846,17 +1051,17 @@ def _configure_loopback(mux: str | int, *, enable: bool) -> None:
     try:
         for box_id, confs in box_confs.items():
             boxes[box_id].config_rfswitches(confs)
-        print(f"Loopback {action} for MUX#{mux} {[q.label for q in qubits]}.")
-        print(dict(box_confs))
-    except Exception as e:
-        console.print(f"Error {action} loopback: {e}")
+        logger.info(f"Loopback {action} for MUX#{mux} {[q.label for q in qubits]}.")
+        logger.info(dict(box_confs))
+    except Exception:
+        logger.exception(f"Error {action} loopback")
 
 
-def enable_loopback(*, mux: str | int):
+def enable_loopback(*, mux: str | int) -> None:
     """Enable loopback for the specified MUX (backward-compatible API)."""
     _configure_loopback(mux, enable=True)
 
 
-def disable_loopback(*, mux: str | int):
+def disable_loopback(*, mux: str | int) -> None:
     """Disable loopback for the specified MUX (backward-compatible API)."""
     _configure_loopback(mux, enable=False)

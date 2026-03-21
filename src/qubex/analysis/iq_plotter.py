@@ -1,3 +1,5 @@
+"""Interactive IQ plotter widgets."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -5,21 +7,25 @@ import plotly.graph_objs as go
 from IPython.display import display
 from ipywidgets import Output
 
-from ..style import get_colors, get_config
-from ..typing import IQArray, TargetMap
+from qubex.typing import IQArray, TargetMap
+from qubex.visualization import get_colors, get_config
 
 
 class IQPlotter:
+    """Plot IQ data in a Cartesian plane."""
+
     def __init__(
         self,
         state_centers: TargetMap[dict[int, complex]] | None = None,
     ):
         self._state_centers = state_centers or {}
         self._colors = [f"rgba{color}" for color in get_colors(alpha=0.8)]
+        self._color_index_by_label: dict[str, int] = {}
         self._num_scatters = -1
         self._output = Output()
         self._widget = go.FigureWidget()
         self._widget.update_layout(
+            template="qubex",
             title="I/Q plane",
             xaxis_title="In-phase (arb. units)",
             yaxis_title="Quadrature (arb. units)",
@@ -45,10 +51,12 @@ class IQPlotter:
             showlegend=True,
         )
         self._max_val_center = 0.0
+        self._state_trace_count = 0
 
         if len(self._state_centers) > 0:
             colors = get_colors(alpha=0.1)
             for idx, (label, centers) in enumerate(self._state_centers.items()):
+                self._color_index_by_label[label] = idx
                 color = colors[idx % len(colors)]
                 center_values = list(centers.values())
                 x = np.real(center_values)
@@ -85,27 +93,44 @@ class IQPlotter:
                 initial=0.0,
             )
 
-    def update(self, data: TargetMap[IQArray]):
+    def _normalize_iq_array(self, values: IQArray) -> np.ndarray:
+        """Return a flattened complex array for Plotly scatter updates."""
+        return np.ravel(np.asarray(values, dtype=np.complex128))
+
+    def update(self, data: TargetMap[IQArray]) -> None:
+        """Update the plot with new IQ data."""
+        normalized_data = {
+            qubit: self._normalize_iq_array(values) for qubit, values in data.items()
+        }
+
         if self._num_scatters == -1:
             display(self._output)
             with self._output:
                 display(self._widget)
-            for idx, qubit in enumerate(data):
-                if qubit in self._state_centers:
-                    idx = list(self._state_centers.keys()).index(qubit)
+            for legend_index, qubit in enumerate(normalized_data):
+                if qubit not in self._color_index_by_label:
+                    self._color_index_by_label[qubit] = len(self._color_index_by_label)
+                idx = self._color_index_by_label[qubit]
                 color = self._colors[idx % len(self._colors)]
                 self._widget.add_scatter(
                     name=qubit,
                     meta=qubit,
                     mode="markers",
                     marker=dict(size=4, color=color),
-                    legendrank=idx,
+                    legendrank=legend_index,
                 )
-            self._num_scatters = len(data)
-        if len(data) != self._num_scatters:
+            self._num_scatters = len(normalized_data)
+        if len(normalized_data) != self._num_scatters:
             raise ValueError("Number of scatters does not match")
 
-        max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])
+        max_val = np.max(
+            [
+                np.max(np.abs(values))
+                for values in normalized_data.values()
+                if values.size > 0
+            ],
+            initial=0.0,
+        )
         max_val = max(max_val, self._max_val_center)
         axis_range = [-max_val * 1.1, max_val * 1.1]
         dtick = max_val / 2
@@ -121,28 +146,38 @@ class IQPlotter:
             ),
         )
 
-        for qubit in data:
+        for qubit, values in normalized_data.items():
             for trace in self._widget.data:
-                scatter: go.Scatter = trace  # type: ignore
-                if scatter.meta == qubit:
-                    scatter.x = np.real(data[qubit])
-                    scatter.y = np.imag(data[qubit])
+                if isinstance(trace, go.Scatter) and trace.meta == qubit:
+                    trace.x = np.real(values)
+                    trace.y = np.imag(values)
 
-    def clear(self):
+    def clear(self) -> None:
+        """Clear and close the widget output."""
         self._output.clear_output()
         self._output.close()
 
-    def show(self):
+    def show(self) -> None:
+        """Show the plot widget."""
         self.clear()
         self._widget.show(config=get_config())
 
+    def to_figure(self) -> go.Figure:
+        """Return a detached Plotly figure copied from the current widget state."""
+        fig = go.Figure(self._widget)
+        fig.update_layout(template="qubex")
+        return fig
+
 
 class IQPlotterPolar:
+    """Plot IQ data on a polar plane."""
+
     def __init__(self, normalize: bool = True):
         self._normalize = normalize
         self._num_scatters: int | None = None
         self._widget = go.FigureWidget()
         self._widget.update_layout(
+            template="qubex",
             title="I/Q plane",
             width=500,
             height=400,
@@ -174,7 +209,8 @@ class IQPlotterPolar:
     def update(
         self,
         data: TargetMap[IQArray],
-    ):
+    ) -> None:
+        """Update the plot with new IQ data."""
         if self._num_scatters is None:
             display(self._widget)
             for qubit in data:
@@ -197,6 +233,7 @@ class IQPlotterPolar:
                 signals[qubit] = iq_array
 
         for idx, qubit in enumerate(data):
-            scatterpolar: go.Scatterpolar = self._widget.data[idx]  # type: ignore
-            scatterpolar.r = np.abs(signals[qubit])
-            scatterpolar.theta = np.angle(signals[qubit], deg=True)
+            trace = self._widget.data[idx]
+            if isinstance(trace, go.Scatterpolar):
+                trace.r = np.abs(signals[qubit])
+                trace.theta = np.angle(signals[qubit], deg=True)

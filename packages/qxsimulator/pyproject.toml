@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qxsimulator"
+version = "1.5.0b4"
+requires-python = ">=3.10"
+authors = [{ name = "Akinori Machino" }]
+description = "Qubex quantum system simulation utilities"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+    "ipython >= 7.0",
+    "jax >= 0.4",
+    "networkx >= 2.7",
+    "numpy >= 1.22",
+    "optax >= 0.2",
+    "plotly >= 5.23",
+    "qctrl-visualizer >= 8.0",
+    "qutip >= 5.0",
+    "qxpulse == 1.5.0b4",
+    "qxvisualizer == 1.5.0b4",
+    "scipy >= 1.0",
+]
+
+[tool.setuptools.package-data]
+qxsimulator = ["py.typed"]

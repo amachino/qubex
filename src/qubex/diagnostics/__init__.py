@@ -1,3 +1,5 @@
+"""Diagnostics and inspection utilities for chip validation."""
+
 from .chip_inspector import ChipInspector, InspectionSummary, InspectionType
 from .inspection import Inspection, InspectionParams
 from .inspection_library import (
@@ -17,10 +19,10 @@ from .inspection_library import (
 
 __all__ = [
     "ChipInspector",
-    "InspectionType",
-    "InspectionSummary",
     "Inspection",
     "InspectionParams",
+    "InspectionSummary",
+    "InspectionType",
     "Type0A",
     "Type0B",
     "Type1A",

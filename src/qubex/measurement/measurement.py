@@ -1,114 +1,191 @@
+"""Measurement facade for measurement-centric hardware workflows."""
+
 from __future__ import annotations
 
 import logging
-import math
-from collections import defaultdict
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from functools import cache, cached_property, reduce
 from pathlib import Path
-from typing import Collection, Final, Literal
+from typing import Any, Final
 
-import numpy as np
 import numpy.typing as npt
+from qxpulse import PulseSchedule, RampType
+from typing_extensions import deprecated
 
-from ..backend import (
-    SAMPLING_PERIOD,
+from qubex.backend import (
+    BackendController,
+    BackendKind,
+)
+from qubex.backend.quel1 import ExecutionMode
+from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
+from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_result import (
+    MeasurementResult,
+)
+from qubex.system import (
     ConfigLoader,
-    ControlParams,
-    DeviceController,
+    ControlParameters,
     ExperimentSystem,
     Mux,
-    RawResult,
     SystemManager,
     Target,
 )
-from ..backend.dc_voltage_controller import dc_voltage
-from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
-from ..typing import IQArray, TargetMap
-from .measurement_result import (
-    MeasureData,
-    MeasureMode,
+from qubex.typing import ConfigurationMode, IQArray, TargetMap
+
+from .classifiers.state_classifier import StateClassifier
+from .measurement_constraint_profile import MeasurementConstraintProfile
+from .measurement_context import MeasurementContext
+from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_schedule_builder import (
+    CapturePlacement,
+    MeasurementScheduleBuilder,
+)
+from .measurement_schedule_runner import MeasurementScheduleRunner
+from .models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
-from .state_classifier import StateClassifier
+from .models.measurement_schedule import MeasurementSchedule
+from .models.sweep_measurement_result import (
+    NDSweepMeasurementResult,
+    SweepAxes,
+    SweepKey,
+    SweepMeasurementResult,
+    SweepPoint,
+    SweepValue,
+)
+from .services import (
+    MeasurementAmplificationService,
+    MeasurementClassificationService,
+    MeasurementExecutionService,
+    MeasurementSessionService,
+)
 
 logger = logging.getLogger(__name__)
 
-try:
-    from qubecalib import Sequencer
-    from qubecalib import neopulse as pls
-
-    from ..backend.sequencer_mod import SequencerMod
-except ImportError as e:
-    logger.info(e)
-
-DEFAULT_SHOTS: Final = 1024
-DEFAULT_INTERVAL: Final = 150 * 1024  # ns
-DEFAULT_READOUT_DURATION: Final = 384  # ns
-DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
-DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
-DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
-WORD_LENGTH: Final = 4  # samples
-WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
-BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
-BLOCK_DURATION: Final = BLOCK_LENGTH * SAMPLING_PERIOD  # ns
-
-EXTRA_SUM_SECTION_LENGTH = WORD_LENGTH * 4  # samples
-EXTRA_POST_BLANK_LENGTH = WORD_LENGTH  # samples
-EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # samples
-EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
-
 
 class Measurement:
+    """
+    Measurement-centric facade for hardware-backed session and execution flows.
+
+    `Measurement` is the measurement-side foundation that `Experiment`
+    delegates to for session lifecycle and measurement execution.
+    Choose it when sessions, schedules, capture/readout, sweeps, and
+    backend-facing concepts should be the main abstraction, not because it is
+    a strictly more capable alternative to `Experiment`.
+
+    Concrete responsibilities are delegated to focused collaborators:
+    context access (`MeasurementContext`), configuration/backend lifecycle
+    (`MeasurementSessionService`), schedule assembly
+    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), execution
+    orchestration (`MeasurementExecutionService`), classifier state
+    (`MeasurementClassificationService`), and temporary DC operations
+    (`MeasurementAmplificationService`).
+
+    """
+
+    _execution_mode: ExecutionMode | None = None
+    _clock_health_checks: bool | None = None
+    DEFAULT_LOAD_CONFIGS: Final[bool] = True
+    DEFAULT_CONNECT_DEVICES: Final[bool] = False
+    DEFAULT_CONFIGURATION_MODE: Final[ConfigurationMode] = "ge-cr-cr"
+
     def __init__(
         self,
         *,
-        chip_id: str,
+        chip_id: str | None = None,
+        system_id: str | None = None,
         qubits: Collection[str],
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
-        load_configs: bool = True,
-        connect_devices: bool = True,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        load_configs: bool | None = None,
+        connect_devices: bool | None = None,
+        configuration_mode: ConfigurationMode | None = None,
+        backend_kind: BackendKind | None = None,
+        _execution_mode: ExecutionMode | None = None,
+        _clock_health_checks: bool | None = None,
     ):
         """
-        Initialize the Measurement.
+        Initialize a measurement facade with optional session bootstrap.
 
         Parameters
         ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        qubits : Sequence[str]
-            The list of qubit labels.
-        config_dir : str, optional
-            The configuration directory.
-        params_dir : str, optional
-            The parameters directory.
-        load_configs : bool, optional
-            Whether to load the configurations, by default True.
-        connect_devices : bool, optional
-            Whether to connect the devices, by default True.
-        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
-            The configuration mode, by default "ge-cr-cr".
+        chip_id : str | None
+            Deprecated chip identifier compatibility input.
+        system_id : str | None
+            Canonical system identifier used to resolve configuration resources.
+        qubits : Collection[str]
+            Qubit labels managed by this measurement instance.
+        config_dir : Path | str | None, optional
+            Base directory that contains system configuration files.
+        params_dir : Path | str | None, optional
+            Base directory that contains control parameter files.
+        load_configs : bool | None, optional
+            Whether to call `load` during initialization. If `None`,
+            `DEFAULT_LOAD_CONFIGS` is used.
+        connect_devices : bool | None, optional
+            Whether to call `connect` during initialization. If `None`,
+            `DEFAULT_CONNECT_DEVICES` is used.
+        configuration_mode : ConfigurationMode | None, optional
+            Priority-ordered control layout passed to `load`. `"ge-ef-cr"`
+            assigns channels to GE, then EF, then CR. `"ge-cr-cr"` assigns
+            GE, then two CR channels. Ports with fewer channels keep the
+            leftmost roles. If `None`, `DEFAULT_CONFIGURATION_MODE` is used.
+        backend_kind : BackendKind | None, optional
+            Backend family to initialize through configuration loading.
+        _execution_mode : ExecutionMode | None, optional
+            Internal execution mode override forwarded to the execution service.
+        _clock_health_checks : bool | None, optional
+            Internal flag for backend clock-health checks in parallel execution.
 
         Examples
         --------
-        >>> from qubex import Measurement
-        >>> meas = Measurement(
+        >>> from qubex.measurement import Measurement
+        >>> session = Measurement(
         ...     chip_id="64Q",
         ...     qubits=["Q00", "Q01"],
         ... )
         """
-        self._chip_id: Final = chip_id
+        if chip_id is None and system_id is None:
+            raise ValueError("Either `system_id` or `chip_id` must be provided.")
+        self._chip_id = chip_id
+        self._system_id: Final[str | None] = system_id
         self._qubits: Final = list(qubits)
-        self._classifiers: TargetMap[StateClassifier] = {}
+        self._execution_mode: Final[ExecutionMode | None] = _execution_mode
+        self._clock_health_checks: Final[bool | None] = _clock_health_checks
         self._system_manager = SystemManager.shared()
+        self._context = MeasurementContext(
+            system_manager=self._system_manager,
+            qubits=self._qubits,
+        )
+        self._classification_service = MeasurementClassificationService(classifiers={})
+        self._amplification_service = MeasurementAmplificationService(
+            context=self._context
+        )
+        self._session_service = MeasurementSessionService(
+            system_manager=self._system_manager,
+            context=self._context,
+        )
+        self._execution_service = MeasurementExecutionService(
+            context=self._context,
+            session_service=self._session_service,
+            classifiers=self._classification_service.classifiers,
+            execution_mode=self._execution_mode,
+            clock_health_checks=self._clock_health_checks,
+        )
+        if load_configs is None:
+            load_configs = self.DEFAULT_LOAD_CONFIGS
+        if connect_devices is None:
+            connect_devices = self.DEFAULT_CONNECT_DEVICES
+        if configuration_mode is None:
+            configuration_mode = self.DEFAULT_CONFIGURATION_MODE
         if load_configs:
             self.load(
                 config_dir=config_dir,
                 params_dir=params_dir,
                 configuration_mode=configuration_mode,
+                system_id=system_id,
+                backend_kind=backend_kind,
             )
         if connect_devices:
             self.connect()
@@ -117,48 +194,86 @@ class Measurement:
         self,
         config_dir: Path | str | None,
         params_dir: Path | str | None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
-    ):
+        configuration_mode: ConfigurationMode | None = None,
+        system_id: str | None = None,
+        backend_kind: BackendKind | None = None,
+    ) -> None:
         """
-        Load the measurement settings.
+        Load configuration resources into the current session.
 
         Parameters
         ----------
         config_dir : Path | str | None
-            The configuration directory.
+            Directory that contains system configuration files.
         params_dir : Path | str | None
-            The parameters directory.
-        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
-            The configuration mode, by default "ge-cr-cr".
+            Directory that contains control parameter files.
+        configuration_mode : ConfigurationMode | None, optional
+            Priority-ordered control layout. `"ge-ef-cr"` assigns channels to
+            GE, then EF, then CR. `"ge-cr-cr"` assigns GE, then two CR
+            channels. Ports with fewer channels keep the leftmost roles. If
+            `None`, backend defaults are used.
+        backend_kind : BackendKind | None, optional
+            Backend family used when creating the backend controller.
+
+        Notes
+        -----
+        This method updates `config_loader`, `experiment_system`, and backend
+        runtime dependencies.
         """
-        self.system_manager.load(
+        self.session_service.load(
             chip_id=self._chip_id,
+            system_id=system_id or self._system_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            backend_kind=backend_kind,
         )
-        self.system_manager.load_skew_file(self.box_ids)
 
     def connect(
         self,
         *,
-        sync_clocks: bool = True,
-    ):
-        """Connect to the devices."""
-        if len(self.box_ids) == 0:
-            print("No boxes are selected. Please check the configuration.")
-            return
-        self.device_controller.connect(self.box_ids)
-        self.system_manager.pull(self.box_ids)
-        if sync_clocks:
-            self.device_controller.resync_clocks(self.box_ids)
+        sync_clocks: bool | None = None,
+        parallel: bool | None = None,
+    ) -> None:
+        """
+        Connect backend resources for the active session.
+
+        Parameters
+        ----------
+        sync_clocks : bool | None, optional
+            Whether to synchronize hardware clocks before measurement.
+        parallel : bool | None, optional
+            Whether backend setup steps should run in parallel where supported.
+
+        Notes
+        -----
+        This method performs hardware-side connection and may take noticeable
+        time depending on backend state.
+        """
+        self.session_service.connect(sync_clocks=sync_clocks, parallel=parallel)
 
     def reload(
         self,
         *,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
-    ):
-        """Reload the measuremnt settings."""
+        configuration_mode: ConfigurationMode | None = None,
+    ) -> None:
+        """
+        Reload configuration and reconnect backend resources.
+
+        Parameters
+        ----------
+        configuration_mode : ConfigurationMode | None, optional
+            Priority-ordered control layout passed to `load`. `"ge-ef-cr"`
+            assigns channels to GE, then EF, then CR. `"ge-cr-cr"` assigns
+            GE, then two CR channels. Ports with fewer channels keep the
+            leftmost roles. If `None`, the previously configured value is
+            reused by the loader/service.
+
+        Notes
+        -----
+        This method calls `load` using the current loader paths and then
+        reconnects hardware resources via `connect`.
+        """
         self.load(
             config_dir=self.config_loader.config_path,
             params_dir=self.config_loader.params_path,
@@ -167,62 +282,119 @@ class Measurement:
         self.connect()
 
     @property
-    def qubits(self) -> list[str]:
-        """Get the list of qubit labels."""
+    def qubit_labels(self) -> list[str]:
+        """Return the configured qubit labels."""
         return self._qubits
 
-    @cached_property
-    def box_ids(self) -> list[str]:
-        """Get the list of box IDs."""
-        boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
-        return [box.id for box in boxes]
+    @property
+    @deprecated("Use `qubit_labels` instead.")
+    def qubits(self) -> list[str]:
+        """Return the configured qubit labels."""
+        return self._qubits
 
-    @cached_property
+    @property
+    def box_ids(self) -> list[str]:
+        """Return backend box identifiers for the active session."""
+        return self.context.box_ids
+
+    @property
     def mux_dict(self) -> dict[str, Mux]:
-        """Get a dictionary of Mux objects indexed by qubit labels."""
-        return {
-            qubit: self.experiment_system.get_mux_by_qubit(qubit)
-            for qubit in self._qubits
-        }
+        """Return MUX objects indexed by qubit label."""
+        return self.context.mux_dict
 
     @property
     def system_manager(self) -> SystemManager:
-        """Get the state manager."""
+        """Return the shared system manager."""
         return self._system_manager
 
     @property
+    def context(self) -> MeasurementContext:
+        """Return the measurement context."""
+        return self._context
+
+    @property
+    def session_service(self) -> MeasurementSessionService:
+        """Return the session lifecycle service."""
+        return self._session_service
+
+    @property
+    def execution_service(self) -> MeasurementExecutionService:
+        """Return the measurement execution service."""
+        return self._execution_service
+
+    @property
+    def classification_service(self) -> MeasurementClassificationService:
+        """Return the classification service."""
+        return self._classification_service
+
+    @property
+    def amplification_service(self) -> MeasurementAmplificationService:
+        """Return the readout amplification service."""
+        return self._amplification_service
+
+    @property
+    def pulse_factory(self) -> MeasurementPulseFactory:
+        """Return a pulse factory bound to current system state."""
+        return self.execution_service.pulse_factory
+
+    @property
+    def schedule_builder(self) -> MeasurementScheduleBuilder:
+        """Return a schedule builder bound to current system state."""
+        return self.execution_service.schedule_builder
+
+    @property
+    def measurement_config_factory(self) -> MeasurementConfigFactory:
+        """Return a measurement-config factory bound to current defaults."""
+        return self.execution_service.measurement_config_factory
+
+    @property
     def config_loader(self) -> ConfigLoader:
-        """Get the configuration loader."""
-        return self._system_manager.config_loader
+        """Return the configuration loader."""
+        return self.context.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
-        """Get the experiment system."""
-        return self._system_manager.experiment_system
+        """Return the active experiment system."""
+        return self.context.experiment_system
 
     @property
-    def device_controller(self) -> DeviceController:
-        """Get the device controller."""
-        return self._system_manager.device_controller
+    def backend_controller(self) -> BackendController:
+        """Return the active backend controller."""
+        return self.context.backend_controller
 
     @property
-    def control_params(self) -> ControlParams:
-        """Get the control parameters."""
+    def sampling_period(self) -> float:
+        """Return sampling period in ns."""
+        return self.execution_service.sampling_period
+
+    @property
+    def constraint_profile(self) -> MeasurementConstraintProfile:
+        """Return backend timing and alignment constraints."""
+        return self.execution_service.constraint_profile
+
+    @property
+    def measurement_schedule_runner(self) -> MeasurementScheduleRunner:
+        """Return the schedule-execution runner."""
+        return self.execution_service.measurement_schedule_runner
+
+    @property
+    def control_params(self) -> ControlParameters:
+        """Return active control parameters."""
         return self.experiment_system.control_params
 
     @property
     def chip_id(self) -> str:
-        """Get the chip ID."""
+        """Return the active chip identifier."""
         return self.experiment_system.chip.id
 
     @property
     def targets(self) -> dict[str, Target]:
-        """Get the targets."""
+        """Return available targets indexed by label."""
         return {target.label: target for target in self.experiment_system.targets}
 
     @property
     def nco_frequencies(self) -> dict[str, float]:
-        """Get the NCO frequencies."""
+        """Return NCO frequencies indexed by target label."""
         return {
             target.label: self.experiment_system.get_nco_frequency(target.label)
             for target in self.experiment_system.targets
@@ -230,7 +402,7 @@ class Measurement:
 
     @property
     def awg_frequencies(self) -> dict[str, float]:
-        """Get the AWG frequencies."""
+        """Return AWG frequencies indexed by target label."""
         return {
             target.label: self.experiment_system.get_awg_frequency(target.label)
             for target in self.experiment_system.targets
@@ -238,1221 +410,766 @@ class Measurement:
 
     @property
     def classifiers(self) -> TargetMap[StateClassifier]:
-        """Get the state classifiers."""
-        return self._classifiers
+        """Return currently registered state classifiers."""
+        return self.classification_service.classifiers
 
     def get_awg_frequency(self, target: str) -> float:
         """
-        Get the AWG frequency for the target.
+        Return the AWG frequency for one target.
 
         Parameters
         ----------
         target : str
-            The target label.
+            Target label.
 
         Returns
         -------
         float
-            The AWG frequency in Hz.
+            AWG frequency in Hz.
         """
         return self.experiment_system.get_awg_frequency(target)
 
     def get_diff_frequency(self, target: str) -> float:
         """
-        Get the difference frequency for the target.
+        Return the intermediate (difference) frequency for one target.
 
         Parameters
         ----------
         target : str
-            The target label.
+            Target label.
 
         Returns
         -------
         float
-            The difference frequency in Hz.
+            Difference frequency in Hz.
         """
         return self.experiment_system.get_diff_frequency(target)
 
-    def update_classifiers(self, classifiers: TargetMap[StateClassifier]):
-        """Update the state classifiers."""
-        for target, classifier in classifiers.items():
-            self._classifiers[target] = classifier  # type: ignore
+    def update_classifiers(self, classifiers: TargetMap[StateClassifier]) -> None:
+        """
+        Replace registered state classifiers.
+
+        Parameters
+        ----------
+        classifiers : TargetMap[StateClassifier]
+            Classifiers indexed by target label.
+        """
+        self.classification_service.update_classifiers(classifiers)
 
     def get_confusion_matrix(
         self,
         targets: Collection[str],
     ) -> npt.NDArray:
-        targets = list(targets)
-        confusion_matrices = []
-        for target in targets:
-            cm = self.classifiers[target].confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
-        return reduce(np.kron, confusion_matrices)
+        """
+        Return a combined confusion matrix for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            Target labels included in Kronecker-product order.
+
+        Returns
+        -------
+        npt.NDArray
+            Combined confusion matrix.
+        """
+        return self.classification_service.get_confusion_matrix(targets)
 
     def get_inverse_confusion_matrix(
         self,
         targets: Collection[str],
     ) -> npt.NDArray:
-        targets = list(targets)
-        confusion_matrix = self.get_confusion_matrix(targets)
-        return np.linalg.inv(confusion_matrix)
+        """
+        Return the inverse of the combined confusion matrix.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            Target labels included in Kronecker-product order.
+
+        Returns
+        -------
+        npt.NDArray
+            Inverse combined confusion matrix.
+        """
+        return self.classification_service.get_inverse_confusion_matrix(targets)
 
     def is_connected(self) -> bool:
         """
-        Check if the measurement system is connected to the devices.
+        Return whether backend resources are connected.
 
         Returns
         -------
         bool
-            True if connected, False otherwise.
+            `True` if connected, otherwise `False`.
         """
-        return self.device_controller._quel1system is not None
+        return self.session_service.is_connected()
 
-    def check_link_status(self, box_list: list[str]) -> dict:
+    def disconnect(self) -> None:
         """
-        Check the link status of the boxes.
+        Disconnect backend resources held by the measurement session.
+
+        Notes
+        -----
+        This method forwards directly to the session lifecycle service and
+        resets runtime connectivity state.
+        """
+        self.session_service.disconnect()
+
+    def check_link_status(
+        self,
+        box_list: list[str],
+        *,
+        parallel: bool | None = None,
+    ) -> dict:
+        """
+        Return link status for the specified backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
+        parallel : bool | None, optional
+            Whether to query each box in parallel where supported. If `None`,
+            the session-level default is used.
 
         Returns
         -------
         dict
-            The link status of the boxes.
+            Backend-specific link status payload keyed by box identifier.
 
         Examples
         --------
-        >>> meas.check_link_status(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.check_link_status(["Q73A", "U10B"])
         """
-        link_statuses = {
-            box: self.device_controller.link_status(box) for box in box_list
-        }
-        is_linkedup = all([all(status.values()) for status in link_statuses.values()])
-        return {
-            "status": is_linkedup,
-            "links": link_statuses,
-        }
+        return self.session_service.check_link_status(box_list, parallel=parallel)
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """
-        Check the clock status of the boxes.
+        Return clock status for the specified backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
 
         Returns
         -------
         dict
-            The clock status of the boxes.
+            Backend-specific clock status payload keyed by box identifier.
 
         Examples
         --------
-        >>> meas.check_clock_status(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.check_clock_status(["Q73A", "U10B"])
         """
-        clocks = self.device_controller.read_clocks(box_list)
-        clock_statuses = {box: clock for box, clock in zip(box_list, clocks)}
-        is_synced = self.device_controller.check_clocks(box_list)
-        return {
-            "status": is_synced,
-            "clocks": clock_statuses,
-        }
+        return self.session_service.check_clock_status(box_list)
 
-    def linkup(self, box_list: list[str], noise_threshold: int | None = None):
+    def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """
-        Link up the boxes and synchronize the clocks.
+        Run link-up and clock synchronization for backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
+        noise_threshold : int | None, optional
+            Optional threshold used by backend-specific link quality checks.
 
         Examples
         --------
-        >>> meas.linkup(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.linkup(["Q73A", "U10B"])
         """
-        self.device_controller.linkup_boxes(box_list, noise_threshold=noise_threshold)
-        self.device_controller.sync_clocks(box_list)
+        self.session_service.linkup(box_list, noise_threshold=noise_threshold)
 
-    def relinkup(self, box_list: list[str]):
+    def relinkup(self, box_list: list[str]) -> None:
         """
-        Relink up the boxes and synchronize the clocks.
+        Re-run link-up for already configured backend boxes.
 
         Parameters
         ----------
         box_list : list[str]
-            The list of box IDs.
+            Backend box identifiers.
 
         Examples
         --------
-        >>> meas.relinkup(["Q73A", "U10B"])
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> session.relinkup(["Q73A", "U10B"])
         """
-        self.device_controller.relinkup_boxes(box_list)
-        self.device_controller.sync_clocks(box_list)
+        self.session_service.relinkup(box_list)
 
     @contextmanager
-    def modified_frequencies(self, target_frequencies: dict[str, float]):
+    def modified_frequencies(
+        self,
+        target_frequencies: dict[str, float],
+    ) -> Iterator[None]:
         """
-        Temporarily modify the target frequencies.
+        Temporarily override target frequencies within a context block.
 
         Parameters
         ----------
         target_frequencies : dict[str, float]
-            The target frequencies to be modified.
+            Frequency overrides in Hz keyed by target label.
+
+        Yields
+        ------
+        None
+            Context where overridden frequencies are active.
+
+        Notes
+        -----
+        Original frequencies are restored when exiting the context manager.
 
         Examples
         --------
-        >>> with meas.modified_frequencies({"Q00": 5.0}):
-        ...     result = meas.measure({
-        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
-        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
-        ...     })
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> with session.modified_frequencies({"Q00": 5.0e9}):
+        ...     _ = session.measure(
+        ...         {
+        ...             "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...             "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...         }
+        ...     )
         """
-        if target_frequencies is None:
+        with self.session_service.modified_frequencies(target_frequencies):
             yield
-        else:
-            with self.system_manager.modified_frequencies(target_frequencies):
-                yield
 
     @contextmanager
-    def apply_dc_voltages(self, targets: str | Collection[str]):
+    def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:
         """
-        Temporarily apply DC voltages to the specified targets.
+        Temporarily apply DC voltages to selected targets.
 
         Parameters
         ----------
-        targets : Collection[str]
-            The list of target names.
+        targets : str | Collection[str]
+            Target label or target labels for temporary DC bias application.
+
+        Yields
+        ------
+        None
+            Context where DC voltages are applied.
+
+        Notes
+        -----
+        DC voltages are removed automatically when exiting the context manager.
 
         Examples
         --------
-        >>> with meas.apply_dc_voltages(["Q00", "Q01"]):
-        ...     result = meas.measure({
-        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
-        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
-        ...     })
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> with session.apply_dc_voltages(["Q00", "Q01"]):
+        ...     _ = session.measure(
+        ...         {
+        ...             "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...             "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...         }
+        ...     )
         """
-        if isinstance(targets, str):
-            targets = [targets]
-        qubits = [Target.qubit_label(target) for target in targets]
-        muxes = {
-            self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
-        }
-        voltages = {mux + 1: self.control_params.get_dc_voltage(mux) for mux in muxes}
-        with dc_voltage(voltages):
+        with self.amplification_service.apply_dc_voltages(targets):
             yield
 
-    def measure_noise(
+    async def run_measurement(
         self,
-        targets: Collection[str],
-        duration: float,
-    ) -> MeasureResult:
+        schedule: MeasurementSchedule,
+        *,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
         """
-        Measure the readout noise.
+        Execute one prepared measurement schedule.
 
         Parameters
         ----------
-        targets : Collection[str]
-            The list of target names.
-        duration : float, optional
-            The duration in ns.
+        schedule : MeasurementSchedule
+            Measurement schedule that includes readout instructions.
+        config : MeasurementConfig
+            Runtime acquisition configuration.
 
         Returns
         -------
-        MeasureResult
-            The measurement results.
+        MeasurementResult
+            Serialized measurement result container.
+        """
+        return await self.execution_service.run_measurement(
+            schedule=schedule,
+            config=config,
+        )
+
+    async def run_sweep_measurement(
+        self,
+        schedule: Callable[[SweepValue], MeasurementSchedule],
+        *,
+        config: MeasurementConfig,
+        sweep_values: npt.ArrayLike | Sequence[SweepValue],
+        on_point: Callable[[SweepValue, MeasurementResult], None] | None = None,
+    ) -> SweepMeasurementResult:
+        """
+        Execute a pointwise sweep over explicit sweep values.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepValue], MeasurementSchedule]
+            Factory that builds one schedule from one sweep value.
+        config : MeasurementConfig
+            Runtime acquisition configuration.
+        sweep_values : ArrayLike | Sequence[SweepValue]
+            Explicit sweep values evaluated in sequence.
+        on_point : Callable[[SweepValue, MeasurementResult], None] | None, optional
+            Callback invoked after each point measurement completes.
+
+        Returns
+        -------
+        SweepMeasurementResult
+            Sweep result with one point result per sweep value.
+            `result.data[target][capture]` has shape
+            `(len(sweep_values), *capture_shape)`, where `capture_shape` follows
+            the canonical `CaptureData` payload contract.
+        """
+        return await self.execution_service.run_sweep_measurement(
+            schedule,
+            config=config,
+            sweep_values=sweep_values,
+            on_point=on_point,
+        )
+
+    async def run_ndsweep_measurement(
+        self,
+        schedule: Callable[[SweepPoint], MeasurementSchedule],
+        *,
+        config: MeasurementConfig,
+        sweep_points: Mapping[SweepKey, Sequence[SweepValue]],
+        sweep_axes: SweepAxes | None = None,
+    ) -> NDSweepMeasurementResult:
+        """
+        Execute an N-dimensional Cartesian-product sweep.
+
+        Parameters
+        ----------
+        schedule : Callable[[SweepPoint], MeasurementSchedule]
+            Factory that builds one schedule from one expanded sweep point.
+        config : MeasurementConfig
+            Runtime acquisition configuration.
+        sweep_points : Mapping[SweepKey, Sequence[SweepValue]]
+            Sweep axes and candidate values for each axis.
+        sweep_axes : SweepAxes | None, optional
+            Axis order used for Cartesian expansion and index mapping. If
+            `None`, insertion order from `sweep_points` is used. Non-`dict`
+            mapping inputs must provide `sweep_axes` explicitly.
+
+        Returns
+        -------
+        NDSweepMeasurementResult
+            N-dimensional sweep result stored as flattened point results with
+            shape metadata. `result.data[target][capture]` has shape
+            `(*result.shape, *capture_shape)`, where `capture_shape` follows
+            the canonical `CaptureData` payload contract.
+        """
+        return await self.execution_service.run_ndsweep_measurement(
+            schedule,
+            config=config,
+            sweep_points=sweep_points,
+            sweep_axes=sweep_axes,
+        )
+
+    async def measure_noise(
+        self,
+        targets: Collection[str],
+        *,
+        duration: float,
+    ) -> MeasurementResult:
+        """
+        Measure readout noise with no control waveform drive.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            Target labels to capture.
+        duration : float
+            Capture duration in ns.
+
+        Returns
+        -------
+        MeasurementResult
+            Noise measurement result.
 
         Examples
         --------
-        >>> result = meas.measure_noise()
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> result = await session.measure_noise(["Q00", "Q01"], duration=2048.0)
         """
-        return self.measure(
-            waveforms={target: np.zeros(0) for target in targets},
-            mode="avg",
-            shots=1,
-            readout_duration=duration,
-            readout_amplitudes={target: 0 for target in targets},
+        return await self.execution_service.measure_noise(
+            targets=targets,
+            duration=duration,
         )
 
     def measure(
         self,
-        waveforms: TargetMap[IQArray],
+        waveforms: Mapping[str, IQArray],
         *,
-        mode: Literal["single", "avg"] = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
-        enable_dsp_sum: bool = False,
-        enable_dsp_classification: bool = False,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        readout_amplification: bool | None = None,
+        classification_line_param0: tuple[float, float, float] | None = None,
+        classification_line_param1: tuple[float, float, float] | None = None,
+        plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MeasureResult:
         """
-        Measure with the given control waveforms.
+        Execute one measurement from target waveform mappings.
 
         Parameters
         ----------
-        waveforms : TargetMap[IQArray]
-            The control waveforms for each target.
-            Waveforms are complex I/Q arrays with the sampling period of 2 ns.
-        mode : Literal["single", "avg"], optional
-            The measurement mode, by default "single".
-            - "single": Measure once.
-            - "avg": Measure multiple times and average the results.
-        shots : int, optional
-            The number of shots.
-        interval : float, optional
-            The interval in ns.
-        readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit.
-        readout_duration : float, optional
-            The readout duration in ns.
-        readout_pre_margin : float, optional
-            The readout pre-margin in ns.
-        readout_post_margin : float, optional
-            The readout post-margin in ns.
-        readout_ramptime : float, optional
-            The readout ramp time in ns.
-        readout_drag_coeff : float, optional
-            The readout drag coefficient.
-        readout_ramp_type : RampType, optional
-            The readout ramp type.
-        add_pump_pulses : bool, optional
-            Whether to add pump pulses, by default False.
+        waveforms : Mapping[str, IQArray]
+            Control waveforms keyed by target label. Each waveform is a complex
+            I/Q array sampled at `sampling_period` ns.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether shot averaging is applied in hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitude overrides keyed by target label.
+        readout_duration : float | None, optional
+            Readout capture duration in ns.
+        readout_pre_margin : float | None, optional
+            Margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp duration in ns.
+        readout_drag_coeff : float | None, optional
+            Drag coefficient for ramp shaping.
+        readout_ramp_type : RampType | None, optional
+            Ramp shape type.
+        readout_amplification : bool | None, optional
+            Whether to apply readout amplification pulses.
+        classification_line_param0 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 0.
+        classification_line_param1 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 1.
+        plot : bool | None, optional
+            Whether to plot readout waveforms and/or results.
+        **deprecated_options : Any
+            Deprecated option aliases kept for backward compatibility.
 
         Returns
         -------
         MeasureResult
-            The measurement results.
+            Single measurement result.
+
+        Notes
+        -----
+        Deprecated options are normalized by the execution service.
 
         Examples
         --------
-        >>> result = meas.measure({
-        ...     "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
-        ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
-        ... })
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> result = session.measure(
+        ...     {
+        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...     }
+        ... )
         """
-        if shots is None:
-            shots = DEFAULT_SHOTS
-
-        measure_mode = MeasureMode(mode)
-        sequencer = self._create_sequencer(
+        return self.execution_service.measure(
             waveforms=waveforms,
-            interval=interval,
-            add_pump_pulses=add_pump_pulses,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            shot_averaging=shot_averaging,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            readout_amplitudes=readout_amplitudes,
-            readout_ramptime=readout_ramptime,
+            readout_ramp_time=readout_ramp_time,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            readout_amplification=readout_amplification,
+            time_integration=time_integration,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
+            plot=plot,
+            **deprecated_options,
         )
-        backend_result = self.device_controller.execute_sequencer(
-            sequencer=sequencer,
-            repeats=shots,
-            integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=enable_dsp_demodulation,
-            enable_sum=enable_dsp_sum,
-            enable_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
-        result = self._create_measure_result(
-            backend_result=backend_result,
-            measure_mode=measure_mode,
-            shots=shots,
-        )
-        rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None:
-            result.save(data_dir=rawdata_dir)
-        return result
 
     def execute(
         self,
-        schedule: PulseSchedule,
+        schedule: PulseSchedule | TargetMap[IQArray],
         *,
-        mode: Literal["single", "avg"] = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+        frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
+        readout_ramp_time: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
-        enable_dsp_sum: bool = False,
-        enable_dsp_classification: bool = False,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
-        plot: bool = False,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        classification_line_param0: tuple[float, float, float] | None = None,
+        classification_line_param1: tuple[float, float, float] | None = None,
+        plot: bool | None = None,
+        **deprecated_options: Any,
     ) -> MultipleMeasureResult:
         """
-        Measure with the given control waveforms.
+        Execute measurement for a pulse schedule or waveform mapping.
 
         Parameters
         ----------
-        schedule : PulseSchedule
-            The pulse schedule.
-        mode : Literal["single", "avg"], optional
-            The measurement mode, by default "single".
-            - "single": Measure once.
-            - "avg": Measure multiple times and average the results.
-        shots : int, optional
-            The number of shots.
-        interval : float, optional
-            The interval in ns.
-        readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit.
-        readout_duration : float, optional
-            The readout duration in ns.
-        readout_pre_margin : float, optional
-            The readout pre-margin in ns.
-        readout_post_margin : float, optional
-            The readout post-margin in ns.
-        readout_ramptime : float, optional
-            The readout ramp time in ns.
-        readout_drag_coeff : float, optional
-            The readout drag coefficient.
-        readout_ramp_type : RampType, optional
-            The readout ramp type.
-        add_last_measurement : bool, optional
-            Whether to add the last measurement, by default False.
-        add_pump_pulses : bool, optional
-            Whether to add pump pulses, by default False.
-        enable_dsp_sum : bool, optional
-            Whether to enable DSP summation, by default False.
-        enable_dsp_classification : bool, optional
-            Whether to enable DSP classification, by default False.
-        plot : bool, optional
-            Whether to plot the results, by default False.
+        schedule : PulseSchedule | TargetMap[IQArray]
+            Pulse schedule or waveform mapping to execute.
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether shot averaging is applied in hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitude overrides keyed by target label.
+        readout_duration : float | None, optional
+            Readout capture duration in ns.
+        readout_pre_margin : float | None, optional
+            Margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp duration in ns.
+        readout_drag_coeff : float | None, optional
+            Drag coefficient for ramp shaping.
+        readout_ramp_type : RampType | None, optional
+            Ramp shape type.
+        readout_amplification : bool | None, optional
+            Whether to apply readout amplification pulses.
+        final_measurement : bool | None, optional
+            Whether to append a final readout measurement.
+        classification_line_param0 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 0.
+        classification_line_param1 : tuple[float, float, float] | None, optional
+            Optional QuEL-1 classification line parameter 1.
+        plot : bool | None, optional
+            Whether to plot readout waveforms and/or results.
+        **deprecated_options : Any
+            Deprecated option aliases kept for backward compatibility.
 
         Returns
         -------
         MultipleMeasureResult
-            The measurement results.
+            Measurement results for all captured readout windows.
+
+        Notes
+        -----
+        Deprecated options are normalized by the execution service.
+
+        Examples
+        --------
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> result = session.execute(
+        ...     {
+        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...     }
+        ... )
         """
-        if not schedule.is_valid():
-            raise ValueError("Invalid pulse schedule.")
-
-        if shots is None:
-            shots = DEFAULT_SHOTS
-
-        measure_mode = MeasureMode(mode)
-        sequencer = self._create_sequencer_from_schedule(
+        return self.execution_service.execute(
             schedule=schedule,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            shot_averaging=shot_averaging,
+            frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
+            readout_ramp_time=readout_ramp_time,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            time_integration=time_integration,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
             plot=plot,
+            **deprecated_options,
         )
-        backend_result = self.device_controller.execute_sequencer(
-            sequencer=sequencer,
-            repeats=shots,
-            integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=enable_dsp_demodulation,
-            enable_sum=enable_dsp_sum,
-            enable_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
-        result = self._create_multiple_measure_result(
-            backend_result=backend_result,
-            measure_mode=measure_mode,
-            shots=shots,
-        )
-        rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None:
-            result.save(data_dir=rawdata_dir)
-        return result
 
-    @cache
-    def readout_pulse(
+    def capture_loopback(
         self,
-        target: str,
+        schedule: PulseSchedule | TargetMap[IQArray],
         *,
-        duration: float | None = None,
-        amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
-        drag_coeff: float | None = None,
-        pre_margin: float | None = None,
-        post_margin: float | None = None,
-    ) -> PulseArray:
-        qubit = Target.qubit_label(target)
-        if duration is None:
-            duration = DEFAULT_READOUT_DURATION
-        if amplitude is None:
-            amplitude = self.control_params.get_readout_amplitude(qubit)
-        if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMPTIME
-        if type is None:
-            type = "RaisedCosine"
-        if drag_coeff is None:
-            drag_coeff = 0.0
-        if pre_margin is None:
-            pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if post_margin is None:
-            post_margin = DEFAULT_READOUT_POST_MARGIN
-        pulse = FlatTop(
-            duration=duration,
-            amplitude=amplitude,
-            tau=ramptime,
-            beta=drag_coeff,
-            type=type,
-        )
-        return PulseArray(
-            [
-                Blank(pre_margin),
-                pulse.padded(
-                    total_duration=duration + post_margin,
-                    pad_side="right",
-                ),
-            ]
-        )
-
-    @cache
-    def pump_pulse(
-        self,
-        target: str,
-        duration: float | None = None,
-        amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
-    ) -> FlatTop:
-        qubit = Target.qubit_label(target)
-        mux = self.mux_dict[qubit]
-        if duration is None:
-            duration = DEFAULT_READOUT_DURATION
-        if amplitude is None:
-            amplitude = self.control_params.get_pump_amplitude(mux.index)
-        if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMPTIME
-        if type is None:
-            type = "RaisedCosine"
-        return FlatTop(
-            duration=duration,
-            amplitude=amplitude,
-            tau=ramptime,
-            type=type,
-        )
-
-    def _create_sequencer(
-        self,
-        *,
-        waveforms: TargetMap[IQArray],
-        interval: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
-        readout_ramp_type: RampType | None = None,
-        readout_drag_coeff: float | None = None,
-        capture_delays: dict[int, int] | None = None,
-        add_pump_pulses: bool = False,
-    ) -> Sequencer:
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-        if readout_amplitudes is None:
-            readout_amplitudes = self.control_params.readout_amplitude
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
-        if readout_pre_margin is None:
-            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if readout_post_margin is None:
-            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if capture_delays is None:
-            capture_delays = self.control_params.capture_delay_word
-
-        qubits = [Target.qubit_label(target) for target in waveforms]
-        control_length = max(len(waveform) for waveform in waveforms.values())
-        pre_margin_length = self._number_of_samples(readout_pre_margin)
-        control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
-        # ensure first capture starts at a multiple of BLOCK_LENGTH
-        control_length = (
-            control_length + BLOCK_LENGTH - (pre_margin_length % BLOCK_LENGTH)
-        )
-        readout_length = self._number_of_samples(readout_duration)
-        post_margin_length = self._number_of_samples(readout_post_margin)
-        total_readout_length = pre_margin_length + readout_length + post_margin_length
-        total_length = control_length + total_readout_length
-        total_length = math.ceil(total_length / BLOCK_LENGTH) * BLOCK_LENGTH
-        readout_slice = slice(control_length, control_length + total_readout_length)
-
-        # post margin to wait photon emission of resonator
-        capture_length = readout_length + post_margin_length
-        capture_start = {}
-        for qubit in qubits:
-            mux = self.mux_dict[qubit]
-            capture_delay_word = capture_delays.get(mux.index)
-            if capture_delay_word is None:
-                capture_delay_word = 0
-            offset_length = capture_delay_word * WORD_LENGTH
-            capture_start[qubit] = control_length + pre_margin_length + offset_length
-
-        # zero padding for user-defined waveforms
-        user_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
-        for target, waveform in waveforms.items():
-            if waveform is None or len(waveform) == 0:
-                continue
-            padded_waveform = np.zeros(total_length, dtype=np.complex128)
-            left_padding = control_length - len(waveform)
-            control_slice = slice(left_padding, control_length)
-            padded_waveform[control_slice] = waveform
-            user_waveforms[target] = padded_waveform
-
-        # add system-defined readout waveforms
-        readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
-        for qubit in qubits:
-            readout_target = Target.read_label(qubit)
-            if readout_target in user_waveforms:
-                padded_waveform = user_waveforms[readout_target]
-            else:
-                padded_waveform = np.zeros(total_length, dtype=np.complex128)
-            readout_pulse = self.readout_pulse(
-                target=qubit,
-                duration=readout_duration,
-                amplitude=readout_amplitudes.get(qubit),
-                ramptime=readout_ramptime,
-                type=readout_ramp_type,
-                drag_coeff=readout_drag_coeff,
-                pre_margin=readout_pre_margin,
-                post_margin=readout_post_margin,
-            )
-            padded_waveform[readout_slice] = readout_pulse.values
-            # use diff_frequency instead of awg_frequency since the envelope will be adjusted by conjugation later
-            omega = 2 * np.pi * self.get_diff_frequency(readout_target)
-            offset = capture_start[qubit] * SAMPLING_PERIOD
-            padded_waveform *= np.exp(1j * omega * offset)
-            readout_waveforms[readout_target] = padded_waveform
-
-        # zero padding (pump)
-        pump_duration = readout_pre_margin + readout_duration + readout_post_margin
-        pump_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
-        if add_pump_pulses:
-            for qubit in qubits:
-                mux = self.mux_dict[qubit]
-                pump_pulse = self.pump_pulse(
-                    target=qubit,
-                    duration=pump_duration,
-                    amplitude=self.control_params.get_pump_amplitude(mux.index),
-                    ramptime=readout_ramptime,
-                    type=readout_ramp_type,
-                )
-                padded_waveform = np.zeros(total_length, dtype=np.complex128)
-                padded_waveform[readout_slice] = pump_pulse.values
-                pump_waveforms[mux.label] = padded_waveform
-
-        # create dict of GenSampledSequence and CapSampledSequence
-        gen_sequences: dict[str, pls.GenSampledSequence] = {}
-        cap_sequences: dict[str, pls.CapSampledSequence] = {}
-        for target, waveform in user_waveforms.items():
-            # add GenSampledSequence (control)
-            if self.experiment_system.get_target(target).sideband != "L":
-                waveform = np.conj(waveform)
-            gen_sequences[target] = pls.GenSampledSequence(
-                target_name=target,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
-                sub_sequences=[
-                    pls.GenSampledSubSequence(
-                        real=np.real(waveform),
-                        imag=np.imag(waveform),
-                        repeats=1,
-                        post_blank=None,
-                        original_post_blank=None,
-                    )
-                ],
-            )
-        for target, waveform in pump_waveforms.items():
-            # add GenSampledSequence (pump)
-            if self.experiment_system.get_target(target).sideband != "L":
-                waveform = np.conj(waveform)
-            gen_sequences[target] = pls.GenSampledSequence(
-                target_name=target,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
-                sub_sequences=[
-                    pls.GenSampledSubSequence(
-                        real=np.real(waveform),
-                        imag=np.imag(waveform),
-                        repeats=1,
-                        post_blank=None,
-                        original_post_blank=None,
-                    )
-                ],
-            )
-        for target, waveform in readout_waveforms.items():
-            qubit = Target.qubit_label(target)
-            # add GenSampledSequence (readout)
-            if self.experiment_system.get_target(target).sideband != "L":
-                waveform = np.conj(waveform)
-            modulation_frequency = self.get_awg_frequency(target)
-            gen_sequences[target] = pls.GenSampledSequence(
-                target_name=target,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=modulation_frequency,
-                sub_sequences=[
-                    pls.GenSampledSubSequence(
-                        real=np.real(waveform),
-                        imag=np.imag(waveform),
-                        repeats=1,
-                        post_blank=None,
-                        original_post_blank=None,
-                    )
-                ],
-            )
-            # add CapSampledSequence
-            cap_sequences[target] = pls.CapSampledSequence(
-                target_name=target,
-                repeats=None,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=modulation_frequency,
-                sub_sequences=[
-                    pls.CapSampledSubSequence(
-                        capture_slots=[
-                            pls.CaptureSlots(
-                                duration=capture_length,
-                                post_blank=None,
-                                original_duration=None,  # type: ignore
-                                original_post_blank=None,
-                            ),
-                        ],
-                        repeats=None,
-                        prev_blank=capture_start[qubit],
-                        post_blank=None,
-                        original_prev_blank=None,  # type: ignore
-                        original_post_blank=None,
-                    )
-                ],
-            )
-
-        # create resource map
-        all_targets = (
-            list(user_waveforms.keys())
-            + list(readout_waveforms.keys())
-            + list(pump_waveforms.keys())
-        )
-        resource_map = self.device_controller.get_resource_map(all_targets)
-
-        # calculate the backend interval
-        backend_interval = total_length * SAMPLING_PERIOD + interval
-        backend_interval = math.ceil(backend_interval / BLOCK_DURATION) * BLOCK_DURATION
-        backend_interval += BLOCK_DURATION  # TODO: remove this hack
-
-        # return Sequencer
-        return SequencerMod(
-            gen_sampled_sequence=gen_sequences,
-            cap_sampled_sequence=cap_sequences,
-            resource_map=resource_map,  # type: ignore
-            interval=backend_interval,
-            sysdb=self.device_controller.qubecalib.sysdb,
-            driver=self.device_controller.quel1system,
-        )
-
-    def _create_sampled_sequences_from_schedule(
-        self,
-        schedule: PulseSchedule,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
-        readout_ramp_type: RampType | None = None,
-        readout_drag_coeff: float | None = None,
-        capture_delays: dict[int, int] | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        plot: bool = False,
-    ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
-        if readout_amplitudes is None:
-            readout_amplitudes = self.control_params.readout_amplitude
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
-        if readout_pre_margin is None:
-            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if readout_post_margin is None:
-            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if capture_delays is None:
-            capture_delays = self.control_params.capture_delay_word
-
-        if not schedule.is_valid():
-            raise ValueError("Invalid pulse schedule.")
-
-        # add last readout pulse if necessary
-        if add_last_measurement:
-            # register all readout targets for the last measurement
-            readout_targets = list(
-                {
-                    Target.read_label(label)
-                    for label in schedule.labels
-                    if not self.targets[label].is_pump
-                }
-            )
-            # create a new schedule with the last readout pulse
-            with PulseSchedule(schedule.labels + readout_targets) as ps:
-                ps.call(schedule)
-                ps.barrier()
-                for target in readout_targets:
-                    ps.add(
-                        target,
-                        self.readout_pulse(
-                            target=target,
-                            duration=readout_duration,
-                            amplitude=readout_amplitudes.get(target),
-                            ramptime=readout_ramptime,
-                            type=readout_ramp_type,
-                            drag_coeff=readout_drag_coeff,
-                            pre_margin=readout_pre_margin,
-                            post_margin=readout_post_margin,
-                        ),
-                    )
-            # update the schedule
-            schedule = ps
-        else:
-            # readout targets in the provided schedule
-            readout_targets = [
-                label for label in schedule.labels if self.targets[label].is_read
-            ]
-
-        # check the readout targets
-        if not readout_targets:
-            raise ValueError("No readout targets in the pulse schedule.")
-
-        # WORKAROUND: add some blank for the first extra capture by left padding
-        schedule.pad(
-            total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
-            pad_side="left",
-        )
-
-        # ensure the schedule duration is a multiple of MIN_DURATION by right padding
-        sequence_duration = (
-            math.ceil(schedule.duration / BLOCK_DURATION + 1) * BLOCK_DURATION
-        )
-        schedule.pad(
-            total_duration=sequence_duration,
-            pad_side="right",
-        )
-
-        # get readout ranges
-        readout_ranges = schedule.get_pulse_ranges(readout_targets)
-
-        capture_delay_sample = {}
-        for target in readout_targets:
-            mux = self.mux_dict[Target.qubit_label(target)]
-            capture_delay_word = capture_delays.get(mux.index)
-            if capture_delay_word is None:
-                capture_delay_word = 0
-            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
-
-        # add pump pulses if necessary
-        if add_pump_pulses:
-            with PulseSchedule() as ps_with_pumps:
-                ps_with_pumps.call(schedule)
-                for target, ranges in readout_ranges.items():
-                    if not ranges:
-                        continue
-                    mux = self.mux_dict[Target.qubit_label(target)]
-                    # add pump pulses to overlap with the readout pulses
-                    for i in range(len(ranges)):
-                        current_range = ranges[i]
-
-                        if i == 0:
-                            blank_duration = current_range.start * SAMPLING_PERIOD
-                        else:
-                            prev_range = ranges[i - 1]
-                            blank_duration = (
-                                current_range.start - prev_range.stop
-                            ) * SAMPLING_PERIOD
-
-                        # start the pump pulse before the readout pulse if there is a pre-margin
-                        blank_duration -= readout_pre_margin
-
-                        pump_duration = (
-                            current_range.stop - current_range.start
-                        ) * SAMPLING_PERIOD + readout_pre_margin
-
-                        pump_amplitude = self.control_params.get_pump_amplitude(
-                            mux.index
-                        )
-
-                        ps_with_pumps.add(
-                            mux.label,
-                            PulseArray(
-                                [
-                                    Blank(blank_duration),
-                                    self.pump_pulse(
-                                        target=target,
-                                        duration=pump_duration,
-                                        amplitude=pump_amplitude,
-                                        ramptime=readout_ramptime,
-                                        type=readout_ramp_type,
-                                    ),
-                                ]
-                            ),
-                        )
-
-            if not ps_with_pumps.is_valid():
-                raise ValueError("Invalid pulse schedule with pump pulses.")
-
-            # update the schedule
-            schedule = ps_with_pumps
-
-        if plot:
-            schedule.plot()
-
-        # get sampled sequences
-        sampled_sequences = schedule.get_sampled_sequences(copy=False)
-
-        # adjust the phase of the readout pulses
-        for target, ranges in readout_ranges.items():
-            if not ranges:
-                continue
-            seq = sampled_sequences[target]
-            # use diff_frequency instead of awg_frequency since the envelope will be adjusted by conjugation later
-            omega = 2 * np.pi * self.get_diff_frequency(target)
-            delay = capture_delay_sample[target]
-            for rng in ranges:
-                offset = (rng.start + delay) * SAMPLING_PERIOD
-                seq[rng] *= np.exp(1j * omega * offset)
-
-        # create GenSampledSequence
-        gen_sequences: dict[str, pls.GenSampledSequence] = {}
-        for target, waveform in sampled_sequences.items():
-            if self.experiment_system.get_target(target).sideband != "L":
-                waveform = np.conj(waveform)
-            gen_sequences[target] = pls.GenSampledSequence(
-                target_name=target,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
-                sub_sequences=[
-                    # has only one GenSampledSubSequence
-                    pls.GenSampledSubSequence(
-                        real=np.real(waveform),
-                        imag=np.imag(waveform),
-                        repeats=1,
-                        post_blank=None,
-                        original_post_blank=None,
-                    )
-                ],
-            )
-
-        # create CapSampledSequence
-        cap_sequences: dict[str, pls.CapSampledSequence] = {}
-        for target, ranges in readout_ranges.items():
-            if not ranges:
-                continue
-
-            if ranges[0].start % WORD_LENGTH != 0:
-                raise ValueError(
-                    f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
-                )
-
-            delay = capture_delay_sample[target]
-
-            cap_sub_sequence = pls.CapSampledSubSequence(
-                capture_slots=[],
-                repeats=None,
-                prev_blank=delay,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-            )
-
-            # WORKAROUND: add an extra capture to ensure the first capture begins at a multiple of 64 samples
-            post_blank_to_first_readout = ranges[0].start - EXTRA_SUM_SECTION_LENGTH
-            cap_sub_sequence.capture_slots.append(
-                pls.CaptureSlots(
-                    duration=EXTRA_SUM_SECTION_LENGTH,
-                    post_blank=post_blank_to_first_readout,
-                    original_duration=None,  # type: ignore
-                    original_post_blank=None,  # type: ignore
-                )
-            )
-
-            for i in range(len(ranges) - 1):
-                current_range = ranges[i]
-                next_range = ranges[i + 1]
-                capture_range_length = len(current_range)
-                # post_blank_length is the number of samples to the next readout pulse
-                post_blank_length = next_range.start - current_range.stop
-
-                if current_range.start % WORD_LENGTH != 0:
-                    raise ValueError(
-                        f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
-                    )
-                if capture_range_length % WORD_LENGTH != 0:
-                    raise ValueError(
-                        f"Capture duration should be a multiple of 4 samples ({WORD_DURATION} ns)."
-                    )
-                if post_blank_length < WORD_LENGTH:
-                    raise ValueError(
-                        f"Readout pulses must have at least {WORD_DURATION} ns post-blank time."
-                    )
-                if post_blank_length % WORD_LENGTH != 0:
-                    raise ValueError(
-                        f"Post-blank time should be a multiple of 4 samples ({WORD_DURATION} ns)."
-                    )
-                cap_sub_sequence.capture_slots.append(
-                    pls.CaptureSlots(
-                        duration=capture_range_length,
-                        post_blank=post_blank_length,
-                        original_duration=None,  # type: ignore
-                        original_post_blank=None,  # type: ignore
-                    )
-                )
-            last_capture_range = ranges[-1]
-            last_capture_range_length = len(last_capture_range)
-            # last_post_blank_length is the number of samples to the end of the schedule
-            last_post_blank_length = schedule.length - last_capture_range.stop
-
-            cap_sub_sequence.capture_slots.append(
-                pls.CaptureSlots(
-                    duration=last_capture_range_length,
-                    post_blank=last_post_blank_length,
-                    original_duration=None,  # type: ignore
-                    original_post_blank=None,  # type: ignore,
-                )
-            )
-            cap_sequence = pls.CapSampledSequence(
-                target_name=target,
-                repeats=None,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
-                sub_sequences=[
-                    # has only one CapSampledSubSequence
-                    cap_sub_sequence,
-                ],
-            )
-            cap_sequences[target] = cap_sequence
-
-        return gen_sequences, cap_sequences
-
-    def _create_sequencer_from_schedule(
-        self,
-        schedule: PulseSchedule,
-        interval: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
-        readout_drag_coeff: float | None = None,
-        readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        plot: bool = False,
-    ) -> Sequencer:
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-
-        gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
-            schedule=schedule,
-            readout_amplitudes=readout_amplitudes,
-            readout_duration=readout_duration,
-            readout_pre_margin=readout_pre_margin,
-            readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
-            readout_drag_coeff=readout_drag_coeff,
-            readout_ramp_type=readout_ramp_type,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
-            plot=plot,
-        )
-
-        backend_interval = (
-            math.ceil((schedule.duration + interval) / BLOCK_DURATION) * BLOCK_DURATION
-        )
-
-        targets = list(gen_sequences.keys() | cap_sequences.keys())
-        resource_map = self.device_controller.get_resource_map(targets)
-
-        return SequencerMod(
-            gen_sampled_sequence=gen_sequences,
-            cap_sampled_sequence=cap_sequences,
-            resource_map=resource_map,  # type: ignore
-            interval=backend_interval,
-            sysdb=self.device_controller.qubecalib.sysdb,
-            driver=self.device_controller.quel1system,
-        )
-
-    def _create_measure_result(
-        self,
-        backend_result: RawResult,
-        measure_mode: MeasureMode,
-        shots: int,
-    ) -> MeasureResult:
-        label_slice = slice(1, None)  # remove the resonator prefix "R"
-        norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-        capture_index = -1
-
-        iq_data = {}
-        for target, iqs in sorted(backend_result.data.items()):
-            sideband = self.experiment_system.get_target(target).sideband
-            if sideband == "L":
-                iq_data[target] = np.conjugate(iqs)
-            else:
-                iq_data[target] = iqs
-
-        if measure_mode == MeasureMode.SINGLE:
-            backend_data = {
-                # iqs[capture_index]: ndarray[shots, duration]
-                target[label_slice]: iqs[capture_index] * norm_factor
-                for target, iqs in iq_data.items()
-            }
-            measure_data = {
-                qubit: MeasureData(
-                    target=qubit,
-                    mode=measure_mode,
-                    raw=iq,
-                    classifier=self.classifiers.get(qubit),
-                )
-                for qubit, iq in backend_data.items()
-            }
-        elif measure_mode == MeasureMode.AVG:
-            backend_data = {
-                # iqs[capture_index]: ndarray[1, duration]
-                target[label_slice]: iqs[capture_index].squeeze() * norm_factor / shots
-                for target, iqs in iq_data.items()
-            }
-            measure_data = {
-                qubit: MeasureData(
-                    target=qubit,
-                    mode=measure_mode,
-                    raw=iq,
-                )
-                for qubit, iq in backend_data.items()
-            }
-        else:
-            raise ValueError(f"Invalid measure mode: {measure_mode}")
-
-        return MeasureResult(
-            mode=measure_mode,
-            data=measure_data,
-            config=self.device_controller.box_config,
-        )
-
-    def _create_multiple_measure_result(
-        self,
-        backend_result: RawResult,
-        measure_mode: MeasureMode,
-        shots: int,
-    ) -> MultipleMeasureResult:
-        label_slice = slice(1, None)  # remove the resonator prefix "R"
-        norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-
-        iq_data = {}
-        for target, iqs in sorted(backend_result.data.items()):
-            sideband = self.experiment_system.get_target(target).sideband
-            if sideband == "L":
-                iq_data[target] = [np.conjugate(iq) for iq in iqs]
-            else:
-                iq_data[target] = iqs
-
-        measure_data = defaultdict(list)
-        if measure_mode == MeasureMode.SINGLE:
-            for target, iqs in iq_data.items():
-                qubit = target[label_slice]
-                for idx, iq in enumerate(iqs):
-                    if idx == 0:
-                        # skip the first extra capture
-                        continue
-                    measure_data[qubit].append(
-                        MeasureData(
-                            target=qubit,
-                            mode=measure_mode,
-                            raw=iq * norm_factor,
-                            classifier=self.classifiers.get(qubit),
-                        )
-                    )
-        elif measure_mode == MeasureMode.AVG:
-            for target, iqs in iq_data.items():
-                qubit = target[label_slice]
-                for idx, iq in enumerate(iqs):
-                    if idx == 0:
-                        # skip the first extra capture
-                        continue
-                    measure_data[qubit].append(
-                        MeasureData(
-                            target=qubit,
-                            mode=measure_mode,
-                            raw=iq.squeeze() * norm_factor / shots,
-                        )
-                    )
-        else:
-            raise ValueError(f"Invalid measure mode: {measure_mode}")
-
-        return MultipleMeasureResult(
-            mode=measure_mode,
-            data=dict(measure_data),
-            config=self.device_controller.box_config,
-        )
-
-    @staticmethod
-    def _number_of_samples(
-        duration: float,
-        allow_negative: bool = False,
-    ) -> int:
+        n_shots: int | None = None,
+    ) -> MeasurementResult:
         """
-        Returns the number of samples in the waveform.
+        Capture full-span loopback data from read-in and monitor channels.
 
         Parameters
         ----------
-        duration : float
-            Duration of the waveform in ns.
-        """
-        dt = SAMPLING_PERIOD
-        if duration < 0 and not allow_negative:
-            raise ValueError("Duration must be positive.")
+        schedule : PulseSchedule | TargetMap[IQArray]
+            Pulse schedule or waveform mapping to execute.
+        n_shots : int | None, optional
+            Number of shots.
 
-        # Tolerance for floating point comparison
-        tolerance = 1e-9
-        frac = duration / dt
-        N = round(frac)
-        if abs(frac - N) > tolerance:
-            raise ValueError(
-                f"Duration must be a multiple of the sampling period ({dt} ns)."
-            )
-        return N
+        Returns
+        -------
+        MeasurementResult
+            Measurement result for loopback capture windows.
+        """
+        return self.execution_service.capture_loopback(
+            schedule=schedule,
+            n_shots=n_shots,
+        )
+
+    def create_measurement_config(
+        self,
+        *,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        shot_averaging: bool | None = None,
+        time_integration: bool | None = None,
+        state_classification: bool | None = None,
+    ) -> MeasurementConfig:
+        """
+        Create a measurement config from optional runtime overrides.
+
+        Parameters
+        ----------
+        n_shots : int | None, optional
+            Number of shots.
+        shot_interval : float | None, optional
+            Interval between shots in ns.
+        shot_averaging : bool | None, optional
+            Whether to average shots on hardware.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
+        state_classification : bool | None, optional
+            Whether to enable state classification.
+
+        Returns
+        -------
+        MeasurementConfig
+            Measurement configuration with merged defaults and overrides.
+
+        Examples
+        --------
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> config = session.create_measurement_config(
+        ...     n_shots=1024,
+        ...     shot_interval=2048.0,
+        ... )
+        """
+        return self.execution_service.create_measurement_config(
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            shot_averaging=shot_averaging,
+            time_integration=time_integration,
+            state_classification=state_classification,
+        )
+
+    def build_measurement_schedule(
+        self,
+        pulse_schedule: PulseSchedule,
+        *,
+        frequencies: dict[str, float] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramp_time: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_amplification: bool | None = None,
+        final_measurement: bool | None = None,
+        capture_placement: CapturePlacement | None = None,
+        capture_targets: list[str] | None = None,
+        plot: bool | None = None,
+    ) -> MeasurementSchedule:
+        """
+        Build a measurement schedule from a pulse schedule and readout options.
+
+        Parameters
+        ----------
+        pulse_schedule : PulseSchedule
+            Pulse schedule to augment with readout instructions.
+        frequencies : dict[str, float] | None, optional
+            Channel-frequency overrides keyed by schedule label.
+        readout_amplitudes : dict[str, float] | None, optional
+            Readout amplitude overrides keyed by target label.
+        readout_duration : float | None, optional
+            Readout capture duration in ns.
+        readout_pre_margin : float | None, optional
+            Margin inserted before readout in ns.
+        readout_post_margin : float | None, optional
+            Margin inserted after readout in ns.
+        readout_ramp_time : float | None, optional
+            Readout ramp duration in ns.
+        readout_ramp_type : RampType | None, optional
+            Ramp shape type.
+        readout_drag_coeff : float | None, optional
+            Drag coefficient for ramp shaping.
+        readout_amplification : bool | None, optional
+            Whether to insert readout amplification pulses.
+        final_measurement : bool | None, optional
+            Whether to append a final measurement at schedule tail.
+        capture_placement : CapturePlacement | None, optional
+            Capture-window placement (`pulse_aligned` or `entire_schedule`).
+        capture_targets : list[str] | None, optional
+            Explicit capture-channel labels for `entire_schedule` placement.
+        plot : bool | None, optional
+            Whether to plot the generated schedule.
+
+        Returns
+        -------
+        MeasurementSchedule
+            Built measurement schedule ready for execution.
+
+        Examples
+        --------
+        >>> # `session` is an initialized `Measurement` instance.
+        >>> schedule = session.build_measurement_schedule(pulse_schedule)
+        """
+        return self.execution_service.build_measurement_schedule(
+            pulse_schedule=pulse_schedule,
+            frequencies=frequencies,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramp_time=readout_ramp_time,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_amplification=readout_amplification,
+            final_measurement=final_measurement,
+            capture_placement=capture_placement,
+            capture_targets=capture_targets,
+            plot=plot,
+        )

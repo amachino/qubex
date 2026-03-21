@@ -1,5 +1,5 @@
 """
-Copyright (c) 2024 NF Corporation
+Copyright (c) 2024 NF Corporation.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,52 +23,61 @@ from __future__ import annotations
 
 import socket
 import time
-from typing import Optional
 
 import serial
 
 
-class ONS61797(object):
+class ONS61797:
     """
-    A class to interface with ONS61797 instruments via serial or socket communication.
+    Interface with ONS61797 instruments via serial or socket communication.
 
     Parameters
     ----------
     port : str, optional
-        The serial port to connect to the instrument, by default None.
+        Serial port to connect to the instrument, by default None.
+
     ip_address : str, optional
-        The IP address to connect to the instrument, by default None.
+        IP address to connect to the instrument, by default None.
+
 
     Attributes
     ----------
     instrument : serial.Serial or socket.socket
-        The instrument connection object.
+        Instrument connection object.
+
     port : str
-        The serial port used for communication.
+        Serial port used for communication.
+
     baudrate : int
-        The baudrate for serial communication, default is 115200.
+        Baudrate for serial communication, default is 115200.
+
     ip_address : str
-        The IP address for socket communication.
+        IP address for socket communication.
+
     line_feed_code : str
-        The line feed character used in communication.
+        Line feed character used in communication.
+
     time_out : float
         Timeout value for communication, default is 10.0 seconds.
     time_interval : float
-        The time interval between sending a command and reading a response, default is 0.1 seconds.
+        Time interval between sending a command and reading a response, default is 0.1 seconds.
+
     """
 
-    def __init__(self, port: Optional[str] = None, ip_address: Optional[str] = None):
+    def __init__(self, port: str | None = None, ip_address: str | None = None):
         """
-        Initializes the connection to the instrument.
+        Initialize the connection to the instrument.
 
         Parameters
         ----------
         port : str, optional
-            The serial port to connect to the instrument, by default None.
+            Serial port to connect to the instrument, by default None.
+
         ip_address : str, optional
-            The IP address to connect to the instrument, by default None.
+            IP address to connect to the instrument, by default None.
+
         """
-        self.instrument: Optional[socket.socket | serial.Serial] = None
+        self.instrument: socket.socket | serial.Serial | None = None
         self.port = port
         self.baudrate = 115200
         self.ip_address = ip_address
@@ -78,22 +87,22 @@ class ONS61797(object):
         self.connect(port=self.port, ip_address=self.ip_address)
 
     def __del__(self) -> None:
-        """Closes the connection to the instrument when the object is deleted."""
+        """Close the connection to the instrument when the object is deleted."""
         if self.instrument:
             self.close()
 
-    def connect(
-        self, port: Optional[str] = None, ip_address: Optional[str] = None
-    ) -> None:
+    def connect(self, port: str | None = None, ip_address: str | None = None) -> None:
         """
-        Establishes a connection to the instrument via serial or socket.
+        Establish a connection to the instrument via serial or socket.
 
         Parameters
         ----------
         port : str, optional
-            The serial port to connect to the instrument, by default None.
+            Serial port to connect to the instrument, by default None.
+
         ip_address : str, optional
-            The IP address to connect to the instrument, by default None.
+            IP address to connect to the instrument, by default None.
+
 
         Raises
         ------
@@ -122,19 +131,20 @@ class ONS61797(object):
             self.instrument.connect((self.ip_address, 10001))
 
     def close(self) -> None:
-        """Closes the connection to the instrument."""
+        """Close the connection to the instrument."""
         if self.instrument:
             self.instrument.close()
             self.instrument = None
 
     def write(self, cmd: str) -> None:
         """
-        Sends a command to the instrument.
+        Send a command to the instrument.
 
         Parameters
         ----------
         cmd : str
-            The command to send to the instrument.
+            Command to send to the instrument.
+
         """
         cmd = f"{cmd}{self.line_feed_code}"
         if self.kind == "serial":
@@ -149,12 +159,13 @@ class ONS61797(object):
 
     def read(self) -> str:
         """
-        Reads a response from the instrument.
+        Read a response from the instrument.
 
         Returns
         -------
         str
-            The response from the instrument.
+            Response from the instrument.
+
         """
         if self.kind == "serial":
             if isinstance(self.instrument, serial.Serial):
@@ -180,17 +191,19 @@ class ONS61797(object):
 
     def query(self, cmd: str) -> str:
         """
-        Sends a command and reads the response from the instrument.
+        Send a command and read the response from the instrument.
 
         Parameters
         ----------
         cmd : str
-            The command to send.
+            Command to send.
+
 
         Returns
         -------
         str
-            The response from the instrument.
+            Response from the instrument.
+
         """
         self.write(cmd)
         time.sleep(self.time_interval)
@@ -198,161 +211,176 @@ class ONS61797(object):
 
     def on(self, channel: int) -> None:
         """
-        Turns on the specified output channel.
+        Turn on the specified output channel.
 
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
         """
         cmd = f"OUT {channel},1"
         self.write(cmd=cmd)
 
     def off(self, channel: int) -> None:
         """
-        Turns off the specified output channel.
+        Turn off the specified output channel.
 
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
         """
         cmd = f"OUT {channel},0"
         self.write(cmd=cmd)
 
     def get_output_state(self, channel: int) -> int:
         """
-        Gets the current state of the specified output channel.
+        Get the current state of the specified output channel.
 
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
 
         Returns
         -------
         int
-            The state of the output channel (0: off, 1: on).
+            State of the output channel (0: off, 1: on).
+
         """
         cmd = f"OUT? {channel}"
         return int(self.query(cmd=cmd))
 
     def set_voltage(self, channel: int, voltage: float) -> None:
         """
-        Sets the output voltage for the specified channel.
+        Set the output voltage for the specified channel.
 
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
         voltage : float
-            The voltage to set.
+            Voltage to set.
+
         """
         cmd = f"VLT {channel},{voltage:.4f}"
         self.write(cmd=cmd)
 
     def get_voltage(self, channel: int) -> float:
         """
-        Gets the current output voltage for the specified channel.
+        Get the current output voltage for the specified channel.
 
         Parameters
         ----------
         channel : int
-            The output channel number.
+            Output channel number.
+
 
         Returns
         -------
         float
-            The output voltage.
+            Output voltage.
+
         """
         cmd = f"VLT? {channel}"
         return float(self.query(cmd=cmd))
 
     def get_device_information(self) -> str:
         """
-        Retrieves the device information.
+        Retrieve the device information.
 
         Returns
         -------
         str
-            The device information string.
+            Device information string.
+
         """
         cmd = "*IDN?"
         return self.query(cmd=cmd)
 
     def reset(self) -> None:
-        """Resets the instrument to its default settings."""
+        """Reset the instrument to its default settings."""
         cmd = "*RST"
         self.write(cmd=cmd)
 
     def set_ip_address(self, ip_address: str) -> None:
         """
-        Sets the instrument's IP address.
+        Set the instrument's IP address.
 
         Parameters
         ----------
         ip_address : str
-            The new IP address.
+            New IP address.
+
         """
         cmd = f"IPA {ip_address}"
         self.write(cmd=cmd)
 
     def get_ip_address(self) -> str:
         """
-        Gets the current IP address of the instrument.
+        Get the current IP address of the instrument.
 
         Returns
         -------
         str
-            The IP address.
+            IP address.
+
         """
         cmd = "IPA?"
         return str(self.query(cmd=cmd))
 
     def set_subnet_mask(self, subnet_mask: str) -> None:
         """
-        Sets the subnet mask for the instrument.
+        Set the subnet mask for the instrument.
 
         Parameters
         ----------
         subnet_mask : str
-            The new subnet mask.
+            New subnet mask.
+
         """
         cmd = f"SBM {subnet_mask}"
         self.write(cmd=cmd)
 
     def get_subnet_mask(self) -> str:
         """
-        Gets the current subnet mask of the instrument.
+        Get the current subnet mask of the instrument.
 
         Returns
         -------
         str
-            The subnet mask.
+            Subnet mask.
+
         """
         cmd = "SBM?"
         return str(self.query(cmd=cmd))
 
     def set_default_gateway(self, default_gateway: str) -> None:
         """
-        Sets the default gateway for the instrument.
+        Set the default gateway for the instrument.
 
         Parameters
         ----------
         default_gateway : str
-            The new default gateway.
+            New default gateway.
+
         """
         cmd = f"DGW {default_gateway}"
         self.write(cmd=cmd)
 
     def get_default_gateway(self) -> str:
         """
-        Gets the current default gateway of the instrument.
+        Get the current default gateway of the instrument.
 
         Returns
         -------
         str
-            The default gateway.
+            Default gateway.
+
         """
         cmd = "DGW?"
         return str(self.query(cmd=cmd))

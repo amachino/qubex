@@ -1,17 +1,32 @@
+"""Compatibility exports for legacy experiment result imports."""
+
 from __future__ import annotations
 
-from collections import UserDict
-from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+from qubex.compat.deprecated_imports import (
+    deprecated_module_dir,
+    load_deprecated_module_attr,
+)
+
+# TODO: Remove this compatibility shim after downstream imports migrate to
+# `qubex.experiment.models.result`.
+if TYPE_CHECKING:
+    from .models.result import Result
+
+__all__ = ["Result"]
 
 
-class Result(UserDict):
-    def __init__(
-        self,
-        data: dict | None = None,
-    ) -> None:
-        """General result container for experiment calls."""
-        super().__init__(data)
-        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def __getattr__(name: str) -> Any:
+    """Resolve legacy exports lazily."""
+    return load_deprecated_module_attr(
+        name=name,
+        legacy_module="qubex.experiment.result",
+        canonical_module="qubex.experiment.models.result",
+        exports=__all__,
+    )
 
-    def __repr__(self) -> str:
-        return f"<Result created_at={self.created_at} data={{...}}>"
+
+def __dir__() -> list[str]:
+    """Return the public names exposed by this compatibility shim."""
+    return deprecated_module_dir(exports=__all__)

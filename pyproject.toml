@@ -1,56 +1,212 @@
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "qubex"
-dynamic = ["version"]
-requires-python = ">=3.9,<3.13"
+version = "1.5.0b4"
+requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex: Qubit experiment framework"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
-    "cma ~= 4.0",
-    "cvxopt ~= 1.3",
-    "cvxpy ~= 1.6",
-    "httpx ~= 0.0",
-    "jax ~= 0.0",
-    "jsonpickle ~= 3.0",
-    "jupyter ~= 1.0",
+    "anywidget >= 0.9",
+    "cma >= 4.0",
+    "cvxpy >= 1.6",
+    "jsonpickle >= 3.0",
+    "ipykernel >= 6.0",
+    "ipywidgets >= 7.7",
+    # Keep Kaleido on v0.2.1 to avoid the Chrome runtime dependency introduced in v1+.
     "kaleido == 0.2.1",
-    "matplotlib ~= 3.0",
-    "networkx ~= 3.0",
-    "numpy ~= 1.0",
-    "optax ~= 0.0",
-    "pip == 24.0",
-    "plotly ~= 5.23",
-    "pydantic ~= 2.0",
-    "pyserial ~= 3.5",
-    "pyyaml ~= 6.0",
-    "qctrl-visualizer ~= 8.0",
-    "qutip ~= 5.0",
-    "rich ~= 13.0",
-    "scikit-learn ~= 1.0",
-    "scipy ~= 1.0",
-    "tqdm ~= 4.0",
+    "networkx >= 2.7",
+    "nbformat >= 5.0",
+    "numpy >= 1.22",
+    "plotly >= 5.23",
+    "pydantic >= 2.0",
+    "pyserial >= 3.5",
+    "pyyaml >= 6.0",
+    "qctrl-visualizer >= 8.0",
+    "qxcore == 1.5.0b4",
+    "qxfitting == 1.5.0b4",
+    "qxpulse == 1.5.0b4",
+    "qxschema == 1.5.0b4",
+    "qxsimulator == 1.5.0b4",
+    "qxvisualizer == 1.5.0b4",
+    "rich >= 13.0",
+    "scikit-learn >= 1.0",
+    "scipy >= 1.0",
+    "tqdm >= 4.0",
+    "typedunits >= 0.0",
+    "typing_extensions >= 4.5",
 ]
 
 [project.optional-dependencies]
-backend = [
-    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.16beta1",
-]
-dev = ["pyinstrument", "pytest", "pytest-cov", "ruff"]
+backend = ["qxdriver-quel1 == 1.5.0b4"]
+quel1 = ["qxdriver-quel1 == 1.5.0b4"]
+quel3 = ["quelware-client"]
 
-[tool.setuptools.dynamic]
-version = { attr = "qubex.version.get_version" }
+[project.scripts]
+qubex = "qubex.cli:main"
+
+[dependency-groups]
+dev = [
+    "pyinstrument",
+    "pyright",
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "ruff",
+]
+
+docs = [
+    "mkdocs",
+    "mkdocs-autoapi[python]",
+    "mkdocs-autorefs",
+    "mkdocs-github-admonitions-plugin",
+    "mkdocs-jupyter",
+    "mkdocs-material",
+    "mkdocs-static-i18n",
+    "mkdocstrings[python]",
+    "pymdown-extensions",
+]
 
 [tool.setuptools.package-data]
 qubex = ["py.typed", "clifford/**/*.json"]
 
+[tool.uv]
+cache-dir = ".cache/uv"
+
+[tool.uv.sources]
+quelware_client = { workspace = true }
+qxdriver_quel1 = { workspace = true }
+qxcore = { workspace = true }
+qxfitting = { workspace = true }
+qxpulse = { workspace = true }
+qxschema = { workspace = true }
+qxsimulator = { workspace = true }
+qxvisualizer = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "packages/quelware-client/quelware-client",
+    "packages/qxcore",
+    "packages/qxdriver-quel1",
+    "packages/qxfitting",
+    "packages/qxpulse",
+    "packages/qxschema",
+    "packages/qxsimulator",
+    "packages/qxvisualizer",
+]
+
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$"]
+
+[tool.pyright]
+include = ["src", "packages", "scripts", "tests"]
+exclude = [
+    ".venv",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "lib",
+    "packages/qube-calib",
+    "packages/quelware-client",
+    "packages/qxdriver-quel1",
+]
+typeCheckingMode = "basic"
+
+[tool.ruff]
+extend-exclude = [
+    "lib",
+    "packages/qube-calib",
+    "packages/quelware-client",
+    "packages/qxdriver-quel1",
+]
 
 [tool.ruff.lint]
-ignore = ["E731", "E741"]
-unfixable = ["F401"]
+select = [
+    "ANN",  # flake8-annotations
+    "S",    # flake8-bandit
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "SLF",  # flake8-self
+    "PT",   # flake8-pytest-style
+    "TID",  # flake8-tidy-imports
+    "I",    # isort
+    "PERF", # Perflint
+    "E",    # pycodestyle
+    "D",    # pydocstyle
+    "F",    # Pyflakes
+    "UP",   # pyupgrade
+    "RUF",  # Ruff-specific rules
+    "TRY",  # tryceratops
+
+    # pydocstyle
+    "D213", # multi-line-summary-second-line
+]
+
+ignore = [
+    # flake8-annotations
+    "ANN002", # missing-type-args
+    "ANN003", # missing-type-kwargs
+    "ANN202", # missing-return-type-private-function
+    "ANN204", # missing-return-type-special-method
+    "ANN401", # any-type
+
+    # flake8-bandit
+    "S311", # suspicious-non-cryptographic-random-usage
+
+    # flake8-comprehensions
+    "C408", # unnecessary-collection-call
+
+    # flake8-simplify
+    "SIM102", # collapsible-if
+    "SIM108", # if-else-block-instead-of-if-exp
+
+    # pycodestyle
+    "E501", # line-too-long
+    "E731", # lambda-assignment
+    "E741", # ambiguous-variable-name
+
+    # Ruff-specific rules
+    "RUF001", # ambiguous-unicode-character-string
+    "RUF002", # ambiguous-unicode-character-docstring
+    "RUF003", # ambiguous-unicode-character-comment
+
+    # tryceratops
+    "TRY003", # raise-vanilla-args
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = [
+    "ANN", # flake8-annotations
+
+    # Pyflakes
+    "F401", # unused-import
+
+    # flake8-bandit
+    "S101", # assert
+]
+"tests/**/*.py" = [
+    "ANN", # flake8-annotations
+
+    # flake8-bandit
+    "S101", # assert
+]
+"packages/**/tests/**/*.py" = [
+    "ANN", # flake8-annotations
+
+    # flake8-bandit
+    "S101", # assert
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"

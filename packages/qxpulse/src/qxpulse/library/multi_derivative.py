@@ -1,0 +1,105 @@
+"""Multi-derivative pulse shape helpers."""
+
+from __future__ import annotations
+
+from typing import Final
+
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+from typing_extensions import override
+
+from qxpulse.pulse import Pulse
+
+from .sintegral import MultiDerivativeSintegral
+
+
+class MultiDerivative(Pulse):
+    """
+    A class to represent a DRAG pulse.
+
+    Parameters
+    ----------
+    duration : float
+        Duration of the DRAG pulse in ns.
+    amplitude : float
+        Amplitude of the DRAG pulse.
+
+    betas : dict[int, float] | None
+        multi-Derivative pulse correction coefficients.
+    power : int
+        Power of the sine integral function.
+
+    Examples
+    --------
+    >>> pulse = Drag(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ...     beta=1.0,
+    ... )
+    """
+
+    def __init__(
+        self,
+        *,
+        duration: float,
+        amplitude: float,
+        betas: dict[int, float] | None = None,
+        power: int = 2,
+        **kwargs,
+    ):
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
+
+        self.amplitude: Final = amplitude
+        self.betas: Final = betas
+        self.power: Final = power
+        self._finalize_initialization()
+
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the multi-derivative pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return MultiDerivative.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            betas=self.betas,
+            power=self.power,
+        )
+
+    @staticmethod
+    def func(
+        t: ArrayLike,
+        *,
+        duration: float,
+        amplitude: float,
+        betas: dict[int, float] | None = None,
+        power: int = 2,
+    ) -> NDArray:
+        """
+        DRAG pulse function.
+
+        Parameters
+        ----------
+        t : ArrayLike
+            Time points at which to evaluate the pulse.
+        duration : float
+            Duration of the DRAG pulse in ns.
+        amplitude : float
+            Amplitude of the DRAG pulse.
+        betas : dict[int, float] | None
+            multi-Derivative pulse correction coefficients.
+        power : int
+            Power of the sine integral function.
+        """
+        return MultiDerivativeSintegral.func(
+            t=t,
+            duration=duration,
+            amplitude=amplitude,
+            power=power,
+            betas=betas,
+        )

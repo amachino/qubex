@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenAI Knowledge"
+  short_description: "Fetch current OpenAI docs and guidance"
+  default_prompt: "Use $openai-knowledge to gather current OpenAI platform guidance from official docs before implementation."

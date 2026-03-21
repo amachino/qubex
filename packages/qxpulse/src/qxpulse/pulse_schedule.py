@@ -1,0 +1,1022 @@
+"""
+Device-independent multi-channel pulse sequence definition.
+
+This module provides `PulseSchedule`, a class that defines pulse sequences for multiple channels
+in a device-independent manner. It is used as a common data structure by both qubex.measurement
+and qubex.simulator.
+"""
+
+# ruff: noqa: SLF001
+
+from __future__ import annotations
+
+import logging
+import warnings
+from collections import defaultdict
+from collections.abc import Collection, Mapping
+from copy import deepcopy
+from dataclasses import dataclass, field
+from types import TracebackType
+from typing import Literal
+
+import numpy as np
+import numpy.typing as npt
+import plotly.graph_objects as go
+from qxvisualizer.figure import show_figure
+from qxvisualizer.style import COLORS
+
+from qxpulse.typing import IQArray
+
+from .blank import Blank
+from .phase_shift import PhaseShift
+from .pulse import Arbitrary
+from .pulse_array import PulseArray
+from .waveform import Waveform
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PulseChannel:
+    """Container for a labeled pulse channel."""
+
+    label: str
+    sequence: PulseArray = field(default_factory=PulseArray)
+    frequency: float | None = None
+    target: str | None = None
+    frame: str | None = None
+
+
+class PulseSchedule:
+    """Device-independent multi-channel pulse schedule."""
+
+    def __init__(
+        self,
+        channels: list[str] | list[PulseChannel] | None = None,
+        /,
+    ):
+        """
+        Represent a pulse schedule.
+
+        Parameters
+        ----------
+        channels : list[str] | list[PulseChannel], optional
+            The channels of the pulse schedule.
+
+        Examples
+        --------
+        >>> from qubex.pulse import PulseSchedule, FlatTop
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> ps.plot()
+        """
+        self._channels: dict[str, PulseChannel] = {}
+
+        if channels is not None:
+            if isinstance(channels, list):
+                for channel in channels:
+                    if isinstance(channel, str):
+                        self._channels[channel] = PulseChannel(label=channel)
+                    elif isinstance(channel, PulseChannel):
+                        self._channels[channel.label] = deepcopy(channel)
+                    else:
+                        raise TypeError("Invalid channels.")
+            else:
+                raise TypeError("Invalid channels.")
+
+        self._offsets = defaultdict(lambda: 0.0)
+        self._global_offset = 0.0
+
+    def __enter__(self) -> PulseSchedule:
+        """
+        Enter the context manager.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ps:
+        ...     ps.add(...)
+        """
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """
+        Exit the context manager and add a barrier to the sequence.
+
+        The following codes are equivalent:
+
+        >>> ps = PulseSchedule()
+        >>> ps.add(...)
+        >>> ps.barrier()
+
+        >>> with PulseSchedule([...]) as ps:
+        ...     ps.add(...)
+
+        Note that duration of sequences might be different if context manager is not used.
+        """
+        self.barrier()
+
+    @classmethod
+    def from_waveforms(
+        cls,
+        waveforms: Mapping[str, IQArray | Waveform],
+    ) -> PulseSchedule:
+        """
+        Create a pulse schedule from waveforms.
+
+        Parameters
+        ----------
+        waveforms : Mapping[str, IQArray | Waveform]
+            The sampled waveforms or waveform objects for each channel.
+
+        Returns
+        -------
+        PulseSchedule
+            The created pulse schedule.
+        """
+        normalized_waveforms: dict[str, IQArray] = {
+            label: values.values if isinstance(values, Waveform) else values
+            for label, values in waveforms.items()
+        }
+
+        if not len({len(v) for v in normalized_waveforms.values()}) == 1:
+            raise ValueError("Waveforms must have the same length.")
+
+        with cls() as sched:
+            for label, values in normalized_waveforms.items():
+                sched.add(label, Arbitrary(values))
+        return sched
+
+    @property
+    def labels(self) -> list[str]:
+        """Return the channel labels."""
+        return list(self._channels.keys())
+
+    @property
+    def values(self) -> dict[str, npt.NDArray[np.complex128]]:
+        """Return the sampled pulse sequences."""
+        return self.get_sampled_sequences()
+
+    @property
+    def length(self) -> int:
+        """Return the length of the pulse schedule in samples."""
+        if len(self._channels) == 0:
+            return 0
+        if not self.is_valid():
+            raise ValueError("Inconsistent sequence lengths.")
+        sampling_periods = {
+            channel.sequence.sampling_period for channel in self._channels.values()
+        }
+        if len(sampling_periods) != 1:
+            raise ValueError("Inconsistent sampling periods across channels.")
+        # Bind length computation to schedule-contained sampling periods, not mutable global defaults.
+        sampling_period = next(iter(sampling_periods))
+        # NOTE:
+        #   Using floor division (//) with floating point numbers can lead to an off-by-one
+        #   error due to binary representation (e.g. 100 // 0.1 -> 999.0 instead of 1000.0).
+        #   We therefore compute the ratio and round it to the nearest integer.
+        #   This assumes that duration is always intended to be an integer multiple of
+        #   sampling period within normal floating point tolerance.
+        return round(self.duration / sampling_period)
+
+    @property
+    def duration(self) -> float:
+        """Return the duration of the pulse schedule in ns."""
+        return self._max_offset()
+
+    def add(
+        self,
+        /,
+        label: str,
+        obj: Waveform | PhaseShift,
+    ) -> None:
+        """
+        Add a waveform or a phase shift to the pulse schedule.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+        obj : Waveform | PhaseShift
+            The waveform or phase shift to add.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        """
+        self._add_channels_if_not_exist([label])
+
+        self._channels[label].sequence.add(obj)
+
+        if isinstance(obj, Waveform):
+            self._offsets[label] += obj.cached_duration
+
+    def barrier(
+        self,
+        labels: Collection[str] | None = None,
+    ) -> None:
+        """
+        Add a barrier to the pulse schedule.
+
+        Parameters
+        ----------
+        labels : list[str], optional
+            The channel labels to add the barrier.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
+        """
+        if labels is None:
+            labels = self.labels
+            self._global_offset = self._max_offset()
+        else:
+            labels = list(labels)
+
+        self._add_channels_if_not_exist(labels)
+
+        for label in labels:
+            diff = self._max_offset(labels) - self._offsets[label]
+            if diff > 0:
+                self.add(label, Blank(duration=diff))
+
+    def call(
+        self,
+        schedule: PulseSchedule,
+        copy: bool = False,
+    ) -> None:
+        """
+        Call another pulse schedule in the current pulse schedule.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            The pulse schedule to call.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ctrl:
+        ...     ctrl.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ctrl.barrier()
+        ...     ctrl.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        >>> with PulseSchedule() as read:
+        ...     read.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     read.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> with PulseSchedule() as ps:
+        ...     ps.call(ctrl)
+        ...     ps.barrier()
+        ...     ps.call(read)
+        >>> ps.plot()
+        """
+        if schedule == self:
+            raise ValueError("Cannot call itself.")
+
+        self.barrier(schedule.labels)
+        sequences = schedule.get_sequences(copy=copy)
+        for label, sequence in sequences.items():
+            self.add(label, sequence)
+
+    def copy(self) -> PulseSchedule:
+        """Return a copy of the pulse schedule."""
+        return deepcopy(self)
+
+    def padded(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+        deepcopy: bool = True,
+    ) -> PulseSchedule:
+        """
+        Return a copy of the pulse schedule with zero padding.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse schedule in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        deepcopy : bool, optional
+            If True, deep-copy nested waveform objects for full isolation.
+            If False, reuse nested waveform objects while detaching schedule
+            and sequence containers.
+        """
+        duration = total_duration - self.duration
+        if duration < 0:
+            raise ValueError(
+                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+            )
+        with PulseSchedule() as new_sched:
+            for label, channel in self._channels.items():
+                new_sched.add(
+                    label,
+                    channel.sequence.padded(
+                        total_duration,
+                        pad_side,
+                        deepcopy=deepcopy,
+                    ),
+                )
+                new_channel = new_sched._channels[label]
+                new_channel.frequency = channel.frequency
+                new_channel.target = channel.target
+                new_channel.frame = channel.frame
+        return new_sched
+
+    def pad(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+    ) -> None:
+        """
+        Pad the pulse schedule with blank pulses.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse schedule in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        """
+        duration = total_duration - self.duration
+        if duration < 0:
+            raise ValueError(
+                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+            )
+        for channel in self._channels.values():
+            channel.sequence.pad(total_duration, pad_side)
+            self._offsets[channel.label] = total_duration
+        self._global_offset = total_duration
+
+    def scaled(self, scale: float) -> PulseSchedule:
+        """Return a scaled pulse schedule."""
+        if scale == 1:
+            return self
+        new_sched = deepcopy(self)
+        for channel in new_sched._channels.values():
+            channel.sequence._scale *= scale
+        return new_sched
+
+    def detuned(self, detuning: float) -> PulseSchedule:
+        """Return a detuned pulse schedule."""
+        if detuning == 0:
+            return self
+        new_sched = deepcopy(self)
+        for channel in new_sched._channels.values():
+            channel.sequence._detuning += detuning
+        return new_sched
+
+    def shifted(self, phase: float) -> PulseSchedule:
+        """Return a shifted pulse schedule."""
+        if phase == 0:
+            return self
+        new_sched = deepcopy(self)
+        for channel in new_sched._channels.values():
+            channel.sequence._phase += phase
+        return new_sched
+
+    def repeated(self, n: int) -> PulseSchedule:
+        """Return a repeated pulse schedule."""
+        if n == 1:
+            return self
+        new_sched = PulseSchedule()
+        for label, channel in self._channels.items():
+            new_sched.add(label, channel.sequence.repeated(n))
+            new_sched._channels[label].frequency = channel.frequency
+            new_sched._channels[label].target = channel.target
+        return new_sched
+
+    def inverted(self) -> PulseSchedule:
+        """Return an inverted pulse schedule."""
+        with PulseSchedule() as new_sched:
+            for label, channel in self._channels.items():
+                new_sched.add(label, channel.sequence.inverted())
+        return new_sched
+
+    def plot(
+        self,
+        *,
+        show_physical_pulse: bool = False,
+        title: str = "Pulse Sequence",
+        width: int = 800,
+        n_samples: int | None = None,
+        divide_by_two_pi: bool = False,
+        time_unit: Literal["ns", "samples"] = "ns",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+    ) -> None:
+        """
+        Plot the pulse schedule.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> ps.plot()
+        """
+        if self._max_offset() == 0.0:
+            logger.warning("No data to plot.")
+            return
+
+        n_channels = len(self._channels)
+
+        if n_channels == 0:
+            logger.warning("No data to plot.")
+            return
+
+        sequences = self.get_sequences()
+
+        fig = go.Figure()
+        fig.set_subplots(
+            rows=n_channels,
+            cols=1,
+            shared_xaxes=True,
+            specs=[[{"secondary_y": True}] for _ in range(n_channels)],
+        )
+        for i, (_, seq) in enumerate(sequences.items()):
+            if time_unit == "ns":
+                times = np.append(seq.times, seq.times[-1] + seq.SAMPLING_PERIOD)
+            else:
+                times = np.arange(seq.length + 1)
+
+            if show_physical_pulse:
+                values = seq.get_values(apply_frame_shifts=True)
+            else:
+                values = seq.get_values(apply_frame_shifts=False)
+            real = np.real(values)
+            imag = np.imag(values)
+            real = np.append(real, real[-1])
+            imag = np.append(imag, imag[-1])
+            phase = -np.append(seq.frame_shifts, seq.final_frame_shift)
+            phase = (phase + np.pi) % (2 * np.pi) - np.pi
+
+            if n_samples is not None and len(times) > n_samples:
+                times = self._downsample(times, n_samples)
+                real = self._downsample(real, n_samples)
+                imag = self._downsample(imag, n_samples)
+                phase = self._downsample(phase, n_samples)
+
+            if divide_by_two_pi:
+                real /= 2 * np.pi * 1e-3
+                imag /= 2 * np.pi * 1e-3
+
+            fig.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=real,
+                    name="I" if show_physical_pulse else "X",
+                    mode="lines",
+                    line_shape=line_shape,
+                    line=dict(color=COLORS[0]),
+                    showlegend=(i == 0),
+                ),
+                row=i + 1,
+                col=1,
+                secondary_y=False,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=imag,
+                    name="Q" if show_physical_pulse else "Y",
+                    mode="lines",
+                    line_shape=line_shape,
+                    line=dict(color=COLORS[1]),
+                    showlegend=(i == 0),
+                ),
+                row=i + 1,
+                col=1,
+                secondary_y=False,
+            )
+            if not show_physical_pulse:
+                fig.add_trace(
+                    go.Scatter(
+                        x=times,
+                        y=phase,
+                        name="φ",
+                        mode="lines",
+                        line_shape=line_shape,
+                        line=dict(color=COLORS[2], dash="dot"),
+                        showlegend=(i == 0),
+                    ),
+                    row=i + 1,
+                    col=1,
+                    secondary_y=True,
+                )
+
+        fig.update_layout(
+            title=title,
+            height=80 * n_channels + 140,
+            width=width,
+            template="qubex",
+        )
+        fig.update_xaxes(
+            row=n_channels,
+            col=1,
+            title_text="Time (ns)" if time_unit == "ns" else "Time (samples)",
+        )
+        for i, (label, seq) in enumerate(sequences.items()):
+            y_max = np.max(seq.abs)
+            if divide_by_two_pi:
+                y_max /= 2 * np.pi * 1e-3
+            fig.update_yaxes(
+                row=i + 1,
+                col=1,
+                title_text=label,
+                range=[-1.2 * y_max, 1.2 * y_max],
+                secondary_y=False,
+            )
+            if not show_physical_pulse:
+                fig.update_yaxes(
+                    row=i + 1,
+                    col=1,
+                    range=[-np.pi * 1.2, np.pi * 1.2],
+                    tickvals=[-np.pi, 0, np.pi],
+                    ticktext=["-π", "0", "π"],
+                    secondary_y=True,
+                )
+            frequency = self._channels[label].frequency
+            target = self._channels[label].target
+            if frequency is not None and target is not None:
+                annotations = []
+                annotations.append(f"{frequency:.2f} GHz")
+                annotations.append(f"{target}")
+                fig.add_annotation(
+                    x=0.02,
+                    y=0.06,
+                    xref="x domain",
+                    yref="y domain",
+                    text=" → ".join(annotations),
+                    showarrow=False,
+                    row=i + 1,
+                    col=1,
+                    bgcolor="rgba(255, 255, 255, 0.8)",
+                )
+        show_figure(fig, filename="pulse_schedule")
+
+    def is_valid(self) -> bool:
+        """Return True if the pulse schedule is valid."""
+        return len({ch.sequence.length for ch in self._channels.values()}) == 1
+
+    def get_sequence(
+        self,
+        label: str,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+        copy: bool = True,
+    ) -> PulseArray:
+        """
+        Return the pulse sequence for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+        duration : float, optional
+            Deprecated. Duration for padded output sequence.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
+        copy : bool, optional
+            If True, returns a copy of the sequence.
+
+        Returns
+        -------
+        PulseArray
+            The pulse sequence for the channel.
+        """
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
+        sequence = self._channels[label].sequence
+        if duration is not None:
+            pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
+            if copy:
+                return sequence.padded(duration, pad_side)
+            else:
+                sequence.pad(duration, pad_side)
+                return sequence
+        else:
+            if copy:
+                return sequence.copy()
+            else:
+                return sequence
+
+    def get_sequences(
+        self,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+        copy: bool = True,
+    ) -> dict[str, PulseArray]:
+        """
+        Return the pulse sequences.
+
+        Parameters
+        ----------
+        duration : float, optional
+            Deprecated. Duration for padded output sequences.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
+        copy : bool, optional
+            If True, returns a copy of the sequences.
+
+        Returns
+        -------
+        dict[str, PulseArray]
+            The pulse sequences.
+        """
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
+        return {
+            label: self.get_sequence(
+                label=label,
+                duration=duration,
+                align=align,
+                copy=copy,
+            )
+            for label in self.labels
+        }
+
+    def get_sampled_sequence(
+        self,
+        label: str,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+        copy: bool = False,
+    ) -> npt.NDArray[np.complex128]:
+        """
+        Return the sampled pulse sequence for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+        duration : float, optional
+            Deprecated. Duration for padded output sequence.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
+        copy : bool, optional
+            If True, returns a copy of the sampled sequence.
+
+        Returns
+        -------
+        npt.NDArray[np.complex128]
+            The sampled pulse sequence for the channel.
+        """
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
+        sequence = self.get_sequence(
+            label=label,
+            duration=duration,
+            align=align,
+            copy=copy,
+        )
+        return sequence.values
+
+    def get_sampled_sequences(
+        self,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+        copy: bool = False,
+    ) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Return the sampled pulse sequences.
+
+        Parameters
+        ----------
+        duration : float, optional
+            Deprecated. Duration for padded output sequences.
+        align : {"start", "end"}, optional
+            Deprecated. Alignment side used with `duration`.
+        copy : bool, optional
+            If True, returns copies of sampled sequences.
+
+        Returns
+        -------
+        dict[str, npt.NDArray[np.complex128]]
+            The sampled pulse sequences
+        """
+        if align != "start":
+            self._warn_deprecated_align_argument()
+        if duration is not None:
+            self._warn_deprecated_duration_argument()
+        return {
+            label: self.get_sampled_sequence(
+                label=label,
+                duration=duration,
+                align=align,
+                copy=copy,
+            )
+            for label in self.labels
+        }
+
+    def get_final_frame_shift(
+        self,
+        label: str,
+    ) -> float:
+        """
+        Return the final frame shift for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        float
+            The final frame shift.
+        """
+        phase = self._channels[label].sequence.final_frame_shift
+        phase = (phase + np.pi) % (np.pi * 2) - np.pi
+        return phase
+
+    def get_final_frame_shifts(
+        self,
+    ) -> dict[str, float]:
+        """
+        Return the final frame shifts.
+
+        Returns
+        -------
+        dict[str, float]
+            The final frame shifts.
+        """
+        return {label: self.get_final_frame_shift(label) for label in self.labels}
+
+    def get_pulse_ranges(
+        self,
+        labels: list[str] | None = None,
+    ) -> dict[str, list[range]]:
+        """
+        Return the pulse ranges in samples.
+
+        Parameters
+        ----------
+        labels : list[str], optional
+            The channel labels.
+
+        Returns
+        -------
+        dict[str, list[range]]
+            Pulse index ranges for each channel in sample units.
+        """
+        if labels is None:
+            labels = self.labels
+        ranges: dict[str, list[range]] = {label: [] for label in labels}
+        for label in labels:
+            current_offset = 0
+            for waveform in self._channels[label].sequence.get_flattened_waveforms(
+                apply_frame_shifts=False
+            ):
+                next_offset = current_offset + waveform.length
+                if not isinstance(waveform, Blank):
+                    ranges[label].append(range(current_offset, next_offset))
+                current_offset = next_offset
+        return ranges
+
+    def get_blank_ranges(
+        self,
+        labels: list[str] | None = None,
+    ) -> dict[str, list[range]]:
+        """
+        Return the blank ranges in samples.
+
+        Parameters
+        ----------
+        labels : list[str], optional
+            The channel labels.
+
+        Returns
+        -------
+        dict[str, list[range]]
+            Blank index ranges for each channel in sample units.
+        """
+        if labels is None:
+            labels = self.labels
+        ranges: dict[str, list[range]] = {label: [] for label in labels}
+        for label in labels:
+            current_offset = 0
+            for waveform in self._channels[label].sequence.get_flattened_waveforms(
+                apply_frame_shifts=False
+            ):
+                next_offset = current_offset + waveform.length
+                if isinstance(waveform, Blank):
+                    ranges[label].append(range(current_offset, next_offset))
+                current_offset = next_offset
+        return ranges
+
+    def get_frequency(
+        self,
+        label: str,
+    ) -> float | None:
+        """
+        Return the frequency for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        float | None
+            The frequency.
+        """
+        return self._channels[label].frequency
+
+    def set_frequency(
+        self,
+        label: str,
+        frequency: float | None,
+    ) -> None:
+        """
+        Set frequency metadata for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+        frequency : float | None
+            Frequency metadata value.
+        """
+        if label not in self._channels:
+            raise KeyError(label)
+        self._channels[label].frequency = frequency
+
+    def set_frequencies(
+        self,
+        frequencies: Mapping[str, float | None],
+    ) -> None:
+        """
+        Set frequency metadata for multiple channels.
+
+        Parameters
+        ----------
+        frequencies : Mapping[str, float | None]
+            Frequency metadata keyed by channel label.
+        """
+        for label, frequency in frequencies.items():
+            self.set_frequency(label, frequency)
+
+    def get_frequencies(
+        self,
+    ) -> dict[str, float | None]:
+        """
+        Return the frequencies.
+
+        Returns
+        -------
+        dict[str, float | None]
+            The frequencies.
+        """
+        return {label: self.get_frequency(label) for label in self.labels}
+
+    def get_target(
+        self,
+        label: str,
+    ) -> str | None:
+        """
+        Return the target for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        str | None
+            The target.
+        """
+        return self._channels[label].target
+
+    def get_targets(
+        self,
+    ) -> dict[str, str | None]:
+        """
+        Return the targets.
+
+        Returns
+        -------
+        dict[str, str | None]
+            The targets.
+        """
+        return {label: self.get_target(label) for label in self.labels}
+
+    def get_frame(
+        self,
+        label: str,
+    ) -> str | None:
+        """
+        Return the frame for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        str | None
+            The frame.
+        """
+        return self._channels[label].frame
+
+    def get_frames(
+        self,
+    ) -> dict[str, str | None]:
+        """
+        Return the frames.
+
+        Returns
+        -------
+        dict[str, str | None]
+            The frames.
+        """
+        return {label: self.get_frame(label) for label in self.labels}
+
+    def get_offset(
+        self,
+        label: str,
+    ) -> float:
+        """
+        Return the offset for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        float
+            The offset.
+        """
+        return self._offsets[label]
+
+    def _add_channels_if_not_exist(self, labels: list[str]):
+        for label in labels:
+            if label not in self.labels:
+                self._channels[label] = PulseChannel(label)
+                if self._global_offset > 0:
+                    self.add(label, Blank(duration=self._global_offset))
+
+    def _max_offset(
+        self,
+        labels: list[str] | None = None,
+    ) -> float:
+        if labels is None:
+            offsets = list(self._offsets.values())
+        else:
+            offsets = [self._offsets[label] for label in labels]
+
+        max_offset = max(offsets, default=0.0)
+
+        return max_offset
+
+    @staticmethod
+    def _downsample(
+        data: npt.NDArray,
+        n_max_points: int,
+    ) -> npt.NDArray:
+        if len(data) <= n_max_points:
+            return data
+        indices = np.linspace(0, len(data) - 1, n_max_points).astype(int)
+        return data[indices]
+
+    @staticmethod
+    def _warn_deprecated_duration_argument() -> None:
+        """Warn that the legacy duration option is deprecated."""
+        warnings.warn(
+            "`duration` in sequence accessor methods is deprecated and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    @staticmethod
+    def _warn_deprecated_align_argument() -> None:
+        """Warn that the legacy align option is deprecated."""
+        warnings.warn(
+            "`align` in sequence accessor methods is deprecated and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=3,
+        )

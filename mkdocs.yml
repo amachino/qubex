@@ -1,0 +1,157 @@
+site_name: Qubex
+site_description: "Qubex: Qubit experiment framework"
+site_url: https://amachino.github.io/qubex/
+repo_url: https://github.com/amachino/qubex
+repo_name: amachino/qubex
+
+docs_dir: docs
+site_dir: site
+hooks:
+  - scripts/mkdocs_hooks.py
+
+theme:
+  name: material
+  language: en
+  icon:
+    logo: material/book 
+  font:
+    text: Noto Sans
+    code: Noto Sans Mono
+  palette:
+    - scheme: default
+      primary: black
+  features:
+    - navigation.footer
+    - content.code.copy
+
+plugins:
+  - gh-admonitions
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
+      ignore_h1_titles: true
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+          options:
+            docstring_style: numpy
+            allow_inspection: false
+            show_source: false
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: ja
+          name: 日本語
+          build: true
+          site_description: "Qubex: 量子ビット実験フレームワーク"
+          nav:
+            - ホーム: index.md
+            - はじめに:
+                - インストール: user-guide/getting-started/installation.md
+                - 始め方を選ぶ: user-guide/getting-started/choose-where-to-start.md
+                - システム設定: user-guide/getting-started/system-configuration.md
+            - パルスシーケンス:
+                - パルスシーケンスの組み方: user-guide/pulse-sequences/index.md
+            - 実験インタフェース:
+                - Experiment クラス: user-guide/experiment/index.md
+                - クイックスタート: user-guide/getting-started/quickstart.md
+                - サンプルワークフロー: user-guide/experiment/examples.md
+                - コミュニティ提供ワークフロー: user-guide/getting-started/contrib-workflows.md
+            - パルスレベルシミュレータ:
+                - QuantumSimulator クラス: user-guide/simulator/index.md
+                - サンプルワークフロー: user-guide/simulator/examples.md
+            - 低レベル API:
+                - 概要: user-guide/low-level-apis/index.md
+                - measurement モジュール: user-guide/measurement/index.md
+                - measurement サンプルワークフロー: user-guide/measurement/examples.md
+                - system モジュール: user-guide/system/index.md
+                - system サンプルワークフロー: user-guide/system/examples.md
+                - backend モジュール: user-guide/backend/index.md
+                - backend サンプルワークフロー: user-guide/backend/examples.md
+            - リリースノート:
+                - 概要: release-notes/index.md
+                - v1.5.0 リリースノート: release-notes/v1-5-0.md
+                - v1.5.0 移行ガイド: release-notes/v1-5-0-migration.md
+            - サンプル集: examples/index.md
+            - コントリビュート: CONTRIBUTING.md
+            - 開発ガイド:
+                - Overview: developer-guide/index.md
+                - Development flow: developer-guide/development-flow.md
+                - Experiment API delegation guidelines: developer-guide/experiment-api-delegation-guidelines.md
+                - Document guidelines: developer-guide/document-guidelines.md
+                - Docstring guidelines: developer-guide/docstring-guidelines.md
+                - Dependency guidelines: developer-guide/dependency-guidelines.md
+                - Test guidelines: developer-guide/test-guidelines.md
+                - Contrib module guidelines: developer-guide/contrib-guidelines.md
+                - Issue guidelines: developer-guide/issue-guidelines.md
+                - Pull request guidelines: developer-guide/pull-request-guidelines.md
+                - Commit message guidelines: developer-guide/commit-guidelines.md
+            - API リファレンス: api-reference/qubex/index.md
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra:
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: user-guide/getting-started/installation.md
+      - Choose where to start: user-guide/getting-started/choose-where-to-start.md
+      - System configuration: user-guide/getting-started/system-configuration.md
+  - Pulse sequences:
+      - Build pulse sequences with PulseSchedule: user-guide/pulse-sequences/index.md
+  - Experiment interface:
+      - Experiment class: user-guide/experiment/index.md
+      - Quickstart: user-guide/getting-started/quickstart.md
+      - Example workflows: user-guide/experiment/examples.md
+      - Community-contributed workflows: user-guide/getting-started/contrib-workflows.md
+  - Pulse-level simulator:
+      - QuantumSimulator class: user-guide/simulator/index.md
+      - Example workflows: user-guide/simulator/examples.md
+  - Low-level APIs:
+      - Overview: user-guide/low-level-apis/index.md
+      - measurement module: user-guide/measurement/index.md
+      - measurement example workflows: user-guide/measurement/examples.md
+      - system module: user-guide/system/index.md
+      - system example workflows: user-guide/system/examples.md
+      - backend module: user-guide/backend/index.md
+      - backend example workflows: user-guide/backend/examples.md
+  - Release notes:
+      - Overview: release-notes/index.md
+      - v1.5.0 release notes: release-notes/v1-5-0.md
+      - v1.5.0 migration guide: release-notes/v1-5-0-migration.md
+  - Examples: examples/index.md
+  - Contributing: CONTRIBUTING.md
+  - Developer guide:
+      - Overview: developer-guide/index.md
+      - Development flow: developer-guide/development-flow.md
+      - Experiment API delegation guidelines: developer-guide/experiment-api-delegation-guidelines.md
+      - Document guidelines: developer-guide/document-guidelines.md
+      - Docstring guidelines: developer-guide/docstring-guidelines.md
+      - Dependency guidelines: developer-guide/dependency-guidelines.md
+      - Test guidelines: developer-guide/test-guidelines.md
+      - Contrib module guidelines: developer-guide/contrib-guidelines.md
+      - Issue guidelines: developer-guide/issue-guidelines.md
+      - Pull request guidelines: developer-guide/pull-request-guidelines.md
+      - Commit message guidelines: developer-guide/commit-guidelines.md
+  - API reference: api-reference/qubex/index.md

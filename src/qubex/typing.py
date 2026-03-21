@@ -1,22 +1,27 @@
+"""Shared typing aliases for Qubex."""
+
 from __future__ import annotations
 
-from typing import Callable, Mapping, TypeVar, Union
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 
-import numpy as np
-from numpy.typing import NDArray
+from qxcore import Frequency, Time, Value
+from qxpulse.typing import IQArray as _IQArray
 
-from .pulse import PulseSchedule, Waveform
+if TYPE_CHECKING:
+    from qxpulse import PulseSchedule, Waveform
 
 T_co = TypeVar("T_co", covariant=True)
 
-TargetMap = Mapping[str, T_co]
+TargetMap: TypeAlias = Mapping[str, T_co]
 
-IQArray = Union[
-    list[complex],
-    list[float],
-    NDArray[np.complex128],
-    NDArray[np.float64],
-]
+IQArray: TypeAlias = _IQArray
 
-ParametricWaveformDict = Callable[..., TargetMap[Waveform]]
-ParametricPulseSchedule = Callable[..., PulseSchedule]
+ParametricWaveformDict: TypeAlias = Callable[..., TargetMap["Waveform"]]
+ParametricPulseSchedule: TypeAlias = Callable[..., "PulseSchedule"]
+
+MeasurementMode: TypeAlias = Literal["single", "avg"]
+ConfigurationMode: TypeAlias = Literal["ge-ef-cr", "ge-cr-cr"]
+
+TimeLike: TypeAlias = float | int | Time | Value
+FrequencyLike: TypeAlias = float | int | Frequency | Value

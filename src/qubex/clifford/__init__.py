@@ -1,3 +1,5 @@
+"""Clifford group utilities and data structures."""
+
 from .clifford import Clifford
 from .clifford_generator import CliffordGenerator
 from .clifford_sequence import CliffordSequence

@@ -1,3 +1,5 @@
+"""Clifford sequence composition utilities."""
+
 from __future__ import annotations
 
 from .clifford import Clifford
@@ -10,9 +12,11 @@ class CliffordSequence:
     Attributes
     ----------
     sequence : list[Clifford]
-        The sequence of Clifford operators.
+        Sequence of Clifford operators.
+
     clifford : Clifford
-        The cumulative Clifford operator of the sequence.
+        Cumulative Clifford operator of the sequence.
+
     """
 
     def __init__(
@@ -36,7 +40,7 @@ class CliffordSequence:
         return cls(sequence=[], clifford=Clifford.I())
 
     @classmethod
-    def II(cls) -> CliffordSequence:  # noqa: E743
+    def II(cls) -> CliffordSequence:
         """
         Create an two-qubit identity Clifford sequence.
 
@@ -64,12 +68,14 @@ class CliffordSequence:
         Parameters
         ----------
         clifford : Clifford
-            The Clifford operator to count.
+            Clifford operator to count.
+
 
         Returns
         -------
         int
-            The number of occurrences of the input Clifford operator in the sequence.
+            Number of occurrences of the input Clifford operator in the sequence.
+
         """
         return self.sequence.count(clifford)
 
@@ -83,23 +89,27 @@ class CliffordSequence:
         Parameters
         ----------
         other : Clifford | CliffordSequence
-            The Clifford transformation to compose with the current sequence.
+            Clifford transformation to compose with the current sequence.
+
 
         Returns
         -------
         CliffordSequence
-            The resulting Clifford sequence after composing the input transformation.
+            Resulting Clifford sequence after composing the input transformation.
+
         """
         if isinstance(other, CliffordSequence):
             composed_sequence = self.sequence + other.sequence
             composed_clifford = self.clifford.compose(other.clifford)
         else:
-            composed_sequence = self.sequence + [other]
+            composed_sequence = [*self.sequence, other]
             composed_clifford = self.clifford.compose(other)
         return CliffordSequence(sequence=composed_sequence, clifford=composed_clifford)
 
     def __hash__(self) -> int:
+        """Return a hash based on the sequence content."""
         return hash(tuple(self.sequence))
 
     def __repr__(self) -> str:
+        """Return the debug representation of the sequence."""
         return f"CliffordSequence({self.gate_sequence})"

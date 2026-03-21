@@ -1,16 +1,24 @@
+"""Base inspection classes and parameter definitions."""
+
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from typing import NoReturn
 
 import numpy as np
 
-from ..backend.lattice_graph import LatticeGraph
+from qubex.system.lattice_graph import LatticeGraph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class InspectionParams:
+    """Parameter defaults for inspection checks."""
+
     max_frequency: float = 9.5
     min_frequency: float = 6.5
     max_detuning: float = 1.5
@@ -25,6 +33,8 @@ class InspectionParams:
 
 
 class Inspection(ABC):
+    """Base class for inspection checks on lattice graphs."""
+
     def __init__(
         self,
         name: str,
@@ -42,21 +52,25 @@ class Inspection(ABC):
         self._invalid_edges = defaultdict(list[str])
 
     @abstractmethod
-    def execute(self):
+    def execute(self) -> NoReturn:
+        """Execute the inspection and populate invalid nodes/edges."""
         raise NotImplementedError
 
     @property
     def invalid_nodes(self) -> dict[str, list[str]]:
+        """Return invalid nodes keyed by label."""
         return dict(sorted(self._invalid_nodes.items()))
 
     @property
     def invalid_edges(self) -> dict[str, list[str]]:
+        """Return invalid edges keyed by label."""
         return dict(sorted(self._invalid_edges.items()))
 
     def get_label(
         self,
         target: int | tuple[int, int],
     ) -> str:
+        """Return a label for the given node or edge target."""
         if isinstance(target, int):
             return self.graph.qubit_nodes[target]["label"]
         elif isinstance(target, tuple):
@@ -68,13 +82,14 @@ class Inspection(ABC):
                 label_1 = self.graph.qubit_nodes[target[1]]["label"]
                 return f"{label_0}-{label_1}"
         else:
-            raise ValueError("Invalid target type.")
+            raise TypeError("Invalid target type.")
 
     def get_property(
         self,
         target: int | tuple[int, int],
         property_type: str,
     ) -> float | None:
+        """Return a numeric property for the target if available."""
         value = self.graph.get_property(target, property_type)
 
         # treat nan as None
@@ -87,12 +102,14 @@ class Inspection(ABC):
         self,
         target: int,
     ) -> float:
+        """Return the GE frequency for a node in GHz."""
         return self.get_property(target, "frequency") or np.nan
 
     def get_anharmonicity(
         self,
         target: int,
     ) -> float:
+        """Return the anharmonicity for a node in GHz."""
         anharmonicity = self.get_property(target, "anharmonicity")
         if anharmonicity is None:
             f = self.get_ge_frequency(target)
@@ -104,36 +121,42 @@ class Inspection(ABC):
         self,
         target: int,
     ) -> float:
+        """Return the EF frequency for a node in GHz."""
         return self.get_ge_frequency(target) + self.get_anharmonicity(target)
 
     def get_t1(
         self,
         target: int,
     ) -> float:
+        """Return the T1 value for a node in ns."""
         return self.get_property(target, "t1") or self.params.default_t1
 
     def get_t2(
         self,
         target: int,
     ) -> float:
+        """Return the T2 echo value for a node in ns."""
         return self.get_property(target, "t2_echo") or self.params.default_t2
 
     def get_ge_ge_detuning(
         self,
         target: tuple[int, int],
     ) -> float:
+        """Return GE-GE detuning for a pair in GHz."""
         return self.get_ge_frequency(target[0]) - self.get_ge_frequency(target[1])
 
     def get_ef_ge_detuning(
         self,
         target: tuple[int, int],
     ) -> float:
+        """Return EF-GE detuning for a pair in GHz."""
         return self.get_ef_frequency(target[0]) - self.get_ge_frequency(target[1])
 
     def get_stark_shift(
         self,
         target: tuple[int, int],
     ) -> float:
+        """Return the Stark shift for a control-target pair."""
         c, t = target
         a_c = self.get_anharmonicity(c)
         D_ct = self.get_ge_ge_detuning((c, t))
@@ -144,13 +167,16 @@ class Inspection(ABC):
         self,
         target: tuple[int, int],
     ) -> float:
+        """Return nearest-neighbor coupling strength in GHz."""
         return self.get_property(target, "coupling") or self.params.default_coupling
 
     def get_nnn_coupling(
         self,
         target: tuple[int, int],
     ) -> float:
-        def get_composite_coupling(i, j, k):
+        """Return next-nearest-neighbor coupling strength in GHz."""
+
+        def get_composite_coupling(i: int, j: int, k: int) -> float:
             f_i = self.get_ge_frequency(i)
             f_j = self.get_ge_frequency(j)
             f_k = self.get_ge_frequency(k)
@@ -178,6 +204,7 @@ class Inspection(ABC):
         self,
         target: tuple[int, int],
     ) -> float:
+        """Return the CR Rabi frequency estimate in GHz."""
         cnot = self.params.cnot_time
         return 1 / (4 * cnot)
 
@@ -185,6 +212,7 @@ class Inspection(ABC):
         self,
         target: tuple[int, int],
     ) -> float:
+        """Return the CR drive frequency estimate in GHz."""
         c, t = target
         D_ct = self.get_ge_ge_detuning((c, t))
         a_c = self.get_anharmonicity(c)
@@ -196,7 +224,8 @@ class Inspection(ABC):
         self,
         nodes: list[str],
         message: str,
-    ):
+    ) -> None:
+        """Record a validation message for invalid nodes."""
         nodes = nodes or []
         for node in nodes:
             self._invalid_nodes[node].append(message)
@@ -205,7 +234,8 @@ class Inspection(ABC):
         self,
         edges: list[str],
         message: str,
-    ):
+    ) -> None:
+        """Record a validation message for invalid edges."""
         edges = edges or []
         for edge in edges:
             self._invalid_edges[edge].append(message)
@@ -215,6 +245,7 @@ class Inspection(ABC):
         label: str,
         invalid_types: list[str] | None = None,
     ) -> str:
+        """Create hover text for a node label."""
         if invalid_types is None:
             invalid_types = []
 
@@ -269,6 +300,7 @@ class Inspection(ABC):
         label: str,
         invalid_types: list[str] | None = None,
     ) -> str:
+        """Create hover text for an edge label."""
         if invalid_types is None:
             invalid_types = []
 
@@ -312,30 +344,32 @@ class Inspection(ABC):
         )
         return hovertext
 
-    def print(self):
-        print(f"[{self.name}]")
-        print(f"{self.description}")
-        print()
-        print(f"{len(self.invalid_nodes)} invalid nodes: ")
+    def log_report(self) -> None:
+        """Log a formatted inspection report."""
+        logger.info(f"[{self.name}]")
+        logger.info(f"{self.description}")
+        logger.info("")
+        logger.info(f"{len(self.invalid_nodes)} invalid nodes: ")
         if self.invalid_nodes:
             for label, messages in self.invalid_nodes.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
-        print(f"{len(self.invalid_edges)} invalid edges: ")
+                    logger.info(f"    - {message}")
+        logger.info(f"{len(self.invalid_edges)} invalid edges: ")
         if self.invalid_edges:
             for label, messages in self.invalid_edges.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
+                    logger.info(f"    - {message}")
 
     def draw(
         self,
         save_image: bool = False,
         images_dir: str = "./images",
-    ):
-        node_values = {label: 1 for label in self.invalid_nodes.keys()}
-        edge_values = {label: 1 for label in self.invalid_edges.keys()}
+    ) -> None:
+        """Render the inspection results on the lattice graph."""
+        node_values = dict.fromkeys(self.invalid_nodes, 1)
+        edge_values = dict.fromkeys(self.invalid_edges, 1)
         node_hovertexts = {
             data["label"]: self.create_node_hovertext(data["label"])
             for data in self.graph.qubit_nodes.values()

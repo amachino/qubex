@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qxvisualizer"
+version = "1.5.0b4"
+requires-python = ">=3.10"
+authors = [{ name = "Akinori Machino" }]
+description = "Qubex shared visualization tools"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+    "numpy >= 1.22",
+    "plotly >= 5.23",
+]
+
+[tool.setuptools.package-data]
+qxvisualizer = ["py.typed"]
