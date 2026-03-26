@@ -45,6 +45,27 @@ def _format_raw_preview(raw: NDArray) -> str:
     return f"array({preview}, shape={array.shape})"
 
 
+def _has_raw_dsp_classification(data: MeasureData) -> bool:
+    """Return whether legacy raw payload already stores DSP-classified bits."""
+    return (
+        data.mode == MeasureMode.SINGLE
+        and data.classifier is None
+        and np.issubdtype(np.asarray(data.raw).dtype, np.integer)
+    )
+
+
+def _raw_dsp_labels(data: MeasureData) -> NDArray[np.int64]:
+    """Convert raw DSP output bits (`00`/`11`) into logical g/e labels."""
+    values = np.asarray(data.raw, dtype=np.int64)
+    if values.ndim == 0:
+        values = values.reshape(1)
+    if np.any((values != 0) & (values != 3)):
+        raise ValueError(
+            "Raw DSP classification data must contain only 0 or 3 for gmm_linear classification."
+        )
+    return np.where(values == 3, 1, 0).astype(np.int64, copy=False)
+
+
 class MeasureMode(Enum):
     """Measurement mode for result processing."""
 
@@ -101,10 +122,11 @@ class MeasureData:
     @cached_property
     def n_states(self) -> int:
         """Return the number of classifier states."""
-        if self.classifier is None:
-            raise ValueError("Classifier is not set")
-        else:
+        if self.classifier is not None:
             return self.classifier.n_states
+        if _has_raw_dsp_classification(self):
+            return 2
+        raise ValueError("Classifier is not set")
 
     @cached_property
     def kerneled(
@@ -127,8 +149,9 @@ class MeasureData:
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 return self.classifier.predict(self.kerneled)
-            else:
-                raise ValueError("Classifier is not set")
+            if _has_raw_dsp_classification(self):
+                return _raw_dsp_labels(self)
+            raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -237,8 +260,11 @@ class MeasureData:
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 return self.classifier.predict_proba(self.kerneled)
-            else:
-                raise ValueError("Classifier is not set")
+            if _has_raw_dsp_classification(self):
+                raise ValueError(
+                    "Soft classification is not available for raw DSP classification data."
+                )
+            raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -261,14 +287,17 @@ class MeasureData:
         """
         if threshold is None:
             return self.classified
-        else:
-            data = self.get_soft_classified_data()
-            if len(data) == 0:
-                raise ValueError("No classification data available")
-            max_probs = np.max(data, axis=1)
-            labels = np.argmax(data, axis=1)
-            result = np.where(max_probs > threshold, labels, -1)
-            return result
+        if _has_raw_dsp_classification(self):
+            raise ValueError(
+                "Thresholded classification is not supported for raw DSP classification data."
+            )
+        data = self.get_soft_classified_data()
+        if len(data) == 0:
+            raise ValueError("No classification data available")
+        max_probs = np.max(data, axis=1)
+        labels = np.argmax(data, axis=1)
+        result = np.where(max_probs > threshold, labels, -1)
+        return result
 
     def plot(
         self,

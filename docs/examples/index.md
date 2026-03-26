@@ -20,6 +20,7 @@ If you are new to Qubex, start with [Choose where to start](../user-guide/gettin
 - [EF characterization](experiment/7_ef_characterization.ipynb)
 - [State classification](experiment/8_state_classification.ipynb)
 - [CR calibration](experiment/9_cr_calibration.ipynb)
+- [Mid-circuit measurement with DSP classification](experiment/10_mid_circuit_dsp_classification.ipynb)
 
 ## Low-level APIs
 

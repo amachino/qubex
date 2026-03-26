@@ -74,6 +74,8 @@ class SequencerExecutionEngine:
         enable_classification: bool,
         line_param0: tuple[float, float, float] | None,
         line_param1: tuple[float, float, float] | None,
+        line_param0_by_target: dict[str, tuple[float, float, float]] | None,
+        line_param1_by_target: dict[str, tuple[float, float, float]] | None,
     ) -> None:
         """
         Configure sequencer measurement options with stable defaults.
@@ -127,6 +129,8 @@ class SequencerExecutionEngine:
             enable_classification=enable_classification,
             line_param0=line_param0,
             line_param1=line_param1,
+            line_param0_by_target=line_param0_by_target,
+            line_param1_by_target=line_param1_by_target,
         )
 
     @staticmethod

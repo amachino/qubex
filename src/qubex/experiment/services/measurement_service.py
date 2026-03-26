@@ -29,6 +29,7 @@ from rich.console import Console
 from tqdm import tqdm
 
 import qubex.visualization as viz
+from qubex.contrib.gmm_linear_classification import build_gmm_linear_line_param
 from qubex.analysis import FitStatus, IQPlotter, fitting
 from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
@@ -154,6 +155,72 @@ class MeasurementService:
                 fallback_registry.resolve_qubit_label(label, allow_legacy=True)
                 for label in labels
             ]
+        )
+
+    def _resolve_gmm_linear_line_params(
+        self,
+        *,
+        labels: Sequence[str],
+    ) -> dict[str, tuple[float, float, float]]:
+        """Resolve per-readout DSP line parameters from stored GMM centers."""
+        line_params_by_target: dict[str, tuple[float, float, float]] = {}
+        missing_qubits: list[str] = []
+        for qubit in self.ctx.ordered_qubit_labels(labels):
+            centers = self.ctx.state_centers.get(qubit)
+            if centers is None:
+                missing_qubits.append(qubit)
+                continue
+            read_label = self.ctx.resolve_read_label(qubit)
+            line_params_by_target[read_label] = build_gmm_linear_line_param(centers)
+        if missing_qubits:
+            joined = ", ".join(missing_qubits)
+            raise ValueError(
+                f"GMM state centers are not available for: {joined}."
+            )
+        return line_params_by_target
+
+    def _resolve_classification_source_options(
+        self,
+        *,
+        labels: Sequence[str],
+        classification_source: Literal["gmm_linear"] | None,
+        state_classification: bool | None,
+        classification_line_param0: tuple[float, float, float] | None,
+        classification_line_param1: tuple[float, float, float] | None,
+    ) -> tuple[
+        bool | None,
+        tuple[float, float, float] | None,
+        tuple[float, float, float] | None,
+        dict[str, tuple[float, float, float]] | None,
+        dict[str, tuple[float, float, float]] | None,
+    ]:
+        """Resolve classification source into concrete DSP line parameters."""
+        if classification_source is None:
+            return (
+                state_classification,
+                classification_line_param0,
+                classification_line_param1,
+                None,
+                None,
+            )
+        if classification_source != "gmm_linear":
+            raise ValueError(
+                f"Unsupported classification_source: {classification_source}."
+            )
+        if (
+            classification_line_param0 is not None
+            or classification_line_param1 is not None
+        ):
+            raise ValueError(
+                "classification_source='gmm_linear' does not accept manual line_param overrides."
+            )
+        line_params_by_target = self._resolve_gmm_linear_line_params(labels=labels)
+        return (
+            True,
+            None,
+            None,
+            line_params_by_target,
+            line_params_by_target,
         )
 
     def _resolve_measurement_schedule(
@@ -565,6 +632,7 @@ class MeasurementService:
         shot_interval: float | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -632,6 +700,20 @@ class MeasurementService:
         if plot is None:
             plot = False
 
+        (
+            state_classification,
+            classification_line_param0,
+            classification_line_param1,
+            classification_line_param0_by_target,
+            classification_line_param1_by_target,
+        ) = self._resolve_classification_source_options(
+            labels=schedule.labels,
+            classification_source=classification_source,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
+        )
+
         if reset_awg_and_capunits:
             qubits = {
                 self.ctx.resolve_qubit_label(target) for target in schedule.labels
@@ -645,6 +727,7 @@ class MeasurementService:
                 shot_interval=shot_interval,
                 time_integration=time_integration,
                 state_classification=state_classification,
+                classification_source=classification_source,
                 mode=mode,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -657,6 +740,8 @@ class MeasurementService:
                 final_measurement=final_measurement,
                 classification_line_param0=classification_line_param0,
                 classification_line_param1=classification_line_param1,
+                classification_line_param0_by_target=classification_line_param0_by_target,
+                classification_line_param1_by_target=classification_line_param1_by_target,
                 plot=plot,
                 **deprecated_options,
             )
@@ -687,6 +772,7 @@ class MeasurementService:
         shot_interval: float | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -803,6 +889,20 @@ class MeasurementService:
                     else:
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
 
+        (
+            state_classification,
+            classification_line_param0,
+            classification_line_param1,
+            classification_line_param0_by_target,
+            classification_line_param1_by_target,
+        ) = self._resolve_classification_source_options(
+            labels=waveforms,
+            classification_source=classification_source,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
+        )
+
         if reset_awg_and_capunits:
             qubits = {self.ctx.resolve_qubit_label(target) for target in waveforms}
             self.ctx.reset_awg_and_capunits(qubits=qubits)
@@ -814,6 +914,7 @@ class MeasurementService:
                 shot_interval=shot_interval,
                 time_integration=time_integration,
                 state_classification=state_classification,
+                classification_source=classification_source,
                 mode=mode,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -825,6 +926,8 @@ class MeasurementService:
                 readout_amplification=readout_amplification,
                 classification_line_param0=classification_line_param0,
                 classification_line_param1=classification_line_param1,
+                classification_line_param0_by_target=classification_line_param0_by_target,
+                classification_line_param1_by_target=classification_line_param1_by_target,
                 **deprecated_options,
             )
         if plot:

@@ -171,3 +171,65 @@ def test_model_rejects_duplicate_return_items() -> None:
             state_classification=False,
             return_items=(ReturnItem.WAVEFORM_SERIES, ReturnItem.WAVEFORM_SERIES),
         )
+
+
+def test_model_gmm_linear_classification_forces_state_series_return_item() -> None:
+    """Given gmm_linear classification, model should use state-series payloads only."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        classification_source="gmm_linear",
+    )
+
+    assert config.primary_return_item == ReturnItem.STATE_SERIES
+    assert tuple(config.return_items) == (ReturnItem.STATE_SERIES,)
+
+
+def test_model_rejects_invalid_gmm_linear_flag_combinations() -> None:
+    """Given invalid flags, gmm_linear classification config validation should fail."""
+    with pytest.raises(ValidationError, match="requires shot_averaging=False"):
+        _ = MeasurementConfig(
+            n_shots=4,
+            shot_interval=100.0,
+            shot_averaging=True,
+            time_integration=True,
+            state_classification=True,
+            classification_source="gmm_linear",
+        )
+
+    with pytest.raises(ValidationError, match="requires time_integration=True"):
+        _ = MeasurementConfig(
+            n_shots=4,
+            shot_interval=100.0,
+            shot_averaging=False,
+            time_integration=False,
+            state_classification=True,
+            classification_source="gmm_linear",
+        )
+
+
+def test_factory_forwards_classification_source() -> None:
+    """Given classification_source, factory should persist it on the built config."""
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    factory = MeasurementConfigFactory(
+        experiment_system=cast(ExperimentSystem, experiment_system)
+    )
+
+    config = factory.create(
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        classification_source="gmm_linear",
+    )
+
+    assert config.classification_source == "gmm_linear"

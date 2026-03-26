@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 import numpy.typing as npt
 from qxpulse import PulseSchedule, RampType
@@ -822,6 +822,13 @@ class Measurement:
         readout_amplification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
+        classification_line_param0_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
@@ -907,6 +914,9 @@ class Measurement:
             state_classification=state_classification,
             classification_line_param0=classification_line_param0,
             classification_line_param1=classification_line_param1,
+            classification_source=classification_source,
+            classification_line_param0_by_target=classification_line_param0_by_target,
+            classification_line_param1_by_target=classification_line_param1_by_target,
             plot=plot,
             **deprecated_options,
         )
@@ -932,6 +942,13 @@ class Measurement:
         final_measurement: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
+        classification_line_param0_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
@@ -1019,6 +1036,9 @@ class Measurement:
             state_classification=state_classification,
             classification_line_param0=classification_line_param0,
             classification_line_param1=classification_line_param1,
+            classification_source=classification_source,
+            classification_line_param0_by_target=classification_line_param0_by_target,
+            classification_line_param1_by_target=classification_line_param1_by_target,
             plot=plot,
             **deprecated_options,
         )

@@ -148,6 +148,8 @@ class Quel1Sequencer(Sequencer):
             enable_classification=self.enable_classification,
             line_param0=self.line_param0,
             line_param1=self.line_param1,
+            line_param0_by_target=self.line_param0_by_target,
+            line_param1_by_target=self.line_param1_by_target,
         )
         gen_e7_settings = driver.Converter.convert_to_gen_device_specific_sequence(
             gen_sampled_sequence=self.gen_sampled_sequence,

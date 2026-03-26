@@ -48,8 +48,14 @@ from .experiment.stark_characterization import (
     stark_ramsey_experiment,
     stark_t1_experiment,
 )
+from .gmm_linear_classification import (
+    build_gmm_linear_line_param,
+    build_gmm_linear_line_params,
+)
 
 __all__ = [
+    "build_gmm_linear_line_param",
+    "build_gmm_linear_line_params",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",

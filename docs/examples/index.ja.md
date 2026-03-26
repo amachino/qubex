@@ -20,6 +20,7 @@ Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-sta
 - [ef 特性評価](experiment/7_ef_characterization.ipynb)
 - [状態分類](experiment/8_state_classification.ipynb)
 - [CR 較正](experiment/9_cr_calibration.ipynb)
+- [DSP classification を使った mid-circuit measurement](experiment/10_mid_circuit_dsp_classification.ipynb)
 
 ## 低レベル API
 

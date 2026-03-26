@@ -18,6 +18,7 @@
 - [ef 特性評価](../../examples/experiment/7_ef_characterization.ipynb): 計算基底を超えた transmon の高次準位を扱います。
 - [状態分類](../../examples/experiment/8_state_classification.ipynb): 読み出し状態分類器を学習・確認します。
 - [CR 較正](../../examples/experiment/9_cr_calibration.ipynb): 2 量子ビット制御のための cross-resonance 相互作用を較正します。
+- [DSP classification を使った mid-circuit measurement](../../examples/experiment/10_mid_circuit_dsp_classification.ipynb): 2 回の readout を含む single-shot 実験を実行し、結果が `gg` と `ee` に集まることを確認します。
 
 ## 関連ページ
 
