@@ -32,3 +32,8 @@ def test_qubex_exports_top_level_module_aliases(
 
     assert module is expected_module
     assert callable(getattr(module, probe))
+
+
+def test_qubex_exports_experiment_lazy_attr() -> None:
+    """`qubex.Experiment` should resolve without circular imports."""
+    assert qx.Experiment.__name__ == "Experiment"
