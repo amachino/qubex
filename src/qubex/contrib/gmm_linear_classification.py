@@ -32,7 +32,9 @@ def build_gmm_linear_line_param(
     if g_center == e_center:
         raise ValueError("GMM state centers for g/e must not be identical.")
 
-    delta = e_center - g_center
+    # Keep the ground-state center on the positive side so DSP classification
+    # polarity matches the legacy raw 00/11 -> logical 0/1 conversion.
+    delta = g_center - e_center
     midpoint = (g_center + e_center) / 2
     a = float(delta.real)
     b = float(delta.imag)

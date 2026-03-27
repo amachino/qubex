@@ -60,7 +60,9 @@ def _make_service() -> tuple[MeasurementService, dict[str, list[dict[str, object
     }
 
 
-def test_execute_resolves_multi_qubit_gmm_linear_line_params_per_readout_target() -> None:
+def test_execute_resolves_multi_qubit_gmm_linear_line_params_per_readout_target() -> (
+    None
+):
     """Given multi-qubit centers, execute should derive one identical DSP line per readout target."""
     service, captured = _make_service()
 
@@ -82,10 +84,10 @@ def test_execute_resolves_multi_qubit_gmm_linear_line_params_per_readout_target(
     assert kwargs["state_classification"] is True
     assert line_param0_by_target == line_param1_by_target
     assert set(line_param0_by_target) == {"RQ00", "RQ01"}
-    assert _evaluate_line(line_param0_by_target["RQ01"], 0.0 + 0.0j) < 0.0
-    assert _evaluate_line(line_param0_by_target["RQ01"], 2.0 + 0.0j) > 0.0
-    assert _evaluate_line(line_param0_by_target["RQ00"], 1.0 + 1.0j) < 0.0
-    assert _evaluate_line(line_param0_by_target["RQ00"], 1.0 + 3.0j) > 0.0
+    assert _evaluate_line(line_param0_by_target["RQ01"], 0.0 + 0.0j) > 0.0
+    assert _evaluate_line(line_param0_by_target["RQ01"], 2.0 + 0.0j) < 0.0
+    assert _evaluate_line(line_param0_by_target["RQ00"], 1.0 + 1.0j) > 0.0
+    assert _evaluate_line(line_param0_by_target["RQ00"], 1.0 + 3.0j) < 0.0
 
 
 def test_measure_resolves_gmm_linear_line_params_from_waveform_targets() -> None:

@@ -15,7 +15,9 @@ class _FakeMemoryManager:
 
     def allocate(self, bufsize, *, minimum_align: int, **kwargs):
         self.calls.append((bufsize, minimum_align, kwargs))
-        return SimpleNamespace(bufsize=bufsize, minimum_align=minimum_align, kwargs=kwargs)
+        return SimpleNamespace(
+            bufsize=bufsize, minimum_align=minimum_align, kwargs=kwargs
+        )
 
 
 class _FakeCaptureParam:

@@ -215,7 +215,9 @@ def test_build_measurement_result_normalizes_time_integrated_single_mode_to_1d()
     )
 
 
-def test_build_measurement_result_preserves_raw_dsp_classification_state_series() -> None:
+def test_build_measurement_result_preserves_raw_dsp_classification_state_series() -> (
+    None
+):
     """Given DSP-classified backend payloads, adapter should keep raw 00/11 state-series data."""
     backend_result = Quel1BackendExecutionResult(
         status={},

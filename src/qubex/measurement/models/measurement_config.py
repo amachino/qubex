@@ -72,7 +72,10 @@ class MeasurementConfig(Model):
             )
 
         required = {self._primary_return_item()}
-        if self.state_classification and self._primary_return_item() != ReturnItem.STATE_SERIES:
+        if (
+            self.state_classification
+            and self._primary_return_item() != ReturnItem.STATE_SERIES
+        ):
             required.add(ReturnItem.STATE_SERIES)
         missing = [item for item in required if item not in return_items]
         if missing:

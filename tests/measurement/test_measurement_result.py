@@ -179,7 +179,9 @@ def test_measure_data_accepts_raw_dsp_classification_payload() -> None:
     assert data.probabilities.tolist() == pytest.approx([0.5, 0.5])
 
 
-def test_measure_data_rejects_soft_or_thresholded_access_for_raw_dsp_classification() -> None:
+def test_measure_data_rejects_soft_or_thresholded_access_for_raw_dsp_classification() -> (
+    None
+):
     """Given raw DSP classification payloads, soft probabilities and thresholds should be unavailable."""
     data = MeasureData(
         target="Q00",

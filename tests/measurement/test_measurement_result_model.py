@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import warnings
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -12,6 +13,7 @@ from netCDF4 import Dataset
 from pydantic import ValidationError
 from sklearn import __version__ as SKLEARN_VERSION
 
+from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import (
     CaptureData,
@@ -1393,13 +1395,14 @@ def test_state_series_conversion_ignores_legacy_classifier_map() -> None:
         def predict(self, data: np.ndarray) -> np.ndarray:
             raise AssertionError(data)
 
+    classifiers = {"Q00": cast(StateClassifier, _ExplodingClassifier())}
     restored = MeasurementResultConverter.to_multiple_measure_result(
         result,
-        classifiers={"Q00": _ExplodingClassifier()},
+        classifiers=classifiers,
     )
     single = MeasurementResultConverter.to_measure_result(
         result,
-        classifiers={"Q00": _ExplodingClassifier()},
+        classifiers=classifiers,
     )
 
     assert restored.data["Q00"][0].classifier is None

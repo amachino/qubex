@@ -37,7 +37,7 @@ def _patch_capunit_simplified(capunit_module: Any) -> None:
     if original_allocate_read_buffer is None:
         return
 
-    def _allocate_read_buffer(self, **kwargs):
+    def _allocate_read_buffer(self: Any, **kwargs):
         if self._current_param is None:
             raise AssertionError("_allocate_read_buffer() requires self._current_param")
         if not self._current_param.classification_enable:

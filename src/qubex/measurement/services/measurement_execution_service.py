@@ -286,7 +286,7 @@ class MeasurementExecutionService:
     @staticmethod
     def _normalize_classification_source(
         classification_source: str | None,
-    ) -> str | None:
+    ) -> Literal["gmm_linear"] | None:
         """Validate and normalize the optional classification-source selector."""
         if classification_source is None:
             return None

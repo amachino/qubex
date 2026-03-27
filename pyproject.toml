@@ -79,7 +79,8 @@ qubex = ["py.typed", "clifford/**/*.json"]
 cache-dir = ".cache/uv"
 
 [tool.uv.sources]
-qxdriver_quel1 = { path = "../qxdriver-quel1" }
+quelware_client = { workspace = true }
+qxdriver_quel1 = { workspace = true }
 qxcore = { workspace = true }
 qxfitting = { workspace = true }
 qxpulse = { workspace = true }
@@ -89,7 +90,9 @@ qxvisualizer = { workspace = true }
 
 [tool.uv.workspace]
 members = [
+    "packages/quelware-client/quelware-client",
     "packages/qxcore",
+    "packages/qxdriver-quel1",
     "packages/qxfitting",
     "packages/qxpulse",
     "packages/qxschema",
@@ -115,10 +118,14 @@ exclude = [
     "packages/qxdriver-quel1",
 ]
 typeCheckingMode = "basic"
+pythonVersion = "3.10"
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 extend-exclude = [
     "lib",
+    "docs/examples/experiment/10_mid_circuit_dsp_classification.ipynb",
     "packages/qube-calib",
     "packages/quelware-client",
     "packages/qxdriver-quel1",
@@ -191,6 +198,9 @@ combine-as-imports = true
 
     # flake8-bandit
     "S101", # assert
+
+    # Ruff-specific rules
+    "RUF046", # unnecessary-int-cast
 ]
 "tests/**/*.py" = [
     "ANN", # flake8-annotations

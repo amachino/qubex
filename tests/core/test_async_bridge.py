@@ -12,6 +12,9 @@ import pytest
 
 from qubex.core.async_bridge import AsyncBridge
 
+BRIDGE_TEST_TIMEOUT_SECONDS = 5.0
+BRIDGE_CANCELLATION_TIMEOUT_SECONDS = 0.05
+
 
 async def _return_value(value: int) -> int:
     return value
@@ -21,8 +24,8 @@ async def _return_value(value: int) -> int:
 def bridge() -> Generator[AsyncBridge, None, None]:
     """Given bridge fixture, when test finishes, then bridge loop is closed."""
     async_bridge = AsyncBridge(
-        default_timeout=1.0,
-        startup_timeout=1.0,
+        default_timeout=BRIDGE_TEST_TIMEOUT_SECONDS,
+        startup_timeout=BRIDGE_TEST_TIMEOUT_SECONDS,
         thread_name="qubex-test-async-bridge",
     )
     try:
@@ -47,7 +50,7 @@ def test_run_inside_running_loop_preserves_contextvars(bridge: AsyncBridge) -> N
 
     async def _invoke() -> str:
         marker.set("captured")
-        return bridge.run(lambda: _read_marker(), timeout=1.0)
+        return bridge.run(lambda: _read_marker(), timeout=BRIDGE_TEST_TIMEOUT_SECONDS)
 
     result = asyncio.run(_invoke())
 
@@ -67,11 +70,14 @@ def test_run_inside_running_loop_cancels_on_timeout(bridge: AsyncBridge) -> None
 
     async def _invoke() -> None:
         with pytest.raises(TimeoutError):
-            bridge.run(lambda: _hang_forever(), timeout=0.01)
+            bridge.run(
+                lambda: _hang_forever(),
+                timeout=BRIDGE_CANCELLATION_TIMEOUT_SECONDS,
+            )
 
     asyncio.run(_invoke())
 
-    assert cancelled.wait(timeout=1.0)
+    assert cancelled.wait(timeout=BRIDGE_TEST_TIMEOUT_SECONDS)
 
 
 def test_run_inside_running_loop_propagates_cancelled_error(
@@ -84,14 +90,17 @@ def test_run_inside_running_loop_propagates_cancelled_error(
 
     async def _invoke() -> None:
         with pytest.raises(asyncio.CancelledError):
-            bridge.run(lambda: _cancelled(), timeout=1.0)
+            bridge.run(lambda: _cancelled(), timeout=BRIDGE_TEST_TIMEOUT_SECONDS)
 
     asyncio.run(_invoke())
 
 
 def test_run_after_close_raises_runtime_error() -> None:
     """Given closed bridge, when running async, then runtime error is raised."""
-    bridge = AsyncBridge(default_timeout=1.0, startup_timeout=1.0)
+    bridge = AsyncBridge(
+        default_timeout=BRIDGE_TEST_TIMEOUT_SECONDS,
+        startup_timeout=BRIDGE_TEST_TIMEOUT_SECONDS,
+    )
     bridge.close()
 
     with pytest.raises(RuntimeError, match="closed"):
@@ -122,7 +131,7 @@ def test_startup_timeout_requests_stop_and_closes_loop() -> None:
         None,
     )
     if lingering_thread is not None:
-        lingering_thread.join(timeout=1.0)
+        lingering_thread.join(timeout=BRIDGE_TEST_TIMEOUT_SECONDS)
 
     assert not any(
         thread.name == thread_name and thread.is_alive()

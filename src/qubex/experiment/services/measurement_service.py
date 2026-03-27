@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from itertools import product
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -29,7 +29,6 @@ from rich.console import Console
 from tqdm import tqdm
 
 import qubex.visualization as viz
-from qubex.contrib.gmm_linear_classification import build_gmm_linear_line_param
 from qubex.analysis import FitStatus, IQPlotter, fitting
 from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
@@ -41,6 +40,7 @@ from qubex.compat.deprecated_options import (
     partition_deprecated_options,
     resolve_deprecated_option,
 )
+from qubex.contrib.gmm_linear_classification import build_gmm_linear_line_param
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 from qubex.core.sentinel import MISSING
 from qubex.core.unit_converter import (
@@ -171,12 +171,12 @@ class MeasurementService:
                 missing_qubits.append(qubit)
                 continue
             read_label = self.ctx.resolve_read_label(qubit)
-            line_params_by_target[read_label] = build_gmm_linear_line_param(centers)
+            line_params_by_target[read_label] = build_gmm_linear_line_param(
+                cast(Mapping[int | str, complex], centers)
+            )
         if missing_qubits:
             joined = ", ".join(missing_qubits)
-            raise ValueError(
-                f"GMM state centers are not available for: {joined}."
-            )
+            raise ValueError(f"GMM state centers are not available for: {joined}.")
         return line_params_by_target
 
     def _resolve_classification_source_options(
@@ -896,7 +896,7 @@ class MeasurementService:
             classification_line_param0_by_target,
             classification_line_param1_by_target,
         ) = self._resolve_classification_source_options(
-            labels=waveforms,
+            labels=tuple(waveforms),
             classification_source=classification_source,
             state_classification=state_classification,
             classification_line_param0=classification_line_param0,
