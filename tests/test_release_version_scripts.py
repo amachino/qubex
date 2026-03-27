@@ -87,7 +87,7 @@ def test_set_pyproject_version_raises_for_missing_version(tmp_path: Path) -> Non
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text('[project]\nname = "qxdriver-quel1"\n')
 
-    with pytest.raises(ValueError, match="Static project.version"):
+    with pytest.raises(ValueError, match=r"Static project\.version"):
         module.set_pyproject_version(  # type: ignore[attr-defined]
             pyproject,
             version="1.5.0b4",
