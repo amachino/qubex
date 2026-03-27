@@ -66,16 +66,28 @@ def characterize_thermal_excitation_via_rabi(
     data_g = normalized(result_g.data[target].data)
     data_e = normalized(result_e.data[target].data)
 
-    fit_result_g: fitting.FitResult = fitting.fit_rabi()
-    fit_result_e: fitting.FitResult = fitting.fit_rabi()
+    fit_result_g: fitting.FitResult = fitting.fit_rabi(
+        target=target,
+        times=time_range,
+        data=data_g,
+        is_damped=True,
+        plot=False,
+    )
+    fit_result_e: fitting.FitResult = fitting.fit_rabi(
+        target=target,
+        times=time_range,
+        data=data_e,
+        is_damped=True,
+        plot=False,
+    )
 
     fig = viz.make_figure()
     for d in fit_result_g.data["fig"]:
         for trace in d.data:
-            fig.add_trace(trace)
+            fig.add_trace(trace, name=trace.name + " (g population rabi)")
     for d in fit_result_e.data["fig"]:
         for trace in d.data:
-            fig.add_trace(trace)
+            fig.add_trace(trace, name=trace.name + " (e population rabi)")
     fig.show()
 
     print("")
