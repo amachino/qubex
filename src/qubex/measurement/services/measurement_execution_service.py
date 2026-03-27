@@ -283,6 +283,19 @@ class MeasurementExecutionService:
             )
         return old_value if new_value is None else new_value
 
+    @staticmethod
+    def _normalize_classification_source(
+        classification_source: str | None,
+    ) -> Literal["gmm_linear"] | None:
+        """Validate and normalize the optional classification-source selector."""
+        if classification_source is None:
+            return None
+        if classification_source != "gmm_linear":
+            raise ValueError(
+                f"Unsupported classification_source: {classification_source}."
+            )
+        return classification_source
+
     def get_awg_frequency(self, target: str) -> float:
         """
         Get the AWG frequency for the target.
@@ -848,6 +861,7 @@ class MeasurementExecutionService:
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -859,6 +873,12 @@ class MeasurementExecutionService:
         readout_amplification: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
+        classification_line_param0_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MeasureResult:
@@ -929,6 +949,7 @@ class MeasurementExecutionService:
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
+            classification_source=classification_source,
             frequencies=frequencies,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
@@ -941,6 +962,8 @@ class MeasurementExecutionService:
             final_measurement=True,
             classification_line_param0=classification_line_param0,
             classification_line_param1=classification_line_param1,
+            classification_line_param0_by_target=classification_line_param0_by_target,
+            classification_line_param1_by_target=classification_line_param1_by_target,
             plot=plot,
             **deprecated_options,
         )
@@ -960,6 +983,7 @@ class MeasurementExecutionService:
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -972,6 +996,12 @@ class MeasurementExecutionService:
         final_measurement: bool | None = None,
         classification_line_param0: tuple[float, float, float] | None = None,
         classification_line_param1: tuple[float, float, float] | None = None,
+        classification_line_param0_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1_by_target: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         plot: bool | None = None,
         **deprecated_options: Any,
     ) -> MultipleMeasureResult:
@@ -1033,6 +1063,8 @@ class MeasurementExecutionService:
             Measurement results.
 
         """
+        explicit_time_integration = time_integration
+        explicit_state_classification = state_classification
         legacy_options: dict[str, Any] = dict(deprecated_options)
         legacy_keys = {
             "mode",
@@ -1122,18 +1154,22 @@ class MeasurementExecutionService:
                     "remove this argument or pass None."
                 )
 
+        legacy_enable_dsp_sum = legacy_options.pop("enable_dsp_sum", None)
         time_integration = self._resolve_deprecated_alias(
             new_value=time_integration,
-            old_value=legacy_options.pop("enable_dsp_sum", None),
+            old_value=legacy_enable_dsp_sum,
             old_name="enable_dsp_sum",
             new_name="time_integration",
         )
         if time_integration is None:
             time_integration = True
 
+        legacy_enable_dsp_classification = legacy_options.pop(
+            "enable_dsp_classification", None
+        )
         state_classification = self._resolve_deprecated_alias(
             new_value=state_classification,
-            old_value=legacy_options.pop("enable_dsp_classification", None),
+            old_value=legacy_enable_dsp_classification,
             old_name="enable_dsp_classification",
             new_name="state_classification",
         )
@@ -1154,6 +1190,34 @@ class MeasurementExecutionService:
             old_name="line_param1",
             new_name="classification_line_param1",
         )
+        classification_source = self._normalize_classification_source(
+            classification_source
+        )
+        if classification_source == "gmm_linear":
+            if shot_averaging:
+                raise ValueError(
+                    "classification_source='gmm_linear' requires shot_averaging=False."
+                )
+            if explicit_time_integration is False or legacy_enable_dsp_sum is False:
+                raise ValueError(
+                    "classification_source='gmm_linear' requires time_integration=True."
+                )
+            if (
+                explicit_state_classification is False
+                or legacy_enable_dsp_classification is False
+            ):
+                raise ValueError(
+                    "classification_source='gmm_linear' requires state_classification=True."
+                )
+            if (
+                classification_line_param0_by_target is None
+                or classification_line_param1_by_target is None
+            ):
+                raise ValueError(
+                    "classification_source='gmm_linear' requires per-target classification line parameters."
+                )
+            time_integration = True
+            state_classification = True
 
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
@@ -1164,6 +1228,7 @@ class MeasurementExecutionService:
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
+            classification_source=classification_source,
         )
 
         measurement_schedule = self.build_measurement_schedule(
@@ -1181,7 +1246,12 @@ class MeasurementExecutionService:
             plot=plot,
         )
 
-        if classification_line_param0 is None and classification_line_param1 is None:
+        if (
+            classification_line_param0 is None
+            and classification_line_param1 is None
+            and not classification_line_param0_by_target
+            and not classification_line_param1_by_target
+        ):
             result = self.measurement_schedule_runner.execute_sync(
                 schedule=measurement_schedule,
                 config=measurement_config,
@@ -1190,6 +1260,8 @@ class MeasurementExecutionService:
             quel1_options = Quel1MeasurementOptions(
                 classification_line_param0=classification_line_param0,
                 classification_line_param1=classification_line_param1,
+                classification_line_param0_by_target=classification_line_param0_by_target,
+                classification_line_param1_by_target=classification_line_param1_by_target,
             )
             result = self.measurement_schedule_runner.execute_sync(
                 schedule=measurement_schedule,
@@ -1299,6 +1371,7 @@ class MeasurementExecutionService:
         shot_averaging: bool | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        classification_source: str | None = None,
     ) -> MeasurementConfig:
         """
         Create a `MeasurementConfig` from optional runtime overrides.
@@ -1328,6 +1401,7 @@ class MeasurementExecutionService:
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
+            classification_source=classification_source,
         )
 
     def build_measurement_schedule(

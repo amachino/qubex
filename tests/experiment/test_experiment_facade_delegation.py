@@ -421,6 +421,7 @@ def test_execute_delegates_new_shot_arguments_to_measurement_service() -> None:
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
+                "classification_source": None,
                 "line_param0": None,
                 "line_param1": None,
                 "reset_awg_and_capunits": None,
@@ -460,6 +461,7 @@ def test_measure_delegates_legacy_shot_arguments_to_measurement_service() -> Non
                 "enable_dsp_demodulation": None,
                 "enable_dsp_sum": None,
                 "enable_dsp_classification": None,
+                "classification_source": None,
                 "line_param0": None,
                 "line_param1": None,
                 "reset_awg_and_capunits": None,
@@ -874,3 +876,16 @@ def test_register_custom_target_delegates_to_context() -> None:
             },
         )
     ]
+
+
+def test_execute_delegates_classification_source_to_measurement_service() -> None:
+    """Given DSP classification source, execute should forward it to measurement service."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    schedule = cast(Any, object())
+
+    _ = exp.execute(schedule=schedule, classification_source="gmm_linear")
+
+    assert measurement_stub.calls[-1][0] == "execute"
+    assert measurement_stub.calls[-1][1]["classification_source"] == "gmm_linear"

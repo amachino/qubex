@@ -21,8 +21,9 @@ WORKSPACE_PACKAGES: tuple[str, ...] = (
     "qxschema",
     "qxsimulator",
     "qxvisualizer",
-    "qxdriver-quel1",
 )
+
+NON_WORKSPACE_PACKAGES: tuple[str, ...] = ("qxdriver-quel1",)
 
 PACKAGE_PYPROJECTS: dict[str, Path] = {
     "qubex": ROOT_PYPROJECT,
@@ -71,11 +72,27 @@ def _run(cmd: list[str]) -> None:
     subprocess.run([UV_EXECUTABLE, *cmd], cwd=ROOT, check=True)  # noqa: S603
 
 
+def set_pyproject_version(path: Path, *, version: str) -> None:
+    """Rewrite one static project.version field in place."""
+    text = path.read_text()
+    pattern = re.compile(r'(^version\s*=\s*")([^"]+)(")', re.MULTILINE)
+
+    def _replace(match: re.Match[str]) -> str:
+        return f"{match.group(1)}{version}{match.group(3)}"
+
+    updated_text, count = pattern.subn(_replace, text, count=1)
+    if count == 0:
+        raise ValueError(f"Static project.version not found in {path}.")
+    path.write_text(updated_text)
+
+
 def set_workspace_versions(version: str) -> None:
     """Set root and companion package versions to one shared value."""
     _run(["version", "--frozen", version])
     for package in WORKSPACE_PACKAGES:
         _run(["version", "--frozen", "--package", package, version])
+    for package in NON_WORKSPACE_PACKAGES:
+        set_pyproject_version(PACKAGE_PYPROJECTS[package], version=version)
 
 
 def pin_dependency_version(

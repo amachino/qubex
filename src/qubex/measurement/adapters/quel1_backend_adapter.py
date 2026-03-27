@@ -20,7 +20,7 @@ from qubex.measurement.measurement_constraint_profile import (
 )
 from qubex.measurement.models.capture_data import CaptureData
 from qubex.measurement.models.measure_result import MeasureMode
-from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_config import MeasurementConfig, ReturnItem
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
@@ -277,6 +277,16 @@ class Quel1MeasurementBackendAdapter:
                 if quel1_options is None
                 else quel1_options.classification_line_param1
             ),
+            line_param0_by_target=(
+                None
+                if quel1_options is None
+                else quel1_options.classification_line_param0_by_target
+            ),
+            line_param1_by_target=(
+                None
+                if quel1_options is None
+                else quel1_options.classification_line_param1_by_target
+            ),
         )
         return BackendExecutionRequest(
             payload=payload,
@@ -301,6 +311,41 @@ class Quel1MeasurementBackendAdapter:
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
         target_registry = getattr(self._experiment_system, "target_registry", None)
 
+        def _resolve_output_target(target: str) -> str:
+            if target_registry is not None and hasattr(
+                target_registry,
+                "measurement_output_label",
+            ):
+                return str(target_registry.measurement_output_label(target))
+            if target.startswith("R"):
+                return target[1:]
+            return target
+
+        if measurement_config.primary_return_item == ReturnItem.STATE_SERIES:
+            measure_data: dict[str, list[CaptureData]] = {}
+            for target, states in sorted(backend_result.data.items()):
+                qubit = _resolve_output_target(target)
+                values: list[CaptureData] = []
+                for index, state in enumerate(states):
+                    if skip_extra_capture and index == 0:
+                        continue
+                    values.append(
+                        CaptureData.from_primary_data(
+                            target=qubit,
+                            data=_as_read_only_array(
+                                np.asarray(state, dtype=np.uint8).squeeze()
+                            ),
+                            config=measurement_config,
+                            sampling_period=sampling_period,
+                        )
+                    )
+                measure_data[qubit] = values
+            return MeasurementResult(
+                data=measure_data,
+                device_config=device_config,
+                measurement_config=measurement_config,
+            )
+
         iq_data: dict[str, list[npt.ArrayLike]] = {}
         for target, iqs in sorted(backend_result.data.items()):
             sideband = "U"
@@ -318,19 +363,10 @@ class Quel1MeasurementBackendAdapter:
         measure_data: dict[str, list[CaptureData]] = {}
         if not shot_averaging:
             for target, iqs in iq_data.items():
-                if target_registry is not None and hasattr(
-                    target_registry,
-                    "measurement_output_label",
-                ):
-                    qubit = str(target_registry.measurement_output_label(target))
-                elif target.startswith("R"):
-                    qubit = target[1:]
-                else:
-                    qubit = target
+                qubit = _resolve_output_target(target)
                 values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
-                        # skip the first extra capture
                         continue
                     values.append(
                         CaptureData.from_primary_data(
@@ -345,19 +381,10 @@ class Quel1MeasurementBackendAdapter:
                 measure_data[qubit] = values
         else:
             for target, iqs in iq_data.items():
-                if target_registry is not None and hasattr(
-                    target_registry,
-                    "measurement_output_label",
-                ):
-                    qubit = str(target_registry.measurement_output_label(target))
-                elif target.startswith("R"):
-                    qubit = target[1:]
-                else:
-                    qubit = target
+                qubit = _resolve_output_target(target)
                 values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
-                        # skip the first extra capture
                         continue
                     values.append(
                         CaptureData.from_primary_data(

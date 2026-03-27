@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 
 import numpy as np
+import pytest
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
 
@@ -163,3 +164,33 @@ def test_measure_data_repr_summarizes_raw_array() -> None:
     text = repr(data)
 
     assert "raw=array([0., ...], shape=(1024,))" in text
+
+
+def test_measure_data_accepts_raw_dsp_classification_payload() -> None:
+    """Given raw DSP 00/11 payloads, MeasureData should expose logical 0/1 labels."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([0, 3, 3, 0], dtype=np.uint8),
+    )
+
+    assert data.classified.tolist() == [0, 1, 1, 0]
+    assert data.counts == {"0": 2, "1": 2}
+    assert data.probabilities.tolist() == pytest.approx([0.5, 0.5])
+
+
+def test_measure_data_rejects_soft_or_thresholded_access_for_raw_dsp_classification() -> (
+    None
+):
+    """Given raw DSP classification payloads, soft probabilities and thresholds should be unavailable."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([0, 3], dtype=np.uint8),
+    )
+
+    with pytest.raises(ValueError, match="Soft classification"):
+        data.get_soft_classified_data()
+
+    with pytest.raises(ValueError, match="Thresholded classification"):
+        data.get_classified_data(threshold=0.8)

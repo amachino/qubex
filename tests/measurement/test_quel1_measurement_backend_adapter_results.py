@@ -213,3 +213,53 @@ def test_build_measurement_result_normalizes_time_integrated_single_mode_to_1d()
         result.data["Q00"][0].data,
         np.array([8.0 + 4.0j, 12.0 + 6.0j], dtype=np.complex128) * norm_factor,
     )
+
+
+def test_build_measurement_result_preserves_raw_dsp_classification_state_series() -> (
+    None
+):
+    """Given DSP-classified backend payloads, adapter should keep raw 00/11 state-series data."""
+    backend_result = Quel1BackendExecutionResult(
+        status={},
+        data={
+            "RQ00": [
+                np.array([0], dtype=np.uint8),
+                np.array([0, 3, 3], dtype=np.uint8),
+            ],
+            "RQ01": [
+                np.array([0], dtype=np.uint8),
+                np.array([3, 0, 3], dtype=np.uint8),
+            ],
+        },
+        config={},
+    )
+    adapter = Quel1MeasurementBackendAdapter(
+        backend_controller=cast(Any, object()),
+        experiment_system=cast(Any, object()),
+    )
+    config = MeasurementConfig(
+        n_shots=3,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        classification_source="gmm_linear",
+    )
+
+    result = adapter.build_measurement_result(
+        backend_result=backend_result,
+        measurement_config=config,
+        device_config={"kind": "quel1"},
+        sampling_period=2.0,
+    )
+
+    assert set(result.data) == {"Q00", "Q01"}
+    assert result.data["Q00"][0].data.dtype == np.uint8
+    assert np.array_equal(
+        result.data["Q00"][0].data,
+        np.array([0, 3, 3], dtype=np.uint8),
+    )
+    assert np.array_equal(
+        result.data["Q01"][0].data,
+        np.array([3, 0, 3], dtype=np.uint8),
+    )

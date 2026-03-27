@@ -15,7 +15,7 @@ from .models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
-from .models.measurement_config import MeasurementConfig
+from .models.measurement_config import MeasurementConfig, ReturnItem
 from .models.measurement_result import MeasurementResult
 
 
@@ -38,6 +38,17 @@ class MeasurementResultConverter:
     def _resolve_capture_mode(capture: CaptureData) -> MeasureMode:
         """Resolve legacy measure mode from capture-level config."""
         return MeasureMode.AVG if capture.config.shot_averaging else MeasureMode.SINGLE
+
+    @staticmethod
+    def _resolve_legacy_classifier(
+        *,
+        capture: CaptureData,
+        classifier: StateClassifier | None,
+    ) -> StateClassifier | None:
+        """Return classifier metadata only when legacy re-classification is valid."""
+        if capture.config.primary_return_item == ReturnItem.STATE_SERIES:
+            return None
+        return classifier
 
     @staticmethod
     def from_multiple(
@@ -122,7 +133,10 @@ class MeasurementResultConverter:
                     target=target,
                     mode=mode,
                     raw=np.asarray(capture.data),
-                    classifier=resolved_classifiers.get(target),
+                    classifier=MeasurementResultConverter._resolve_legacy_classifier(
+                        capture=capture,
+                        classifier=resolved_classifiers.get(target),
+                    ),
                     sampling_period=(
                         sampling_period
                         if sampling_period is not None
@@ -205,7 +219,10 @@ class MeasurementResultConverter:
                 target=target,
                 mode=selected_mode,
                 raw=np.asarray(selected_capture.data),
-                classifier=resolved_classifiers.get(target),
+                classifier=MeasurementResultConverter._resolve_legacy_classifier(
+                    capture=selected_capture,
+                    classifier=resolved_classifiers.get(target),
+                ),
                 sampling_period=(
                     sampling_period
                     if sampling_period is not None

@@ -65,3 +65,30 @@ def test_pin_dependency_raises_for_missing_entry() -> None:
             version="1.5.0b4",
             path=Path("pyproject.toml"),
         )
+
+
+def test_set_pyproject_version_replaces_static_version_line(tmp_path: Path) -> None:
+    """Given a static project version, when syncing, then the version line is updated."""
+    module = _load_sync_release_version_module()
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "qxdriver-quel1"\nversion = "0.0.0.dev0"\n')
+
+    module.set_pyproject_version(  # type: ignore[attr-defined]
+        pyproject,
+        version="1.5.0b4",
+    )
+
+    assert 'version = "1.5.0b4"' in pyproject.read_text()
+
+
+def test_set_pyproject_version_raises_for_missing_version(tmp_path: Path) -> None:
+    """Given missing static version metadata, when syncing, then an error is raised."""
+    module = _load_sync_release_version_module()
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "qxdriver-quel1"\n')
+
+    with pytest.raises(ValueError, match=r"Static project\.version"):
+        module.set_pyproject_version(  # type: ignore[attr-defined]
+            pyproject,
+            version="1.5.0b4",
+        )

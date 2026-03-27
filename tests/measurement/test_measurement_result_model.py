@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import warnings
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -12,6 +13,7 @@ from netCDF4 import Dataset
 from pydantic import ValidationError
 from sklearn import __version__ as SKLEARN_VERSION
 
+from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import (
     CaptureData,
@@ -1361,3 +1363,49 @@ def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
 
         payload = json.loads(payload_json)
         assert "Q00" in payload["data"]
+
+
+def test_state_series_conversion_ignores_legacy_classifier_map() -> None:
+    """Given canonical state-series data, legacy conversion should not re-attach software classifiers."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        classification_source="gmm_linear",
+    )
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([0, 3, 3, 0], dtype=np.uint8),
+                    measurement_config=config,
+                    sampling_period=2.0,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+
+    class _ExplodingClassifier:
+        n_states = 2
+
+        def predict(self, data: np.ndarray) -> np.ndarray:
+            raise AssertionError(data)
+
+    classifiers = {"Q00": cast(StateClassifier, _ExplodingClassifier())}
+    restored = MeasurementResultConverter.to_multiple_measure_result(
+        result,
+        classifiers=classifiers,
+    )
+    single = MeasurementResultConverter.to_measure_result(
+        result,
+        classifiers=classifiers,
+    )
+
+    assert restored.data["Q00"][0].classifier is None
+    assert single.data["Q00"].classifier is None
+    assert restored.data["Q00"][0].classified.tolist() == [0, 1, 1, 0]
+    assert single.data["Q00"].classified.tolist() == [0, 1, 1, 0]

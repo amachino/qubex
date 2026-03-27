@@ -2555,3 +2555,111 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True
+
+
+def test_execute_with_gmm_linear_forces_state_config_and_passes_line_maps(
+    monkeypatch,
+) -> None:
+    """Given gmm_linear DSP classification, execution service should force state-mode config and forward per-target lines."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    execution_service = measurement.execution_service
+    pulse_schedule = PulseSchedule(["Q00"])
+    built_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["RQ00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    line_params = {"RQ00": (1.0, 0.0, -1.0)}
+    called: dict[str, object] = {}
+
+    def fake_build(
+        self: MeasurementExecutionService,
+        *,
+        pulse_schedule: PulseSchedule,
+        **kwargs: object,
+    ) -> MeasurementSchedule:
+        del self, pulse_schedule, kwargs
+        return built_schedule
+
+    class _Factory:
+        def create(self, **kwargs: object) -> MeasurementConfig:
+            called["config_kwargs"] = kwargs
+            return MeasurementConfig(
+                n_shots=4,
+                shot_interval=120.0,
+                shot_averaging=False,
+                time_integration=True,
+                state_classification=True,
+                classification_source="gmm_linear",
+            )
+
+    class _Executor:
+        def execute_sync(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+            quel1_options: Quel1MeasurementOptions | None = None,
+        ) -> MeasurementResult:
+            called["schedule"] = schedule
+            called["config"] = config
+            called["quel1_options"] = quel1_options
+            return _make_measurement_result(
+                data={"Q00": [np.array([0, 3, 0, 3], dtype=np.uint8)]},
+                measurement_config=config,
+                sampling_period=2.0,
+            )
+
+    execution_service.build_measurement_schedule = MethodType(
+        fake_build, execution_service
+    )
+    monkeypatch.setattr(
+        MeasurementExecutionService,
+        "measurement_config_factory",
+        property(lambda self: _Factory()),
+    )
+    monkeypatch.setattr(
+        MeasurementExecutionService,
+        "measurement_schedule_runner",
+        property(lambda self: _Executor()),
+    )
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 4}})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+        rawdata_dir=None,
+    )
+
+    result = execution_service.execute(
+        schedule=pulse_schedule,
+        n_shots=4,
+        shot_interval=120.0,
+        shot_averaging=False,
+        classification_source="gmm_linear",
+        classification_line_param0_by_target=line_params,
+        classification_line_param1_by_target=line_params,
+        plot=False,
+    )
+
+    config_kwargs = cast(dict[str, object], called["config_kwargs"])
+    assert config_kwargs["classification_source"] == "gmm_linear"
+    assert config_kwargs["time_integration"] is True
+    assert config_kwargs["state_classification"] is True
+    options = cast(Quel1MeasurementOptions, called["quel1_options"])
+    assert options.classification_line_param0_by_target == line_params
+    assert options.classification_line_param1_by_target == line_params
+    assert result.data["Q00"][0].classifier is None
+    assert result.data["Q00"][0].classified.tolist() == [0, 1, 0, 1]

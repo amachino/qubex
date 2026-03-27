@@ -262,7 +262,8 @@ class AsyncBridge:
             self._loop_ready.set()
             loop.close()
             return
-        self._loop_ready.set()
+        # Signal readiness only after the loop starts serving callbacks.
+        loop.call_soon(self._loop_ready.set)
         try:
             loop.run_forever()
         except BaseException as error:  # pragma: no cover - fatal guard

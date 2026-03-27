@@ -269,6 +269,8 @@ class ConverterProtocol(Protocol):
         enable_classification: bool = False,
         line_param0: tuple[float, float, float] = (1.0, 0.0, 0.0),
         line_param1: tuple[float, float, float] = (0.0, 1.0, 0.0),
+        line_param0_by_target: Mapping[str, tuple[float, float, float]] | None = None,
+        line_param1_by_target: Mapping[str, tuple[float, float, float]] | None = None,
     ) -> dict[tuple[str, PortType, int], Any]:
         """Convert capture sampled sequences into per-runit capture params."""
         ...
@@ -756,6 +758,8 @@ class SequencerProtocol(Protocol):
     enable_classification: bool
     line_param0: tuple[float, float, float]
     line_param1: tuple[float, float, float]
+    line_param0_by_target: Mapping[str, tuple[float, float, float]] | None
+    line_param1_by_target: Mapping[str, tuple[float, float, float]] | None
     driver: Quel1SystemProtocol | None
 
     def __init__(

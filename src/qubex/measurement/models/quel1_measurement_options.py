@@ -11,3 +11,9 @@ class Quel1MeasurementOptions(Model):
     demodulation: bool | None = None
     classification_line_param0: tuple[float, float, float] | None = None
     classification_line_param1: tuple[float, float, float] | None = None
+    classification_line_param0_by_target: (
+        dict[str, tuple[float, float, float]] | None
+    ) = None
+    classification_line_param1_by_target: (
+        dict[str, tuple[float, float, float]] | None
+    ) = None

@@ -18,6 +18,7 @@ Use these notebooks after completing the [Quickstart](../getting-started/quickst
 - [EF characterization](../../examples/experiment/7_ef_characterization.ipynb): Work with the higher transmon levels beyond the computational basis.
 - [State classification](../../examples/experiment/8_state_classification.ipynb): Train and inspect readout-state classifiers.
 - [CR calibration](../../examples/experiment/9_cr_calibration.ipynb): Calibrate cross-resonance interactions for two-qubit control.
+- [Mid-circuit measurement with DSP classification](../../examples/experiment/10_mid_circuit_dsp_classification.ipynb): Run a two-readout single-shot experiment and verify that the outcomes cluster on `gg` and `ee`.
 
 ## Related pages
 
