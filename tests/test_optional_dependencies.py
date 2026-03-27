@@ -39,7 +39,10 @@ def test_project_uv_sources_use_repo_local_paths_for_external_driver_packages() 
     """Given project metadata, uv sources should resolve external driver packages from repo-local submodule paths."""
     text = _read_project_text()
 
-    assert 'quelware_client = { path = "packages/quelware-client/quelware-client" }' in text
+    assert (
+        'quelware_client = { path = "packages/quelware-client/quelware-client" }'
+        in text
+    )
     assert 'qxdriver_quel1 = { path = "packages/qxdriver-quel1" }' in text
 
 

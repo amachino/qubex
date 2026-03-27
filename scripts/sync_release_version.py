@@ -23,9 +23,7 @@ WORKSPACE_PACKAGES: tuple[str, ...] = (
     "qxvisualizer",
 )
 
-NON_WORKSPACE_PACKAGES: tuple[str, ...] = (
-    "qxdriver-quel1",
-)
+NON_WORKSPACE_PACKAGES: tuple[str, ...] = ("qxdriver-quel1",)
 
 PACKAGE_PYPROJECTS: dict[str, Path] = {
     "qubex": ROOT_PYPROJECT,
