@@ -58,9 +58,9 @@ Use this variant when you plan to use Qubex with QuEL-3 runtime support.
 uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
 ```
 
-`quel3` depends on `quelware-client`. If that package is not published on
-PyPI, install it from the package source or index specified by your
-environment.
+`quel3` depends on `quelware-client`. During the `v1.5.0 beta` period,
+install with `uv`, which resolves the bundled source dependency declared by
+Qubex.
 
 ### Install specific version
 

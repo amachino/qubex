@@ -35,17 +35,23 @@ def test_project_optional_dependencies_split_backend_quel1_quel3() -> None:
     )
 
 
-def test_project_uv_sources_use_workspace_members_for_driver_packages() -> None:
-    """Given project metadata, uv sources should resolve driver packages from the workspace."""
+def test_project_uv_sources_use_repo_local_paths_for_external_driver_packages() -> None:
+    """Given project metadata, uv sources should resolve external driver packages from repo-local submodule paths."""
     text = _read_project_text()
 
-    assert "quelware_client = { workspace = true }" in text
-    assert "qxdriver_quel1 = { workspace = true }" in text
+    assert 'quelware_client = { path = "packages/quelware-client/quelware-client" }' in text
+    assert 'qxdriver_quel1 = { path = "packages/qxdriver-quel1" }' in text
 
 
-def test_project_uv_workspace_members_include_local_driver_packages() -> None:
-    """Given project metadata, uv workspace members should include local driver packages."""
+def test_project_uv_workspace_members_exclude_external_driver_packages() -> None:
+    """Given project metadata, uv workspace should only include in-repository packages."""
     text = _read_project_text()
+    workspace = text.split("[tool.uv.workspace]", 1)[1].split(
+        "[tool.pytest.ini_options]",
+        1,
+    )[0]
 
-    assert '"packages/quelware-client/quelware-client",' in text
-    assert '"packages/qxdriver-quel1",' in text
+    assert '"packages/qxcore",' in workspace
+    assert '"packages/qxvisualizer",' in workspace
+    assert '"packages/quelware-client/quelware-client",' not in workspace
+    assert '"packages/qxdriver-quel1",' not in workspace
