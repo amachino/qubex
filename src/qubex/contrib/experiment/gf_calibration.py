@@ -8,10 +8,10 @@ from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
-import qubex.visualization as viz
 from numpy.typing import ArrayLike, NDArray
 from tqdm import tqdm
 
+import qubex.visualization as viz
 from qubex.analysis import FitStatus, fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
@@ -27,9 +27,9 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.models.experiment_result import (
     AmplCalibData,
     ExperimentResult,
-    RamseyData,
     RabiData,
     RabiParam,
+    RamseyData,
 )
 from qubex.experiment.result import Result
 from qubex.pulse import Blank, FlatTop, PulseSchedule
@@ -449,12 +449,16 @@ def gf_chevron_pattern(
         for detuning in tqdm(detuning_values, leave=False):
             with exp.util.no_output():
 
-                def gf_rabi_sequence(duration_ns: int) -> PulseSchedule:
+                def gf_rabi_sequence(
+                    duration_ns: int,
+                    _subgroup: Collection[str] = subgroup,
+                    _ef_subgroup: Collection[str] = ef_subgroup,
+                ) -> PulseSchedule:
                     with PulseSchedule() as ps:
-                        for ge_label in subgroup:
+                        for ge_label in _subgroup:
                             ps.add(ge_label, exp.pulse.x180(ge_label))
                         ps.barrier()
-                        for ef_label in ef_subgroup:
+                        for ef_label in _ef_subgroup:
                             ps.add(
                                 ef_label,
                                 FlatTop(
@@ -463,7 +467,7 @@ def gf_chevron_pattern(
                                     tau=ramptime,
                                 ),
                             )
-                    return ps
+                        return ps
 
                 sweep_result = exp.measurement_service.sweep_parameter(
                     sequence=gf_rabi_sequence,
@@ -877,11 +881,15 @@ def gf_ramsey_experiment(
         print(f"Target qubits: {target_qubits}")
         print(f"Spectator qubits: {spectator_qubits}")
 
-        def gf_ramsey_sequence(t_ns: int) -> PulseSchedule:
+        def gf_ramsey_sequence(
+            t_ns: int,
+            _spectator_qubits: Collection[str] = spectator_qubits,
+            _target_qubits: Collection[str] = target_qubits,
+        ) -> PulseSchedule:
             with PulseSchedule() as ps:
                 # Excite spectator qubits if needed
                 if spectator_state != "0":
-                    for spectator in spectator_qubits:
+                    for spectator in _spectator_qubits:
                         if spectator in exp.ctx.qubit_labels:
                             pulse = exp.get_pulse_for_state(
                                 target=spectator,
@@ -891,7 +899,7 @@ def gf_ramsey_experiment(
                     ps.barrier()
 
                 # Ramsey sequence for the target qubit
-                for target in target_qubits:
+                for target in _target_qubits:
                     ef_label = Target.ef_label(target)
                     x180 = exp.pulse.x180(target)
                     ef90 = ef_hpi_pulses[ef_label]
