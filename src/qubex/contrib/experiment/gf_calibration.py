@@ -398,16 +398,13 @@ def gf_chevron_pattern(
 
     if frequencies is None:
         ef_targets = [Target.ef_label(target) for target in target_list]
-        frequencies = {
-            target: exp.targets[target].frequency for target in ef_targets
-        }
+        frequencies = {target: exp.targets[target].frequency for target in ef_targets}
 
     if amplitudes is None:
         ef_labels = [Target.ef_label(target) for target in target_list]
         ef_targets = [exp.targets[ef_label] for ef_label in ef_labels]
         amplitudes = {
-            ef.label: exp.params.get_ef_control_amplitude(ef.qubit)
-            for ef in ef_targets
+            ef.label: exp.params.get_ef_control_amplitude(ef.qubit) for ef in ef_targets
         }
 
     ramptime = 32 - 12
@@ -415,16 +412,19 @@ def gf_chevron_pattern(
     shared_rabi_params: dict[str, RabiParam]
     if rabi_params is None:
         print("Obtaining Rabi parameters between g and f...")
-        shared_rabi_params = dict(obtain_gf_rabi_params(
-            exp=exp,
-            targets=target_list,
-            time_range=time_values,
-            fit_threshold=0.0,
-            n_shots=n_shots,
-            shot_interval=shot_interval,
-            plot=False,
-            store_params=False,
-        ).rabi_params or {})
+        shared_rabi_params = dict(
+            obtain_gf_rabi_params(
+                exp=exp,
+                targets=target_list,
+                time_range=time_values,
+                fit_threshold=0.0,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+                plot=False,
+                store_params=False,
+            ).rabi_params
+            or {}
+        )
     else:
         shared_rabi_params = rabi_params
 
@@ -785,6 +785,7 @@ def calibrate_gf_pi_pulse(
         **deprecated_options,
     )
 
+
 def gf_ramsey_experiment(
     exp: Experiment,
     targets: Collection[str] | str | None = None,
@@ -845,16 +846,16 @@ def gf_ramsey_experiment(
         )
 
     gf_rabi_params = {
-        target: exp.get_rabi_param(f"{Target.ge_label(target)}_{Target.ef_label(target)}")
+        target: exp.get_rabi_param(
+            f"{Target.ge_label(target)}_{Target.ef_label(target)}"
+        )
         for target in target_list
     }
     missing_gf_rabi = [
         target for target, rabi_param in gf_rabi_params.items() if rabi_param is None
     ]
     if missing_gf_rabi:
-        raise ValueError(
-            f"GF Rabi parameters are not stored for {missing_gf_rabi}."
-        )
+        raise ValueError(f"GF Rabi parameters are not stored for {missing_gf_rabi}.")
 
     target_groups = exp.util.create_qubit_subgroups(target_list)
     spectator_groups = reversed(target_groups)  # TODO: make it more general
@@ -865,7 +866,9 @@ def gf_ramsey_experiment(
         target_groups, spectator_groups, strict=True
     ):
         active_targets = (
-            target_qubits + spectator_qubits if spectator_state != "0" else target_qubits
+            target_qubits + spectator_qubits
+            if spectator_state != "0"
+            else target_qubits
         )
 
         if len(active_targets) == 0:
