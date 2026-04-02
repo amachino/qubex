@@ -415,7 +415,7 @@ def gf_chevron_pattern(
     shared_rabi_params: dict[str, RabiParam]
     if rabi_params is None:
         print("Obtaining Rabi parameters between g and f...")
-        shared_rabi_params = obtain_gf_rabi_params(
+        shared_rabi_params = dict(obtain_gf_rabi_params(
             exp=exp,
             targets=target_list,
             time_range=time_values,
@@ -424,7 +424,7 @@ def gf_chevron_pattern(
             shot_interval=shot_interval,
             plot=False,
             store_params=False,
-        ).rabi_params or {}
+        ).rabi_params or {})
     else:
         shared_rabi_params = rabi_params
 
