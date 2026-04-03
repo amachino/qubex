@@ -72,23 +72,22 @@ _INLINE_MATH_PATTERN = re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)")
 
 
 def _wrap_notebook_math(html: str) -> str:
-    """Wrap $...$ and $$...$$ in notebook HTML with arithmatex spans.
+    """
+    Wrap $...$ and $$...$$ in notebook HTML with arithmatex spans.
 
     nbconvert emits bare $...$ delimiters that MathJax cannot find because
     the global ignoreHtmlClass pattern blocks classless elements. Wrapping
     them in <span class="arithmatex"> makes them visible to MathJax, just
     like pymdownx.arithmatex does for regular Markdown pages.
     """
-    html = _DISPLAY_MATH_PATTERN.sub(
-        r'<span class="arithmatex">\[\1\]</span>', html
-    )
-    html = _INLINE_MATH_PATTERN.sub(
-        r'<span class="arithmatex">\(\1\)</span>', html
-    )
+    html = _DISPLAY_MATH_PATTERN.sub(r'<span class="arithmatex">\[\1\]</span>', html)
+    html = _INLINE_MATH_PATTERN.sub(r'<span class="arithmatex">\(\1\)</span>', html)
     return html
 
 
-def on_page_content(html: str, *, page: Page, config: MkDocsConfig, files: Files) -> str:
+def on_page_content(
+    html: str, *, page: Page, config: MkDocsConfig, files: Files
+) -> str:
     """Post-process notebook HTML for MathJax v3 compatibility."""
     html = _MATHJAX_V2_PATTERN.sub("", html)
     if isinstance(page.file, NotebookFile):
