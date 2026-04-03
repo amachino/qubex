@@ -166,15 +166,26 @@ class CharacterizeReadoutParametersResult:
         print("Fitted parameters:")
         print(f"R² score: {r2_score:.4f}")
         print(
-            f"kappa_p/2π: {popt[0] / (2 * np.pi) * 1e3:.8f} ± {perr[0] / (2 * np.pi) * 1e3:.8f} MHz"
+            f"purcell filter external linewidth (kappa_p/2π): {popt[0] / (2 * np.pi) * 1e3:.8f} ± {perr[0] / (2 * np.pi) * 1e3:.8f} MHz"
         )
         print(
-            f"J/2π: {popt[1] / (2 * np.pi) * 1e3:.8f} ± {perr[1] / (2 * np.pi) * 1e3:.8f} MHz"
+            f"resonator and purcell coupling (J/2π)         : {popt[1] / (2 * np.pi) * 1e3:.8f} ± {perr[1] / (2 * np.pi) * 1e3:.8f} MHz"
         )
-        print(f"f_p: {popt[2]:.8f} ± {perr[2]:.8f} GHz")
-        print(f"f_r: {popt[3]:.8f} ± {perr[3]:.8f} GHz")
-        print(f"a: {popt[4]:.8f} ± {perr[4]:.8f} /GHz")
-        print(f"b: {popt[5]:.8f} ± {perr[5]:.8f} rad")
+        print(
+            f"purcell filter frequency (f_p)                : {popt[2]:.8f} ± {perr[2]:.8f} GHz"
+        )
+        print(
+            f"resonator frequency (f_r)                     : {popt[3]:.8f} ± {perr[3]:.8f} GHz"
+        )
+        print(
+            f"a                                             : {popt[4]:.8f} ± {perr[4]:.8f} rad/√GHz"
+        )
+        print(
+            f"attenation coeff (-a / √π / 10 * log_e(10))   : {-popt[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} ± {perr[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} /√GHz"
+        )
+        print(
+            f"b                                             : {popt[5]:.8f} ± {perr[5]:.8f} rad"
+        )
 
         return {
             "popt": popt,
@@ -227,4 +238,4 @@ def _fit_func(f_d, kappa_p, J, f_p, f_r, a, b):
     angle = np.angle(
         _Gamma(kappa_p, gamma_purcell, J, gamma_resonator, omega_d, omega_p, omega_r)
     )
-    return -np.unwrap(angle) + a * f_d + b
+    return -np.unwrap(angle) + a * np.sqrt(omega_d) + b
