@@ -40,7 +40,12 @@ from .purity_benchmarking import (
 )
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
-from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
+from .stark_characterization import (
+    stark_p1_experiment,
+    stark_p1_spectroscopy,
+    stark_ramsey_experiment,
+    stark_t1_experiment,
+)
 
 __all__ = [
     "cr_crosstalk_hamiltonian_tomography",
@@ -77,6 +82,8 @@ __all__ = [
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
+    "stark_p1_experiment",
+    "stark_p1_spectroscopy",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
     "visualize_graph",
