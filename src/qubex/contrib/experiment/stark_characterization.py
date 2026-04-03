@@ -6,6 +6,7 @@ from collections.abc import Collection, Mapping
 from typing import Any, Literal
 
 import numpy as np
+import plotly.graph_objects as go
 from numpy.typing import ArrayLike
 
 import qubex.visualization as viz
@@ -16,11 +17,13 @@ from qubex.experiment.experiment_constants import (
     DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
 )
+from qubex.experiment.models import Result
 from qubex.experiment.models.experiment_result import (
     ExperimentResult,
     RamseyData,
     T1Data,
 )
+from qubex.measurement.models import MeasureResult
 from qubex.pulse import FlatTop, PulseSchedule, VirtualZ
 
 from ._deprecated_options import resolve_shot_options
@@ -438,3 +441,255 @@ def stark_ramsey_experiment(
                 viz.save_figure(fig, name=f"stark_ramsey_{qubit}")
 
     return ExperimentResult(data=data)
+
+def _resolve_wait_time(
+    exp: Experiment,
+    *,
+    target: str,
+    wait_time: int | None,
+) -> int:
+    if wait_time is not None:
+        return wait_time
+
+    t1_dict = exp.ctx.system_manager.config_loader.load_param_data("t1")
+    if target not in t1_dict:
+        raise ValueError(f"T1 data is not available for target `{target}`.")
+
+    half_t1 = t1_dict[target] * np.log(2)
+    sampling_period = exp.ctx.measurement.sampling_period
+    return int(np.round(half_t1 / sampling_period) * sampling_period)
+
+
+def stark_p1_experiment(
+    exp: Experiment,
+    target: str,
+    *,
+    stark_detuning: float | None = None,
+    stark_amplitude: float | None = None,
+    stark_ramptime: float | None = None,
+    wait_time: int | None = None,
+    mode: Literal["single", "avg"] | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
+    plot: bool | None = None,
+    **deprecated_options: Any,
+) -> MeasureResult:
+    """
+    Measure excited-state population under a Stark drive.
+
+    Parameters
+    ----------
+    exp
+        Experiment instance to use for pulse generation and measurement.
+    target
+        Target qubit to measure.
+    stark_detuning
+        Stark-tone detuning in GHz.
+    stark_amplitude
+        Stark-tone relative drive amplitude.
+    stark_ramptime
+        Stark-tone ramp time in ns.
+    wait_time
+        Stark-tone flat-top wait time in ns.
+    mode
+        Measurement mode.
+    n_shots
+        Number of shots.
+    shot_interval
+        Measurement interval in seconds.
+    plot
+        Whether to render the measurement result.
+
+    Returns
+    -------
+    MeasureResult
+        Raw classified measurement result for the Stark-driven P1 experiment.
+    """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="stark_p1_experiment",
+    )
+    if mode is None:
+        mode = "avg"
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
+    if plot is None:
+        plot = False
+
+    if stark_detuning is None:
+        stark_detuning = 0.15
+    elif abs(stark_detuning) > 0.2:
+        raise ValueError("Detuning of a stark tone exceeds 0.2 GHz AWG limit.")
+
+    if stark_amplitude is None:
+        stark_amplitude = 0.1
+
+    if stark_ramptime is None:
+        stark_ramptime = 10
+
+    wait_time = _resolve_wait_time(
+        exp,
+        target=target,
+        wait_time=wait_time,
+    )
+    exp.pulse.validate_rabi_params([target])
+
+    stark_power = exp.pulse.calc_control_amplitude(
+        target=target,
+        rabi_rate=stark_amplitude,
+    )
+    if stark_power > 1:
+        raise ValueError("Stark drive amplitude must not exceed 1")
+
+    def stark_p1_sequence() -> PulseSchedule:
+        with PulseSchedule([target]) as ps:
+            ps.add(target, exp.pulse.get_hpi_pulse(target).repeated(2))
+            ps.add(
+                target,
+                FlatTop(
+                    duration=wait_time + stark_ramptime * 2,
+                    amplitude=stark_power,
+                    tau=stark_ramptime,
+                ).detuned(detuning=stark_detuning),
+            )
+        return ps
+
+    return exp.measurement_service.measure(
+        sequence=stark_p1_sequence(),
+        mode=mode,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        plot=plot,
+    )
+
+
+def stark_p1_spectroscopy(
+    exp: Experiment,
+    target: str,
+    *,
+    stark_detuning: float | None = None,
+    stark_ramptime: float | None = None,
+    stark_amplitude_range: ArrayLike = np.linspace(0, 0.1, 51),
+    wait_time: int | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
+    plot: bool | None = None,
+    save_image: bool | None = None,
+    **deprecated_options: Any,
+) -> Result:
+    """
+    Sweep Stark amplitude and estimate excited-state population.
+
+    Parameters
+    ----------
+    exp
+        Experiment instance to use for pulse generation and measurements.
+    target
+        Target qubit to characterize.
+    stark_detuning
+        Stark-tone detuning in GHz.
+    stark_ramptime
+        Stark-tone ramp time in ns.
+    stark_amplitude_range
+        Sweep range for Stark-tone relative drive amplitude.
+    wait_time
+        Stark-tone flat-top wait time in ns.
+    n_shots
+        Number of shots per sweep point.
+    shot_interval
+        Measurement interval in seconds.
+    plot
+        Whether to render the spectroscopy figure.
+    save_image
+        Whether to save the generated figure.
+
+    Returns
+    -------
+    Result
+        Spectroscopy result containing sweep amplitudes, P1 data, and figures.
+    """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="stark_p1_spectroscopy",
+    )
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
+    if plot is None:
+        plot = True
+    if save_image is None:
+        save_image = False
+
+    if stark_detuning is None:
+        stark_detuning = 0.15
+    elif abs(stark_detuning) > 0.2:
+        raise ValueError("Detuning of a stark tone exceeds 0.2 GHz AWG limit.")
+
+    amplitude_range = np.asarray(stark_amplitude_range, dtype=float)
+    for stark_amplitude in amplitude_range:
+        stark_power = exp.pulse.calc_control_amplitude(
+            target=target,
+            rabi_rate=stark_amplitude,
+        )
+        if stark_power > 1:
+            raise ValueError("Stark drive amplitude must not exceed 1")
+
+    if stark_ramptime is None:
+        stark_ramptime = 50
+
+    wait_time = _resolve_wait_time(
+        exp,
+        target=target,
+        wait_time=wait_time,
+    )
+    exp.pulse.validate_rabi_params([target])
+
+    results: list[MeasureResult] = []
+    p1_list: list[float] = []
+    for stark_amplitude in amplitude_range:
+        result = stark_p1_experiment(
+            exp,
+            target=target,
+            stark_amplitude=stark_amplitude,
+            stark_detuning=stark_detuning,
+            stark_ramptime=stark_ramptime,
+            wait_time=wait_time,
+            mode="single",
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            plot=False,
+        )
+        results.append(result)
+        p1_list.append(result.probabilities.get("1", 0.0))
+
+    fig = go.Figure()
+    fig.add_scatter(name="data", x=amplitude_range, y=p1_list)
+    fig.update_layout(
+        title="P1 spectroscopy",
+        xaxis_title="Stark Amplitude (GHz)",
+        yaxis_title="Probability_1",
+        showlegend=True,
+    )
+
+    if plot:
+        fig.show()
+    if save_image:
+        viz.save_figure(fig, name=f"stark_p1_spectroscopy_{target}")
+
+    return Result(
+        data={
+            "raw_result": results,
+            "amplitude_range": amplitude_range,
+            "p1": p1_list,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
+            "fig": fig,
+        },
+        figure=fig,
+    )
