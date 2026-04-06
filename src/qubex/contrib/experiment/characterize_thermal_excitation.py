@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import qxvisualizer as viz
 from qxpulse import FlatTop, PulseSchedule
@@ -13,7 +15,13 @@ def characterize_thermal_excitation_via_rabi(
     *,
     target: str,
     time_range: np.ndarray,
+    ramptime: float | None = None,
 ) -> float:
+
+    if ramptime is None:
+        ramptime = 0
+
+    effective_time_range = time_range + ramptime
 
     def _sequence_g_population_rabi(T: int) -> PulseSchedule:
         ef_label = Target.ef_label(target)
@@ -21,7 +29,14 @@ def characterize_thermal_excitation_via_rabi(
         with PulseSchedule() as ps:
             ps.add(target, exp.x180(target))
             ps.barrier()
-            ps.add(ef_label, FlatTop(duration=T))
+            ps.add(
+                ef_label,
+                FlatTop(
+                    duration=T,
+                    amplitude=exp.params.control_amplitude[target] / np.sqrt(2),
+                    tau=ramptime,
+                ),
+            )
             ps.barrier()
             ps.add(target, exp.x180(target))
         return ps
@@ -30,7 +45,14 @@ def characterize_thermal_excitation_via_rabi(
         ef_label = Target.ef_label(target)
 
         with PulseSchedule() as ps:
-            ps.add(ef_label, FlatTop(duration=T))
+            ps.add(
+                ef_label,
+                FlatTop(
+                    duration=T,
+                    amplitude=exp.params.control_amplitude[target] / np.sqrt(2),
+                    tau=ramptime,
+                ),
+            )
             ps.barrier()
             ps.add(target, exp.x180(target))
         return ps
@@ -38,56 +60,48 @@ def characterize_thermal_excitation_via_rabi(
     result_g: ExperimentResult[SweepData] = exp.sweep_parameter(
         sequence=_sequence_g_population_rabi,
         sweep_range=time_range,
-        plot=False,
+        plot=True,
     )
 
     result_e: ExperimentResult[SweepData] = exp.sweep_parameter(
         sequence=_sequence_e_population_rabi,
         sweep_range=time_range,
-        plot=False,
+        plot=True,
     )
 
-    state_centers = exp.state_centers[target]
-    if state_centers is None:
-        raise ValueError(f"State centers for target {target} are not defined.")
-    if len(state_centers) < 3:
-        raise ValueError(
-            f"State centers for target {target} should have at least 3 states (g, e, f)."
-        )
+    result_g.plot(normalize=True)
+    result_e.plot(normalize=True)
 
-    def normalized(data: np.ndarray[np.complex128]) -> np.ndarray:
-        c_g = state_centers[0]
-        c_f = state_centers[2]
-
-        v_gf = c_f - c_g
-        v_gd = data - c_g
-        return np.real(v_gd * np.conj(v_gf)) / np.abs(v_gf)
-
-    data_g = normalized(result_g.data[target].data)
-    data_e = normalized(result_e.data[target].data)
-
-    fit_result_g: fitting.FitResult = fitting.fit_rabi(
-        target=target,
-        times=time_range,
-        data=data_g,
-        is_damped=True,
-        plot=False,
+    fit_result_g: fitting.FitResult = fitting.fit_cosine(
+        x=effective_time_range,
+        y=result_g.data[target].normalized,
+        ylabel="Normalized signal",
+        plot=True,
     )
-    fit_result_e: fitting.FitResult = fitting.fit_rabi(
-        target=target,
-        times=time_range,
-        data=data_e,
-        is_damped=True,
-        plot=False,
+    fit_result_e: fitting.FitResult = fitting.fit_cosine(
+        x=effective_time_range,
+        y=result_e.data[target].normalized,
+        xlabel="Time (ns)",
+        ylabel="Normalized signal",
+        plot=True,
     )
 
     fig = viz.make_figure()
-    for d in fit_result_g.data["fig"]:
-        for trace in d.data:
-            fig.add_trace(trace, name=trace.name + " (g population rabi)")
-    for d in fit_result_e.data["fig"]:
-        for trace in d.data:
-            fig.add_trace(trace, name=trace.name + " (e population rabi)")
+
+    fig_g = fit_result_g.data.get("fig")
+    if fig_g is not None:
+        for trace in fig_g.data:
+            trace_name = trace.name
+            trace.name = trace_name + " (g population rabi)"
+            fig.add_trace(trace)
+
+    fig_e = fit_result_e.data.get("fig")
+    if fig_e is not None:
+        for trace in fig_e.data:
+            trace_name = trace.name
+            trace.name = trace_name + " (e population rabi)"
+            fig.add_trace(trace)
+
     fig.show()
 
     print("")
