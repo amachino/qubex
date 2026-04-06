@@ -148,6 +148,11 @@ class Measurement:
         if len(self.box_ids) == 0:
             print("No boxes are selected. Please check the configuration.")
             return
+        for box_id in self.box_ids:
+            link_status = self.device_controller.link_status(box_id)
+            if not all(link_status.values()):
+                print(f"Box {box_id} is not linked up. Please check the connection.")
+                return
         self.device_controller.connect(self.box_ids)
         self.system_manager.pull(self.box_ids)
         if sync_clocks:
