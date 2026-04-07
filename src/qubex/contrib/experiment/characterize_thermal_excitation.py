@@ -146,6 +146,7 @@ def characterize_thermal_excitation_via_rabi(
             "time_range": time_range,
             "theta_range": theta_range,
             "result_history": result_history,
+            "p_ex": p_ex,
         },
         figure=fig,
     )
