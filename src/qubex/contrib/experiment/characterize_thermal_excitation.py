@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Literal
 
 import numpy as np
 from qxpulse import FlatTop, PulseSchedule
@@ -15,7 +16,28 @@ from qubex.pulse import VirtualZ
 from qubex.system.target import Target
 
 
-def characterize_thermal_excitation_via_rabi(
+def characterize_thermal_excitation(
+    sweep_mode: Literal["amplitude", "Virtual-Z"] = "amplitude", **kwargs
+) -> float:
+    if sweep_mode == "amplitude":
+        return characterize_thermal_excitation_via_amplitude(**kwargs)
+    elif sweep_mode == "Virtual-Z":
+        return characterize_thermal_excitation_via_virtual_z(**kwargs)
+
+
+def characterize_thermal_excitation_via_amplitude(
+    exp: Experiment,
+    *,
+    target: str,
+    amplitude_range: np.ndarray,
+    time_range: np.ndarray | None = None,
+    ramptime: float | None = None,
+    plot: bool = False,
+) -> float:
+    pass
+
+
+def characterize_thermal_excitation_via_virtual_z(
     exp: Experiment,
     *,
     target: str,
