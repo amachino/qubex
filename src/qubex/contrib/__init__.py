@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from .experiment.characterize_thermal_excitation import (
+    characterize_thermal_excitation_via_rabi,
+)
 from .experiment.crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
@@ -50,6 +53,7 @@ from .experiment.stark_characterization import (
 )
 
 __all__ = [
+    "characterize_thermal_excitation_via_rabi",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
