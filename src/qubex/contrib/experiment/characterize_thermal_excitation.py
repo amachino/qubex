@@ -31,7 +31,8 @@ def characterize_thermal_excitation_via_amplitude(
     target: str,
     amplitude_range: np.ndarray,
     time_range: np.ndarray | None = None,
-    ramptime: float | None = None,
+    ef_rabi_ramptime: float | None = None,
+    ef_rabi_amplitude: float | None = None,
     plot: bool = False,
 ) -> float:
     pass
@@ -43,7 +44,7 @@ def characterize_thermal_excitation_via_virtual_z(
     target: str,
     time_range: np.ndarray | None = None,
     theta_range: np.ndarray | None = None,
-    ramptime: float | None = None,
+    ef_rabi_ramptime: float | None = None,
     ef_rabi_amplitude: float | None = None,
     plot: bool = False,
 ) -> float:
@@ -53,14 +54,14 @@ def characterize_thermal_excitation_via_virtual_z(
     if theta_range is None:
         theta_range = np.linspace(0, 1.5 * np.pi, 21)
 
-    if ramptime is None:
-        ramptime = 0
+    if ef_rabi_ramptime is None:
+        ef_rabi_ramptime = 0
 
     if ef_rabi_amplitude is None:
         ef_rabi_amplitude = exp.params.control_amplitude[target] / np.sqrt(2)
 
     time_range = np.asarray(time_range)
-    effective_time_range = time_range + ramptime
+    effective_time_range = time_range + ef_rabi_ramptime
 
     fit_theta_history = defaultdict(list)
     fit_rabi_amplitude_history = defaultdict(list)
@@ -80,9 +81,9 @@ def characterize_thermal_excitation_via_virtual_z(
                 ps.add(
                     ef_label,
                     FlatTop(
-                        duration=T + 2 * ramptime,
+                        duration=T + 2 * ef_rabi_ramptime,
                         amplitude=ef_rabi_amplitude,
-                        tau=ramptime,
+                        tau=ef_rabi_ramptime,
                     ),
                 )
                 ps.barrier()
