@@ -34,9 +34,6 @@ def characterize_thermal_excitation_via_rabi(
     if ramptime is None:
         ramptime = 0
 
-    reference_points = exp.obtain_reference_points(
-        target,
-    )
     if ef_rabi_amplitude is None:
         ef_rabi_amplitude = exp.params.control_amplitude[target] / np.sqrt(2)
 
@@ -82,7 +79,6 @@ def characterize_thermal_excitation_via_rabi(
                 target=target,
                 times=effective_time_range,
                 data=result.data[target].data,
-                reference_point=reference_points.data["iq"][target],
                 plot=plot,
             )
             r2 = fit_rabi_result.data["r2"]
