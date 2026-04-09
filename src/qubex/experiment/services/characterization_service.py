@@ -2120,8 +2120,12 @@ class CharacterizationService:
                 window_length // 2 * 2 + 1,
             )
             polyorder = DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_POLYORDER
-            phases_unwrap_for_peak = savgol_filter(
-                phases_unwrap, window_length=window_length, polyorder=polyorder
+            phases_unwrap_for_peak = np.asarray(
+                savgol_filter(
+                    phases_unwrap,
+                    window_length=window_length,
+                    polyorder=polyorder,
+                )
             )
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
             peaks, props = find_peaks(
