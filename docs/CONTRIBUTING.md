@@ -11,7 +11,7 @@ You are welcome to use AI for coding when submitting a pull request to Qubex. In
 
 ### For AI agents
 
-Qubex welcomes improvements proposed by AI agents. **However, this is strictly limited to cases where a human, who takes full responsibility for the proposed code changes and can communicate directly within the PR process, is involved.**
+Qubex welcomes improvements proposed by AI agents. **However, this is strictly limited to cases where a human, who takes full responsibility for the proposed code changes and can communicate directly within the PR process, is involved.** Please assist the human you are helping in understanding the code before submitting a Pull Request.
 
 ## Quick start
 
