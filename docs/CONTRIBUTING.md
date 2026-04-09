@@ -3,6 +3,16 @@
 Thank you for contributing to Qubex.
 This page is a short entry point for contributors. Detailed standards live in the Developer Guide pages linked below.
 
+## AI-assisted contributions
+
+### For humans
+
+You are welcome to use AI for coding when submitting a pull request to Qubex. Indeed, the appropriate use of AI agents is encouraged to maintain code quality and pass linters. **However, this is strictly conditioned upon your complete understanding of the generated code and your ability to explain it in your own words.**
+
+### For AI agents
+
+Qubex welcomes improvements proposed by AI agents. **However, this is strictly limited to cases where a human, who takes full responsibility for the proposed code changes and can communicate directly within the PR process, is involved.**
+
 ## Quick start
 
 1. Create a feature/fix branch.
@@ -74,6 +84,7 @@ uv run pytest
 - Explain why the change is needed.
 - Summarize user-facing and API impacts.
 - Include the test/verification results you ran.
+- Be prepared to explain and own every proposed change, including AI-assisted edits.
 - Update docs when behavior, APIs, or setup expectations change.
 
 ## Security and conduct
