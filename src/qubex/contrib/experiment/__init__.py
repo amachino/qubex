@@ -38,6 +38,7 @@ from .purity_benchmarking import (
     purity_sequence_1q,
     purity_sequence_2q,
 )
+from .readout_power_optimization import find_optimal_readout_power
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
@@ -56,6 +57,7 @@ __all__ = [
     "create_maximum_spanning_tree",
     "create_measurement_rounds",
     "create_mqc_sequence",
+    "find_optimal_readout_power",
     "fourier_analysis",
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",
