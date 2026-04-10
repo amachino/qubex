@@ -48,6 +48,10 @@ from .experiment.stark_characterization import (
     stark_ramsey_experiment,
     stark_t1_experiment,
 )
+from .experiment.superconducting_gap import (
+    get_resistance_charge,
+    get_superconducting_gap,
+)
 
 __all__ = [
     "cr_crosstalk_hamiltonian_tomography",
@@ -64,6 +68,8 @@ __all__ = [
     "create_measurement_rounds",
     "create_mqc_sequence",
     "fourier_analysis",
+    "get_resistance_charge",
+    "get_superconducting_gap",
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",
     "ipb_experiment",
