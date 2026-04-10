@@ -39,6 +39,7 @@ def find_optimal_readout_power(
     amplitude_range: ArrayLike | None = None,
     n_shots: int | None = None,
     shot_interval: float | None = None,
+    fidelity_ratio: float = 0.99,
     plot: bool | None = None,
     save_image: bool | None = None,
     **deprecated_options: Any,
@@ -52,6 +53,8 @@ def find_optimal_readout_power(
         Target qubit label.
     amplitude_range
         Readout amplitude sweep range.
+    fidelity_ratio
+        Fraction of peak fidelity used as the acceptance threshold (0--1).
     """
     n_shots, shot_interval = resolve_shot_options(
         n_shots=n_shots,
@@ -97,7 +100,7 @@ def find_optimal_readout_power(
 
     fid_arr = np.array(fidelities)
     fid_peak = float(fid_arr.max())
-    plateau_mask = fid_arr >= fid_peak * 0.99
+    plateau_mask = fid_arr >= fid_peak * fidelity_ratio
     best_idx = int(np.where(plateau_mask)[0][0])
     optimal_amplitude = float(amplitude_range[best_idx])
 
