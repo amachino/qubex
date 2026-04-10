@@ -73,11 +73,12 @@ def _load_resistance_payload(path: Path) -> dict[str, object]:
 
     parsed_data: dict[str, float | None] = {}
     for key, value in data_obj.items():
-        key_text = str(key)
+        if not isinstance(key, str):
+            raise TypeError("resistance yaml keys must be qubit-label strings.")
         if value is None:
-            parsed_data[key_text] = None
+            parsed_data[key] = None
             continue
-        parsed_data[key_text] = float(value)
+        parsed_data[key] = float(value)
 
     description = meta_obj.get("description", _DEFAULT_RESISTANCE_DESCRIPTION)
     unit = meta_obj.get("unit", _DEFAULT_RESISTANCE_UNIT)
@@ -264,7 +265,7 @@ def _build_superconducting_gap_figure(
 
 def get_superconducting_gap(
     exp: Experiment,
-    resistance_charge: Mapping[str, float | None] | str | Path | None = None,
+    resistance_charge: Mapping[str | int, float | None] | str | Path | None = None,
     *,
     plot: bool | None = None,
     save_image: bool | None = None,
@@ -453,11 +454,12 @@ def get_superconducting_gap(
 
 def get_resistance_charge(
     exp: Experiment,
-    resistance_charge: Mapping[str, float | None] | str | Path | None = None,
+    resistance_charge: Mapping[str | int, float | None] | str | Path | None = None,
     *,
     plot: bool | None = None,
     save_image: bool | None = None,
     image_name: str | None = None,
+    output_path: str | Path | None = None,
 ) -> Result:
     """
     Load resistance-charge data and optionally plot it on chip layout.
@@ -477,6 +479,8 @@ def get_resistance_charge(
         Whether to save the rendered heatmap image.
     image_name
         Image name used when `save_image=True`.
+    output_path
+        Optional yaml path. When provided, the payload is serialized to this path.
 
     Returns
     -------
@@ -536,12 +540,16 @@ def get_resistance_charge(
     if not isinstance(payload_data_obj, dict):
         raise TypeError("resistance payload `data` must be a mapping.")
 
+    available_labels = set(exp.ctx.qubit_labels)
     normalized_payload_data = _normalize_qubit_keyed_values(
         payload_data_obj,  # type: ignore[arg-type]
         all_labels=inferred_all_labels,
     )
     full_data: dict[str, float | None] = {}
     for qubit_label in inferred_all_labels:
+        if qubit_label not in available_labels:
+            full_data[qubit_label] = None
+            continue
         value = normalized_payload_data.get(qubit_label)
         full_data[qubit_label] = None if value is None else float(value)
 
@@ -549,6 +557,12 @@ def get_resistance_charge(
         "meta": resistance_payload["meta"],
         "data": full_data,
     }
+
+    if output_path is not None:
+        dump_superconducting_gap_yaml(
+            superconducting_gap=result_payload,
+            output_path=output_path,
+        )
 
     figure: go.Figure | None = None
     if plot:
