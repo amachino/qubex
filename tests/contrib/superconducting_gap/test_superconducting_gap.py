@@ -86,12 +86,13 @@ def test_superconducting_gap_raises_when_default_resistance_file_is_missing() ->
         )
 
 
-def test_superconducting_gap_loads_cached_file_from_params() -> None:
+def test_superconducting_gap_loads_cached_file_from_params(tmp_path: Path) -> None:
     """Given cached superconducting gap yaml, when helper runs, then it loads cache without resistance input."""
-    params_path = "/home/nilton/work/work_experiments_2026_04/.tmp/test-gap-cache-load"
+    params_dir = tmp_path / "test-gap-cache-load"
+    params_dir.mkdir(parents=True, exist_ok=True)
     exp = SimpleNamespace(
         chip_id="4Qv1",
-        config_loader=SimpleNamespace(params_path=params_path),
+        config_loader=SimpleNamespace(params_path=str(params_dir)),
         ctx=SimpleNamespace(
             qubit_labels=["Q00", "Q01", "Q03"],
             qubits={
@@ -102,7 +103,7 @@ def test_superconducting_gap_loads_cached_file_from_params() -> None:
         ),
     )
 
-    cache_path = Path(params_path) / "superconducting_gap.yaml"
+    cache_path = params_dir / "superconducting_gap.yaml"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "meta": {"description": "cached", "unit": "ueV"},
