@@ -42,7 +42,6 @@ def test_superconducting_gap_fills_unavailable_qubits_with_none() -> None:
     assert data["Q03"] is not None
 
 
-
 def test_superconducting_gap_raises_when_resistance_is_missing() -> None:
     """Given missing resistance, when estimating gap, then helper raises a descriptive ValueError."""
     exp = SimpleNamespace(

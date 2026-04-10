@@ -378,7 +378,9 @@ def get_superconducting_gap(
                 continue
 
             if qubit_label not in resistance_map:
-                raise ValueError(f"`resistance_charge` is missing target `{qubit_label}`.")
+                raise ValueError(
+                    f"`resistance_charge` is missing target `{qubit_label}`."
+                )
 
             resistance_ohm = resistance_map[qubit_label]
             if resistance_ohm is None:
@@ -436,7 +438,9 @@ def get_superconducting_gap(
         )
         figure.show()
         if save_image:
-            figure_width = int(figure.layout.width) if figure.layout.width is not None else None
+            figure_width = (
+                int(figure.layout.width) if figure.layout.width is not None else None
+            )
             figure_height = (
                 int(figure.layout.height) if figure.layout.height is not None else None
             )
@@ -574,7 +578,9 @@ def get_resistance_charge(
         )
         figure.show()
         if save_image:
-            figure_width = int(figure.layout.width) if figure.layout.width is not None else None
+            figure_width = (
+                int(figure.layout.width) if figure.layout.width is not None else None
+            )
             figure_height = (
                 int(figure.layout.height) if figure.layout.height is not None else None
             )
