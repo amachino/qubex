@@ -18,7 +18,7 @@ from qubex.experiment.result import Result
 from qubex.system.target import Target
 
 
-def characterize_thermal_excitation_via_rabi(
+def thermal_excitation_via_rabi(
     exp: Experiment,
     *,
     target: str,
@@ -190,7 +190,7 @@ def characterize_thermal_excitation_via_rabi(
     )
 
 
-def characterize_thermal_excitation_via_Gaussian_fit(
+def thermal_excitation_via_Gaussian_fit(
     exp: Experiment,
     *,
     targets: list[str],

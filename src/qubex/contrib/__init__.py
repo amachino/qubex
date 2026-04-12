@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from .experiment.characterize_thermal_excitation import (
-    characterize_thermal_excitation_via_rabi,
-)
 from .experiment.crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
@@ -51,9 +48,11 @@ from .experiment.stark_characterization import (
     stark_ramsey_experiment,
     stark_t1_experiment,
 )
+from .experiment.thermal_excitation_characterization import (
+    thermal_excitation_via_rabi,
+)
 
 __all__ = [
-    "characterize_thermal_excitation_via_rabi",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
@@ -90,5 +89,6 @@ __all__ = [
     "simultaneous_coherence_measurement",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
+    "thermal_excitation_via_rabi",
     "visualize_graph",
 ]

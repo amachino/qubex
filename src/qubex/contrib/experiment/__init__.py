@@ -1,6 +1,5 @@
 """Experiment-oriented contrib modules."""
 
-from .characterize_thermal_excitation import characterize_thermal_excitation_via_rabi
 from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
@@ -42,9 +41,11 @@ from .purity_benchmarking import (
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
+from .thermal_excitation_characterization import (
+    thermal_excitation_via_rabi,
+)
 
 __all__ = [
-    "characterize_thermal_excitation_via_rabi",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
@@ -81,5 +82,6 @@ __all__ = [
     "simultaneous_coherence_measurement",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
+    "thermal_excitation_via_rabi",
     "visualize_graph",
 ]
