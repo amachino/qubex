@@ -1,9 +1,5 @@
 """Experiment-oriented contrib modules."""
 
-from .characterize_readout_parameters import (
-    CharacterizeReadoutParametersResult,
-    characterize_readout_parameters,
-)
 from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
@@ -41,6 +37,10 @@ from .purity_benchmarking import (
     purity_benchmarking,
     purity_sequence_1q,
     purity_sequence_2q,
+)
+from .readout_parameters import (
+    CharacterizeReadoutParametersResult,
+    characterize_readout_parameters,
 )
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
