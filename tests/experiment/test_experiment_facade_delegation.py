@@ -293,7 +293,7 @@ def test_characterize_2q_delegates_in_same_mux_to_characterization_service() -> 
         targets=None,
         in_same_mux=False,
         n_shots=512,
-        shot_interval=240.0,
+        shot_interval=240,
         plot=False,
         save_image=True,
     )
@@ -306,7 +306,7 @@ def test_characterize_2q_delegates_in_same_mux_to_characterization_service() -> 
                 "targets": None,
                 "in_same_mux": False,
                 "shots": 512,
-                "interval": 240.0,
+                "interval": 240,
                 "plot": False,
                 "save_image": True,
             },
