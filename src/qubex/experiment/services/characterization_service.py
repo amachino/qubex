@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection
 from copy import deepcopy
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
@@ -3479,13 +3479,15 @@ class CharacterizationService:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
+        objective: Literal["fidelity", "distance"] = "fidelity",
+        fidelity_ratio: float = 0.99,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
         """
-        Find readout amplitude maximizing state separation.
+        Find readout amplitude maximizing state separation or readout fidelity.
 
         Parameters
         ----------
@@ -3493,6 +3495,12 @@ class CharacterizationService:
             Target qubit label.
         amplitude_range
             Readout amplitude sweep range.
+        objective
+            Optimization objective: ``"fidelity"`` maximizes GMM-based readout
+            fidelity (default), ``"distance"`` maximizes IQ state distance.
+        fidelity_ratio
+            Fraction of peak fidelity used as the acceptance threshold (0--1).
+            Only used when ``objective="fidelity"``.
         """
         if shots is None:
             shots = CALIBRATION_SHOTS
@@ -3507,25 +3515,70 @@ class CharacterizationService:
         else:
             amplitude_range = np.array(amplitude_range)
 
-        buffer_0 = []
-        buffer_1 = []
+        if objective == "fidelity":
+            return self._find_optimal_readout_amplitude_by_fidelity(
+                target=target,
+                amplitude_range=amplitude_range,
+                fidelity_ratio=fidelity_ratio,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            return self._find_optimal_readout_amplitude_by_distance(
+                target=target,
+                amplitude_range=amplitude_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+
+    def _sweep_readout_amplitude(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        mode: Literal["avg", "single"],
+        shots: int,
+        interval: float,
+    ) -> tuple[list[NDArray], list[NDArray]]:
+        """Sweep readout amplitude and collect IQ data for states 0 and 1."""
+        buffer_0: list[NDArray] = []
+        buffer_1: list[NDArray] = []
         for amplitude in tqdm(amplitude_range):
+            readout_amp = {target: float(amplitude)}
             result_0 = self._measurement_service.measure_state(
                 {target: "0"},
-                mode="avg",
-                readout_amplitudes={target: amplitude},
+                mode=mode,
+                readout_amplitudes=readout_amp,
                 shots=shots,
                 interval=interval,
             )
             result_1 = self._measurement_service.measure_state(
                 {target: "1"},
-                mode="avg",
-                readout_amplitudes={target: amplitude},
+                mode=mode,
+                readout_amplitudes=readout_amp,
                 shots=shots,
                 interval=interval,
             )
             buffer_0.append(result_0.data[target].kerneled)
             buffer_1.append(result_1.data[target].kerneled)
+        return buffer_0, buffer_1
+
+    def _find_optimal_readout_amplitude_by_distance(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing IQ state distance."""
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="avg", shots=shots, interval=interval
+        )
         signals_0 = np.array(buffer_0)
         signals_1 = np.array(buffer_1)
 
@@ -3589,6 +3642,114 @@ class CharacterizationService:
                 "fig": fig,
             },
             figure=fig,
+        )
+
+    def _find_optimal_readout_amplitude_by_fidelity(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        fidelity_ratio: float,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing GMM-based readout fidelity."""
+        from qubex.measurement.classifiers.state_classifier_gmm import (
+            StateClassifierGMM,
+        )
+
+        phase = self.ctx.reference_phases.get(target, 0.0)
+
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="single", shots=shots, interval=interval
+        )
+
+        fidelities: list[float] = []
+        for iq_0, iq_1 in zip(buffer_0, buffer_1, strict=True):
+            classifier = StateClassifierGMM.fit({0: iq_0, 1: iq_1}, phase=phase)
+            fid_per_state = []
+            for state, iq in enumerate([iq_0, iq_1]):
+                predicted = classifier.predict(iq)
+                correct = int(np.sum(predicted == state))
+                fid_per_state.append(correct / len(iq))
+            fidelities.append(float(np.mean(fid_per_state)))
+
+        fid_arr = np.array(fidelities)
+        fid_peak = float(fid_arr.max())
+        plateau_mask = fid_arr >= fid_peak * fidelity_ratio
+        best_idx = int(np.where(plateau_mask)[0][0])
+        optimal_amplitude = float(amplitude_range[best_idx])
+
+        fig = viz.make_figure(width=600, height=300)
+        fig.add_scatter(
+            x=list(amplitude_range),
+            y=list(fid_arr),
+            name="Readout fidelity",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_amplitude,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=(
+                f"amp_opt: {optimal_amplitude:.4f}<br>"
+                f"fidelity: {fid_arr[best_idx]:.4f}<br>"
+                f"peak: {fid_peak:.4f}"
+            ),
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"Readout fidelity : {target}",
+            xaxis_title="Amplitude (arb. units)",
+            yaxis_title="Readout fidelity",
+        )
+
+        figures: dict[str, Any] = {"readout_fidelity": fig}
+
+        classifier_result = self._measurement_service.build_classifier(
+            targets=target,
+            readout_amplitudes={target: optimal_amplitude},
+            n_shots=shots,
+            shot_interval=interval,
+            plot=plot,
+        )
+        if classifier_result.figures is not None:
+            figures.update(classifier_result.figures)
+
+        if plot:
+            fig.show()
+            print(
+                f"amp_opt: {optimal_amplitude:.4f}  "
+                f"readout_fidelity: {fid_arr[best_idx]:.4f}  "
+                f"peak: {fid_peak:.4f}"
+            )
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"optimal_readout_amplitude_fidelity_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "optimal_amplitude": optimal_amplitude,
+                "amplitude_range": amplitude_range,
+                "readout_fidelity": fid_arr,
+                "classifier_result": classifier_result,
+            },
+            figure=fig,
+            figures=figures,
         )
 
     def ckp_sequence(
