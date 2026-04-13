@@ -4937,15 +4937,30 @@ class Experiment:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Find the readout amplitude maximizing state separation."""
+        """
+        Find the readout amplitude maximizing state separation or fidelity.
+
+        Parameters
+        ----------
+        objective
+            Optimization objective: ``"fidelity"`` maximizes GMM-based readout
+            fidelity (default), ``"distance"`` maximizes IQ state distance.
+        fidelity_ratio
+            Fraction of peak fidelity used as the acceptance threshold (0--1).
+            Only used when ``objective="fidelity"``.
+        """
         return self.characterization_service.find_optimal_readout_amplitude(
             target=target,
             amplitude_range=amplitude_range,
+            objective=objective,
+            fidelity_ratio=fidelity_ratio,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,
