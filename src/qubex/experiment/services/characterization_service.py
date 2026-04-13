@@ -3479,8 +3479,8 @@ class CharacterizationService:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
-        objective: Literal["fidelity", "distance"] = "fidelity",
-        fidelity_ratio: float = 0.99,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -3502,6 +3502,10 @@ class CharacterizationService:
             Fraction of peak fidelity used as the acceptance threshold (0--1).
             Only used when ``objective="fidelity"``.
         """
+        if objective is None:
+            objective = "fidelity"
+        if fidelity_ratio is None:
+            fidelity_ratio = 0.99
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
