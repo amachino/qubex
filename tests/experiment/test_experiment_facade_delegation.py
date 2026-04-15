@@ -409,6 +409,50 @@ def test_execute_delegates_new_shot_arguments_to_measurement_service() -> None:
                 "mode": None,
                 "n_shots": 256,
                 "shot_interval": 120.0,
+                "time_integration": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramptime": None,
+                "readout_drag_coeff": None,
+                "readout_ramp_type": None,
+                "add_last_measurement": None,
+                "add_pump_pulses": None,
+                "enable_dsp_demodulation": None,
+                "enable_dsp_sum": None,
+                "enable_dsp_classification": None,
+                "line_param0": None,
+                "line_param1": None,
+                "reset_awg_and_capunits": None,
+                "plot": None,
+            },
+        )
+    ]
+
+
+def test_execute_delegates_time_integration_to_measurement_service() -> None:
+    """Given time_integration, when execute is called, then it delegates the canonical key."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    schedule = cast(Any, object())
+
+    _ = exp.execute(
+        schedule=schedule,
+        time_integration=False,
+    )
+
+    assert measurement_stub.calls == [
+        (
+            "execute",
+            {
+                "schedule": schedule,
+                "frequencies": None,
+                "mode": None,
+                "n_shots": None,
+                "shot_interval": None,
+                "time_integration": False,
                 "readout_amplitudes": None,
                 "readout_duration": None,
                 "readout_pre_margin": None,
@@ -449,6 +493,7 @@ def test_measure_delegates_legacy_shot_arguments_to_measurement_service() -> Non
                 "mode": None,
                 "n_shots": None,
                 "shot_interval": None,
+                "time_integration": None,
                 "readout_amplitudes": None,
                 "readout_duration": None,
                 "readout_pre_margin": None,
@@ -466,6 +511,49 @@ def test_measure_delegates_legacy_shot_arguments_to_measurement_service() -> Non
                 "plot": None,
                 "shots": 64,
                 "interval": 256.0,
+            },
+        )
+    ]
+
+
+def test_measure_delegates_time_integration_to_measurement_service() -> None:
+    """Given time_integration, when measure is called, then it delegates the canonical key."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sequence = cast(Any, {"Q00": [0.0 + 0.0j]})
+
+    _ = exp.measure(
+        sequence=sequence,
+        time_integration=True,
+    )
+
+    assert measurement_stub.calls == [
+        (
+            "measure",
+            {
+                "sequence": sequence,
+                "frequencies": None,
+                "initial_states": None,
+                "mode": None,
+                "n_shots": None,
+                "shot_interval": None,
+                "time_integration": True,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "readout_ramptime": None,
+                "readout_drag_coeff": None,
+                "readout_ramp_type": None,
+                "add_pump_pulses": None,
+                "enable_dsp_demodulation": None,
+                "enable_dsp_sum": None,
+                "enable_dsp_classification": None,
+                "line_param0": None,
+                "line_param1": None,
+                "reset_awg_and_capunits": None,
+                "plot": None,
             },
         )
     ]
