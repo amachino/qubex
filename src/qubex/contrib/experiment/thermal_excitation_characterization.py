@@ -31,7 +31,68 @@ def thermal_excitation_via_rabi(
     n_shots: int = DEFAULT_SHOTS,
     plot: bool = False,
 ) -> float:
+    """
+    Estimate the thermal excitation probability of a qubit via ef Rabi oscillations.
 
+    For each drive amplitude in `amplitude_range`, a flat-top preparation pulse is
+    applied to the ge transition, followed by an ef Rabi sweep (|e⟩–|f⟩ transition),
+    and finally a ge π pulse.  The resulting Rabi oscillation amplitude varies with
+    the preparation amplitude according to the thermal population in |e⟩.  Fitting a
+    cosine to those amplitudes yields the minimum (`rabi_ampl_min`) and maximum
+    (`rabi_ampl_max`) Rabi amplitudes, from which the thermal excitation probability
+    is computed as
+
+        p_ex = rabi_ampl_min / (rabi_ampl_min + rabi_ampl_max).
+
+    Parameters
+    ----------
+    exp : Experiment
+        Experiment instance used to run pulse sequences and access calibration
+        parameters.
+    target : str
+        Label of the qubit target to characterize.
+    amplitude_range : np.ndarray, optional
+        Preparation pulse amplitudes to sweep (a.u.).  If `None`, a linearly spaced
+        array of `n_amplitude_ranges` points from 0 to 1.5× the ge flat-top amplitude
+        is used.
+    time_range : np.ndarray, optional
+        ef Rabi pulse durations to sweep (ns).  Defaults to
+        `DEFAULT_RABI_TIME_RANGE`.
+    n_amplitude_ranges : int, optional
+        Number of amplitude points when `amplitude_range` is `None`.  Defaults to
+        21.
+    ef_rabi_ramptime : float, optional
+        Ramp time of the EF Rabi flat-top pulse (ns).  Defaults to 0.
+    ef_rabi_amplitude : float, optional
+        Drive amplitude for the EF Rabi pulse (a.u.).  Defaults to the ge control
+        amplitude divided by √2.
+    n_shots : int, optional
+        Number of measurement shots per sequence.  Defaults to `DEFAULT_SHOTS`.
+    plot : bool, optional
+        If `True`, intermediate sweep and fit results are plotted.  Defaults to
+        `False`.
+
+    Returns
+    -------
+    Result
+        A `Result` object whose `data` dict contains:
+
+        - `time_range` : np.ndarray – ef Rabi time sweep used.
+        - `amplitude_range` : np.ndarray – Preparation amplitude sweep used.
+        - `result_history` : list[ExperimentResult] – Raw sweep results for each
+          amplitude point.
+        - `p_ex` : float – Estimated thermal excitation probability.
+        - `rabi_ampl_min` : float – Minimum Rabi oscillation amplitude (a.u.).
+        - `rabi_ampl_max` : float – Maximum Rabi oscillation amplitude (a.u.).
+
+        The `figure` attribute holds the cosine-fit plot with amplitude annotations.
+
+    Notes
+    -----
+    Only EF Rabi fits with R² ≥ 0.9 are included when building the cosine fit.
+    This function prints fit parameters and the estimated `p_ex` to stdout.
+
+    """
     if n_amplitude_ranges is None:
         n_amplitude_ranges = 21
     if amplitude_range is None:
