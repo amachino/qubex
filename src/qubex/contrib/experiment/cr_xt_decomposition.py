@@ -184,28 +184,35 @@ def decompose_cr_crosstalk(
     xt_quantum = IX_quantum + 1j * IY_quantum
     xt_classical = IX_classical + 1j * IY_classical
 
-    ratio = np.abs(xt_classical) / max(np.abs(xt_quantum), eps)
+    mag_classical = np.abs(xt_classical)
+    mag_quantum = np.abs(xt_quantum)
+    ratio = mag_classical / max(mag_quantum, eps)
 
     if plot:
         print()
         print("Crosstalk decomposition:")
-        print("  Anharmonicity (control qubit):")
-        print(f"    alpha_c : {alpha_c * 1e3:+.4f} MHz")
+
         print(
-            "    (This value is expected to be measured independently and is used here for estimating quantum crosstalk.)"
+            f"  IX_quantum   : {IX_quantum * 1e3:+.4f} MHz"
+            f"    IX_classical : {IX_classical * 1e3:+.4f} MHz"
+            f"    IX_total     : {IX * 1e3:+.4f} MHz"
+        )
+        print(
+            f"  IY_quantum   : {IY_quantum * 1e3:+.4f} MHz"
+            f"    IY_classical : {IY_classical * 1e3:+.4f} MHz"
+            f"    IY_total     : {IY * 1e3:+.4f} MHz"
         )
 
-        print("  --- IX / IY components ---")
-        print(f"    IX total     : {IX * 1e3:+.4f} MHz")
-        print(f"    IX quantum   : {IX_quantum * 1e3:+.4f} MHz")
-        print(f"    IX classical : {IX_classical * 1e3:+.4f} MHz")
+        print(
+            f"    |classical| / |quantum| : {ratio:.3f} "
+            f"(= {mag_classical * 1e3:.3f} MHz / {mag_quantum * 1e3:.3f} MHz)"
+        )
 
-        print(f"    IY total     : {IY * 1e3:+.4f} MHz")
-        print(f"    IY quantum   : {IY_quantum * 1e3:+.4f} MHz")
-        print(f"    IY classical : {IY_classical * 1e3:+.4f} MHz")
-
-        print("  --- Magnitude ratio ---")
-        print(f"    |classical| / |quantum| : {ratio:.3f}")
+        print()
+        print(
+            f"(The anharmonicity of the control qubit: {alpha_c * 1e3:+.4f} MHz is expected to be measured\n"
+            "   independently and is used here for estimating quantum crosstalk.)"
+        )
 
     return Result(
         data={
