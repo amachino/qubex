@@ -6,7 +6,6 @@ from collections import defaultdict
 from collections.abc import Callable
 
 import numpy as np
-import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from qxpulse import FlatTop, PulseSchedule, Waveform
 from tqdm import tqdm
@@ -179,24 +178,19 @@ def thermal_excitation_via_rabi(
         y=fit_rabi_amplitude_history[target],
         plot=False,
     )
-    fig: go.Figure = fit_cosine_result.figure
 
-    if fig is not None:
+    if fit_cosine_result.figure is not None:
+        fig = fit_cosine_result.get_figure()
         ef_rabi_freq = exp.calc_control_amplitude(target, ef_rabi_amplitude)
         dense_x_range = np.linspace(0, float(amplitude_range[-1]), 1000)
         calc_res = _calculate_thermal_population(fit_cosine_result, dense_x_range)
 
-        fig.data = tuple(trace for trace in fig.data if trace.name != "Fit")
+        fig.update_traces(visible=False, selector={"name": "Fit"})
         fig.add_scatter(
             x=dense_x_range,
             y=calc_res["y_fit"],
             mode="lines",
             name="Fit Extrapolation",
-        )
-        # Move the fit trace to the end of the data list to ensure it is plotted on top
-        fig.data = (
-            fig.data[-1],
-            *fig.data[:-1],
         )
         fig.update_layout(
             title=dict(
