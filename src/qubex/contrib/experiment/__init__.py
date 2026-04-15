@@ -1,5 +1,6 @@
 """Experiment-oriented contrib modules."""
 
+from .cr_xt_decomposition import decompose_cr_crosstalk
 from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
@@ -56,6 +57,7 @@ __all__ = [
     "create_maximum_spanning_tree",
     "create_measurement_rounds",
     "create_mqc_sequence",
+    "decompose_cr_crosstalk",
     "fourier_analysis",
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",

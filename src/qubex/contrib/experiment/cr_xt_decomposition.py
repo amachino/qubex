@@ -208,7 +208,6 @@ def decompose_cr_crosstalk(
             f"(= {mag_classical * 1e3:.3f} MHz / {mag_quantum * 1e3:.3f} MHz)"
         )
 
-        print()
         print(
             f"(The anharmonicity of the control qubit: {alpha_c * 1e3:+.4f} MHz is expected to be measured\n"
             "   independently and is used here for estimating quantum crosstalk.)"
