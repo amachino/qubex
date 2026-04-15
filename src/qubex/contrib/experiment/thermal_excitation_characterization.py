@@ -14,8 +14,8 @@ from qubex.experiment.experiment_constants import (
     PI_DURATION,
     PI_RAMPTIME,
 )
-from qubex.experiment.experiment_result import ExperimentResult, SweepData
-from qubex.experiment.result import Result
+from qubex.experiment.models.experiment_result import ExperimentResult, SweepData
+from qubex.experiment.models.result import Result
 from qubex.system.target import Target
 
 
