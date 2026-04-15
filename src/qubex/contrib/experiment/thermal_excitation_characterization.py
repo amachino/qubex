@@ -194,22 +194,3 @@ def thermal_excitation_via_rabi(
         },
         figure=fig,
     )
-
-
-def thermal_excitation_via_Gaussian_fit(
-    exp: Experiment,
-    *,
-    targets: list[str],
-    n_shots: int = 1024,
-) -> float:
-
-    for target in targets:
-        results = exp.measure_state_distribution(
-            target,
-            n_shots=n_shots,
-        )
-        iq_g = results[0].data[target].kerneled
-        iq_e = results[1].data[target].kerneled
-
-
-# TODO: Fit Gaussian distributions to iq_g and iq_e
