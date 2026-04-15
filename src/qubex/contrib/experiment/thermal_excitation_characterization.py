@@ -10,6 +10,7 @@ import qubex.analysis.fitting as fitting
 from qubex import Experiment
 from qubex.experiment.experiment_constants import (
     DEFAULT_RABI_TIME_RANGE,
+    DEFAULT_SHOTS,
     PI_DURATION,
     PI_RAMPTIME,
 )
@@ -24,15 +25,19 @@ def thermal_excitation_via_rabi(
     target: str,
     amplitude_range: np.ndarray | None = None,
     time_range: np.ndarray | None = None,
+    n_amplitude_ranges: int | None = None,
     ef_rabi_ramptime: float | None = None,
     ef_rabi_amplitude: float | None = None,
+    n_shots: int = DEFAULT_SHOTS,
     plot: bool = False,
 ) -> float:
 
+    if n_amplitude_ranges is None:
+        n_amplitude_ranges = 21
     if amplitude_range is None:
         pi_rabi_freq = 1 / (PI_DURATION + PI_RAMPTIME)
         pi_rabi_amplitude = exp.calc_control_amplitude(target, pi_rabi_freq)
-        amplitude_range = np.linspace(0, pi_rabi_amplitude * 1.5, 21)
+        amplitude_range = np.linspace(0, pi_rabi_amplitude * 1.5, n_amplitude_ranges)
 
     if time_range is None:
         time_range = DEFAULT_RABI_TIME_RANGE
@@ -79,6 +84,7 @@ def thermal_excitation_via_rabi(
         result: ExperimentResult[SweepData] = exp.sweep_parameter(
             sequence=_sequence_population_rabi,
             sweep_range=time_range,
+            n_shots=n_shots,
             plot=plot,
         )
         result_history.append(result)
