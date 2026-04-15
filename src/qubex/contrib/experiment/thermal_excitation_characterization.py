@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 
 import numpy as np
-from qxpulse import FlatTop, PulseSchedule
+from qxpulse import FlatTop, PulseSchedule, Waveform
 from tqdm import tqdm
 
 import qubex.analysis.fitting as fitting
@@ -17,6 +18,42 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.models.experiment_result import ExperimentResult, SweepData
 from qubex.experiment.models.result import Result
 from qubex.system.target import Target
+
+
+def _build_population_rabi_sequence(
+    target: str,
+    amplitude: float,
+    ef_rabi_ramptime: float,
+    ef_rabi_amplitude: float,
+    pi_pulse: Waveform,
+) -> Callable[[int], PulseSchedule]:
+
+    def population_rabi_sequence(
+        T: int,
+    ) -> PulseSchedule:
+        ef_label = Target.ef_label(target)
+
+        with PulseSchedule() as ps:
+            ampl_pulse = FlatTop(
+                duration=PI_DURATION,
+                amplitude=amplitude,
+                tau=PI_RAMPTIME,
+            )
+            ps.add(target, ampl_pulse)
+            ps.barrier()
+            ps.add(
+                ef_label,
+                FlatTop(
+                    duration=T + 2 * ef_rabi_ramptime,
+                    amplitude=ef_rabi_amplitude,
+                    tau=ef_rabi_ramptime,
+                ),
+            )
+            ps.barrier()
+            ps.add(target, pi_pulse)
+        return ps
+
+    return population_rabi_sequence
 
 
 def thermal_excitation_via_rabi(
@@ -75,35 +112,17 @@ def thermal_excitation_via_rabi(
     fit_amplitude_history = defaultdict(list)
     fit_rabi_amplitude_history = defaultdict(list)
     result_history = []
+
     for amplitude in tqdm(amplitude_range):
-
-        def _sequence_population_rabi(
-            T: int,
-        ) -> PulseSchedule:
-            ef_label = Target.ef_label(target)
-
-            with PulseSchedule() as ps:
-                ampl_pulse = FlatTop(
-                    duration=PI_DURATION,
-                    amplitude=amplitude,
-                    tau=PI_RAMPTIME,
-                )
-                ps.add(target, ampl_pulse)
-                ps.barrier()
-                ps.add(
-                    ef_label,
-                    FlatTop(
-                        duration=T + 2 * ef_rabi_ramptime,
-                        amplitude=ef_rabi_amplitude,
-                        tau=ef_rabi_ramptime,
-                    ),
-                )
-                ps.barrier()
-                ps.add(target, exp.x180(target))
-            return ps
-
+        population_rabi_sequence = _build_population_rabi_sequence(
+            target=target,
+            amplitude=amplitude,
+            ef_rabi_ramptime=ef_rabi_ramptime,
+            ef_rabi_amplitude=ef_rabi_amplitude,
+            pi_pulse=exp.x180(target),
+        )
         result: ExperimentResult[SweepData] = exp.sweep_parameter(
-            sequence=_sequence_population_rabi,
+            sequence=population_rabi_sequence,
             sweep_range=time_range,
             n_shots=n_shots,
             plot=plot,
