@@ -1,8 +1,11 @@
+"""Contributed helpers for readout parameters characterization."""
+
 from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
 import qxvisualizer as viz
+from numpy.typing import NDArray
 from scipy.optimize import curve_fit
 
 from qubex.experiment.experiment import Experiment
@@ -13,12 +16,29 @@ def characterize_readout_parameters(
     exp: Experiment,
     *,
     target: str | None = None,
-    frequency_range: np.ndarray,
+    frequency_range: NDArray,
     readout_amplitude: float | None = None,
     n_shots: int = 1024,
     save_image: bool = True,
 ) -> Result:
+    """
+    Characterize readout parameters by scanning readout frequency.
 
+    Parameters
+    ----------
+    exp : Experiment
+        Qubex Experiment instance
+    target : str, optional
+        Qubit label
+    frequency_range : NDArray
+        Range of readout frequencies to scan [GHz]
+    readout_amplitude : float, optional
+        Amplitude of readout pulse. The unit is a value for Hardware.
+    n_shots : int, optional
+        Number of shots.
+    save_image : bool, optional
+        Whether to save the scan result as an image file
+    """
     if target is None:
         target = exp.qubit_labels[0]
 
@@ -54,8 +74,27 @@ def fit_readout_parameters(
     a: float | None = None,
     b: float | None = None,
     split_freq_width: float = 0.15,
-) -> dict[str, np.ndarray | float]:
-    """Fit readout parameters from characterize_readout_parameters output."""
+) -> None:
+    """
+    Fit readout parameters from characterize_readout_parameters output.
+
+    Parameters
+    ----------
+    kappa_p : float
+        Coupling strength between Purcell filter and transmission line [rad/ns]
+    gamma_p : float
+        Internal loss rate of Purcell filter [rad/ns]
+    J : float
+        Coupling strength between Purcell filter and resonator [rad/ns]
+    gamma_r : float
+        Internal loss rate of resonator [rad/ns]
+    omega_d : NDArray
+        Angular frequency of incident wave [rad/ns]
+    omega_p : float
+        Angular frequency of Purcell filter [rad/ns]
+    omega_r : float
+        Angular frequency of resonator [rad/ns]
+    """
     scan_result = result.data.get("result", None)
     mux_no = result.data.get("mux_no", None)
     frequency_range = result.data.get("frequency_range", None)
@@ -102,7 +141,10 @@ def fit_readout_parameters(
 
     perr = np.sqrt(np.diag(pcov))
 
-    def _calc_r2_score(data, fit_data):
+    def _calc_r2_score(
+        data: NDArray,
+        fit_data: NDArray,
+    ) -> np.float64:
         ss_res = np.sum((data - fit_data) ** 2)
         ss_tot = np.sum((data - np.mean(data)) ** 2)
         return 1 - (ss_res / ss_tot)
@@ -193,7 +235,15 @@ def fit_readout_parameters(
     )
 
 
-def _Gamma(kappa_p, gamma_p, J, gamma_r, omega_d, omega_p, omega_r):
+def _Gamma(
+    kappa_p: float,
+    gamma_p: float,
+    J: float,
+    gamma_r: float,
+    omega_d: NDArray,
+    omega_p: float,
+    omega_r: float,
+) -> NDArray:
     """
     Reflection coefficient when Purcell filter is present.
 
@@ -207,7 +257,7 @@ def _Gamma(kappa_p, gamma_p, J, gamma_r, omega_d, omega_p, omega_r):
         Coupling strength between Purcell filter and resonator [rad/ns]
     gamma_r : float
         Internal loss rate of resonator [rad/ns]
-    omega_d : float
+    omega_d : NDArray
         Angular frequency of incident wave [rad/ns]
     omega_p : float
         Angular frequency of Purcell filter [rad/ns]
@@ -226,7 +276,35 @@ def _Gamma(kappa_p, gamma_p, J, gamma_r, omega_d, omega_p, omega_r):
     return 1 - numerator / denominator
 
 
-def _fit_func(f_d, kappa_p, J, f_p, f_r, a, b):
+def _fit_func(
+    f_d: NDArray,
+    kappa_p: float,
+    J: float,
+    f_p: float,
+    f_r: float,
+    a: float,
+    b: float,
+) -> NDArray:
+    """
+    Fit function for readout parameter characterization.
+
+    Parameters
+    ----------
+    kappa_p : float
+        Coupling strength between Purcell filter and transmission line [rad/ns]
+    gamma_p : float
+        Internal loss rate of Purcell filter [rad/ns]
+    J : float
+        Coupling strength between Purcell filter and resonator [rad/ns]
+    gamma_r : float
+        Internal loss rate of resonator [rad/ns]
+    omega_d : NDArray
+        Angular frequency of incident wave [rad/ns]
+    omega_p : float
+        Angular frequency of Purcell filter [rad/ns]
+    omega_r : float
+        Angular frequency of resonator [rad/ns]
+    """
     omega_d = 2 * np.pi * f_d
     omega_p = 2 * np.pi * f_p
     omega_r = 2 * np.pi * f_r
