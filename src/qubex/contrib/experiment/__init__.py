@@ -1,5 +1,6 @@
 """Experiment-oriented contrib modules."""
 
+from .cr_xt_decomposition import decompose_cr_crosstalk
 from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
@@ -38,13 +39,13 @@ from .purity_benchmarking import (
     purity_sequence_1q,
     purity_sequence_2q,
 )
-from .readout_parameters_characterization import (
-    characterize_readout_parameters,
-    fit_readout_parameters,
-)
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
+from .superconducting_gap import get_resistance_charge, get_superconducting_gap
+from .thermal_excitation_characterization import (
+    thermal_excitation_via_rabi,
+)
 
 __all__ = [
     "characterize_readout_parameters",
@@ -61,8 +62,9 @@ __all__ = [
     "create_maximum_spanning_tree",
     "create_measurement_rounds",
     "create_mqc_sequence",
-    "fit_readout_parameters",
     "fourier_analysis",
+    "get_resistance_charge",
+    "get_superconducting_gap",
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",
     "ipb_experiment",
@@ -72,6 +74,8 @@ __all__ = [
     "measure_cr_crosstalk",
     "measure_ghz_state",
     "measure_graph_state",
+    "measurement_induced_dephasing",
+    "measurement_induced_dephasing_experiment",
     "mqc_experiment",
     "parity_oscillation",
     "partial_transpose",
@@ -80,10 +84,14 @@ __all__ = [
     "purity_benchmarking",
     "purity_sequence_1q",
     "purity_sequence_2q",
+    "quantum_efficiency_measurement",
+    "readout_snr",
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
+    "sweep_readout_snr",
+    "thermal_excitation_via_rabi",
     "visualize_graph",
 ]
