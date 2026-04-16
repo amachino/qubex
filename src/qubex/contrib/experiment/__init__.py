@@ -38,7 +38,7 @@ from .purity_benchmarking import (
     purity_sequence_1q,
     purity_sequence_2q,
 )
-from .readout_parameters import (
+from .readout_parameters_characterization import (
     CharacterizeReadoutParametersResult,
     characterize_readout_parameters,
 )

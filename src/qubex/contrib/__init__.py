@@ -40,7 +40,7 @@ from .experiment.purity_benchmarking import (
     purity_sequence_1q,
     purity_sequence_2q,
 )
-from .experiment.readout_parameters import (
+from .experiment.readout_parameters_characterization import (
     CharacterizeReadoutParametersResult,
     characterize_readout_parameters,
 )
