@@ -46,6 +46,7 @@ from .quantum_efficiency_measurement import (
     readout_snr,
     sweep_readout_snr,
 )
+from .readout_parameters_characterization import characterize_readout_parameters
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
@@ -55,6 +56,7 @@ from .thermal_excitation_characterization import (
 )
 
 __all__ = [
+    "characterize_readout_parameters",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",

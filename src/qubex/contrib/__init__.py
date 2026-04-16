@@ -48,6 +48,10 @@ from .experiment.quantum_efficiency_measurement import (
     readout_snr,
     sweep_readout_snr,
 )
+from .experiment.readout_parameters_characterization import (
+    characterize_readout_parameters,
+    fit_readout_parameters,
+)
 from .experiment.rzx_gate import rzx, rzx_gate_property
 from .experiment.simultaneous_coherence_measurement import (
     simultaneous_coherence_measurement,
@@ -65,6 +69,7 @@ from .experiment.thermal_excitation_characterization import (
 )
 
 __all__ = [
+    "characterize_readout_parameters",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
@@ -79,6 +84,7 @@ __all__ = [
     "create_measurement_rounds",
     "create_mqc_sequence",
     "decompose_cr_crosstalk",
+    "fit_readout_parameters",
     "fourier_analysis",
     "get_resistance_charge",
     "get_superconducting_gap",
