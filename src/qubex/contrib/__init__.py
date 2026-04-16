@@ -60,6 +60,9 @@ from .experiment.superconducting_gap import (
     get_resistance_charge,
     get_superconducting_gap,
 )
+from .experiment.thermal_excitation_characterization import (
+    thermal_excitation_via_rabi,
+)
 
 __all__ = [
     "cr_crosstalk_hamiltonian_tomography",
@@ -106,5 +109,6 @@ __all__ = [
     "stark_ramsey_experiment",
     "stark_t1_experiment",
     "sweep_readout_snr",
+    "thermal_excitation_via_rabi",
     "visualize_graph",
 ]
