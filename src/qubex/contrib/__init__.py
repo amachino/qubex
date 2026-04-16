@@ -41,8 +41,8 @@ from .experiment.purity_benchmarking import (
     purity_sequence_2q,
 )
 from .experiment.readout_parameters_characterization import (
-    CharacterizeReadoutParametersResult,
     characterize_readout_parameters,
+    fit_readout_parameters,
 )
 from .experiment.rzx_gate import rzx, rzx_gate_property
 from .experiment.simultaneous_coherence_measurement import (
@@ -54,7 +54,6 @@ from .experiment.stark_characterization import (
 )
 
 __all__ = [
-    "CharacterizeReadoutParametersResult",
     "characterize_readout_parameters",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
@@ -69,6 +68,7 @@ __all__ = [
     "create_maximum_spanning_tree",
     "create_measurement_rounds",
     "create_mqc_sequence",
+    "fit_readout_parameters",
     "fourier_analysis",
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",

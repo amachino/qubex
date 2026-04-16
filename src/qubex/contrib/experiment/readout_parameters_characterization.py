@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 import plotly.graph_objects as go
 import qxvisualizer as viz
@@ -19,7 +17,7 @@ def characterize_readout_parameters(
     readout_amplitude: float | None = None,
     n_shots: int = 1024,
     save_image: bool = True,
-) -> CharacterizeReadoutParametersResult:
+) -> Result:
 
     if target is None:
         target = exp.qubit_labels[0]
@@ -36,164 +34,157 @@ def characterize_readout_parameters(
     )
     _mux = target.replace("Q", "")
     mux = int(int(_mux) // 4)
-    return CharacterizeReadoutParametersResult(
-        result=result,
-        mux=mux,
-        frequency_range=frequency_range,
-        readout_amplitude=readout_amplitude,
+    return Result(
+        data={
+            "result": result,
+            "mux_no": mux,
+            "frequency_range": frequency_range,
+            "readout_amplitude": readout_amplitude,
+        }
     )
 
 
-@dataclass
-class CharacterizeReadoutParametersResult:
-    result: Result
-    mux: int
-    frequency_range: np.ndarray
-    readout_amplitude: float
+def fit_readout_parameters(
+    result: Result,
+    *,
+    f_r: float,
+    f_p: float | None = None,
+    kappa_p: float | None = None,
+    J: float | None = None,
+    a: float | None = None,
+    b: float | None = None,
+    split_freq_width: float = 0.15,
+) -> dict[str, np.ndarray | float]:
+    """Fit readout parameters from characterize_readout_parameters output."""
+    scan_result = result.data.get("result", None)
+    mux_no = result.data.get("mux_no", None)
+    frequency_range = result.data.get("frequency_range", None)
+    readout_amplitude = result.data.get("readout_amplitude", None)
 
-    @property
-    def phases(self) -> np.ndarray:
-        return self.result.data.get("phases_unwrap", np.nan)
+    if scan_result is None:
+        raise ValueError("result.data['result'] is missing.")
+    if frequency_range is None:
+        raise ValueError("result.data['frequency_range'] is missing.")
 
-    @property
-    def signals(self) -> np.ndarray:
-        return self.result.data.get("signals", np.nan)
+    phases = scan_result.data.get("phases_unwrap", np.nan)
 
-    def fit(
-        self,
-        *,
-        f_r: float,
-        f_p: float | None = None,
-        kappa_p: float | None = None,
-        J: float | None = None,
-        a: float | None = None,
-        b: float | None = None,
-        split_freq_width: float = 0.15,
-    ):
-        if a is None:
-            a = (self.phases[-1] - self.phases[0]) / (
-                self.frequency_range[-1] - self.frequency_range[0]
-            )
-        if b is None:
-            b = np.average(self.phases)
-        if f_p is None:
-            f_p = f_r
-        if kappa_p is None:
-            kappa_p = 2 * np.pi * 0.01  # GHz
-        if J is None:
-            J = 2 * np.pi * 0.01  # GHz
+    if a is None:
+        a = (phases[-1] - phases[0]) / (frequency_range[-1] - frequency_range[0])
+    if b is None:
+        b = np.average(phases)
+    if f_p is None:
+        f_p = f_r
+    if kappa_p is None:
+        kappa_p = 2 * np.pi * 0.01  # GHz
+    if J is None:
+        J = 2 * np.pi * 0.01  # GHz
 
-        idx = np.where(
-            (self.frequency_range >= f_r - split_freq_width / 2)
-            & (self.frequency_range <= f_r + split_freq_width / 2)
-        )[0]
-        _frequency_range = self.frequency_range[idx]
-        _phases = self.phases[idx]
+    idx = np.where(
+        (frequency_range >= f_r - split_freq_width / 2)
+        & (frequency_range <= f_r + split_freq_width / 2)
+    )[0]
+    _frequency_range = frequency_range[idx]
+    _phases = phases[idx]
 
-        bounds_params = [
-            [0, 0, 0, 0, -np.inf, -np.inf],  # Lower bounds
-            [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf],  # Upper bounds
-        ]
+    bounds_params = [
+        [0, 0, 9.5, 9.5, -np.inf, -np.inf],  # Lower bounds
+        [np.inf, np.inf, 11.5, 11.5, np.inf, np.inf],  # Upper bounds
+    ]
 
-        initial_guess = [kappa_p, J, f_p, f_r, a, b]
-        popt, pcov = curve_fit(
-            _fit_func,
-            _frequency_range,
-            _phases,
-            p0=initial_guess,
-            bounds=bounds_params,
+    initial_guess = [kappa_p, J, f_p, f_r, a, b]
+    popt, pcov = curve_fit(
+        _fit_func,
+        _frequency_range,
+        _phases,
+        p0=initial_guess,
+        bounds=bounds_params,
+    )
+
+    perr = np.sqrt(np.diag(pcov))
+
+    def _calc_r2_score(data, fit_data):
+        ss_res = np.sum((data - fit_data) ** 2)
+        ss_tot = np.sum((data - np.mean(data)) ** 2)
+        return 1 - (ss_res / ss_tot)
+
+    y_pred = _fit_func(_frequency_range, *popt)
+    r2_score = _calc_r2_score(_phases, y_pred)
+
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
+            x=_frequency_range,
+            y=_phases,
+            mode="markers",
+            name="Data",
         )
-
-        perr = np.sqrt(np.diag(pcov))
-
-        def _calc_r2_score(data, fit_data):
-            ss_res = np.sum((data - fit_data) ** 2)
-            ss_tot = np.sum((data - np.mean(data)) ** 2)
-            return 1 - (ss_res / ss_tot)
-
-        y_pred = _fit_func(_frequency_range, *popt)
-        r2_score = _calc_r2_score(_phases, y_pred)
-
-        fig = viz.make_figure()
-        fig.add_trace(
-            go.Scatter(
-                x=_frequency_range,
-                y=_phases,
-                mode="markers",
-                name="Data",
-            )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=_frequency_range,
+            y=_fit_func(_frequency_range, *popt),
+            mode="lines",
+            name="Fit",
         )
-        fig.add_trace(
-            go.Scatter(
-                x=_frequency_range,
-                y=_fit_func(_frequency_range, *popt),
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_vline(
-            x=popt[2],
-            line=dict(color="red", dash="dash"),
-            annotation=dict(
-                text="",
-                hovertext=f"purcell: {popt[2]:.8f} GHz",
-                showarrow=False,
-                hoverlabel=dict(bgcolor="red", font=dict(color="white")),
+    )
+    fig.add_vline(
+        x=popt[2],
+        line=dict(color="red", dash="dash"),
+        annotation=dict(
+            text="",
+            hovertext=f"purcell: {popt[2]:.8f} GHz",
+            showarrow=False,
+            hoverlabel=dict(bgcolor="red", font=dict(color="white")),
+        ),
+    )
+    fig.add_vline(
+        x=popt[3],
+        line=dict(color="green", dash="dash"),
+        annotation=dict(
+            text="",
+            hovertext=f"resonator: {popt[3]:.8f} GHz",
+            showarrow=False,
+            hoverlabel=dict(bgcolor="green", font=dict(color="white")),
+        ),
+    )
+    fig.update_layout(
+        title=dict(
+            text="Characterization Readout Parameters",
+            subtitle=dict(
+                text=(
+                    f"mux= {mux_no}, target_freq= {f_r:.2f} GHz, "
+                    f"readout ampl = {readout_amplitude}, r2: {r2_score:.3f}"
+                )
             ),
-        )
-        fig.add_vline(
-            x=popt[3],
-            line=dict(color="green", dash="dash"),
-            annotation=dict(
-                text="",
-                hovertext=f"resonator: {popt[3]:.8f} GHz",
-                showarrow=False,
-                hoverlabel=dict(bgcolor="green", font=dict(color="white")),
-            ),
-        )
-        fig.update_layout(
-            title=dict(
-                text="Characterization Readout Parameters",
-                subtitle=dict(
-                    text=f"target_freq= {f_r:.2f} GHz, readout ampl = {self.readout_amplitude}, r2: {r2_score:.3f}"
-                ),
-            ),
-            xaxis_title="Drive frequency [GHz]",
-            yaxis_title="Reflection coefficient",
-            font=dict(size=14),
-        )
-        fig.show()
-        print("Fitted parameters:")
-        print(f"R² score: {r2_score:.4f}")
-        print(
-            f"purcell filter external linewidth (kappa_p/2π): {popt[0] / (2 * np.pi) * 1e3:.8f} ± {perr[0] / (2 * np.pi) * 1e3:.8f} MHz"
-        )
-        print(
-            f"resonator and purcell coupling (J/2π)         : {popt[1] / (2 * np.pi) * 1e3:.8f} ± {perr[1] / (2 * np.pi) * 1e3:.8f} MHz"
-        )
-        print(
-            f"purcell filter frequency (f_p)                : {popt[2]:.8f} ± {perr[2]:.8f} GHz"
-        )
-        print(
-            f"resonator frequency (f_r)                     : {popt[3]:.8f} ± {perr[3]:.8f} GHz"
-        )
-        print(
-            f"a                                             : {popt[4]:.8f} ± {perr[4]:.8f} rad/√GHz"
-        )
-        print(
-            f"attenation coeff (-a / √π / 10 * log_e(10))   : {-popt[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} ± {perr[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} /√GHz"
-        )
-        print(
-            f"b                                             : {popt[5]:.8f} ± {perr[5]:.8f} rad"
-        )
-
-        return {
-            "popt": popt,
-            "pcov": pcov,
-            "perr": perr,
-            "r2_score": r2_score,
-            "y_pred": y_pred,
-        }
+        ),
+        xaxis_title="Drive frequency [GHz]",
+        yaxis_title="Reflection coefficient",
+        font=dict(size=14),
+    )
+    fig.show()
+    print("Fitted parameters:")
+    print(f"R² score: {r2_score:.4f}")
+    print(
+        f"purcell filter external linewidth (kappa_p/2π): {popt[0] / (2 * np.pi) * 1e3:.8f} ± {perr[0] / (2 * np.pi) * 1e3:.8f} MHz"
+    )
+    print(
+        f"resonator and purcell coupling (J/2π)         : {popt[1] / (2 * np.pi) * 1e3:.8f} ± {perr[1] / (2 * np.pi) * 1e3:.8f} MHz"
+    )
+    print(
+        f"purcell filter frequency (f_p)                : {popt[2]:.8f} ± {perr[2]:.8f} GHz"
+    )
+    print(
+        f"resonator frequency (f_r)                     : {popt[3]:.8f} ± {perr[3]:.8f} GHz"
+    )
+    print(
+        f"a                                             : {popt[4]:.8f} ± {perr[4]:.8f} rad/√GHz"
+    )
+    print(
+        f"attenation coeff (-a / √π / 10 * log_e(10))   : {-popt[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} ± {perr[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} /√GHz"
+    )
+    print(
+        f"b                                             : {popt[5]:.8f} ± {perr[5]:.8f} rad"
+    )
 
 
 def _Gamma(kappa_p, gamma_p, J, gamma_r, omega_d, omega_p, omega_r):
