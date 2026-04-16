@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Literal
 
 from qubex.experiment.experiment_context import ExperimentContext
@@ -110,3 +111,43 @@ def test_targets_keep_cr_pair_with_active_spectator(monkeypatch) -> None:
     )
 
     assert set(context.targets) == {"Q00-Q01"}
+
+
+def test_get_edge_labels_filters_to_same_mux_by_default(monkeypatch) -> None:
+    """Given mux-mixed spectators, when getting edge labels, then only same-mux edges are returned by default."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+
+    def _get_spectators(
+        qubit: str, *, in_same_mux: bool = True
+    ) -> list[SimpleNamespace]:
+        assert qubit == "Q00"
+        if in_same_mux:
+            return [SimpleNamespace(label="Q01")]
+        return [SimpleNamespace(label="Q01"), SimpleNamespace(label="Q02")]
+
+    monkeypatch.setattr(context, "get_spectators", _get_spectators)
+
+    assert context.get_edge_labels() == ["Q00-Q01"]
+
+
+def test_get_edge_labels_can_include_cross_mux_edges(monkeypatch) -> None:
+    """Given mux-mixed spectators, when in_same_mux is false, then cross-mux edges are included."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+
+    recorded: list[bool] = []
+
+    def _get_spectators(
+        qubit: str, *, in_same_mux: bool = True
+    ) -> list[SimpleNamespace]:
+        assert qubit == "Q00"
+        recorded.append(in_same_mux)
+        if in_same_mux:
+            return [SimpleNamespace(label="Q01")]
+        return [SimpleNamespace(label="Q01"), SimpleNamespace(label="Q02")]
+
+    monkeypatch.setattr(context, "get_spectators", _get_spectators)
+
+    assert context.get_edge_labels(in_same_mux=False) == ["Q00-Q01", "Q00-Q02"]
+    assert recorded == [False]

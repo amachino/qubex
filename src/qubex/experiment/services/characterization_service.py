@@ -57,6 +57,7 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+_CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
 
 
 def _build_ramsey_sequence(
@@ -166,6 +167,29 @@ class CharacterizationService:
     def calibration_service(self) -> CalibrationService:
         """Return the calibration service."""
         return self._calibration_service
+
+    @staticmethod
+    def _is_valid_chevron_rabi_param(param: Any) -> bool:
+        """Return whether a shared Rabi parameter is safe for chevron normalization."""
+        if param is None:
+            return False
+        amplitude = getattr(param, "amplitude", np.nan)
+        return bool(
+            np.isfinite(amplitude) and abs(amplitude) > _CHEVRON_RABI_AMPLITUDE_EPS
+        )
+
+    @staticmethod
+    def _get_chevron_plot_values(
+        data: Any,
+        *,
+        use_fallback: bool,
+    ) -> NDArray[np.float64]:
+        """Return heatmap values for chevron plotting."""
+        if not use_fallback:
+            return np.asarray(data.normalized, dtype=np.float64)
+        # When normalization is invalid, use one fixed raw quadrature.
+        # Real/imag are equivalent here because link-up resets the phase basis.
+        return np.asarray(np.real(data.data), dtype=np.float64)
 
     def measure_readout_snr(
         self,
@@ -543,6 +567,12 @@ class CharacterizationService:
         rabi_rates: dict[str, NDArray] = {}
         chevron_data: dict[str, NDArray] = {}
         resonant_frequencies: dict[str, float] = {}
+        use_fallback_by_target = {
+            target: not self._is_valid_chevron_rabi_param(
+                shared_rabi_params.get(target)
+            )
+            for target in targets
+        }
 
         print(f"Targets : {targets}")
         subgroups = self.ctx.util.create_qubit_subgroups(targets)
@@ -585,7 +615,12 @@ class CharacterizationService:
                             fit_result.get("frequency", np.nan)
                         )
                         data.rabi_param = shared_rabi_params[target]
-                        chevron_data_buffer[target].append(data.normalized)
+                        chevron_data_buffer[target].append(
+                            self._get_chevron_plot_values(
+                                data,
+                                use_fallback=use_fallback_by_target[target],
+                            )
+                        )
 
             for target in subgroup:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
@@ -604,7 +639,14 @@ class CharacterizationService:
                     title=dict(
                         text=f"Chevron pattern : {target}",
                         subtitle=dict(
-                            text=f"control_amplitude={amplitudes[target]:.6g}",
+                            text=(
+                                f"control_amplitude={amplitudes[target]:.6g}"
+                                if not use_fallback_by_target[target]
+                                else (
+                                    f"control_amplitude={amplitudes[target]:.6g}, "
+                                    "fallback=data.real"
+                                )
+                            ),
                             font=dict(
                                 size=13,
                                 family="monospace",
@@ -4306,6 +4348,7 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
+        in_same_mux: bool = True,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -4318,6 +4361,8 @@ class CharacterizationService:
         ----------
         targets
             Target edges to characterize.
+        in_same_mux
+            Whether to restrict default target edges to the same mux.
         shots
             Number of shots per experiment.
         plot
@@ -4332,7 +4377,7 @@ class CharacterizationService:
         if save_image is None:
             save_image = True
         if targets is None:
-            targets = self.ctx.edge_labels
+            targets = self.ctx.get_edge_labels(in_same_mux=in_same_mux)
         elif isinstance(targets, str):
             targets = [targets]
         else:
