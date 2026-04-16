@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .experiment.cr_xt_decomposition import decompose_cr_crosstalk
 from .experiment.crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
@@ -67,6 +68,7 @@ __all__ = [
     "create_maximum_spanning_tree",
     "create_measurement_rounds",
     "create_mqc_sequence",
+    "decompose_cr_crosstalk",
     "fourier_analysis",
     "get_resistance_charge",
     "get_superconducting_gap",
