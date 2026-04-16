@@ -4306,6 +4306,7 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
+        in_same_mux: bool = True,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -4318,6 +4319,8 @@ class CharacterizationService:
         ----------
         targets
             Target edges to characterize.
+        in_same_mux
+            Whether to restrict default target edges to the same mux.
         shots
             Number of shots per experiment.
         plot
@@ -4332,7 +4335,7 @@ class CharacterizationService:
         if save_image is None:
             save_image = True
         if targets is None:
-            targets = self.ctx.edge_labels
+            targets = self.ctx.get_edge_labels(in_same_mux=in_same_mux)
         elif isinstance(targets, str):
             targets = [targets]
         else:
