@@ -165,25 +165,31 @@ def fit_readout_parameters(
     print("Fitted parameters:")
     print(f"R² score: {r2_score:.4f}")
     print(
-        f"purcell filter external linewidth (kappa_p/2π): {popt[0] / (2 * np.pi) * 1e3:.8f} ± {perr[0] / (2 * np.pi) * 1e3:.8f} MHz"
+        f"purcell filter external linewidth (kappa_p/2π): {popt[0] / (2 * np.pi) * 1e3:.4f} ± {perr[0] / (2 * np.pi) * 1e3:.4f} MHz"
     )
     print(
-        f"resonator and purcell coupling (J/2π)         : {popt[1] / (2 * np.pi) * 1e3:.8f} ± {perr[1] / (2 * np.pi) * 1e3:.8f} MHz"
+        f"resonator and purcell coupling (J/2π)         : {popt[1] / (2 * np.pi) * 1e3:.4f} ± {perr[1] / (2 * np.pi) * 1e3:.4f} MHz"
     )
     print(
-        f"purcell filter frequency (f_p)                : {popt[2]:.8f} ± {perr[2]:.8f} GHz"
+        f"purcell filter frequency (f_p)                : {popt[2]:.4f} ± {perr[2]:.4f} GHz"
     )
     print(
-        f"resonator frequency (f_r)                     : {popt[3]:.8f} ± {perr[3]:.8f} GHz"
+        f"resonator frequency (f_r)                     : {popt[3]:.4f} ± {perr[3]:.4f} GHz"
     )
     print(
-        f"a                                             : {popt[4]:.8f} ± {perr[4]:.8f} rad/√GHz"
+        f"Internal loss for purcell filter (gamma_p/2π) : {0.0} MHz (assumed in fitting)"
     )
     print(
-        f"attenation coeff (-a / √π / 10 * log_e(10))   : {-popt[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} ± {perr[4] / np.sqrt(np.pi) / 10 * np.log(10):.8f} /√GHz"
+        f"Internal loss for resonator (gamma_r/2π)      : {0.0} MHz (assumed in fitting)"
     )
     print(
-        f"b                                             : {popt[5]:.8f} ± {perr[5]:.8f} rad"
+        f"a                                             : {popt[4]:.4f} ± {perr[4]:.4f} rad/√GHz"
+    )
+    print(
+        f"attenation coeff (-a / √π / 10 * log_e(10))   : {-popt[4] / np.sqrt(np.pi) / 10 * np.log(10):.4f} ± {perr[4] / np.sqrt(np.pi) / 10 * np.log(10):.4f} /√GHz"
+    )
+    print(
+        f"b                                             : {popt[5]:.4f} ± {perr[5]:.4f} rad"
     )
 
 
@@ -224,8 +230,12 @@ def _fit_func(f_d, kappa_p, J, f_p, f_r, a, b):
     omega_d = 2 * np.pi * f_d
     omega_p = 2 * np.pi * f_p
     omega_r = 2 * np.pi * f_r
-    gamma_purcell = 2 * np.pi * 0  # Purcell: filterのinternal loss rate [GHz]
-    gamma_resonator = 2 * np.pi * 0  # Resonator: internal loss rate [GHz]
+    gamma_purcell = (
+        2 * np.pi * 0
+    )  # TODO add internal loss rate [GHz] to fitting parameters
+    gamma_resonator = (
+        2 * np.pi * 0
+    )  # TODO add internal loss rate [GHz] to fitting parameters
     angle = np.angle(
         _Gamma(kappa_p, gamma_purcell, J, gamma_resonator, omega_d, omega_p, omega_r)
     )
