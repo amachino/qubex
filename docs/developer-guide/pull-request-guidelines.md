@@ -36,4 +36,6 @@ Update docs when you change:
 
 - Ensure tests are deterministic.
 - Avoid unrelated formatting-only noise.
+- If you use AI assistance, review the generated changes carefully and make sure you can explain them in your own words.
+- Keep a human contributor fully responsible for reviewer communication and follow-up changes.
 - Resolve reviewer comments with follow-up commits.
