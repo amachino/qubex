@@ -297,7 +297,7 @@ def _measure_ramsey_fringe(
             schedule.barrier()
             schedule.add(
                 readout_target,
-                exp.pulse.readout(readout_target, readout_amplitude=readout_amplitude),
+                exp.pulse.readout(readout_target, amplitude=readout_amplitude),
             )
             schedule.barrier()
             schedule.add(target, exp.pulse.x90(target).shifted(float(phase_shift)))
