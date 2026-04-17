@@ -31,7 +31,7 @@ from qubex.experiment.models.experiment_result import (
     RabiParam,
     RamseyData,
 )
-from qubex.experiment.result import Result
+from qubex.experiment.models.result import Result
 from qubex.pulse import Blank, FlatTop, PulseSchedule
 from qubex.system import Target
 
