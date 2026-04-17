@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -67,6 +67,19 @@ class _WavegenTaskProtocol(Protocol):
     def result(self) -> Any:
         """Wait for completion."""
         ...
+
+    def cancel(
+        self,
+        timeout: float | None = None,
+        polling_period: float | None = None,
+    ) -> bool:
+        """Cancel one in-flight task when supported."""
+        ...
+
+
+_QUICK_CANCEL_TIMEOUT_SECONDS: Final[float] = 0.05
+_QUICK_CANCEL_POLLING_SECONDS: Final[float] = 0.005
+_TOO_LATE_SCHEDULE_RETRY_COUNT: Final[int] = 1
 
 
 def _is_runit_setting_shape(
@@ -473,6 +486,64 @@ def _run_per_box_parallel(
         return dict(executor.map(_invoke, items))
 
 
+def _is_retryable_too_late_error(error: BaseException) -> bool:
+    """Return whether one error matches the timed-AWG schedule race."""
+    return isinstance(error, RuntimeError) and "too late to schedule" in str(error)
+
+
+def _pick_parallel_error(errors: Sequence[BaseException]) -> BaseException:
+    """Prefer non-retryable failures when multiple per-box tasks fail."""
+    for error in errors:
+        if not _is_retryable_too_late_error(error):
+            return error
+    return errors[0]
+
+
+def _cancel_one_task_quickly(task: Any) -> None:
+    """Best-effort cancel for one task-like object without waiting for full timeout."""
+    cancel = getattr(task, "cancel", None)
+    if not callable(cancel):
+        return
+    try:
+        cancel(
+            timeout=_QUICK_CANCEL_TIMEOUT_SECONDS,
+            polling_period=_QUICK_CANCEL_POLLING_SECONDS,
+        )
+    except TypeError:
+        pass
+    else:
+        return
+    try:
+        cancel(_QUICK_CANCEL_TIMEOUT_SECONDS)
+    except TypeError:
+        pass
+    else:
+        return
+    cancel()
+
+
+def _cancel_capture_future_tree(future_tree: Any) -> None:
+    """Walk nested capture future payloads and cancel each task-like leaf."""
+    if isinstance(future_tree, Mapping):
+        for child in future_tree.values():
+            _cancel_capture_future_tree(child)
+        return
+    if isinstance(future_tree, tuple | list | set):
+        for child in future_tree:
+            _cancel_capture_future_tree(child)
+        return
+    _cancel_one_task_quickly(future_tree)
+
+
+def _task_error(task: _WavegenTaskProtocol) -> BaseException | None:
+    """Return one task exception without raising from the loop body."""
+    try:
+        task.result()
+    except BaseException as error:
+        return error
+    return None
+
+
 @dataclass(frozen=True)
 class ClockHealthCheckOptions:
     """
@@ -498,7 +569,19 @@ class ClockHealthCheckOptions:
 
 @dataclass(frozen=True)
 class QubexMultiAction:
-    """Qubex-side multi-action with optional clock-health I/O."""
+    """
+    Qubex-side multi-action with optional clock-health I/O.
+
+    Notes
+    -----
+    On the qxdriver/quelware 0.10 path, triggered capture arms capture units
+    and schedules the trigger-side AWG against one shared future timecount.
+    When box-local setup overruns the timed-AWG guard, quel_ic_config raises
+    `RuntimeError("... too late to schedule")`. This class treats only that
+    specific race as retryable: it cancels any partial task tree, rebuilds the
+    shared schedule from the current reference-box counter, and retries the
+    whole multi-box action once. Other errors are surfaced immediately.
+    """
 
     _system: Quel1SystemProtocol
     _actions: MappingProxyType[str, SingleActionProtocol]
@@ -550,13 +633,30 @@ class QubexMultiAction:
             for name, action in self._actions.items()
             if self._has_capture_setting(action)
         ]
-        return cast(
-            dict[str, dict[PortType, Any]],
-            _run_per_box_parallel(
-                capture_actions,
-                _start_capture,
-            ),
-        )
+        if not capture_actions:
+            return {}
+
+        results: dict[str, dict[PortType, Any]] = {}
+        errors: list[BaseException] = []
+        max_workers = max(1, len(capture_actions))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures: dict[Future[dict[PortType, Any]], str] = {
+                executor.submit(_start_capture, name, action): name
+                for name, action in capture_actions
+            }
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    results[name] = future.result()
+                except BaseException as error:
+                    errors.append(error)
+
+        if not errors:
+            return results
+
+        for future_map in results.values():
+            _cancel_capture_future_tree(future_map)
+        raise _pick_parallel_error(errors)
 
     def capture_stop(
         self,
@@ -588,16 +688,45 @@ class QubexMultiAction:
         dict[tuple[str, PortType], Any],
         dict[tuple[str, PortType, int], Any],
     ]:
-        """Run capture start -> timed emission reservation -> capture stop."""
-        scheduled_times = self._build_scheduled_times(
-            displacement=self._system.displacement
-        )
-        futures = self.capture_start(scheduled_times=scheduled_times)
-        self.emit_at(
-            displacement=self._system.displacement,
-            scheduled_times=scheduled_times,
-        )
-        return self.capture_stop(futures)
+        """
+        Run capture start -> timed emission reservation -> capture stop.
+
+        Notes
+        -----
+        The qxdriver multi-box path can fail when a shared `scheduled_time`
+        becomes too close to the current hardware counter before triggered or
+        non-triggered timed AWGs are fully armed. When quel_ic_config reports
+        `too late to schedule`, this method cancels partial task state and
+        retries the entire action with a freshly rebuilt schedule. The retry
+        count is intentionally fixed by module-level policy rather than exposed
+        as a public execution option.
+        """
+        for attempt in range(_TOO_LATE_SCHEDULE_RETRY_COUNT + 1):
+            scheduled_times = self._build_scheduled_times(
+                displacement=self._system.displacement
+            )
+            futures: dict[str, dict[PortType, Any]] | None = None
+            try:
+                futures = self.capture_start(scheduled_times=scheduled_times)
+                self.emit_at(
+                    displacement=self._system.displacement,
+                    scheduled_times=scheduled_times,
+                )
+                return self.capture_stop(futures)
+            except BaseException as error:
+                if futures is not None:
+                    _cancel_capture_future_tree(futures)
+                if (
+                    attempt < _TOO_LATE_SCHEDULE_RETRY_COUNT
+                    and _is_retryable_too_late_error(error)
+                ):
+                    self._logger.warning(
+                        "Retrying parallel multi-box action after timed scheduling race: %s",
+                        error,
+                    )
+                    continue
+                raise
+        raise RuntimeError("unreachable retry loop exit")
 
     def _build_scheduled_times(
         self,
@@ -684,8 +813,11 @@ class QubexMultiAction:
                 self._estimated_timediff[name],
                 self._system.timing_shift[name],
             )
-        for task in tasks:
-            task.result()
+        errors = [error for task in tasks if (error := _task_error(task)) is not None]
+        if errors:
+            for task in tasks:
+                _cancel_one_task_quickly(task)
+            raise _pick_parallel_error(errors)
 
 
 def build_parallel_multi_action(

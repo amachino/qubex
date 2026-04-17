@@ -504,6 +504,91 @@ class _ConcurrentCaptureAction:
             self.probe.leave()
 
 
+@dataclass
+class _CancelableTask:
+    cancel_calls: int = 0
+
+    def cancel(
+        self,
+        timeout: float | None = None,
+        polling_period: float | None = None,
+    ) -> bool:
+        _ = timeout, polling_period
+        self.cancel_calls += 1
+        return True
+
+
+@dataclass
+class _RetryCaptureAction:
+    box: _FakeWavegenBox
+    task: _CancelableTask
+    _cprms: dict[str, object] = field(default_factory=lambda: {"P0": object()})
+    _wseqs: list[SimpleNamespace] = field(default_factory=list)
+    _triggers: dict[str, object] = field(default_factory=lambda: {"P0": object()})
+    capture_start_calls: int = 0
+    should_fail_once: bool = False
+
+    def capture_start(self, *, timecounter: int | None = None) -> dict[str, Any]:
+        _ = timecounter
+        self.capture_start_calls += 1
+        if self.should_fail_once and self.capture_start_calls == 1:
+            raise RuntimeError("specified timecount (= 1) is too late to schedule")
+        return {"P0": self.task}
+
+    def capture_stop(
+        self,
+        futures: dict[str, Any],
+    ) -> tuple[dict[str, str], dict[tuple[str, int], str]]:
+        _ = futures
+        return {"P0": "ok"}, {("P0", 0): "data"}
+
+
+@dataclass
+class _FailingWavegenTask:
+    failures_before_success: int
+    result_calls: int = 0
+    cancel_calls: int = 0
+
+    def result(self, timeout: float | None = None) -> None:
+        _ = timeout
+        self.result_calls += 1
+        if self.result_calls <= self.failures_before_success:
+            raise RuntimeError("specified timecount (= 1) is too late to schedule")
+
+    def cancel(
+        self,
+        timeout: float | None = None,
+        polling_period: float | None = None,
+    ) -> bool:
+        _ = timeout, polling_period
+        self.cancel_calls += 1
+        return True
+
+
+@dataclass
+class _RetryWavegenBox:
+    task: _FailingWavegenTask
+    current_time: int = 100
+    latest_sysref_time: int = 0
+    reservations: list[tuple[set[tuple[str, int]], int | None]] = field(
+        default_factory=list
+    )
+
+    def get_current_timecounter(self) -> int:
+        return self.current_time
+
+    def get_latest_sysref_timecounter(self) -> int:
+        return self.latest_sysref_time
+
+    def start_wavegen(
+        self,
+        channels: set[tuple[str, int]],
+        timecounter: int | None = None,
+    ) -> _FailingWavegenTask:
+        self.reservations.append((channels, timecounter))
+        return self.task
+
+
 def test_qubecalib_emit_at_reserves_triggered_boxes() -> None:
     """Qubecalib compatibility should reserve emission for triggered boxes."""
     box = _FakeWavegenBox()
@@ -804,3 +889,85 @@ def test_qubex_multi_action_capture_stop_runs_box_calls_in_parallel() -> None:
         ("B1", "P1", 1): "data1",
     }
     assert probe.max_active_calls == 2
+
+
+def test_qubex_multi_action_retries_too_late_capture_start() -> None:
+    """Given one triggered box misses schedule, action should cancel partial futures and retry."""
+    stable_task = _CancelableTask()
+    stable_action = _RetryCaptureAction(box=_FakeWavegenBox(), task=stable_task)
+    retry_action = _RetryCaptureAction(
+        box=_FakeWavegenBox(),
+        task=_CancelableTask(),
+        should_fail_once=True,
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"B0": stable_action.box, "B1": retry_action.box},
+                timing_shift={"B0": 0, "B1": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"B0": stable_action, "B1": retry_action}),
+        ),
+        _estimated_timediff=MappingProxyType({"B0": 0, "B1": 0}),
+        _reference_box_name="B0",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+        _arm_triggered_boxes_at_capture_start=True,
+    )
+
+    status, data = multi_action.action()
+
+    assert stable_task.cancel_calls == 1
+    assert stable_action.capture_start_calls == 2
+    assert retry_action.capture_start_calls == 2
+    assert status == {("B0", "P0"): "ok", ("B1", "P0"): "ok"}
+    assert data == {("B0", "P0", 0): "data", ("B1", "P0", 0): "data"}
+
+
+def test_qubex_multi_action_retries_too_late_emit_at() -> None:
+    """Given non-triggered AWG scheduling misses deadline, action should retry and complete."""
+    stable_task = _CancelableTask()
+    triggered_action = _RetryCaptureAction(box=_FakeWavegenBox(), task=stable_task)
+    wavegen_task = _FailingWavegenTask(failures_before_success=1)
+    non_triggered_box = _RetryWavegenBox(task=wavegen_task)
+    non_triggered_action = _TimedAwgOnlyAction(
+        box=cast(Any, non_triggered_box),
+        _wseqs=[SimpleNamespace(port="GEN", channel=1)],
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"MON": triggered_action.box, "GEN": non_triggered_box},
+                timing_shift={"MON": 0, "GEN": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"MON": triggered_action, "GEN": non_triggered_action}),
+        ),
+        _estimated_timediff=MappingProxyType({"MON": 0, "GEN": 0}),
+        _reference_box_name="MON",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+        _arm_triggered_boxes_at_capture_start=True,
+    )
+
+    status, data = multi_action.action()
+
+    assert stable_task.cancel_calls == 1
+    assert triggered_action.capture_start_calls == 2
+    assert wavegen_task.cancel_calls == 1
+    assert len(non_triggered_box.reservations) == 2
+    assert status == {("MON", "P0"): "ok"}
+    assert data == {("MON", "P0", 0): "data"}
