@@ -1007,6 +1007,16 @@ def test_qubex_multi_action_retries_too_late_emit_at() -> None:
     assert data == {("MON", "P0", 0): "data"}
 
 
+def test_drain_treats_too_late_error_as_quiesced() -> None:
+    """Given timed scheduling race result, drain should treat the task as quiesced."""
+    task = _FailingWavegenTask(failures_before_success=1)
+
+    quiesced, errors = parallel_action_builder._drain_task_tree([task])  # noqa: SLF001
+
+    assert quiesced is True
+    assert errors == []
+
+
 def test_qubex_multi_action_does_not_retry_when_cancelled_capture_task_does_not_quiesce() -> (
     None
 ):

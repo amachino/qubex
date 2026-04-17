@@ -565,6 +565,8 @@ def _drain_one_task(task: Any) -> tuple[bool, BaseException | None]:
     except CancelledError:
         return True, None
     except BaseException as error:
+        if _is_retryable_too_late_error(error):
+            return True, None
         if _task_is_running(task):
             return False, None
         return True, error
