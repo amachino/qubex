@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -473,6 +473,84 @@ def _run_per_box_parallel(
         return dict(executor.map(_invoke, items))
 
 
+class _PartialCaptureStopError(Exception):
+    """Internal wrapper that preserves started capture futures for cleanup."""
+
+    def __init__(
+        self,
+        error: BaseException,
+        futures: dict[str, dict[PortType, Any]],
+    ) -> None:
+        super().__init__(str(error))
+        self.error = error
+        self.futures = futures
+
+
+def _is_retryable_too_late_error(error: BaseException) -> bool:
+    """Return whether one error matches the timed-AWG schedule race."""
+    return isinstance(error, RuntimeError) and "too late to schedule" in str(error)
+
+
+def _pick_parallel_error(errors: Sequence[BaseException]) -> BaseException:
+    """Prefer non-retryable failures when multiple per-box tasks fail."""
+    for error in errors:
+        if not _is_retryable_too_late_error(error):
+            return error
+    return errors[0]
+
+
+def _task_result_error(task: Any) -> BaseException | None:
+    """Return one task result error without suppressing retryable failures."""
+    result = getattr(task, "result", None)
+    if not callable(result):
+        return None
+    try:
+        result()
+    except BaseException as error:
+        return error
+    return None
+
+
+def _future_error(future: Future[Any]) -> BaseException | None:
+    """Resolve one worker future and suppress retryable timed-AWG races."""
+    try:
+        future.result()
+    except BaseException as error:
+        if _is_retryable_too_late_error(error):
+            return None
+        return error
+    return None
+
+
+def _discard_task_result(task: Any) -> BaseException | None:
+    """Wait for one started task to finish and suppress retryable race failures."""
+    error = _task_result_error(task)
+    if error is None:
+        return None
+    if _is_retryable_too_late_error(error):
+        return None
+    return error
+
+
+def _discard_task_tree(task_tree: Any) -> list[BaseException]:
+    """Wait for all started tasks in one abandoned attempt and collect real errors."""
+    errors: list[BaseException] = []
+    if isinstance(task_tree, Mapping):
+        values = task_tree.values()
+    elif isinstance(task_tree, (tuple, list, set)):
+        values = task_tree
+    else:
+        values = (task_tree,)
+    for child in values:
+        if isinstance(child, (Mapping, tuple, list, set)):
+            errors.extend(_discard_task_tree(child))
+            continue
+        error = _discard_task_result(child)
+        if error is not None:
+            errors.append(error)
+    return errors
+
+
 @dataclass(frozen=True)
 class ClockHealthCheckOptions:
     """
@@ -550,13 +628,26 @@ class QubexMultiAction:
             for name, action in self._actions.items()
             if self._has_capture_setting(action)
         ]
-        return cast(
-            dict[str, dict[PortType, Any]],
-            _run_per_box_parallel(
-                capture_actions,
-                _start_capture,
-            ),
-        )
+        if not capture_actions:
+            return {}
+
+        results: dict[str, dict[PortType, Any]] = {}
+        errors: list[BaseException] = []
+        max_workers = max(1, len(capture_actions))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(_start_capture, name, action): name
+                for name, action in capture_actions
+            }
+            for future in as_completed(future_map):
+                name = future_map[future]
+                try:
+                    results[name] = future.result()
+                except BaseException as error:
+                    errors.append(error)
+        if errors:
+            raise _PartialCaptureStopError(_pick_parallel_error(errors), results)
+        return results
 
     def capture_stop(
         self,
@@ -582,22 +673,86 @@ class QubexMultiAction:
                 data[(name, port, runit)] = runit_data
         return status, data
 
+    def _discard_capture_attempt(
+        self,
+        futures: dict[str, dict[PortType, Any]],
+    ) -> list[BaseException]:
+        """Wait for all started capture futures from one abandoned attempt."""
+        errors: list[BaseException] = []
+        capture_items = list(futures.items())
+        if not capture_items:
+            return errors
+        max_workers = max(1, len(capture_items))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(self._actions[name].capture_stop, future): name
+                for name, future in capture_items
+            }
+            for future in as_completed(future_map):
+                error = _future_error(future)
+                if error is not None:
+                    errors.append(error)
+        return errors
+
     def action(
         self,
     ) -> tuple[
         dict[tuple[str, PortType], Any],
         dict[tuple[str, PortType, int], Any],
     ]:
-        """Run capture start -> timed emission reservation -> capture stop."""
+        """
+        Run capture start -> timed emission reservation -> capture stop.
+
+        Notes
+        -----
+        When timed AWG scheduling reports `too late to schedule`, this method
+        does not aggressively cancel the remaining attempt. Instead it lets any
+        started tasks finish naturally, discards the results, rebuilds the
+        shared schedule, and retries once. The only explicit cancel is the
+        safe `cap_task.cancel()` done inside qxdriver when a trigger-side AWG
+        never armed and the paired capture task is still waiting for trigger.
+        """
         scheduled_times = self._build_scheduled_times(
             displacement=self._system.displacement
         )
-        futures = self.capture_start(scheduled_times=scheduled_times)
-        self.emit_at(
-            displacement=self._system.displacement,
-            scheduled_times=scheduled_times,
-        )
-        return self.capture_stop(futures)
+        for attempt in range(2):
+            futures: dict[str, dict[PortType, Any]] = {}
+            try:
+                futures = self.capture_start(scheduled_times=scheduled_times)
+                self.emit_at(
+                    displacement=self._system.displacement,
+                    scheduled_times=scheduled_times,
+                )
+                return self.capture_stop(futures)
+            except _PartialCaptureStopError as error:
+                cleanup_errors = self._discard_capture_attempt(error.futures)
+                if cleanup_errors:
+                    raise _pick_parallel_error(cleanup_errors) from error.error
+                if attempt < 1 and _is_retryable_too_late_error(error.error):
+                    self._logger.warning(
+                        "Retrying parallel multi-box action after timed scheduling race: %s",
+                        error.error,
+                    )
+                    scheduled_times = self._build_scheduled_times(
+                        displacement=self._system.displacement
+                    )
+                    continue
+                raise error.error from error
+            except BaseException as error:
+                cleanup_errors = self._discard_capture_attempt(futures)
+                if cleanup_errors:
+                    raise _pick_parallel_error(cleanup_errors) from error
+                if attempt < 1 and _is_retryable_too_late_error(error):
+                    self._logger.warning(
+                        "Retrying parallel multi-box action after timed scheduling race: %s",
+                        error,
+                    )
+                    scheduled_times = self._build_scheduled_times(
+                        displacement=self._system.displacement
+                    )
+                    continue
+                raise
+        raise RuntimeError("unreachable retry loop exit")
 
     def _build_scheduled_times(
         self,
@@ -684,8 +839,11 @@ class QubexMultiAction:
                 self._estimated_timediff[name],
                 self._system.timing_shift[name],
             )
-        for task in tasks:
-            task.result()
+        errors = [
+            error for task in tasks if (error := _task_result_error(task)) is not None
+        ]
+        if errors:
+            raise _pick_parallel_error(errors)
 
 
 def build_parallel_multi_action(

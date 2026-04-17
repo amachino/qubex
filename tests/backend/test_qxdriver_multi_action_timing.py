@@ -45,6 +45,26 @@ class _FailingTask:
         raise self._error
 
 
+class _CancelableCaptureTask:
+    def __init__(self) -> None:
+        self.cancel_calls: int = 0
+
+    def result(self, timeout: float | None = None) -> Any:
+        _ = timeout
+        raise AssertionError(
+            "capture task should not be awaited after trigger AWG too-late failure"
+        )
+
+    def cancel(
+        self,
+        timeout: float | None = None,
+        polling_period: float | None = None,
+    ) -> bool:
+        _ = timeout, polling_period
+        self.cancel_calls += 1
+        return True
+
+
 class _TriggeredCaptureBox:
     def __init__(self) -> None:
         self.calls: list[
@@ -102,6 +122,33 @@ def test_single_action_capture_stop_surfaces_trigger_awg_failure_first() -> None
 
     with pytest.raises(RuntimeError, match="too late to schedule"):
         action.capture_stop(cast(Any, futures))
+
+
+def test_single_action_capture_stop_cancels_capture_task_on_trigger_awg_too_late() -> (
+    None
+):
+    """Triggered single action should best-effort cancel the paired capture task on too-late failure."""
+    cap_task = _CancelableCaptureTask()
+    action = SingleAction(
+        box=cast(Any, object()),
+        wseqs=MappingProxyType({AwgId(port=0, channel=0): WaveSequence(0, 1)}),
+        cprms=MappingProxyType({RunitId(port=1, runit=0): CaptureParam()}),
+        triggers=MappingProxyType({1: AwgId(port=0, channel=0)}),
+    )
+
+    futures = {
+        _TRIGGERED_CAPTURE_KEY: (
+            cap_task,
+            _FailingTask(
+                RuntimeError("specified timecount (= 1) is too late to schedule")
+            ),
+        )
+    }
+
+    with pytest.raises(RuntimeError, match="too late to schedule"):
+        action.capture_stop(cast(Any, futures))
+
+    assert cap_task.cancel_calls == 1
 
 
 @dataclass

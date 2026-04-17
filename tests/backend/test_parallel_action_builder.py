@@ -8,6 +8,9 @@ from threading import Event, Lock
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
+import numpy as np
+import pytest
+
 import qubex.backend.quel1.compat.parallel_action_builder as parallel_action_builder
 from qubex.backend.quel1.compat.parallel_action_builder import (
     ClockHealthCheckOptions,
@@ -504,6 +507,68 @@ class _ConcurrentCaptureAction:
             self.probe.leave()
 
 
+@dataclass
+class _TooLateCaptureStopAction:
+    _cprms: dict[str, object] = field(default_factory=lambda: {"P0": object()})
+    _wseqs: list[object] = field(default_factory=list)
+    _triggers: dict[str, object] = field(default_factory=dict)
+    box: Any = field(default_factory=lambda: _FakeWavegenBox())
+    capture_start_calls: int = 0
+    capture_stop_calls: int = 0
+    return_data: bool = False
+
+    def capture_start(self, *, timecounter: int | None = None) -> dict[str, str]:
+        _ = timecounter
+        self.capture_start_calls += 1
+        return {"P0": "future"}
+
+    def capture_stop(
+        self,
+        futures: dict[str, str],
+    ) -> tuple[dict[str, object], dict[tuple[str, int], object]]:
+        _ = futures
+        self.capture_stop_calls += 1
+        if self.return_data:
+            return {"P0": "ok"}, {("P0", 0): np.asarray([1 + 0j], dtype=np.complex64)}
+        raise RuntimeError("specified timecount (= 1) is too late to schedule")
+
+
+@dataclass
+class _WavegenTask:
+    failures_before_success: int = 0
+    result_calls: int = 0
+
+    def result(self, timeout: float | None = None) -> None:
+        _ = timeout
+        self.result_calls += 1
+        if self.result_calls <= self.failures_before_success:
+            raise RuntimeError("specified timecount (= 1) is too late to schedule")
+
+
+@dataclass
+class _WavegenBox:
+    task: _WavegenTask
+    reservations: list[tuple[set[tuple[str, int]], int | None]] = field(
+        default_factory=list
+    )
+    current_time: int = 100
+    latest_sysref_time: int = 0
+
+    def get_current_timecounter(self) -> int:
+        return self.current_time
+
+    def get_latest_sysref_timecounter(self) -> int:
+        return self.latest_sysref_time
+
+    def start_wavegen(
+        self,
+        channels: set[tuple[str, int]],
+        timecounter: int | None = None,
+    ) -> _WavegenTask:
+        self.reservations.append((channels, timecounter))
+        return self.task
+
+
 def test_qubecalib_emit_at_reserves_triggered_boxes() -> None:
     """Qubecalib compatibility should reserve emission for triggered boxes."""
     box = _FakeWavegenBox()
@@ -804,3 +869,75 @@ def test_qubex_multi_action_capture_stop_runs_box_calls_in_parallel() -> None:
         ("B1", "P1", 1): "data1",
     }
     assert probe.max_active_calls == 2
+
+
+def test_qubex_multi_action_retries_after_triggered_capture_stop_too_late() -> None:
+    """Triggered capture-stop races should be discarded and retried once."""
+    failing_action = _TooLateCaptureStopAction()
+    stable_action = _TooLateCaptureStopAction(return_data=True)
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"B0": failing_action.box, "B1": stable_action.box},
+                timing_shift={"B0": 0, "B1": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"B0": failing_action, "B1": stable_action}),
+        ),
+        _estimated_timediff=MappingProxyType({"B0": 0, "B1": 0}),
+        _reference_box_name="B0",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+    )
+
+    with pytest.raises(RuntimeError, match="too late to schedule"):
+        multi_action.action()
+
+    assert failing_action.capture_start_calls == 2
+    assert failing_action.capture_stop_calls >= 2
+    assert stable_action.capture_stop_calls >= 1
+
+
+def test_qubex_multi_action_retries_after_non_triggered_emit_too_late() -> None:
+    """Non-triggered AWG races should wait the attempt out and then retry."""
+    trigger_action = _TooLateCaptureStopAction(return_data=True)
+    wavegen_box = _WavegenBox(task=_WavegenTask(failures_before_success=1))
+    non_triggered = _TimedAwgOnlyAction(
+        box=cast(Any, wavegen_box),
+        _wseqs=[SimpleNamespace(port="GEN", channel=1)],
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"MON": trigger_action.box, "GEN": wavegen_box},
+                timing_shift={"MON": 0, "GEN": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"MON": trigger_action, "GEN": non_triggered}),
+        ),
+        _estimated_timediff=MappingProxyType({"MON": 0, "GEN": 0}),
+        _reference_box_name="MON",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+        _arm_triggered_boxes_at_capture_start=True,
+    )
+
+    status, data = multi_action.action()
+
+    assert wavegen_box.task.result_calls >= 2
+    assert len(wavegen_box.reservations) == 2
+    assert trigger_action.capture_stop_calls == 2
+    assert status == {("MON", "P0"): "ok"}
+    assert data == {("MON", "P0", 0): np.asarray([1 + 0j], dtype=np.complex64)}
