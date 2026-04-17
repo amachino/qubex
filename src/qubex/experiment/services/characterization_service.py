@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection
 from copy import deepcopy
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
@@ -57,6 +57,7 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+_CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
 
 
 def _build_ramsey_sequence(
@@ -166,6 +167,29 @@ class CharacterizationService:
     def calibration_service(self) -> CalibrationService:
         """Return the calibration service."""
         return self._calibration_service
+
+    @staticmethod
+    def _is_valid_chevron_rabi_param(param: Any) -> bool:
+        """Return whether a shared Rabi parameter is safe for chevron normalization."""
+        if param is None:
+            return False
+        amplitude = getattr(param, "amplitude", np.nan)
+        return bool(
+            np.isfinite(amplitude) and abs(amplitude) > _CHEVRON_RABI_AMPLITUDE_EPS
+        )
+
+    @staticmethod
+    def _get_chevron_plot_values(
+        data: Any,
+        *,
+        use_fallback: bool,
+    ) -> NDArray[np.float64]:
+        """Return heatmap values for chevron plotting."""
+        if not use_fallback:
+            return np.asarray(data.normalized, dtype=np.float64)
+        # When normalization is invalid, use one fixed raw quadrature.
+        # Real/imag are equivalent here because link-up resets the phase basis.
+        return np.asarray(np.real(data.data), dtype=np.float64)
 
     def measure_readout_snr(
         self,
@@ -543,6 +567,12 @@ class CharacterizationService:
         rabi_rates: dict[str, NDArray] = {}
         chevron_data: dict[str, NDArray] = {}
         resonant_frequencies: dict[str, float] = {}
+        use_fallback_by_target = {
+            target: not self._is_valid_chevron_rabi_param(
+                shared_rabi_params.get(target)
+            )
+            for target in targets
+        }
 
         print(f"Targets : {targets}")
         subgroups = self.ctx.util.create_qubit_subgroups(targets)
@@ -585,7 +615,12 @@ class CharacterizationService:
                             fit_result.get("frequency", np.nan)
                         )
                         data.rabi_param = shared_rabi_params[target]
-                        chevron_data_buffer[target].append(data.normalized)
+                        chevron_data_buffer[target].append(
+                            self._get_chevron_plot_values(
+                                data,
+                                use_fallback=use_fallback_by_target[target],
+                            )
+                        )
 
             for target in subgroup:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
@@ -604,7 +639,14 @@ class CharacterizationService:
                     title=dict(
                         text=f"Chevron pattern : {target}",
                         subtitle=dict(
-                            text=f"control_amplitude={amplitudes[target]:.6g}",
+                            text=(
+                                f"control_amplitude={amplitudes[target]:.6g}"
+                                if not use_fallback_by_target[target]
+                                else (
+                                    f"control_amplitude={amplitudes[target]:.6g}, "
+                                    "fallback=data.real"
+                                )
+                            ),
                             font=dict(
                                 size=13,
                                 family="monospace",
@@ -2120,8 +2162,12 @@ class CharacterizationService:
                 window_length // 2 * 2 + 1,
             )
             polyorder = DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_POLYORDER
-            phases_unwrap_for_peak = savgol_filter(
-                phases_unwrap, window_length=window_length, polyorder=polyorder
+            phases_unwrap_for_peak = np.asarray(
+                savgol_filter(
+                    phases_unwrap,
+                    window_length=window_length,
+                    polyorder=polyorder,
+                )
             )
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
             peaks, props = find_peaks(
@@ -3475,13 +3521,15 @@ class CharacterizationService:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
         """
-        Find readout amplitude maximizing state separation.
+        Find readout amplitude maximizing state separation or readout fidelity.
 
         Parameters
         ----------
@@ -3489,7 +3537,17 @@ class CharacterizationService:
             Target qubit label.
         amplitude_range
             Readout amplitude sweep range.
+        objective
+            Optimization objective: ``"fidelity"`` maximizes GMM-based readout
+            fidelity (default), ``"distance"`` maximizes IQ state distance.
+        fidelity_ratio
+            Fraction of peak fidelity used as the acceptance threshold (0--1).
+            Only used when ``objective="fidelity"``.
         """
+        if objective is None:
+            objective = "fidelity"
+        if fidelity_ratio is None:
+            fidelity_ratio = 0.99
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -3503,25 +3561,70 @@ class CharacterizationService:
         else:
             amplitude_range = np.array(amplitude_range)
 
-        buffer_0 = []
-        buffer_1 = []
+        if objective == "fidelity":
+            return self._find_optimal_readout_amplitude_by_fidelity(
+                target=target,
+                amplitude_range=amplitude_range,
+                fidelity_ratio=fidelity_ratio,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            return self._find_optimal_readout_amplitude_by_distance(
+                target=target,
+                amplitude_range=amplitude_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+
+    def _sweep_readout_amplitude(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        mode: Literal["avg", "single"],
+        shots: int,
+        interval: float,
+    ) -> tuple[list[NDArray], list[NDArray]]:
+        """Sweep readout amplitude and collect IQ data for states 0 and 1."""
+        buffer_0: list[NDArray] = []
+        buffer_1: list[NDArray] = []
         for amplitude in tqdm(amplitude_range):
+            readout_amp = {target: float(amplitude)}
             result_0 = self._measurement_service.measure_state(
                 {target: "0"},
-                mode="avg",
-                readout_amplitudes={target: amplitude},
+                mode=mode,
+                readout_amplitudes=readout_amp,
                 shots=shots,
                 interval=interval,
             )
             result_1 = self._measurement_service.measure_state(
                 {target: "1"},
-                mode="avg",
-                readout_amplitudes={target: amplitude},
+                mode=mode,
+                readout_amplitudes=readout_amp,
                 shots=shots,
                 interval=interval,
             )
             buffer_0.append(result_0.data[target].kerneled)
             buffer_1.append(result_1.data[target].kerneled)
+        return buffer_0, buffer_1
+
+    def _find_optimal_readout_amplitude_by_distance(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing IQ state distance."""
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="avg", shots=shots, interval=interval
+        )
         signals_0 = np.array(buffer_0)
         signals_1 = np.array(buffer_1)
 
@@ -3585,6 +3688,114 @@ class CharacterizationService:
                 "fig": fig,
             },
             figure=fig,
+        )
+
+    def _find_optimal_readout_amplitude_by_fidelity(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        fidelity_ratio: float,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing GMM-based readout fidelity."""
+        from qubex.measurement.classifiers.state_classifier_gmm import (
+            StateClassifierGMM,
+        )
+
+        phase = self.ctx.reference_phases.get(target, 0.0)
+
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="single", shots=shots, interval=interval
+        )
+
+        fidelities: list[float] = []
+        for iq_0, iq_1 in zip(buffer_0, buffer_1, strict=True):
+            classifier = StateClassifierGMM.fit({0: iq_0, 1: iq_1}, phase=phase)
+            fid_per_state = []
+            for state, iq in enumerate([iq_0, iq_1]):
+                predicted = classifier.predict(iq)
+                correct = int(np.sum(predicted == state))
+                fid_per_state.append(correct / len(iq))
+            fidelities.append(float(np.mean(fid_per_state)))
+
+        fid_arr = np.array(fidelities)
+        fid_peak = float(fid_arr.max())
+        plateau_mask = fid_arr >= fid_peak * fidelity_ratio
+        best_idx = int(np.where(plateau_mask)[0][0])
+        optimal_amplitude = float(amplitude_range[best_idx])
+
+        fig = viz.make_figure(width=600, height=300)
+        fig.add_scatter(
+            x=list(amplitude_range),
+            y=list(fid_arr),
+            name="Readout fidelity",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_amplitude,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=(
+                f"amp_opt: {optimal_amplitude:.4f}<br>"
+                f"fidelity: {fid_arr[best_idx]:.4f}<br>"
+                f"peak: {fid_peak:.4f}"
+            ),
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"Readout fidelity : {target}",
+            xaxis_title="Amplitude (arb. units)",
+            yaxis_title="Readout fidelity",
+        )
+
+        figures: dict[str, Any] = {"readout_fidelity": fig}
+
+        classifier_result = self._measurement_service.build_classifier(
+            targets=target,
+            readout_amplitudes={target: optimal_amplitude},
+            n_shots=shots,
+            shot_interval=interval,
+            plot=plot,
+        )
+        if classifier_result.figures is not None:
+            figures.update(classifier_result.figures)
+
+        if plot:
+            fig.show()
+            print(
+                f"amp_opt: {optimal_amplitude:.4f}  "
+                f"readout_fidelity: {fid_arr[best_idx]:.4f}  "
+                f"peak: {fid_peak:.4f}"
+            )
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"optimal_readout_amplitude_fidelity_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "optimal_amplitude": optimal_amplitude,
+                "amplitude_range": amplitude_range,
+                "readout_fidelity": fid_arr,
+                "classifier_result": classifier_result,
+            },
+            figure=fig,
+            figures=figures,
         )
 
     def ckp_sequence(
@@ -4137,6 +4348,7 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
+        in_same_mux: bool = True,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -4149,6 +4361,8 @@ class CharacterizationService:
         ----------
         targets
             Target edges to characterize.
+        in_same_mux
+            Whether to restrict default target edges to the same mux.
         shots
             Number of shots per experiment.
         plot
@@ -4163,7 +4377,7 @@ class CharacterizationService:
         if save_image is None:
             save_image = True
         if targets is None:
-            targets = self.ctx.edge_labels
+            targets = self.ctx.get_edge_labels(in_same_mux=in_same_mux)
         elif isinstance(targets, str):
             targets = [targets]
         else:

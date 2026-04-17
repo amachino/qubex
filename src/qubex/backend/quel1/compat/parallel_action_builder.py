@@ -510,9 +510,9 @@ class QubexMultiAction:
     _emit_triggered_boxes: bool = False
     _arm_triggered_boxes_at_capture_start: bool = False
 
-    SYSREF_PERIOD: Final[int] = 2_000
+    SYSREF_PERIOD: Final[int] = 2_000  # 2e3 ticks = 2e3 * 8 ns = 16 us = 62.5 kHz
     TIMING_OFFSET: Final[int] = 0
-    MIN_TIME_OFFSET: Final[int] = 12_500_000
+    MIN_TIME_OFFSET: Final[int] = 12_500_000  # 12.5e6 ticks = 12.5e6 * 8 ns = 100 ms
 
     @classmethod
     def _mod_by_sysref(cls, t: int) -> int:
