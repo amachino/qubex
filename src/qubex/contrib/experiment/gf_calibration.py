@@ -467,6 +467,8 @@ def gf_chevron_pattern(
                                     tau=ramptime,
                                 ),
                             )
+                        for ge_label in _subgroup:
+                            ps.add(ge_label, exp.pulse.x180(ge_label))
                         return ps
 
                 sweep_result = exp.measurement_service.sweep_parameter(
