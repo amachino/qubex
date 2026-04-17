@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import TimeoutError
 from dataclasses import dataclass, field
 from threading import Event, Lock
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
+
+import pytest
 
 import qubex.backend.quel1.compat.parallel_action_builder as parallel_action_builder
 from qubex.backend.quel1.compat.parallel_action_builder import (
@@ -508,6 +511,10 @@ class _ConcurrentCaptureAction:
 class _CancelableTask:
     cancel_calls: int = 0
 
+    def result(self, timeout: float | None = None) -> None:
+        _ = timeout
+        return None
+
     def cancel(
         self,
         timeout: float | None = None,
@@ -517,11 +524,14 @@ class _CancelableTask:
         self.cancel_calls += 1
         return True
 
+    def running(self) -> bool:
+        return False
+
 
 @dataclass
 class _RetryCaptureAction:
     box: _FakeWavegenBox
-    task: _CancelableTask
+    task: Any
     _cprms: dict[str, object] = field(default_factory=lambda: {"P0": object()})
     _wseqs: list[SimpleNamespace] = field(default_factory=list)
     _triggers: dict[str, object] = field(default_factory=lambda: {"P0": object()})
@@ -562,6 +572,30 @@ class _FailingWavegenTask:
     ) -> bool:
         _ = timeout, polling_period
         self.cancel_calls += 1
+        return True
+
+    def running(self) -> bool:
+        return False
+
+
+@dataclass
+class _StuckTask:
+    cancel_calls: int = 0
+
+    def result(self, timeout: float | None = None) -> None:
+        _ = timeout
+        raise TimeoutError
+
+    def cancel(
+        self,
+        timeout: float | None = None,
+        polling_period: float | None = None,
+    ) -> bool:
+        _ = timeout, polling_period
+        self.cancel_calls += 1
+        return False
+
+    def running(self) -> bool:
         return True
 
 
@@ -971,3 +1005,47 @@ def test_qubex_multi_action_retries_too_late_emit_at() -> None:
     assert len(non_triggered_box.reservations) == 2
     assert status == {("MON", "P0"): "ok"}
     assert data == {("MON", "P0", 0): "data"}
+
+
+def test_qubex_multi_action_does_not_retry_when_cancelled_capture_task_does_not_quiesce() -> (
+    None
+):
+    """Given cancelled capture tasks stay running, action should fail instead of retrying."""
+    stuck_task = _StuckTask()
+    stable_action = _RetryCaptureAction(box=_FakeWavegenBox(), task=stuck_task)
+    retry_action = _RetryCaptureAction(
+        box=_FakeWavegenBox(),
+        task=_CancelableTask(),
+        should_fail_once=True,
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"B0": stable_action.box, "B1": retry_action.box},
+                timing_shift={"B0": 0, "B1": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"B0": stable_action, "B1": retry_action}),
+        ),
+        _estimated_timediff=MappingProxyType({"B0": 0, "B1": 0}),
+        _reference_box_name="B0",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+        _arm_triggered_boxes_at_capture_start=True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="failed to quiesce cancelled capture tasks before retry",
+    ):
+        multi_action.action()
+
+    assert stable_action.capture_start_calls == 1
+    assert retry_action.capture_start_calls == 1
+    assert stuck_task.cancel_calls == 1

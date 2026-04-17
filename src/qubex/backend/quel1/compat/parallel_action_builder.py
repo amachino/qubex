@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -79,6 +79,7 @@ class _WavegenTaskProtocol(Protocol):
 
 _QUICK_CANCEL_TIMEOUT_SECONDS: Final[float] = 0.05
 _QUICK_CANCEL_POLLING_SECONDS: Final[float] = 0.005
+_CANCEL_DRAIN_TIMEOUT_SECONDS: Final[float] = 0.2
 _TOO_LATE_SCHEDULE_RETRY_COUNT: Final[int] = 1
 
 
@@ -535,6 +536,53 @@ def _cancel_capture_future_tree(future_tree: Any) -> None:
     _cancel_one_task_quickly(future_tree)
 
 
+def _iter_task_leaves(task_tree: Any) -> Any:
+    """Yield task-like leaves from nested mappings and sequences."""
+    if isinstance(task_tree, Mapping):
+        for child in task_tree.values():
+            yield from _iter_task_leaves(child)
+        return
+    if isinstance(task_tree, tuple | list | set):
+        for child in task_tree:
+            yield from _iter_task_leaves(child)
+        return
+    yield task_tree
+
+
+def _task_is_running(task: Any) -> bool:
+    """Return whether one task-like object still reports running."""
+    running = getattr(task, "running", None)
+    return bool(running()) if callable(running) else False
+
+
+def _drain_one_task(task: Any) -> tuple[bool, BaseException | None]:
+    """Wait briefly for one cancelled task to reach a terminal state."""
+    result = getattr(task, "result", None)
+    if not callable(result):
+        return True, None
+    try:
+        result(timeout=_CANCEL_DRAIN_TIMEOUT_SECONDS)
+    except CancelledError:
+        return True, None
+    except BaseException as error:
+        if _task_is_running(task):
+            return False, None
+        return True, error
+    return True, None
+
+
+def _drain_task_tree(task_tree: Any) -> tuple[bool, list[BaseException]]:
+    """Wait briefly for all task leaves to quiesce after cancellation."""
+    quiesced = True
+    errors: list[BaseException] = []
+    for task in _iter_task_leaves(task_tree):
+        task_quiesced, error = _drain_one_task(task)
+        quiesced = quiesced and task_quiesced
+        if error is not None:
+            errors.append(error)
+    return quiesced, errors
+
+
 def _task_error(task: _WavegenTaskProtocol) -> BaseException | None:
     """Return one task exception without raising from the loop body."""
     try:
@@ -656,6 +704,11 @@ class QubexMultiAction:
 
         for future_map in results.values():
             _cancel_capture_future_tree(future_map)
+        quiesced, cleanup_errors = _drain_task_tree(results)
+        if cleanup_errors:
+            raise _pick_parallel_error(cleanup_errors)
+        if not quiesced:
+            raise RuntimeError("failed to quiesce cancelled capture tasks before retry")
         raise _pick_parallel_error(errors)
 
     def capture_stop(
@@ -716,6 +769,13 @@ class QubexMultiAction:
             except BaseException as error:
                 if futures is not None:
                     _cancel_capture_future_tree(futures)
+                    quiesced, cleanup_errors = _drain_task_tree(futures)
+                    if cleanup_errors:
+                        raise _pick_parallel_error(cleanup_errors) from error
+                    if not quiesced:
+                        raise RuntimeError(
+                            "failed to quiesce cancelled capture tasks before retry"
+                        ) from error
                 if (
                     attempt < _TOO_LATE_SCHEDULE_RETRY_COUNT
                     and _is_retryable_too_late_error(error)
@@ -817,6 +877,13 @@ class QubexMultiAction:
         if errors:
             for task in tasks:
                 _cancel_one_task_quickly(task)
+            quiesced, cleanup_errors = _drain_task_tree(tasks)
+            if cleanup_errors:
+                raise _pick_parallel_error(cleanup_errors)
+            if not quiesced:
+                raise RuntimeError(
+                    "failed to quiesce cancelled emission tasks before retry"
+                )
             raise _pick_parallel_error(errors)
 
 
