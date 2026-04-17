@@ -492,6 +492,11 @@ def _is_retryable_too_late_error(error: BaseException) -> bool:
     return isinstance(error, RuntimeError) and "too late to schedule" in str(error)
 
 
+def _is_retryable_cancel_side_effect(error: BaseException) -> bool:
+    """Return whether one error is expected from an aborted capture attempt."""
+    return type(error).__name__ == "E7awgCaptureDataError"
+
+
 def _pick_parallel_error(errors: Sequence[BaseException]) -> BaseException:
     """Prefer non-retryable failures when multiple per-box tasks fail."""
     for error in errors:
@@ -566,6 +571,8 @@ def _drain_one_task(task: Any) -> tuple[bool, BaseException | None]:
         return True, None
     except BaseException as error:
         if _is_retryable_too_late_error(error):
+            return True, None
+        if _is_retryable_cancel_side_effect(error):
             return True, None
         if _task_is_running(task):
             return False, None

@@ -600,6 +600,20 @@ class _StuckTask:
 
 
 @dataclass
+class _BrokenDataTask:
+    def result(self, timeout: float | None = None) -> None:
+        _ = timeout
+
+        class E7awgCaptureDataError(Exception):
+            pass
+
+        raise E7awgCaptureDataError
+
+    def running(self) -> bool:
+        return False
+
+
+@dataclass
 class _RetryWavegenBox:
     task: _FailingWavegenTask
     current_time: int = 100
@@ -1012,6 +1026,16 @@ def test_drain_treats_too_late_error_as_quiesced() -> None:
     task = _FailingWavegenTask(failures_before_success=1)
 
     quiesced, errors = parallel_action_builder._drain_task_tree([task])  # noqa: SLF001
+
+    assert quiesced is True
+    assert errors == []
+
+
+def test_drain_treats_broken_data_error_from_aborted_attempt_as_quiesced() -> None:
+    """Given broken-data error during cleanup, drain should allow retry to continue."""
+    quiesced, errors = parallel_action_builder._drain_task_tree(  # noqa: SLF001
+        [_BrokenDataTask()]
+    )
 
     assert quiesced is True
     assert errors == []
