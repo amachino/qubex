@@ -8,6 +8,7 @@ import qxvisualizer as viz
 from numpy.typing import NDArray
 from scipy.optimize import curve_fit
 
+from qubex.analysis import FitResult, FitStatus
 from qubex.experiment.experiment import Experiment
 from qubex.experiment.models.result import Result
 
@@ -74,7 +75,7 @@ def fit_readout_parameters(
     a: float | None = None,
     b: float | None = None,
     split_freq_width: float = 0.15,
-) -> None:
+) -> FitResult:
     """
     Fit readout parameters from characterize_readout_parameters output.
 
@@ -131,13 +132,19 @@ def fit_readout_parameters(
     ]
 
     initial_guess = [kappa_p, J, f_p, f_r, a, b]
-    popt, pcov = curve_fit(
-        _fit_func,
-        _frequency_range,
-        _phases,
-        p0=initial_guess,
-        bounds=bounds_params,
-    )
+    try:
+        popt, pcov = curve_fit(
+            _fit_func,
+            _frequency_range,
+            _phases,
+            p0=initial_guess,
+            bounds=bounds_params,
+        )
+    except Exception as e:
+        return FitResult(
+            status=FitStatus.ERROR,
+            message=f"Fitting failed: {e}",
+        )
 
     perr = np.sqrt(np.diag(pcov))
 
@@ -204,6 +211,7 @@ def fit_readout_parameters(
         font=dict(size=14),
     )
     fig.show()
+
     print("Fitted parameters:")
     print(f"R² score: {r2_score:.4f}")
     print(
@@ -233,6 +241,42 @@ def fit_readout_parameters(
     print(
         f"b                                             : {popt[5]:.4f} ± {perr[5]:.4f} rad"
     )
+
+    data_payload = {
+        "kappa_p": popt[0],
+        "kappa_p_err": perr[0],
+        "J": popt[1],
+        "J_err": perr[1],
+        "f_p": popt[2],
+        "f_p_err": perr[2],
+        "f_r": popt[3],
+        "f_r_err": perr[3],
+        "a": popt[4],
+        "a_err": perr[4],
+        "b": popt[5],
+        "b_err": perr[5],
+        "popt": popt,
+        "pcov": pcov,
+        "perr": perr,
+        "r2": r2_score,
+        "y_fit": y_pred,
+    }
+    if r2_score > 0.9:
+        status = FitStatus.SUCCESS
+        return FitResult(
+            status=status,
+            message="R² < 0.9",
+            data=data_payload,
+            figure=fig,
+        )
+    else:
+        status = FitStatus.WARNING
+        return FitResult(
+            status=status,
+            message=f"R² < 0.9: {r2_score:.4f}",
+            data=data_payload,
+            figure=fig,
+        )
 
 
 def _Gamma(
