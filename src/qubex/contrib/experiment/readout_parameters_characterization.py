@@ -178,6 +178,8 @@ def fit_readout_parameters(
     )
     fig.add_vline(
         x=popt[2],
+        name="Purcell filter",
+        showlegend=True,
         line=dict(color="red", dash="dash"),
         annotation=dict(
             text="",
@@ -188,6 +190,8 @@ def fit_readout_parameters(
     )
     fig.add_vline(
         x=popt[3],
+        name="Resonator",
+        showlegend=True,
         line=dict(color="green", dash="dash"),
         annotation=dict(
             text="",
