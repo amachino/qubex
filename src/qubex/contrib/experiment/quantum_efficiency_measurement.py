@@ -76,6 +76,31 @@ class RamseyFringeSummary(TypedDict):
     sigma_z_fit: NDArray[np.float64]
 
 
+class GaussianHistogramComponentSummary(TypedDict):
+    """Typed one-component Gaussian summary extracted from a histogram fit."""
+
+    mu: float
+    sigma: float
+    weight: float
+
+
+class DoubleGaussianHistogramFitSummary(TypedDict):
+    """Typed double-Gaussian histogram fit payload."""
+
+    status: str
+    message: str
+    bin_edges: NDArray[np.float64]
+    bin_centers: NDArray[np.float64]
+    counts: NDArray[np.float64]
+    fit_counts: NDArray[np.float64]
+    fit_axis: NDArray[np.float64]
+    total_curve: NDArray[np.float64]
+    main_curve: NDArray[np.float64]
+    spurious_curve: NDArray[np.float64]
+    main_component: GaussianHistogramComponentSummary
+    spurious_component: GaussianHistogramComponentSummary
+
+
 class ReadoutSnrSummary(TypedDict):
     """Typed single-amplitude readout-SNR payload."""
 
@@ -89,6 +114,8 @@ class ReadoutSnrSummary(TypedDict):
     weights: NDArray[np.complex128]
     projected_ground: NDArray[np.float64]
     projected_excited: NDArray[np.float64]
+    ground_fit: DoubleGaussianHistogramFitSummary
+    excited_fit: DoubleGaussianHistogramFitSummary
 
 
 def _show_figure(fig: go.Figure, filename: str) -> None:
@@ -228,6 +255,294 @@ def _dense_fit_axis(
     return np.linspace(float(np.min(values)), float(np.max(values)), n_points)
 
 
+def _gaussian_pdf(
+    x: ArrayLike,
+    *,
+    mu: float,
+    sigma: float,
+    zero_tolerance: float = ZERO_TOLERANCE,
+) -> NDArray[np.float64]:
+    """Return one normalized Gaussian PDF on the input axis."""
+    axis = np.asarray(x, dtype=np.float64)
+    sigma_safe = max(float(sigma), zero_tolerance)
+    normalized = (axis - float(mu)) / sigma_safe
+    return np.exp(-0.5 * normalized**2) / (np.sqrt(2.0 * np.pi) * sigma_safe)
+
+
+def _resolve_histogram_bin_edges(
+    values: ArrayLike,
+    *,
+    min_bins: int = 20,
+    max_bins: int = 80,
+) -> NDArray[np.float64]:
+    """Return one finite, increasing histogram edge array."""
+    samples = _normalize_float_array(values, name="histogram_values")
+    lower = float(np.min(samples))
+    upper = float(np.max(samples))
+    if upper - lower < ZERO_TOLERANCE:
+        half_span = max(abs(lower), 1.0)
+        return np.linspace(
+            lower - half_span,
+            lower + half_span,
+            min_bins + 1,
+            dtype=np.float64,
+        )
+
+    edges = np.histogram_bin_edges(samples, bins="fd")
+    n_bins = len(edges) - 1
+    if n_bins < min_bins:
+        edges = np.histogram_bin_edges(samples, bins=min_bins)
+    elif n_bins > max_bins:
+        edges = np.histogram_bin_edges(samples, bins=max_bins)
+    edges = np.asarray(edges, dtype=np.float64)
+    if len(edges) < 2 or not np.all(np.diff(edges) > 0):
+        return np.linspace(lower, upper, min_bins + 1, dtype=np.float64)
+    return edges
+
+
+def _fallback_double_gaussian_histogram_fit(
+    values: NDArray[np.float64],
+    *,
+    bin_edges: NDArray[np.float64],
+    message: str,
+) -> DoubleGaussianHistogramFitSummary:
+    """Return one direct-statistics fallback when the double-Gaussian fit fails."""
+    edges = np.asarray(bin_edges, dtype=np.float64)
+    counts, _ = np.histogram(values, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    bin_width = float(edges[1] - edges[0])
+    mu = float(np.mean(values))
+    sigma = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
+    sigma = max(sigma, bin_width / np.sqrt(12.0), ZERO_TOLERANCE)
+    fit_axis = np.linspace(float(edges[0]), float(edges[-1]), 500, dtype=np.float64)
+    total_curve = len(values) * bin_width * _gaussian_pdf(fit_axis, mu=mu, sigma=sigma)
+    fit_counts = len(values) * bin_width * _gaussian_pdf(centers, mu=mu, sigma=sigma)
+    zero_curve = np.zeros_like(fit_axis)
+    return {
+        "status": "fallback",
+        "message": message,
+        "bin_edges": edges,
+        "bin_centers": centers.astype(np.float64),
+        "counts": counts.astype(np.float64),
+        "fit_counts": fit_counts.astype(np.float64),
+        "fit_axis": fit_axis,
+        "total_curve": total_curve.astype(np.float64),
+        "main_curve": total_curve.astype(np.float64),
+        "spurious_curve": zero_curve.astype(np.float64),
+        "main_component": {
+            "mu": mu,
+            "sigma": sigma,
+            "weight": 1.0,
+        },
+        "spurious_component": {
+            "mu": mu,
+            "sigma": sigma,
+            "weight": 0.0,
+        },
+    }
+
+
+def _fit_double_gaussian_histogram(
+    values: ArrayLike,
+    *,
+    name: str,
+    bin_edges: NDArray[np.float64] | None = None,
+) -> DoubleGaussianHistogramFitSummary:
+    """
+    Fit one histogram with the sum of two Gaussian functions.
+
+    This follows the SNR-extraction procedure described in Fig. 1(c) of
+    arXiv:1711.05336, where the main Gaussian is used for the final signal and
+    noise estimates while the second Gaussian absorbs spurious state-preparation
+    and relaxation events.
+    """
+    samples = _normalize_float_array(values, name=name)
+    if bin_edges is None:
+        edges = _resolve_histogram_bin_edges(samples)
+    else:
+        edges = _normalize_float_array(bin_edges, name=f"{name}_bin_edges")
+        if len(edges) < 2 or not np.all(np.diff(edges) > 0):
+            raise ValueError(f"`{name}_bin_edges` must be a strictly increasing array.")
+
+    counts, _ = np.histogram(samples, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    bin_width = float(edges[1] - edges[0])
+    if len(samples) < 4 or len(centers) < 2:
+        return _fallback_double_gaussian_histogram_fit(
+            samples,
+            bin_edges=edges,
+            message="Insufficient data for double-Gaussian histogram fitting.",
+        )
+
+    sample_std = float(np.std(samples, ddof=1)) if len(samples) > 1 else 0.0
+    if sample_std < ZERO_TOLERANCE:
+        return _fallback_double_gaussian_histogram_fit(
+            samples,
+            bin_edges=edges,
+            message="Degenerate projected data prevented double-Gaussian fitting.",
+        )
+
+    def model(
+        x: NDArray[np.float64],
+        weight: float,
+        mu_1: float,
+        sigma_1: float,
+        mu_2: float,
+        sigma_2: float,
+    ) -> NDArray[np.float64]:
+        return len(samples) * bin_width * (
+            weight * _gaussian_pdf(x, mu=mu_1, sigma=sigma_1)
+            + (1.0 - weight) * _gaussian_pdf(x, mu=mu_2, sigma=sigma_2)
+        )
+
+    q25, q50, q75 = np.quantile(samples, [0.25, 0.5, 0.75])
+    lower_half = samples[samples <= q50]
+    upper_half = samples[samples > q50]
+    mu_1_init = float(np.mean(lower_half)) if lower_half.size else float(q25)
+    mu_2_init = float(np.mean(upper_half)) if upper_half.size else float(q75)
+    if abs(mu_2_init - mu_1_init) < ZERO_TOLERANCE:
+        mu_1_init = float(q25)
+        mu_2_init = float(q75)
+
+    sigma_floor = max(bin_width / np.sqrt(12.0), sample_std / 20.0, 1e-6)
+    sigma_1_init = max(
+        float(np.std(lower_half, ddof=1)) if lower_half.size > 1 else sample_std / 2.0,
+        sigma_floor,
+    )
+    sigma_2_init = max(
+        float(np.std(upper_half, ddof=1)) if upper_half.size > 1 else sample_std / 2.0,
+        sigma_floor,
+    )
+    dominant_center = float(centers[int(np.argmax(counts))])
+    weight_init = 0.8 if abs(mu_1_init - dominant_center) <= abs(mu_2_init - dominant_center) else 0.2
+
+    span = max(float(np.max(samples) - np.min(samples)), sigma_floor)
+    lower_bounds = np.array(
+        [
+            1e-6,
+            float(np.min(samples)) - 2.0 * span,
+            sigma_floor,
+            float(np.min(samples)) - 2.0 * span,
+            sigma_floor,
+        ],
+        dtype=np.float64,
+    )
+    upper_bounds = np.array(
+        [
+            1.0 - 1e-6,
+            float(np.max(samples)) + 2.0 * span,
+            max(10.0 * span, 10.0 * sigma_floor),
+            float(np.max(samples)) + 2.0 * span,
+            max(10.0 * span, 10.0 * sigma_floor),
+        ],
+        dtype=np.float64,
+    )
+
+    candidate_parameters = [
+        np.array(
+            [weight_init, mu_1_init, sigma_1_init, mu_2_init, sigma_2_init],
+            dtype=np.float64,
+        ),
+        np.array(
+            [1.0 - weight_init, mu_1_init, sigma_1_init, mu_2_init, sigma_2_init],
+            dtype=np.float64,
+        ),
+        np.array(
+            [1.0 - weight_init, mu_2_init, sigma_2_init, mu_1_init, sigma_1_init],
+            dtype=np.float64,
+        ),
+    ]
+
+    from scipy.optimize import curve_fit  # lazy import
+
+    sigma_counts = np.sqrt(np.maximum(counts.astype(np.float64), 1.0))
+    best_parameters: NDArray[np.float64] | None = None
+    best_cost = np.inf
+    last_error: Exception | None = None
+    for initial in candidate_parameters:
+        try:
+            popt, _ = curve_fit(
+                model,
+                centers,
+                counts.astype(np.float64),
+                p0=np.clip(initial, lower_bounds, upper_bounds),
+                bounds=(lower_bounds, upper_bounds),
+                sigma=sigma_counts,
+                absolute_sigma=True,
+                maxfev=50_000,
+            )
+        except Exception as exc:
+            last_error = exc
+            continue
+
+        residual = (counts.astype(np.float64) - model(centers, *popt)) / sigma_counts
+        cost = float(np.sum(residual**2))
+        if cost < best_cost:
+            best_cost = cost
+            best_parameters = np.asarray(popt, dtype=np.float64)
+
+    if best_parameters is None:
+        detail = f": {last_error}" if last_error is not None else "."
+        return _fallback_double_gaussian_histogram_fit(
+            samples,
+            bin_edges=edges,
+            message=f"Double-Gaussian histogram fitting failed for {name}{detail}",
+        )
+
+    weight_1 = float(best_parameters[0])
+    component_1 = {
+        "mu": float(best_parameters[1]),
+        "sigma": float(best_parameters[2]),
+        "weight": weight_1,
+    }
+    component_2 = {
+        "mu": float(best_parameters[3]),
+        "sigma": float(best_parameters[4]),
+        "weight": 1.0 - weight_1,
+    }
+    if component_1["weight"] >= component_2["weight"]:
+        main_component = component_1
+        spurious_component = component_2
+    else:
+        main_component = component_2
+        spurious_component = component_1
+
+    fit_axis = np.linspace(float(edges[0]), float(edges[-1]), 500, dtype=np.float64)
+
+    def component_curve(
+        x: NDArray[np.float64],
+        component: GaussianHistogramComponentSummary,
+    ) -> NDArray[np.float64]:
+        return len(samples) * bin_width * component["weight"] * _gaussian_pdf(
+            x,
+            mu=component["mu"],
+            sigma=component["sigma"],
+        )
+
+    total_curve = component_curve(fit_axis, component_1) + component_curve(
+        fit_axis, component_2
+    )
+    fit_counts = component_curve(centers, component_1) + component_curve(
+        centers, component_2
+    )
+    return {
+        "status": "success",
+        "message": f"Double-Gaussian histogram fitting successful for {name}.",
+        "bin_edges": edges.astype(np.float64),
+        "bin_centers": centers.astype(np.float64),
+        "counts": counts.astype(np.float64),
+        "fit_counts": fit_counts.astype(np.float64),
+        "fit_axis": fit_axis,
+        "total_curve": total_curve.astype(np.float64),
+        "main_curve": component_curve(fit_axis, main_component).astype(np.float64),
+        "spurious_curve": component_curve(fit_axis, spurious_component).astype(
+            np.float64
+        ),
+        "main_component": main_component,
+        "spurious_component": spurious_component,
+    }
+
+
 def _fit_ramsey_fringe(
     phases: ArrayLike,
     excited_probabilities: ArrayLike,
@@ -333,7 +648,10 @@ def compute_readout_snr(
 
     For waveform IQ data, the projection weight is the mean state difference
     ``mean_e - mean_g``. For already-integrated IQ data, the projection axis is
-    the mean-state separation. The final scalar SNR is
+    the mean-state separation. The projected ``|g>`` and ``|e>`` histograms are
+    then fit independently with the sum of two Gaussian functions, following the
+    SNR-extraction procedure described in Fig. 1(c) of arXiv:1711.05336. The
+    final scalar SNR is
 
     ``SNR = |mu_e - mu_g| / (0.5 * (sigma_g + sigma_e))``.
     """
@@ -362,14 +680,24 @@ def compute_readout_snr(
             projected_ground = np.real(ground @ np.conj(weights))
             projected_excited = np.real(excited @ np.conj(weights))
 
-    mu_ground = float(np.mean(projected_ground))
-    mu_excited = float(np.mean(projected_excited))
-    sigma_ground = (
-        float(np.std(projected_ground, ddof=1)) if len(projected_ground) > 1 else 0.0
+    common_bin_edges = _resolve_histogram_bin_edges(
+        np.concatenate([projected_ground, projected_excited]),
     )
-    sigma_excited = (
-        float(np.std(projected_excited, ddof=1)) if len(projected_excited) > 1 else 0.0
+    ground_fit = _fit_double_gaussian_histogram(
+        projected_ground,
+        name="projected_ground",
+        bin_edges=common_bin_edges,
     )
+    excited_fit = _fit_double_gaussian_histogram(
+        projected_excited,
+        name="projected_excited",
+        bin_edges=common_bin_edges,
+    )
+
+    mu_ground = float(ground_fit["main_component"]["mu"])
+    mu_excited = float(excited_fit["main_component"]["mu"])
+    sigma_ground = float(ground_fit["main_component"]["sigma"])
+    sigma_excited = float(excited_fit["main_component"]["sigma"])
 
     signal = abs(mu_excited - mu_ground)
     noise = 0.5 * (sigma_ground + sigma_excited)
@@ -386,6 +714,8 @@ def compute_readout_snr(
         "weights": np.asarray(weights, dtype=np.complex128),
         "projected_ground": np.asarray(projected_ground, dtype=np.float64),
         "projected_excited": np.asarray(projected_excited, dtype=np.float64),
+        "ground_fit": ground_fit,
+        "excited_fit": excited_fit,
     }
 
 
@@ -972,21 +1302,88 @@ def _readout_snr(
         print(f"  noise = {float(summary['noise']):.6g}")
         print(f"  snr = {float(summary['snr']):.6g}")
 
+    ground_fit = summary["ground_fit"]
+    excited_fit = summary["excited_fit"]
+    common_edges = np.asarray(ground_fit["bin_edges"], dtype=np.float64)
+    xbins = dict(
+        start=float(common_edges[0]),
+        end=float(common_edges[-1]),
+        size=float(common_edges[1] - common_edges[0]),
+    )
+    ground_color = "#1f77b4"
+    excited_color = "#d62728"
+
     projection_figure = viz.make_figure()
     projection_figure.add_trace(
         go.Histogram(
             x=np.asarray(summary["projected_ground"], dtype=np.float64),
             name="|g⟩",
-            opacity=0.65,
-            nbinsx=40,
+            opacity=0.55,
+            marker_color=ground_color,
+            xbins=xbins,
         )
     )
     projection_figure.add_trace(
         go.Histogram(
             x=np.asarray(summary["projected_excited"], dtype=np.float64),
             name="|e⟩",
-            opacity=0.65,
-            nbinsx=40,
+            opacity=0.55,
+            marker_color=excited_color,
+            xbins=xbins,
+        )
+    )
+    projection_figure.add_trace(
+        go.Scatter(
+            x=np.asarray(ground_fit["fit_axis"], dtype=np.float64),
+            y=np.asarray(ground_fit["total_curve"], dtype=np.float64),
+            mode="lines",
+            name="|g⟩ fit",
+            line={"color": ground_color, "width": 2},
+        )
+    )
+    projection_figure.add_trace(
+        go.Scatter(
+            x=np.asarray(ground_fit["fit_axis"], dtype=np.float64),
+            y=np.asarray(ground_fit["main_curve"], dtype=np.float64),
+            mode="lines",
+            name="|g⟩ main",
+            line={"color": ground_color, "dash": "dash", "width": 1.5},
+        )
+    )
+    projection_figure.add_trace(
+        go.Scatter(
+            x=np.asarray(ground_fit["fit_axis"], dtype=np.float64),
+            y=np.asarray(ground_fit["spurious_curve"], dtype=np.float64),
+            mode="lines",
+            name="|g⟩ spurious",
+            line={"color": ground_color, "dash": "dot", "width": 1.5},
+        )
+    )
+    projection_figure.add_trace(
+        go.Scatter(
+            x=np.asarray(excited_fit["fit_axis"], dtype=np.float64),
+            y=np.asarray(excited_fit["total_curve"], dtype=np.float64),
+            mode="lines",
+            name="|e⟩ fit",
+            line={"color": excited_color, "width": 2},
+        )
+    )
+    projection_figure.add_trace(
+        go.Scatter(
+            x=np.asarray(excited_fit["fit_axis"], dtype=np.float64),
+            y=np.asarray(excited_fit["main_curve"], dtype=np.float64),
+            mode="lines",
+            name="|e⟩ main",
+            line={"color": excited_color, "dash": "dash", "width": 1.5},
+        )
+    )
+    projection_figure.add_trace(
+        go.Scatter(
+            x=np.asarray(excited_fit["fit_axis"], dtype=np.float64),
+            y=np.asarray(excited_fit["spurious_curve"], dtype=np.float64),
+            mode="lines",
+            name="|e⟩ spurious",
+            line={"color": excited_color, "dash": "dot", "width": 1.5},
         )
     )
     projection_figure.update_layout(
