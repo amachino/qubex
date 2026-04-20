@@ -12,11 +12,13 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 
 ## Source snapshot (reference)
 
-- `packages/quelware-client/quelware-client/src/quelware_client/client/helpers/sequencer/__init__.py`
-- `packages/quelware-client/quelware-client/src/quelware_client/core/_client.py`
-- `packages/quelware-client/quelware-client/src/quelware_client/core/_session.py`
-- `packages/quelware-client/quelware-client/src/quelware_client/core/instrument_driver/__init__.py`
-- `packages/quelware-client/quelware-client/examples/generate_readout_pulse.py`
+- PyPI package `quelware-client`
+- Official `quelware-client` repository source tree
+- `quelware_client.client.helpers.sequencer`
+- `quelware_client.core._client`
+- `quelware_client.core._session`
+- `quelware_client.core.instrument_driver`
+- Official `generate_readout_pulse.py` example
 
 ## Integration boundary in Qubex
 

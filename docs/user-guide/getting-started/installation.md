@@ -58,10 +58,6 @@ Use this variant when you plan to use Qubex with QuEL-3 runtime support.
 uv pip install "qubex[quel3] @ git+https://github.com/amachino/qubex.git"
 ```
 
-`quel3` depends on `quelware-client`. If that package is not published on
-PyPI, install it from the package source or index specified by your
-environment.
-
 ### Install specific version
 
 Use this option when you need a pinned version for reproducibility.
