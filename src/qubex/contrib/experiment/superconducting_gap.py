@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 import plotly.graph_objects as go
@@ -23,6 +23,7 @@ _DEFAULT_DESCRIPTION = (
 _DEFAULT_UNIT = "ueV"
 _DEFAULT_RESISTANCE_DESCRIPTION = "Resistance charge after annealing"
 _DEFAULT_RESISTANCE_UNIT = "ohms"
+_KeyT = TypeVar("_KeyT")
 
 
 def _infer_all_qubit_labels(exp: Experiment) -> list[str]:
@@ -76,7 +77,7 @@ def _resolve_resistance_source(
 
 
 def _normalize_qubit_values(
-    raw_values: Mapping[str | int, float | None],
+    raw_values: Mapping[_KeyT, float | None],
     *,
     all_labels: list[str],
 ) -> dict[str, float | None]:
