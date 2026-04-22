@@ -57,8 +57,6 @@ def test_superconducting_gap_uses_full_system_qubits_beyond_active_mux_subset() 
             ge_targets=[
                 SimpleNamespace(qubit="Q00"),
                 SimpleNamespace(qubit="Q01"),
-                SimpleNamespace(qubit="Q02"),
-                SimpleNamespace(qubit="Q03"),
             ],
         ),
         ctx=SimpleNamespace(
@@ -88,8 +86,8 @@ def test_superconducting_gap_uses_full_system_qubits_beyond_active_mux_subset() 
     assert data["Q03"] is not None
 
 
-def test_superconducting_gap_raises_when_resistance_is_missing() -> None:
-    """Given missing resistance, when estimating gap, then helper raises a descriptive ValueError."""
+def test_superconducting_gap_skips_when_resistance_is_missing() -> None:
+    """Given missing resistance, when estimating gap, then helper stores None for that qubit."""
     exp = SimpleNamespace(
         chip_id="2Qv1",
         ctx=SimpleNamespace(
@@ -101,11 +99,13 @@ def test_superconducting_gap_raises_when_resistance_is_missing() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="missing target `Q01`"):
-        get_superconducting_gap(
-            exp,  # type: ignore[arg-type]
-            resistance_charge={"Q00": 4700.0},
-        )
+    result = get_superconducting_gap(
+        exp,  # type: ignore[arg-type]
+        resistance_charge={"Q00": 4700.0},
+    )
+    data = result.data["data"]
+    assert data["Q00"] is not None
+    assert data["Q01"] is None
 
 
 def test_superconducting_gap_raises_when_default_resistance_file_is_missing(
@@ -252,8 +252,8 @@ def test_resistance_charge_raises_when_default_file_is_missing(tmp_path: Path) -
         )
 
 
-def test_resistance_charge_accepts_numeric_index_keys() -> None:
-    """Given numeric index keys, when loading resistance values, then helper maps them to qubit labels."""
+def test_resistance_charge_ignores_noncanonical_keys() -> None:
+    """Given noncanonical keys, when loading resistance values, then helper ignores them."""
     exp = SimpleNamespace(
         chip_id="4Qv1",
         ctx=SimpleNamespace(
@@ -273,22 +273,27 @@ def test_resistance_charge_accepts_numeric_index_keys() -> None:
 
     data = result.data["data"]
     assert isinstance(data, dict)
-    assert data["Q00"] == 4700.0
-    assert data["Q01"] == 4710.0
+    assert data["Q00"] is None
+    assert data["Q01"] is None
     assert data["Q02"] is None
-    assert data["Q03"] == 4720.0
+    assert data["Q03"] is None
 
 
 def test_resistance_charge_uses_full_system_qubits_beyond_active_mux_subset() -> None:
     """Given full-system metadata, when active muxes are partial, then all available qubits are populated."""
+    full_system_qubits = [
+        SimpleNamespace(label="Q00"),
+        SimpleNamespace(label="Q01"),
+        SimpleNamespace(label="Q02"),
+        SimpleNamespace(label="Q03"),
+    ]
     exp = SimpleNamespace(
         chip_id="4Qv1",
         experiment_system=SimpleNamespace(
+            qubits=full_system_qubits,
             ge_targets=[
                 SimpleNamespace(qubit="Q00"),
                 SimpleNamespace(qubit="Q01"),
-                SimpleNamespace(qubit="Q02"),
-                SimpleNamespace(qubit="Q03"),
             ],
         ),
         ctx=SimpleNamespace(
