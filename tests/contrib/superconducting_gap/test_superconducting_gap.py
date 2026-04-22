@@ -62,11 +62,11 @@ def test_superconducting_gap_raises_when_resistance_is_missing() -> None:
         )
 
 
-def test_superconducting_gap_raises_when_default_resistance_file_is_missing() -> None:
+def test_superconducting_gap_raises_when_default_resistance_file_is_missing(
+    tmp_path: Path,
+) -> None:
     """Given no resistance source, when default params file is absent, then helper raises FileNotFoundError."""
-    missing_params_path = (
-        "/home/nilton/work/work_experiments_2026_04/.tmp/nonexistent-qubex-params"
-    )
+    missing_params_path = tmp_path / "nonexistent-qubex-params"
     exp = SimpleNamespace(
         chip_id="2Qv1",
         config_loader=SimpleNamespace(params_path=missing_params_path),
@@ -184,11 +184,9 @@ def test_resistance_charge_loads_from_default_params_file(tmp_path: Path) -> Non
     assert data["Q00"] == 4700.0
 
 
-def test_resistance_charge_raises_when_default_file_is_missing() -> None:
+def test_resistance_charge_raises_when_default_file_is_missing(tmp_path: Path) -> None:
     """Given no source and missing default file, when helper runs, then FileNotFoundError is raised."""
-    missing_params_path = (
-        "/home/nilton/work/work_experiments_2026_04/.tmp/nonexistent-resistance-params"
-    )
+    missing_params_path = tmp_path / "nonexistent-resistance-params"
     exp = SimpleNamespace(
         chip_id="2Qv1",
         config_loader=SimpleNamespace(params_path=missing_params_path),
