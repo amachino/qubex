@@ -38,6 +38,7 @@ from qubex.typing import MeasurementMode
 class _FakePulseSchedule:
     duration: float
     sequences: dict[str, PulseArray]
+    frequencies: dict[str, float] = field(default_factory=dict)
     valid: bool = True
 
     @property
@@ -54,11 +55,18 @@ class _FakePulseSchedule:
     def get_sampled_sequences(self) -> dict[str, np.ndarray]:
         raise AssertionError("Quel3 adapter must not call get_sampled_sequences().")
 
+    def get_frequency(self, label: str) -> float:
+        return self.frequencies[label]
+
+    def set_frequency(self, label: str, frequency: float) -> None:
+        self.frequencies[label] = frequency
+
 
 @dataclass
 class _FakeExperimentSystem:
     target_registry: Any = field(default_factory=TargetRegistry)
     awg_frequency: float = 100_000_000.0
+    target_frequencies: dict[str, float] = field(default_factory=dict)
     target_port_ids: dict[str, str] = field(default_factory=dict)
     capture_port_ids: dict[str, str] = field(default_factory=dict)
     target_port_bindings: dict[str, tuple[str, int]] = field(default_factory=dict)
@@ -95,6 +103,7 @@ class _FakeExperimentSystem:
         port_id = self.target_port_ids.get(label, f"box-{label}")
         target_type = self._target_type_for_label(label)
         return SimpleNamespace(
+            frequency=self.target_frequencies.get(label, float("nan")),
             type=target_type,
             is_read=(target_type is TargetType.READ),
             channel=SimpleNamespace(
@@ -277,6 +286,138 @@ def test_quel3_adapter_builds_fixed_timeline_payload() -> None:
     assert timeline.capture_windows[0].name == f"{target}:0"
     assert timeline.capture_windows[0].start_offset_ns == pytest.approx(0.4)
     assert timeline.capture_windows[0].length_ns == pytest.approx(0.4)
+
+
+def test_quel3_adapter_embeds_schedule_frequency_in_payload() -> None:
+    """Given schedule frequency metadata, when building payload, then timeline frequency is preserved."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    pulse_schedule = _FakePulseSchedule(
+        duration=1.2,
+        sequences={
+            target: _pulse_array(
+                values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                sampling_period=0.4,
+            )
+        },
+    )
+    pulse_schedule.set_frequency(target, 6.25)
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.fixed_timelines[target].frequency_hz == pytest.approx(6.25e9)
+
+
+def test_quel3_adapter_falls_back_to_target_frequency_in_payload() -> None:
+    """Given target frequency metadata, when schedule frequency is absent, then timeline frequency uses target frequency."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(
+            Any,
+            _FakeExperimentSystem(target_frequencies={target: 9.87}),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.fixed_timelines[target].frequency_hz == pytest.approx(9.87e9)
+
+
+def test_quel3_adapter_treats_schedule_frequency_as_ghz() -> None:
+    """Given schedule frequency metadata, when building payload, then it is converted from GHz to Hz."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    pulse_schedule = _FakePulseSchedule(
+        duration=1.2,
+        sequences={
+            target: _pulse_array(
+                values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                sampling_period=0.4,
+            )
+        },
+    )
+    pulse_schedule.set_frequency(target, 0.14)
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.fixed_timelines[target].frequency_hz == pytest.approx(140e6)
+
+
+def test_quel3_adapter_prefers_schedule_frequency_over_target_frequency() -> None:
+    """Given both schedule and target frequencies, when building payload, then schedule frequency wins."""
+    target = "Q00"
+    alias = "alias-Q00"
+    pulse_schedule = _FakePulseSchedule(
+        duration=1.2,
+        sequences={
+            target: _pulse_array(
+                values=np.array([0.1 + 0.0j], dtype=np.complex128),
+                sampling_period=0.4,
+            )
+        },
+    )
+    pulse_schedule.set_frequency(target, 5.12)
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(
+            Any,
+            _FakeExperimentSystem(target_frequencies={target: 5.08}),
+        ),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=_make_config())
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.fixed_timelines[target].frequency_hz == pytest.approx(5.12e9)
 
 
 def test_quel3_adapter_applies_mux_capture_delay_to_capture_windows() -> None:

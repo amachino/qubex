@@ -75,7 +75,12 @@ class _CountingInstrumentResolver(_FakeInstrumentResolver):
         self.refresh_calls += 1
 
 
-def _make_payload(*, mode: str = "avg", n_iterations: int = 2) -> Quel3ExecutionPayload:
+def _make_payload(
+    *,
+    mode: str = "avg",
+    n_iterations: int = 2,
+    frequency_hz: float | None = None,
+) -> Quel3ExecutionPayload:
     waveform_name = "wf0"
     timeline = Quel3FixedTimeline(
         events=(
@@ -88,6 +93,7 @@ def _make_payload(*, mode: str = "avg", n_iterations: int = 2) -> Quel3Execution
             Quel3CaptureWindow(name="capture_0", start_offset_ns=0.4, length_ns=0.4),
         ),
         length_ns=0.8,
+        frequency_hz=frequency_hz,
     )
     return Quel3ExecutionPayload(
         waveform_library={
@@ -511,7 +517,7 @@ def test_constructor_rejects_mismatched_injected_client_runtime_values() -> None
 
 def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:
     """Given shared alias bindings, resolved payload merges timelines per alias."""
-    payload = _make_payload()
+    payload = _make_payload(frequency_hz=6.2e9)
     payload = replace(
         payload,
         fixed_timelines={
@@ -543,6 +549,38 @@ def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:
         "alias-shared:0",
         "alias-shared:1",
     ]
+    assert timeline.frequency_hz == pytest.approx(6.2e9)
+
+
+def test_resolve_payload_rejects_conflicting_frequencies_for_shared_alias() -> None:
+    """Given shared alias with different frequencies, resolving payload should fail."""
+    payload = _make_payload()
+    base_timeline = payload.fixed_timelines["alias-rq00"]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "RQ00": replace(base_timeline, frequency_hz=6.0e9),
+            "RQ01": replace(base_timeline, frequency_hz=6.1e9),
+        },
+        instrument_bindings={
+            "RQ00": "alias:alias-shared",
+            "RQ01": "alias:alias-shared",
+        },
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-shared": _FakeInstrumentInfo(
+                port_id="unit-a:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="Conflicting frequency"):
+        Quel3ExecutionManager._resolve_payload(
+            payload=payload,
+            resolver=cast(Any, resolver),
+        )
 
 
 def test_filter_runnable_payload_drops_empty_aliases() -> None:
@@ -883,6 +921,7 @@ def test_execute_batches_capture_mode_with_timeline_directive(
             _FakeSequencer,
             lambda _session, _instrument_info: driver,
             SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
             lambda *, mode: ("capture_mode", mode),
         ),
     )
@@ -898,6 +937,50 @@ def test_execute_batches_capture_mode_with_timeline_directive(
         result.data["alias-rq00"][0],
         np.array([1.0 + 0.0j], dtype=np.complex128),
     )
+
+
+def test_execute_batches_frequency_capture_mode_with_timeline_directive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given payload frequency, execute should apply frequency before capture mode and timeline."""
+    payload = _make_payload(frequency_hz=6.25e9)
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    asyncio.run(manager.execute_async(request=BackendExecutionRequest(payload=payload)))
+
+    assert driver.apply_calls == [
+        [("frequency", 6.25e9), ("capture_mode", "avg"), ("timeline", "alias-rq00")]
+    ]
 
 
 def test_execute_rejects_runtime_without_required_capture_mode(
@@ -932,6 +1015,7 @@ def test_execute_rejects_runtime_without_required_capture_mode(
             _FakeSequencer,
             lambda _session, _instrument_info: driver,
             SimpleNamespace(),
+            lambda *, hz: ("frequency", hz),
             lambda *, mode: ("capture_mode", mode),
         ),
     )
@@ -1005,6 +1089,7 @@ def test_execute_parallelizes_driver_phases(
             _FakeSequencer,
             lambda _session, instrument_info: drivers[instrument_info.alias],
             SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
             lambda *, mode: ("capture_mode", mode),
         ),
     )
@@ -1070,6 +1155,7 @@ def test_execute_batch_async_reuses_one_session(
             _FakeSequencer,
             lambda _session, _instrument_info: driver,
             SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
             lambda *, mode: ("capture_mode", mode),
         ),
     )
@@ -1153,6 +1239,7 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
             _FakeSequencer,
             lambda _session, instrument_info: drivers[instrument_info.alias],
             SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
             lambda *, mode: ("capture_mode", mode),
         ),
     )

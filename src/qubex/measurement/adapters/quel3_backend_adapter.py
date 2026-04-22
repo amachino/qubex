@@ -166,6 +166,10 @@ class Quel3MeasurementBackendAdapter:
                 events=events,
                 capture_windows=capture_windows,
                 length_ns=timeline_length_ns,
+                frequency_hz=self._resolve_timeline_frequency_hz(
+                    target=target,
+                    pulse_schedule=pulse_schedule,
+                ),
             )
             try:
                 output_target_labels_by_target[target] = str(
@@ -329,6 +333,42 @@ class Quel3MeasurementBackendAdapter:
         ):
             return shots
         return 1
+
+    def _resolve_timeline_frequency_hz(
+        self,
+        *,
+        target: str,
+        pulse_schedule: object,
+    ) -> float:
+        """Resolve fixed-timeline frequency in Hz for quelware directives."""
+        schedule_frequency_ghz = self._resolve_schedule_frequency_ghz(
+            pulse_schedule=pulse_schedule,
+            target=target,
+        )
+        if schedule_frequency_ghz is not None:
+            return schedule_frequency_ghz * 1e9
+        return self._experiment_system.get_target(target).frequency * 1e9
+
+    @staticmethod
+    def _resolve_schedule_frequency_ghz(
+        *,
+        pulse_schedule: object,
+        target: str,
+    ) -> float | None:
+        """Resolve channel frequency metadata in GHz from pulse schedule."""
+        get_frequency = getattr(pulse_schedule, "get_frequency", None)
+        if not callable(get_frequency):
+            return None
+        try:
+            frequency = get_frequency(target)
+        except KeyError:
+            return None
+        if not isinstance(frequency, (int, float)):
+            return None
+        frequency_value = float(frequency)
+        if not math.isfinite(frequency_value):
+            return None
+        return frequency_value
 
     @staticmethod
     def _build_capture_targets_by_alias(

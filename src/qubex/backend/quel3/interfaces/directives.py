@@ -36,3 +36,11 @@ class SetCaptureModeFactory(Protocol):
     def __call__(self, *, mode: CaptureModeValue) -> DirectiveProtocol:
         """Create one capture-mode directive."""
         ...
+
+
+class SetFrequencyFactory(Protocol):
+    """Factory protocol for `SetFrequency` directives."""
+
+    def __call__(self, *, hz: float) -> DirectiveProtocol:
+        """Create one frequency directive."""
+        ...

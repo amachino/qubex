@@ -16,6 +16,7 @@ from qubex.backend.quel3.interfaces.directives import (
     CaptureModeValue,
     DirectiveProtocol,
     SetCaptureModeFactory,
+    SetFrequencyFactory,
 )
 from qubex.backend.quel3.interfaces.driver import (
     InstrumentConfigProtocol,
@@ -50,4 +51,5 @@ __all__ = [
     "SequencerProtocol",
     "SessionProtocol",
     "SetCaptureModeFactory",
+    "SetFrequencyFactory",
 ]
