@@ -102,7 +102,10 @@ def _load_resistance_map_from_file(path: Path) -> dict[str, float | None]:
     if not isinstance(data, dict):
         raise TypeError("resistance yaml must contain a `data` mapping.")
 
-    return {str(key): (None if value is None else float(value)) for key, value in data.items()}
+    return {
+        str(key): (None if value is None else float(value))
+        for key, value in data.items()
+    }
 
 
 def _build_resistance_payload_from_values(
@@ -113,7 +116,10 @@ def _build_resistance_payload_from_values(
             "description": _DEFAULT_RESISTANCE_DESCRIPTION,
             "unit": _DEFAULT_RESISTANCE_UNIT,
         },
-        "data": {str(key): (None if value is None else float(value)) for key, value in values.items()},
+        "data": {
+            str(key): (None if value is None else float(value))
+            for key, value in values.items()
+        },
     }
 
 
@@ -141,7 +147,10 @@ def _load_resistance_payload(path: Path) -> dict[str, object]:
 
     return {
         "meta": {"description": description, "unit": unit},
-        "data": {str(key): (None if value is None else float(value)) for key, value in data.items()},
+        "data": {
+            str(key): (None if value is None else float(value))
+            for key, value in data.items()
+        },
     }
 
 
@@ -169,7 +178,10 @@ def _load_superconducting_gap_payload(path: Path) -> dict[str, object]:
 
     return {
         "meta": {"description": description, "unit": unit},
-        "data": {str(key): (None if value is None else float(value)) for key, value in data.items()},
+        "data": {
+            str(key): (None if value is None else float(value))
+            for key, value in data.items()
+        },
     }
 
 
@@ -270,8 +282,12 @@ def _build_optional_heatmap(
     figure.show()
 
     if save_image:
-        figure_width = int(figure.layout.width) if figure.layout.width is not None else None
-        figure_height = int(figure.layout.height) if figure.layout.height is not None else None
+        figure_width = (
+            int(figure.layout.width) if figure.layout.width is not None else None
+        )
+        figure_height = (
+            int(figure.layout.height) if figure.layout.height is not None else None
+        )
         save_figure(
             figure,
             name=image_name,
@@ -319,7 +335,9 @@ def get_superconducting_gap(
         raw_resistance = (
             _load_resistance_map_from_file(resistance_path)
             if resistance_path is not None
-            else _normalize_qubit_values(resistance_mapping or {}, all_labels=all_labels)
+            else _normalize_qubit_values(
+                resistance_mapping or {}, all_labels=all_labels
+            )
         )
         resistance_map = _normalize_qubit_values(raw_resistance, all_labels=all_labels)
 
