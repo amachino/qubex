@@ -145,6 +145,53 @@ def _resolve_params_path(exp: Experiment) -> Path | None:
     return Path(params_path)
 
 
+def _resolve_qubit_params_by_label(exp: Experiment) -> dict[str, object]:
+    experiment_system = getattr(exp, "experiment_system", None)
+    system_qubits = (
+        getattr(experiment_system, "qubits", None)
+        if experiment_system is not None
+        else None
+    )
+    if system_qubits is not None:
+        resolved: dict[str, object] = {}
+        for qubit in system_qubits:
+            label = getattr(qubit, "label", None)
+            if isinstance(label, str):
+                resolved[label] = qubit
+        if len(resolved) > 0:
+            return resolved
+
+    ctx = getattr(exp, "ctx", None)
+    ctx_qubits = getattr(ctx, "qubits", None) if ctx is not None else None
+    if isinstance(ctx_qubits, dict):
+        return {str(label): qubit for label, qubit in ctx_qubits.items()}
+    return {}
+
+
+def _infer_available_qubit_labels(exp: Experiment, *, all_labels: list[str]) -> set[str]:
+    experiment_system = getattr(exp, "experiment_system", None)
+    ge_targets = (
+        getattr(experiment_system, "ge_targets", None)
+        if experiment_system is not None
+        else None
+    )
+    if ge_targets is not None:
+        available = {
+            str(qubit_label)
+            for target in ge_targets
+            for qubit_label in [getattr(target, "qubit", None)]
+            if qubit_label is not None
+        }
+        if len(available) > 0:
+            return available
+
+    ctx = getattr(exp, "ctx", None)
+    ctx_qubit_labels = getattr(ctx, "qubit_labels", None) if ctx is not None else None
+    if ctx_qubit_labels is None:
+        return set(all_labels)
+    return {str(label) for label in ctx_qubit_labels}
+
+
 def _normalize_qubit_keyed_values(
     raw_values: Mapping[str, float | None],
     *,
@@ -263,6 +310,195 @@ def _build_superconducting_gap_figure(
     return fig
 
 
+def _resolve_default_resistance_path(params_path: Path | None) -> Path:
+    if params_path is None:
+        raise FileNotFoundError(
+            "No `resistance_charge` source was provided and params path "
+            "is unavailable from `exp.config_loader.params_path`."
+        )
+    default_path = params_path / "resistance_charge.yaml"
+    if not default_path.exists():
+        raise FileNotFoundError(
+            "No `resistance_charge` source was provided, and default file "
+            f"`{default_path}` was not found."
+        )
+    return default_path
+
+
+def _load_resistance_map_from_source(
+    *,
+    params_path: Path | None,
+    resistance_charge: Mapping[str | int, float | None] | str | Path | None,
+) -> dict[str, float | None]:
+    if resistance_charge is None:
+        return _load_resistance_map_from_file(
+            _resolve_default_resistance_path(params_path)
+        )
+    if isinstance(resistance_charge, (str, Path)):
+        resistance_path = Path(resistance_charge)
+        if not resistance_path.exists():
+            raise FileNotFoundError(
+                f"`resistance_charge` file was not found: {resistance_path}"
+            )
+        return _load_resistance_map_from_file(resistance_path)
+    return {
+        str(key): (None if value is None else float(value))
+        for key, value in resistance_charge.items()
+    }
+
+
+def _load_resistance_payload_from_source(
+    *,
+    params_path: Path | None,
+    resistance_charge: Mapping[str | int, float | None] | str | Path | None,
+) -> dict[str, object]:
+    if resistance_charge is None:
+        return _load_resistance_payload(_resolve_default_resistance_path(params_path))
+    if isinstance(resistance_charge, (str, Path)):
+        resistance_path = Path(resistance_charge)
+        if not resistance_path.exists():
+            raise FileNotFoundError(
+                f"`resistance_charge` file was not found: {resistance_path}"
+            )
+        return _load_resistance_payload(resistance_path)
+    return {
+        "meta": {
+            "description": _DEFAULT_RESISTANCE_DESCRIPTION,
+            "unit": _DEFAULT_RESISTANCE_UNIT,
+        },
+        "data": {
+            str(key): (None if value is None else float(value))
+            for key, value in resistance_charge.items()
+        },
+    }
+
+
+def _build_superconducting_gap_payload(
+    data: Mapping[str, float | None],
+) -> dict[str, object]:
+    return {
+        "meta": {
+            "description": _DEFAULT_DESCRIPTION,
+            "unit": _DEFAULT_UNIT,
+        },
+        "data": dict(data),
+    }
+
+
+def _compute_superconducting_gap_data(
+    *,
+    exp: Experiment,
+    all_labels: list[str],
+    resistance_map: Mapping[str, float | None],
+) -> dict[str, float | None]:
+    available_labels = _infer_available_qubit_labels(exp, all_labels=all_labels)
+    qubit_params_by_label = _resolve_qubit_params_by_label(exp)
+
+    data: dict[str, float | None] = {}
+    for qubit_label in all_labels:
+        qubit_param = qubit_params_by_label.get(qubit_label)
+        if qubit_label not in available_labels or qubit_param is None:
+            data[qubit_label] = None
+            continue
+
+        if qubit_label not in resistance_map:
+            raise ValueError(f"`resistance_charge` is missing target `{qubit_label}`.")
+
+        resistance_ohm = resistance_map[qubit_label]
+        if resistance_ohm is None:
+            data[qubit_label] = None
+            continue
+        if resistance_ohm <= 0:
+            raise ValueError(
+                f"`resistance_charge[{qubit_label}]` must be positive: {resistance_ohm}."
+            )
+
+        anharmonicity_ghz = abs(float(qubit_param.anharmonicity))
+        if anharmonicity_ghz == 0:
+            raise ValueError(
+                f"Anharmonicity for `{qubit_label}` must not be zero to estimate gap."
+            )
+
+        frequency_ghz = float(qubit_param.frequency)
+        data[qubit_label] = (
+            1e15
+            * _ELECTRON_CHARGE_C
+            * resistance_ohm
+            * (frequency_ghz + anharmonicity_ghz) ** 2
+            / anharmonicity_ghz
+        )
+
+    return data
+
+
+def _expand_resistance_data(
+    *,
+    exp: Experiment,
+    all_labels: list[str],
+    raw_data: Mapping[str, float | None],
+) -> dict[str, float | None]:
+    available_labels = _infer_available_qubit_labels(exp, all_labels=all_labels)
+    normalized_data = _normalize_qubit_keyed_values(raw_data, all_labels=all_labels)
+
+    full_data: dict[str, float | None] = {}
+    for qubit_label in all_labels:
+        if qubit_label not in available_labels:
+            full_data[qubit_label] = None
+            continue
+        value = normalized_data.get(qubit_label)
+        full_data[qubit_label] = None if value is None else float(value)
+    return full_data
+
+
+def _save_figure_if_requested(
+    *,
+    figure: go.Figure,
+    save_image: bool,
+    image_name: str,
+) -> None:
+    if not save_image:
+        return
+    figure_width = int(figure.layout.width) if figure.layout.width is not None else None
+    figure_height = (
+        int(figure.layout.height) if figure.layout.height is not None else None
+    )
+    save_figure(
+        figure,
+        name=image_name,
+        format="png",
+        width=figure_width,
+        height=figure_height,
+        scale=3,
+    )
+
+
+def _build_optional_heatmap(
+    *,
+    plot: bool,
+    save_image: bool,
+    image_name: str,
+    all_labels: list[str],
+    values_by_label: Mapping[str, float | None],
+    title: str,
+    unit_label: str,
+) -> go.Figure | None:
+    if not plot:
+        return None
+    figure = _build_superconducting_gap_figure(
+        all_labels=all_labels,
+        values_by_label=values_by_label,
+        title=title,
+        unit_label=unit_label,
+    )
+    figure.show()
+    _save_figure_if_requested(
+        figure=figure,
+        save_image=save_image,
+        image_name=image_name,
+    )
+    return figure
+
+
 def get_superconducting_gap(
     exp: Experiment,
     resistance_charge: Mapping[str | int, float | None] | str | Path | None = None,
@@ -339,81 +575,20 @@ def get_superconducting_gap(
             raise TypeError("superconducting gap payload `data` must be a mapping.")
         data = loaded_data
     else:
-        if resistance_charge is None:
-            if params_path is None:
-                raise FileNotFoundError(
-                    "No `resistance_charge` source was provided and params path "
-                    "is unavailable from `exp.config_loader.params_path`."
-                )
-            default_path = params_path / "resistance_charge.yaml"
-            if not default_path.exists():
-                raise FileNotFoundError(
-                    "No `resistance_charge` source was provided, and default file "
-                    f"`{default_path}` was not found."
-                )
-            resistance_map = _load_resistance_map_from_file(default_path)
-        elif isinstance(resistance_charge, (str, Path)):
-            resistance_path = Path(resistance_charge)
-            if not resistance_path.exists():
-                raise FileNotFoundError(
-                    f"`resistance_charge` file was not found: {resistance_path}"
-                )
-            resistance_map = _load_resistance_map_from_file(resistance_path)
-        else:
-            resistance_map = {
-                str(key): (None if value is None else float(value))
-                for key, value in resistance_charge.items()
-            }
+        raw_resistance_map = _load_resistance_map_from_source(
+            params_path=params_path,
+            resistance_charge=resistance_charge,
+        )
         resistance_map = _normalize_qubit_keyed_values(
-            resistance_map,
+            raw_resistance_map,
             all_labels=inferred_all_labels,
         )
-
-        available_labels = set(exp.ctx.qubit_labels)
-        data = {}
-        for qubit_label in inferred_all_labels:
-            qubit_param = exp.ctx.qubits.get(qubit_label)
-            if qubit_label not in available_labels or qubit_param is None:
-                data[qubit_label] = None
-                continue
-
-            if qubit_label not in resistance_map:
-                raise ValueError(
-                    f"`resistance_charge` is missing target `{qubit_label}`."
-                )
-
-            resistance_ohm = resistance_map[qubit_label]
-            if resistance_ohm is None:
-                data[qubit_label] = None
-                continue
-            if resistance_ohm <= 0:
-                raise ValueError(
-                    f"`resistance_charge[{qubit_label}]` must be positive: {resistance_ohm}."
-                )
-
-            anharmonicity_ghz = abs(float(qubit_param.anharmonicity))
-            if anharmonicity_ghz == 0:
-                raise ValueError(
-                    f"Anharmonicity for `{qubit_label}` must not be zero to estimate gap."
-                )
-
-            frequency_ghz = float(qubit_param.frequency)
-            gap_uev = (
-                1e15
-                * _ELECTRON_CHARGE_C
-                * resistance_ohm
-                * (frequency_ghz + anharmonicity_ghz) ** 2
-                / anharmonicity_ghz
-            )
-            data[qubit_label] = gap_uev
-
-        superconducting_gap = {
-            "meta": {
-                "description": _DEFAULT_DESCRIPTION,
-                "unit": _DEFAULT_UNIT,
-            },
-            "data": data,
-        }
+        data = _compute_superconducting_gap_data(
+            exp=exp,
+            all_labels=inferred_all_labels,
+            resistance_map=resistance_map,
+        )
+        superconducting_gap = _build_superconducting_gap_payload(data)
 
         if default_gap_path is not None:
             default_gap_path.parent.mkdir(parents=True, exist_ok=True)
@@ -428,30 +603,15 @@ def get_superconducting_gap(
             output_path=output_path,
         )
 
-    figure: go.Figure | None = None
-    if plot:
-        figure = _build_superconducting_gap_figure(
-            all_labels=inferred_all_labels,
-            values_by_label=data,
-            title="Superconducting gap (ueV)",
-            unit_label="ueV",
-        )
-        figure.show()
-        if save_image:
-            figure_width = (
-                int(figure.layout.width) if figure.layout.width is not None else None
-            )
-            figure_height = (
-                int(figure.layout.height) if figure.layout.height is not None else None
-            )
-            save_figure(
-                figure,
-                name=image_name,
-                format="png",
-                width=figure_width,
-                height=figure_height,
-                scale=3,
-            )
+    figure = _build_optional_heatmap(
+        plot=plot,
+        save_image=save_image,
+        image_name=image_name,
+        all_labels=inferred_all_labels,
+        values_by_label=data,
+        title="Superconducting gap (ueV)",
+        unit_label="ueV",
+    )
 
     return Result(data=superconducting_gap, figure=figure)
 
@@ -508,54 +668,20 @@ def get_resistance_charge(
     params_path = _resolve_params_path(exp)
     inferred_all_labels = _infer_all_qubit_labels(exp)
 
-    if resistance_charge is None:
-        if params_path is None:
-            raise FileNotFoundError(
-                "No `resistance_charge` source was provided and params path "
-                "is unavailable from `exp.config_loader.params_path`."
-            )
-        default_path = params_path / "resistance_charge.yaml"
-        if not default_path.exists():
-            raise FileNotFoundError(
-                "No `resistance_charge` source was provided, and default file "
-                f"`{default_path}` was not found."
-            )
-        resistance_payload = _load_resistance_payload(default_path)
-    elif isinstance(resistance_charge, (str, Path)):
-        resistance_path = Path(resistance_charge)
-        if not resistance_path.exists():
-            raise FileNotFoundError(
-                f"`resistance_charge` file was not found: {resistance_path}"
-            )
-        resistance_payload = _load_resistance_payload(resistance_path)
-    else:
-        resistance_payload = {
-            "meta": {
-                "description": _DEFAULT_RESISTANCE_DESCRIPTION,
-                "unit": _DEFAULT_RESISTANCE_UNIT,
-            },
-            "data": {
-                str(key): (None if value is None else float(value))
-                for key, value in resistance_charge.items()
-            },
-        }
+    resistance_payload = _load_resistance_payload_from_source(
+        params_path=params_path,
+        resistance_charge=resistance_charge,
+    )
 
     payload_data_obj = resistance_payload["data"]
     if not isinstance(payload_data_obj, dict):
         raise TypeError("resistance payload `data` must be a mapping.")
 
-    available_labels = set(exp.ctx.qubit_labels)
-    normalized_payload_data = _normalize_qubit_keyed_values(
-        payload_data_obj,  # type: ignore[arg-type]
+    full_data = _expand_resistance_data(
+        exp=exp,
         all_labels=inferred_all_labels,
+        raw_data=payload_data_obj,  # type: ignore[arg-type]
     )
-    full_data: dict[str, float | None] = {}
-    for qubit_label in inferred_all_labels:
-        if qubit_label not in available_labels:
-            full_data[qubit_label] = None
-            continue
-        value = normalized_payload_data.get(qubit_label)
-        full_data[qubit_label] = None if value is None else float(value)
 
     result_payload: dict[str, object] = {
         "meta": resistance_payload["meta"],
@@ -568,30 +694,15 @@ def get_resistance_charge(
             output_path=output_path,
         )
 
-    figure: go.Figure | None = None
-    if plot:
-        figure = _build_superconducting_gap_figure(
-            all_labels=inferred_all_labels,
-            values_by_label=full_data,
-            title="Resistance charge (ohms)",
-            unit_label="ohms",
-        )
-        figure.show()
-        if save_image:
-            figure_width = (
-                int(figure.layout.width) if figure.layout.width is not None else None
-            )
-            figure_height = (
-                int(figure.layout.height) if figure.layout.height is not None else None
-            )
-            save_figure(
-                figure,
-                name=image_name,
-                format="png",
-                width=figure_width,
-                height=figure_height,
-                scale=3,
-            )
+    figure = _build_optional_heatmap(
+        plot=plot,
+        save_image=save_image,
+        image_name=image_name,
+        all_labels=inferred_all_labels,
+        values_by_label=full_data,
+        title="Resistance charge (ohms)",
+        unit_label="ohms",
+    )
 
     return Result(data=result_payload, figure=figure)
 

@@ -42,6 +42,52 @@ def test_superconducting_gap_fills_unavailable_qubits_with_none() -> None:
     assert data["Q03"] is not None
 
 
+def test_superconducting_gap_uses_full_system_qubits_beyond_active_mux_subset() -> None:
+    """Given full-system metadata, when active muxes are partial, then all available qubits are computed."""
+    full_system_qubits = [
+        SimpleNamespace(label="Q00", frequency=6.0, anharmonicity=-0.3),
+        SimpleNamespace(label="Q01", frequency=5.5, anharmonicity=-0.25),
+        SimpleNamespace(label="Q02", frequency=5.3, anharmonicity=-0.22),
+        SimpleNamespace(label="Q03", frequency=5.2, anharmonicity=-0.2),
+    ]
+    exp = SimpleNamespace(
+        chip_id="4Qv1",
+        experiment_system=SimpleNamespace(
+            qubits=full_system_qubits,
+            ge_targets=[
+                SimpleNamespace(qubit="Q00"),
+                SimpleNamespace(qubit="Q01"),
+                SimpleNamespace(qubit="Q02"),
+                SimpleNamespace(qubit="Q03"),
+            ],
+        ),
+        ctx=SimpleNamespace(
+            qubit_labels=["Q00", "Q01"],
+            qubits={
+                "Q00": SimpleNamespace(frequency=6.0, anharmonicity=-0.3),
+                "Q01": SimpleNamespace(frequency=5.5, anharmonicity=-0.25),
+            },
+        ),
+    )
+
+    result = get_superconducting_gap(
+        exp,  # type: ignore[arg-type]
+        resistance_charge={
+            "Q00": 4700.0,
+            "Q01": 4710.0,
+            "Q02": 4720.0,
+            "Q03": 4730.0,
+        },
+    )
+
+    data = result.data["data"]
+    assert isinstance(data, dict)
+    assert data["Q00"] is not None
+    assert data["Q01"] is not None
+    assert data["Q02"] is not None
+    assert data["Q03"] is not None
+
+
 def test_superconducting_gap_raises_when_resistance_is_missing() -> None:
     """Given missing resistance, when estimating gap, then helper raises a descriptive ValueError."""
     exp = SimpleNamespace(
@@ -231,3 +277,42 @@ def test_resistance_charge_accepts_numeric_index_keys() -> None:
     assert data["Q01"] == 4710.0
     assert data["Q02"] is None
     assert data["Q03"] == 4720.0
+
+
+def test_resistance_charge_uses_full_system_qubits_beyond_active_mux_subset() -> None:
+    """Given full-system metadata, when active muxes are partial, then all available qubits are populated."""
+    exp = SimpleNamespace(
+        chip_id="4Qv1",
+        experiment_system=SimpleNamespace(
+            ge_targets=[
+                SimpleNamespace(qubit="Q00"),
+                SimpleNamespace(qubit="Q01"),
+                SimpleNamespace(qubit="Q02"),
+                SimpleNamespace(qubit="Q03"),
+            ],
+        ),
+        ctx=SimpleNamespace(
+            qubit_labels=["Q00", "Q01"],
+            qubits={
+                "Q00": SimpleNamespace(frequency=6.0, anharmonicity=-0.3),
+                "Q01": SimpleNamespace(frequency=5.5, anharmonicity=-0.25),
+            },
+        ),
+    )
+
+    result = get_resistance_charge(
+        exp,  # type: ignore[arg-type]
+        resistance_charge={
+            "Q00": 4700.0,
+            "Q01": 4710.0,
+            "Q02": 4720.0,
+            "Q03": 4730.0,
+        },
+    )
+
+    data = result.data["data"]
+    assert isinstance(data, dict)
+    assert data["Q00"] == 4700.0
+    assert data["Q01"] == 4710.0
+    assert data["Q02"] == 4720.0
+    assert data["Q03"] == 4730.0
