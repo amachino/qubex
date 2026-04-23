@@ -620,17 +620,24 @@ def calibrate_gf_pulse(
         shot_interval = DEFAULT_INTERVAL
 
     target_list = _normalize_targets(exp, targets)
-    gf_rabi_params = {
+    gf_rabi_params_or_none = {
         target: exp.get_rabi_param(
             f"{Target.ge_label(target)}_{Target.ef_label(target)}"
         )
         for target in target_list
     }
     missing_gf_rabi = [
-        target for target, rabi_param in gf_rabi_params.items() if rabi_param is None
+        target
+        for target, rabi_param in gf_rabi_params_or_none.items()
+        if rabi_param is None
     ]
     if missing_gf_rabi:
         raise ValueError(f"GF Rabi parameters are not stored for {missing_gf_rabi}.")
+    gf_rabi_params = {
+        target: rabi_param
+        for target, rabi_param in gf_rabi_params_or_none.items()
+        if rabi_param is not None
+    }
     sampling_period_ns = exp.ctx.util.resolve_sampling_period(
         exp.ctx.measurement.sampling_period
     )
