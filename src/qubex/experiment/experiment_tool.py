@@ -267,6 +267,7 @@ def print_chip_info(
         "static_zz_interaction",
         "qubit_qubit_coupling_strength",
         "average_readout_fidelity",
+        "quantum_efficiency",
         "average_gate_fidelity",
         "x90_gate_fidelity",
         "x180_gate_fidelity",
@@ -313,6 +314,7 @@ def print_chip_info(
             "static_zz_interaction",
             "qubit_qubit_coupling_strength",
             "average_readout_fidelity",
+            "quantum_efficiency",
             "x90_gate_fidelity",
             "x180_gate_fidelity",
             "zx90_gate_fidelity",
@@ -566,6 +568,23 @@ def print_chip_info(
                     ],
                     save_image=save_image,
                     image_name="average_readout_fidelity",
+                )
+
+        if "quantum_efficiency" in info_type:
+            if values := loader.load_param_data("quantum_efficiency"):
+                graph.plot_lattice_data(
+                    title="Quantum efficiency (%)",
+                    values=list(values.values()),
+                    texts=[
+                        f"{qubit}<br>{value:.2%}" if _is_valid(value) else "N/A"
+                        for qubit, value in values.items()
+                    ],
+                    hovertexts=[
+                        f"{qubit}: {value:.2%}" if _is_valid(value) else f"{qubit}: N/A"
+                        for qubit, value in values.items()
+                    ],
+                    save_image=save_image,
+                    image_name="quantum_efficiency",
                 )
 
         if "x90_gate_fidelity" in info_type:
