@@ -49,6 +49,34 @@ def _normalize_targets(
     return list(targets)
 
 
+def _build_gf_rabi_sequence(
+    exp: Experiment,
+    *,
+    ge_labels: Collection[str],
+    ef_labels: Collection[str],
+    amplitudes: dict[str, float],
+    duration_ns: int,
+    ramptime: float,
+) -> PulseSchedule:
+    with PulseSchedule() as ps:
+        for ge_label in ge_labels:
+            ps.add(ge_label, exp.pulse.x180(ge_label))
+        ps.barrier()
+        for ef_label in ef_labels:
+            ps.add(
+                ef_label,
+                FlatTop(
+                    duration=duration_ns + 2 * ramptime,
+                    amplitude=amplitudes[ef_label],
+                    tau=ramptime,
+                ),
+            )
+        ps.barrier()
+        for ge_label in ge_labels:
+            ps.add(ge_label, exp.pulse.x180(ge_label))
+    return ps
+
+
 def gf_rabi_experiment(
     exp: Experiment,
     *,
@@ -137,23 +165,14 @@ def gf_rabi_experiment(
         }
 
     def gf_rabi_sequence(duration_ns: int) -> PulseSchedule:
-        with PulseSchedule() as ps:
-            for ge_label in ge_labels:
-                ps.add(ge_label, exp.pulse.x180(ge_label))
-            ps.barrier()
-            for ef_label in ef_labels:
-                ps.add(
-                    ef_label,
-                    FlatTop(
-                        duration=duration_ns + 2 * ramptime,
-                        amplitude=normalized_amplitudes[ef_label],
-                        tau=ramptime,
-                    ),
-                )
-            ps.barrier()
-            for ge_label in ge_labels:
-                ps.add(ge_label, exp.pulse.x180(ge_label))
-        return ps
+        return _build_gf_rabi_sequence(
+            exp,
+            ge_labels=ge_labels,
+            ef_labels=ef_labels,
+            amplitudes=normalized_amplitudes,
+            duration_ns=duration_ns,
+            ramptime=ramptime,
+        )
 
     if detuning is not None:
         frequencies = {
@@ -444,6 +463,7 @@ def gf_chevron_pattern(
 
         rabi_rates_buffer: dict[str, list[float]] = defaultdict(list)
         chevron_data_buffer: dict[str, list[NDArray]] = defaultdict(list)
+        ge_subgroup = [Target.ge_label(target) for target in subgroup]
         ef_subgroup = [Target.ef_label(target) for target in subgroup]
 
         for detuning in tqdm(detuning_values, leave=False):
@@ -451,25 +471,17 @@ def gf_chevron_pattern(
 
                 def gf_rabi_sequence(
                     duration_ns: int,
-                    _subgroup: Collection[str] = subgroup,
+                    _ge_subgroup: Collection[str] = ge_subgroup,
                     _ef_subgroup: Collection[str] = ef_subgroup,
                 ) -> PulseSchedule:
-                    with PulseSchedule() as ps:
-                        for ge_label in _subgroup:
-                            ps.add(ge_label, exp.pulse.x180(ge_label))
-                        ps.barrier()
-                        for ef_label in _ef_subgroup:
-                            ps.add(
-                                ef_label,
-                                FlatTop(
-                                    duration=duration_ns + 2 * ramptime,
-                                    amplitude=amplitudes[ef_label],
-                                    tau=ramptime,
-                                ),
-                            )
-                        for ge_label in _subgroup:
-                            ps.add(ge_label, exp.pulse.x180(ge_label))
-                        return ps
+                    return _build_gf_rabi_sequence(
+                        exp,
+                        ge_labels=_ge_subgroup,
+                        ef_labels=_ef_subgroup,
+                        amplitudes=amplitudes,
+                        duration_ns=duration_ns,
+                        ramptime=ramptime,
+                    )
 
                 sweep_result = exp.measurement_service.sweep_parameter(
                     sequence=gf_rabi_sequence,
@@ -608,9 +620,17 @@ def calibrate_gf_pulse(
         shot_interval = DEFAULT_INTERVAL
 
     target_list = _normalize_targets(exp, targets)
-    gf_rabi_params = exp.calib_note.rabi_params
-    if gf_rabi_params is None:
-        raise ValueError("Rabi parameters are not stored.")
+    gf_rabi_params = {
+        target: exp.get_rabi_param(
+            f"{Target.ge_label(target)}_{Target.ef_label(target)}"
+        )
+        for target in target_list
+    }
+    missing_gf_rabi = [
+        target for target, rabi_param in gf_rabi_params.items() if rabi_param is None
+    ]
+    if missing_gf_rabi:
+        raise ValueError(f"GF Rabi parameters are not stored for {missing_gf_rabi}.")
     sampling_period_ns = exp.ctx.util.resolve_sampling_period(
         exp.ctx.measurement.sampling_period
     )
@@ -618,7 +638,6 @@ def calibrate_gf_pulse(
     def calibrate(target: str) -> AmplCalibData:
         ge_label = Target.ge_label(target)
         ef_label = Target.ef_label(target)
-        gf_label = f"{ge_label}_{ef_label}"
 
         if pulse_type == "hpi":
             pulse = FlatTop(
@@ -639,12 +658,10 @@ def calibrate_gf_pulse(
         else:
             raise ValueError("Invalid pulse type.")
 
-        gf_rabi_param = gf_rabi_params.get(gf_label)
-        if gf_rabi_param is None:
-            raise ValueError(f"GF Rabi parameters are not stored for `{gf_label}`.")
+        gf_rabi_param = gf_rabi_params[target]
 
         default_amplitude = exp.params.get_ef_control_amplitude(target)
-        ampl = rabi_rate * default_amplitude / gf_rabi_param["frequency"]
+        ampl = rabi_rate * default_amplitude / gf_rabi_param.frequency
 
         ampl_min = ampl * (1 - 0.8 / n_rotations)
         ampl_max = ampl * (1 + 0.5 / n_rotations)
@@ -676,11 +693,12 @@ def calibrate_gf_pulse(
             shot_interval=shot_interval,
             plot=plot,
         ).data[ge_label]
+        sweep_data.rabi_param = gf_rabi_param
 
         fit_result = fitting.fit_ampl_calib_data(
             target=target,
             amplitude_range=ampl_range,
-            data=sweep_data.data,
+            data=sweep_data.normalized,
             plot=plot,
             title=f"gf {pulse_type} pulse calibration",
             ylabel="Normalized signal",
