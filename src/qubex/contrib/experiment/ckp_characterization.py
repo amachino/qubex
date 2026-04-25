@@ -726,6 +726,18 @@ def filtered_ckp_experiment(
         - ``A2``  ( = |A|² )
         - ``A``
 
+        Parameter uncertainties
+        -----------------------
+        - ``omega_r_g_error``
+        - ``omega_r_e_error``
+        - ``omega_p_error``
+        - ``J_error``
+        - ``kappa_error``
+        - ``C_error``
+        - ``chi_error``
+        - ``A2_error``
+        - ``covariance``
+
         Photon-number metrics
         ---------------------
         - ``ng_max``
@@ -1010,17 +1022,8 @@ def filtered_ckp_experiment(
     J = float(fit.J)
     kappa = float(fit.kappa)
     C = float(fit.C)
-
-    chi = (omega_r_e - omega_r_g) / 2.0
-
-    if np.isclose(chi, 0.0):
-        raise ValueError("Estimated chi is too close to zero, cannot compute |A|^2.")
-
-    A2 = C / (4.0 * chi)
-    if A2 < 0:
-        raise ValueError(
-            f"Estimated |A|^2 became negative: C={C}, chi={chi}, C/(4chi)={A2}"
-        )
+    chi = float(fit.chi)
+    A2 = float(fit.A2)
 
     x_dense_min = min(np.min(x_g), np.min(x_e), omega_r_g, omega_r_e, omega_p) - 0.01
     x_dense_max = max(np.max(x_g), np.max(x_e), omega_r_g, omega_r_e, omega_p) + 0.01
@@ -1117,13 +1120,14 @@ def filtered_ckp_experiment(
         if plot:
             fig.show()
             print(f"=== Estimated Readout Parameters : {target} ===")
-            print(f"ωr^g   = {omega_r_g:.6f} GHz")
-            print(f"ωr^e   = {omega_r_e:.6f} GHz")
-            print(f"ωp     = {omega_p:.6f} GHz")
-            print(f"J      = {1000 * J:.3f} MHz")
-            print(f"κ      = {1000 * kappa:.3f} MHz")
-            print(f"χ      = {1000 * chi:.3f} MHz")
-            print(f"|A|²   = {1000 * A2:.3f} MHz")
+            print(f"ωr^g   = {omega_r_g:.6f} ± {fit.omega_r_g_error:.6f} GHz")
+            print(f"ωr^e   = {omega_r_e:.6f} ± {fit.omega_r_e_error:.6f} GHz")
+            print(f"ωp     = {omega_p:.6f} ± {fit.omega_p_error:.6f} GHz")
+            print(f"J      = {1000 * J:.3f} ± {1000 * fit.J_error:.3f} MHz")
+            print(f"κ      = {1000 * kappa:.3f} ± {1000 * fit.kappa_error:.3f} MHz")
+            print(f"χ      = {1000 * chi:.3f} ± {1000 * fit.chi_error:.3f} MHz")
+            print(f"C      = {C:.6g} ± {fit.C_error:.3g}")
+            print(f"|A|²   = {1000 * A2:.3f} ± {1000 * fit.A2_error:.3f} MHz")
             print(f"n_g,max = {ng_max:.3f} @ {x_ng_max:.6f} GHz")
             print(f"n_e,max = {ne_max:.3f} @ {x_ne_max:.6f} GHz")
 
@@ -1171,7 +1175,16 @@ def filtered_ckp_experiment(
             "chi": chi,
             "C": C,
             "A2": A2,
-            "A": float(np.sqrt(A2)),
+            "A": fit.A,
+            "omega_r_g_error": fit.omega_r_g_error,
+            "omega_r_e_error": fit.omega_r_e_error,
+            "omega_p_error": fit.omega_p_error,
+            "J_error": fit.J_error,
+            "kappa_error": fit.kappa_error,
+            "C_error": fit.C_error,
+            "chi_error": fit.chi_error,
+            "A2_error": fit.A2_error,
+            "covariance": fit.covariance,
             "ng_max": ng_max,
             "ne_max": ne_max,
             "x_ng_max": x_ng_max,
@@ -1306,11 +1319,23 @@ class FilteredCKPFitResult:
     omega_p: float
     J: float
     kappa: float
+    chi: float
+    A2: float
+    A: float
+    C_error: float
+    omega_r_g_error: float
+    omega_r_e_error: float
+    omega_p_error: float
+    J_error: float
+    kappa_error: float
+    chi_error: float
+    A2_error: float
     success: bool
     cost: float
     message: str
     nfev: int
     result_raw: object
+    covariance: np.ndarray | None = None
 
 
 def filtered_ckp_model(
@@ -1516,6 +1541,52 @@ def fit_filtered_ckp_two_traces(
 
     C, omega_r_g, omega_r_e, omega_p, J, kappa = result.x
 
+    chi = (omega_r_e - omega_r_g) / 2.0
+    if np.isclose(chi, 0.0):
+        A2 = np.nan
+        A = np.nan
+    else:
+        A2 = C / (4.0 * chi)
+        if A2 < 0:
+            A = np.nan
+        else:
+            A = np.sqrt(A2)
+
+    perr = np.full(6, np.nan, dtype=float)
+    cov = None
+
+    chi_error = np.nan
+    A2_error = np.nan
+
+    try:
+        jac = result.jac
+        n_data = jac.shape[0]
+        n_param = jac.shape[1]
+        dof = max(0, n_data - n_param)
+
+        if dof > 0:
+            resid = result.fun
+            rss = np.sum(resid**2)
+            s_sq = rss / dof
+            jtj = jac.T @ jac
+
+            cov = np.linalg.pinv(jtj) * s_sq
+            perr = np.sqrt(np.diag(cov))
+
+            chi_error = 0.5 * np.sqrt(cov[1, 1] + cov[2, 2] - 2.0 * cov[1, 2])
+
+            if np.isfinite(A2):
+                grad_A2 = np.zeros(6, dtype=float)
+                grad_A2[0] = 1.0 / (4.0 * chi)
+                grad_A2[1] = C / (8.0 * chi**2)
+                grad_A2[2] = -C / (8.0 * chi**2)
+
+                A2_var = float(grad_A2 @ cov @ grad_A2)
+                A2_error = np.sqrt(max(A2_var, 0.0))
+
+    except np.linalg.LinAlgError:
+        pass
+
     return FilteredCKPFitResult(
         C=float(C),
         omega_r_g=float(omega_r_g),
@@ -1523,6 +1594,18 @@ def fit_filtered_ckp_two_traces(
         omega_p=float(omega_p),
         J=float(J),
         kappa=float(kappa),
+        chi=float(chi),
+        chi_error=float(chi_error),
+        A2=float(A2),
+        A2_error=float(A2_error),
+        A=float(A),
+        C_error=float(perr[0]),
+        omega_r_g_error=float(perr[1]),
+        omega_r_e_error=float(perr[2]),
+        omega_p_error=float(perr[3]),
+        J_error=float(perr[4]),
+        kappa_error=float(perr[5]),
+        covariance=cov,
         success=bool(result.success),
         cost=float(result.cost),
         message=str(result.message),
