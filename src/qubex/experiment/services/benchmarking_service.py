@@ -1057,52 +1057,41 @@ class BenchmarkingService:
         if save_image is None:
             save_image = True
 
-        if in_parallel:
-            self.interleaved_randomized_benchmarking(
-                targets,
-                interleaved_clifford="X90",
-                n_trials=n_trials,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                save_image=save_image,
-            )
-            self.interleaved_randomized_benchmarking(
-                targets,
-                interleaved_clifford="X180",
-                n_trials=n_trials,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                save_image=save_image,
-            )
-        else:
+        def _run_irb(
+            benchmark_targets: Collection[str] | str,
+            *,
+            interleaved_clifford: str,
+            label: object,
+        ) -> None:
             try:
-                for target in targets:
-                    self.interleaved_randomized_benchmarking(
-                        target,
-                        interleaved_clifford="X90",
-                        n_trials=n_trials,
-                        in_parallel=in_parallel,
-                        shots=shots,
-                        interval=interval,
-                        plot=plot,
-                        save_image=save_image,
-                    )
-                    self.interleaved_randomized_benchmarking(
-                        target,
-                        interleaved_clifford="X180",
-                        n_trials=n_trials,
-                        in_parallel=in_parallel,
-                        shots=shots,
-                        interval=interval,
-                        plot=plot,
-                        save_image=save_image,
-                    )
+                self.interleaved_randomized_benchmarking(
+                    benchmark_targets,
+                    interleaved_clifford=interleaved_clifford,
+                    n_trials=n_trials,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                    save_image=save_image,
+                )
             except Exception as e:
-                print(f"Failed to benchmark {target}: {e}")
+                print(f"Failed to benchmark {label} with {interleaved_clifford}: {e}")
+
+        if in_parallel:
+            for interleaved_clifford in ("X90", "X180"):
+                _run_irb(
+                    targets,
+                    interleaved_clifford=interleaved_clifford,
+                    label=targets,
+                )
+        else:
+            for target in targets:
+                for interleaved_clifford in ("X90", "X180"):
+                    _run_irb(
+                        target,
+                        interleaved_clifford=interleaved_clifford,
+                        label=target,
+                    )
 
     def benchmark_2q(
         self,
@@ -1130,29 +1119,23 @@ class BenchmarkingService:
         if save_image is None:
             save_image = True
 
-        if in_parallel:
-            self.interleaved_randomized_benchmarking(
-                targets,
-                interleaved_clifford="ZX90",
-                n_trials=n_trials,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                save_image=save_image,
-            )
-        else:
+        def _run_zx90(benchmark_targets: Collection[str] | str, label: object) -> None:
             try:
-                for target in targets:
-                    self.interleaved_randomized_benchmarking(
-                        target,
-                        interleaved_clifford="ZX90",
-                        n_trials=n_trials,
-                        in_parallel=in_parallel,
-                        shots=shots,
-                        interval=interval,
-                        plot=plot,
-                        save_image=save_image,
-                    )
+                self.interleaved_randomized_benchmarking(
+                    benchmark_targets,
+                    interleaved_clifford="ZX90",
+                    n_trials=n_trials,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                    save_image=save_image,
+                )
             except Exception as e:
-                print(f"Failed to benchmark {target}: {e}")
+                print(f"Failed to benchmark {label} with ZX90: {e}")
+
+        if in_parallel:
+            _run_zx90(targets, targets)
+        else:
+            for target in targets:
+                _run_zx90(target, target)

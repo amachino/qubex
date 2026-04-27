@@ -71,6 +71,7 @@ PARAMS_MAP = {
     "t2_echo": ("t2_echo", "props"),
     "t2_star": ("t2_star", "props"),
     "average_readout_fidelity": ("average_readout_fidelity", "props"),
+    "quantum_efficiency": ("quantum_efficiency", "props"),
     "x90_gate_fidelity": ("x90_gate_fidelity", "props"),
     "x180_gate_fidelity": ("x180_gate_fidelity", "props"),
     "zx90_gate_fidelity": ("zx90_gate_fidelity", "props"),
@@ -96,6 +97,7 @@ QUBIT_KEYED_PARAMS = frozenset(
         "t2_echo",
         "t2_star",
         "average_readout_fidelity",
+        "quantum_efficiency",
         "x90_gate_fidelity",
         "x180_gate_fidelity",
     }

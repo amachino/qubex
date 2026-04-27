@@ -4269,36 +4269,27 @@ class CharacterizationService:
             "ramsey_experiment": {},
         }
 
-        try:
-            for target in targets:
-                result = self.t1_experiment(
+        def _run_step(
+            target: str,
+            name: str,
+            experiment: Callable[..., Any],
+        ) -> None:
+            try:
+                result = experiment(
                     target,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                     save_image=save_image,
                 )
-                data["t1_experiment"][target] = result.data[target]
+                data[name][target] = result.data[target]
+            except Exception as e:
+                print(f"{name} failed for {target}: {e}")
 
-                result = self.t2_experiment(
-                    target,
-                    shots=shots,
-                    interval=interval,
-                    plot=plot,
-                    save_image=save_image,
-                )
-                data["t2_experiment"][target] = result.data[target]
-
-                result = self.ramsey_experiment(
-                    target,
-                    shots=shots,
-                    interval=interval,
-                    plot=plot,
-                    save_image=save_image,
-                )
-                data["ramsey_experiment"][target] = result.data[target]
-        except Exception as e:
-            print(f"Characterization failed for {target}: {e}")
+        for target in targets:
+            _run_step(target, "t1_experiment", self.t1_experiment)
+            _run_step(target, "t2_experiment", self.t2_experiment)
+            _run_step(target, "ramsey_experiment", self.ramsey_experiment)
 
         if plot:
             print()
@@ -4387,8 +4378,8 @@ class CharacterizationService:
             "obtain_coupling_strength": {},
         }
 
-        try:
-            for target in targets:
+        def _run_coupling_strength(target: str) -> None:
+            try:
                 pair = target.split("-")
                 result = self.obtain_coupling_strength(
                     *pair,
@@ -4397,8 +4388,11 @@ class CharacterizationService:
                     plot=plot,
                 )
                 data["obtain_coupling_strength"][target] = result.data
-        except Exception as e:
-            print(f"Characterization failed for {target}: {e}")
+            except Exception as e:
+                print(f"obtain_coupling_strength failed for {target}: {e}")
+
+        for target in targets:
+            _run_coupling_strength(target)
 
         if plot:
             print()
