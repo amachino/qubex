@@ -210,7 +210,7 @@ def thermal_excitation_via_rabi(
             figure=fig,
         )
 
-    if fit_cosine_result.figure is not None:
+    if fit_cosine_result.status != FitStatus.ERROR:
         fig = fit_cosine_result.get_figure()
         ef_rabi_freq = exp.calc_control_amplitude(target, ef_rabi_amplitude)
         dense_x_range = np.linspace(0, float(amplitude_range[-1]), 1000)
