@@ -6,13 +6,14 @@ from collections import defaultdict
 from collections.abc import Callable
 
 import numpy as np
+import qxvisualizer as viz
 from numpy.typing import ArrayLike, NDArray
 from qxpulse import FlatTop, PulseSchedule, Waveform
 from tqdm import tqdm
 
 import qubex.analysis.fitting as fitting
 from qubex import Experiment
-from qubex.analysis.fit_result import FitResult
+from qubex.analysis.fit_result import FitResult, FitStatus
 from qubex.experiment.experiment_constants import (
     DEFAULT_RABI_TIME_RANGE,
     DEFAULT_SHOTS,
@@ -94,6 +95,7 @@ def thermal_excitation_via_rabi(
     ef_rabi_ramptime: float | None = None,
     ef_rabi_amplitude: float | None = None,
     n_shots: int = DEFAULT_SHOTS,
+    fit_rabi_is_damped: bool = True,
     plot: bool = False,
 ) -> Result:
     """
@@ -165,19 +167,48 @@ def thermal_excitation_via_rabi(
         fit_rabi_result = fitting.fit_rabi(
             target=target,
             times=effective_time_range,
+            is_damped=fit_rabi_is_damped,
             data=result.data[target].data,
             plot=plot,
         )
-        r2 = fit_rabi_result.data["r2"]
+        r2 = fit_rabi_result.data.get("r2", np.nan)
         if r2 >= 0.9:
             fit_rabi_amplitude_history[target].append(fit_rabi_result.data["amplitude"])
             fit_amplitude_history[target].append(amplitude)
 
-    fit_cosine_result: FitResult = fitting.fit_cosine(
-        x=fit_amplitude_history[target],
-        y=fit_rabi_amplitude_history[target],
-        plot=False,
-    )
+    try:
+        fit_cosine_result: FitResult = fitting.fit_cosine(
+            x=fit_amplitude_history[target],
+            y=fit_rabi_amplitude_history[target],
+            plot=False,
+        )
+    except Exception as e:
+        print("Cosine fit failed")
+        ef_rabi_freq = exp.calc_control_amplitude(target, ef_rabi_amplitude)
+        fig = viz.make_figure()
+        fig.add_scatter(
+            x=fit_amplitude_history[target],
+            y=fit_rabi_amplitude_history[target],
+            mode="markers",
+            name="Data",
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"Thermal excitation characterization via Rabi - {target}",
+                subtitle=dict(
+                    text=f"Ωef={ef_rabi_freq * 1e3:.1f} MHz. Cosine fit failed"
+                ),
+            ),
+            xaxis_title="Amplitude (a.u.)",
+            yaxis_title="Rabi Amplitude (a.u.)",
+        )
+        fig.show()
+        fit_cosine_result = FitResult(
+            data={},
+            status=FitStatus.ERROR,
+            message=str(e),
+            figure=fig,
+        )
 
     if fit_cosine_result.figure is not None:
         fig = fit_cosine_result.get_figure()
@@ -250,6 +281,7 @@ def thermal_excitation_via_rabi(
             "rabi_ampl_max": None,
             "p_ex": None,
         }
+        fig = None
 
     return Result(
         data={
