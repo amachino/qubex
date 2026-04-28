@@ -174,6 +174,13 @@ class MeasurementService:
         """Return measurement schedule, building only when pulse schedule is provided."""
         if isinstance(schedule, MeasurementSchedule):
             return schedule
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         return self.ctx.measurement.build_measurement_schedule(
             pulse_schedule=schedule,
             frequencies=frequencies,
@@ -187,6 +194,22 @@ class MeasurementService:
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
         )
+
+    def _resolve_readout_timing_defaults(
+        self,
+        *,
+        readout_duration: float | None,
+        readout_pre_margin: float | None,
+        readout_post_margin: float | None,
+    ) -> tuple[float, float, float]:
+        """Return Experiment readout timing defaults for omitted measurement options."""
+        if readout_duration is None:
+            readout_duration = self.pulse.readout_duration
+        if readout_pre_margin is None:
+            readout_pre_margin = self.pulse.readout_pre_margin
+        if readout_post_margin is None:
+            readout_post_margin = self.pulse.readout_post_margin
+        return readout_duration, readout_pre_margin, readout_post_margin
 
     @classmethod
     def resolve_deprecated_option(
@@ -260,6 +283,13 @@ class MeasurementService:
         plot: bool | None = None,
     ) -> MeasurementSchedule:
         """Build a measurement schedule through the measurement facade."""
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         return self.ctx.measurement.build_measurement_schedule(
             pulse_schedule=pulse_schedule,
             frequencies=frequencies,
@@ -638,6 +668,13 @@ class MeasurementService:
             }
             self.ctx.reset_awg_and_capunits(qubits=qubits)
 
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         with self.ctx.modified_frequencies(frequencies):
             result = self.ctx.measurement.execute(
                 schedule=schedule,
@@ -807,6 +844,13 @@ class MeasurementService:
             qubits = {self.ctx.resolve_qubit_label(target) for target in waveforms}
             self.ctx.reset_awg_and_capunits(qubits=qubits)
 
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         with self.ctx.modified_frequencies(frequencies):
             result = self.ctx.measurement.measure(
                 waveforms=waveforms,

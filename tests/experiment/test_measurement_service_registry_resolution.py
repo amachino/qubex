@@ -215,6 +215,21 @@ def test_execute_does_not_reset_awg_by_default() -> None:
     assert captured["reset_calls"] == []
 
 
+def test_execute_uses_experiment_readout_timing_defaults() -> None:
+    """Given omitted readout timing, when executing, then Experiment defaults are delegated."""
+    service, captured = _make_service()
+
+    with PulseSchedule(["custom-target"]) as schedule:
+        pass
+
+    service.execute(schedule, plot=False)
+
+    execute_calls = cast(list[dict[str, object]], captured["execute_calls"])
+    assert execute_calls[0]["readout_duration"] == 1024.0
+    assert execute_calls[0]["readout_pre_margin"] == 8.0
+    assert execute_calls[0]["readout_post_margin"] == 16.0
+
+
 def test_measure_does_not_reset_awg_by_default() -> None:
     """Given measure call without reset flag, when measured, then AWG reset is skipped by default."""
     service, captured = _make_service()
@@ -225,6 +240,21 @@ def test_measure_does_not_reset_awg_by_default() -> None:
     )
 
     assert captured["reset_calls"] == []
+
+
+def test_measure_uses_experiment_readout_timing_defaults() -> None:
+    """Given omitted readout timing, when measuring, then Experiment defaults are delegated."""
+    service, captured = _make_service()
+
+    service.measure(
+        sequence={"custom-target": np.array([0.0 + 0.0j], dtype=np.complex128)},
+        plot=False,
+    )
+
+    measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
+    assert measure_calls[0]["readout_duration"] == 1024.0
+    assert measure_calls[0]["readout_pre_margin"] == 8.0
+    assert measure_calls[0]["readout_post_margin"] == 16.0
 
 
 def test_check_waveform_resolves_read_labels_via_target_registry() -> None:
