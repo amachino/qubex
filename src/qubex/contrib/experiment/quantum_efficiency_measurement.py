@@ -378,10 +378,15 @@ def _gaussian_component_curve(
     component: GaussianHistogramComponentSummary,
 ) -> NDArray[np.float64]:
     """Return one histogram-space Gaussian component curve."""
-    return sample_count * bin_width * component["weight"] * _gaussian_pdf(
-        x,
-        mu=component["mu"],
-        sigma=component["sigma"],
+    return (
+        sample_count
+        * bin_width
+        * component["weight"]
+        * _gaussian_pdf(
+            x,
+            mu=component["mu"],
+            sigma=component["sigma"],
+        )
     )
 
 
@@ -887,7 +892,9 @@ def _fit_coupled_double_gaussian_histograms(
     else:
         edges = _normalize_float_array(bin_edges, name="projected_bin_edges")
         if len(edges) < 2 or not np.all(np.diff(edges) > 0):
-            raise ValueError("`projected_bin_edges` must be a strictly increasing array.")
+            raise ValueError(
+                "`projected_bin_edges` must be a strictly increasing array."
+            )
 
     if len(ground_samples) < 4 or len(excited_samples) < 4:
         return _independent_double_gaussian_fit_pair(
