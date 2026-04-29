@@ -137,6 +137,7 @@ def thermal_excitation_via_rabi(
         ef_rabi_amplitude = exp.params.control_amplitude.get(target, None)
         if ef_rabi_amplitude is not None:
             ef_rabi_amplitude /= np.sqrt(2)
+            ef_rabi_freq = exp.calc_rabi_rate(target, ef_rabi_amplitude * np.sqrt(2))
         if ef_rabi_amplitude is None:
             raise ValueError("Failed to determine ef_rabi_amplitude.")
 
@@ -184,7 +185,7 @@ def thermal_excitation_via_rabi(
         )
     except Exception as e:
         print("Cosine fit failed")
-        ef_rabi_freq = exp.calc_control_amplitude(target, ef_rabi_amplitude)
+
         fig = viz.make_figure()
         fig.add_scatter(
             x=fit_amplitude_history[target],
@@ -212,7 +213,6 @@ def thermal_excitation_via_rabi(
 
     if fit_cosine_result.status != FitStatus.ERROR:
         fig = fit_cosine_result.get_figure()
-        ef_rabi_freq = exp.calc_control_amplitude(target, ef_rabi_amplitude)
         dense_x_range = np.linspace(0, float(amplitude_range[-1]), 1000)
         calc_res = _calculate_thermal_population(fit_cosine_result, dense_x_range)
 
