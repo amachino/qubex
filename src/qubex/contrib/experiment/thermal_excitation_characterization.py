@@ -6,82 +6,84 @@ from collections import defaultdict
 from collections.abc import Callable
 
 import numpy as np
-import qxvisualizer as viz
-from numpy.typing import ArrayLike, NDArray
 from qxpulse import FlatTop, PulseSchedule, Waveform
-from tqdm import tqdm
 
-import qubex.analysis.fitting as fitting
 from qubex import Experiment
-from qubex.analysis.fit_result import FitResult, FitStatus
 from qubex.experiment.experiment_constants import (
-    DEFAULT_RABI_TIME_RANGE,
     DEFAULT_SHOTS,
     PI_DURATION,
     PI_RAMPTIME,
 )
-from qubex.experiment.models.experiment_result import ExperimentResult, SweepData
 from qubex.experiment.models.result import Result
+from qubex.measurement.measurement_result import (
+    MeasureResult,
+)
 from qubex.system.target import Target
+
+EF_PI_DURATION = PI_DURATION
+EF_PI_RAMPTIME = PI_RAMPTIME
+
+THERMAL_EXCITATION_DEFAULT_SHOTS = int(10 * DEFAULT_SHOTS)
 
 
 def _build_population_rabi_sequence(
     target: str,
-    amplitude: float,
-    ef_rabi_ramptime: float,
     ef_rabi_amplitude: float,
     pi_pulse: Waveform,
 ) -> Callable[[int], PulseSchedule]:
-
-    def population_rabi_sequence(
-        T: int,
+    def sequence0(
+        target: str,
+        ef_rabi_amplitude: float,
+        pi_pulse: Waveform,
     ) -> PulseSchedule:
         ef_label = Target.ef_label(target)
 
         with PulseSchedule() as ps:
-            ampl_pulse = FlatTop(
-                duration=PI_DURATION,
-                amplitude=amplitude,
-                tau=PI_RAMPTIME,
-            )
-            ps.add(target, ampl_pulse)
-            ps.barrier()
             ps.add(
                 ef_label,
                 FlatTop(
-                    duration=T + 2 * ef_rabi_ramptime,
+                    duration=EF_PI_DURATION,
                     amplitude=ef_rabi_amplitude,
-                    tau=ef_rabi_ramptime,
+                    tau=EF_PI_RAMPTIME,
                 ),
             )
             ps.barrier()
             ps.add(target, pi_pulse)
         return ps
 
-    return population_rabi_sequence
+    def sequence1(
+        target: str,
+        ef_rabi_amplitude: float,
+        pi_pulse: Waveform,
+    ) -> PulseSchedule:
+        ef_label = Target.ef_label(target)
 
-
-def _calculate_thermal_population(
-    fit_result: FitResult, dense_x_range: NDArray
-) -> dict[str, float | ArrayLike]:
-    popt = fit_result.data["popt"]
-
-    y_fit = fitting.func_cos(dense_x_range, *popt)
-    idx_min = int(np.argmin(y_fit))
-    idx_max = int(np.argmax(y_fit))
-    x_min = dense_x_range[idx_min]
-    x_max = dense_x_range[idx_max]
-    rabi_ampl_min = np.min(y_fit)
-    rabi_ampl_max = np.max(y_fit)
-    p_ex = rabi_ampl_min / (rabi_ampl_min + rabi_ampl_max)
+        with PulseSchedule() as ps:
+            ps.add(target, pi_pulse)
+            ps.barrier()
+            ps.add(
+                ef_label,
+                FlatTop(
+                    duration=EF_PI_DURATION,
+                    amplitude=2 * ef_rabi_amplitude,
+                    tau=EF_PI_RAMPTIME,
+                ),
+            )
+            ps.barrier()
+            ps.add(target, pi_pulse)
+        return ps
 
     return {
-        "y_fit": y_fit,
-        "x_min": x_min,
-        "x_max": x_max,
-        "rabi_ampl_min": rabi_ampl_min,
-        "rabi_ampl_max": rabi_ampl_max,
-        "p_ex": p_ex,
+        "sequence0": sequence0(
+            target=target,
+            ef_rabi_amplitude=ef_rabi_amplitude,
+            pi_pulse=pi_pulse,
+        ),
+        "sequence1": sequence1(
+            target=target,
+            ef_rabi_amplitude=ef_rabi_amplitude,
+            pi_pulse=pi_pulse,
+        ),
     }
 
 
@@ -89,13 +91,8 @@ def thermal_excitation_via_rabi(
     exp: Experiment,
     *,
     target: str,
-    amplitude_range: ArrayLike | None = None,
-    time_range: ArrayLike | None = None,
-    n_amplitude_ranges: int | None = None,
-    ef_rabi_ramptime: float | None = None,
-    ef_rabi_amplitude: float | None = None,
-    n_shots: int = DEFAULT_SHOTS,
-    fit_rabi_is_damped: bool = True,
+    n_shots: int = THERMAL_EXCITATION_DEFAULT_SHOTS,
+    readout_amplitude: float | None = None,
     plot: bool = False,
 ) -> Result:
     """
@@ -105,192 +102,67 @@ def thermal_excitation_via_rabi(
     ----------
     target : str
         Target qubit to measure.
-    amplitude_range : ArrayLike, optional
-        sweep range for state-preparation pulse amplitude.
-    time_range : ArrayLike, optional
-        sweep range for ef Rabi pulse durations (ns).
-    n_amplitude_ranges : int, optional
-        Number of amplitude points when `amplitude_range` is `None`.
-    ef_rabi_ramptime : float, optional
-        Ramp time of the ef Rabi flat-top pulse (ns)
-    ef_rabi_amplitude : float, optional
-        Drive amplitude for the ef Rabi pulse.
     n_shots : int, optional
-        Number of measurement shots per sequence.  Defaults to `DEFAULT_SHOTS`.
+        Number of measurement shots per sequence.  Defaults to 10 times the value of `DEFAULT_SHOTS``.
     plot : bool, optional
         Whether to plot ef rabi.
     """
-    if n_amplitude_ranges is None:
-        n_amplitude_ranges = 21
-    if amplitude_range is None:
-        pi_rabi_freq = 1 / (PI_DURATION + PI_RAMPTIME)
-        pi_rabi_amplitude = exp.calc_control_amplitude(target, pi_rabi_freq)
-        amplitude_range = np.linspace(0, pi_rabi_amplitude * 1.5, n_amplitude_ranges)
-
-    if time_range is None:
-        time_range = DEFAULT_RABI_TIME_RANGE
-
-    if ef_rabi_ramptime is None:
-        ef_rabi_ramptime = 0
-
+    control_amplitude = exp.calc_control_amplitude(target, rabi_rate=0.0125)
+    if control_amplitude is not None:
+        ef_rabi_amplitude = control_amplitude / np.sqrt(2)
     if ef_rabi_amplitude is None:
-        ef_rabi_amplitude = exp.params.control_amplitude.get(target, None)
-        if ef_rabi_amplitude is not None:
-            ef_rabi_amplitude /= np.sqrt(2)
-        if ef_rabi_amplitude is None:
-            raise ValueError("Failed to determine ef_rabi_amplitude.")
+        raise ValueError("Failed to determine ef_rabi_amplitude.")
 
-    amplitude_range = np.asarray(amplitude_range, dtype=np.float64)
-    time_range = np.asarray(time_range, dtype=np.int64)
-    effective_time_range = time_range + ef_rabi_ramptime
+    if readout_amplitude is None:
+        readout_amplitudes = None
+    else:
+        readout_amplitudes = {target: readout_amplitude}
 
-    fit_amplitude_history = defaultdict(list)
-    fit_rabi_amplitude_history = defaultdict(list)
-    result_history = []
+    amplitude_history = defaultdict(list)
 
-    for amplitude in tqdm(amplitude_range):
-        population_rabi_sequence = _build_population_rabi_sequence(
+    for _ef_rabi_amplitude in [0, ef_rabi_amplitude]:
+        sequences = _build_population_rabi_sequence(
             target=target,
-            amplitude=amplitude,
-            ef_rabi_ramptime=ef_rabi_ramptime,
-            ef_rabi_amplitude=ef_rabi_amplitude,
+            ef_rabi_amplitude=_ef_rabi_amplitude,
             pi_pulse=exp.x180(target),
         )
-        result: ExperimentResult[SweepData] = exp.sweep_parameter(
-            sequence=population_rabi_sequence,
-            sweep_range=time_range,
+
+        result0: MeasureResult = exp.measure(
+            sequence=sequences["sequence0"],
+            readout_amplitudes=readout_amplitudes,
+            mode="avg",
             n_shots=n_shots,
             plot=plot,
         )
-        result_history.append(result)
-
-        fit_rabi_result = fitting.fit_rabi(
-            target=target,
-            times=effective_time_range,
-            is_damped=fit_rabi_is_damped,
-            data=result.data[target].data,
+        result1: MeasureResult = exp.measure(
+            sequence=sequences["sequence1"],
+            readout_amplitudes=readout_amplitudes,
+            mode="avg",
+            n_shots=n_shots,
             plot=plot,
         )
-        r2 = fit_rabi_result.data.get("r2", np.nan)
-        if r2 >= 0.9:
-            fit_rabi_amplitude_history[target].append(fit_rabi_result.data["amplitude"])
-            fit_amplitude_history[target].append(amplitude)
 
-    try:
-        fit_cosine_result: FitResult = fitting.fit_cosine(
-            x=fit_amplitude_history[target],
-            y=fit_rabi_amplitude_history[target],
-            plot=False,
-        )
-    except Exception as e:
-        print("Cosine fit failed")
-        ef_rabi_freq = exp.calc_control_amplitude(target, ef_rabi_amplitude)
-        fig = viz.make_figure()
-        fig.add_scatter(
-            x=fit_amplitude_history[target],
-            y=fit_rabi_amplitude_history[target],
-            mode="markers",
-            name="Data",
-        )
-        fig.update_layout(
-            title=dict(
-                text=f"Thermal excitation characterization via Rabi - {target}",
-                subtitle=dict(
-                    text=f"Ωef={ef_rabi_freq * 1e3:.1f} MHz. Cosine fit failed"
-                ),
-            ),
-            xaxis_title="Amplitude (a.u.)",
-            yaxis_title="Rabi Amplitude (a.u.)",
-        )
-        fig.show()
-        fit_cosine_result = FitResult(
-            data={},
-            status=FitStatus.ERROR,
-            message=str(e),
-            figure=fig,
-        )
+        iq0 = result0.data[target].kerneled
+        iq1 = result1.data[target].kerneled
+        state_center = exp.state_centers[target][1]
+        vec0 = np.abs(iq0 - state_center)
+        vec1 = np.abs(iq1 - state_center)
+        amplitude_history["0"].append(vec0)
+        amplitude_history["1"].append(vec1)
 
-    if fit_cosine_result.status != FitStatus.ERROR:
-        fig = fit_cosine_result.get_figure()
-        ef_rabi_freq = exp.calc_control_amplitude(target, ef_rabi_amplitude)
-        dense_x_range = np.linspace(0, float(amplitude_range[-1]), 1000)
-        calc_res = _calculate_thermal_population(fit_cosine_result, dense_x_range)
-
-        fig.update_traces(visible=False, selector={"name": "Fit"})
-        fig.add_scatter(
-            x=dense_x_range,
-            y=calc_res["y_fit"],
-            mode="lines",
-            name="Fit Extrapolation",
-        )
-        fig.update_layout(
-            title=dict(
-                text=f"Thermal excitation characterization via Rabi - {target}",
-                subtitle=dict(
-                    text=f"Ωef = {ef_rabi_freq * 1e3:.1f} MHz, p_ex = {calc_res['p_ex']:.4f}"
-                ),
-            ),
-            xaxis_title="Amplitude (a.u.)",
-            yaxis_title="Rabi Amplitude (a.u.)",
-        )
-        fig.add_annotation(
-            x=calc_res["x_min"],
-            y=calc_res["rabi_ampl_min"],
-            text=f"min: {calc_res['rabi_ampl_min']:.6g}",
-            showarrow=True,
-            arrowhead=1,
-        )
-        fig.add_annotation(
-            x=calc_res["x_max"],
-            y=calc_res["rabi_ampl_max"],
-            text=f"max: {calc_res['rabi_ampl_max']:.6g}",
-            showarrow=True,
-            arrowhead=1,
-        )
-
-        fig.show()
-
-        A = fit_cosine_result.data["A"]
-        A_err = fit_cosine_result.data["A_err"]
-        f = fit_cosine_result.data["f"]
-        f_err = fit_cosine_result.data["f_err"]
-        phi = fit_cosine_result.data["phi"]
-        phi_err = fit_cosine_result.data["phi_err"]
-        C = fit_cosine_result.data["C"]
-        C_err = fit_cosine_result.data["C_err"]
-
-        print("")
-        print(f"target : {target}")
-        print(f"A   : {A} ± {A_err}")
-        print(f"f   : {f} ± {f_err}")
-        print(f"phi : {phi} ± {phi_err}")
-        print(f"C   : {C} ± {C_err}")
-        print("")
-        print("thermal excitation probability (p_ex):")
-        print(f"rabi amplitude min : {calc_res['rabi_ampl_min']:.4f}")
-        print(f"rabi amplitude max : {calc_res['rabi_ampl_max']:.4f}")
-        print(f"p_ex : {calc_res['p_ex']:.4f}")
-        print("")
-
-    else:
-        print(
-            f"Cosine fit failed. Unable to estimate thermal excitation probability for target {target}."
-        )
-        calc_res = {
-            "rabi_ampl_min": None,
-            "rabi_ampl_max": None,
-            "p_ex": None,
-        }
-        fig = None
+    A_min = np.abs(amplitude_history["0"][0] - amplitude_history["0"][-1])
+    A_max = np.abs(amplitude_history["1"][0] - amplitude_history["1"][-1])
+    p_ex = A_min / (A_min + A_max)
+    print("")
+    print(f"{target}")
+    print(f"A_min : {A_min}")
+    print(f"A_max : {A_max}")
+    print(f"p_ex  : {p_ex}")
 
     return Result(
         data={
-            "time_range": time_range,
-            "amplitude_range": amplitude_range,
-            "result_history": result_history,
-            "p_ex": calc_res["p_ex"],
-            "rabi_ampl_min": calc_res["rabi_ampl_min"],
-            "rabi_ampl_max": calc_res["rabi_ampl_max"],
+            "p_ex": p_ex,
+            "rabi_ampl_min": A_min,
+            "rabi_ampl_max": A_max,
         },
-        figure=fig,
     )
