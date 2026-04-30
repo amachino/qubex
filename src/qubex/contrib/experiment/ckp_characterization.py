@@ -168,7 +168,7 @@ def ckp_sequence_v2(
     if resonator_drive_amplitude is None:
         resonator_drive_amplitude = exp.ctx.params.get_readout_amplitude(
             exp.ctx.resolve_qubit_label(target)
-        )
+        ) / 2
     if resonator_drive_ramptime is None:
         resonator_drive_ramptime = 32
     if resonator_settle_duration is None:
@@ -249,9 +249,7 @@ def ckp_measurement_v2(
     frequency shift.
 
     The extracted resonance frequencies are later used for filtered CKP
-    fitting to estimate readout resonator parameters such as:
-
-        omega_r_g, omega_r_e, omega_p, J, kappa, chi, |A|^2
+    fitting to estimate readout resonator parameters.
 
     Invalid Lorentzian fits (fit failure, non-finite parameters, or poor
     goodness-of-fit) are skipped automatically.
@@ -324,6 +322,10 @@ def ckp_measurement_v2(
         If True, stop the resonator-frequency sweep early when the fitted
         qubit resonance frequency crosses the specified lower limit.
 
+        When early-stop mode is enabled but no early stop is triggered,
+        additional resonator-frequency points are adaptively measured
+        around the minimum fitted qubit resonance frequency.        
+
         If None, defaults to False.
 
     f0_lower_qubit_detuning_limit : float, optional
@@ -368,20 +370,20 @@ def ckp_measurement_v2(
         save_image = True
     if qubit_detuning_range is None:
         left = np.linspace(-0.055, -0.04, 3, endpoint=False)
-        center = np.linspace(-0.04, 0.01, 30, endpoint=False)
+        medium_left = np.linspace(-0.04, -0.03, 4, endpoint=False)
+        center = np.linspace(-0.03, 0.01, 24, endpoint=False)
         right = np.linspace(0.01, 0.025, 3)
-        qubit_detuning_range = np.concatenate([left, center, right])
-    else:
-        qubit_detuning_range = np.asarray(qubit_detuning_range)
+        qubit_detuning_range = np.concatenate([left, medium_left, center, right])
+    qubit_detuning_range = np.asarray(qubit_detuning_range, dtype=float)
     if resonator_detuning_range is None:
         u = np.linspace(-1, 1, 50)
-        beta = 0.9
-        resonator_detuning_range = 0.1 * np.arctanh(beta * u) / np.arctanh(beta)
-    resonator_detuning_range = np.asarray(resonator_detuning_range)
+        beta = 0.95
+        resonator_detuning_range = 0.12 * np.arctanh(beta * u) / np.arctanh(beta)
+    resonator_detuning_range = np.asarray(resonator_detuning_range, dtype=float)
     if resonator_drive_amplitude is None:
         resonator_drive_amplitude = exp.ctx.params.get_readout_amplitude(
             exp.ctx.resolve_qubit_label(target)
-        )
+        ) / 2
     if qubit_drive_scale is None:
         qubit_drive_scale = 0.8
     if qubit_drive_duration is None:
@@ -411,7 +413,10 @@ def ckp_measurement_v2(
     measured_resonator_frequencies = []
     fit_results = []
     exp.ctx.reset_awg_and_capunits(qubits=[qubit_label])
-    for resonator_detuning in tqdm(resonator_detuning_range):
+
+    def measure_one_resonator_point(resonator_detuning: float) -> None:
+        nonlocal early_stopped
+
         measured_resonator_frequencies.append(float(f_resonator + resonator_detuning))
         result1d = []
         for qubit_detuning in qubit_detuning_range:
@@ -476,7 +481,7 @@ def ckp_measurement_v2(
                 f"resonator_detuning={resonator_detuning:.6f}: {exc}"
             )
             fit_results.append(None)
-            continue
+            return
         fit_results.append(fit_result)
         f0 = fit_result.get("f0", np.nan)
         f0_err = fit_result.get("f0_err", np.nan)
@@ -484,17 +489,57 @@ def ckp_measurement_v2(
         if not (
             np.isfinite(f0) and np.isfinite(f0_err) and np.isfinite(r2) and r2 > 0.5
         ):
-            print(f"[WARN] invalid fit at resonator_detuning={resonator_detuning:.6f}")
-            print(f"f0={f0}, err={f0_err}, r2={r2:.3f}")
-        else:
-            valid_resonator_frequencies.append(f_resonator + resonator_detuning)
-            qubit_resonance_frequencies.append(f0)
-            qubit_resonance_frequency_errors.append(f0_err)
+            print(
+                f"[WARN] invalid fit at resonator_detuning={resonator_detuning:.6f}"
+                f"f0={f0}, err={f0_err}, r2={r2:.3f}"
+            )
+            return
+        valid_resonator_frequencies.append(f_resonator + resonator_detuning)
+        qubit_resonance_frequencies.append(f0)
+        qubit_resonance_frequency_errors.append(f0_err)
+        if enable_early_stop and f0_lower_frequency_limit is not None:
+            if f0 < f0_lower_frequency_limit:
+                early_stopped = True
 
-            if enable_early_stop and f0_lower_frequency_limit is not None:
-                if f0 < f0_lower_frequency_limit:
-                    early_stopped = True
-                    break
+    for resonator_detuning in tqdm(resonator_detuning_range):
+        measure_one_resonator_point(float(resonator_detuning))
+        if early_stopped:
+            break
+
+    if enable_early_stop and not early_stopped:
+        if len(qubit_resonance_frequencies) >= 3:
+            f0_arr = np.asarray(qubit_resonance_frequencies, dtype=float)
+            fr_valid_arr = np.asarray(valid_resonator_frequencies, dtype=float)
+            full_fr = np.asarray(resonator_frequency_range, dtype=float)
+            idx_min = int(np.argmin(f0_arr))
+            f_center = fr_valid_arr[idx_min]
+            idx_center_full = int(np.argmin(np.abs(full_fr - f_center)))
+
+            if (
+                0 < idx_min < len(fr_valid_arr) - 1
+                and 0 < idx_center_full < len(full_fr) - 1
+            ):
+                f_left_full = full_fr[idx_center_full - 1]
+                f_right_full = full_fr[idx_center_full + 1]
+                f0_left = f0_arr[idx_min - 1]
+                f0_right = f0_arr[idx_min + 1]
+
+                if f0_left <= f0_right:
+                    f_neighbor = f_left_full
+                    f_other = f_right_full
+                else:
+                    f_neighbor = f_right_full
+                    f_other = f_left_full
+
+                main_points = np.linspace(f_center, f_neighbor, 5)[1:3]
+                other_point = np.linspace(f_center, f_other, 5)[1:2]
+                extra_frequencies = np.concatenate([main_points, other_point])
+
+                for f_extra in tqdm(extra_frequencies):
+                    resonator_detuning_extra = float(f_extra - f_resonator)
+                    measure_one_resonator_point(resonator_detuning_extra)
+                    if early_stopped:
+                        break
 
     data = np.array(result2d)
     if qubit_initial_state == "1":
@@ -504,6 +549,29 @@ def ckp_measurement_v2(
         measured_resonator_frequencies,
         dtype=float,
     )
+
+    idx_all = np.argsort(measured_resonator_frequency_range)
+    measured_resonator_frequency_range = measured_resonator_frequency_range[idx_all]
+    data = data[idx_all]
+    fit_results = [fit_results[i] for i in idx_all]  
+
+    valid_resonator_frequencies = np.asarray(
+        valid_resonator_frequencies,
+        dtype=float,
+    )
+    qubit_resonance_frequencies = np.asarray(
+        qubit_resonance_frequencies,
+        dtype=float,
+    )
+    qubit_resonance_frequency_errors = np.asarray(
+        qubit_resonance_frequency_errors,
+        dtype=float,
+    )
+
+    idx_valid = np.argsort(valid_resonator_frequencies)
+    valid_resonator_frequencies = valid_resonator_frequencies[idx_valid]
+    qubit_resonance_frequencies = qubit_resonance_frequencies[idx_valid]
+    qubit_resonance_frequency_errors = qubit_resonance_frequency_errors[idx_valid]
 
     fig = viz.make_figure()
     fig.add_heatmap(
@@ -592,8 +660,9 @@ def filtered_ckp_experiment(
     save_image: bool | None = None,
     save_animation: bool | None = None,
     enable_rough_search: bool | None = None,
-    f0_lower_qubit_detuning_limit: float | None = None,
-    f0_upper_qubit_detuning_limit: float | None = None,
+    target_min_qubit_detuning: float | None = None,
+    max_rough_search_reductions: int | None = None,
+    max_rough_search_increases: int | None = None,
 ) -> Result:
     """
     Run a full filtered CKP experiment and estimate readout resonator parameters.
@@ -621,6 +690,12 @@ def filtered_ckp_experiment(
 
     In addition, the estimated intracavity photon numbers for the |g> and |e>
     branches are evaluated.
+
+    After fitting, the routine estimates the optimal readout
+    frequency by maximizing |beta_e-beta_g| both with:
+
+    - fixed drive amplitude
+    - photon-number-limited drive amplitude    
 
     Parameters
     ----------
@@ -686,11 +761,17 @@ def filtered_ckp_experiment(
 
         If None, defaults to True.
 
-    f0_lower_qubit_detuning_limit : float, optional
-        Lower detuning threshold (GHz) used during rough search.
+    target_min_qubit_detuning : float, optional
+        Target minimum qubit-frequency detuning (GHz) used to tune
+        the resonator drive amplitude during rough search.   
 
-    f0_upper_qubit_detuning_limit : float, optional
-        Upper detuning threshold (GHz) used during rough search.
+    max_rough_search_reductions : int, optional
+        Maximum number of times the resonator drive amplitude
+        may be reduced during rough search.
+
+    max_rough_search_increases : int, optional
+        Maximum number of times the resonator drive amplitude
+        may be increased during rough search.                     
 
     Returns
     -------
@@ -736,6 +817,7 @@ def filtered_ckp_experiment(
         - ``C_error``
         - ``chi_error``
         - ``A2_error``
+        - ``reduced_chi2``
         - ``covariance``
 
         Photon-number metrics
@@ -744,6 +826,7 @@ def filtered_ckp_experiment(
         - ``ne_max``
         - ``x_ng_max``
         - ``x_ne_max``
+        - ``n_crit``
 
         Fit diagnostics
         ---------------
@@ -754,12 +837,13 @@ def filtered_ckp_experiment(
         --------------------
         - ``resonator_drive_amplitude``
         - ``rough_search_results``
-        - ``rough_search_reduces``
-        - ``rough_search_increases``
+        - ``rough_search_reduce_trials``
+        - ``rough_search_increase_trials``
 
         Optimized readout frequency
         ---------------
         - ``readout_frequency_opt``
+        - ``readout_frequency_opt_limited``        
         - ``readout_optimization_result``
 
     Notes
@@ -780,10 +864,16 @@ def filtered_ckp_experiment(
     if enable_rough_search is None:
         enable_rough_search = True
     if enable_rough_search:
-        if f0_lower_qubit_detuning_limit is None:
-            f0_lower_qubit_detuning_limit = -0.035
-        if f0_upper_qubit_detuning_limit is None:
-            f0_upper_qubit_detuning_limit = -0.01
+        if target_min_qubit_detuning is None:
+            target_min_qubit_detuning = -0.02
+        if target_min_qubit_detuning >= 0:
+            raise ValueError("target_min_qubit_detuning must be negative.")
+        f0_lower_qubit_detuning_limit = target_min_qubit_detuning * 1.5
+        f0_upper_qubit_detuning_limit = target_min_qubit_detuning * 0.5
+    if max_rough_search_reductions is None:
+        max_rough_search_reductions = 4
+    if max_rough_search_increases is None:
+        max_rough_search_increases = 4        
     if shots is None:
         shots = DEFAULT_SHOTS
     if plot is None:
@@ -796,13 +886,13 @@ def filtered_ckp_experiment(
         save_animation = False
     if resonator_detuning_range is None:
         u = np.linspace(-1, 1, 50)
-        beta = 0.9
-        resonator_detuning_range = 0.1 * np.arctanh(beta * u) / np.arctanh(beta)
-    resonator_detuning_range = np.asarray(resonator_detuning_range)
+        beta = 0.95
+        resonator_detuning_range = 0.12 * np.arctanh(beta * u) / np.arctanh(beta)
+    resonator_detuning_range = np.asarray(resonator_detuning_range, dtype=float)
     if resonator_drive_amplitude is None:
         resonator_drive_amplitude = exp.ctx.params.get_readout_amplitude(
             exp.ctx.resolve_qubit_label(target)
-        )
+        ) / 2
     verbose = False
 
     rough_search_results = []
@@ -837,13 +927,13 @@ def filtered_ckp_experiment(
             rough_search_results.append(result_0_rough_search)
 
             if result_0_rough_search.data["early_stopped"]:
-                resonator_drive_amplitude *= 0.5
+                resonator_drive_amplitude *= np.sqrt(0.5)
                 n_reduces += 1
                 print(
                     "[ROUGH SEARCH] ac Stark shift too large. "
                     f"Reduce resonator_drive_amplitude -> {resonator_drive_amplitude:.6g} "
                 )
-                if n_reduces >= 3:
+                if n_reduces >= max_rough_search_reductions:
                     print(
                         "[ROUGH SEARCH] Early stop still detected after max reduction trials. "
                         "Proceeding with current amplitude."
@@ -862,28 +952,41 @@ def filtered_ckp_experiment(
                 result_0_rough_search.data["qubit_frequency_range"][0]
                 - result_0_rough_search.data["qubit_detuning_range"][0]
             )
-            if f0_upper_qubit_detuning_limit is not None:
-                f0_upper_frequency_limit = f_qubit_rough + f0_upper_qubit_detuning_limit
-                has_below_upper = np.any(f0_list < f0_upper_frequency_limit)
-                if not has_below_upper:
-                    resonator_drive_amplitude *= 2.0
-                    n_increases += 1
+            f0_upper_frequency_limit = f_qubit_rough + f0_upper_qubit_detuning_limit
+            has_below_upper = np.any(f0_list < f0_upper_frequency_limit)
+            if not has_below_upper:
+                resonator_drive_amplitude *= np.sqrt(2.0)
+                n_increases += 1
+                print(
+                    "[ROUGH SEARCH] ac Stark shift too small. "
+                    f"Increase resonator_drive_amplitude -> {resonator_drive_amplitude:.6g} "
+                )
+                if n_increases >= max_rough_search_increases:
                     print(
-                        "[ROUGH SEARCH] ac Stark shift too small. "
-                        f"Increase resonator_drive_amplitude -> {resonator_drive_amplitude:.6g} "
+                        "[ROUGH SEARCH] Max increase trial reached. "
+                        "Proceeding with current amplitude."
                     )
-                    if n_increases >= 1:
-                        print(
-                            "[ROUGH SEARCH] Max increase trial reached. "
-                            "Proceeding with current amplitude."
-                        )
-                        break
-                    continue
+                    break
+                continue
+
+            observed_min_qubit_detuning = float(np.min(f0_list) - f_qubit_rough)
+            scale = 1.0
+            if (
+                target_min_qubit_detuning is not None
+                and observed_min_qubit_detuning < 0
+                and target_min_qubit_detuning < 0
+            ):
+                scale = np.sqrt(target_min_qubit_detuning / observed_min_qubit_detuning)
+                scale = np.clip(scale, 0.5, 1.5)
+                resonator_drive_amplitude *= float(scale)
 
             print(
-                "[ROUGH SEARCH] resonator_drive_amplitude accepted : "
-                f"{resonator_drive_amplitude:.6g}"
-            )
+                "[ROUGH SEARCH] Auto-adjust amplitude\n"
+                f"    observed shift : {1000*observed_min_qubit_detuning:.2f} MHz\n"
+                f"    target shift   : {1000*target_min_qubit_detuning:.2f} MHz\n"
+                f"    scale factor   : {scale:.3f}\n"
+                f"    amplitude      : {resonator_drive_amplitude:.6g}"
+            )             
             break
 
     shots_no_drive = 4 * shots
@@ -1067,6 +1170,13 @@ def filtered_ckp_experiment(
     ne_max = float(np.max(ne_dense))
     x_ng_max = float(x_dense[np.argmax(ng_dense)])
     x_ne_max = float(x_dense[np.argmax(ne_dense)])
+    f_q = 0.5 * (offset_g + offset_e)
+    f_r = 0.5 * (omega_r_g + omega_r_e)
+    delta_qr = f_q - f_r
+    if np.isclose(chi, 0.0):
+        n_crit = np.nan
+    else:
+        n_crit = abs(delta_qr / (4.0 * chi))
 
     if plot or save_image:
         fig = viz.make_figure()
@@ -1112,9 +1222,17 @@ def filtered_ckp_experiment(
                 text=f"Filtered CKP fit : {target}",
             ),
             xaxis_title="Resonator drive frequency (GHz)",
-            yaxis_title="ac Stark shift (GHz)",
-            width=800,
+            yaxis_title="ac Stark shift (GHz)", 
+            width=1000,
             height=500,
+            margin=dict(l=85, r=230, t=60, b=70),
+            legend=dict(
+                x=1.12,
+                y=1.0,
+                xanchor="left",
+                yanchor="top",
+            ),
+            title_x = 0.43,
         )
 
         if plot:
@@ -1128,14 +1246,16 @@ def filtered_ckp_experiment(
             print(f"χ      = {1000 * chi:.3f} ± {1000 * fit.chi_error:.3f} MHz")
             print(f"C      = {C:.6g} ± {fit.C_error:.3g}")
             print(f"|A|²   = {1000 * A2:.3f} ± {1000 * fit.A2_error:.3f} MHz")
+            print(f"χ²_red       = {fit.reduced_chi2:.3g}")
             print(f"n_g,max = {ng_max:.3f} @ {x_ng_max:.6f} GHz")
             print(f"n_e,max = {ne_max:.3f} @ {x_ne_max:.6f} GHz")
+            print(f"n_c    ≈ {n_crit:.3f}")
 
         if save_image:
             viz.save_figure(
                 fig,
                 name=f"filtered_ckp_fit_{target}",
-                width=800,
+                width=1000,
                 height=500,
             )
 
@@ -1146,7 +1266,8 @@ def filtered_ckp_experiment(
         omega_p=omega_p,
         J=J,
         kappa=kappa,
-        A=float(np.sqrt(A2)),
+        A=fit.A,
+        n_crit=n_crit,
         plot=plot,
         show_animation=show_animation,
         save_image=save_image,
@@ -1184,11 +1305,13 @@ def filtered_ckp_experiment(
             "C_error": fit.C_error,
             "chi_error": fit.chi_error,
             "A2_error": fit.A2_error,
+            "reduced_chi2": fit.reduced_chi2,
             "covariance": fit.covariance,
             "ng_max": ng_max,
             "ne_max": ne_max,
             "x_ng_max": x_ng_max,
             "x_ne_max": x_ne_max,
+            "n_crit": n_crit,
             "initial_guess": {
                 "C0": C0,
                 "omega_r_g0": omega_r_g0,
@@ -1208,6 +1331,7 @@ def filtered_ckp_experiment(
             "rough_search_reduce_trials": n_reduces,
             "rough_search_increase_trials": n_increases,
             "readout_frequency_opt": readout_opt_result.data["readout_frequency_opt"],
+            "readout_frequency_opt_limited": readout_opt_result.data["readout_frequency_opt_limited"],
             "readout_optimization_result": readout_opt_result,
         }
     )
@@ -1332,6 +1456,9 @@ class FilteredCKPFitResult:
     A2_error: float
     success: bool
     cost: float
+    chi2: float
+    reduced_chi2: float
+    dof: int
     message: str
     nfev: int
     result_raw: object
@@ -1552,6 +1679,13 @@ def fit_filtered_ckp_two_traces(
         else:
             A = np.sqrt(A2)
 
+    weighted_residuals = np.asarray(result.fun, dtype=float)
+    n_data = weighted_residuals.size
+    n_param = len(result.x)
+    dof = max(n_data - n_param, 1)
+    chi2 = float(np.sum(weighted_residuals**2))
+    reduced_chi2 = chi2 / dof
+
     perr = np.full(6, np.nan, dtype=float)
     cov = None
 
@@ -1562,12 +1696,12 @@ def fit_filtered_ckp_two_traces(
         jac = result.jac
         n_data = jac.shape[0]
         n_param = jac.shape[1]
-        dof = max(0, n_data - n_param)
+        fit_dof = max(0, n_data - n_param)
 
-        if dof > 0:
+        if fit_dof > 0:
             resid = result.fun
             rss = np.sum(resid**2)
-            s_sq = rss / dof
+            s_sq = rss / fit_dof
             jtj = jac.T @ jac
 
             cov = np.linalg.pinv(jtj) * s_sq
@@ -1608,6 +1742,9 @@ def fit_filtered_ckp_two_traces(
         covariance=cov,
         success=bool(result.success),
         cost=float(result.cost),
+        chi2=float(chi2),
+        reduced_chi2=float(reduced_chi2),
+        dof=int(dof),
         message=str(result.message),
         nfev=int(result.nfev),
         result_raw=result,
@@ -1651,6 +1788,26 @@ def filtered_ckp_alpha(
     return -J * np.sqrt(kappa) * A / denom
 
 
+def filtered_ckp_beta(
+    x: ArrayLike,
+    *,
+    omega_r: float,
+    omega_p: float,
+    J: float,
+    kappa: float,
+    A: complex | float,
+) -> np.ndarray:
+    """Steady-state Purcell-filter amplitude beta_ss for the filtered CKP model."""
+    x = np.asarray(x, dtype=float)
+
+    delta_r = omega_r - x
+    delta_p = omega_p - x
+
+    denom = delta_r * (delta_p - 1j * kappa / 2.0) - J**2
+
+    return delta_r * np.sqrt(kappa) * A / denom
+
+
 def estimate_optimal_readout_frequency_from_ckp(
     *,
     frequency_range: ArrayLike,
@@ -1660,6 +1817,7 @@ def estimate_optimal_readout_frequency_from_ckp(
     J: float,
     kappa: float,
     A: complex | float,
+    n_crit: float,
     n_points: int = 4000,
     plot: bool = True,
     show_animation: bool = False,
@@ -1672,7 +1830,20 @@ def estimate_optimal_readout_frequency_from_ckp(
     Estimate the optimal readout frequency from fitted filtered-CKP parameters.
 
     The optimal frequency is defined as the frequency that maximizes
-    |alpha_e - alpha_g|.
+    |beta_e - beta_g|.
+
+    This routine evaluates:
+
+    1. Unconstrained optimization using a fixed drive amplitude A
+    2. Photon-limited optimization where A is adjusted at each frequency so that
+
+        max(|alpha_g|^2, |alpha_e|^2) = 0.1 * n_crit
+
+    Plots include:
+
+    - |beta_e-beta_g| versus drive frequency
+    - Phase of beta_g / beta_e measured from the beta-circle center
+    - Optional beta IQ-plane animation
 
     Parameters
     ----------
@@ -1697,21 +1868,26 @@ def estimate_optimal_readout_frequency_from_ckp(
     A : complex or float, optional
         Input drive amplitude.
 
+    n_crit : float
+        Critical resonator photon number.
+
     n_points : int, optional
         Number of frequency points used when frequency_range is given as
         [f_min, f_max].
 
     plot : bool, optional
-        If True, show |alpha_e-alpha_g| and IQ trajectory plots.
+        If True, show optimization figures including separation,
+        phase, and photon-limited separation plots.
 
     show_animation : bool, optional
-        If True, display the generated animation.
+        If True, display an animation of beta_g and beta_e
+        trajectories in the IQ plane.
 
     save_image : bool, optional
-        If True, save the generated figures.
+        If True, save generated optimization figures.
 
     save_animation : bool, optional
-        If True, save an HTML animation of alpha_g and alpha_e trajectories.
+        If True, save an HTML animation of beta_g and beta_e trajectories.
 
     output_dir : str or Path, optional
         Directory used for saving figures and animation.
@@ -1722,8 +1898,9 @@ def estimate_optimal_readout_frequency_from_ckp(
     Returns
     -------
     Result
-        Result object containing the optimal readout frequency and
-        calculated alpha trajectories.
+        Result object containing unconstrained and photon-limited
+        optimal readout frequencies, beta trajectories, phase data,
+        and generated figures.
     """
     frequency_range = np.asarray(frequency_range, dtype=float).ravel()
 
@@ -1733,6 +1910,9 @@ def estimate_optimal_readout_frequency_from_ckp(
         x = frequency_range
     else:
         raise ValueError("frequency_range must be [f_min, f_max] or an array.")
+    
+    if not np.isfinite(n_crit) or n_crit <= 0:
+        raise ValueError("n_crit must be a positive finite value.")
 
     if output_dir is None:
         output_dir = Path(".")
@@ -1740,7 +1920,7 @@ def estimate_optimal_readout_frequency_from_ckp(
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    alpha_g = filtered_ckp_alpha(
+    beta_g = filtered_ckp_beta(
         x,
         omega_r=omega_r_g,
         omega_p=omega_p,
@@ -1748,7 +1928,7 @@ def estimate_optimal_readout_frequency_from_ckp(
         kappa=kappa,
         A=A,
     )
-    alpha_e = filtered_ckp_alpha(
+    beta_e = filtered_ckp_beta(
         x,
         omega_r=omega_r_e,
         omega_p=omega_p,
@@ -1757,102 +1937,142 @@ def estimate_optimal_readout_frequency_from_ckp(
         A=A,
     )
 
-    alpha_diff = alpha_e - alpha_g
-    separation = np.abs(alpha_diff)
+    beta_diff = beta_e - beta_g
+    separation = np.abs(beta_diff)
 
     idx_opt = int(np.argmax(separation))
     readout_frequency_opt = float(x[idx_opt])
     max_separation = float(separation[idx_opt])
 
-    fig_sep = viz.make_figure()
-    fig_sep.add_scatter(
+    beta_center = 1j * np.sqrt(kappa) * A / kappa
+
+    phase_g = np.unwrap(np.angle(beta_g - beta_center))
+    phase_e = np.unwrap(np.angle(beta_e - beta_center))
+
+    fig_beta = viz.make_figure()
+
+    fig_beta.add_scatter(
         x=x,
         y=separation,
         mode="lines",
-        name="|alpha_e - alpha_g|",
+        name="|beta_e - beta_g|",
+        yaxis="y1",
     )
-    fig_sep.add_scatter(
+
+    fig_beta.add_scatter(
         x=[readout_frequency_opt],
         y=[max_separation],
         mode="markers",
         name="optimal readout frequency",
         marker=dict(size=9),
+        yaxis="y1",
     )
-    fig_sep.add_vline(
+
+    fig_beta.add_scatter(
+        x=x,
+        y=phase_g,
+        mode="lines",
+        name="arg(beta_g - center)",
+        yaxis="y2",
+    )
+
+    fig_beta.add_scatter(
+        x=x,
+        y=phase_e,
+        mode="lines",
+        name="arg(beta_e - center)",
+        yaxis="y2",
+    )
+
+    fig_beta.add_scatter(
+        x=[readout_frequency_opt],
+        y=[phase_g[idx_opt]],
+        mode="markers",
+        name="g phase at optimum",
+        marker=dict(size=9),
+        yaxis="y2",
+    )
+
+    fig_beta.add_scatter(
+        x=[readout_frequency_opt],
+        y=[phase_e[idx_opt]],
+        mode="markers",
+        name="e phase at optimum",
+        marker=dict(size=9),
+        yaxis="y2",
+    )
+
+    fig_beta.add_vline(
         x=readout_frequency_opt,
         line_dash="dash",
         annotation_text=f"opt = {readout_frequency_opt:.6f} GHz",
     )
-    fig_sep.update_layout(
+
+    sep_max = float(np.max(separation))
+
+    fig_beta.update_layout(
         title="Readout-frequency optimization from filtered CKP",
-        xaxis_title="Readout drive frequency (GHz)",
-        yaxis_title="|alpha_e - alpha_g|",
-        width=800,
-        height=450,
+        xaxis=dict(
+            title="Readout drive frequency (GHz)",
+        ),
+
+        yaxis=dict(
+            title="|beta_e - beta_g|",
+            side="left",
+            range=[0, 1.1 * sep_max],
+        ),
+
+        yaxis2=dict(
+            title="arg(beta - center)",
+            overlaying="y",
+            side="right",
+            range=[-np.pi/2, 7*np.pi/2], 
+            tickmode="array",
+            tickvals=[
+                -np.pi/2,
+                0,
+                np.pi/2,
+                np.pi,
+                3*np.pi/2,
+                2*np.pi,
+                5*np.pi/2,
+                3*np.pi,
+                7*np.pi/2,
+            ],
+            ticktext=[
+                "-π/2",
+                "0",
+                "π/2",
+                "π",
+                "3π/2",
+                "2π",
+                "5π/2",
+                "3π",
+                "7π/2",
+            ],
+        ),
+
+        width=1000,
+        height=500,
+        margin=dict(l=85, r=230, t=60, b=70),
+        legend=dict(
+            x=1.12,
+            y=1.0,
+            xanchor="left",
+            yanchor="top",
+        ),
+        title_x = 0.43,
     )
 
     if plot:
-        fig_sep.show()
+        fig_beta.show()
 
     if save_image:
         viz.save_figure(
-            fig_sep,
-            name=f"{name}_separation",
-            width=800,
-            height=450,
-        )
-
-    fig_iq = viz.make_figure()
-    fig_iq.add_scatter(
-        x=np.real(alpha_g),
-        y=np.imag(alpha_g),
-        mode="lines",
-        name="alpha_g trajectory",
-    )
-    fig_iq.add_scatter(
-        x=np.real(alpha_e),
-        y=np.imag(alpha_e),
-        mode="lines",
-        name="alpha_e trajectory",
-    )
-    fig_iq.add_scatter(
-        x=[np.real(alpha_g[idx_opt])],
-        y=[np.imag(alpha_g[idx_opt])],
-        mode="markers",
-        name="alpha_g at optimum",
-        marker=dict(size=9),
-    )
-    fig_iq.add_scatter(
-        x=[np.real(alpha_e[idx_opt])],
-        y=[np.imag(alpha_e[idx_opt])],
-        mode="markers",
-        name="alpha_e at optimum",
-        marker=dict(size=9),
-    )
-    fig_iq.add_scatter(
-        x=[np.real(alpha_g[idx_opt]), np.real(alpha_e[idx_opt])],
-        y=[np.imag(alpha_g[idx_opt]), np.imag(alpha_e[idx_opt])],
-        mode="lines",
-        name="max separation vector",
-    )
-    fig_iq.update_layout(
-        title="Alpha trajectories in complex plane",
-        xaxis_title="Re(alpha)",
-        yaxis_title="Im(alpha)",
-        width=600,
-        height=600,
-        yaxis=dict(scaleanchor="x", scaleratio=1),
-    )
-
-    if plot:
-        fig_iq.show()
-
-    if save_image:
-        viz.save_figure(
-            fig_iq,
-            name=f"{name}_iq_trajectory",
-            width=600,
-            height=600,
+            fig_beta,
+            name=f"{name}_combined",
+            width=1000,
+            height=500,
         )
 
     animation_path = None
@@ -1867,42 +2087,42 @@ def estimate_optimal_readout_frequency_from_ckp(
             go.Frame(
                 data=[
                     go.Scatter(
-                        x=np.real(alpha_g[: i + 1]),
-                        y=np.imag(alpha_g[: i + 1]),
+                        x=np.real(beta_g[: i + 1]),
+                        y=np.imag(beta_g[: i + 1]),
                         mode="lines",
-                        name="alpha_g trajectory",
+                        name="beta_g trajectory",
                     ),
                     go.Scatter(
-                        x=np.real(alpha_e[: i + 1]),
-                        y=np.imag(alpha_e[: i + 1]),
+                        x=np.real(beta_e[: i + 1]),
+                        y=np.imag(beta_e[: i + 1]),
                         mode="lines",
-                        name="alpha_e trajectory",
+                        name="beta_e trajectory",
                     ),
                     go.Scatter(
-                        x=[np.real(alpha_g[i])],
-                        y=[np.imag(alpha_g[i])],
+                        x=[np.real(beta_g[i])],
+                        y=[np.imag(beta_g[i])],
                         mode="markers",
-                        name="alpha_g",
+                        name="beta_g",
                         marker=dict(size=10),
                     ),
                     go.Scatter(
-                        x=[np.real(alpha_e[i])],
-                        y=[np.imag(alpha_e[i])],
+                        x=[np.real(beta_e[i])],
+                        y=[np.imag(beta_e[i])],
                         mode="markers",
-                        name="alpha_e",
+                        name="beta_e",
                         marker=dict(size=10),
                     ),
                     go.Scatter(
-                        x=[np.real(alpha_g[i]), np.real(alpha_e[i])],
-                        y=[np.imag(alpha_g[i]), np.imag(alpha_e[i])],
+                        x=[np.real(beta_g[i]), np.real(beta_e[i])],
+                        y=[np.imag(beta_g[i]), np.imag(beta_e[i])],
                         mode="lines",
-                        name="alpha_e - alpha_g",
+                        name="beta_e - beta_g",
                     ),
                 ],
                 name=str(i),
                 layout=go.Layout(
                     title_text=(
-                        "Alpha trajectories in complex plane "
+                        "Beta trajectories in complex plane "
                         f"(f = {x[i]:.6f} GHz, "
                         f"|diff| = {separation[i]:.4g})"
                     )
@@ -1911,8 +2131,8 @@ def estimate_optimal_readout_frequency_from_ckp(
             for i in frame_indices
         ]
 
-        x_all = np.concatenate([np.real(alpha_g), np.real(alpha_e)])
-        y_all = np.concatenate([np.imag(alpha_g), np.imag(alpha_e)])
+        x_all = np.concatenate([np.real(beta_g), np.real(beta_e)])
+        y_all = np.concatenate([np.imag(beta_g), np.imag(beta_e)])
         x_pad = 0.05 * max(np.ptp(x_all), 1e-12)
         y_pad = 0.05 * max(np.ptp(y_all), 1e-12)
 
@@ -1921,9 +2141,9 @@ def estimate_optimal_readout_frequency_from_ckp(
             frames=frames,
         )
         fig_anim.update_layout(
-            title="Alpha trajectories in complex plane",
-            xaxis_title="Re(alpha)",
-            yaxis_title="Im(alpha)",
+            title="Beta trajectories in complex plane",
+            xaxis_title="Re(beta)",
+            yaxis_title="Im(beta)",
             width=650,
             height=650,
             xaxis=dict(
@@ -1967,7 +2187,7 @@ def estimate_optimal_readout_frequency_from_ckp(
         )
 
         if save_animation:
-            animation_path = output_dir / f"{name}_iq_animation.html"
+            animation_path = output_dir / f"{name}_beta_animation.html"
 
             fig_anim.write_html(
                 str(animation_path),
@@ -1978,23 +2198,140 @@ def estimate_optimal_readout_frequency_from_ckp(
         if show_animation:
             fig_anim.show()
 
+    n_max_allowed = 0.1 * n_crit
+
+    alpha_g_unit = filtered_ckp_alpha(
+        x,
+        omega_r=omega_r_g,
+        omega_p=omega_p,
+        J=J,
+        kappa=kappa,
+        A=1.0,
+    )
+    alpha_e_unit = filtered_ckp_alpha(
+        x,
+        omega_r=omega_r_e,
+        omega_p=omega_p,
+        J=J,
+        kappa=kappa,
+        A=1.0,
+    )
+
+    n_g_unit = np.abs(alpha_g_unit) ** 2
+    n_e_unit = np.abs(alpha_e_unit) ** 2
+    n_max_unit = np.maximum(n_g_unit, n_e_unit)
+
+    eps = 1e-18
+    A_allowed = np.sqrt(n_max_allowed / np.maximum(n_max_unit, eps))
+
+    beta_g_limited = filtered_ckp_beta(
+        x,
+        omega_r=omega_r_g,
+        omega_p=omega_p,
+        J=J,
+        kappa=kappa,
+        A=A_allowed,
+    )
+    beta_e_limited = filtered_ckp_beta(
+        x,
+        omega_r=omega_r_e,
+        omega_p=omega_p,
+        J=J,
+        kappa=kappa,
+        A=A_allowed,
+    )
+
+    separation_limited = np.abs(beta_e_limited - beta_g_limited)
+
+    idx_opt_limited = int(np.argmax(separation_limited))
+    readout_frequency_opt_limited = float(x[idx_opt_limited])
+    max_separation_limited = float(separation_limited[idx_opt_limited])       
+
+    fig_sep_limited = viz.make_figure()
+
+    fig_sep_limited.add_scatter(
+        x=x,
+        y=separation_limited,
+        mode="lines",
+        name="|beta_e - beta_g| (n limited)",
+    )
+
+    fig_sep_limited.add_scatter(
+        x=[readout_frequency_opt_limited],
+        y=[max_separation_limited],
+        mode="markers",
+        name="optimal readout frequency",
+        marker=dict(size=9),
+    )
+
+    fig_sep_limited.add_vline(
+        x=readout_frequency_opt_limited,
+        line_dash="dash",
+        annotation_text=(
+            f"opt = {readout_frequency_opt_limited:.6f} GHz"
+        ),
+    )
+
+    fig_sep_limited.update_layout(
+        title=(
+            "Readout optimization with "
+            "max(|alpha_g|², |alpha_e|²) = 0.1 n_crit"
+        ),
+        xaxis_title="Readout drive frequency (GHz)",
+        yaxis=dict(
+            title="|beta_e - beta_g|",
+            range=[0, 1.1 * float(np.max(separation_limited))],
+        ),
+        width=1000,
+        height=500,
+        margin=dict(l=85, r=230, t=60, b=70),
+        legend=dict(
+            x=1.12,
+            y=1.0,
+            xanchor="left",
+            yanchor="top",
+        ),
+        title_x = 0.43,
+    )
+
+    if plot:
+        fig_sep_limited.show()
+
+    if save_image:
+        viz.save_figure(
+            fig_sep_limited,
+            name=f"{name}_separation_n_limited",
+            width=1000,
+            height=500,
+        )     
+
     return Result(
         data={
             "readout_frequency_opt": readout_frequency_opt,
-            "max_alpha_separation": max_separation,
+            "max_beta_separation": max_separation,
             "frequency_range": x,
-            "alpha_g": alpha_g,
-            "alpha_e": alpha_e,
-            "alpha_diff": alpha_diff,
-            "alpha_separation": separation,
+            "beta_g": beta_g,
+            "beta_e": beta_e,
+            "beta_diff": beta_diff,
+            "beta_separation": separation,
             "omega_r_g": omega_r_g,
             "omega_r_e": omega_r_e,
             "omega_p": omega_p,
             "J": J,
             "kappa": kappa,
             "A": A,
-            "fig_separation": fig_sep,
-            "fig_iq": fig_iq,
+            "fig_combined": fig_beta,
+            "fig_limited": fig_sep_limited,
+            "beta_center": beta_center,
+            "phase_g": phase_g,
+            "phase_e": phase_e,
+            "n_max_allowed": n_max_allowed,
+            "A_allowed": A_allowed,
+            "beta_g_limited": beta_g_limited,
+            "beta_e_limited": beta_e_limited,
+            "beta_separation_limited": separation_limited,
+            "readout_frequency_opt_limited": readout_frequency_opt_limited,
+            "max_beta_separation_limited": max_separation_limited,            
             "animation_path": str(animation_path)
             if animation_path is not None
             else None,
