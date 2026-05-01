@@ -90,7 +90,11 @@ def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
     service.__dict__["_ctx"] = SimpleNamespace(
         measurement=measurement,
     )
-    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        readout_duration=512.0,
+        readout_pre_margin=16.0,
+        readout_post_margin=96.0,
+    )
     return cast(MeasurementService, service), calls
 
 
@@ -104,7 +108,7 @@ def _measurement_schedule() -> MeasurementSchedule:
 
 
 def test_build_measurement_schedule_delegates_none_values() -> None:
-    """Given omitted optional flags, when building schedule, then None values are delegated downstream."""
+    """Given omitted options, when building schedule, then timing defaults and optional flags are delegated."""
     service, calls = _make_service()
     pulse_schedule = object()
 
@@ -113,10 +117,27 @@ def test_build_measurement_schedule_delegates_none_values() -> None:
     assert cast(SimpleNamespace, result).tag == "built"
     kwargs = calls["build_schedule"][0]
     assert kwargs["pulse_schedule"] is pulse_schedule
+    assert kwargs["readout_duration"] == 512.0
+    assert kwargs["readout_pre_margin"] == 16.0
+    assert kwargs["readout_post_margin"] == 96.0
     assert kwargs["readout_amplification"] is None
     assert kwargs["final_measurement"] is None
     assert kwargs["capture_placement"] is None
     assert kwargs["plot"] is None
+
+
+def test_run_measurement_uses_experiment_readout_timing_defaults() -> None:
+    """Given no per-call timing, when running async measurement, then Experiment defaults are delegated."""
+    service, calls = _make_service()
+    pulse_schedule = cast(Any, object())
+
+    result = asyncio.run(service.run_measurement(pulse_schedule))
+
+    assert result == "measurement_result"
+    build_kwargs = calls["build_schedule"][0]
+    assert build_kwargs["readout_duration"] == 512.0
+    assert build_kwargs["readout_pre_margin"] == 16.0
+    assert build_kwargs["readout_post_margin"] == 96.0
 
 
 def test_run_measurement_builds_schedule_and_delegates() -> None:
