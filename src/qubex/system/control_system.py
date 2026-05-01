@@ -110,6 +110,34 @@ PORT_DIRECTION: Final = {
 }
 
 
+# QuEL-1/QuBE port comments are derived from quel_ic_config's maps:
+# - port -> (group, line):
+#   quel_ic_config.quel1_box.Quel1Box._PORT2LINE
+# - QuEL-1/QuBE (group, line) -> (MxFE, DAC/ADC):
+#   quel_ic_config.quel1_config_subsystem.*ConfigSubsystem._DAC_IDX/_ADC_IDX
+# - QuEL-1 SE R8 (group, line) -> (MxFE, DAC/ADC):
+#   quel_ic_config.quel1se_riken8_config_subsystem.*ConfigSubsystem._DAC_IDX/_ADC_IDX
+# - QuEL-1 SE A/B (group, line) -> (MxFE, DAC/ADC):
+#   quel_ic_config.quel1se_fujitsu11_config_subsystem.*ConfigSubsystem._DAC_IDX/_ADC_IDX
+
+# QuEL-1/QuBE port numbering follows quel_ic_config's port-to-line map.
+# Each box has two logical groups backed by one MxFE each:
+# - group:0 -> MxFE0
+# - group:1 -> MxFE1
+
+# Type-A boxes expose readout input/output paths.  Within each MxFE, the
+# output-line layout is readout, pump, ctrl, ctrl:
+# - quel1-a MxFE0: ports 1, 3, 2, 4
+# - quel1-a MxFE1: ports 8, 10, 11, 9
+# - qube-*-a MxFE0: ports 0, 2, 5, 6
+# - qube-*-a MxFE1: ports 13, 11, 8, 7
+
+# Type-B boxes have no readout output path in this model.  Their eight output
+# ports are all control-like lines split across the two MxFEs:
+# - quel1-b MxFE0: ports 1, 2, 3, 4
+# - quel1-b MxFE1: ports 8, 9, 11, 10
+# - qube-*-b MxFE0: ports 0, 2, 5, 6
+# - qube-*-b MxFE1: ports 13, 11, 8, 7
 PORT_MAPPING: Final = {
     BoxType.QUEL3: {
         0: PortType.READ_IN,
@@ -132,147 +160,147 @@ PORT_MAPPING: Final = {
         17: PortType.CTRL,
     },
     BoxType.QUEL1SE_R8: {
-        0: PortType.READ_IN,
-        1: PortType.READ_OUT,
-        (1, 1): PortType.FOGI,
-        2: PortType.PUMP,
-        3: PortType.CTRL,
-        4: PortType.MNTR_IN,
+        0: PortType.READ_IN,  # (group:0, line:r), (mxfe0, adc3)
+        1: PortType.READ_OUT,  # (group:0, line:0), (mxfe0, dac0)
+        (1, 1): PortType.FOGI,  # (group:0, line:1), (mxfe0, dac1)
+        2: PortType.PUMP,  # (group:0, line:2), (mxfe0, dac2)
+        3: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        4: PortType.MNTR_IN,  # (group:0, line:m), (mxfe0, adc2)
         5: PortType.MNTR_OUT,
-        6: PortType.CTRL,
-        7: PortType.CTRL,
-        8: PortType.CTRL,
-        9: PortType.CTRL,
-        10: PortType.MNTR_IN,
+        6: PortType.CTRL,  # (group:1, line:0), (mxfe1, dac0)
+        7: PortType.CTRL,  # (group:1, line:1), (mxfe1, dac1)
+        8: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac2)
+        9: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac3)
+        10: PortType.MNTR_IN,  # (group:1, line:m), (mxfe1, adc2)
         11: PortType.MNTR_OUT,
     },
     BoxType.QUEL1SE_A: {
-        0: PortType.READ_IN,
-        1: PortType.READ_OUT,
-        2: PortType.CTRL,
-        3: PortType.PUMP,
-        4: PortType.CTRL,
-        5: PortType.MNTR_IN,
+        0: PortType.READ_IN,  # (group:0, line:r), (mxfe0, adc3)
+        1: PortType.READ_OUT,  # (group:0, line:0), (mxfe0, dac0)
+        2: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        3: PortType.PUMP,  # (group:0, line:1), (mxfe0, dac1)
+        4: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        5: PortType.MNTR_IN,  # (group:0, line:m), (mxfe0, adc2)
         6: PortType.MNTR_OUT,
-        7: PortType.READ_IN,
-        8: PortType.READ_OUT,
-        9: PortType.CTRL,
-        10: PortType.PUMP,
-        11: PortType.CTRL,
-        12: PortType.MNTR_IN,
+        7: PortType.READ_IN,  # (group:1, line:r), (mxfe1, adc3)
+        8: PortType.READ_OUT,  # (group:1, line:0), (mxfe1, dac0)
+        9: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac2)
+        10: PortType.PUMP,  # (group:1, line:1), (mxfe1, dac1)
+        11: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac3)
+        12: PortType.MNTR_IN,  # (group:1, line:m), (mxfe1, adc2)
         13: PortType.MNTR_OUT,
     },
     BoxType.QUEL1SE_B: {
         0: PortType.NOT_AVAILABLE,
-        1: PortType.CTRL,
-        2: PortType.CTRL,
-        3: PortType.CTRL,
-        4: PortType.CTRL,
-        5: PortType.MNTR_IN,
+        1: PortType.CTRL,  # (group:0, line:0), (mxfe0, dac0)
+        2: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        3: PortType.CTRL,  # (group:0, line:1), (mxfe0, dac1)
+        4: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        5: PortType.MNTR_IN,  # (group:0, line:m), (mxfe0, adc2)
         6: PortType.MNTR_OUT,
         7: PortType.NOT_AVAILABLE,
-        8: PortType.CTRL,
-        9: PortType.CTRL,
-        10: PortType.CTRL,
-        11: PortType.CTRL,
-        12: PortType.MNTR_IN,
+        8: PortType.CTRL,  # (group:1, line:0), (mxfe1, dac0)
+        9: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac2)
+        10: PortType.CTRL,  # (group:1, line:1), (mxfe1, dac1)
+        11: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac3)
+        12: PortType.MNTR_IN,  # (group:1, line:m), (mxfe1, adc2)
         13: PortType.MNTR_OUT,
     },
     BoxType.QUEL1_A: {
-        0: PortType.READ_IN,
-        1: PortType.READ_OUT,
-        2: PortType.CTRL,
-        3: PortType.PUMP,
-        4: PortType.CTRL,
-        5: PortType.MNTR_IN,
+        0: PortType.READ_IN,  # (group:0, line:r), (mxfe0, adc3)
+        1: PortType.READ_OUT,  # (group:0, line:0), (mxfe0, dac0)
+        2: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        3: PortType.PUMP,  # (group:0, line:1), (mxfe0, dac1)
+        4: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        5: PortType.MNTR_IN,  # (group:0, line:m), (mxfe0, adc2)
         6: PortType.MNTR_OUT,
-        7: PortType.READ_IN,
-        8: PortType.READ_OUT,
-        9: PortType.CTRL,
-        10: PortType.PUMP,
-        11: PortType.CTRL,
-        12: PortType.MNTR_IN,
+        7: PortType.READ_IN,  # (group:1, line:r), (mxfe1, adc3)
+        8: PortType.READ_OUT,  # (group:1, line:0), (mxfe1, dac3)
+        9: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac0)
+        10: PortType.PUMP,  # (group:1, line:1), (mxfe1, dac2)
+        11: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac1)
+        12: PortType.MNTR_IN,  # (group:1, line:m), (mxfe1, adc2)
         13: PortType.MNTR_OUT,
     },
     BoxType.QUEL1_B: {
         0: PortType.NOT_AVAILABLE,
-        1: PortType.CTRL,
-        2: PortType.CTRL,
-        3: PortType.CTRL,
-        4: PortType.CTRL,
-        5: PortType.MNTR_IN,
+        1: PortType.CTRL,  # (group:0, line:0), (mxfe0, dac0)
+        2: PortType.CTRL,  # (group:0, line:1), (mxfe0, dac1)
+        3: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        4: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        5: PortType.MNTR_IN,  # (group:0, line:m), (mxfe0, adc2)
         6: PortType.NOT_AVAILABLE,
         7: PortType.NOT_AVAILABLE,
-        8: PortType.CTRL,
-        9: PortType.CTRL,
-        10: PortType.CTRL,
-        11: PortType.CTRL,
-        12: PortType.MNTR_IN,
+        8: PortType.CTRL,  # (group:1, line:0), (mxfe1, dac3)
+        9: PortType.CTRL,  # (group:1, line:1), (mxfe1, dac2)
+        10: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac0)
+        11: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac1)
+        12: PortType.MNTR_IN,  # (group:1, line:m), (mxfe1, adc2)
         13: PortType.NOT_AVAILABLE,
     },
     BoxType.QUBE_RIKEN_A: {
-        0: PortType.READ_OUT,
-        1: PortType.READ_IN,
-        2: PortType.PUMP,
+        0: PortType.READ_OUT,  # (group:0, line:0), (mxfe0, dac0)
+        1: PortType.READ_IN,  # (group:0, line:r), (mxfe0, adc3)
+        2: PortType.PUMP,  # (group:0, line:1), (mxfe0, dac1)
         3: PortType.MNTR_OUT,
-        4: PortType.MNTR_IN,
-        5: PortType.CTRL,
-        6: PortType.CTRL,
-        7: PortType.CTRL,
-        8: PortType.CTRL,
-        9: PortType.MNTR_IN,
+        4: PortType.MNTR_IN,  # (group:0, line:m), (mxfe0, adc2)
+        5: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        6: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        7: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac0)
+        8: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac1)
+        9: PortType.MNTR_IN,  # (group:1, line:m), (mxfe1, adc2)
         10: PortType.MNTR_OUT,
-        11: PortType.PUMP,
-        12: PortType.READ_IN,
-        13: PortType.READ_OUT,
+        11: PortType.PUMP,  # (group:1, line:1), (mxfe1, dac2)
+        12: PortType.READ_IN,  # (group:1, line:r), (mxfe1, adc3)
+        13: PortType.READ_OUT,  # (group:1, line:0), (mxfe1, dac3)
     },
     BoxType.QUBE_RIKEN_B: {
-        0: PortType.CTRL,
+        0: PortType.CTRL,  # (group:0, line:0), (mxfe0, dac0)
         1: PortType.NOT_AVAILABLE,
-        2: PortType.CTRL,
+        2: PortType.CTRL,  # (group:0, line:1), (mxfe0, dac1)
         3: PortType.MNTR_OUT,
-        4: PortType.MNTR_IN,
-        5: PortType.CTRL,
-        6: PortType.CTRL,
-        7: PortType.CTRL,
-        8: PortType.CTRL,
-        9: PortType.MNTR_IN,
+        4: PortType.MNTR_IN,  # (group:0, line:m), (mxfe0, adc2)
+        5: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        6: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        7: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac0)
+        8: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac1)
+        9: PortType.MNTR_IN,  # (group:1, line:m), (mxfe1, adc2)
         10: PortType.MNTR_OUT,
-        11: PortType.CTRL,
+        11: PortType.CTRL,  # (group:1, line:1), (mxfe1, dac2)
         12: PortType.NOT_AVAILABLE,
-        13: PortType.CTRL,
+        13: PortType.CTRL,  # (group:1, line:0), (mxfe1, dac3)
     },
     BoxType.QUBE_OU_A: {
-        0: PortType.READ_OUT,
-        1: PortType.READ_IN,
-        2: PortType.PUMP,
+        0: PortType.READ_OUT,  # (group:0, line:0), (mxfe0, dac0)
+        1: PortType.READ_IN,  # (group:0, line:r), (mxfe0, adc3)
+        2: PortType.PUMP,  # (group:0, line:1), (mxfe0, dac1)
         3: PortType.NOT_AVAILABLE,
         4: PortType.NOT_AVAILABLE,
-        5: PortType.CTRL,
-        6: PortType.CTRL,
-        7: PortType.CTRL,
-        8: PortType.CTRL,
+        5: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        6: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        7: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac0)
+        8: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac1)
         9: PortType.NOT_AVAILABLE,
         10: PortType.NOT_AVAILABLE,
-        11: PortType.PUMP,
-        12: PortType.READ_IN,
-        13: PortType.READ_OUT,
+        11: PortType.PUMP,  # (group:1, line:1), (mxfe1, dac2)
+        12: PortType.READ_IN,  # (group:1, line:r), (mxfe1, adc3)
+        13: PortType.READ_OUT,  # (group:1, line:0), (mxfe1, dac3)
     },
     BoxType.QUBE_OU_B: {
-        0: PortType.CTRL,
+        0: PortType.CTRL,  # (group:0, line:0), (mxfe0, dac0)
         1: PortType.NOT_AVAILABLE,
-        2: PortType.CTRL,
+        2: PortType.CTRL,  # (group:0, line:1), (mxfe0, dac1)
         3: PortType.NOT_AVAILABLE,
         4: PortType.NOT_AVAILABLE,
-        5: PortType.CTRL,
-        6: PortType.CTRL,
-        7: PortType.CTRL,
-        8: PortType.CTRL,
+        5: PortType.CTRL,  # (group:0, line:2), (mxfe0, dac2)
+        6: PortType.CTRL,  # (group:0, line:3), (mxfe0, dac3)
+        7: PortType.CTRL,  # (group:1, line:3), (mxfe1, dac0)
+        8: PortType.CTRL,  # (group:1, line:2), (mxfe1, dac1)
         9: PortType.NOT_AVAILABLE,
         10: PortType.NOT_AVAILABLE,
-        11: PortType.CTRL,
+        11: PortType.CTRL,  # (group:1, line:1), (mxfe1, dac2)
         12: PortType.NOT_AVAILABLE,
-        13: PortType.CTRL,
+        13: PortType.CTRL,  # (group:1, line:0), (mxfe1, dac3)
     },
 }
 
@@ -298,147 +326,147 @@ NUMBER_OF_CHANNELS: Final = {
         17: 2,
     },
     BoxType.QUEL1SE_R8: {
-        0: 4,
-        1: 1,
-        (1, 1): 1,
-        2: 3,
-        3: 3,
-        4: 1,
-        5: 1,
-        6: 2,
-        7: 2,
-        8: 2,
-        9: 2,
-        10: 1,
-        11: 1,
+        0: 4,  # READ_IN, (group:0, line:r), (mxfe0, adc3)
+        1: 1,  # READ_OUT, (group:0, line:0), (mxfe0, dac0)
+        (1, 1): 1,  # FOGI, (group:0, line:1), (mxfe0, dac1)
+        2: 3,  # PUMP, (group:0, line:2), (mxfe0, dac2)
+        3: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        4: 1,  # MNTR_IN, (group:0, line:m), (mxfe0, adc2)
+        5: 1,  # MNTR_OUT
+        6: 2,  # CTRL, (group:1, line:0), (mxfe1, dac0)
+        7: 2,  # CTRL, (group:1, line:1), (mxfe1, dac1)
+        8: 2,  # CTRL, (group:1, line:2), (mxfe1, dac2)
+        9: 2,  # CTRL, (group:1, line:3), (mxfe1, dac3)
+        10: 1,  # MNTR_IN, (group:1, line:m), (mxfe1, adc2)
+        11: 1,  # MNTR_OUT
     },
     BoxType.QUEL1SE_A: {
-        0: 4,
-        1: 1,
-        2: 3,
-        3: 1,
-        4: 3,
-        5: 1,
-        6: 1,
-        7: 4,
-        8: 1,
-        9: 3,
-        10: 1,
-        11: 3,
-        12: 1,
-        13: 1,
+        0: 4,  # READ_IN, (group:0, line:r), (mxfe0, adc3)
+        1: 1,  # READ_OUT, (group:0, line:0), (mxfe0, dac0)
+        2: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        3: 1,  # PUMP, (group:0, line:1), (mxfe0, dac1)
+        4: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        5: 1,  # MNTR_IN, (group:0, line:m), (mxfe0, adc2)
+        6: 1,  # MNTR_OUT
+        7: 4,  # READ_IN, (group:1, line:r), (mxfe1, adc3)
+        8: 1,  # READ_OUT, (group:1, line:0), (mxfe1, dac0)
+        9: 3,  # CTRL, (group:1, line:2), (mxfe1, dac2)
+        10: 1,  # PUMP, (group:1, line:1), (mxfe1, dac1)
+        11: 3,  # CTRL, (group:1, line:3), (mxfe1, dac3)
+        12: 1,  # MNTR_IN, (group:1, line:m), (mxfe1, adc2)
+        13: 1,  # MNTR_OUT
     },
     BoxType.QUEL1SE_B: {
-        0: 0,
-        1: 1,
-        2: 3,
-        3: 1,
-        4: 3,
-        5: 1,
-        6: 1,
-        7: 0,
-        8: 1,
-        9: 3,
-        10: 1,
-        11: 3,
-        12: 1,
-        13: 1,
+        0: 0,  # N/A
+        1: 1,  # CTRL, (group:0, line:0), (mxfe0, dac0)
+        2: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        3: 1,  # CTRL, (group:0, line:1), (mxfe0, dac1)
+        4: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        5: 1,  # MNTR_IN, (group:0, line:m), (mxfe0, adc2)
+        6: 1,  # MNTR_OUT
+        7: 0,  # N/A
+        8: 1,  # CTRL, (group:1, line:0), (mxfe1, dac0)
+        9: 3,  # CTRL, (group:1, line:2), (mxfe1, dac2)
+        10: 1,  # CTRL, (group:1, line:1), (mxfe1, dac1)
+        11: 3,  # CTRL, (group:1, line:3), (mxfe1, dac3)
+        12: 1,  # MNTR_IN, (group:1, line:m), (mxfe1, adc2)
+        13: 1,  # MNTR_OUT
     },
     BoxType.QUEL1_A: {
-        0: 4,
-        1: 1,
-        2: 3,
-        3: 1,
-        4: 3,
-        5: 1,
-        6: 1,
-        7: 4,
-        8: 1,
-        9: 3,
-        10: 1,
-        11: 3,
-        12: 1,
-        13: 1,
+        0: 4,  # READ_IN, (group:0, line:r), (mxfe0, adc3)
+        1: 1,  # READ_OUT, (group:0, line:0), (mxfe0, dac0)
+        2: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        3: 1,  # PUMP, (group:0, line:1), (mxfe0, dac1)
+        4: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        5: 1,  # MNTR_IN, (group:0, line:m), (mxfe0, adc2)
+        6: 1,  # MNTR_OUT
+        7: 4,  # READ_IN, (group:1, line:r), (mxfe1, adc3)
+        8: 1,  # READ_OUT, (group:1, line:0), (mxfe1, dac3)
+        9: 3,  # CTRL, (group:1, line:3), (mxfe1, dac0)
+        10: 1,  # PUMP, (group:1, line:1), (mxfe1, dac2)
+        11: 3,  # CTRL, (group:1, line:2), (mxfe1, dac1)
+        12: 1,  # MNTR_IN, (group:1, line:m), (mxfe1, adc2)
+        13: 1,  # MNTR_OUT
     },
     BoxType.QUEL1_B: {
-        0: 0,
-        1: 1,
-        2: 1,
-        3: 3,
-        4: 3,
-        5: 1,
-        6: 0,
-        7: 0,
-        8: 1,
-        9: 1,
-        10: 3,
-        11: 3,
-        12: 1,
-        13: 0,
+        0: 0,  # N/A
+        1: 1,  # CTRL, (group:0, line:0), (mxfe0, dac0)
+        2: 1,  # CTRL, (group:0, line:1), (mxfe0, dac1)
+        3: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        4: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        5: 1,  # MNTR_IN, (group:0, line:m), (mxfe0, adc2)
+        6: 0,  # N/A
+        7: 0,  # N/A
+        8: 1,  # CTRL, (group:1, line:0), (mxfe1, dac3)
+        9: 1,  # CTRL, (group:1, line:1), (mxfe1, dac2)
+        10: 3,  # CTRL, (group:1, line:3), (mxfe1, dac0)
+        11: 3,  # CTRL, (group:1, line:2), (mxfe1, dac1)
+        12: 1,  # MNTR_IN, (group:1, line:m), (mxfe1, adc2)
+        13: 0,  # N/A
     },
     BoxType.QUBE_RIKEN_A: {
-        0: 1,
-        1: 4,
-        2: 1,
-        3: 1,
-        4: 1,
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-        9: 1,
-        10: 1,
-        11: 1,
-        12: 4,
-        13: 1,
+        0: 1,  # READ_OUT, (group:0, line:0), (mxfe0, dac0)
+        1: 4,  # READ_IN, (group:0, line:r), (mxfe0, adc3)
+        2: 1,  # PUMP, (group:0, line:1), (mxfe0, dac1)
+        3: 1,  # MNTR_OUT
+        4: 1,  # MNTR_IN, (group:0, line:m), (mxfe0, adc2)
+        5: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        6: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        7: 3,  # CTRL, (group:1, line:3), (mxfe1, dac0)
+        8: 3,  # CTRL, (group:1, line:2), (mxfe1, dac1)
+        9: 1,  # MNTR_IN, (group:1, line:m), (mxfe1, adc2)
+        10: 1,  # MNTR_OUT
+        11: 1,  # PUMP, (group:1, line:1), (mxfe1, dac2)
+        12: 4,  # READ_IN, (group:1, line:r), (mxfe1, adc3)
+        13: 1,  # READ_OUT, (group:1, line:0), (mxfe1, dac3)
     },
     BoxType.QUBE_RIKEN_B: {
-        0: 1,
-        1: 0,
-        2: 1,
-        3: 1,
-        4: 1,
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-        9: 1,
-        10: 1,
-        11: 1,
-        12: 0,
-        13: 1,
+        0: 1,  # CTRL, (group:0, line:0), (mxfe0, dac0)
+        1: 0,  # N/A
+        2: 1,  # CTRL, (group:0, line:1), (mxfe0, dac1)
+        3: 1,  # MNTR_OUT
+        4: 1,  # MNTR_IN, (group:0, line:m), (mxfe0, adc2)
+        5: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        6: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        7: 3,  # CTRL, (group:1, line:3), (mxfe1, dac0)
+        8: 3,  # CTRL, (group:1, line:2), (mxfe1, dac1)
+        9: 1,  # MNTR_IN, (group:1, line:m), (mxfe1, adc2)
+        10: 1,  # MNTR_OUT
+        11: 1,  # CTRL, (group:1, line:1), (mxfe1, dac2)
+        12: 0,  # N/A
+        13: 1,  # CTRL, (group:1, line:0), (mxfe1, dac3)
     },
     BoxType.QUBE_OU_A: {
-        0: 1,
-        1: 4,
-        2: 1,
-        3: 0,
-        4: 0,
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-        9: 0,
-        10: 0,
-        11: 1,
-        12: 4,
-        13: 1,
+        0: 1,  # READ_OUT, (group:0, line:0), (mxfe0, dac0)
+        1: 4,  # READ_IN, (group:0, line:r), (mxfe0, adc3)
+        2: 1,  # PUMP, (group:0, line:1), (mxfe0, dac1)
+        3: 0,  # N/A
+        4: 0,  # N/A
+        5: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        6: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        7: 3,  # CTRL, (group:1, line:3), (mxfe1, dac0)
+        8: 3,  # CTRL, (group:1, line:2), (mxfe1, dac1)
+        9: 0,  # N/A
+        10: 0,  # N/A
+        11: 1,  # PUMP, (group:1, line:1), (mxfe1, dac2)
+        12: 4,  # READ_IN, (group:1, line:r), (mxfe1, adc3)
+        13: 1,  # READ_OUT, (group:1, line:0), (mxfe1, dac3)
     },
     BoxType.QUBE_OU_B: {
-        0: 1,
-        1: 0,
-        2: 1,
-        3: 0,
-        4: 0,
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-        9: 0,
-        10: 0,
-        11: 1,
-        12: 0,
-        13: 1,
+        0: 1,  # CTRL, (group:0, line:0), (mxfe0, dac0)
+        1: 0,  # N/A
+        2: 1,  # CTRL, (group:0, line:1), (mxfe0, dac1)
+        3: 0,  # N/A
+        4: 0,  # N/A
+        5: 3,  # CTRL, (group:0, line:2), (mxfe0, dac2)
+        6: 3,  # CTRL, (group:0, line:3), (mxfe0, dac3)
+        7: 3,  # CTRL, (group:1, line:3), (mxfe1, dac0)
+        8: 3,  # CTRL, (group:1, line:2), (mxfe1, dac1)
+        9: 0,  # N/A
+        10: 0,  # N/A
+        11: 1,  # CTRL, (group:1, line:1), (mxfe1, dac2)
+        12: 0,  # N/A
+        13: 1,  # CTRL, (group:1, line:0), (mxfe1, dac3)
     },
 }
 
