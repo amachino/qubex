@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
 
 import numpy as np
 from qxpulse import FlatTop, PulseSchedule, Waveform
@@ -15,7 +14,7 @@ from qubex.experiment.experiment_constants import (
     PI_RAMPTIME,
 )
 from qubex.experiment.models.result import Result
-from qubex.measurement.measurement_result import (
+from qubex.measurement.models.measure_result import (
     MeasureResult,
 )
 from qubex.system.target import Target
@@ -30,7 +29,7 @@ def _build_population_rabi_sequence(
     target: str,
     ef_rabi_amplitude: float,
     pi_pulse: Waveform,
-) -> Callable[[int], PulseSchedule]:
+) -> dict[str, PulseSchedule]:
     def sequence0(
         target: str,
         ef_rabi_amplitude: float,
