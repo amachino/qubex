@@ -2853,7 +2853,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ) -> float:
+    ) -> Result:
         """
         Estimate control amplitude from a resonance scan.
 
@@ -2893,23 +2893,36 @@ class CharacterizationService:
             plot=plot,
             save_image=save_image,
         )["phases"]
-        result = fitting.fit_sqrt_lorentzian(
+        fit_result = fitting.fit_sqrt_lorentzian(
             target=target,
             x=frequency_range,
             y=data,
-            plot=plot,
+            plot=False,
             title="Qubit resonance fit",
         )
-        rabi_rate = result["Omega"]
+
+        rabi_rate = fit_result.get("Omega")
+        if rabi_rate is None:
+            return Result(
+                data={
+                    "frequency_range": frequency_range,
+                    "phases": data,
+                    "rabi_rate": None,
+                    "estimated_amplitude": None,
+                    "fig": None,
+                },
+                figure=None,
+            )
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
+        fig = None
         if plot:
-            fig = result.get_figure()
+            fig = fit_result.get_figure()
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
                     subtitle=dict(
-                        text=f"readout_amplitude={readout_amplitude:.6g}",
+                        text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
                         font=dict(size=13, family="monospace"),
                     ),
                 ),
@@ -2926,14 +2939,24 @@ class CharacterizationService:
             print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
             print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
 
-        if save_image:
+        if save_image and fig is not None:
             viz.save_figure(
                 fig,
                 name=f"control_amplitude_estimation_{target}",
                 width=600,
                 height=300,
             )
-        return estimated_amplitude
+        return Result(
+            data={
+                "frequency_range": frequency_range,
+                "phases": data,
+                "rabi_rate": rabi_rate,
+                "estimated_amplitude": estimated_amplitude,
+                "fig": fig,
+                **fit_result,
+            },
+            figure=fig,
+        )
 
     def measure_qubit_resonance(
         self,

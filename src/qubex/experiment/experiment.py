@@ -4813,7 +4813,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ) -> float:
+    ) -> Result:
         """Estimate control amplitude from a resonance scan."""
         return self.characterization_service.estimate_control_amplitude(
             target=target,
