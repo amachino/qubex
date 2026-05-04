@@ -2651,7 +2651,7 @@ class CalibrationService:
                 self.ctx.save_calib_note()
 
             except Exception as e:
-                print(f"Error calibrating 1Q gates for {targets}: {e}")
+                print(f"Error calibrating 1Q gates for {target}: {e}")
                 continue
 
         return Result(data=data)
@@ -2679,8 +2679,6 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        pairs = [self.ctx.cr_pair(target) for target in targets]
-
         data = {
             "obtain_cr_params": {},
             "calibrate_zx90": {},
@@ -2688,9 +2686,12 @@ class CalibrationService:
 
         cr_calib_params = cr_calib_params or {}
 
-        for control_qubit, target_qubit in pairs:
-            cr_label = f"{control_qubit}-{target_qubit}"
+        def _calibrate_pair(target: str) -> None:
+            label = target
             try:
+                control_qubit, target_qubit = self.ctx.cr_pair(target)
+                cr_label = f"{control_qubit}-{target_qubit}"
+                label = cr_label if target == cr_label else f"{target} ({cr_label})"
                 param = cr_calib_params.get(cr_label, {})
                 result = self.obtain_cr_params(
                     control_qubit=control_qubit,
@@ -2731,8 +2732,10 @@ class CalibrationService:
 
                 self.ctx.save_calib_note()
             except Exception as e:
-                print(f"Error calibrating {cr_label}: {e}")
-                continue
+                print(f"Error calibrating {label}: {e}")
+
+        for target in targets:
+            _calibrate_pair(target)
 
         return Result(data=data)
 

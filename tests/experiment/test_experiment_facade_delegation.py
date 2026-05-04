@@ -34,6 +34,15 @@ class _BenchmarkingServiceStub:
         self.calls.append(("benchmark_2q", kwargs))
 
 
+class _CharacterizationServiceStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def characterize_2q(self, **kwargs: Any) -> str:
+        self.calls.append(("characterize_2q", kwargs))
+        return "characterize_2q_result"
+
+
 class _MeasurementServiceStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -269,6 +278,37 @@ def test_benchmark_2q_delegates_to_benchmarking_service() -> None:
                 "interval": 240.0,
                 "plot": True,
                 "save_image": False,
+            },
+        )
+    ]
+
+
+def test_characterize_2q_delegates_in_same_mux_to_characterization_service() -> None:
+    """Given in_same_mux, when characterize_2q is called, then it delegates to characterization service."""
+    exp = object.__new__(Experiment)
+    characterization_stub = _CharacterizationServiceStub()
+    exp.__dict__["_characterization_service"] = characterization_stub
+
+    result = exp.characterize_2q(
+        targets=None,
+        in_same_mux=False,
+        n_shots=512,
+        shot_interval=240,
+        plot=False,
+        save_image=True,
+    )
+
+    assert result == "characterize_2q_result"
+    assert characterization_stub.calls == [
+        (
+            "characterize_2q",
+            {
+                "targets": None,
+                "in_same_mux": False,
+                "shots": 512,
+                "interval": 240,
+                "plot": False,
+                "save_image": True,
             },
         )
     ]

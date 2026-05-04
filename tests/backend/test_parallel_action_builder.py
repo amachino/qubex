@@ -713,6 +713,47 @@ def test_qxdriver_action_arms_triggered_boxes_at_shared_time() -> None:
     assert data == {("MON", "P0", 0): "data"}
 
 
+def test_qxdriver_action_uses_150ms_default_min_time_offset() -> None:
+    """Qxdriver compatibility should schedule the default shared time 150 ms ahead."""
+    monitor_box = _FakeWavegenBox()
+    target_box = _FakeWavegenBox()
+    monitor_action = _TimedTriggeredAction(
+        box=monitor_box,
+        _wseqs=[SimpleNamespace(port="MON", channel=0)],
+        _triggers={"P0": SimpleNamespace(port="MON", channel=0)},
+    )
+    target_action = _TimedAwgOnlyAction(
+        box=target_box,
+        _wseqs=[SimpleNamespace(port="GEN", channel=1)],
+    )
+    multi_action = QubexMultiAction(
+        _system=cast(
+            Any,
+            SimpleNamespace(
+                box={"MON": monitor_box, "GEN": target_box},
+                timing_shift={"MON": 0, "GEN": 0},
+                displacement=0,
+            ),
+        ),
+        _actions=cast(
+            Any,
+            MappingProxyType({"MON": monitor_action, "GEN": target_action}),
+        ),
+        _estimated_timediff=MappingProxyType({"MON": 0, "GEN": 0}),
+        _reference_box_name="MON",
+        _ref_sysref_time_offset=0,
+        _clock_options=ClockHealthCheckOptions(),
+        _logger=logging.getLogger(__name__),
+        _emit_triggered_boxes=False,
+        _arm_triggered_boxes_at_capture_start=True,
+    )
+
+    multi_action.action()
+
+    assert monitor_action.capture_start_timecounter == 18_750_112
+    assert target_box.reservations == [({("GEN", 1)}, 18_750_112)]
+
+
 def test_qubex_multi_action_capture_start_runs_box_calls_in_parallel() -> None:
     """Given multiple boxes, when starting capture, then per-box starts should overlap."""
     # Arrange

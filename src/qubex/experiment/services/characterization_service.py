@@ -57,6 +57,7 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+_CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
 
 
 def _build_ramsey_sequence(
@@ -166,6 +167,29 @@ class CharacterizationService:
     def calibration_service(self) -> CalibrationService:
         """Return the calibration service."""
         return self._calibration_service
+
+    @staticmethod
+    def _is_valid_chevron_rabi_param(param: Any) -> bool:
+        """Return whether a shared Rabi parameter is safe for chevron normalization."""
+        if param is None:
+            return False
+        amplitude = getattr(param, "amplitude", np.nan)
+        return bool(
+            np.isfinite(amplitude) and abs(amplitude) > _CHEVRON_RABI_AMPLITUDE_EPS
+        )
+
+    @staticmethod
+    def _get_chevron_plot_values(
+        data: Any,
+        *,
+        use_fallback: bool,
+    ) -> NDArray[np.float64]:
+        """Return heatmap values for chevron plotting."""
+        if not use_fallback:
+            return np.asarray(data.normalized, dtype=np.float64)
+        # When normalization is invalid, use one fixed raw quadrature.
+        # Real/imag are equivalent here because link-up resets the phase basis.
+        return np.asarray(np.real(data.data), dtype=np.float64)
 
     def measure_readout_snr(
         self,
@@ -543,6 +567,12 @@ class CharacterizationService:
         rabi_rates: dict[str, NDArray] = {}
         chevron_data: dict[str, NDArray] = {}
         resonant_frequencies: dict[str, float] = {}
+        use_fallback_by_target = {
+            target: not self._is_valid_chevron_rabi_param(
+                shared_rabi_params.get(target)
+            )
+            for target in targets
+        }
 
         print(f"Targets : {targets}")
         subgroups = self.ctx.util.create_qubit_subgroups(targets)
@@ -585,7 +615,12 @@ class CharacterizationService:
                             fit_result.get("frequency", np.nan)
                         )
                         data.rabi_param = shared_rabi_params[target]
-                        chevron_data_buffer[target].append(data.normalized)
+                        chevron_data_buffer[target].append(
+                            self._get_chevron_plot_values(
+                                data,
+                                use_fallback=use_fallback_by_target[target],
+                            )
+                        )
 
             for target in subgroup:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
@@ -604,7 +639,14 @@ class CharacterizationService:
                     title=dict(
                         text=f"Chevron pattern : {target}",
                         subtitle=dict(
-                            text=f"control_amplitude={amplitudes[target]:.6g}",
+                            text=(
+                                f"control_amplitude={amplitudes[target]:.6g}"
+                                if not use_fallback_by_target[target]
+                                else (
+                                    f"control_amplitude={amplitudes[target]:.6g}, "
+                                    "fallback=data.real"
+                                )
+                            ),
                             font=dict(
                                 size=13,
                                 family="monospace",
@@ -4250,36 +4292,27 @@ class CharacterizationService:
             "ramsey_experiment": {},
         }
 
-        try:
-            for target in targets:
-                result = self.t1_experiment(
+        def _run_step(
+            target: str,
+            name: str,
+            experiment: Callable[..., Any],
+        ) -> None:
+            try:
+                result = experiment(
                     target,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                     save_image=save_image,
                 )
-                data["t1_experiment"][target] = result.data[target]
+                data[name][target] = result.data[target]
+            except Exception as e:
+                print(f"{name} failed for {target}: {e}")
 
-                result = self.t2_experiment(
-                    target,
-                    shots=shots,
-                    interval=interval,
-                    plot=plot,
-                    save_image=save_image,
-                )
-                data["t2_experiment"][target] = result.data[target]
-
-                result = self.ramsey_experiment(
-                    target,
-                    shots=shots,
-                    interval=interval,
-                    plot=plot,
-                    save_image=save_image,
-                )
-                data["ramsey_experiment"][target] = result.data[target]
-        except Exception as e:
-            print(f"Characterization failed for {target}: {e}")
+        for target in targets:
+            _run_step(target, "t1_experiment", self.t1_experiment)
+            _run_step(target, "t2_experiment", self.t2_experiment)
+            _run_step(target, "ramsey_experiment", self.ramsey_experiment)
 
         if plot:
             print()
@@ -4329,6 +4362,7 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
+        in_same_mux: bool = True,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -4341,6 +4375,8 @@ class CharacterizationService:
         ----------
         targets
             Target edges to characterize.
+        in_same_mux
+            Whether to restrict default target edges to the same mux.
         shots
             Number of shots per experiment.
         plot
@@ -4355,7 +4391,7 @@ class CharacterizationService:
         if save_image is None:
             save_image = True
         if targets is None:
-            targets = self.ctx.edge_labels
+            targets = self.ctx.get_edge_labels(in_same_mux=in_same_mux)
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -4365,8 +4401,8 @@ class CharacterizationService:
             "obtain_coupling_strength": {},
         }
 
-        try:
-            for target in targets:
+        def _run_coupling_strength(target: str) -> None:
+            try:
                 pair = target.split("-")
                 result = self.obtain_coupling_strength(
                     *pair,
@@ -4375,8 +4411,11 @@ class CharacterizationService:
                     plot=plot,
                 )
                 data["obtain_coupling_strength"][target] = result.data
-        except Exception as e:
-            print(f"Characterization failed for {target}: {e}")
+            except Exception as e:
+                print(f"obtain_coupling_strength failed for {target}: {e}")
+
+        for target in targets:
+            _run_coupling_strength(target)
 
         if plot:
             print()

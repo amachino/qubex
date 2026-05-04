@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from .experiment.cr_xt_decomposition import decompose_cr_crosstalk
 from .experiment.crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
+)
+from .experiment.gf_calibration import (
+    calibrate_gf_hpi_pulse,
+    calibrate_gf_pi_pulse,
+    calibrate_gf_pulse,
+    gf_chevron_pattern,
+    gf_rabi_experiment,
+    gf_ramsey_experiment,
+    obtain_gf_rabi_params,
 )
 from .experiment.multipartite_entanglement import (
     create_1d_cluster_sequence,
@@ -40,6 +50,17 @@ from .experiment.purity_benchmarking import (
     purity_sequence_1q,
     purity_sequence_2q,
 )
+from .experiment.quantum_efficiency_measurement import (
+    measurement_induced_dephasing,
+    measurement_induced_dephasing_experiment,
+    quantum_efficiency_measurement,
+    readout_snr,
+    sweep_readout_snr,
+)
+from .experiment.readout_parameters_characterization import (
+    characterize_readout_parameters,
+    fit_readout_parameters,
+)
 from .experiment.rzx_gate import rzx, rzx_gate_property
 from .experiment.simultaneous_coherence_measurement import (
     simultaneous_coherence_measurement,
@@ -48,8 +69,19 @@ from .experiment.stark_characterization import (
     stark_ramsey_experiment,
     stark_t1_experiment,
 )
+from .experiment.superconducting_gap import (
+    get_resistance_charge,
+    get_superconducting_gap,
+)
+from .experiment.thermal_excitation_characterization import (
+    thermal_excitation_via_rabi,
+)
 
 __all__ = [
+    "calibrate_gf_hpi_pulse",
+    "calibrate_gf_pi_pulse",
+    "calibrate_gf_pulse",
+    "characterize_readout_parameters",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
@@ -63,7 +95,14 @@ __all__ = [
     "create_maximum_spanning_tree",
     "create_measurement_rounds",
     "create_mqc_sequence",
+    "decompose_cr_crosstalk",
+    "fit_readout_parameters",
     "fourier_analysis",
+    "get_resistance_charge",
+    "get_superconducting_gap",
+    "gf_chevron_pattern",
+    "gf_rabi_experiment",
+    "gf_ramsey_experiment",
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",
     "ipb_experiment",
@@ -73,7 +112,10 @@ __all__ = [
     "measure_cr_crosstalk",
     "measure_ghz_state",
     "measure_graph_state",
+    "measurement_induced_dephasing",
+    "measurement_induced_dephasing_experiment",
     "mqc_experiment",
+    "obtain_gf_rabi_params",
     "parity_oscillation",
     "partial_transpose",
     "pb_experiment_1q",
@@ -81,10 +123,14 @@ __all__ = [
     "purity_benchmarking",
     "purity_sequence_1q",
     "purity_sequence_2q",
+    "quantum_efficiency_measurement",
+    "readout_snr",
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
+    "sweep_readout_snr",
+    "thermal_excitation_via_rabi",
     "visualize_graph",
 ]

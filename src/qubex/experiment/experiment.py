@@ -5070,6 +5070,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
+        in_same_mux: bool = True,
         n_shots: int | None = None,
         shot_interval: int | None = None,
         plot: bool | None = None,
@@ -5078,6 +5079,7 @@ class Experiment:
         """Run basic two-qubit characterization routines."""
         return self.characterization_service.characterize_2q(
             targets=targets,
+            in_same_mux=in_same_mux,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,

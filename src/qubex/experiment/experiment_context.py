@@ -802,11 +802,13 @@ class ExperimentContext:
 
     def get_edge_pairs(
         self,
+        *,
+        in_same_mux: bool = True,
     ) -> list[tuple[str, str]]:
         """Get the qubit edge pairs."""
         edge_pairs = []
         for qubit in self.qubit_labels:
-            spectators = self.get_spectators(qubit, in_same_mux=True)
+            spectators = self.get_spectators(qubit, in_same_mux=in_same_mux)
             for spectator in spectators:
                 pair = (qubit, spectator.label)
                 edge_pairs.append(pair)
@@ -814,9 +816,14 @@ class ExperimentContext:
 
     def get_edge_labels(
         self,
+        *,
+        in_same_mux: bool = True,
     ) -> list[str]:
         """Get the qubit edge labels."""
-        return [f"{pair[0]}-{pair[1]}" for pair in self.get_edge_pairs()]
+        return [
+            f"{pair[0]}-{pair[1]}"
+            for pair in self.get_edge_pairs(in_same_mux=in_same_mux)
+        ]
 
     def cr_pair(self, cr_label: str) -> tuple[str, str]:
         """Return the control/target qubit pair for a CR label."""
