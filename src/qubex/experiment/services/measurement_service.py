@@ -1178,7 +1178,8 @@ class MeasurementService:
                     )
 
         if plot:
-            plotter.show()
+            plotter.clear()
+            plotter.to_figure().show()
 
         sweep_data = {
             target: SweepData(
