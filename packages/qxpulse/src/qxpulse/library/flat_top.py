@@ -183,8 +183,12 @@ class FlatTop(Pulse):
                 **kwargs,
             )
 
-        if beta is not None:
+        dI = None
+        if beta is not None or correction_type is not None:
             dI = np.gradient(I, t)
+        if beta is not None:
+            if dI is None:
+                raise RuntimeError("DRAG correction requires an envelope derivative.")
             if correction_type is None and correction_factor is None:
                 Q = beta * dI
                 return I + 1j * Q
@@ -199,6 +203,8 @@ class FlatTop(Pulse):
             correction_factor = 1.0
 
         Q = np.zeros_like(t, dtype=np.complex128)
+        if dI is None:
+            raise RuntimeError("Pulse correction requires an envelope derivative.")
         if correction_type == "DRAG":
             Q = -(correction_factor / delta) * dI
         elif correction_type == "CD":

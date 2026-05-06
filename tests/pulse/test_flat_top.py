@@ -75,3 +75,20 @@ def test_shape_kwargs_do_not_leak_pulse_init_parameters(monkeypatch):
     assert captured["window"] == "hann"
     assert "sampling_period" not in captured
     assert "lazy" not in captured
+
+
+def test_cd_correction_without_beta_returns_complex_values():
+    """Given CD correction without beta, when sampling FlatTop, then values are complex."""
+    pulse = FlatTop(
+        duration=8 * dt,
+        amplitude=1.0,
+        tau=2 * dt,
+        delta=0.2,
+        correction_type="CD",
+        correction_factor=1.0,
+    )
+
+    values = pulse.values
+
+    assert len(values) == pulse.length
+    assert any(value.imag != 0.0 for value in values)
