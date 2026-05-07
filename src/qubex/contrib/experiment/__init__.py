@@ -15,6 +15,11 @@ from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
 )
+from .ef_measurement_with_one_channel import (
+    calibrate_cr_pi_pulse,
+    ef_chevron_pattern,
+    ef_rabi_experiment,
+)
 from .gf_calibration import (
     calibrate_gf_hpi_pulse,
     calibrate_gf_pi_pulse,
@@ -72,11 +77,6 @@ from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
 from .superconducting_gap import get_resistance_charge, get_superconducting_gap
 from .thermal_excitation_characterization import (
     thermal_excitation_via_rabi,
-)
-from .ef_measurement_with_one_channel import (
-    calibrate_cr_pi_pulse,
-    ef_chevron_pattern,
-    ef_rabi_experiment,
 )
 
 __all__ = [
