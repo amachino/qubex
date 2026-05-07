@@ -73,9 +73,15 @@ from .superconducting_gap import get_resistance_charge, get_superconducting_gap
 from .thermal_excitation_characterization import (
     thermal_excitation_via_rabi,
 )
+from .ef_measurement_with_one_channel import (
+    calibrate_cr_pi_pulse,
+    ef_chevron_pattern,
+    ef_rabi_experiment,
+)
 
 __all__ = [
     "analyze_chevron_matched_transform",
+    "calibrate_cr_pi_pulse",
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
@@ -97,6 +103,8 @@ __all__ = [
     "decompose_cr_crosstalk",
     "estimate_qubit_frequency_from_chevron",
     "estimate_qubit_frequency_from_chevron_adaptive",
+    "ef_chevron_pattern",
+    "ef_rabi_experiment",
     "filtered_ckp_experiment",
     "fourier_analysis",
     "get_resistance_charge",
