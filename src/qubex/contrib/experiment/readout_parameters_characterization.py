@@ -219,10 +219,10 @@ def fit_readout_parameters(
     print("Fitted parameters:")
     print(f"R² score: {r2_score:.4f}")
     print(
-        f"purcell filter external linewidth (kappa_p/2π): {popt[0] / (2 * np.pi) * 1e3:.4f} ± {perr[0] / (2 * np.pi) * 1e3:.4f} MHz"
+        f"purcell filter external linewidth (kappa_p): {popt[0] * 1e3:.4f} ± {perr[0] * 1e3:.4f} MHz"
     )
     print(
-        f"resonator and purcell coupling (J/2π)         : {popt[1] / (2 * np.pi) * 1e3:.4f} ± {perr[1] / (2 * np.pi) * 1e3:.4f} MHz"
+        f"resonator and purcell coupling (J)         : {popt[1] * 1e3:.4f} ± {perr[1] * 1e3:.4f} MHz"
     )
     print(
         f"purcell filter frequency (f_p)                : {popt[2]:.4f} ± {perr[2]:.4f} GHz"
@@ -231,16 +231,16 @@ def fit_readout_parameters(
         f"resonator frequency (f_r)                     : {popt[3]:.4f} ± {perr[3]:.4f} GHz"
     )
     print(
-        f"Internal loss for purcell filter (gamma_p/2π) : {0.0} MHz (assumed in fitting)"
+        f"Internal loss for purcell filter (gamma_p) : {0.0} MHz (assumed in fitting)"
     )
     print(
-        f"Internal loss for resonator (gamma_r/2π)      : {0.0} MHz (assumed in fitting)"
+        f"Internal loss for resonator (gamma_r)      : {0.0} MHz (assumed in fitting)"
     )
     print(
-        f"a                                             : {popt[4]:.4f} ± {perr[4]:.4f} rad/√GHz"
+        f"a                                             : {popt[4]:.4f} ± {perr[4]:.4f} 1/√GHz"
     )
     print(
-        f"attenation coeff (-a / √π / 10 * log_e(10))   : {-popt[4] / np.sqrt(np.pi) / 10 * np.log(10):.4f} ± {perr[4] / np.sqrt(np.pi) / 10 * np.log(10):.4f} /√GHz"
+        f"attenation coeff (-a/ 10 * log_e(10))   : {-popt[4] / 10 * np.log(10):.4f} ± {perr[4] / 10 * np.log(10):.4f} /√GHz"
     )
     print(
         f"b                                             : {popt[5]:.4f} ± {perr[5]:.4f} rad"
@@ -284,10 +284,10 @@ def fit_readout_parameters(
 
 
 def _Gamma(
-    kappa_p: float,
-    gamma_p: float,
-    J: float,
-    gamma_r: float,
+    omega_kappa_p: float,
+    omega_gamma_p: float,
+    omega_J: float,
+    omega_gamma_r: float,
     omega_d: NDArray,
     omega_p: float,
     omega_r: float,
@@ -297,13 +297,13 @@ def _Gamma(
 
     Parameters
     ----------
-    kappa_p : float
+    omega_kappa_p : float
         Coupling strength between Purcell filter and transmission line [rad/ns]
-    gamma_p : float
+    omega_gamma_p : float
         Internal loss rate of Purcell filter [rad/ns]
-    J : float
+    omega_J : float
         Coupling strength between Purcell filter and resonator [rad/ns]
-    gamma_r : float
+    omega_gamma_r : float
         Internal loss rate of resonator [rad/ns]
     omega_d : NDArray
         Angular frequency of incident wave [rad/ns]
@@ -317,10 +317,10 @@ def _Gamma(
     Gamma : complex
         Reflection coefficient
     """
-    numerator = 4j * kappa_p * ((omega_r - omega_d) - 1j * gamma_r / 2)
-    denominator = (2j * (omega_p - omega_d) + kappa_p + gamma_p) * (
-        2j * (omega_r - omega_d) + gamma_r
-    ) + 4 * J**2
+    numerator = 4j * omega_kappa_p * ((omega_r - omega_d) - 1j * omega_gamma_r / 2)
+    denominator = (2j * (omega_p - omega_d) + omega_kappa_p + omega_gamma_p) * (
+        2j * (omega_r - omega_d) + omega_gamma_r
+    ) + 4 * omega_J**2
     return 1 - numerator / denominator
 
 
@@ -339,30 +339,44 @@ def _fit_func(
     Parameters
     ----------
     kappa_p : float
-        Coupling strength between Purcell filter and transmission line [rad/ns]
+        Coupling strength between Purcell filter and transmission line [1/ns]
     gamma_p : float
-        Internal loss rate of Purcell filter [rad/ns]
+        Internal loss rate of Purcell filter [1/ns]
     J : float
-        Coupling strength between Purcell filter and resonator [rad/ns]
+        Coupling strength between Purcell filter and resonator [1/ns]
     gamma_r : float
-        Internal loss rate of resonator [rad/ns]
-    omega_d : NDArray
-        Angular frequency of incident wave [rad/ns]
-    omega_p : float
-        Angular frequency of Purcell filter [rad/ns]
-    omega_r : float
-        Angular frequency of resonator [rad/ns]
+        Internal loss rate of resonator [1/ns]
+    f_d : NDArray
+        Angular frequency of incident wave [1/ns]
+    f_p : float
+        Angular frequency of Purcell filter [1/ns]
+    f_r : float
+        Angular frequency of resonator [1/ns]
+    a: float
+        term for attenuation dependent on frequency [/√GHz]
+    b: float
+        offset. [rad]
     """
+    omega_kappa_p = 2 * np.pi * kappa_p
+    omega_J = 2 * np.pi * J
     omega_d = 2 * np.pi * f_d
     omega_p = 2 * np.pi * f_p
     omega_r = 2 * np.pi * f_r
-    gamma_purcell = (
+    omega_gamma_purcell = (
         2 * np.pi * 0
     )  # TODO add internal loss rate [GHz] to fitting parameters
-    gamma_resonator = (
+    omega_gamma_resonator = (
         2 * np.pi * 0
     )  # TODO add internal loss rate [GHz] to fitting parameters
     angle = np.angle(
-        _Gamma(kappa_p, gamma_purcell, J, gamma_resonator, omega_d, omega_p, omega_r)
-    )
-    return -np.unwrap(angle) + a * np.sqrt(omega_d) + b
+        _Gamma(
+            omega_kappa_p,
+            omega_gamma_purcell,
+            omega_J,
+            omega_gamma_resonator,
+            omega_d,
+            omega_p,
+            omega_r,
+        )
+    )  # TODO add stack real and imaginary part.
+    return -np.unwrap(angle) + np.sqrt(np.pi) * a * np.sqrt(omega_d) + b
