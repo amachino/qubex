@@ -1,5 +1,9 @@
 """Experiment-oriented contrib modules."""
 
+from .ckp_characterization import (
+    ckp_measurement_v2,
+    filtered_ckp_experiment,
+)
 from .cr_xt_decomposition import decompose_cr_crosstalk
 from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
@@ -69,6 +73,7 @@ __all__ = [
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
     "characterize_readout_parameters",
+    "ckp_measurement_v2",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
@@ -83,6 +88,7 @@ __all__ = [
     "create_measurement_rounds",
     "create_mqc_sequence",
     "decompose_cr_crosstalk",
+    "filtered_ckp_experiment",
     "fourier_analysis",
     "get_resistance_charge",
     "get_superconducting_gap",

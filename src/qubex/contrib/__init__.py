@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from .experiment.ckp_characterization import (
+    ckp_measurement_v2,
+    filtered_ckp_experiment,
+)
 from .experiment.cr_xt_decomposition import decompose_cr_crosstalk
 from .experiment.crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
@@ -82,6 +86,7 @@ __all__ = [
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
     "characterize_readout_parameters",
+    "ckp_measurement_v2",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
@@ -96,6 +101,7 @@ __all__ = [
     "create_measurement_rounds",
     "create_mqc_sequence",
     "decompose_cr_crosstalk",
+    "filtered_ckp_experiment",
     "fit_readout_parameters",
     "fourier_analysis",
     "get_resistance_charge",
