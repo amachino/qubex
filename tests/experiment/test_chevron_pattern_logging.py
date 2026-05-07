@@ -7,9 +7,14 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 
+from qubex.analysis import FitResult, FitStatus
 from qubex.experiment.models.result import Result
-from qubex.experiment.services.characterization_service import CharacterizationService
+from qubex.experiment.services.characterization_service import (
+    CharacterizationService,
+    _select_detuned_rabi_fit,
+)
 
 
 def test_chevron_pattern_suppresses_low_r2_fit_warning(monkeypatch) -> None:
@@ -76,3 +81,107 @@ def test_chevron_pattern_suppresses_low_r2_fit_warning(monkeypatch) -> None:
     assert fit_rabi_calls
     assert all(call["warn_low_r2"] is False for call in fit_rabi_calls)
     assert result.data["resonant_frequencies"] == {"Q00": 5.0}
+
+
+def test_select_detuned_rabi_fit_prunes_low_quality_rates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given mixed-quality Rabi fits, when selecting fit, then low-r2 rates are masked."""
+    calls: list[np.ndarray] = []
+
+    def _fit_detuned_rabi(**kwargs: Any) -> FitResult:
+        rabi_frequencies = np.asarray(kwargs["rabi_frequencies"], dtype=np.float64)
+        calls.append(rabi_frequencies)
+        return FitResult(
+            status=FitStatus.SUCCESS,
+            data={
+                "f_resonance": 1.2,
+                "r2": 0.9 if np.isnan(rabi_frequencies).any() else 0.1,
+            },
+        )
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.fitting.fit_detuned_rabi",
+        _fit_detuned_rabi,
+    )
+
+    _fit_result, selected_rates, threshold = _select_detuned_rabi_fit(
+        target="Q00",
+        control_frequencies=np.linspace(1.0, 1.4, 5),
+        rabi_rates=np.array([0.04, 0.02, 0.01, 0.02, 0.04]),
+        rabi_fit_r2=np.array([0.1, 0.8, 0.9, 0.85, 0.2]),
+        plot=False,
+    )
+
+    np.testing.assert_allclose(
+        selected_rates,
+        np.array([np.nan, 0.02, 0.01, 0.02, np.nan]),
+        equal_nan=True,
+        rtol=0,
+        atol=0,
+    )
+    assert threshold == 0.8
+    assert calls
+
+
+def test_chevron_pattern_returns_nan_when_detuned_fit_errors(monkeypatch) -> None:
+    """Given detuned fit failure, when chevron is analyzed, then heatmap result is still returned."""
+
+    @contextmanager
+    def _no_output() -> Any:
+        yield
+
+    def _fit_detuned_rabi(**_kwargs: Any) -> FitResult:
+        return FitResult(status=FitStatus.ERROR, message="failed")
+
+    service = cast(Any, object.__new__(CharacterizationService))
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        qubit_labels=["Q00"],
+        targets={"Q00": SimpleNamespace(frequency=5.0)},
+        params=SimpleNamespace(control_amplitude={"Q00": 0.1}),
+        util=SimpleNamespace(
+            create_qubit_subgroups=lambda targets: [list(targets)],
+            no_output=_no_output,
+        ),
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace(
+        obtain_rabi_params=lambda **kwargs: SimpleNamespace(
+            rabi_params={"Q00": SimpleNamespace()}
+        ),
+        sweep_parameter=lambda **kwargs: Result(
+            data={
+                "Q00": SimpleNamespace(
+                    target="Q00",
+                    sweep_range=np.array([0.0, 4.0, 8.0]),
+                    data=np.array([0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j]),
+                    rabi_param=None,
+                    normalized=np.array([0.0, 1.0, 0.0]),
+                )
+            }
+        ),
+    )
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.fitting.fit_rabi",
+        lambda **_kwargs: FitResult(
+            status=FitStatus.SUCCESS,
+            data={"frequency": 0.25, "r2": 1.0},
+        ),
+    )
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.fitting.fit_detuned_rabi",
+        _fit_detuned_rabi,
+    )
+
+    result = service.chevron_pattern(
+        targets=["Q00"],
+        detuning_range=np.array([0.0, 0.1, 0.2]),
+        time_range=np.array([0.0, 4.0, 8.0]),
+        plot=False,
+        save_image=False,
+    )
+
+    assert np.isnan(result.data["resonant_frequencies"]["Q00"])
+    assert "Q00" in result.figures

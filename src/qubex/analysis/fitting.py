@@ -1686,13 +1686,32 @@ def fit_detuned_rabi(
     mask = ~np.isnan(rabi_frequencies)
     control_frequencies = control_frequencies[mask]
     rabi_frequencies = rabi_frequencies[mask]
+    if len(control_frequencies) < 3:
+        logger.warning(f"Not enough finite data to fit the data for {target}.")
+        return FitResult(
+            status=FitStatus.ERROR,
+            message="Not enough finite data to fit the data.",
+        )
 
     def func(f_control: NDArray, f_resonance: float, f_rabi: float) -> NDArray:
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
 
+    initial_f_resonance = control_frequencies[np.argmin(rabi_frequencies)]
+    initial_f_rabi = max(float(np.min(rabi_frequencies)), np.finfo(np.float64).eps)
+
     try:
-        popt, pcov = _curve_fit(func, control_frequencies, rabi_frequencies)
-    except RuntimeError:
+        popt, pcov = _curve_fit(
+            func,
+            control_frequencies,
+            rabi_frequencies,
+            p0=(initial_f_resonance, initial_f_rabi),
+            bounds=(
+                (float(np.min(control_frequencies)), 0.0),
+                (float(np.max(control_frequencies)), np.inf),
+            ),
+            maxfev=10000,
+        )
+    except (RuntimeError, ValueError):
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
@@ -1757,9 +1776,16 @@ def fit_detuned_rabi(
         logger.info("Resonance frequency")
         logger.info(f"  {target}: {f_resonance:.6f}")
 
+    status = FitStatus.SUCCESS
+    message = "Fitting successful."
+    if not np.isfinite(r2) or r2 < 0.5:
+        status = FitStatus.WARNING
+        message = "R² < 0.5"
+        logger.warning("R² < 0.5")
+
     return FitResult(
-        status=FitStatus.SUCCESS,
-        message="Fitting successful.",
+        status=status,
+        message=message,
         data={
             "f_resonance": f_resonance,
             "f_resonance_err": f_resonance_err,
