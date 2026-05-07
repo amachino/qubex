@@ -88,9 +88,9 @@ def decompose_cr_crosstalk(
         - IX_quantum, IY_quantum : quantum crosstalk contributions
         - IX_classical, IY_classical : classical crosstalk contributions
         - xt_total, xt_quantum, xt_classical : complex-valued representations
+        - classical_xt_leakage_db : classical XT leakage relative to CR drive Rabi
         - f_delta : detuning between qubits (GHz)
         - anharmonicity_control : control qubit anharmonicity (GHz)
-        - xt_ratio : ratio |classical| / |quantum|
         - tomography_result : raw CR Hamiltonian tomography result
 
     Raises
@@ -159,6 +159,57 @@ def decompose_cr_crosstalk(
     )
 
     coeffs = result["coeffs"]
+    cr_rabi_rate = result["cr_drive_amplitude"]
+
+    IX = coeffs["IX"]
+    IY = coeffs["IY"]
+    ZX = coeffs["ZX"]
+    ZY = coeffs["ZY"]
+
+    analysis = _show_classical_crosstalk(
+        exp=exp,
+        control_qubit=control_qubit,
+        coeffs=coeffs,
+        f_delta=f_delta,
+        cr_rabi_rate=cr_rabi_rate,
+        plot=plot,
+    )
+
+    return Result(
+        data={
+            "control_qubit": control_qubit,
+            "target_qubit": target_qubit,
+            "coeffs": coeffs,
+            "IX_total": IX,
+            "IY_total": IY,
+            "ZX": ZX,
+            "ZY": ZY,
+            "IX_quantum": analysis["IX_quantum"],
+            "IY_quantum": analysis["IY_quantum"],
+            "IX_classical": analysis["IX_classical"],
+            "IY_classical": analysis["IY_classical"],
+            "xt_total": analysis["xt_total"],
+            "xt_quantum": analysis["xt_quantum"],
+            "xt_classical": analysis["xt_classical"],
+            "classical_xt_leakage_db": analysis["classical_xt_leakage_db"],
+            "f_delta": f_delta,
+            "anharmonicity_control": analysis["alpha_c"],
+            "tomography_result": result,
+        }
+    )
+
+
+def _show_classical_crosstalk(
+    exp: Experiment,
+    control_qubit: str,
+    *,
+    coeffs: dict[str, float],
+    f_delta: float,
+    cr_rabi_rate: float,
+    plot: bool | None = None,
+):
+    if plot is None:
+        plot = True
 
     IX = coeffs["IX"]
     IY = coeffs["IY"]
@@ -166,9 +217,7 @@ def decompose_cr_crosstalk(
     ZY = coeffs["ZY"]
 
     alpha_c = exp.ctx.qubits[control_qubit].anharmonicity
-
     eps = 1e-12
-
     if np.abs(alpha_c) < eps:
         raise ValueError(
             f"Anharmonicity is too small (alpha_c={alpha_c}). Cannot compute quantum crosstalk."
@@ -186,55 +235,43 @@ def decompose_cr_crosstalk(
 
     mag_classical = np.abs(xt_classical)
     mag_quantum = np.abs(xt_quantum)
-    ratio = mag_classical / max(mag_quantum, eps)
+    mag_total = np.abs(xt_total)
+
+    classical_xt_leakage_ratio = mag_classical / max(abs(cr_rabi_rate), eps)
+    classical_xt_leakage_db = 20 * np.log10(max(classical_xt_leakage_ratio, eps))
 
     if plot:
-        print()
-        print("Crosstalk decomposition:")
-
         print(
-            f"  IX_quantum   : {IX_quantum * 1e3:+.4f} MHz"
-            f"    IX_classical : {IX_classical * 1e3:+.4f} MHz"
-            f"    IX_total     : {IX * 1e3:+.4f} MHz"
-        )
-        print(
-            f"  IY_quantum   : {IY_quantum * 1e3:+.4f} MHz"
-            f"    IY_classical : {IY_classical * 1e3:+.4f} MHz"
-            f"    IY_total     : {IY * 1e3:+.4f} MHz"
-        )
-
-        print(
-            f"    |classical| / |quantum| : {ratio:.3f} "
-            f"(= {mag_classical * 1e3:.3f} MHz / {mag_quantum * 1e3:.3f} MHz)"
-        )
-
-        print(
+            "\nCrosstalk decomposition:\n"
+            f"  IX_quantum     : {IX_quantum * 1e3:+.4f} MHz"
+            f"    IX_classical   : {IX_classical * 1e3:+.4f} MHz"
+            f"    IX_total       : {IX * 1e3:+.4f} MHz\n"
+            f"  IY_quantum     : {IY_quantum * 1e3:+.4f} MHz"
+            f"    IY_classical   : {IY_classical * 1e3:+.4f} MHz"
+            f"    IY_total       : {IY * 1e3:+.4f} MHz\n"
+            f"  |XT_quantum|   : {mag_quantum * 1e3:+.4f} MHz"
+            f"    |XT_classical| : {mag_classical * 1e3:+.4f} MHz"
+            f"    |XT_total|     : {mag_total * 1e3:+.4f} MHz\n"
+            f"  classical XT leakage relative to CR drive Rabi : "
+            f"{classical_xt_leakage_db:+.2f} dB\n"
             f"(The anharmonicity of the control qubit: {alpha_c * 1e3:+.4f} MHz is expected to be measured\n"
             "   independently and is used here for estimating quantum crosstalk.)"
         )
 
-    return Result(
-        data={
-            "control_qubit": control_qubit,
-            "target_qubit": target_qubit,
-            "coeffs": coeffs,
-            "IX_total": IX,
-            "IY_total": IY,
-            "ZX": ZX,
-            "ZY": ZY,
-            "IX_quantum": IX_quantum,
-            "IY_quantum": IY_quantum,
-            "IX_classical": IX_classical,
-            "IY_classical": IY_classical,
-            "xt_total": xt_total,
-            "xt_quantum": xt_quantum,
-            "xt_classical": xt_classical,
-            "f_delta": f_delta,
-            "anharmonicity_control": alpha_c,
-            "xt_ratio": ratio,
-            "tomography_result": result,
-        }
-    )
+    return {
+        "IX_quantum": IX_quantum,
+        "IY_quantum": IY_quantum,
+        "IX_classical": IX_classical,
+        "IY_classical": IY_classical,
+        "xt_total": xt_total,
+        "xt_quantum": xt_quantum,
+        "xt_classical": xt_classical,
+        "mag_classical": mag_classical,
+        "mag_quantum": mag_quantum,
+        "mag_total": mag_total,
+        "classical_xt_leakage_db": classical_xt_leakage_db,
+        "alpha_c": alpha_c,
+    }
 
 
 def _ramptime(
