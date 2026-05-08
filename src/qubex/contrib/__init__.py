@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from .experiment.chevron_matched_transform import (
+    analyze_chevron_matched_transform,
+    estimate_qubit_frequency_from_chevron,
+    estimate_qubit_frequency_from_chevron_adaptive,
+    measure_chevron_pattern,
+)
 from .experiment.ckp_characterization import (
     ckp_measurement_v2,
     filtered_ckp_experiment,
@@ -82,6 +88,7 @@ from .experiment.thermal_excitation_characterization import (
 )
 
 __all__ = [
+    "analyze_chevron_matched_transform",
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
@@ -101,6 +108,8 @@ __all__ = [
     "create_measurement_rounds",
     "create_mqc_sequence",
     "decompose_cr_crosstalk",
+    "estimate_qubit_frequency_from_chevron",
+    "estimate_qubit_frequency_from_chevron_adaptive",
     "filtered_ckp_experiment",
     "fit_readout_parameters",
     "fourier_analysis",
@@ -115,6 +124,7 @@ __all__ = [
     "measure_1d_cluster_state",
     "measure_bell_state_fidelities",
     "measure_bell_states",
+    "measure_chevron_pattern",
     "measure_cr_crosstalk",
     "measure_ghz_state",
     "measure_graph_state",
