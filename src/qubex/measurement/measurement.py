@@ -566,7 +566,7 @@ class Measurement:
         """
         return self.session_service.check_clock_status(box_list)
 
-    def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
+    def linkup(self, box_list: list[str], noise_threshold: float | None = None) -> None:
         """
         Run link-up and clock synchronization for backend boxes.
 
@@ -574,7 +574,7 @@ class Measurement:
         ----------
         box_list : list[str]
             Backend box identifiers.
-        noise_threshold : int | None, optional
+        noise_threshold : float | None, optional
             Optional threshold used by backend-specific link quality checks.
 
         Examples

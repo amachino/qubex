@@ -10,7 +10,9 @@ import pytest
 import yaml
 
 from qubex.backend.quel1.managers.skew_manager import Quel1SkewManager
-from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 
 
 class _FakeBox:
@@ -215,10 +217,10 @@ def test_run_skew_measurement_reuses_connected_boxes_without_reconnect() -> None
     assert create_call["update_copnfig_cache"] is True
 
 
-def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect() -> (
+def test_run_skew_measurement_adds_missing_reference_box_with_default_reconnect() -> (
     None
 ):
-    """Given connected runtime missing reference box, when measuring skew, then manager creates missing box with relaxed reconnect."""
+    """Given connected runtime missing reference box, when measuring skew, then manager creates missing box with default reconnect."""
     _reset_fakes()
     sysdb = _FakeSysDb()
     connected_system = _FakeSkewSystem(
@@ -243,7 +245,7 @@ def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect(
 
     assert sysdb.create_box_calls == [("R", False)]
     assert sysdb.created_boxes["R"].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
     assert _FakeQuBEMasterClient.create_calls == []
     create_call = _FakeQuel1SystemClass.create_calls[-1]
@@ -253,7 +255,7 @@ def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect(
     assert create_call["update_copnfig_cache"] is True
 
 
-def test_run_skew_measurement_creates_all_boxes_with_relaxed_reconnect_when_disconnected() -> (
+def test_run_skew_measurement_creates_all_boxes_with_default_reconnect_when_disconnected() -> (
     None
 ):
     """Given disconnected runtime, when measuring skew, then manager creates all boxes and clockmaster explicitly."""
@@ -277,10 +279,10 @@ def test_run_skew_measurement_creates_all_boxes_with_relaxed_reconnect_when_disc
 
     assert sysdb.create_box_calls == [("A", False), ("R", False)]
     assert sysdb.created_boxes["A"].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
     assert sysdb.created_boxes["R"].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
     assert _FakeQuBEMasterClient.create_calls == ["192.0.2.1"]
     from_yaml_call = _FakeSkewClass.from_yaml_calls[-1]

@@ -17,6 +17,9 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 from qubex.diagnostics import ChipInspector
 from qubex.experiment.models.result import Result
 from qubex.system import LatticeGraph, PortType, SystemManager
@@ -167,7 +170,9 @@ def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
     get_box = _require_backend_callable("get_box")
     box = cast("Quel1Box", get_box(box_id))
-    box.reconnect(background_noise_threshold=50_000)
+    box.reconnect(
+        background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+    )
     return box
 
 
@@ -197,7 +202,7 @@ def reboot_fpga(box_id: str) -> None:
 
 def relinkup_box(
     box_id: str | Collection[str],
-    noise_threshold: int | None = None,
+    noise_threshold: float | None = None,
 ) -> None:
     """Relink up the boxes."""
     if isinstance(box_id, str):
@@ -230,7 +235,7 @@ This operation will reset LO/NCO settings. Do you want to continue?
 
 
 @deprecated("relinkup_box is deprecated, please use relinkup_boxes instead.")
-def relinkup_boxes(box_ids: list[str], noise_threshold: int | None = None) -> None:
+def relinkup_boxes(box_ids: list[str], noise_threshold: float | None = None) -> None:
     """Relink up the boxes."""
     relinkup_box(box_ids, noise_threshold=noise_threshold)
 
