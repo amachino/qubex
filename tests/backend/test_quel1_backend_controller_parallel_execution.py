@@ -179,7 +179,7 @@ def test_relinkup_boxes_parallel_calls_each_box(monkeypatch) -> None:
     controller = Quel1BackendController()
     called: list[str] = []
 
-    def _fake_relinkup(box_name: str, noise_threshold: int | None = None) -> None:
+    def _fake_relinkup(box_name: str, noise_threshold: float | None = None) -> None:
         _ = noise_threshold
         called.append(box_name)
 
@@ -195,7 +195,7 @@ def test_relinkup_boxes_parallel_deduplicates_box_names(monkeypatch) -> None:
     controller = Quel1BackendController()
     called: list[str] = []
 
-    def _fake_relinkup(box_name: str, noise_threshold: int | None = None) -> None:
+    def _fake_relinkup(box_name: str, noise_threshold: float | None = None) -> None:
         _ = noise_threshold
         called.append(box_name)
 

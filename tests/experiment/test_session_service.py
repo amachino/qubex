@@ -112,7 +112,7 @@ class _MeasurementStub:
     def linkup(
         self,
         box_list: list[str],
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
     ) -> None:
         self._calls.append(
             (

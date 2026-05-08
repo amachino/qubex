@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 if TYPE_CHECKING:
@@ -194,7 +196,9 @@ class Quel1SkewManager:
             box = existing_boxes.get(box_name)
             if box is None:
                 box = db.create_box(box_name, reconnect=False)
-                box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+                box.reconnect(
+                    background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+                )
             named_boxes.append(driver.NamedBox(name=box_name, box=box))
         return driver.Quel1System.create(
             clockmaster=clockmaster,

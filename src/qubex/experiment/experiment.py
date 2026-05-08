@@ -782,7 +782,7 @@ class Experiment:
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
     ) -> None:
         """Link up specified boxes with optional noise threshold."""
         return self.session_service.linkup(

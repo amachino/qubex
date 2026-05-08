@@ -227,7 +227,7 @@ class Quel1BackendController(BackendController):
     def linkup(
         self,
         box_name: str,
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         **kwargs: Any,
     ) -> Quel1Box:
         """
@@ -258,7 +258,7 @@ class Quel1BackendController(BackendController):
     def linkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         *,
         parallel: bool | None = None,
     ) -> dict[str, Quel1Box]:
@@ -269,7 +269,7 @@ class Quel1BackendController(BackendController):
         ----------
         box_list : list[str]
             List of box names.
-        noise_threshold : int | None, optional
+        noise_threshold : float | None, optional
             Threshold for linkup noise checks.
         parallel : bool | None, optional
             Whether to link up boxes in parallel. If `None`, it follows
@@ -286,7 +286,7 @@ class Quel1BackendController(BackendController):
             parallel=parallel,
         )
 
-    def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
+    def relinkup(self, box_name: str, noise_threshold: float | None = None) -> None:
         """
         Relink a box.
 
@@ -303,7 +303,7 @@ class Quel1BackendController(BackendController):
     def relinkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         *,
         parallel: bool | None = None,
     ) -> None:
@@ -314,7 +314,7 @@ class Quel1BackendController(BackendController):
         ----------
         box_list : list[str]
             List of box names.
-        noise_threshold : int | None, optional
+        noise_threshold : float | None, optional
             Threshold for relinkup noise checks.
         parallel : bool | None, optional
             Whether to relink boxes in parallel. If `None`, it follows

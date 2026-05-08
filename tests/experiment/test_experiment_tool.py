@@ -10,6 +10,9 @@ from typing import cast
 import plotly.graph_objects as go
 import pytest
 
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 from qubex.experiment import experiment_tool
 from qubex.experiment.models.result import Result
 from qubex.system.control_system import PortType
@@ -72,9 +75,9 @@ class FakeQuel1Box:
     """Quel1Box stub recording reconnect calls."""
 
     def __init__(self) -> None:
-        self.background_noise_thresholds: list[int] = []
+        self.background_noise_thresholds: list[float] = []
 
-    def reconnect(self, *, background_noise_threshold: int) -> None:
+    def reconnect(self, *, background_noise_threshold: float) -> None:
         """Record reconnect threshold."""
         self.background_noise_thresholds.append(background_noise_threshold)
 
@@ -192,7 +195,9 @@ def test_get_quel1_box_reconnects_box_with_default_threshold(monkeypatch) -> Non
     returned_box = experiment_tool.get_quel1_box("U15A")
 
     assert returned_box is box
-    assert box.background_noise_thresholds == [50_000]
+    assert box.background_noise_thresholds == [
+        DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+    ]
 
 
 def test_print_chip_info_uses_active_system_id_for_chip_summary(

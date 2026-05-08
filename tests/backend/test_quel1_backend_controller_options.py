@@ -10,6 +10,10 @@ from typing import Any, cast
 
 import pytest
 
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_RELINKUP,
+)
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
 
@@ -24,6 +28,7 @@ class _FakeBox:
         self.boxtype = boxtype
         self._status = status
         self.relinkup_calls: list[dict[str, Any]] = []
+        self.reconnect_calls: list[dict[str, Any]] = []
 
     def link_status(self) -> dict[int, bool]:
         """Return a fixed link status."""
@@ -35,6 +40,7 @@ class _FakeBox:
 
     def reconnect(self, **kwargs: Any) -> None:
         """Accept reconnect calls."""
+        self.reconnect_calls.append(kwargs)
 
 
 def _make_controller() -> Quel1BackendController:
@@ -98,6 +104,11 @@ def test_constructor_allows_manager_injection() -> None:
     assert controller._skew_manager is skew_manager
 
 
+def test_default_relinkup_noise_threshold_is_1024() -> None:
+    """Given backend constants, when reading relinkup threshold, then it is 1024."""
+    assert DEFAULT_BACKGROUND_NOISE_THRESHOLD_RELINKUP == 1024.0
+
+
 def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -> None:
     """Given R8 box without options, when relinkup runs, then default awg2222 is used."""
     controller = _make_controller()
@@ -115,8 +126,14 @@ def test_relinkup_uses_default_awg2222_for_r8(monkeypatch: pytest.MonkeyPatch) -
     controller.relinkup("B0")
 
     relinkup_kwargs = fake_box.relinkup_calls[0]
+    assert relinkup_kwargs["background_noise_threshold"] == (
+        DEFAULT_BACKGROUND_NOISE_THRESHOLD_RELINKUP
+    )
     assert relinkup_kwargs["config_options"] == [
         _FakeQuel1ConfigOption.SE8_MXFE1_AWG2222
+    ]
+    assert fake_box.reconnect_calls == [
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
 
 
@@ -172,10 +189,32 @@ def test_relinkup_rejects_conflicting_awg_options(
         controller.relinkup("B0")
 
 
-def test_linkup_uses_relaxed_noise_threshold_by_default(
+def test_relinkup_keeps_explicit_noise_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given no threshold, when linkup runs, then relaxed threshold is used."""
+    """Given explicit threshold, when relinkup runs, then provided threshold is used."""
+    controller = _make_controller()
+    fake_box = _FakeBox("quel1se-riken8", {0: False})
+    _override_driver_classes(controller, Quel1ConfigOption=_FakeQuel1ConfigOption)
+    monkeypatch.setattr(
+        controller._runtime_context, "validate_box_availability", lambda _: None
+    )
+    monkeypatch.setattr(
+        controller._connection_manager,
+        "_get_existing_or_create_box",
+        lambda **kwargs: fake_box,
+    )
+
+    controller.relinkup("B0", noise_threshold=12345)
+
+    assert fake_box.relinkup_calls[0]["background_noise_threshold"] == 12345
+    assert fake_box.reconnect_calls == [{"background_noise_threshold": 12345}]
+
+
+def test_linkup_uses_default_reconnect_noise_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given no threshold, when linkup runs, then reconnect threshold is used."""
     controller = _make_controller()
     fake_box = _FakeBox("quel1se-riken8", {0: True})
     reconnect_calls: list[dict[str, Any]] = []
@@ -197,7 +236,9 @@ def test_linkup_uses_relaxed_noise_threshold_by_default(
     controller.linkup("B0")
 
     assert reconnect_calls
-    assert reconnect_calls[0]["background_noise_threshold"] == 50_000
+    assert reconnect_calls[0]["background_noise_threshold"] == (
+        DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+    )
 
 
 def test_linkup_keeps_explicit_noise_threshold(
