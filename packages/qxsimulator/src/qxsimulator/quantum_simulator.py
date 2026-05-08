@@ -687,7 +687,7 @@ class SimulationResult:
             The label of the qubit, by default
         """
         states = self.states if label is None else self.get_substates(label)
-        population = np.real(states[-1].diag())
+        population = self._get_population(states[-1])
         for idx, prob in enumerate(population):
             basis = self.system.basis_labels[idx] if label is None else str(idx)
             logger.info(f"|{basis}⟩: {prob * 100:6.3f}%")
@@ -709,7 +709,7 @@ class SimulationResult:
         states = self.states if label is None else self.get_substates(label)
         populations = defaultdict(list)
         for state in states:
-            population = np.abs(state.diag())
+            population = self._get_population(state)
             population[population > 1] = 1.0
             for idx, prob in enumerate(population):
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
@@ -740,6 +740,13 @@ class SimulationResult:
             template="qubex",
         )
         show_figure(fig, filename="population_dynamics")
+
+    @staticmethod
+    def _get_population(state: qt.Qobj) -> npt.NDArray:
+        """Return computational-basis populations for a ket or density matrix."""
+        if state.isket:
+            return np.abs(state.full().ravel()) ** 2
+        return np.real(state.diag())
 
 
 class QuantumSimulator:
@@ -921,6 +928,74 @@ class QuantumSimulator:
             model=model,
         )
 
+    def sesolve(
+        self,
+        controls: list[Control] | PulseSchedule,
+        *,
+        initial_state: qt.Qobj | dict | None = None,
+        dt: float | None = None,
+        n_samples: int | None = None,
+    ) -> SimulationResult:
+        """
+        Simulate closed-system dynamics using QuTiP's `sesolve`.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            The control signals.
+        initial_state : qt.Qobj | dict | None, optional
+            Pure initial state of the quantum system, by default None.
+        dt : float, optional
+            The time step of the simulation.
+        n_samples : int | None, optional
+            The number of samples to return, by default None.
+
+        Returns
+        -------
+        SimulationResult
+            The result of the simulation.
+
+        Raises
+        ------
+        ValueError
+            If the initial state is not a ket.
+        """
+        if isinstance(controls, PulseSchedule):
+            controls = self._convert_pulse_schedule_to_controls(controls)
+        self._validate_controls(controls)
+
+        model = self.create_simulation_model(
+            controls=controls,
+            initial_state=initial_state,
+            dt=dt,
+            include_collapse_operators=False,
+        )
+
+        if not model.initial_state.isket:
+            raise ValueError("sesolve requires a ket initial_state.")
+
+        result = qt.sesolve(
+            H=model.hamiltonian,
+            psi0=model.initial_state,
+            tlist=model.times,
+        )
+
+        states = np.array(result.states)
+        times = model.times
+
+        if n_samples is not None:
+            times = downsample(times, n_samples)
+            states = downsample(states, n_samples)
+
+        return SimulationResult(
+            system=self.system,
+            controls=controls,
+            times=times,
+            states=states,
+            unitaries=np.array([]),
+            model=model,
+        )
+
     def propagator(
         self,
         controls: list[Control] | PulseSchedule,
@@ -1020,6 +1095,7 @@ class QuantumSimulator:
         controls: list[Control] | PulseSchedule,
         *,
         dt: float | None = None,
+        include_collapse_operators: bool = True,
     ) -> dict:
         """
         Build QuTiP-compatible simulation parameters.
@@ -1030,6 +1106,8 @@ class QuantumSimulator:
             Control signals defining the evolution.
         dt : float | None, optional
             Time step for discretization.
+        include_collapse_operators : bool, optional
+            Whether to include system collapse operators, by default True.
 
         Returns
         -------
@@ -1087,13 +1165,14 @@ class QuantumSimulator:
         ]
 
         # Add collapse operators
-        for object in self.system.objects:
-            a = self.system.get_lowering_operator(object.label)
-            n_steps = self.system.get_number_operator(object.label)
-            relaxation_operator = np.sqrt(object.relaxation_rate) * a
-            dephasing_operator = np.sqrt(object.dephasing_rate) * n_steps
-            collapse_operators.append(relaxation_operator)
-            collapse_operators.append(dephasing_operator)
+        if include_collapse_operators:
+            for object in self.system.objects:
+                a = self.system.get_lowering_operator(object.label)
+                n_steps = self.system.get_number_operator(object.label)
+                relaxation_operator = np.sqrt(object.relaxation_rate) * a
+                dephasing_operator = np.sqrt(object.dephasing_rate) * n_steps
+                collapse_operators.append(relaxation_operator)
+                collapse_operators.append(dephasing_operator)
 
         return {
             "times": times,
@@ -1107,6 +1186,7 @@ class QuantumSimulator:
         *,
         initial_state: qt.Qobj | dict | None = None,
         dt: float | None = None,
+        include_collapse_operators: bool = True,
     ) -> SimulationModel:
         """
         Create a simulation model for QuTiP solvers.
@@ -1119,6 +1199,8 @@ class QuantumSimulator:
             Initial state specification.
         dt : float | None, optional
             Time step for discretization.
+        include_collapse_operators : bool, optional
+            Whether to include system collapse operators, by default True.
 
         Returns
         -------
@@ -1135,6 +1217,7 @@ class QuantumSimulator:
         params = self.create_simulation_parameters(
             controls=controls,
             dt=dt,
+            include_collapse_operators=include_collapse_operators,
         )
 
         return SimulationModel(
