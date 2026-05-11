@@ -58,6 +58,9 @@ from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
 _CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
+# Candidate gates for removing unreliable per-detuning Rabi estimates.
+_DETUNED_RABI_PRUNING_R2_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.3)
+_DETUNED_RABI_MIN_R2_IMPROVEMENT = 0.01
 
 
 def _filter_low_quality_rabi_rates(
@@ -104,6 +107,10 @@ def _select_detuned_rabi_fit(
     """
     Fit detuned Rabi after choosing the best Rabi-fit quality gate.
 
+    The selection keeps the unfiltered fit unless pruning gives a meaningful
+    detuned-Rabi R² improvement, and favors retaining more points when R²
+    values are close.
+
     Parameters
     ----------
     target : str
@@ -124,16 +131,18 @@ def _select_detuned_rabi_fit(
         threshold. The threshold is `None` when the unfiltered rates are kept.
     """
     best_rates = np.asarray(rabi_rates, dtype=np.float64)
-    best_fit = fitting.fit_detuned_rabi(
+    initial_fit = fitting.fit_detuned_rabi(
         target=target,
         control_frequencies=control_frequencies,
         rabi_frequencies=best_rates,
         plot=False,
+        warn_low_r2=False,
     )
-    best_r2 = best_fit.get("r2", np.nan)
+    best_r2 = initial_fit.get("r2", np.nan)
+    best_count = np.count_nonzero(np.isfinite(best_rates))
     selected_threshold: float | None = None
 
-    for threshold in (0.9, 0.8, 0.7, 0.6, 0.5, 0.3):
+    for threshold in _DETUNED_RABI_PRUNING_R2_THRESHOLDS:
         candidate_rates = _filter_low_quality_rabi_rates(
             rabi_rates,
             rabi_fit_r2,
@@ -146,26 +155,34 @@ def _select_detuned_rabi_fit(
             control_frequencies=control_frequencies,
             rabi_frequencies=candidate_rates,
             plot=False,
+            warn_low_r2=False,
         )
         candidate_r2 = candidate_fit.get("r2", np.nan)
-        if np.isfinite(candidate_r2) and (
-            not np.isfinite(best_r2) or candidate_r2 > best_r2
-        ):
-            best_fit = candidate_fit
+        candidate_count = np.count_nonzero(np.isfinite(candidate_rates))
+        improves_fit = np.isfinite(candidate_r2) and (
+            not np.isfinite(best_r2)
+            or candidate_r2 > best_r2 + _DETUNED_RABI_MIN_R2_IMPROVEMENT
+        )
+        keeps_more_close_points = (
+            np.isfinite(candidate_r2)
+            and np.isfinite(best_r2)
+            and candidate_count > best_count
+            and candidate_r2 >= best_r2 - _DETUNED_RABI_MIN_R2_IMPROVEMENT
+        )
+        if improves_fit or keeps_more_close_points:
             best_rates = candidate_rates
             best_r2 = candidate_r2
+            best_count = candidate_count
             selected_threshold = threshold
 
-    if plot:
-        selected_fit = fitting.fit_detuned_rabi(
-            target=target,
-            control_frequencies=control_frequencies,
-            rabi_frequencies=best_rates,
-            plot=True,
-        )
-        return selected_fit, best_rates, selected_threshold
-
-    return best_fit, best_rates, selected_threshold
+    selected_fit = fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=best_rates,
+        plot=plot,
+        warn_low_r2=True,
+    )
+    return selected_fit, best_rates, selected_threshold
 
 
 def _is_reliable_detuned_rabi_fit(fit_result: Any) -> bool:
@@ -627,7 +644,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-        pruned_fit: bool | None = True,
+        pruned_fit: bool | None = None,
     ) -> Result:
         """Measure chevron patterns for targets."""
         if targets is None:

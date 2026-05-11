@@ -1660,6 +1660,7 @@ def fit_detuned_rabi(
     control_frequencies: NDArray,
     rabi_frequencies: NDArray,
     plot: bool = True,
+    warn_low_r2: bool = True,
 ) -> FitResult:
     """
     Fit detuned Rabi oscillation data to a cosine function and plot the results.
@@ -1674,6 +1675,8 @@ def fit_detuned_rabi(
         Rabi frequencies corresponding to the control frequencies in GHz.
     plot : bool, optional
         Whether to plot the data and the fit.
+    warn_low_r2 : bool, optional
+        Whether to emit a warning log when the fit quality is low.
 
     Returns
     -------
@@ -1781,7 +1784,8 @@ def fit_detuned_rabi(
     if not np.isfinite(r2) or r2 < 0.5:
         status = FitStatus.WARNING
         message = "R² < 0.5"
-        logger.warning("R² < 0.5")
+        if warn_low_r2:
+            logger.warning("R² < 0.5")
 
     return FitResult(
         status=status,
