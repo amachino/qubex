@@ -29,8 +29,8 @@ def estimate_qubit_frequency_from_chevron(
     frequencies: dict[str, float] | None = None,
     amplitudes: dict[str, float] | None = None,
     omega_rabi_range: ArrayLike | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     quadratic_window: int | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
@@ -68,10 +68,10 @@ def estimate_qubit_frequency_from_chevron(
         If None, default control amplitudes are used.
     omega_rabi_range : array-like, optional
         Trial resonant Rabi frequencies (GHz) used in the matched transform.
-    shots : int, optional
+    n_shots : int, optional
         Number of shots.
         Default: DEFAULT_SHOTS // 4
-    interval : float, optional
+    shot_interval : float, optional
         Interval between shots.
     quadratic_window : int, optional
         Half-width of the local quadratic fitting window used for
@@ -119,23 +119,26 @@ def estimate_qubit_frequency_from_chevron(
                     amplitudes used for each target,
                 "peak_prominence_ratios":
                     peak prominence ratios for each target,
-                "measurement_figures":
-                    chevron measurement figures,
-                "analysis_figures":
-                    matched-transform analysis figures,
+            }
+        figures:
+            {
+                f"{target}_measurement":
+                    chevron measurement figure,
+                f"{target}_transform":
+                    matched-transform analysis figure,
             }
 
     Notes
     -----
     - Chevron data are projected onto a global PCA axis in the IQ plane
-    before analysis.
+        before analysis.
     - The matched transform integrates over both drive frequency and
-    pulse duration and supports nonuniform sampling grids.
+        pulse duration and supports nonuniform sampling grids.
     - The overall sign ambiguity of the transform is fixed such that
-    the dominant peak becomes positive.
+        the dominant peak becomes positive.
     - Quadratic refinement improves sub-grid peak estimation accuracy.
     - The peak prominence ratio serves as a confidence metric for
-    peak detection.
+        peak detection.
     """
     if targets is None:
         targets = exp.ctx.qubit_labels
@@ -150,10 +153,10 @@ def estimate_qubit_frequency_from_chevron(
         time_range = DEFAULT_RABI_TIME_RANGE
     if omega_rabi_range is None:
         omega_rabi_range = 0.1 * (10 ** np.linspace(0, 1, 256) - 1) / 9
-    if shots is None:
-        shots = max(1, DEFAULT_SHOTS // 4)
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = max(1, DEFAULT_SHOTS // 4)
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if quadratic_window is None:
         quadratic_window = 2
     if plot is None:
@@ -177,8 +180,7 @@ def estimate_qubit_frequency_from_chevron(
     resonant_frequencies: dict[str, float] = {}
     omega_rabis: dict[str, float] = {}
     peak_prominence_ratios: dict[str, float] = {}
-    measurement_figures = {}
-    analysis_figures = {}
+    figures = {}
 
     for target in targets:
         print(f"=== Target: {target} ===")
@@ -191,8 +193,8 @@ def estimate_qubit_frequency_from_chevron(
             frequency=frequencies[target],
             amplitude=amplitudes[target],
             omega_rabi_range=omega_rabi_range,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             refine_peak_quadratic=True,
             quadratic_window=quadratic_window,
             plot=plot,
@@ -203,13 +205,18 @@ def estimate_qubit_frequency_from_chevron(
 
         omega_q = analysis["omega_q"]
         omega_rabi = analysis["omega_rabi"]
+        peak_prominence_ratio = analysis["peak_prominence_ratio"]
 
-        print(f"[RESULT] ω_q={omega_q:.6f} GHz, ω_Rabi={omega_rabi:.6f} GHz")
+        print(
+            f"[RESULT] ω_q={omega_q:.6f} GHz,"
+            f" ω_Rabi={omega_rabi:.6f} GHz"
+            f" peak_prominence_ratio={peak_prominence_ratio:.3f}"
+        )
 
         results_data[target] = {
             "omega_q": omega_q,
             "omega_rabi": omega_rabi,
-            "peak_prominence_ratio": analysis["peak_prominence_ratio"],
+            "peak_prominence_ratio": peak_prominence_ratio,
             "frequency_used": frequencies[target],
             "amplitude_used": amplitudes[target],
             "chevron_data": measurement_result.data["chevron_data"],
@@ -218,9 +225,9 @@ def estimate_qubit_frequency_from_chevron(
 
         resonant_frequencies[target] = omega_q
         omega_rabis[target] = omega_rabi
-        peak_prominence_ratios[target] = analysis["peak_prominence_ratio"]
-        measurement_figures[target] = measurement_result.figure
-        analysis_figures[target] = analysis_result.figure
+        peak_prominence_ratios[target] = peak_prominence_ratio
+        figures[f"{target}_measurement"] = measurement_result.figure
+        figures[f"{target}_transform"] = analysis_result.figure
 
     return Result(
         data={
@@ -231,9 +238,8 @@ def estimate_qubit_frequency_from_chevron(
             "omega_rabis": omega_rabis,
             "amplitudes_used": amplitudes,
             "peak_prominence_ratios": peak_prominence_ratios,
-            "measurement_figures": measurement_figures,
-            "analysis_figures": analysis_figures,
         },
+        figures=figures,
     )
 
 
@@ -248,9 +254,9 @@ def estimate_qubit_frequency_from_chevron_adaptive(
     amplitudes: dict[str, float] | None = None,
     omega_rabi_range: ArrayLike | None = None,
     target_omega_rabi: float | None = None,
-    shots: int | None = None,
-    shots_rough_search: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    n_shots_rough_search: int | None = None,
+    shot_interval: float | None = None,
     quadratic_window: int | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
@@ -267,7 +273,8 @@ def estimate_qubit_frequency_from_chevron_adaptive(
 
     1. Rough-search stage (optional)
         - Measure a coarse chevron pattern over a wide detuning range.
-        - Estimate ω_q and ω_Rabi using matched-transform analysis.
+        - Estimate ω_q and ω_Rabi using matched-transform analysis
+            with quadratic peak refinement.
         - Update:
             * drive frequency ← estimated ω_q
             * drive amplitude ← rescaled toward target_omega_rabi
@@ -275,7 +282,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
     2. Final measurement stage
         - Measure a chevron pattern over a narrower detuning range.
         - Perform matched-transform analysis with quadratic peak refinement
-        to obtain final estimates of ω_q and ω_Rabi.
+            to obtain final estimates of ω_q and ω_Rabi.
 
     Parameters
     ----------
@@ -305,13 +312,13 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         Target resonant Rabi frequency (GHz) used to adaptively rescale
         the drive amplitude.
         Default: 0.0125
-    shots : int, optional
+    n_shots : int, optional
         Number of shots for the final measurement.
-        Default: DEFAULT_SHOTS
-    shots_rough_search : int, optional
+        Default: DEFAULT_SHOTS // 4
+    n_shots_rough_search : int, optional
         Number of shots for rough-search measurements.
-        Default: shots // 4
-    interval : float, optional
+        Default: shots
+    shot_interval : float, optional
         Interval between shots.
     quadratic_window : int, optional
         Half-width of the local quadratic fitting window used for
@@ -361,31 +368,39 @@ def estimate_qubit_frequency_from_chevron_adaptive(
                     final amplitudes used for each target,
                 "peak_prominence_ratios":
                     peak prominence ratios for each target,
-                "measurement_figures":
-                    chevron measurement figures,
-                "analysis_figures":
-                    matched-transform analysis figures,
                 "rough_search_results":
                     rough-search measurement and analysis results,
-                "measurement_figures_rough_search":
-                    rough-search chevron measurement figures,
-                "analysis_figures_rough_search":
-                    rough-search matched-transform figures,
+            }
+
+        figures:
+            {
+                f"{target}_measurement":
+                    final chevron measurement figure,
+
+                f"{target}_transform":
+                    final matched-transform analysis figure,
+
+                f"{target}_rough_measurement":
+                    rough-search chevron measurement figure,
+
+                f"{target}_rough_transform":
+                    rough-search matched-transform analysis figure,
             }
 
     Notes
     -----
     - Chevron data are projected onto a global PCA axis in the IQ plane
-    before analysis.
+        before analysis.
     - The matched transform integrates over both drive frequency and
-    pulse duration and supports nonuniform sampling grids.
+        pulse duration and supports nonuniform sampling grids.
     - The overall sign ambiguity of the transform is fixed such that
-    the dominant peak becomes positive.
+        the dominant peak becomes positive.
     - Drive amplitudes are adaptively updated to approach the target
-    resonant Rabi frequency.
-    - Quadratic refinement improves sub-grid peak estimation accuracy.
+        resonant Rabi frequency.
+    - Quadratic refinement is applied during both the rough-search
+        and final measurement stages.
     - The peak prominence ratio serves as a confidence metric for
-    peak detection.
+        peak detection.
     """
     if targets is None:
         targets = exp.ctx.qubit_labels
@@ -404,12 +419,12 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         omega_rabi_range = 0.1 * (10 ** np.linspace(0, 1, 256) - 1) / 9
     if target_omega_rabi is None:
         target_omega_rabi = 0.0125
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if shots_rough_search is None:
-        shots_rough_search = max(1, shots // 4)
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = max(1, DEFAULT_SHOTS // 4)
+    if n_shots_rough_search is None:
+        n_shots_rough_search = n_shots
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if quadratic_window is None:
         quadratic_window = 2
     if plot is None:
@@ -435,16 +450,12 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         }
 
     results_data = {}
+    results_data_rough_search = {}
     resonant_frequencies: dict[str, float] = {}
     omega_rabis: dict[str, float] = {}
     amplitudes_used: dict[str, float] = {}
     peak_prominence_ratios: dict[str, float] = {}
-    measurement_figures = {}
-    analysis_figures = {}
-
-    results_data_rough_search = {}
-    measurement_figures_rough_search = {}
-    analysis_figures_rough_search = {}
+    figures = {}
 
     for target in targets:
         freq = frequencies[target]
@@ -463,9 +474,9 @@ def estimate_qubit_frequency_from_chevron_adaptive(
                 frequency=freq,
                 amplitude=amp,
                 omega_rabi_range=omega_rabi_range,
-                shots=shots_rough_search,
-                interval=interval,
-                refine_peak_quadratic=False,
+                n_shots=n_shots_rough_search,
+                shot_interval=shot_interval,
+                refine_peak_quadratic=True,
                 quadratic_window=quadratic_window,
                 plot=plot,
                 save_image=save_image,
@@ -474,8 +485,13 @@ def estimate_qubit_frequency_from_chevron_adaptive(
 
             omega_q_est = analysis["omega_q"]
             omega_rabi_est = analysis["omega_rabi"]
+            peak_prominence_ratio_rough = analysis["peak_prominence_ratio"]
 
-            print(f"[rough result] ω_q={omega_q_est:.6f}, ω_Rabi={omega_rabi_est:.6f}")
+            print(
+                f"[rough result] ω_q={omega_q_est:.6f},"
+                f" ω_Rabi={omega_rabi_est:.6f},"
+                f" peak_prominence_ratio={peak_prominence_ratio_rough:.3f}"
+            )
 
             freq_old = freq
             amp_old = amp
@@ -494,7 +510,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
             results_data_rough_search[target] = {
                 "omega_q": omega_q_est,
                 "omega_rabi": omega_rabi_est,
-                "peak_prominence_ratio": analysis["peak_prominence_ratio"],
+                "peak_prominence_ratio": peak_prominence_ratio_rough,
                 "frequency_used": freq_old,
                 "amplitude_used": amp_old,
                 "scale": scale,
@@ -502,8 +518,8 @@ def estimate_qubit_frequency_from_chevron_adaptive(
                 "transform": analysis["transform"],
             }
 
-            measurement_figures_rough_search[target] = measurement_result.figure
-            analysis_figures_rough_search[target] = analysis_result.figure
+            figures[f"{target}_rough_measurement"] = measurement_result.figure
+            figures[f"{target}_rough_transform"] = analysis_result.figure
 
         print("[final measurement]")
 
@@ -515,8 +531,8 @@ def estimate_qubit_frequency_from_chevron_adaptive(
             frequency=freq,
             amplitude=amp,
             omega_rabi_range=omega_rabi_range,
-            shots=shots,
-            interval=interval,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
             refine_peak_quadratic=True,
             quadratic_window=quadratic_window,
             plot=plot,
@@ -526,13 +542,18 @@ def estimate_qubit_frequency_from_chevron_adaptive(
 
         omega_q_final = analysis["omega_q"]
         omega_rabi_final = analysis["omega_rabi"]
+        peak_prominence_ratio_final = analysis["peak_prominence_ratio"]
 
-        print(f"[FINAL] ω_q={omega_q_final:.6f} GHz, ω_Rabi={omega_rabi_final:.6f} GHz")
+        print(
+            f"[FINAL] ω_q={omega_q_final:.6f} GHz,"
+            f" ω_Rabi={omega_rabi_final:.6f} GHz,"
+            f" peak_prominence_ratio={peak_prominence_ratio_final:.3f}"
+        )
 
         results_data[target] = {
             "omega_q": omega_q_final,
             "omega_rabi": omega_rabi_final,
-            "peak_prominence_ratio": analysis["peak_prominence_ratio"],
+            "peak_prominence_ratio": peak_prominence_ratio_final,
             "frequency_used": freq,
             "amplitude_used": amp,
             "chevron_data": measurement_result.data["chevron_data"],
@@ -541,10 +562,10 @@ def estimate_qubit_frequency_from_chevron_adaptive(
 
         resonant_frequencies[target] = omega_q_final
         omega_rabis[target] = omega_rabi_final
-        peak_prominence_ratios[target] = analysis["peak_prominence_ratio"]
+        peak_prominence_ratios[target] = peak_prominence_ratio_final
         amplitudes_used[target] = amp
-        measurement_figures[target] = measurement_result.figure
-        analysis_figures[target] = analysis_result.figure
+        figures[f"{target}_measurement"] = measurement_result.figure
+        figures[f"{target}_transform"] = analysis_result.figure
 
     return Result(
         data={
@@ -555,12 +576,9 @@ def estimate_qubit_frequency_from_chevron_adaptive(
             "omega_rabis": omega_rabis,
             "amplitudes_used": amplitudes_used,
             "peak_prominence_ratios": peak_prominence_ratios,
-            "measurement_figures": measurement_figures,
-            "analysis_figures": analysis_figures,
             "rough_search_results": results_data_rough_search,
-            "measurement_figures_rough_search": measurement_figures_rough_search,
-            "analysis_figures_rough_search": analysis_figures_rough_search,
         },
+        figures=figures,
     )
 
 
@@ -573,8 +591,8 @@ def _measure_and_analyze_chevron(
     frequency: float,
     amplitude: float,
     omega_rabi_range: ArrayLike,
-    shots: int,
-    interval: float,
+    n_shots: int,
+    shot_interval: float,
     refine_peak_quadratic: bool,
     quadratic_window: int,
     plot: bool,
@@ -595,8 +613,8 @@ def _measure_and_analyze_chevron(
         time_range=time_range,
         frequency=frequency,
         amplitude=amplitude,
-        shots=shots,
-        interval=interval,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
         plot=plot,
         save_image=save_image,
     )
@@ -629,8 +647,8 @@ def measure_chevron_pattern(
     time_range: ArrayLike | None = None,
     frequency: float | None = None,
     amplitude: float | None = None,
-    shots: int | None = None,
-    interval: float | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
     plot: bool | None = None,
     save_image: bool | None = None,
 ) -> Result:
@@ -651,9 +669,9 @@ def measure_chevron_pattern(
         Base frequency (GHz).
     amplitude:
         Drive amplitude.
-    shots:
+    n_shots:
         Number of shots.
-    interval:
+    shot_interval:
         Interval between shots.
     plot:
         If True, display heatmap.
@@ -683,10 +701,10 @@ def measure_chevron_pattern(
         frequency = exp.ctx.targets[target].frequency
     if amplitude is None:
         amplitude = exp.ctx.params.control_amplitude[target]
-    if shots is None:
-        shots = DEFAULT_SHOTS
-    if interval is None:
-        interval = DEFAULT_INTERVAL
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
     if plot is None:
         plot = True
     if save_image is None:
@@ -703,8 +721,8 @@ def measure_chevron_pattern(
                 sequence=lambda t: {target: Rect(duration=t, amplitude=amplitude)},
                 sweep_range=time_range,
                 frequencies={target: frequency + detuning},
-                shots=shots,
-                interval=interval,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
                 plot=False,
             )
 
@@ -858,7 +876,7 @@ def analyze_chevron_matched_transform(
                 "transform": matched-transform map,
             }
         figure:
-            plotly figure
+            Matched-transform heatmap figure.
     """
     data = result.data
 
@@ -902,37 +920,36 @@ def analyze_chevron_matched_transform(
     omega_q_range = np.asarray(omega_q_range, dtype=float)
     omega_rabi_range = np.asarray(omega_rabi_range, dtype=float)
 
-    transform = np.full(
+    transform = np.empty(
         (omega_rabi_range.size, omega_q_range.size),
-        np.nan,
+        dtype=float,
     )
 
-    # Mesh for data axes
-    tau = time_range[:, None]  # shape: (N_tau, 1)
-    wd = omega_d[None, :]  # shape: (1, N_omega)
+    tau = time_range[:, None, None]
+    wd = omega_d[None, :, None]
+    omega_q_mesh = omega_q_range[None, None, :]
+    f_expanded = f[:, :, None]
+
+    detuning2 = (wd - omega_q_mesh) ** 2
 
     for i, omega_rabi in enumerate(omega_rabi_range):
-        for j, omega_q in enumerate(omega_q_range):
-            omega_eff = np.sqrt(omega_rabi**2 + (wd - omega_q) ** 2)  # GHz
+        omega_eff = np.sqrt(omega_rabi**2 + detuning2)
+        phase = 2.0 * np.pi * omega_eff * tau
+        kernel = np.cos(phase)
 
-            # Since GHz = cycle/ns,
-            # phase in radians is 2*pi*GHz*ns.
-            kernel = np.cos(2.0 * np.pi * omega_eff * tau)
+        integrand = f_expanded * kernel
 
-            integrand = f * kernel
+        tmp = np.trapz(
+            integrand,
+            x=time_range,
+            axis=0,
+        )
 
-            # Integrate over time axis first
-            tmp = np.trapz(
-                integrand,
-                x=time_range,
-                axis=0,
-            )
-
-            # Then integrate over frequency axis
-            transform[i, j] = np.trapz(
-                tmp,
-                x=omega_d,
-            )
+        transform[i] = np.trapz(
+            tmp,
+            x=omega_d,
+            axis=0,
+        )
 
     if np.any(np.isfinite(transform)):
         max_abs_idx = np.nanargmax(np.abs(transform))
@@ -967,8 +984,8 @@ def analyze_chevron_matched_transform(
     background = transform[mask]
     finite_background = background[np.isfinite(background)]
     if finite_background.size > 0:
-        second_peak_value = np.nanmax(finite_background)
-        peak_prominence_ratio = peak_value / max(abs(second_peak_value), 1e-12)
+        second_peak_value = np.nanmax(np.abs(finite_background))
+        peak_prominence_ratio = peak_value / max(second_peak_value, 1e-12)
     else:
         second_peak_value = np.nan
         peak_prominence_ratio = np.nan
