@@ -280,7 +280,6 @@ def _calc_fnco_settings(
     channel_label: str,
     drive_frequency: float,
     force_retune: bool = False,
-    print_info: bool = False,
 ) -> tuple[bool, dict[str, float]]:
     """
     Return device settings kwargs when an FNCO retune is needed.
@@ -304,6 +303,9 @@ def _calc_fnco_settings(
     tuple
         (retune_needed, params) where `params` can be passed to backend settings.
     """
+    # Normally FINE_FREQ_TOL_GHZ could be 0.250 (250 MHz) and FNCO_MAX
+    # could be as high as 750 MHz, but we choose smaller values here to
+    # avoid spurious signals.
     FINE_FREQ_TOL_GHZ = 0.150  # 150 MHz
     FNCO_MAX = 600_000_000  # 600 MHz
 
@@ -318,26 +320,10 @@ def _calc_fnco_settings(
     current_fnco = target.channel.fnco_freq
     current_cnco = target.channel.cnco_freq
 
-    if current_lo is not None:
-        current_diff_ghz = abs(
-            drive_frequency - (current_lo - current_cnco - current_fnco) * 1e-9
-        )
-        if print_info:
-            print(
-                f"current lo: {current_lo * 1e-9} GHz, current cnco: {current_cnco * 1e-9} GHz, fnco: {current_fnco * 1e-9} GHz"
-            )
-
-    else:
-        current_diff_ghz = abs(drive_frequency - (current_cnco + current_fnco) * 1e-9)
-        if print_info:
-            print(
-                f"current cnco: {current_cnco * 1e-9} GHz, fnco: {current_fnco * 1e-9} GHz"
-            )
-
+    current_diff_ghz = abs(drive_frequency - target.fine_frequency)
     current_fnco_ok = abs(current_fnco) <= FNCO_MAX
+
     if not force_retune and current_diff_ghz <= FINE_FREQ_TOL_GHZ and current_fnco_ok:
-        if print_info:
-            print("No FNCO retune needed")
         retune_needed = False
         params = {
             "label": channel_label,
@@ -354,30 +340,24 @@ def _calc_fnco_settings(
         cnco=current_cnco,
     )
 
-    new_fnco = int(np.min((new_fnco, FNCO_MAX)))
-    new_fnco = int(np.max((-FNCO_MAX, new_fnco)))
-
-    # Residual fine-frequency error after applying the rounded FNCO
-    if current_lo is not None:
-        diff_ghz = abs(drive_frequency - (current_lo - current_cnco - new_fnco) * 1e-9)
-    else:
-        diff_ghz = abs(drive_frequency - (current_cnco + new_fnco) * 1e-9)
-    if diff_ghz > FINE_FREQ_TOL_GHZ:
+    # Compare the desired FNCO magnitude with the FNCO limit (upper/lower bound)
+    diff = abs(new_fnco) - FNCO_MAX
+    print(diff)
+    if diff > FINE_FREQ_TOL_GHZ * 1e9:
+        # The required FNCO is outside the allowable range and cannot be compensated by the AWG
         raise RuntimeError(
-            f"{channel_label}: No feasible FNCO within tolerance: residual delta {diff_ghz:.6f} GHz > {FINE_FREQ_TOL_GHZ} GHz"
+            f"{channel_label}: Calculated FNCO {new_fnco} Hz is below min {-FNCO_MAX} Hz by {diff} Hz, which exceeds tolerance {FINE_FREQ_TOL_GHZ * 1e9:.2f} Hz"
         )
-
-    if print_info:
-        print(
-            f"new fnco: {new_fnco * 1e-9} GHz, projected fine frequency delta: {diff_ghz:.6f} GHz"
-        )
+    else:
+        # The difference can be compensated by the AWG, so clip FNCO to the allowable range.
+        new_fnco = np.clip(new_fnco, -FNCO_MAX, FNCO_MAX)
 
     retune_needed = True
     params = {
         "label": channel_label,
         "lo_freq": current_lo,
         "cnco_freq": current_cnco,
-        "fnco_freq": new_fnco,
+        "fnco_freq": int(new_fnco),
     }
     return retune_needed, params
 
