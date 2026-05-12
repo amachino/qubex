@@ -366,13 +366,10 @@ def _calc_fnco_settings(
     return retune_needed, params
 
 
-def ef_rabi_experiment(
+def _ef_rabi_experiment(
     ex: qx.Experiment,
     target_qubit: str,
-    control_qubit: str,
-    cr_amplitude: float,
-    cr_duration: int,
-    cr_ramptime: float,
+    cr_x180: PulseSchedule,
     time_range: ArrayLike,
     ef_amplitude: float | None = None,
     ef_ramptime: float | None = None,
@@ -389,10 +386,10 @@ def ef_rabi_experiment(
     ----------
     ex
         Experiment context with measurement and pulse configuration.
-    target_qubit, control_qubit
-        Qubit labels for the experiment.
-    cr_amplitude, cr_duration, cr_ramptime
-        Parameters for the CR pi pulse used to prepare the `e` state.
+    target_qubit
+        Qubit label for the experiment.
+    cr_x180
+        CR X180 pulse used to prepare the `e` state before EF drive.
     time_range
         Durations swept for the EF drive.
     ef_amplitude, ef_ramptime
@@ -435,24 +432,10 @@ def ef_rabi_experiment(
     effective_time_range = time_range + ef_ramptime
     control_sampling_period = ex.measurement_service.ctx.measurement.sampling_period
 
-    def cr_pi_pulse() -> qx.PulseSchedule:
-        with qx.PulseSchedule() as ps:
-            ps.add(
-                control_qubit,
-                FlatTop(
-                    duration=cr_duration,
-                    amplitude=cr_amplitude,
-                    tau=cr_ramptime,
-                    type="RaisedCosine",
-                ),
-            )
-            ps.add(target_qubit, Blank(duration=cr_duration))
-        return ps
-
     # ef rabi sequence with rect pulses of duration T
     def ef_rabi_sequence(T: int) -> PulseSchedule:
         with PulseSchedule() as ps:
-            ps.call(cr_pi_pulse())
+            ps.call(cr_x180)
             ps.barrier()
             # apply the ef drive to induce the ef Rabi oscillation
             ps.add(
