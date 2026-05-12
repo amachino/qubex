@@ -98,7 +98,7 @@ def calibrate_cr_pi_pulse(
     if n_rotations is None:
         n_rotations = 1
     if n_iterations is None:
-        n_iterations = 2
+        n_iterations = 1
     if r2_threshold is None:
         r2_threshold = 0.5
     if ratio is None:
@@ -106,7 +106,7 @@ def calibrate_cr_pi_pulse(
     if ramptime is None:
         ramptime = PI_RAMPTIME
     if amplitude_range is None:
-        amplitude_range = np.linspace(0.9, 1, n_points)
+        amplitude_range = np.linspace(0.5, 1, n_points)
     if plot is None:
         plot = True
     if shots is None:
@@ -117,10 +117,19 @@ def calibrate_cr_pi_pulse(
     if target_qubit not in ex.ctx.calib_note.rabi_params:
         raise ValueError(f"Rabi parameters are not stored for {target_qubit}.")
 
+    cr_label = control_qubit + "-" + target_qubit
+    control_labels = [
+        target.label
+        for target in ex.ctx.experiment_system.targets
+        if target.is_related_to_qubits(ex.qubit_labels) and target.is_cr
+    ]
+    if cr_label not in control_labels:
+        raise ValueError(f"CR target label `{cr_label}` is not found in the system.")
+
     def seq(duration: float, amplitude: float = 1.0) -> qx.PulseSchedule:
         with qx.PulseSchedule() as ps:
             ps.add(
-                control_qubit,
+                cr_label,
                 FlatTop(
                     duration=duration,
                     amplitude=amplitude,
@@ -233,7 +242,7 @@ def calibrate_cr_pi_pulse(
             r2=r2,
         )
 
-    def _update_amplitude_range(center: float, ratio: float = 0.2) -> Collection[float]:
+    def _update_amplitude_range(center: float, ratio: float = 0.4) -> Collection[float]:
         if ratio <= 0 or ratio >= 1:
             raise ValueError("Ratio must be between 0 and 1.")
         new_range = np.linspace(
@@ -268,7 +277,7 @@ def calibrate_cr_pi_pulse(
         duration=opt_duration_fixed, amplitude=data[target_qubit].calib_value
     )
 
-    return ExperimentResult(data=data), opt_duration_fixed, ps_result
+    return ExperimentResult(data=data), ps_result
 
 
 def _calc_fnco_settings(
