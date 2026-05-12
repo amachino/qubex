@@ -33,10 +33,8 @@ from qubex.system import MixingUtil
 # Public API exported from this module (contrib-style utilities)
 __all__ = [
     "calibrate_cr_pi_pulse",
-    "ef_chevron_pattern",
-    "ef_rabi_experiment",
+    "obtain_anharmonicity_with_cr",
 ]
-
 
 def calibrate_cr_pi_pulse(
     ex: qx.Experiment,
