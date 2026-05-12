@@ -214,6 +214,62 @@ def _select_detuned_rabi_fit(
     return selected_fit, selected_rates, selected_threshold
 
 
+def _fit_chevron_detuned_rabi(
+    *,
+    target: str,
+    control_frequencies: NDArray,
+    rabi_rates: NDArray,
+    rabi_fit_r2: NDArray,
+    plot: bool,
+    pruned_fit: bool,
+) -> FitResult:
+    """
+    Fit chevron detuned Rabi with the configured pruning policy.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    control_frequencies : NDArray
+        Control frequencies in GHz.
+    rabi_rates : NDArray
+        Estimated Rabi rates in GHz.
+    rabi_fit_r2 : NDArray
+        R² values from per-frequency Rabi fits.
+    plot : bool
+        Whether to plot the detuned Rabi fit.
+    pruned_fit : bool
+        Whether to prune low-quality Rabi-rate estimates before fitting.
+
+    Returns
+    -------
+    FitResult
+        Result for the selected detuned Rabi fit.
+    """
+    if pruned_fit:
+        fit_result, _selected_rates, selected_threshold = _select_detuned_rabi_fit(
+            target=target,
+            control_frequencies=control_frequencies,
+            rabi_rates=rabi_rates,
+            rabi_fit_r2=rabi_fit_r2,
+            plot=plot,
+        )
+        if selected_threshold is not None:
+            logger.info(
+                "Selected chevron Rabi-fit R² threshold %.1f for %s.",
+                selected_threshold,
+                target,
+            )
+        return fit_result
+
+    return fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=rabi_rates,
+        plot=plot,
+    )
+
+
 def _is_reliable_detuned_rabi_fit(fit_result: Any) -> bool:
     """Return whether a detuned Rabi fit is good enough for chevron calibration."""
     if getattr(fit_result, "status", FitStatus.SUCCESS) is FitStatus.ERROR:
@@ -794,11 +850,12 @@ class CharacterizationService:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
                 rabi_fit_r2[target] = np.array(rabi_fit_r2_buffer[target])
                 chevron_data[target] = np.array(chevron_data_buffer[target]).T
+                control_frequencies = detuning_range + frequencies[target]
 
                 fig = viz.make_figure()
                 fig.add_trace(
                     go.Heatmap(
-                        x=detuning_range + frequencies[target],
+                        x=control_frequencies,
                         y=time_range,
                         z=chevron_data[target],
                         colorscale="Viridis",
@@ -832,30 +889,14 @@ class CharacterizationService:
                 if plot:
                     fig.show()
 
-                if pruned_fit:
-                    fit_result, selected_rabi_rates, selected_rabi_r2_threshold = (
-                        _select_detuned_rabi_fit(
-                            target=target,
-                            control_frequencies=detuning_range + frequencies[target],
-                            rabi_rates=rabi_rates[target],
-                            rabi_fit_r2=rabi_fit_r2[target],
-                            plot=plot,
-                        )
-                    )
-                    _ = selected_rabi_rates
-                    if selected_rabi_r2_threshold is not None:
-                        logger.info(
-                            "Selected chevron Rabi-fit R² threshold %.1f for %s.",
-                            selected_rabi_r2_threshold,
-                            target,
-                        )
-                else:
-                    fit_result = fitting.fit_detuned_rabi(
-                        target=target,
-                        control_frequencies=detuning_range + frequencies[target],
-                        rabi_frequencies=rabi_rates[target],
-                        plot=plot,
-                    )
+                fit_result = _fit_chevron_detuned_rabi(
+                    target=target,
+                    control_frequencies=control_frequencies,
+                    rabi_rates=rabi_rates[target],
+                    rabi_fit_r2=rabi_fit_r2[target],
+                    plot=plot,
+                    pruned_fit=pruned_fit,
+                )
                 if not _is_reliable_detuned_rabi_fit(fit_result):
                     logger.warning(
                         "Chevron resonance estimate for %s is based on an "
