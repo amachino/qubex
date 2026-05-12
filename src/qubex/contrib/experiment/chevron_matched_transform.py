@@ -317,7 +317,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         Default: DEFAULT_SHOTS // 4
     n_shots_rough_search : int, optional
         Number of shots for rough-search measurements.
-        Default: shots
+        Default: n_shots
     shot_interval : float, optional
         Interval between shots.
     quadratic_window : int, optional
