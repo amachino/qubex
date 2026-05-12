@@ -245,15 +245,11 @@ def calibrate_cr_pi_pulse(
 
     data: dict[str, AmplCalibData] = {}
     _amplitude_range = amplitude_range
-    # print(f"Calibrating CR pi pulse for {target_qubit}...")
 
     opt_duration = calibrate_duration(duration_range=duration_range)
     opt_duration_fixed = int(np.ceil(opt_duration / 2.0) * 2)
-    # print(f"Optimal duration (fit): {opt_duration}")
-    # print(f"Duration used for amplitude sweep (rounded up to even): {opt_duration_fixed}")
 
     for _ in range(n_iterations):
-        # print(f"Amplitude iteration {i+1}/{n_iterations}")
         data[target_qubit] = calibrate_amplitude(
             amplitude_range=_amplitude_range,
             fixed_duration=opt_duration_fixed,
@@ -342,7 +338,6 @@ def _calc_fnco_settings(
 
     # Compare the desired FNCO magnitude with the FNCO limit (upper/lower bound)
     diff = abs(new_fnco) - FNCO_MAX
-    print(diff)
     if diff > FINE_FREQ_TOL_GHZ * 1e9:
         # The required FNCO is outside the allowable range and cannot be compensated by the AWG
         raise RuntimeError(
@@ -411,7 +406,6 @@ def ef_rabi_experiment(
         is_damped = True
     if ef_amplitude is None:
         ef_amplitude = ex.params.get_ef_control_amplitude(target_qubit)
-        # print(f"Using default ef_amplitude {ef_amplitude} for {target_qubit}")
     if ef_ramptime is None:
         ef_ramptime = 0.0
 
@@ -480,7 +474,6 @@ def ef_rabi_experiment(
     ef_label = ex.measurement_service.ctx.resolve_ef_label(target_qubit)
     ge_rabi_param = ex.measurement_service.pulse.ge_rabi_params[target_qubit]
     iq_e = ge_rabi_param.endpoints[1]
-    # print(f"Fitting EF Rabi for {target_qubit} with iq_e={iq_e}, is_damped={is_damped}")
     fit_result = fitting.fit_rabi(
         target=target_qubit,
         times=effective_time_range,
@@ -609,14 +602,10 @@ def ef_chevron_pattern(
             rabi_datum = rabi_result.data.get(ef_label, None)
             if rabi_params is None:
                 raise ValueError("Rabi parameters are not stored.")
-                # print("Rabi parameters are not stored.")
-                # rabi_rates.append(None)
             else:
                 rabi_rates.append(rabi_params.frequency)
             if rabi_datum is None:
                 raise ValueError("Rabi data are not stored.")
-                # print("Rabi data are not stored.")
-                # rabi_data.append(None)
             else:
                 rabi_data.append(rabi_datum)
     detuning_range = np.asarray(detuning_range, dtype=np.float64)
