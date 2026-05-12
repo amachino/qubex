@@ -619,7 +619,7 @@ def ef_chevron_pattern(
                 # rabi_data.append(None)
             else:
                 rabi_data.append(rabi_datum)
-
+    detuning_range = np.asarray(detuning_range, dtype=np.float64)
     frequency_range = detuning_range + ef_frequency
 
     data = {
