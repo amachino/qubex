@@ -30,7 +30,6 @@ Frequency unit is assumed to be GHz unless otherwise noted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import plotly.graph_objects as go
@@ -229,7 +228,7 @@ def ckp_measurement_v2(
     resonator_detuning_range: ArrayLike | None = None,
     resonator_drive_amplitude: float | None = None,
     resonator_settle_duration: float | None = None,
-    shots: int | None = None,
+    n_shots: int | None = None,
     plot: bool | None = None,
     verbose: bool | None = None,
     save_image: bool | None = None,
@@ -303,7 +302,7 @@ def ckp_measurement_v2(
         Waiting time used to let the resonator response approach steady
         state before and after the qubit-drive interval (ns).
 
-    shots : int, optional
+    n_shots : int, optional
         Number of measurement shots used to acquire a single sweep point.
 
         If None, uses DEFAULT_SHOTS.
@@ -351,9 +350,8 @@ def ckp_measurement_v2(
         - ``qubit_resonance_frequencies``
         - ``qubit_resonance_frequency_errors``
         - ``qubit_initial_state``
-        - ``data`` (2D CKP map)
+        - ``heatmap_data``
         - ``fit_results``
-        - ``fig``
 
     Notes
     -----
@@ -362,8 +360,8 @@ def ckp_measurement_v2(
     """
     if qubit_initial_state not in {"0", "1"}:
         qubit_initial_state = "0"
-    if shots is None:
-        shots = DEFAULT_SHOTS
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
     if plot is None:
         plot = True
     if verbose is None:
@@ -437,7 +435,7 @@ def ckp_measurement_v2(
                     resonator_settle_duration=resonator_settle_duration,
                 ),
                 reset_awg_and_capunits=False,
-                n_shots=shots,
+                n_shots=n_shots,
             )
             data = result.data[target][-1]
             result1d.append(data.kerneled)
@@ -622,10 +620,10 @@ def ckp_measurement_v2(
             "early_stop_mode": enable_early_stop,
             "f0_lower_frequency_limit": f0_lower_frequency_limit,
             "early_stopped": early_stopped,
-            "data": data,
+            "heatmap_data": data,
             "fit_results": fit_results,
-            "fig": fig,
-        }
+        },
+        figure=fig,
     )
 
 
@@ -640,11 +638,9 @@ def filtered_ckp_experiment(
     resonator_detuning_range: ArrayLike | None = None,
     resonator_drive_amplitude: float | None = None,
     resonator_settle_duration: float | None = None,
-    shots: int | None = None,
+    n_shots: int | None = None,
     plot: bool | None = None,
-    show_animation: bool | None = None,
     save_image: bool | None = None,
-    save_animation: bool | None = None,
     enable_rough_search: bool | None = None,
     target_min_qubit_detuning: float | None = None,
     max_rough_search_reductions: int | None = None,
@@ -678,10 +674,7 @@ def filtered_ckp_experiment(
     branches are evaluated.
 
     After fitting, the routine estimates the optimal readout
-    frequency by maximizing |beta_e-beta_g| both with:
-
-    - fixed drive amplitude
-    - photon-number-limited drive amplitude
+    frequency by maximizing |beta_e-beta_g| with photon-number-limited drive amplitude.
 
     Parameters
     ----------
@@ -724,7 +717,7 @@ def filtered_ckp_experiment(
         Waiting time used to let the resonator response approach steady
         state before and after the qubit-drive interval (ns).
 
-    shots : int, optional
+    n_shots : int, optional
         Number of measurement shots used for one CKP sweep point.
 
         If None, uses DEFAULT_SHOTS.
@@ -732,14 +725,8 @@ def filtered_ckp_experiment(
     plot : bool, optional
         If True, display the fitted CKP traces and estimated parameters.
 
-    show_animation : bool, optional
-        If True, show the generated animation.
-
     save_image : bool, optional
         If True, save the generated fit figure.
-
-    save_animation : bool, optional
-        If True, save the generated animation.
 
     enable_rough_search : bool, optional
         If True, perform a coarse pre-scan to automatically adjust
@@ -763,26 +750,44 @@ def filtered_ckp_experiment(
     -------
     Result
         Result object containing raw CKP measurements, fitted parameters,
-        derived quantities, and intermediate fitting information.
+        derived quantities, readout optimization results, and generated figures.
 
         Expected fields in ``data`` include:
 
-        Measurement data
-        ----------------
+        Experiment configuration
+        ------------------------
+        - ``target``
+        - ``resonator_detuning_range``
+        - ``resonator_drive_amplitude``
+
+        Rough-search results
+        --------------------
+        - ``rough_search_results``
+        - ``rough_search_reduce_trials``
+        - ``rough_search_increase_trials``
+
+        Raw CKP measurement results
+        ---------------------------
         - ``result_0``
         - ``result_1``
         - ``result_0_no_drive``
         - ``result_1_no_drive``
 
-        Processed traces
-        ----------------
+        Processed CKP traces
+        --------------------
         - ``resonator_frequencies_g``
         - ``resonator_frequencies_e``
         - ``delta_g``
         - ``delta_e``
+        - ``weights_g``
+        - ``weights_e``
 
-        Estimated parameters
-        --------------------
+        Initial parameter estimates
+        ---------------------------
+        - ``initial_guess``
+
+        Estimated readout parameters
+        ----------------------------
         - ``omega_r_g``
         - ``omega_r_e``
         - ``omega_p``
@@ -792,9 +797,10 @@ def filtered_ckp_experiment(
         - ``C``
         - ``A2``  ( = |A|² )
         - ``A``
+        - ``purcell_readout_detuning``
 
-        Parameter uncertainties
-        -----------------------
+        Parameter uncertainties and fit statistics
+        ------------------------------------------
         - ``omega_r_g_error``
         - ``omega_r_e_error``
         - ``omega_p_error``
@@ -806,6 +812,7 @@ def filtered_ckp_experiment(
         - ``reduced_chi2``
         - ``r2``
         - ``covariance``
+        - ``fit_result``
 
         Photon-number metrics
         ---------------------
@@ -815,31 +822,23 @@ def filtered_ckp_experiment(
         - ``x_ne_max``
         - ``n_crit``
 
-        Fit diagnostics
-        ---------------
-        - ``initial_guess``
-        - ``fit_result``
-
-        Rough search results
-        --------------------
-        - ``resonator_drive_amplitude``
-        - ``rough_search_results``
-        - ``rough_search_reduce_trials``
-        - ``rough_search_increase_trials``
-
-        Optimized readout frequency
-        ---------------
-        - ``readout_frequency_opt``
-        - ``readout_frequency_opt_limited``
+        Readout optimization results
+        ----------------------------
+        - ``optimal_readout_frequency``
+        - ``n_limited_A2_at_optimal_frequency``
+        - ``n_limited_readout_amplitude``
         - ``readout_optimization_result``
 
         Figures
-        ---------------
-        - ``fig_ckp_fit``
-        - ``fig_ckp_heatmap_g``
-        - ``fig_ckp_heatmap_e``
-        - ``fig_readout_beta_fixed_amp``
-        - ``fig_readout_beta_photon_limited``
+        -------
+        The primary CKP fit figure is stored in ``figure``.
+
+        Additional figures are stored in ``figures``:
+
+        - ``ckp_fit``
+        - ``ckp_heatmap_g``
+        - ``ckp_heatmap_e``
+        - ``readout_optimization``
 
     Notes
     -----
@@ -855,6 +854,9 @@ def filtered_ckp_experiment(
 
     When rough search is enabled, a reduced sweep using every fourth
     resonator-frequency point and one-fourth shots is used.
+
+    Approximate critical photon number estimated from
+    n_crit ≈ Δ_qr / (4χ).
     """
     if enable_rough_search is None:
         enable_rough_search = True
@@ -869,16 +871,12 @@ def filtered_ckp_experiment(
         max_rough_search_reductions = 4
     if max_rough_search_increases is None:
         max_rough_search_increases = 4
-    if shots is None:
-        shots = DEFAULT_SHOTS
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
     if plot is None:
         plot = True
-    if show_animation is None:
-        show_animation = False
     if save_image is None:
         save_image = True
-    if save_animation is None:
-        save_animation = False
     if resonator_detuning_range is None:
         u = np.linspace(-1, 1, 50)
         beta = 0.95
@@ -899,7 +897,7 @@ def filtered_ckp_experiment(
         resonator_detuning_range_rough_search = resonator_detuning_range[::4]
         if len(resonator_detuning_range_rough_search) == 0:
             resonator_detuning_range_rough_search = resonator_detuning_range
-        shots_rough_search = max(1, shots // 4)
+        n_shots_rough_search = max(1, n_shots // 4)
 
         while True:
             result_0_rough_search = ckp_measurement_v2(
@@ -913,7 +911,7 @@ def filtered_ckp_experiment(
                 resonator_detuning_range=resonator_detuning_range_rough_search,
                 resonator_drive_amplitude=resonator_drive_amplitude,
                 resonator_settle_duration=resonator_settle_duration,
-                shots=shots_rough_search,
+                n_shots=n_shots_rough_search,
                 plot=False,
                 verbose=verbose,
                 save_image=False,
@@ -986,7 +984,7 @@ def filtered_ckp_experiment(
             print(f"    amplitude      : {resonator_drive_amplitude:.6g}")
             break
 
-    shots_no_drive = 4 * shots
+    n_shots_no_drive = 4 * n_shots
     plot_no_drive = False
     save_image_no_drive = False
 
@@ -1001,7 +999,7 @@ def filtered_ckp_experiment(
         resonator_detuning_range=np.asarray([0.0]),
         resonator_drive_amplitude=0.0,
         resonator_settle_duration=resonator_settle_duration,
-        shots=shots_no_drive,
+        n_shots=n_shots_no_drive,
         plot=plot_no_drive,
         verbose=verbose,
         save_image=save_image_no_drive,
@@ -1017,7 +1015,7 @@ def filtered_ckp_experiment(
         resonator_detuning_range=np.asarray([0.0]),
         resonator_drive_amplitude=0.0,
         resonator_settle_duration=resonator_settle_duration,
-        shots=shots_no_drive,
+        n_shots=n_shots_no_drive,
         plot=plot_no_drive,
         verbose=verbose,
         save_image=save_image_no_drive,
@@ -1046,7 +1044,7 @@ def filtered_ckp_experiment(
         resonator_detuning_range=resonator_detuning_range,
         resonator_drive_amplitude=resonator_drive_amplitude,
         resonator_settle_duration=resonator_settle_duration,
-        shots=shots,
+        n_shots=n_shots,
         plot=plot,
         verbose=verbose,
         save_image=save_image,
@@ -1062,7 +1060,7 @@ def filtered_ckp_experiment(
         resonator_detuning_range=resonator_detuning_range,
         resonator_drive_amplitude=resonator_drive_amplitude,
         resonator_settle_duration=resonator_settle_duration,
-        shots=shots,
+        n_shots=n_shots,
         plot=plot,
         verbose=verbose,
         save_image=save_image,
@@ -1124,6 +1122,7 @@ def filtered_ckp_experiment(
     C = float(fit.C)
     chi = float(fit.chi)
     A2 = float(fit.A2)
+    purcell_readout_detuning = omega_p - 0.5 * (omega_r_g + omega_r_e)
 
     x_dense_min = min(np.min(x_g), np.min(x_e), omega_r_g, omega_r_e, omega_p) - 0.01
     x_dense_max = max(np.max(x_g), np.max(x_e), omega_r_g, omega_r_e, omega_p) + 0.01
@@ -1265,28 +1264,61 @@ def filtered_ckp_experiment(
         omega_p=omega_p,
         J=J,
         kappa=kappa,
-        A=fit.A,
         n_crit=n_crit,
         plot=plot,
-        show_animation=show_animation,
         save_image=save_image,
-        save_animation=save_animation,
         name=f"readout_opt_{target}",
     )
+
+    optimal_readout_frequency = readout_opt_result.data["optimal_readout_frequency"]
+    n_limited_A2_at_optimal_frequency = readout_opt_result.data[
+        "n_limited_A2_at_optimal_frequency"
+    ]
+    if A2 <= 0 or not np.isfinite(A2):
+        n_limited_readout_amplitude = np.nan
+    else:
+        n_limited_readout_amplitude = resonator_drive_amplitude * np.sqrt(
+            n_limited_A2_at_optimal_frequency / A2
+        )
+
+    figures: dict[str, go.Figure] = {}
+    if fig is not None:
+        figures["ckp_fit"] = fig
+    if result_0.figure is not None:
+        figures["ckp_heatmap_g"] = result_0.figure
+    if result_1.figure is not None:
+        figures["ckp_heatmap_e"] = result_1.figure
+    if readout_opt_result.figure is not None:
+        figures["readout_optimization"] = readout_opt_result.figure
 
     return Result(
         data={
             "target": target,
             "resonator_detuning_range": resonator_detuning_range,
             "resonator_drive_amplitude": resonator_drive_amplitude,
+            "rough_search_results": rough_search_results,
+            "rough_search_reduce_trials": n_reduces,
+            "rough_search_increase_trials": n_increases,
+            "result_0": result_0,
+            "result_1": result_1,
+            "result_0_no_drive": result_0_no_drive,
+            "result_1_no_drive": result_1_no_drive,
             "resonator_frequencies_g": x_g,
             "resonator_frequencies_e": x_e,
             "delta_g": delta_g,
             "delta_e": delta_e,
-            "offset_g": offset_g,
-            "offset_e": offset_e,
             "weights_g": weights_g,
             "weights_e": weights_e,
+            "initial_guess": {
+                "C0": C0,
+                "omega_r_g0": omega_r_g0,
+                "omega_r_e0": omega_r_e0,
+                "omega_p0": omega_p0,
+                "J0": J0,
+                "kappa0": kappa0,
+                "init_g": init_g,
+                "init_e": init_e,
+            },
             "omega_r_g": omega_r_g,
             "omega_r_e": omega_r_e,
             "omega_p": omega_p,
@@ -1296,6 +1328,7 @@ def filtered_ckp_experiment(
             "C": C,
             "A2": A2,
             "A": fit.A,
+            "purcell_readout_detuning": purcell_readout_detuning,
             "omega_r_g_error": fit.omega_r_g_error,
             "omega_r_e_error": fit.omega_r_e_error,
             "omega_p_error": fit.omega_p_error,
@@ -1307,42 +1340,19 @@ def filtered_ckp_experiment(
             "reduced_chi2": fit.reduced_chi2,
             "r2": fit.r2,
             "covariance": fit.covariance,
+            "fit_result": fit,
             "ng_max": ng_max,
             "ne_max": ne_max,
             "x_ng_max": x_ng_max,
             "x_ne_max": x_ne_max,
             "n_crit": n_crit,
-            "initial_guess": {
-                "C0": C0,
-                "omega_r_g0": omega_r_g0,
-                "omega_r_e0": omega_r_e0,
-                "omega_p0": omega_p0,
-                "J0": J0,
-                "kappa0": kappa0,
-                "init_g": init_g,
-                "init_e": init_e,
-            },
-            "fit_result": fit,
-            "result_0": result_0,
-            "result_1": result_1,
-            "result_0_no_drive": result_0_no_drive,
-            "result_1_no_drive": result_1_no_drive,
-            "rough_search_results": rough_search_results,
-            "rough_search_reduce_trials": n_reduces,
-            "rough_search_increase_trials": n_increases,
-            "readout_frequency_opt": readout_opt_result.data["readout_frequency_opt"],
-            "readout_frequency_opt_limited": readout_opt_result.data[
-                "readout_frequency_opt_limited"
-            ],
+            "optimal_readout_frequency": optimal_readout_frequency,
+            "n_limited_A2_at_optimal_frequency": n_limited_A2_at_optimal_frequency,
+            "n_limited_readout_amplitude": n_limited_readout_amplitude,
             "readout_optimization_result": readout_opt_result,
-            "fig_ckp_fit": fig,
-            "fig_ckp_heatmap_g": result_0.data.get("fig"),
-            "fig_ckp_heatmap_e": result_1.data.get("fig"),
-            "fig_readout_beta_fixed_amp": readout_opt_result.data.get("fig_combined"),
-            "fig_readout_beta_photon_limited": readout_opt_result.data.get(
-                "fig_limited"
-            ),
-        }
+        },
+        figure=fig,
+        figures=figures,
     )
 
 
@@ -1846,39 +1856,40 @@ def estimate_optimal_readout_frequency_from_ckp(
     omega_p: float,
     J: float,
     kappa: float,
-    A: complex | float,
     n_crit: float,
     n_points: int = 4000,
     plot: bool = True,
-    show_animation: bool = False,
     save_image: bool = True,
-    save_animation: bool = False,
-    output_dir: str | Path | None = None,
     name: str = "filtered_ckp_readout_frequency",
 ) -> Result:
     """
     Estimate the optimal readout frequency from fitted filtered-CKP parameters.
 
-    The optimal frequency is defined as the frequency that maximizes
-    |beta_e - beta_g|.
+    The optimal readout frequency is defined as the frequency that maximizes
 
-    This routine evaluates:
+        |beta_e - beta_g|
 
-    1. Unconstrained optimization using a fixed drive amplitude A
-    2. Photon-limited optimization where A is adjusted at each frequency so that
+    under the constraint
 
         max(|alpha_g|^2, |alpha_e|^2) = 0.1 * n_crit
 
-    Plots include:
+    at each drive frequency.
 
-    - |beta_e-beta_g| versus drive frequency
-    - Phase of beta_g / beta_e measured from the beta-circle center
-    - Optional beta IQ-plane animation
+    For every frequency point, the drive amplitude A is automatically
+    rescaled so that the larger intracavity photon number of the
+    ground-state and excited-state branches reaches the allowed maximum
+    photon number.
 
     Parameters
     ----------
     frequency_range : ArrayLike
-        Two-element range [f_min, f_max] or an explicit frequency array.
+        Either:
+
+        - a two-element range [f_min, f_max], or
+        - an explicit frequency array.
+
+        Frequencies are assumed to use the same unit as the fitted
+        resonator parameters (typically GHz).
 
     omega_r_g : float
         Readout-resonator frequency for the qubit ground state.
@@ -1887,50 +1898,79 @@ def estimate_optimal_readout_frequency_from_ckp(
         Readout-resonator frequency for the qubit excited state.
 
     omega_p : float
-        Purcell-filter frequency.
+        Purcell-filter resonance frequency.
 
     J : float
-        Coupling between readout resonator and Purcell filter.
+        Coupling strength between the readout resonator and
+        the Purcell filter.
 
     kappa : float
         Purcell-filter linewidth.
 
-    A : complex or float, optional
-        Input drive amplitude.
-
     n_crit : float
-        Critical resonator photon number.
+        Critical photon number of the readout resonator.
 
     n_points : int, optional
-        Number of frequency points used when frequency_range is given as
-        [f_min, f_max].
+        Number of frequency points used when frequency_range is specified
+        as [f_min, f_max].
 
     plot : bool, optional
-        If True, show optimization figures including separation,
-        phase, and photon-limited separation plots.
-
-    show_animation : bool, optional
-        If True, display an animation of beta_g and beta_e
-        trajectories in the IQ plane.
+        If True, display the readout optimization figure.
 
     save_image : bool, optional
-        If True, save generated optimization figures.
-
-    save_animation : bool, optional
-        If True, save an HTML animation of beta_g and beta_e trajectories.
-
-    output_dir : str or Path, optional
-        Directory used for saving figures and animation.
+        If True, save the generated optimization figure.
 
     name : str, optional
-        Base name for saved files.
+        File name used when saving the figure.
 
     Returns
     -------
     Result
-        Result object containing unconstrained and photon-limited
-        optimal readout frequencies, beta trajectories, phase data,
-        and generated figures.
+        Result object containing:
+
+        - ``optimal_readout_frequency``
+            Frequency maximizing |beta_e - beta_g|.
+
+        - ``max_beta_separation``
+            Maximum value of |beta_e - beta_g|.
+
+        - ``n_limited_A2_at_optimal_frequency``
+            Allowed drive power |A|² at the optimal frequency under the
+            photon-number constraint.
+
+        - ``frequency_range``
+            Frequency array used for optimization.
+
+        - ``beta_g``, ``beta_e``
+            Output-field responses for the ground-state and
+            excited-state branches.
+
+        - ``A_allowed``
+            Frequency-dependent allowed drive amplitude satisfying
+
+                max(|alpha_g|², |alpha_e|²) = 0.1 * n_crit
+
+        - ``beta_separation``
+            |beta_e - beta_g| evaluated over the frequency range.
+
+        - ``n_max_allowed``
+            Maximum allowed intracavity photon number
+            (= 0.1 * n_crit).
+
+    Notes
+    -----
+    The allowed drive amplitude is computed from
+
+        A_allowed(f)
+        =
+        sqrt(
+            n_max_allowed
+            /
+            max(|alpha_g(f)|², |alpha_e(f)|²)
+        )
+
+    so that the larger photon population between the two qubit states
+    is limited to 0.1 * n_crit at every frequency point.
     """
     frequency_range = np.asarray(frequency_range, dtype=float).ravel()
 
@@ -1943,287 +1983,6 @@ def estimate_optimal_readout_frequency_from_ckp(
 
     if not np.isfinite(n_crit) or n_crit <= 0:
         raise ValueError("n_crit must be a positive finite value.")
-
-    if output_dir is None:
-        output_dir = Path(".")
-    else:
-        output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    beta_g = filtered_ckp_beta(
-        x,
-        omega_r=omega_r_g,
-        omega_p=omega_p,
-        J=J,
-        kappa=kappa,
-        A=A,
-    )
-    beta_e = filtered_ckp_beta(
-        x,
-        omega_r=omega_r_e,
-        omega_p=omega_p,
-        J=J,
-        kappa=kappa,
-        A=A,
-    )
-
-    beta_diff = beta_e - beta_g
-    separation = np.abs(beta_diff)
-
-    idx_opt = int(np.argmax(separation))
-    readout_frequency_opt = float(x[idx_opt])
-    max_separation = float(separation[idx_opt])
-
-    beta_center = 1j * np.sqrt(kappa) * A / kappa
-
-    phase_g = np.unwrap(np.angle(beta_g - beta_center))
-    phase_e = np.unwrap(np.angle(beta_e - beta_center))
-
-    fig_beta = viz.make_figure()
-
-    fig_beta.add_scatter(
-        x=x,
-        y=separation,
-        mode="lines",
-        name="|beta_e - beta_g|",
-        yaxis="y1",
-    )
-
-    fig_beta.add_scatter(
-        x=[readout_frequency_opt],
-        y=[max_separation],
-        mode="markers",
-        name="optimal readout frequency",
-        marker=dict(size=9),
-        yaxis="y1",
-    )
-
-    fig_beta.add_scatter(
-        x=x,
-        y=phase_g,
-        mode="lines",
-        name="arg(beta_g - center)",
-        yaxis="y2",
-    )
-
-    fig_beta.add_scatter(
-        x=x,
-        y=phase_e,
-        mode="lines",
-        name="arg(beta_e - center)",
-        yaxis="y2",
-    )
-
-    fig_beta.add_scatter(
-        x=[readout_frequency_opt],
-        y=[phase_g[idx_opt]],
-        mode="markers",
-        name="g phase at optimum",
-        marker=dict(size=9),
-        yaxis="y2",
-    )
-
-    fig_beta.add_scatter(
-        x=[readout_frequency_opt],
-        y=[phase_e[idx_opt]],
-        mode="markers",
-        name="e phase at optimum",
-        marker=dict(size=9),
-        yaxis="y2",
-    )
-
-    fig_beta.add_vline(
-        x=readout_frequency_opt,
-        line_dash="dash",
-        annotation_text=f"opt = {readout_frequency_opt:.6f} GHz",
-    )
-
-    sep_max = float(np.max(separation))
-
-    fig_beta.update_layout(
-        title="Readout-frequency optimization from filtered CKP",
-        xaxis=dict(
-            title="Readout drive frequency (GHz)",
-        ),
-        yaxis=dict(
-            title="|beta_e - beta_g|",
-            side="left",
-            range=[0, 1.1 * sep_max],
-        ),
-        yaxis2=dict(
-            title="arg(beta - center)",
-            overlaying="y",
-            side="right",
-            range=[-np.pi / 2, 7 * np.pi / 2],
-            tickmode="array",
-            tickvals=[
-                -np.pi / 2,
-                0,
-                np.pi / 2,
-                np.pi,
-                3 * np.pi / 2,
-                2 * np.pi,
-                5 * np.pi / 2,
-                3 * np.pi,
-                7 * np.pi / 2,
-            ],
-            ticktext=[
-                "-π/2",
-                "0",
-                "π/2",
-                "π",
-                "3π/2",
-                "2π",
-                "5π/2",
-                "3π",
-                "7π/2",
-            ],
-        ),
-        width=1000,
-        height=500,
-        margin=dict(l=85, r=230, t=60, b=70),
-        legend=dict(
-            x=1.12,
-            y=1.0,
-            xanchor="left",
-            yanchor="top",
-        ),
-        title_x=0.43,
-    )
-
-    if plot:
-        fig_beta.show()
-
-    if save_image:
-        viz.save_figure(
-            fig_beta,
-            name=f"{name}_combined",
-            width=1000,
-            height=500,
-        )
-
-    animation_path = None
-
-    if show_animation or save_animation:
-        step = max(1, len(x) // 300)
-        frame_indices = np.arange(0, len(x), step)
-        if frame_indices[-1] != idx_opt:
-            frame_indices = np.unique(np.append(frame_indices, idx_opt))
-
-        frames = [
-            go.Frame(
-                data=[
-                    go.Scatter(
-                        x=np.real(beta_g[: i + 1]),
-                        y=np.imag(beta_g[: i + 1]),
-                        mode="lines",
-                        name="beta_g trajectory",
-                    ),
-                    go.Scatter(
-                        x=np.real(beta_e[: i + 1]),
-                        y=np.imag(beta_e[: i + 1]),
-                        mode="lines",
-                        name="beta_e trajectory",
-                    ),
-                    go.Scatter(
-                        x=[np.real(beta_g[i])],
-                        y=[np.imag(beta_g[i])],
-                        mode="markers",
-                        name="beta_g",
-                        marker=dict(size=10),
-                    ),
-                    go.Scatter(
-                        x=[np.real(beta_e[i])],
-                        y=[np.imag(beta_e[i])],
-                        mode="markers",
-                        name="beta_e",
-                        marker=dict(size=10),
-                    ),
-                    go.Scatter(
-                        x=[np.real(beta_g[i]), np.real(beta_e[i])],
-                        y=[np.imag(beta_g[i]), np.imag(beta_e[i])],
-                        mode="lines",
-                        name="beta_e - beta_g",
-                    ),
-                ],
-                name=str(i),
-                layout=go.Layout(
-                    title_text=(
-                        "Beta trajectories in complex plane "
-                        f"(f = {x[i]:.6f} GHz, "
-                        f"|diff| = {separation[i]:.4g})"
-                    )
-                ),
-            )
-            for i in frame_indices
-        ]
-
-        x_all = np.concatenate([np.real(beta_g), np.real(beta_e)])
-        y_all = np.concatenate([np.imag(beta_g), np.imag(beta_e)])
-        x_pad = 0.05 * max(np.ptp(x_all), 1e-12)
-        y_pad = 0.05 * max(np.ptp(y_all), 1e-12)
-
-        fig_anim = go.Figure(
-            data=frames[0].data,
-            frames=frames,
-        )
-        fig_anim.update_layout(
-            title="Beta trajectories in complex plane",
-            xaxis_title="Re(beta)",
-            yaxis_title="Im(beta)",
-            width=650,
-            height=650,
-            xaxis=dict(
-                range=[float(np.min(x_all) - x_pad), float(np.max(x_all) + x_pad)]
-            ),
-            yaxis=dict(
-                range=[float(np.min(y_all) - y_pad), float(np.max(y_all) + y_pad)],
-                scaleanchor="x",
-                scaleratio=1,
-            ),
-            updatemenus=[
-                dict(
-                    type="buttons",
-                    showactive=False,
-                    buttons=[
-                        dict(
-                            label="Play",
-                            method="animate",
-                            args=[
-                                None,
-                                dict(
-                                    frame=dict(duration=40, redraw=True),
-                                    fromcurrent=True,
-                                ),
-                            ],
-                        ),
-                        dict(
-                            label="Pause",
-                            method="animate",
-                            args=[
-                                [None],
-                                dict(
-                                    frame=dict(duration=0, redraw=False),
-                                    mode="immediate",
-                                ),
-                            ],
-                        ),
-                    ],
-                )
-            ],
-        )
-
-        if save_animation:
-            animation_path = output_dir / f"{name}_beta_animation.html"
-
-            fig_anim.write_html(
-                str(animation_path),
-                include_plotlyjs="cdn",
-                auto_play=False,
-            )
-
-        if show_animation:
-            fig_anim.show()
 
     n_max_allowed = 0.1 * n_crit
 
@@ -2251,7 +2010,7 @@ def estimate_optimal_readout_frequency_from_ckp(
     eps = 1e-18
     A_allowed = np.sqrt(n_max_allowed / np.maximum(n_max_unit, eps))
 
-    beta_g_limited = filtered_ckp_beta(
+    beta_g = filtered_ckp_beta(
         x,
         omega_r=omega_r_g,
         omega_p=omega_p,
@@ -2259,7 +2018,7 @@ def estimate_optimal_readout_frequency_from_ckp(
         kappa=kappa,
         A=A_allowed,
     )
-    beta_e_limited = filtered_ckp_beta(
+    beta_e = filtered_ckp_beta(
         x,
         omega_r=omega_r_e,
         omega_p=omega_p,
@@ -2268,41 +2027,41 @@ def estimate_optimal_readout_frequency_from_ckp(
         A=A_allowed,
     )
 
-    separation_limited = np.abs(beta_e_limited - beta_g_limited)
+    separation = np.abs(beta_e - beta_g)
 
-    idx_opt_limited = int(np.argmax(separation_limited))
-    readout_frequency_opt_limited = float(x[idx_opt_limited])
-    max_separation_limited = float(separation_limited[idx_opt_limited])
+    idx_opt = int(np.argmax(separation))
+    optimal_readout_frequency = float(x[idx_opt])
+    max_separation = float(separation[idx_opt])
 
-    fig_sep_limited = viz.make_figure()
+    fig_sep = viz.make_figure()
 
-    fig_sep_limited.add_scatter(
+    fig_sep.add_scatter(
         x=x,
-        y=separation_limited,
+        y=separation,
         mode="lines",
         name="|beta_e - beta_g| (n limited)",
     )
 
-    fig_sep_limited.add_scatter(
-        x=[readout_frequency_opt_limited],
-        y=[max_separation_limited],
+    fig_sep.add_scatter(
+        x=[optimal_readout_frequency],
+        y=[max_separation],
         mode="markers",
         name="optimal readout frequency",
         marker=dict(size=9),
     )
 
-    fig_sep_limited.add_vline(
-        x=readout_frequency_opt_limited,
+    fig_sep.add_vline(
+        x=optimal_readout_frequency,
         line_dash="dash",
-        annotation_text=(f"opt = {readout_frequency_opt_limited:.6f} GHz"),
+        annotation_text=(f"opt = {optimal_readout_frequency:.6f} GHz"),
     )
 
-    fig_sep_limited.update_layout(
+    fig_sep.update_layout(
         title=("Readout optimization with max(|alpha_g|², |alpha_e|²) = 0.1 n_crit"),
         xaxis_title="Readout drive frequency (GHz)",
         yaxis=dict(
             title="|beta_e - beta_g|",
-            range=[0, 1.1 * float(np.max(separation_limited))],
+            range=[0, 1.1 * float(np.max(separation))],
         ),
         width=1000,
         height=500,
@@ -2317,45 +2076,32 @@ def estimate_optimal_readout_frequency_from_ckp(
     )
 
     if plot:
-        fig_sep_limited.show()
+        fig_sep.show()
 
     if save_image:
         viz.save_figure(
-            fig_sep_limited,
-            name=f"{name}_separation_n_limited",
+            fig_sep,
+            name=name,
             width=1000,
             height=500,
         )
 
     return Result(
         data={
-            "readout_frequency_opt": readout_frequency_opt,
+            "optimal_readout_frequency": optimal_readout_frequency,
             "max_beta_separation": max_separation,
+            "n_limited_A2_at_optimal_frequency": float(A_allowed[idx_opt] ** 2),
             "frequency_range": x,
             "beta_g": beta_g,
             "beta_e": beta_e,
-            "beta_diff": beta_diff,
+            "A_allowed": A_allowed,
             "beta_separation": separation,
             "omega_r_g": omega_r_g,
             "omega_r_e": omega_r_e,
             "omega_p": omega_p,
             "J": J,
             "kappa": kappa,
-            "A": A,
-            "fig_combined": fig_beta,
-            "fig_limited": fig_sep_limited,
-            "beta_center": beta_center,
-            "phase_g": phase_g,
-            "phase_e": phase_e,
             "n_max_allowed": n_max_allowed,
-            "A_allowed": A_allowed,
-            "beta_g_limited": beta_g_limited,
-            "beta_e_limited": beta_e_limited,
-            "beta_separation_limited": separation_limited,
-            "readout_frequency_opt_limited": readout_frequency_opt_limited,
-            "max_beta_separation_limited": max_separation_limited,
-            "animation_path": str(animation_path)
-            if animation_path is not None
-            else None,
-        }
+        },
+        figure=fig_sep,
     )
