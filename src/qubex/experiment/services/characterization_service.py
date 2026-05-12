@@ -6,6 +6,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
@@ -61,6 +62,16 @@ _CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
 # Candidate gates for removing unreliable per-detuning Rabi estimates.
 _DETUNED_RABI_PRUNING_R2_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.3)
 _DETUNED_RABI_MIN_R2_IMPROVEMENT = 0.01
+
+
+@dataclass(frozen=True)
+class _DetunedRabiFitCandidate:
+    """Candidate detuned-Rabi fit after applying one Rabi-fit quality gate."""
+
+    rates: NDArray
+    threshold: float
+    r2: float
+    retained_count: int
 
 
 def _filter_low_quality_rabi_rates(
@@ -130,26 +141,29 @@ def _select_detuned_rabi_fit(
         Selected fit result, selected Rabi-rate array, and the selected R²
         threshold. The threshold is `None` when the unfiltered rates are kept.
     """
-    best_rates = np.asarray(rabi_rates, dtype=np.float64)
-    initial_fit = fitting.fit_detuned_rabi(
+    baseline_rates = np.asarray(rabi_rates, dtype=np.float64)
+    baseline_fit = fitting.fit_detuned_rabi(
         target=target,
         control_frequencies=control_frequencies,
-        rabi_frequencies=best_rates,
+        rabi_frequencies=baseline_rates,
         plot=False,
         warn_low_r2=False,
     )
-    best_r2 = initial_fit.get("r2", np.nan)
-    best_count = np.count_nonzero(np.isfinite(best_rates))
-    selected_threshold: float | None = None
+    baseline_r2 = baseline_fit.get("r2", np.nan)
+    seen_masks = {tuple(np.isnan(baseline_rates))}
+    candidates: list[_DetunedRabiFitCandidate] = []
 
     for threshold in _DETUNED_RABI_PRUNING_R2_THRESHOLDS:
         candidate_rates = _filter_low_quality_rabi_rates(
-            rabi_rates,
+            baseline_rates,
             rabi_fit_r2,
             min_r2=threshold,
         )
-        if np.array_equal(np.isnan(candidate_rates), np.isnan(best_rates)):
+        mask_key = tuple(np.isnan(candidate_rates))
+        if mask_key in seen_masks:
             continue
+        seen_masks.add(mask_key)
+
         candidate_fit = fitting.fit_detuned_rabi(
             target=target,
             control_frequencies=control_frequencies,
@@ -158,31 +172,46 @@ def _select_detuned_rabi_fit(
             warn_low_r2=False,
         )
         candidate_r2 = candidate_fit.get("r2", np.nan)
-        candidate_count = np.count_nonzero(np.isfinite(candidate_rates))
-        improves_fit = np.isfinite(candidate_r2) and (
-            not np.isfinite(best_r2)
-            or candidate_r2 > best_r2 + _DETUNED_RABI_MIN_R2_IMPROVEMENT
+        if np.isfinite(candidate_r2):
+            candidates.append(
+                _DetunedRabiFitCandidate(
+                    rates=candidate_rates,
+                    threshold=threshold,
+                    r2=float(candidate_r2),
+                    retained_count=int(np.count_nonzero(np.isfinite(candidate_rates))),
+                )
+            )
+
+    selected_rates = baseline_rates
+    selected_threshold: float | None = None
+    if candidates:
+        best_pruned_r2 = max(candidate.r2 for candidate in candidates)
+        # Keep the unfiltered fit unless pruning improves the best pruned R² enough.
+        pruning_improves_fit = not np.isfinite(baseline_r2) or (
+            best_pruned_r2 >= baseline_r2 + _DETUNED_RABI_MIN_R2_IMPROVEMENT
         )
-        keeps_more_close_points = (
-            np.isfinite(candidate_r2)
-            and np.isfinite(best_r2)
-            and candidate_count > best_count
-            and candidate_r2 >= best_r2 - _DETUNED_RABI_MIN_R2_IMPROVEMENT
-        )
-        if improves_fit or keeps_more_close_points:
-            best_rates = candidate_rates
-            best_r2 = candidate_r2
-            best_count = candidate_count
-            selected_threshold = threshold
+        if pruning_improves_fit:
+            # Among near-best pruned fits, prefer the one that retains more data.
+            close_to_best = [
+                candidate
+                for candidate in candidates
+                if candidate.r2 >= best_pruned_r2 - _DETUNED_RABI_MIN_R2_IMPROVEMENT
+            ]
+            selected_candidate = max(
+                close_to_best,
+                key=lambda candidate: (candidate.retained_count, candidate.r2),
+            )
+            selected_rates = selected_candidate.rates
+            selected_threshold = selected_candidate.threshold
 
     selected_fit = fitting.fit_detuned_rabi(
         target=target,
         control_frequencies=control_frequencies,
-        rabi_frequencies=best_rates,
+        rabi_frequencies=selected_rates,
         plot=plot,
         warn_low_r2=True,
     )
-    return selected_fit, best_rates, selected_threshold
+    return selected_fit, selected_rates, selected_threshold
 
 
 def _is_reliable_detuned_rabi_fit(fit_result: Any) -> bool:
