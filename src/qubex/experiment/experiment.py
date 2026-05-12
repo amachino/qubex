@@ -4321,6 +4321,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        pruned_fit: bool | None = None,
     ) -> Result:
         """Measure a chevron pattern for targets."""
         return self.characterization_service.chevron_pattern(
@@ -4334,6 +4335,7 @@ class Experiment:
             interval=shot_interval,
             plot=plot,
             save_image=save_image,
+            pruned_fit=pruned_fit,
         )
 
     def obtain_freq_rabi_relation(
