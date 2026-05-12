@@ -505,13 +505,10 @@ def _ef_rabi_experiment(
     return result
 
 
-def ef_chevron_pattern(
+def obtain_anharmonicity_with_cr(
     ex: qx.Experiment,
     target_qubit: str,
-    control_qubit: str,
-    cr_amplitude: float,
-    cr_duration: int,
-    cr_ramptime: float,
+    cr_x180: PulseSchedule,
     time_range: ArrayLike,
     ef_frequency: float | None = None,
     ef_amplitude: float | None = None,
@@ -530,10 +527,10 @@ def ef_chevron_pattern(
     ----------
     ex
         Experiment context used to run measurements and manage backend settings.
-    target_qubit, control_qubit
-        Qubit labels.
-    cr_amplitude, cr_duration, cr_ramptime
-        CR pi pulse parameters used to prepare the `e` state before EF drive.
+    target_qubit
+        Qubit label.
+    cr_x180
+        CR X180 pulse used to prepare the `e` state before EF drive.
     time_range
         Time sweep used for each Rabi experiment.
     ef_frequency, detuning_range
@@ -552,6 +549,8 @@ def ef_chevron_pattern(
         )
     if detuning_range is None:
         detuning_range = np.linspace(-0.01, 0.01, 21)
+    if plot is None:
+        plot = True
 
     rabi_data: list[RabiData] = []
     rabi_rates: list[float] = []
@@ -565,27 +564,23 @@ def ef_chevron_pattern(
                 ex.system_manager.modified_backend_settings(**backend_settings)
             )
 
-        # ex.obtain_rabi_params()
         for detuning in tqdm(detuning_range):
             with ex.modified_frequencies(
                 {
                     target_qubit: ef_frequency + detuning,
                 }
             ):
-                rabi_result = ef_rabi_experiment(
+                rabi_result = _ef_rabi_experiment(
                     ex=ex,
                     target_qubit=target_qubit,
-                    control_qubit=control_qubit,
-                    cr_amplitude=cr_amplitude,
-                    cr_duration=cr_duration,
-                    cr_ramptime=cr_ramptime,
+                    cr_x180=cr_x180,
                     time_range=time_range,
                     ef_amplitude=ef_amplitude,
                     ef_ramptime=ef_ramptime,
                     is_damped=is_damped,
                     n_shots=n_shots,
                     shot_interval=shot_interval,
-                    plot=plot,
+                    plot=False,
                     **deprecated_options,
                 )
 
@@ -603,16 +598,21 @@ def ef_chevron_pattern(
     detuning_range = np.asarray(detuning_range, dtype=np.float64)
     frequency_range = detuning_range + ef_frequency
 
-    data = {
-        target_qubit: FreqRabiData(
+    data = FreqRabiData(
             target=target_qubit,
             data=np.array(rabi_rates, dtype=np.float64),
             sweep_range=detuning_range,
             frequency_range=frequency_range,
             rabi_data=rabi_data,
         )
-    }
-    result = ExperimentResult(data=data)
-    if plot:
-        result.fit()
-    return result
+    result = ExperimentResult(data={target_qubit: data})
+    fit_result = data.fit(plot=plot)
+    if fit_result.status is FitStatus.SUCCESS:
+        ef_frequency = fit_result.data['f_resonance']
+        anharmonicity = ef_frequency - ex.qubits[target_qubit].frequency
+        print(f"Estimated EF resonance frequency: {ef_frequency:.6f} GHz")
+        print(f"Estimated anharmonicity: {anharmonicity:.6f} GHz")
+        return result, anharmonicity
+    else:
+        raise RuntimeError("Failed to fit EF chevron pattern, cannot estimate resonance frequency and anharmonicity.")
+    
