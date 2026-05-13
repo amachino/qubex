@@ -138,30 +138,6 @@ def calibrate_cr_pi_pulse(
             ps.add(target_qubit, Blank(duration=duration))
         return ps
 
-    def _plot_raw_calibration(
-        x_values: Collection[float],
-        y_values: Collection[float],
-        title: str,
-        xlabel: str,
-    ) -> None:
-        fig = viz.make_figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_values,
-                y=-y_values,
-                mode="markers",
-                name="Data",
-            )
-        )
-        fig.update_layout(
-            title=title,
-            xaxis_title=xlabel,
-            yaxis_title="Normalized signal",
-            xaxis_type="linear",
-            yaxis_type="linear",
-        )
-        fig.show()
-
     def calibrate_duration(duration_range: Collection[float]) -> float:
         n_per_rotation = 2
 
@@ -173,13 +149,6 @@ def calibrate_cr_pi_pulse(
             interval=interval,
             plot=True,
         ).data[target_qubit]
-
-        _plot_raw_calibration(
-            x_values=duration_range,
-            y_values=sweep_data.normalized,
-            title=f"CR pi pulse duration calibration : {target_qubit}",
-            xlabel="duration",
-        )
 
         fit_result = fitting.fit_ampl_calib_data(
             target=target_qubit,
@@ -212,13 +181,6 @@ def calibrate_cr_pi_pulse(
             interval=interval,
             plot=True,
         ).data[target_qubit]
-
-        _plot_raw_calibration(
-            x_values=amplitude_range,
-            y_values=sweep_data.normalized,
-            title=f"CR pi pulse amplitude calibration : {target_qubit}",
-            xlabel="amplitude",
-        )
 
         fit_result = fitting.fit_ampl_calib_data(
             target=target_qubit,
