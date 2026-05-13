@@ -49,42 +49,48 @@ def calibrate_cr_pi_pulse(
     plot: bool | None = None,
     shots: int | None = None,
     interval: float | None = None,
-) -> tuple[ExperimentResult[AmplCalibData], int, qx.PulseSchedule]:
+) -> tuple[ExperimentResult[AmplCalibData], qx.PulseSchedule]:
     """
     Calibrate CR pi pulse by fitting duration first, then amplitude.
 
     Parameters
     ----------
-    ex
-        Experiment context providing measurement and device access.
-    control_qubit, target_qubit
-        Qubit labels used for control and target channels.
-    duration_range
-        Sequence of durations to sweep when fitting the pi pulse duration.
-    amplitude_range
-        Optional amplitude sweep range for amplitude calibration.
-    ramptime
-        Pulse ramp time.
-    n_points
-        Number of points used when generating an amplitude range if not provided.
-    n_rotations, n_iterations, ratio, r2_threshold
-        Calibration control parameters.
-    update_params
-        If True, update experiment calibration parameters (no-op here).
-    plot
-        If True, plotting is enabled.
-    shots, interval
-        Measurement shot options.
+    ex : qx.Experiment
+        qx.Experiment instance.
+    control_qubit : str
+        Label of the control qubit (CR drive channel source).
+    target_qubit : str
+        Label of the target qubit being driven by the CR pulse.
+    duration_range : Collection[float]
+        Iterable of pulse durations (same units as device timing) to sweep
+        when fitting the pi-pulse duration.
+    amplitude_range : Collection[float] or None, optional
+        Optional amplitude sweep range for amplitude calibration. If ``None``
+        a default linear range is generated using ``n_points``.
+    ramptime : float or None, optional
+        Pulse ramp (tau) used when constructing shaped pulses. Defaults to
+        ``PI_RAMPTIME`` if ``None``.
+    n_points : int or None, optional
+        Number of points used when generating an amplitude range if
+        ``amplitude_range`` is not provided. Defaults to 20.
+    n_rotations, n_iterations : int or None, optional
+        Control how many rotations and iterative calibration steps to perform.
+    ratio : float or None, optional
+        Fractional window to narrow the amplitude sweep between iterations.
+    r2_threshold : float or None, optional
+        Minimum acceptable fit R²; a warning is printed when the fit quality
+        is below this threshold.
+    plot : bool or None, optional
+        If True, enable plotting of fit results.
+    shots : int or None, optional
+        Number of measurement shots per point.
+    interval : float or None, optional
+        Measurement interval between repeats.
 
     Returns
     -------
     tuple
-        A tuple of (ExperimentResult[data], fixed_duration, pulse_schedule).
-
-    Notes
-    -----
-    This function preserves argument list and behavior; only docstring and
-    return type annotation were adjusted to match contrib guidelines.
+        A tuple of (ExperimentResult[data], pulse_schedule).
     """
     if n_points is None:
         if amplitude_range is not None:
@@ -249,17 +255,14 @@ def _calc_fnco_settings(
 
     Parameters
     ----------
-    ex
-        Experiment providing system and channel information.
-    channel_label
-        Channel label to inspect and (optionally) retune.
-    drive_frequency
+    ex : qx.Experiment
+        qx.Experiment instance.
+    channel_label : str
+        Channel/target label to evaluate.
+    drive_frequency : float
         Desired drive frequency in GHz.
-    force_retune
-        If True, force recalculation of FNCO even if current settings are within
-        tolerance.
-    print_info
-        If True, print informational messages about decisions.
+    force_retune : bool, optional
+        If True, force recomputation of FNCO regardless of current state.
 
     Returns
     -------
@@ -342,23 +345,30 @@ def _ef_rabi_experiment(
 
     Parameters
     ----------
-    ex
-        Experiment context with measurement and pulse configuration.
-    target_qubit
-        Qubit label for the experiment.
-    cr_x180
-        CR X180 pulse used to prepare the `e` state before EF drive.
-    time_range
-        Durations swept for the EF drive.
-    ef_amplitude, ef_ramptime
-        EF drive amplitude and ramp time. Defaults are taken from `ex` when
-        not provided.
-    is_damped
-        Whether to use a damped Rabi fit.
-    n_shots, shot_interval
-        Measurement shot options.
-    plot
-        If True, plotting is enabled.
+    ex : qx.Experiment
+        qx.Experiment instance.
+    target_qubit : str
+        Target qubit label for the EF drive.
+    cr_x180 : PulseSchedule
+        Pulse schedule performing a CR X180; this is invoked before the EF
+        drive in each sequence.
+    time_range : ArrayLike
+        Array-like durations to sweep for the EF drive. Units match the
+        device timing (usually ns).
+    ef_amplitude : float or None, optional
+        EF drive amplitude. If ``None``, retrieved from ``ex.params``.
+    ef_ramptime : float or None, optional
+        Ramp time for the EF drive pulses.
+    is_damped : bool or None, optional
+        If True, use a damped Rabi model when fitting.
+    n_shots : int or None, optional
+        Shots per point.
+    shot_interval : float or None, optional
+        Interval between shots.
+    plot : bool or None, optional
+        Enable plotting of fit diagnostics.
+    **deprecated_options : Any
+        Additional deprecated keyword options forwarded to the sweep call.
 
     Returns
     -------
@@ -477,29 +487,39 @@ def obtain_anharmonicity_with_cr(
     shot_interval: float | None = None,
     plot: bool | None = None,
     **deprecated_options: Any,
-) -> ExperimentResult[FreqRabiData]:
-    """
-    Measure an EF chevron (frequency-versus-Rabi) pattern by sweeping detuning.
+) -> tuple[ExperimentResult[FreqRabiData], float]:
+    """Measure EF chevron (frequency vs Rabi rate) and estimate anharmonicity.
 
     Parameters
     ----------
-    ex
-        Experiment context used to run measurements and manage backend settings.
-    target_qubit
-        Qubit label.
-    cr_x180
-        CR X180 pulse used to prepare the `e` state before EF drive.
-    time_range
-        Time sweep used for each Rabi experiment.
-    ef_frequency, detuning_range
-        Center EF drive frequency and detuning sweep (in GHz).
-    ef_amplitude, ef_ramptime, is_damped, n_shots, shot_interval, plot
-        Measurement control options.
+    ex : qx.Experiment
+        Experiment instance providing measurement and system management.
+    target_qubit : str
+        Target qubit label to probe.
+    cr_x180 : PulseSchedule
+        CR X180 schedule used to prepare the excited state prior to EF drive.
+    time_range : ArrayLike
+        Time sweep for each EF Rabi run.
+    ef_frequency : float or None, optional
+        Central EF drive frequency in GHz. If ``None``, computed from the
+        qubit frequency plus its known anharmonicity.
+    ef_amplitude, ef_ramptime : float or None, optional
+        EF drive amplitude and ramp time.
+    detuning_range : ArrayLike or None, optional
+        Array-like detunings (in GHz) to sweep around ``ef_frequency``. A
+        default symmetric range is used when ``None``.
+    is_damped, n_shots, shot_interval, plot : optional
+        Measurement and fitting options forwarded to the underlying Rabi
+        experiment.
 
     Returns
     -------
-    ExperimentResult
-        Container with `FreqRabiData` over the detuning sweep.
+    tuple
+        ``(result, anharmonicity)`` where ``result`` is an
+        :class:`ExperimentResult` containing a :class:`FreqRabiData` entry for
+        ``target_qubit``, and ``anharmonicity`` is a float (GHz) estimated
+        from the fitted resonance frequency minus the qubit fundamental
+        frequency.
     """
     if ef_frequency is None:
         ef_frequency = (
@@ -573,4 +593,3 @@ def obtain_anharmonicity_with_cr(
         return result, anharmonicity
     else:
         raise RuntimeError("Failed to fit EF chevron pattern, cannot estimate resonance frequency and anharmonicity.")
-
