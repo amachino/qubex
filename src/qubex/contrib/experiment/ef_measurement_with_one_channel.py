@@ -589,7 +589,7 @@ def obtain_anharmonicity_with_cr(
     result = ExperimentResult(data={target_qubit: data})
     fit_result = data.fit(plot=plot)
     if fit_result.status is FitStatus.SUCCESS:
-        ef_frequency = fit_result.data.get("resonance_frequency", None)
+        ef_frequency = fit_result.data.get("f_resonance", None)
         if ef_frequency is None:
             raise ValueError("Resonance frequency is not available in fit result.")
         anharmonicity = ef_frequency - ex.qubits[target_qubit].frequency
