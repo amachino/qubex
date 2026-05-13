@@ -20,6 +20,9 @@ from .experiment.gf_calibration import (
     gf_ramsey_experiment,
     obtain_gf_rabi_params,
 )
+from .experiment.measurement_induced_decay import (
+    measurement_induced_decay_experiment,
+)
 from .experiment.multipartite_entanglement import (
     create_1d_cluster_sequence,
     create_connected_graphs,
@@ -118,6 +121,7 @@ __all__ = [
     "measure_cr_crosstalk",
     "measure_ghz_state",
     "measure_graph_state",
+    "measurement_induced_decay_experiment",
     "measurement_induced_dephasing",
     "measurement_induced_dephasing_experiment",
     "mqc_experiment",
