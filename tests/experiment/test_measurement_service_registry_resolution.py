@@ -20,8 +20,16 @@ from qubex.measurement.models import (
 
 
 class _DummyResult:
+    data: dict[str, Any]
+
     def plot(self) -> None:
         return None
+
+
+class _NoSamplingPulseSchedule(PulseSchedule):
+    def get_sampled_sequences(self, *args: object, **kwargs: object) -> object:
+        """PulseSchedule should not be sampled in preservation tests."""
+        raise AssertionError("PulseSchedule must not be sampled.")
 
 
 def _make_measurement_result(target: str = "custom-target") -> MeasurementResult:
@@ -106,11 +114,16 @@ def _make_service() -> tuple[MeasurementService, dict[str, object]]:
         reset_awg_and_capunits=lambda *, qubits: reset_calls.append(set(qubits)),
         modified_frequencies=_modified_frequencies,
         qubit_labels=["Q17"],
+        state_centers={},
     )
     pulse_service = SimpleNamespace(
         readout_duration=1024.0,
         readout_pre_margin=8.0,
         readout_post_margin=16.0,
+        ge_rabi_params={},
+        ef_rabi_params={},
+        rabi_params={},
+        get_pulse_for_state=lambda _target, _state: Blank(0),
     )
 
     service = cast(Any, object.__new__(MeasurementService))
@@ -255,6 +268,66 @@ def test_measure_uses_experiment_readout_timing_defaults() -> None:
     assert measure_calls[0]["readout_duration"] == 1024.0
     assert measure_calls[0]["readout_pre_margin"] == 8.0
     assert measure_calls[0]["readout_post_margin"] == 16.0
+
+
+def test_measure_delegates_pulse_schedule_without_sampling() -> None:
+    """Given PulseSchedule input, when measuring, then schedule structure is delegated unchanged."""
+    service, captured = _make_service()
+    schedule = _NoSamplingPulseSchedule(["custom-target"])
+    schedule.add("custom-target", Blank(16))
+    schedule.barrier()
+
+    service.measure(sequence=schedule, plot=False)
+
+    measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
+    assert measure_calls[0]["waveforms"] is schedule
+
+
+def test_measure_composes_initial_states_without_sampling() -> None:
+    """Given initial states, when measuring a schedule, then composed schedule is delegated."""
+    service, captured = _make_service()
+    schedule = _NoSamplingPulseSchedule(["Q17"])
+    schedule.add("Q17", Blank(16))
+    schedule.barrier()
+
+    service.measure(sequence=schedule, initial_states={"Q17": "0"}, plot=False)
+
+    measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
+    delegated = measure_calls[0]["waveforms"]
+    assert isinstance(delegated, PulseSchedule)
+    assert delegated is not schedule
+    assert delegated.get_blank_ranges(["Q17"])["Q17"]
+
+
+def test_sweep_parameter_delegates_pulse_schedules_without_sampling() -> None:
+    """Given parametric schedules, when sweeping, then each point is measured as a schedule."""
+    service, captured = _make_service()
+    schedules: list[PulseSchedule] = []
+    measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
+
+    def _sequence(value: float) -> PulseSchedule:
+        schedule = _NoSamplingPulseSchedule(["Q17"])
+        schedule.add("Q17", Blank(value))
+        schedule.barrier()
+        schedules.append(schedule)
+        return schedule
+
+    def _measure(sequence: object, **kwargs: object) -> _DummyResult:
+        measure_calls.append({"sequence": sequence, **kwargs})
+        result = _DummyResult()
+        result.data = {"Q17": SimpleNamespace(kerneled=1.0 + 0.0j)}
+        return result
+
+    service.__dict__["measure"] = _measure
+
+    result = service.sweep_parameter(
+        sequence=_sequence,
+        sweep_range=[16.0, 32.0],
+        plot=False,
+    )
+
+    assert [call["sequence"] for call in measure_calls] == schedules[1:]
+    assert result.data["Q17"].data.tolist() == [1.0 + 0.0j, 1.0 + 0.0j]
 
 
 def test_check_waveform_resolves_read_labels_via_target_registry() -> None:

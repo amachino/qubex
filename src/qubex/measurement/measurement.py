@@ -804,7 +804,7 @@ class Measurement:
 
     def measure(
         self,
-        waveforms: Mapping[str, IQArray],
+        waveforms: PulseSchedule | Mapping[str, IQArray],
         *,
         n_shots: int | None = None,
         shot_interval: float | None = None,
@@ -826,13 +826,13 @@ class Measurement:
         **deprecated_options: Any,
     ) -> MeasureResult:
         """
-        Execute one measurement from target waveform mappings.
+        Execute one measurement from a pulse schedule or target waveform mapping.
 
         Parameters
         ----------
-        waveforms : Mapping[str, IQArray]
-            Control waveforms keyed by target label. Each waveform is a complex
-            I/Q array sampled at `sampling_period` ns.
+        waveforms : PulseSchedule | Mapping[str, IQArray]
+            Pulse schedule or control waveforms keyed by target label. Mapping
+            values are complex I/Q arrays sampled at `sampling_period` ns.
         n_shots : int | None, optional
             Number of shots.
         shot_interval : float | None, optional

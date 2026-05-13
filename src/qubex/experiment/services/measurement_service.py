@@ -156,6 +156,49 @@ class MeasurementService:
             ]
         )
 
+    @staticmethod
+    def _schedule_from_waveform_map(
+        sequence: TargetMap[IQArray] | TargetMap[Waveform],
+    ) -> PulseSchedule:
+        """Return a schedule that preserves waveform objects in a target map."""
+        with PulseSchedule(list(sequence)) as schedule:
+            for target, waveform in sequence.items():
+                if isinstance(waveform, Waveform):
+                    schedule.add(target, waveform)
+                else:
+                    schedule.add(target, Arbitrary(waveform))
+        return schedule
+
+    @staticmethod
+    def _sampled_waveform_map(
+        sequence: TargetMap[IQArray] | TargetMap[Waveform],
+    ) -> dict[str, NDArray[np.complex128]]:
+        """Return sampled arrays for dense waveform-map inputs."""
+        waveforms: dict[str, NDArray[np.complex128]] = {}
+        for target, waveform in sequence.items():
+            if isinstance(waveform, Waveform):
+                waveforms[target] = waveform.values
+            else:
+                waveforms[target] = np.array(waveform, dtype=np.complex128)
+        return waveforms
+
+    def _prepend_initial_states(
+        self,
+        *,
+        schedule: PulseSchedule,
+        initial_states: dict[str, str],
+    ) -> PulseSchedule:
+        """Return a schedule with initial-state pulses prepended."""
+        labels = self.unique_in_order([*schedule.labels, *initial_states.keys()])
+        with PulseSchedule(labels) as prepared:
+            for target, state in initial_states.items():
+                if target not in self.ctx.qubit_labels:
+                    raise ValueError(f"Invalid init target: {target}")
+                prepared.add(target, self.pulse.get_pulse_for_state(target, state))
+            prepared.barrier()
+            prepared.call(schedule)
+        return prepared
+
     def _resolve_measurement_schedule(
         self,
         *,
@@ -790,58 +833,37 @@ class MeasurementService:
         if plot is None:
             plot = False
 
-        waveforms: dict[str, NDArray[np.complex128]] = {}
-
         if isinstance(sequence, PulseSchedule):
             if not sequence.is_valid():
                 raise ValueError("Invalid pulse schedule.")
 
             if initial_states is not None:
-                labels = self.unique_in_order(
-                    [*sequence.labels, *initial_states.keys()]
+                measurement_input: PulseSchedule | dict[str, NDArray[np.complex128]] = (
+                    self._prepend_initial_states(
+                        schedule=sequence,
+                        initial_states=initial_states,
+                    )
                 )
-                with PulseSchedule(labels) as ps:
-                    for target, state in initial_states.items():
-                        if target in self.ctx.qubit_labels:
-                            ps.add(
-                                target, self.pulse.get_pulse_for_state(target, state)
-                            )
-                        else:
-                            raise ValueError(f"Invalid init target: {target}")
-                    ps.barrier()
-                    ps.call(sequence)
-                waveforms = ps.get_sampled_sequences()
             else:
-                waveforms = sequence.get_sampled_sequences()
+                measurement_input = sequence
         else:
             if initial_states is not None:
-                labels = self.unique_in_order(
-                    [*sequence.keys(), *initial_states.keys()]
+                measurement_input = self._prepend_initial_states(
+                    schedule=self._schedule_from_waveform_map(sequence),
+                    initial_states=initial_states,
                 )
-                with PulseSchedule(labels) as ps:
-                    for target, state in initial_states.items():
-                        if target in self.ctx.qubit_labels:
-                            ps.add(
-                                target, self.pulse.get_pulse_for_state(target, state)
-                            )
-                        else:
-                            raise ValueError(f"Invalid init target: {target}")
-                    ps.barrier()
-                    for target, waveform in sequence.items():
-                        if isinstance(waveform, Waveform):
-                            ps.add(target, waveform)
-                        else:
-                            ps.add(target, Arbitrary(waveform))
-                waveforms = ps.get_sampled_sequences()
+            elif any(isinstance(waveform, Waveform) for waveform in sequence.values()):
+                measurement_input = self._schedule_from_waveform_map(sequence)
             else:
-                for target, waveform in sequence.items():
-                    if isinstance(waveform, Waveform):
-                        waveforms[target] = waveform.values
-                    else:
-                        waveforms[target] = np.array(waveform, dtype=np.complex128)
+                measurement_input = self._sampled_waveform_map(sequence)
 
         if reset_awg_and_capunits:
-            qubits = {self.ctx.resolve_qubit_label(target) for target in waveforms}
+            labels = (
+                measurement_input.labels
+                if isinstance(measurement_input, PulseSchedule)
+                else measurement_input.keys()
+            )
+            qubits = {self.ctx.resolve_qubit_label(target) for target in labels}
             self.ctx.reset_awg_and_capunits(qubits=qubits)
 
         readout_duration, readout_pre_margin, readout_post_margin = (
@@ -853,7 +875,7 @@ class MeasurementService:
         )
         with self.ctx.modified_frequencies(frequencies):
             result = self.ctx.measurement.measure(
-                waveforms=waveforms,
+                waveforms=measurement_input,
                 n_shots=n_shots,
                 shot_interval=shot_interval,
                 time_integration=time_integration,
@@ -1110,18 +1132,18 @@ class MeasurementService:
             initial_sequence = sequence(sweep_range[0])
             if isinstance(initial_sequence, PulseSchedule):
                 sequences = [
-                    sequence(param)
-                    .repeated(repetitions)  # type: ignore
-                    .get_sampled_sequences()
+                    sequence(param).repeated(repetitions)  # type: ignore[union-attr]
                     for param in sweep_range
                 ]
                 ordered_qubits = self.ctx.ordered_qubit_labels(initial_sequence.labels)
             elif isinstance(initial_sequence, dict):
                 sequences = [
-                    {
-                        target: waveform.repeated(repetitions).values
-                        for target, waveform in sequence(param).items()  # type: ignore
-                    }
+                    self._schedule_from_waveform_map(
+                        {
+                            target: waveform.repeated(repetitions)
+                            for target, waveform in sequence(param).items()  # type: ignore[union-attr]
+                        }
+                    )
                     for param in sweep_range
                 ]
                 ordered_qubits = self.ctx.ordered_qubit_labels(list(initial_sequence))
