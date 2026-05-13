@@ -34,6 +34,7 @@ __all__ = [
     "obtain_anharmonicity_with_cr",
 ]
 
+
 def calibrate_cr_pi_pulse(
     ex: qx.Experiment,
     control_qubit: str,
@@ -488,7 +489,8 @@ def obtain_anharmonicity_with_cr(
     plot: bool | None = None,
     **deprecated_options: Any,
 ) -> tuple[ExperimentResult[FreqRabiData], float]:
-    """Measure EF chevron (frequency vs Rabi rate) and estimate anharmonicity.
+    """
+    Measure EF chevron (frequency vs Rabi rate) and estimate anharmonicity.
 
     Parameters
     ----------
@@ -577,19 +579,21 @@ def obtain_anharmonicity_with_cr(
     frequency_range = detuning_range + ef_frequency
 
     data = FreqRabiData(
-            target=target_qubit,
-            data=np.array(rabi_rates, dtype=np.float64),
-            sweep_range=detuning_range,
-            frequency_range=frequency_range,
-            rabi_data=rabi_data,
-        )
+        target=target_qubit,
+        data=np.array(rabi_rates, dtype=np.float64),
+        sweep_range=detuning_range,
+        frequency_range=frequency_range,
+        rabi_data=rabi_data,
+    )
     result = ExperimentResult(data={target_qubit: data})
     fit_result = data.fit(plot=plot)
     if fit_result.status is FitStatus.SUCCESS:
-        ef_frequency = fit_result.data['f_resonance']
+        ef_frequency = fit_result.data["f_resonance"]
         anharmonicity = ef_frequency - ex.qubits[target_qubit].frequency
         print(f"Estimated EF resonance frequency: {ef_frequency:.6f} GHz")
         print(f"Estimated anharmonicity: {anharmonicity:.6f} GHz")
         return result, anharmonicity
     else:
-        raise RuntimeError("Failed to fit EF chevron pattern, cannot estimate resonance frequency and anharmonicity.")
+        raise RuntimeError(
+            "Failed to fit EF chevron pattern, cannot estimate resonance frequency and anharmonicity."
+        )

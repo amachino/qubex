@@ -17,8 +17,7 @@ from .crosstalk_cross_resonance import (
 )
 from .ef_measurement_with_one_channel import (
     calibrate_cr_pi_pulse,
-    ef_chevron_pattern,
-    ef_rabi_experiment,
+    obtain_anharmonicity_with_cr,
 )
 from .gf_calibration import (
     calibrate_gf_hpi_pulse,
@@ -103,8 +102,6 @@ __all__ = [
     "decompose_cr_crosstalk",
     "estimate_qubit_frequency_from_chevron",
     "estimate_qubit_frequency_from_chevron_adaptive",
-    "ef_chevron_pattern",
-    "ef_rabi_experiment",
     "filtered_ckp_experiment",
     "fourier_analysis",
     "get_resistance_charge",
@@ -125,6 +122,7 @@ __all__ = [
     "measurement_induced_dephasing",
     "measurement_induced_dephasing_experiment",
     "mqc_experiment",
+    "obtain_anharmonicity_with_cr",
     "obtain_gf_rabi_params",
     "parity_oscillation",
     "partial_transpose",
