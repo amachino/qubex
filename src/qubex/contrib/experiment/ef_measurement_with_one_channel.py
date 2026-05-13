@@ -8,12 +8,10 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike
-from plotly import graph_objects as go
 from qxpulse import Blank, FlatTop, PulseSchedule
 from tqdm import tqdm
 
 import qubex as qx
-from qubex import visualization as viz
 from qubex.analysis import FitStatus, fitting
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
@@ -575,4 +573,4 @@ def obtain_anharmonicity_with_cr(
         return result, anharmonicity
     else:
         raise RuntimeError("Failed to fit EF chevron pattern, cannot estimate resonance frequency and anharmonicity.")
-    
+
