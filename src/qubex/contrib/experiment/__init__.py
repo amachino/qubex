@@ -15,6 +15,10 @@ from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
 )
+from .ef_measurement_with_one_channel import (
+    calibrate_cr_pi_pulse,
+    obtain_anharmonicity_with_cr,
+)
 from .gf_calibration import (
     calibrate_gf_hpi_pulse,
     calibrate_gf_pi_pulse,
@@ -76,6 +80,7 @@ from .thermal_excitation_characterization import (
 
 __all__ = [
     "analyze_chevron_matched_transform",
+    "calibrate_cr_pi_pulse",
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
@@ -117,6 +122,7 @@ __all__ = [
     "measurement_induced_dephasing",
     "measurement_induced_dephasing_experiment",
     "mqc_experiment",
+    "obtain_anharmonicity_with_cr",
     "obtain_gf_rabi_params",
     "parity_oscillation",
     "partial_transpose",
