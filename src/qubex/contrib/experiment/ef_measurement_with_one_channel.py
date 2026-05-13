@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
 from contextlib import ExitStack
 from typing import Any
 
@@ -39,10 +38,9 @@ def calibrate_cr_pi_pulse(
     ex: qx.Experiment,
     control_qubit: str,
     target_qubit: str,
-    duration_range: Collection[float],
-    amplitude_range: Collection[float] | None = None,
+    duration_range: ArrayLike,
+    amplitude_range: ArrayLike | None = None,
     ramptime: float | None = None,
-    n_points: int | None = None,
     n_rotations: int | None = None,
     n_iterations: int | None = None,
     ratio: float | None = None,
@@ -62,18 +60,15 @@ def calibrate_cr_pi_pulse(
         Label of the control qubit (CR drive channel source).
     target_qubit : str
         Label of the target qubit being driven by the CR pulse.
-    duration_range : Collection[float]
+    duration_range : ArrayLike
         Iterable of pulse durations (same units as device timing) to sweep
         when fitting the pi-pulse duration.
-    amplitude_range : Collection[float] or None, optional
+    amplitude_range : ArrayLike or None, optional
         Optional amplitude sweep range for amplitude calibration. If ``None``
         a default linear range is generated using ``n_points``.
     ramptime : float or None, optional
         Pulse ramp (tau) used when constructing shaped pulses. Defaults to
         ``PI_RAMPTIME`` if ``None``.
-    n_points : int or None, optional
-        Number of points used when generating an amplitude range if
-        ``amplitude_range`` is not provided. Defaults to 20.
     n_rotations, n_iterations : int or None, optional
         Control how many rotations and iterative calibration steps to perform.
     ratio : float or None, optional
@@ -93,11 +88,6 @@ def calibrate_cr_pi_pulse(
     tuple
         A tuple of (ExperimentResult[data], pulse_schedule).
     """
-    if n_points is None:
-        if amplitude_range is not None:
-            n_points = len(amplitude_range)
-        else:
-            n_points = 20
     if n_rotations is None:
         n_rotations = 1
     if n_iterations is None:
@@ -109,13 +99,15 @@ def calibrate_cr_pi_pulse(
     if ramptime is None:
         ramptime = PI_RAMPTIME
     if amplitude_range is None:
-        amplitude_range = np.linspace(0.5, 1, n_points)
+        amplitude_range = np.linspace(0.5, 1, 20)
     if plot is None:
         plot = True
     if shots is None:
         shots = CALIBRATION_SHOTS
     if interval is None:
         interval = DEFAULT_INTERVAL
+
+    amplitude_range = np.asarray(amplitude_range, dtype=np.float64)
 
     if target_qubit not in ex.ctx.calib_note.rabi_params:
         raise ValueError(f"Rabi parameters are not stored for {target_qubit}.")
@@ -143,8 +135,9 @@ def calibrate_cr_pi_pulse(
             ps.add(target_qubit, Blank(duration=duration))
         return ps
 
-    def calibrate_duration(duration_range: Collection[float]) -> float:
+    def calibrate_duration(duration_range: ArrayLike) -> float:
         n_per_rotation = 2
+        duration_range = np.asarray(duration_range, dtype=np.float64)
 
         sweep_data = ex.sweep_parameter(
             sequence=lambda sweep_duration: seq(duration=sweep_duration, amplitude=1.0),
@@ -172,9 +165,10 @@ def calibrate_cr_pi_pulse(
         return fit_result["amplitude"]
 
     def calibrate_amplitude(
-        amplitude_range: Collection[float], fixed_duration: float
+        amplitude_range: ArrayLike, fixed_duration: float
     ) -> AmplCalibData:
         n_per_rotation = 2
+        amplitude_range = np.asarray(amplitude_range, dtype=np.float64)
 
         sweep_data = ex.sweep_parameter(
             sequence=lambda amplitude: seq(
@@ -207,13 +201,13 @@ def calibrate_cr_pi_pulse(
             r2=r2,
         )
 
-    def _update_amplitude_range(center: float, ratio: float = 0.4) -> Collection[float]:
+    def _update_amplitude_range(center: float, ratio: float = 0.4) -> ArrayLike:
         if ratio <= 0 or ratio >= 1:
             raise ValueError("Ratio must be between 0 and 1.")
         new_range = np.linspace(
             np.max((0, center * (1 - ratio))),
             np.min((1, center * (1 + ratio))),
-            n_points,
+            len(amplitude_range),
         )
         return new_range
 
@@ -250,7 +244,7 @@ def _calc_fnco_settings(
     channel_label: str,
     drive_frequency: float,
     force_retune: bool = False,
-) -> tuple[bool, dict[str, float]]:
+) -> tuple[bool, dict]:
     """
     Return device settings kwargs when an FNCO retune is needed.
 
@@ -287,8 +281,13 @@ def _calc_fnco_settings(
     current_fnco = target.channel.fnco_freq
     current_cnco = target.channel.cnco_freq
 
-    current_diff_ghz = abs(drive_frequency - target.fine_frequency)
-    current_fnco_ok = abs(current_fnco) <= FNCO_MAX
+    if current_fnco is None:
+        raise ValueError(
+            f"Current FNCO frequency for channel {channel_label} is not available."
+        )
+
+    current_diff_ghz = np.abs(drive_frequency - target.fine_frequency)
+    current_fnco_ok = np.abs(current_fnco) <= FNCO_MAX
 
     if not force_retune and current_diff_ghz <= FINE_FREQ_TOL_GHZ and current_fnco_ok:
         retune_needed = False
@@ -308,7 +307,7 @@ def _calc_fnco_settings(
     )
 
     # Compare the desired FNCO magnitude with the FNCO limit (upper/lower bound)
-    diff = abs(new_fnco) - FNCO_MAX
+    diff = np.abs(new_fnco) - FNCO_MAX
     if diff > FINE_FREQ_TOL_GHZ * 1e9:
         # The required FNCO is outside the allowable range and cannot be compensated by the AWG
         raise RuntimeError(
@@ -376,7 +375,6 @@ def _ef_rabi_experiment(
     ExperimentResult
         Result object containing fitted `RabiData` and parameters.
     """
-    # TODO: Integrate with rabi_experiment
     if is_damped is None:
         is_damped = True
     if ef_amplitude is None:
@@ -532,6 +530,7 @@ def obtain_anharmonicity_with_cr(
     if plot is None:
         plot = True
 
+    detuning_range = np.asarray(detuning_range, dtype=np.float64)
     rabi_data: list[RabiData] = []
     rabi_rates: list[float] = []
 
@@ -565,6 +564,8 @@ def obtain_anharmonicity_with_cr(
                 )
 
             ef_label = ex.measurement_service.ctx.resolve_ef_label(target_qubit)
+            if rabi_result.rabi_params is None:
+                raise ValueError("Rabi parameters are not stored.")
             rabi_params = rabi_result.rabi_params.get(ef_label, None)
             rabi_datum = rabi_result.data.get(ef_label, None)
             if rabi_params is None:
@@ -588,7 +589,9 @@ def obtain_anharmonicity_with_cr(
     result = ExperimentResult(data={target_qubit: data})
     fit_result = data.fit(plot=plot)
     if fit_result.status is FitStatus.SUCCESS:
-        ef_frequency = fit_result.data["f_resonance"]
+        ef_frequency = fit_result.data.get("resonance_frequency", None)
+        if ef_frequency is None:
+            raise ValueError("Resonance frequency is not available in fit result.")
         anharmonicity = ef_frequency - ex.qubits[target_qubit].frequency
         print(f"Estimated EF resonance frequency: {ef_frequency:.6f} GHz")
         print(f"Estimated anharmonicity: {anharmonicity:.6f} GHz")
