@@ -173,7 +173,9 @@ def _build_reference_t1_sequence(
     wait_ns: float,
 ) -> PulseSchedule:
     with PulseSchedule() as ps:
-        ps.add(measurement_target, exp.pulse.get_hpi_pulse(measurement_target).repeated(2))
+        ps.add(
+            measurement_target, exp.pulse.get_hpi_pulse(measurement_target).repeated(2)
+        )
         ps.add(measurement_target, Blank(wait_ns))
         ps.barrier()
 
@@ -330,14 +332,17 @@ def measurement_induced_decay_experiment(
     exp.pulse.validate_rabi_params(target_list)
 
     if time_range is None:
-        time_range = np.logspace(np.log10(100), np.log10(200 * 1000), 51)
-    sweep_range = _discretize_readout_durations(exp, time_range)
+        resolved_time_range: ArrayLike = np.logspace(
+            np.log10(100), np.log10(200 * 1000), 51
+        )
+    else:
+        resolved_time_range = time_range
+    sweep_range = _discretize_readout_durations(exp, resolved_time_range)
 
     results: dict[str, dict[str, ExperimentResult[T1Data]]] = {}
     print(f"Target qubits: {target_list}")
     print(
-        "Stimulate qubits: "
-        f"{[condition.target for condition in stimulate_conditions]}"
+        f"Stimulate qubits: {[condition.target for condition in stimulate_conditions]}"
     )
     if reference:
         print("Reference: enabled")
@@ -351,10 +356,7 @@ def measurement_induced_decay_experiment(
         for condition in conditions:
             if condition is None:
                 result_key = REFERENCE_KEY
-                print(
-                    "Conducting reference T1 with "
-                    f"target={measurement_target}...\n"
-                )
+                print(f"Conducting reference T1 with target={measurement_target}...\n")
             else:
                 result_key = condition.target
                 print(
@@ -434,10 +436,7 @@ def measurement_induced_decay_experiment(
                 title=(
                     "T1 reference"
                     if condition is None
-                    else (
-                        "Measurement-induced decay "
-                        f"(stimulate: {condition.target})"
-                    )
+                    else (f"Measurement-induced decay (stimulate: {condition.target})")
                 ),
                 xlabel="Time (μs)",
                 ylabel="Measured value",
@@ -473,10 +472,7 @@ def measurement_induced_decay_experiment(
                     )
                     viz.save_figure(
                         fig,
-                        name=(
-                            f"measurement_induced_t1_{measurement_target}"
-                            f"_{suffix}"
-                        ),
+                        name=(f"measurement_induced_t1_{measurement_target}_{suffix}"),
                     )
 
             target_results[result_key] = ExperimentResult(
