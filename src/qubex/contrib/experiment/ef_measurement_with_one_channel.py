@@ -147,7 +147,7 @@ def calibrate_cr_pi_pulse(
             repetitions=n_per_rotation * n_rotations,
             shots=shots,
             interval=interval,
-            plot=True,
+            plot=plot,
         ).data[target_qubit]
 
         fit_result = fitting.fit_ampl_calib_data(
@@ -179,7 +179,7 @@ def calibrate_cr_pi_pulse(
             repetitions=n_per_rotation * n_rotations,
             shots=shots,
             interval=interval,
-            plot=True,
+            plot=plot,
         ).data[target_qubit]
 
         fit_result = fitting.fit_ampl_calib_data(
