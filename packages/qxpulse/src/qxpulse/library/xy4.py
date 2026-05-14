@@ -6,7 +6,7 @@ from typing import Final
 
 from qxpulse.blank import Blank
 from qxpulse.pulse_array import PulseArray
-from qxpulse.waveform import Waveform
+from qxpulse.waveform import Waveform, _is_sampling_period_multiple
 
 
 class XY4(PulseArray):
@@ -57,7 +57,7 @@ class XY4(PulseArray):
         self.pi_y: Final = pi_y
         self.n: Final = n
 
-        if tau % self.SAMPLING_PERIOD != 0:
+        if not _is_sampling_period_multiple(tau, self.SAMPLING_PERIOD):
             raise ValueError(
                 f"Tau must be a multiple of the sampling period ({self.SAMPLING_PERIOD} ns)."
             )
