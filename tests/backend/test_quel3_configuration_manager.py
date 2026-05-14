@@ -161,6 +161,120 @@ def test_deploy_instruments_calls_session_api(
     assert definition.alias in deployed
 
 
+def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quelware prefixes aliases by unit, deploy should keep target bindings usable."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    class _Profile:
+        def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
+            self.frequency_range_min = frequency_range_min
+            self.frequency_range_max = frequency_range_max
+
+    class _Definition:
+        def __init__(self, *, alias: str, mode: object, role: object, profile: object):
+            self.alias = alias
+            self.mode = mode
+            self.role = role
+            self.profile = profile
+
+    class _Mode:
+        FIXED_TIMELINE = "fixed_timeline"
+
+    class _Role:
+        TRANSMITTER = "transmitter"
+
+    @dataclass(frozen=True)
+    class _InstrumentInfo:
+        id: str
+        port_id: str
+        definition: _Definition
+
+    deploy_definitions: list[_Definition] = []
+
+    class _FakeSession:
+        async def __aenter__(self) -> _FakeSession:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+
+        async def deploy_instruments(
+            self,
+            port_id: str,
+            *,
+            definitions: list[_Definition],
+            append: bool = False,
+        ) -> list[_InstrumentInfo]:
+            del append
+            deploy_definitions.extend(definitions)
+            returned_definition = _Definition(
+                alias="quel3-02-a01:Q00",
+                mode=definitions[0].mode,
+                role=definitions[0].role,
+                profile=definitions[0].profile,
+            )
+            return [
+                _InstrumentInfo(
+                    id="inst-q00",
+                    port_id=port_id,
+                    definition=returned_definition,
+                )
+            ]
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+
+        def create_session(self, resource_ids: list[str]) -> _FakeSession:
+            del resource_ids
+            return _FakeSession()
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_client_factory",
+        lambda: lambda endpoint, port: _FakeClient(),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_instrument_entities",
+        lambda: (_Profile, _Definition, _Mode, _Role),
+    )
+
+    request = InstrumentDeployRequest(
+        port_id="quel3-02-a01:tx_p02",
+        role="TRANSMITTER",
+        frequency_range_min_hz=4.1e9,
+        frequency_range_max_hz=4.3e9,
+        alias="Q00",
+        target_labels=("Q00",),
+    )
+
+    deployed = manager.deploy_instruments(requests=(request,))
+
+    assert [definition.alias for definition in deploy_definitions] == ["Q00"]
+    assert set(deployed) == {"Q00"}
+    assert deployed["Q00"][0].definition.alias == "quel3-02-a01:Q00"
+    assert manager.target_alias_map == {"Q00": "quel3-02-a01:Q00"}
+
+
 def test_deploy_instruments_clears_cache_for_empty_requests() -> None:
     """Given empty requests, backend configuration manager should clear deployment cache."""
     manager = Quel3ConfigurationManager(
@@ -788,6 +902,66 @@ def test_refresh_instrument_cache_loads_existing_instruments(
     assert set(cached.keys()) == {"Q00", "RQ00"}
     assert manager.target_alias_map == {"Q00": "Q00", "RQ00": "RQ00"}
     assert set(manager.last_deployed_instrument_infos.keys()) == {"Q00", "RQ00"}
+
+
+def test_refresh_instrument_cache_maps_unit_prefixed_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given cached quelware aliases with unit prefixes, refresh should map local targets to runtime aliases."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    class _Category:
+        name = "INSTRUMENT"
+
+    class _ResourceInfo:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+            self.category = _Category()
+
+    class _Definition:
+        def __init__(self, alias: str) -> None:
+            self.alias = alias
+
+    class _InstrumentInfo:
+        def __init__(self, alias: str, port_id: str) -> None:
+            self.definition = _Definition(alias)
+            self.port_id = port_id
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+
+        async def list_resource_infos(self) -> list[object]:
+            return [_ResourceInfo("inst-q00")]
+
+        async def get_instrument_info(self, resource_id: str) -> object:
+            assert resource_id == "inst-q00"
+            return _InstrumentInfo("quel3-02-a01:Q00", "quel3-02-a01:tx_p04")
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_client_factory",
+        lambda: lambda endpoint, port: _FakeClient(),
+    )
+
+    cached = manager.refresh_instrument_cache()
+
+    assert set(cached) == {"Q00"}
+    assert manager.target_alias_map == {"Q00": "quel3-02-a01:Q00"}
+    assert manager.last_deployed_instrument_infos["Q00"][0].definition.alias == (
+        "quel3-02-a01:Q00"
+    )
 
 
 def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(

@@ -664,6 +664,97 @@ def test_resolve_payload_accepts_alias_binding() -> None:
     assert set(resolved.fixed_timelines.keys()) == {"inst-q00"}
 
 
+def test_execute_resolves_unit_prefixed_alias_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given unit-prefixed alias binding, execute should resolve with the unit label."""
+    payload = _make_payload()
+    payload = replace(
+        payload,
+        fixed_timelines={"Q00": payload.fixed_timelines["alias-rq00"]},
+        instrument_bindings={"Q00": "alias:quel3-02-a01:Q00"},
+    )
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+
+    @dataclass(frozen=True)
+    class _Definition:
+        alias: str
+        role: str
+
+    @dataclass(frozen=True)
+    class _InstrumentInfo:
+        id: str
+        port_id: str
+        definition: _Definition
+
+    class _UnitAwareResolver:
+        def __init__(self) -> None:
+            self.find_calls: list[tuple[str, str | None]] = []
+
+        async def refresh(self, client: object) -> None:
+            del client
+
+        def resolve(self, aliases: list[str]) -> list[str]:
+            return aliases
+
+        def find_inst_info_by_alias(
+            self,
+            alias: str,
+            *,
+            unit: str | None = None,
+        ) -> _InstrumentInfo:
+            self.find_calls.append((alias, unit))
+            if (alias, unit) != ("Q00", "quel3-02-a01"):
+                raise ValueError(alias)
+            return _InstrumentInfo(
+                id="inst-q00",
+                port_id="quel3-02-a01:tx_p04",
+                definition=_Definition(
+                    alias="quel3-02-a01:Q00",
+                    role="TRANSMITTER",
+                ),
+            )
+
+    resolver = _UnitAwareResolver()
+    driver = _FakeInstrumentDriver()
+    session = _FakeSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda _session, _instrument_info: driver,
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=payload))
+    )
+
+    assert resolver.find_calls == [
+        ("Q00", "quel3-02-a01"),
+        ("Q00", "quel3-02-a01"),
+        ("Q00", "quel3-02-a01"),
+    ]
+    assert driver.apply_calls == [
+        [("capture_mode", "avg"), ("timeline", "quel3-02-a01:Q00")]
+    ]
+    assert session.trigger_calls == [["inst-q00"]]
+    assert "quel3-02-a01:Q00" in result.data
+
+
 @dataclass(frozen=True)
 class _FakeInstrumentConfig:
     sampling_period_fs: int
