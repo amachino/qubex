@@ -294,11 +294,9 @@ class Quel3ConfigurationManager:
             deployed.update(port_result.deployed)
             target_alias_map.update(port_result.target_alias_map)
 
-        # Temporary limitation:
-        # quelware `append=True` is currently broken, so QuEL-3 deploy uses
-        # per-request replacement semantics. Until quelware is fixed, keep the
-        # local alias/instrument cache aligned with the explicit deploy subset.
         self._last_deployed_instrument_infos = dict(deployed)
+        # Keep local alias/instrument cache aligned with the explicitly deployed
+        # subset so it matches this replacement-style call behavior.
         self._target_alias_map = target_alias_map
         return deployed
 
@@ -332,7 +330,12 @@ class Quel3ConfigurationManager:
         inst_infos = await session.deploy_instruments(
             port_id,
             definitions=definitions,
-            append=True,
+            # Temporary limitation:
+            # quelware-client Session.deploy_instruments currently removes all
+            # instruments on the port even with append=True. Treat QuEL-3
+            # deploy as replacement-style semantics and pass append=False
+            # explicitly.
+            append=False,
         )
         infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
         for inst_info in inst_infos:
