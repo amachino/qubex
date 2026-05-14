@@ -70,6 +70,7 @@ from .quantum_efficiency_measurement import (
     sweep_readout_snr,
 )
 from .readout_parameters_characterization import characterize_readout_parameters
+from .repeated_coherence_measurement import repeated_coherence_measurement
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
@@ -133,6 +134,7 @@ __all__ = [
     "purity_sequence_2q",
     "quantum_efficiency_measurement",
     "readout_snr",
+    "repeated_coherence_measurement",
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
