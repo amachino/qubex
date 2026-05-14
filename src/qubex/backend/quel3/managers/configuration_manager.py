@@ -162,7 +162,7 @@ class Quel3ConfigurationManager:
 
     @property
     def target_alias_map(self) -> dict[str, str]:
-        """Return last deployed target-to-alias mapping."""
+        """Return last deployed target-to-runtime-alias mapping."""
         return dict(self._target_alias_map)
 
     def deploy_instruments(
@@ -232,7 +232,7 @@ class Quel3ConfigurationManager:
                         definition=definition,
                     ),
                 )
-                target_alias_map[alias] = alias
+                target_alias_map[alias] = definition.alias
 
         self._last_deployed_instrument_infos = deployed
         self._target_alias_map = target_alias_map
@@ -339,7 +339,11 @@ class Quel3ConfigurationManager:
         )
         infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
         for inst_info in inst_infos:
-            infos_by_alias[inst_info.definition.alias].append(inst_info)
+            local_alias, _runtime_alias = self._split_alias_for_port(
+                alias=inst_info.definition.alias,
+                port_id=inst_info.port_id,
+            )
+            infos_by_alias[local_alias].append(inst_info)
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
         target_alias_map: dict[str, str] = {}
@@ -350,8 +354,12 @@ class Quel3ConfigurationManager:
                     "quelware did not return the deployed instrument info for one request."
                 )
             deployed[request.alias] = matched_infos
+            runtime_alias = self._runtime_alias_from_instrument_info(
+                instrument_info=matched_infos[0],
+                fallback_alias=request.alias,
+            )
             for target_label in request.target_labels:
-                target_alias_map[target_label] = request.alias
+                target_alias_map[target_label] = runtime_alias
         return _PortDeployResult(
             deployed=deployed,
             target_alias_map=target_alias_map,
@@ -377,9 +385,12 @@ class Quel3ConfigurationManager:
             alias = instrument_info.definition.alias
             if len(alias.strip()) == 0:
                 continue
-            normalized_alias = alias.strip()
-            deployed[normalized_alias] = (instrument_info,)
-            target_alias_map[normalized_alias] = normalized_alias
+            local_alias, runtime_alias = self._split_alias_for_port(
+                alias=alias,
+                port_id=instrument_info.port_id,
+            )
+            deployed[local_alias] = (instrument_info,)
+            target_alias_map[local_alias] = runtime_alias
 
         self._last_deployed_instrument_infos = deployed
         self._target_alias_map = target_alias_map
@@ -416,7 +427,10 @@ class Quel3ConfigurationManager:
             box_id = box_id_by_unit_label.get(unit_label)
             if box_id is None:
                 continue
-            alias = instrument_info.definition.alias.strip()
+            alias, _runtime_alias = self._split_alias_for_port(
+                alias=instrument_info.definition.alias,
+                port_id=instrument_info.port_id,
+            )
             if len(alias) == 0:
                 continue
             definition = self._serialize_instrument_definition(
@@ -478,6 +492,37 @@ class Quel3ConfigurationManager:
         """Extract unit label prefix from one quelware resource ID."""
         return resource_id.split(":", maxsplit=1)[0]
 
+    @classmethod
+    def _split_alias_for_port(cls, *, alias: str, port_id: str) -> tuple[str, str]:
+        """Return local and runtime aliases for one instrument on a port."""
+        runtime_alias = alias.strip()
+        unit_label = cls._extract_unit_label(str(port_id))
+        local_alias = cls._strip_unit_label_prefix(
+            alias=runtime_alias,
+            unit_label=unit_label,
+        )
+        return local_alias, runtime_alias
+
+    @staticmethod
+    def _strip_unit_label_prefix(*, alias: str, unit_label: str) -> str:
+        """Strip the quelware unit prefix from an alias when it matches the port."""
+        prefix = f"{unit_label}:"
+        if alias.startswith(prefix):
+            return alias.removeprefix(prefix)
+        return alias
+
+    @staticmethod
+    def _runtime_alias_from_instrument_info(
+        *,
+        instrument_info: InstrumentInfoProtocol,
+        fallback_alias: str,
+    ) -> str:
+        """Return the runtime alias stored on one quelware instrument info."""
+        alias = instrument_info.definition.alias.strip()
+        if len(alias) > 0:
+            return alias
+        return fallback_alias
+
     @staticmethod
     def _normalize_role_name(role: object) -> str:
         """Normalize one runtime instrument role value to a comparable string."""
@@ -531,6 +576,13 @@ class Quel3ConfigurationManager:
         if not isinstance(definition_config, Mapping):
             return _CachedInstrumentDefinition(alias=alias, role=role_name)
 
+        definition_alias = definition_config.get("alias")
+        runtime_alias = (
+            definition_alias.strip()
+            if isinstance(definition_alias, str) and len(definition_alias.strip()) > 0
+            else alias
+        )
+
         mode = definition_config.get("mode")
         mode_name = None
         if mode is not None:
@@ -551,7 +603,7 @@ class Quel3ConfigurationManager:
             )
 
         return _CachedInstrumentDefinition(
-            alias=alias,
+            alias=runtime_alias,
             role=role_name,
             mode=mode_name,
             profile=profile,
