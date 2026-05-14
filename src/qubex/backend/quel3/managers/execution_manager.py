@@ -32,6 +32,7 @@ from qubex.backend.quel3.interfaces import (
     SequencerProtocol,
     SessionProtocol,
     SetCaptureModeFactory,
+    SetFrequencyFactory,
 )
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.models import (
@@ -184,6 +185,7 @@ class Quel3ExecutionManager:
                 sequencer_factory,
                 create_instrument_driver_fixed_timeline,
                 capture_mode_enum,
+                set_frequency_factory,
                 set_capture_mode_factory,
             ) = self._load_quelware_api()
         except (ModuleNotFoundError, SyntaxError) as exc:
@@ -206,6 +208,7 @@ class Quel3ExecutionManager:
                     runtime=runtime,
                     sequencer_factory=sequencer_factory,
                     capture_mode_enum=capture_mode_enum,
+                    set_frequency_factory=set_frequency_factory,
                     set_capture_mode_factory=set_capture_mode_factory,
                     parallel=parallel,
                 )
@@ -228,6 +231,7 @@ class Quel3ExecutionManager:
                         runtime=runtime,
                         sequencer_factory=sequencer_factory,
                         capture_mode_enum=capture_mode_enum,
+                        set_frequency_factory=set_frequency_factory,
                         set_capture_mode_factory=set_capture_mode_factory,
                         parallel=parallel,
                     )
@@ -276,6 +280,7 @@ class Quel3ExecutionManager:
                 sequencer_factory,
                 create_instrument_driver_fixed_timeline,
                 capture_mode_enum,
+                set_frequency_factory,
                 set_capture_mode_factory,
             ) = self._load_quelware_api()
         except (ModuleNotFoundError, SyntaxError) as exc:
@@ -295,6 +300,7 @@ class Quel3ExecutionManager:
                 runtime=runtime,
                 sequencer_factory=sequencer_factory,
                 capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
                 set_capture_mode_factory=set_capture_mode_factory,
                 parallel=parallel,
             )
@@ -377,6 +383,7 @@ class Quel3ExecutionManager:
         runtime: _ExecutionRuntime,
         sequencer_factory: Callable[..., SequencerProtocol],
         capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
         set_capture_mode_factory: SetCaptureModeFactory,
         parallel: bool,
     ) -> Quel3BackendExecutionResult:
@@ -421,8 +428,10 @@ class Quel3ExecutionManager:
             alias: self._build_driver_directives(
                 alias=alias,
                 sequencer=sequencer,
+                frequency_hz=payload.fixed_timelines[alias].frequency_hz,
                 capture_mode=payload.capture_mode,
                 capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
                 set_capture_mode_factory=set_capture_mode_factory,
             )
             for alias in runtime.alias_to_driver
@@ -470,12 +479,16 @@ class Quel3ExecutionManager:
         *,
         alias: str,
         sequencer: SequencerProtocol,
+        frequency_hz: float | None,
         capture_mode: Quel3CaptureMode,
         capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
         set_capture_mode_factory: SetCaptureModeFactory,
     ) -> list[DirectiveProtocol]:
         """Build the directives applied to one instrument driver."""
         directives: list[DirectiveProtocol] = []
+        if frequency_hz is not None:
+            directives.append(set_frequency_factory(hz=frequency_hz))
         capture_mode_directive = cls._build_capture_mode_directive(
             capture_mode=capture_mode,
             capture_mode_enum=capture_mode_enum,
@@ -572,6 +585,7 @@ class Quel3ExecutionManager:
             list[tuple[float, float, int, str]],
         ] = defaultdict(list)
         alias_to_length_ns: dict[str, float] = {}
+        alias_to_frequency_hz: dict[str, float] = {}
         sequence_index = 0
 
         for target, timeline in payload.fixed_timelines.items():
@@ -593,6 +607,17 @@ class Quel3ExecutionManager:
                 alias_to_length_ns.get(alias, 0.0),
                 timeline.length_ns,
             )
+            if timeline.frequency_hz is not None:
+                current_frequency_hz = alias_to_frequency_hz.get(alias)
+                if (
+                    current_frequency_hz is not None
+                    and current_frequency_hz != timeline.frequency_hz
+                ):
+                    raise ValueError(
+                        "Conflicting frequency directives resolved to the same "
+                        f"instrument alias `{alias}`."
+                    )
+                alias_to_frequency_hz[alias] = timeline.frequency_hz
             for event in timeline.events:
                 alias_to_events[alias].append((sequence_index, event))
                 sequence_index += 1
@@ -636,6 +661,7 @@ class Quel3ExecutionManager:
                 events=events,
                 capture_windows=tuple(capture_windows),
                 length_ns=length_ns,
+                frequency_hz=alias_to_frequency_hz.get(alias),
             )
 
         return Quel3ExecutionPayload(
@@ -807,6 +833,7 @@ class Quel3ExecutionManager:
         Callable[..., SequencerProtocol],
         InstrumentDriverFactory,
         CaptureModeNamespaceProtocol,
+        SetFrequencyFactory,
         SetCaptureModeFactory,
     ]:
         """Import quelware helpers lazily and return required symbols."""
@@ -832,6 +859,7 @@ class Quel3ExecutionManager:
             driver_module.create_instrument_driver_fixed_timeline
         )
         capture_mode_enum: CaptureModeNamespaceProtocol = directive_module.CaptureMode
+        set_frequency_factory: SetFrequencyFactory = directive_module.SetFrequency
         set_capture_mode_factory: SetCaptureModeFactory = (
             directive_module.SetCaptureMode
         )
@@ -841,5 +869,6 @@ class Quel3ExecutionManager:
             sequencer_factory,
             create_instrument_driver_fixed_timeline,
             capture_mode_enum,
+            set_frequency_factory,
             set_capture_mode_factory,
         )
