@@ -62,6 +62,7 @@ _CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
 # Candidate gates for removing unreliable per-detuning Rabi estimates.
 _DETUNED_RABI_PRUNING_R2_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.3)
 _DETUNED_RABI_MIN_R2_IMPROVEMENT = 0.01
+_READOUT_FREQUENCY_MIN_FIT_R2 = 0.9
 
 
 @dataclass(frozen=True)
@@ -276,6 +277,77 @@ def _is_reliable_detuned_rabi_fit(fit_result: Any) -> bool:
         return False
     r2 = fit_result.get("r2", np.nan)
     return bool(np.isfinite(r2) and r2 >= 0.5)
+
+
+def _is_low_quality_readout_frequency_fit(fit_result: Any) -> bool:
+    """Return whether a readout-frequency fit should fall back to measured peak."""
+    status = getattr(fit_result, "status", FitStatus.SUCCESS)
+    if status is not FitStatus.SUCCESS and status != FitStatus.SUCCESS.value:
+        return True
+
+    r2 = fit_result.get("r2", None)
+    if r2 is None:
+        return False
+
+    try:
+        r2_value = float(r2)
+    except (TypeError, ValueError):
+        return True
+    return not np.isfinite(r2_value) or r2_value < _READOUT_FREQUENCY_MIN_FIT_R2
+
+
+def _make_readout_frequency_fallback_figure(
+    *,
+    target: str,
+    frequencies: NDArray,
+    values: NDArray,
+    peak_frequency: float | None,
+    peak_value: float | None,
+) -> go.Figure:
+    """Build a readout-frequency figure when Lorentzian fitting fails."""
+    finite_mask = np.isfinite(frequencies) & np.isfinite(values)
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
+            x=frequencies[finite_mask],
+            y=values[finite_mask],
+            mode="lines+markers",
+            name="Data",
+        )
+    )
+    if peak_frequency is not None and peak_value is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=[peak_frequency],
+                y=[peak_value],
+                mode="markers",
+                marker=dict(color=COLORS[3], size=10, symbol="x"),
+                name="Maximum response",
+            )
+        )
+        fig.add_annotation(
+            x=peak_frequency,
+            y=peak_value,
+            text=f"max: {peak_frequency:.6f}",
+            showarrow=True,
+            arrowhead=1,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+    fig.update_layout(
+        title=dict(
+            text=f"Readout frequency calibration : {target}",
+            subtitle=dict(
+                text="fit failed; using maximum response",
+                font=dict(size=11, family="monospace"),
+            ),
+        ),
+        xaxis_title="Readout frequency (GHz)",
+        yaxis_title="Rabi amplitude (arb. units)",
+        width=600,
+        height=300,
+        margin=dict(t=80),
+    )
+    return fig
 
 
 def _build_ramsey_sequence(
@@ -1304,29 +1376,76 @@ class CharacterizationService:
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
             values_array = np.array(values, dtype=np.float64)
-            y_med = np.median(values_array)
-            f0_guess = detuning_range[np.argmax(values_array)] + freq
-            gamma_guess = (
-                np.max(detuning_range + freq) - np.min(detuning_range + freq)
-            ) / 4
-            A_guess = max(np.max(values_array) - y_med, np.finfo(np.float64).eps)
-            fit_result = fitting.fit_lorentzian(
-                target=target,
-                x=detuning_range + freq,
-                y=values_array,
-                p0=(A_guess, f0_guess, gamma_guess, y_med),
-                bounds=(
-                    (0, np.min(detuning_range + freq), 0, -np.inf),
-                    (np.inf, np.max(detuning_range + freq), np.inf, np.inf),
-                ),
-                plot=plot,
-                title="Readout frequency calibration",
-                xlabel="Readout frequency (GHz)",
+            frequency_values = detuning_range + freq
+            peak_frequency = None
+            peak_value = None
+            fit_result = FitResult(
+                status=FitStatus.ERROR,
+                message="No finite readout-frequency calibration data.",
             )
-            if "f0" in fit_result:
+            finite_mask = np.isfinite(values_array) & np.isfinite(frequency_values)
+            if np.any(finite_mask):
+                fit_frequencies = frequency_values[finite_mask]
+                fit_values = values_array[finite_mask]
+                peak_index = int(np.argmax(fit_values))
+                peak_frequency = float(fit_frequencies[peak_index])
+                peak_value = float(fit_values[peak_index])
+                y_med = float(np.median(fit_values))
+                frequency_min = float(np.min(fit_frequencies))
+                frequency_max = float(np.max(fit_frequencies))
+                f0_lower = float(np.nextafter(frequency_min, -np.inf))
+                f0_upper = float(np.nextafter(frequency_max, np.inf))
+                gamma_guess = max(
+                    (frequency_max - frequency_min) / 4,
+                    np.finfo(np.float64).eps,
+                )
+                A_guess = max(
+                    float(np.max(fit_values) - y_med),
+                    np.finfo(np.float64).eps,
+                )
+                try:
+                    fit_result = fitting.fit_lorentzian(
+                        target=target,
+                        x=fit_frequencies,
+                        y=fit_values,
+                        p0=(A_guess, peak_frequency, gamma_guess, y_med),
+                        bounds=(
+                            (0, f0_lower, 0, -np.inf),
+                            (np.inf, f0_upper, np.inf, np.inf),
+                        ),
+                        plot=plot,
+                        title="Readout frequency calibration",
+                        xlabel="Readout frequency (GHz)",
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        "Failed to fit readout frequency for %s; using "
+                        "maximum-response frequency. %s",
+                        target,
+                        exc,
+                    )
+            if (
+                _is_low_quality_readout_frequency_fit(fit_result)
+                or "f0" not in fit_result
+            ):
+                if peak_frequency is not None:
+                    fit_data[target] = peak_frequency
+            elif "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
 
             fig = fit_result.figure
+            if fig is None:
+                fig = _make_readout_frequency_fallback_figure(
+                    target=target,
+                    frequencies=frequency_values,
+                    values=values_array,
+                    peak_frequency=peak_frequency,
+                    peak_value=peak_value,
+                )
+                if plot:
+                    fig.show(
+                        config=viz.get_config(filename=f"readout_frequency_{target}")
+                    )
             if fig is not None:
                 figs[target] = fig
 
