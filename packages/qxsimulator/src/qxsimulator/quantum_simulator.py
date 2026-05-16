@@ -690,7 +690,7 @@ class SimulationResult:
         population = self._get_population(states[-1])
         for idx, prob in enumerate(population):
             basis = self.system.basis_labels[idx] if label is None else str(idx)
-            logger.info(f"|{basis}⟩: {prob * 100:6.3f}%")
+            print(f"|{basis}⟩: {prob * 100:6.3f}%")
 
     def plot_population_dynamics(
         self,
