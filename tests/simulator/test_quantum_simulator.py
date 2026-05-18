@@ -52,7 +52,7 @@ def test_sesolve_matches_mesolve_for_closed_system() -> None:
     )
 
 
-def test_sesolve_population_display_supports_ket_states(caplog) -> None:
+def test_sesolve_population_display_supports_ket_states(capsys) -> None:
     """Given sesolve output, population display should handle ket states."""
     system, control = _driven_single_qubit()
     simulator = QuantumSimulator(system)
@@ -63,11 +63,11 @@ def test_sesolve_population_display_supports_ket_states(caplog) -> None:
         dt=0.1,
     )
 
-    caplog.set_level("INFO", logger="qxsimulator.quantum_simulator")
     result.show_last_population()
 
-    assert "|0⟩:" in caplog.text
-    assert "|1⟩:" in caplog.text
+    captured = capsys.readouterr()
+    assert "|0⟩:" in captured.out
+    assert "|1⟩:" in captured.out
 
 
 def test_sesolve_rejects_density_matrix_initial_state() -> None:
