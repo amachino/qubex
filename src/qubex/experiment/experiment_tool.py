@@ -459,8 +459,8 @@ def print_chip_info(
             t2_star_ef_values = loader.load_param_data("t2_star_ef")
             if t2_star_values and t2_star_ef_values:
                 values: dict[str, float] = {}
-                for qubit, raw_t2_star in t2_star_values.items():
-                    t2_star = cast(float | None, raw_t2_star)
+                for qubit in graph.qubits:
+                    t2_star = cast(float | None, t2_star_values.get(qubit))
                     t2_star_ef = cast(float | None, t2_star_ef_values.get(qubit))
                     if (
                         t2_star is not None

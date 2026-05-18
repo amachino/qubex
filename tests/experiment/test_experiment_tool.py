@@ -271,7 +271,6 @@ def test_print_chip_info_maps_t2_star_ef_ratio(monkeypatch) -> None:
                     "Q0": 10_000.0,
                     "Q1": 0.0,
                     "Q2": None,
-                    "Q3": float("nan"),
                 }
             if name == "t2_star_ef":
                 return {
@@ -289,6 +288,7 @@ def test_print_chip_info_maps_t2_star_ef_ratio(monkeypatch) -> None:
 
         def __init__(self, n_qubits: int) -> None:
             self.n_qubits = n_qubits
+            self.qubits = [f"Q{i}" for i in range(n_qubits)]
 
         def plot_lattice_data(self, **kwargs: object) -> None:
             """Record one lattice plot call."""
@@ -315,6 +315,7 @@ def test_print_chip_info_maps_t2_star_ef_ratio(monkeypatch) -> None:
     texts = cast(list[str], call["texts"])
     hovertexts = cast(list[str], call["hovertexts"])
     assert call["title"] == "T2* EF / T2* (%)"
+    assert len(values) == 4
     assert values[0] == 50.0
     assert math.isnan(values[1])
     assert math.isnan(values[2])
