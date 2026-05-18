@@ -698,6 +698,29 @@ def test_load_param_data_accepts_qubit_indices_in_per_file_yaml(tmp_path: Path) 
     )
 
 
+def test_load_param_data_accepts_t2_star_ef_yaml(tmp_path: Path) -> None:
+    """Given T2* EF per-file params, when loading, then ConfigLoader converts units."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        params_dir / "t2_star_ef.yaml",
+        {
+            "meta": {"unit": "us"},
+            "data": {0: 7.5, 1: None},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    values = loader.load_param_data("t2_star_ef", use_default=False)
+
+    assert math.isclose(values["Q0"], 7500.0, rel_tol=0, abs_tol=1e-9)
+    assert values["Q1"] is None
+
+
 def test_loader_uses_env_root_defaults_for_shared_layout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

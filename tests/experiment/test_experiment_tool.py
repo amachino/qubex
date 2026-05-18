@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -251,6 +252,79 @@ def test_print_chip_info_uses_active_system_id_for_chip_summary(
         "config_dir": tmp_path / "config",
         "params_dir": tmp_path / "params",
     }
+
+
+def test_print_chip_info_maps_t2_star_ef_ratio(monkeypatch) -> None:
+    """Given T2* and T2* EF data, when printing T2* EF info, then ratio is mapped."""
+
+    class FakeParamLoader:
+        """Config-loader stub returning coherence maps."""
+
+        def __init__(self) -> None:
+            self.requests: list[str] = []
+
+        def load_param_data(self, name: str) -> dict[str, float | None]:
+            """Return fake parameter data by name."""
+            self.requests.append(name)
+            if name == "t2_star":
+                return {
+                    "Q0": 10_000.0,
+                    "Q1": 0.0,
+                    "Q2": None,
+                }
+            if name == "t2_star_ef":
+                return {
+                    "Q0": 5_000.0,
+                    "Q1": 1_000.0,
+                    "Q2": 4_000.0,
+                    "Q3": 2_000.0,
+                }
+            return {}
+
+    plot_calls: list[dict[str, object]] = []
+
+    class FakeLatticeGraph:
+        """LatticeGraph stub recording plot arguments."""
+
+        def __init__(self, n_qubits: int) -> None:
+            self.n_qubits = n_qubits
+            self.qubits = [f"Q{i}" for i in range(n_qubits)]
+
+        def plot_lattice_data(self, **kwargs: object) -> None:
+            """Record one lattice plot call."""
+            plot_calls.append(kwargs)
+
+    fake_loader = FakeParamLoader()
+    fake_chip = type("FakeChip", (), {"id": "TESTCHIP", "n_qubits": 4})()
+    fake_manager = FakeSystemManager(
+        experiment_system=type(
+            "FakeExperimentSystemWithChip", (), {"chip": fake_chip}
+        )(),
+        backend_controller=FakeBackendController(),
+        config_loader=fake_loader,
+    )
+    monkeypatch.setattr(experiment_tool, "system_manager", fake_manager)
+    monkeypatch.setattr(experiment_tool, "LatticeGraph", FakeLatticeGraph)
+
+    experiment_tool.print_chip_info("t2_star_ef", save_image=True)
+
+    assert fake_loader.requests == ["t2_star", "t2_star_ef"]
+    assert len(plot_calls) == 1
+    call = plot_calls[0]
+    values = cast(list[float], call["values"])
+    texts = cast(list[str], call["texts"])
+    hovertexts = cast(list[str], call["hovertexts"])
+    assert call["title"] == "T2* EF / T2* (%)"
+    assert len(values) == 4
+    assert values[0] == 50.0
+    assert math.isnan(values[1])
+    assert math.isnan(values[2])
+    assert math.isnan(values[3])
+    assert texts[0] == "Q0<br>50.00<br>%"
+    assert texts[1:] == ["N/A", "N/A", "N/A"]
+    assert hovertexts[0] == "Q0: 50.000%"
+    assert call["save_image"] is True
+    assert call["image_name"] == "t2_star_ef"
 
 
 def test_check_skew_renders_figure_widget_via_plotly_figure(

@@ -268,6 +268,7 @@ def print_chip_info(
         "qubit_anharmonicity",
         "t1",
         "t2_star",
+        "t2_star_ef",
         "t2_echo",
         "static_zz_interaction",
         "qubit_qubit_coupling_strength",
@@ -315,6 +316,7 @@ def print_chip_info(
             "qubit_anharmonicity",
             "t1",
             "t2_star",
+            "t2_star_ef",
             "t2_echo",
             "static_zz_interaction",
             "qubit_qubit_coupling_strength",
@@ -450,6 +452,41 @@ def print_chip_info(
                     ],
                     save_image=save_image,
                     image_name="t2_star",
+                )
+
+        if "t2_star_ef" in info_type:
+            t2_star_values = loader.load_param_data("t2_star")
+            t2_star_ef_values = loader.load_param_data("t2_star_ef")
+            if t2_star_values and t2_star_ef_values:
+                values: dict[str, float] = {}
+                for qubit in graph.qubits:
+                    t2_star = cast(float | None, t2_star_values.get(qubit))
+                    t2_star_ef = cast(float | None, t2_star_ef_values.get(qubit))
+                    if (
+                        t2_star is not None
+                        and t2_star_ef is not None
+                        and not math.isnan(t2_star)
+                        and not math.isnan(t2_star_ef)
+                        and t2_star > 0.0
+                    ):
+                        values[qubit] = t2_star_ef / t2_star * 100.0
+                    else:
+                        values[qubit] = math.nan
+                graph.plot_lattice_data(
+                    title="T2* EF / T2* (%)",
+                    values=list(values.values()),
+                    texts=[
+                        f"{qubit}<br>{value:.2f}<br>%" if _is_valid(value) else "N/A"
+                        for qubit, value in values.items()
+                    ],
+                    hovertexts=[
+                        f"{qubit}: {value:.3f}%"
+                        if _is_valid(value)
+                        else f"{qubit}: N/A"
+                        for qubit, value in values.items()
+                    ],
+                    save_image=save_image,
+                    image_name="t2_star_ef",
                 )
 
         if "t2_echo" in info_type:
