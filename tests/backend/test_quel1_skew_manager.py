@@ -85,6 +85,16 @@ class _FakeNamedBox:
     box: _FakeBox
 
 
+@dataclass
+class _FakeEstimatedPulseParams:
+    idx: int
+
+
+class _FakeSkewWithEstimated:
+    def __init__(self, estimated: dict[tuple[str, int], _FakeEstimatedPulseParams]):
+        self._estimated = estimated
+
+
 class _FakeQuel1SystemClass:
     create_calls: ClassVar[list[dict[str, Any]]] = []
 
@@ -319,7 +329,7 @@ def test_run_skew_measurement_passes_empty_boxes_when_system_is_provided() -> No
 def test_update_skew_updates_selected_boxes_and_creates_backup(
     tmp_path: Path,
 ) -> None:
-    """Given selected boxes, when updating skew, then only those waits change and a backup is created."""
+    """Given measured indices, when updating skew, then selected port waits shift toward the target."""
     sysdb = _FakeSysDb()
     runtime_context = _FakeRuntimeContext(
         available_boxes=[],
@@ -334,36 +344,49 @@ def test_update_skew_updates_selected_boxes_and_creates_backup(
 box_setting:
   A:
     slot: 0
-    wait: 0
+    port_wait:
+      1: 0
   B:
     slot: 1
-    wait: 1
+    port_wait:
+      8: 1
+      9: 2
 time_to_start: 0
 """.strip()
         + "\n",
         encoding="utf-8",
     )
+    cast(Any, manager)._last_skew = _FakeSkewWithEstimated(
+        {
+            ("B", 8): _FakeEstimatedPulseParams(idx=70),
+            ("B", 9): _FakeEstimatedPulseParams(idx=90),
+        }
+    )
 
     result = manager.update_skew(
         file_path=path,
-        wait=250,
+        wait=80,
         box_names=["B"],
         backup=True,
     )
 
-    backup_path = path.with_suffix(f"{path.suffix}.bak")
+    backup_path = result["backup_path"]
+    assert isinstance(backup_path, Path)
+    assert backup_path.parent == path.parent
+    assert backup_path.name.startswith("skew.yaml.bak.")
+    assert len(backup_path.name.removeprefix("skew.yaml.bak.")) == 15
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     backup_payload = yaml.safe_load(backup_path.read_text(encoding="utf-8"))
     assert result == {
         "file_path": path,
         "backup_path": backup_path,
         "box_names": ["B"],
-        "wait": 250,
+        "wait": 80,
     }
-    assert payload["box_setting"]["A"]["wait"] == 0
-    assert payload["box_setting"]["B"]["wait"] == 250
-    assert backup_payload["box_setting"]["A"]["wait"] == 0
-    assert backup_payload["box_setting"]["B"]["wait"] == 1
+    assert payload["box_setting"]["A"]["port_wait"] == {1: 0}
+    assert payload["box_setting"]["B"]["port_wait"] == {8: 11, 9: 0}
+    assert backup_payload["box_setting"]["A"]["port_wait"] == {1: 0}
+    assert backup_payload["box_setting"]["B"]["port_wait"] == {8: 1, 9: 2}
     assert sysdb.load_skew_yaml_calls == [str(path)]
 
 
@@ -383,7 +406,8 @@ def test_update_skew_rejects_unknown_box_name(tmp_path: Path) -> None:
 box_setting:
   A:
     slot: 0
-    wait: 0
+    port_wait:
+      1: 0
 time_to_start: 0
 """.strip()
         + "\n"

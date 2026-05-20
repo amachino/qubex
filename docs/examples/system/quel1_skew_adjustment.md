@@ -72,8 +72,9 @@ figure = result.figure
 
 ## Update the target skew value
 
-When you want to set one common wait value across a set of boxes, call
-`exp.tool.update_skew(...)`.
+After `check_skew(...)` estimates the current pulse indices, call
+`exp.tool.update_skew(...)` to shift each measured `port_wait` so the indices
+align to a common target.
 
 ```python
 exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
@@ -82,7 +83,8 @@ exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
 This helper:
 
 - updates `box_setting.<box>.wait` in `skew.yaml`
-- writes a backup file as `skew.yaml.bak` when `backup=True`
+- writes a timestamped backup file such as `skew.yaml.bak.20260520_124900`
+  when `backup=True`
 - reloads the updated skew file into the active QuEL-1 backend
 
 If `box_ids` is omitted, Qubex updates every box listed under `box_setting`.

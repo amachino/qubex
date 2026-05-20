@@ -62,10 +62,13 @@ def check_skew(
     config_dir: str | None = None,
     skew_file: str | None = None,
     box_file: str | None = None,
+    confirm: bool | None = None,
 ) -> Result:
     """Check the skew of the boxes."""
     if estimate is None:
         estimate = True
+    if confirm is None:
+        confirm = True
     if skew_file is None:
         skew_file = "skew.yaml"
     if box_file is None:
@@ -89,32 +92,43 @@ def check_skew(
     with open(skew_file_path) as file:
         config = yaml.safe_load(file)
     ref_port = config["reference_port"].split("-")[0]
+    monitor_port = config.get("monitor_port")
+    monitor_box_id = (
+        monitor_port.split("-")[0] if isinstance(monitor_port, str) else None
+    )
+    target_box_ids = (
+        list(dict.fromkeys([*box_ids, monitor_box_id]))
+        if monitor_box_id is not None
+        else box_ids
+    )
 
-    confirmed = Confirm.ask(
-        f"""
+    if confirm:
+        confirmed = Confirm.ask(
+            f"""
 You are going to check the skew of the following boxes using [bold bright_green]'{ref_port}'[/bold bright_green] as the reference.
 
-[bold bright_green]{box_ids}[/bold bright_green]
+[bold bright_green]{target_box_ids}[/bold bright_green]
 
 Do you want to continue?
 """
-    )
-    if not confirmed:
-        logger.info("Operation cancelled.")
-        return Result()
+        )
+        if not confirmed:
+            logger.info("Operation cancelled.")
+            return Result()
 
-    all_box_ids = list({*box_ids, ref_port})
+    all_box_ids = list(dict.fromkeys([*target_box_ids, ref_port]))
     run_skew_measurement = _require_backend_callable("run_skew_measurement")
     skew, fig = run_skew_measurement(
         skew_yaml_path=skew_file_path,
         box_yaml_path=box_file_path,
         clockmaster_ip=clock_master_address,
         box_names=all_box_ids,
+        target_box_names=target_box_ids,
         estimate=estimate,
     )
     figure = cast(_FigureLike, fig)
     figure.update_layout(
-        title=f"Skew : {', '.join(box_ids)!s} (Ref. {ref_port})",
+        title=f"Skew : {', '.join(target_box_ids)!s} (Ref. {ref_port})",
         width=800,
     )
     rendered_figure = go.Figure(fig)
@@ -137,7 +151,7 @@ def update_skew(
     skew_file: str | None = None,
     backup: bool | None = None,
 ) -> Result:
-    """Update skew waits in one skew YAML file and reload backend settings."""
+    """Shift skew `port_wait` values so measured indices match the target wait."""
     if skew_file is None:
         skew_file = "skew.yaml"
     if backup is None:

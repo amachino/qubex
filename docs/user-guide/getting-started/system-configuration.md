@@ -209,8 +209,10 @@ exp.tool.update_skew(250, ["BOX_A", "BOX_B"], backup=True)
 result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 ```
 
-`exp.tool.update_skew(...)` overwrites `skew.yaml`. Set `backup=True` when you
-want to save the previous file as `skew.yaml.bak`.
+`exp.tool.update_skew(target, ...)` shifts each measured `port_wait` by
+`target - measured_idx` based on the previous `check_skew(...)` result, then
+overwrites `skew.yaml`. Set `backup=True` when you want to save the previous
+file as a timestamped backup such as `skew.yaml.bak.20260520_124900`.
 
 For a full walkthrough, see [QuEL-1 skew adjustment workflow](../../examples/system/quel1_skew_adjustment.md).
 

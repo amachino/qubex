@@ -191,7 +191,11 @@ exp.tool.update_skew(250, ["BOX_A", "BOX_B"], backup=True)
 result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 ```
 
-`exp.tool.update_skew(...)` は `skew.yaml` を上書きします。更新前のファイルを残したい場合は `backup=True` を指定してください。
+`exp.tool.update_skew(target, ...)` は直前の `check_skew(...)` の推定結果を使い、
+各 measured port の `port_wait` を `target - measured_idx` だけずらしてから
+`skew.yaml` を上書きします。更新前のファイルを残したい場合は
+`backup=True` を指定してください。`skew.yaml.bak.20260520_124900` のような
+timestamp 付き backup が作られます。
 
 手順全体は [QuEL-1 skew 調整ワークフロー](../../examples/system/quel1_skew_adjustment.md) を参照してください。
 

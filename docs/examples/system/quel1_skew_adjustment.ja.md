@@ -70,7 +70,9 @@ figure = result.figure
 
 ## 目標 skew 値を設定する
 
-複数 box に共通の wait 値を入れたいときは、`exp.tool.update_skew(...)` を使います。
+`check_skew(...)` で現在の pulse index を推定したあと、
+各 measured port の index が共通 target に揃うように `port_wait` をずらすには
+`exp.tool.update_skew(...)` を使います。
 
 ```python
 exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
@@ -79,7 +81,7 @@ exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
 この helper は次を行います。
 
 - `skew.yaml` の `box_setting.<box>.wait` を更新する
-- `backup=True` なら `skew.yaml.bak` を作る
+- `backup=True` なら `skew.yaml.bak.20260520_124900` のような timestamp 付き backup を作る
 - 更新後の skew file を有効な QuEL-1 backend に再読込する
 
 `box_ids` を省略すると、`box_setting` にある全 box を更新します。
