@@ -121,6 +121,27 @@ def test_padded_can_skip_deepcopy_without_mutating_original_schedule() -> None:
     )
 
 
+@pytest.mark.parametrize("method_name", ["pad", "padded"])
+def test_padding_accepts_float_equivalent_total_duration(method_name):
+    """PulseSchedule padding should accept total duration equal within float roundoff."""
+    original_dt = qx.pulse.get_sampling_period()
+    try:
+        qx.pulse.set_sampling_period(0.4)
+        with PulseSchedule(["Q00"]) as schedule:
+            schedule.add("Q00", Blank(duration=183.2))
+
+        if method_name == "pad":
+            result = schedule
+            schedule.pad(183.2)
+        else:
+            result = schedule.padded(183.2)
+
+        assert result.length == 458
+        assert result.duration == pytest.approx(183.2, abs=1e-12)
+    finally:
+        qx.pulse.set_sampling_period(original_dt)
+
+
 def test_scaled():
     """PulseSchedule should be scaled by a given parameter."""
     with PulseSchedule() as ps:

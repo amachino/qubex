@@ -31,7 +31,7 @@ from .blank import Blank
 from .phase_shift import PhaseShift
 from .pulse import Arbitrary
 from .pulse_array import PulseArray
-from .waveform import Waveform
+from .waveform import Waveform, is_zero_within_sampling_grid
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +173,8 @@ class PulseSchedule:
             return 0
         if not self.is_valid():
             raise ValueError("Inconsistent sequence lengths.")
-        sampling_periods = {
-            channel.sequence.sampling_period for channel in self._channels.values()
-        }
-        if len(sampling_periods) != 1:
-            raise ValueError("Inconsistent sampling periods across channels.")
         # Bind length computation to schedule-contained sampling periods, not mutable global defaults.
-        sampling_period = next(iter(sampling_periods))
+        sampling_period = self._resolve_sampling_period()
         # NOTE:
         #   Using floor division (//) with floating point numbers can lead to an off-by-one
         #   error due to binary representation (e.g. 100 // 0.1 -> 999.0 instead of 1000.0).
@@ -313,6 +308,8 @@ class PulseSchedule:
             and sequence containers.
         """
         duration = total_duration - self.duration
+        if is_zero_within_sampling_grid(duration, self._resolve_sampling_period()):
+            duration = 0.0
         if duration < 0:
             raise ValueError(
                 f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
@@ -349,6 +346,8 @@ class PulseSchedule:
             Side of the zero padding.
         """
         duration = total_duration - self.duration
+        if is_zero_within_sampling_grid(duration, self._resolve_sampling_period()):
+            duration = 0.0
         if duration < 0:
             raise ValueError(
                 f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
@@ -992,6 +991,17 @@ class PulseSchedule:
         max_offset = max(offsets, default=0.0)
 
         return max_offset
+
+    def _resolve_sampling_period(self) -> float:
+        """Return the unique schedule-contained sampling period."""
+        if len(self._channels) == 0:
+            return Waveform.SAMPLING_PERIOD
+        sampling_periods = {
+            channel.sequence.sampling_period for channel in self._channels.values()
+        }
+        if len(sampling_periods) != 1:
+            raise ValueError("Inconsistent sampling periods across channels.")
+        return next(iter(sampling_periods))
 
     @staticmethod
     def _downsample(
