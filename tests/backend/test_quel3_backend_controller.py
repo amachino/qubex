@@ -25,6 +25,7 @@ from qubex.backend.quel3 import (
     Quel3Waveform,
     Quel3WaveformEvent,
 )
+from qubex.backend.quel3.managers import execution_manager as execution_manager_module
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 
 
@@ -1033,6 +1034,7 @@ class _FakeSession:
 class _FakeClient:
     def __init__(self, session: _FakeSession) -> None:
         self._session = session
+        self.exit_calls = 0
 
     async def __aenter__(self) -> _FakeClient:
         return self
@@ -1044,10 +1046,351 @@ class _FakeClient:
         tb: object,
     ) -> None:
         del exc_type, exc, tb
+        self.exit_calls += 1
 
     def create_session(self, resource_ids: list[str]) -> _FakeSession:
         del resource_ids
         return self._session
+
+
+class _FlakyTriggerSession(_FakeSession):
+    def __init__(self, *, fail_once: bool) -> None:
+        super().__init__()
+        self._fail_once = fail_once
+        self.exit_calls = 0
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, exc, tb
+        self.exit_calls += 1
+
+    async def trigger(self, instrument_ids: list[str]) -> None:
+        await super().trigger(instrument_ids)
+        if self._fail_once:
+            self._fail_once = False
+            raise RuntimeError("quelware request failed")
+
+
+class _CloseFailingSession(_FakeSession):
+    def __init__(self, *, fail_trigger: bool = False) -> None:
+        super().__init__()
+        self._fail_trigger = fail_trigger
+        self.exit_calls = 0
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, exc, tb
+        self.exit_calls += 1
+        raise RuntimeError("quelware close failed")
+
+    async def trigger(self, instrument_ids: list[str]) -> None:
+        await super().trigger(instrument_ids)
+        if self._fail_trigger:
+            raise RuntimeError("quelware request failed")
+
+
+def test_execute_recreates_session_after_transient_request_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given transient quelware request failure, execute should retry with a new session."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    sessions = [
+        _FlakyTriggerSession(fail_once=True),
+        _FlakyTriggerSession(fail_once=False),
+    ]
+    clients: list[_FakeClient] = []
+    drivers: list[_FakeInstrumentDriver] = []
+
+    def _create_client(endpoint: str, port: int) -> _FakeClient:
+        del endpoint, port
+        client = _FakeClient(sessions[len(clients)])
+        clients.append(client)
+        return client
+
+    def _create_driver(
+        session: object, instrument_info: object
+    ) -> _FakeInstrumentDriver:
+        del session, instrument_info
+        driver = _FakeInstrumentDriver()
+        drivers.append(driver)
+        return driver
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            _create_client,
+            lambda: resolver,
+            _FakeSequencer,
+            _create_driver,
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=payload))
+    )
+
+    assert len(clients) == 2
+    assert [client.exit_calls for client in clients] == [1, 1]
+    assert [session.exit_calls for session in sessions] == [1, 1]
+    assert sessions[0].trigger_calls == [["alias-rq00"]]
+    assert sessions[1].trigger_calls == [["alias-rq00"]]
+    assert len(drivers) == 2
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_execute_ignores_session_close_failure_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given request succeeds but close fails, execute should preserve the result."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    session = _CloseFailingSession()
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda session, instrument_info: _FakeInstrumentDriver(),
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    result = asyncio.run(
+        manager.execute_async(request=BackendExecutionRequest(payload=payload))
+    )
+
+    assert client.exit_calls == 1
+    assert session.exit_calls == 1
+    assert session.trigger_calls == [["alias-rq00"]]
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([1.0 + 0.0j], dtype=np.complex128),
+    )
+
+
+def test_execute_preserves_request_failure_when_session_close_also_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given request and close both fail, execute should raise the request error."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    session = _CloseFailingSession(fail_trigger=True)
+    client = _FakeClient(session)
+
+    monkeypatch.setattr(
+        execution_manager_module,
+        "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS",
+        1,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            lambda endpoint, port: client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda session, instrument_info: _FakeInstrumentDriver(),
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="quelware request failed"):
+        asyncio.run(
+            manager.execute_async(request=BackendExecutionRequest(payload=payload))
+        )
+
+    assert client.exit_calls == 1
+    assert session.exit_calls == 1
+    assert session.trigger_calls == [["alias-rq00"]]
+
+
+def test_execute_uses_configured_session_request_retry_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given configured retry limit, execute should stop after that many attempts."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    sessions = [
+        _FlakyTriggerSession(fail_once=True),
+        _FlakyTriggerSession(fail_once=True),
+    ]
+    clients: list[_FakeClient] = []
+
+    def _create_client(endpoint: str, port: int) -> _FakeClient:
+        del endpoint, port
+        client = _FakeClient(sessions[len(clients)])
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(
+        execution_manager_module,
+        "QUEL3_SESSION_REQUEST_MAX_ATTEMPTS",
+        2,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            _create_client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda session, instrument_info: _FakeInstrumentDriver(),
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="quelware request failed"):
+        asyncio.run(
+            manager.execute_async(request=BackendExecutionRequest(payload=payload))
+        )
+
+    assert len(clients) == 2
+    assert [client.exit_calls for client in clients] == [1, 1]
+    assert [session.exit_calls for session in sessions] == [1, 1]
+    assert [session.trigger_calls for session in sessions] == [
+        [["alias-rq00"]],
+        [["alias-rq00"]],
+    ]
+
+
+def test_execute_batch_recreates_session_after_transient_request_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given transient quelware request failure, batch execute should retry the batch."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    resolver = _FakeInstrumentResolver(
+        alias_to_info={
+            "alias-rq00": _FakeInstrumentInfo(
+                port_id="quel3-02-a01:trx_p00",
+                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+            )
+        }
+    )
+    sessions = [
+        _FlakyTriggerSession(fail_once=True),
+        _FlakyTriggerSession(fail_once=False),
+    ]
+    clients: list[_FakeClient] = []
+
+    def _create_client(endpoint: str, port: int) -> _FakeClient:
+        del endpoint, port
+        client = _FakeClient(sessions[len(clients)])
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: (
+            _create_client,
+            lambda: resolver,
+            _FakeSequencer,
+            lambda session, instrument_info: _FakeInstrumentDriver(),
+            SimpleNamespace(AVERAGED_VALUE="avg"),
+            lambda *, hz: ("frequency", hz),
+            lambda *, mode: ("capture_mode", mode),
+        ),
+    )
+
+    results = asyncio.run(
+        manager.execute_batch_async(
+            requests=(
+                BackendExecutionRequest(payload=payload),
+                BackendExecutionRequest(payload=payload),
+            )
+        )
+    )
+
+    assert len(results) == 2
+    assert len(clients) == 2
+    assert [client.exit_calls for client in clients] == [1, 1]
+    assert [session.exit_calls for session in sessions] == [1, 1]
+    assert sessions[0].trigger_calls == [["alias-rq00"]]
+    assert sessions[1].trigger_calls == [["alias-rq00"], ["alias-rq00"]]
 
 
 def test_execute_batches_capture_mode_with_timeline_directive(

@@ -22,6 +22,10 @@ from qubex.backend.quel3.interfaces.client import (
     ResourceInfoProtocol,
     SessionProtocol,
 )
+from qubex.backend.quel3.managers.session_workarounds import (
+    QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
+    enter_quelware_session_with_resource_retry,
+)
 from qubex.backend.quel3.models import InstrumentDeployRequest
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
@@ -273,12 +277,59 @@ class Quel3ConfigurationManager:
             (port_id, tuple(port_requests))
             for port_id, port_requests in requests_by_port.items()
         )
+        port_results: list[_PortDeployResult]
+        for attempt in range(QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS):
+            try:
+                port_results = await self._deploy_port_batches(
+                    client_factory=client_factory,
+                    port_request_batches=port_request_batches,
+                    fixed_timeline_profile_cls=fixed_timeline_profile_cls,
+                    instrument_definition_cls=instrument_definition_cls,
+                    instrument_mode=instrument_mode,
+                    instrument_role=instrument_role,
+                    parallel=parallel,
+                )
+                break
+            except Exception:
+                if attempt + 1 >= QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS:
+                    raise
+        else:
+            raise RuntimeError("unreachable QuEL-3 deploy retry state")
+
+        for port_result in port_results:
+            deployed.update(port_result.deployed)
+            target_alias_map.update(port_result.target_alias_map)
+
+        self._last_deployed_instrument_infos = dict(deployed)
+        # Keep local alias/instrument cache aligned with the explicitly deployed
+        # subset so it matches this replacement-style call behavior.
+        self._target_alias_map = target_alias_map
+        return deployed
+
+    async def _deploy_port_batches(
+        self,
+        *,
+        client_factory: QuelwareClientFactory,
+        port_request_batches: tuple[
+            tuple[str, tuple[InstrumentDeployRequest, ...]], ...
+        ],
+        fixed_timeline_profile_cls: _FixedTimelineProfileFactory,
+        instrument_definition_cls: _InstrumentDefinitionFactory,
+        instrument_mode: _EnumNamespace,
+        instrument_role: _EnumNamespace,
+        parallel: bool,
+    ) -> list[_PortDeployResult]:
+        """Deploy port batches in one quelware client/session context."""
         async with client_factory(
             self._quelware_endpoint,
             self._quelware_port,
         ) as client:
             session_resource_ids = [port_id for port_id, _ in port_request_batches]
-            async with client.create_session(session_resource_ids) as session:
+            session_cm, session = await enter_quelware_session_with_resource_retry(
+                client=client,
+                resource_ids=session_resource_ids,
+            )
+            try:
                 deploy_coroutines = [
                     self._deploy_port_batch(
                         session=session,
@@ -291,21 +342,13 @@ class Quel3ConfigurationManager:
                     )
                     for port_id, port_requests in port_request_batches
                 ]
-                port_results = (
-                    await asyncio.gather(*deploy_coroutines)
+                return (
+                    list(await asyncio.gather(*deploy_coroutines))
                     if parallel
                     else [await coro for coro in deploy_coroutines]
                 )
-
-        for port_result in port_results:
-            deployed.update(port_result.deployed)
-            target_alias_map.update(port_result.target_alias_map)
-
-        self._last_deployed_instrument_infos = dict(deployed)
-        # Keep local alias/instrument cache aligned with the explicitly deployed
-        # subset so it matches this replacement-style call behavior.
-        self._target_alias_map = target_alias_map
-        return deployed
+            finally:
+                await session_cm.__aexit__(None, None, None)
 
     async def _deploy_port_batch(
         self,

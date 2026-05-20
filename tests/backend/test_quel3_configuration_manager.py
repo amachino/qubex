@@ -10,6 +10,7 @@ import pytest
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
     configuration_manager as configuration_manager_module,
+    session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.models import InstrumentDeployRequest
 
@@ -159,6 +160,282 @@ def test_deploy_instruments_calls_session_api(
     assert definition.alias == "Q00"
     assert manager.target_alias_map == {"Q00": definition.alias}
     assert definition.alias in deployed
+
+
+def test_deploy_instruments_recreates_session_after_transient_request_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given transient quelware request failure, deploy should retry with a new session."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    class _Profile:
+        def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
+            self.frequency_range_min = frequency_range_min
+            self.frequency_range_max = frequency_range_max
+
+    class _Definition:
+        def __init__(self, *, alias: str, mode: object, role: object, profile: object):
+            self.alias = alias
+            self.mode = mode
+            self.role = role
+            self.profile = profile
+
+    class _Mode:
+        FIXED_TIMELINE = "fixed_timeline"
+
+    class _Role:
+        TRANSMITTER = "transmitter"
+
+    @dataclass(frozen=True)
+    class _InstrumentInfo:
+        id: str
+        port_id: str
+        definition: _Definition
+
+    class _FakeSession:
+        def __init__(self, *, fail_once: bool) -> None:
+            self._fail_once = fail_once
+            self.deploy_calls: list[str] = []
+            self.exit_calls = 0
+
+        async def __aenter__(self) -> _FakeSession:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+            self.exit_calls += 1
+
+        async def deploy_instruments(
+            self,
+            port_id: str,
+            *,
+            definitions: list[_Definition],
+            append: bool = False,
+        ) -> list[_InstrumentInfo]:
+            del append
+            self.deploy_calls.append(port_id)
+            if self._fail_once:
+                self._fail_once = False
+                raise RuntimeError("quelware request failed")
+            return [
+                _InstrumentInfo(
+                    id=f"id:{port_id}",
+                    port_id=port_id,
+                    definition=definitions[0],
+                )
+            ]
+
+    class _FakeClient:
+        def __init__(self, session: _FakeSession) -> None:
+            self._session = session
+            self.exit_calls = 0
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+            self.exit_calls += 1
+
+        def create_session(self, resource_ids: list[str]) -> _FakeSession:
+            assert tuple(resource_ids) == ("quel3-02-a01:tx_p02",)
+            return self._session
+
+    sessions = [
+        _FakeSession(fail_once=True),
+        _FakeSession(fail_once=False),
+    ]
+    clients: list[_FakeClient] = []
+
+    def _create_client(endpoint: str, port: int) -> _FakeClient:
+        del endpoint, port
+        client = _FakeClient(sessions[len(clients)])
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(
+        manager, "_load_quelware_client_factory", lambda: _create_client
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_instrument_entities",
+        lambda: (_Profile, _Definition, _Mode, _Role),
+    )
+
+    request = InstrumentDeployRequest(
+        port_id="quel3-02-a01:tx_p02",
+        role="TRANSMITTER",
+        frequency_range_min_hz=4.1e9,
+        frequency_range_max_hz=4.3e9,
+        alias="Q00",
+        target_labels=("Q00",),
+    )
+
+    deployed = manager.deploy_instruments(requests=(request,))
+
+    assert len(clients) == 2
+    assert [client.exit_calls for client in clients] == [1, 1]
+    assert [session.exit_calls for session in sessions] == [1, 1]
+    assert [session.deploy_calls for session in sessions] == [
+        ["quel3-02-a01:tx_p02"],
+        ["quel3-02-a01:tx_p02"],
+    ]
+    assert set(deployed) == {"Q00"}
+
+
+def test_deploy_instruments_retries_resource_allocation_on_session_create(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given transient resource allocation failure, deploy should retry session creation."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    async def _skip_sleep(delay: float) -> None:
+        del delay
+
+    monkeypatch.setattr(session_workarounds_module.asyncio, "sleep", _skip_sleep)
+
+    class _Profile:
+        def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
+            self.frequency_range_min = frequency_range_min
+            self.frequency_range_max = frequency_range_max
+
+    class _Definition:
+        def __init__(self, *, alias: str, mode: object, role: object, profile: object):
+            self.alias = alias
+            self.mode = mode
+            self.role = role
+            self.profile = profile
+
+    class _Mode:
+        FIXED_TIMELINE = "fixed_timeline"
+
+    class _Role:
+        TRANSMITTER = "transmitter"
+
+    @dataclass(frozen=True)
+    class _InstrumentInfo:
+        id: str
+        port_id: str
+        definition: _Definition
+
+    class _FailingSessionContext:
+        def __init__(self) -> None:
+            self.exit_calls = 0
+
+        async def __aenter__(self) -> object:
+            raise RuntimeError("resource is not available yet")
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+            self.exit_calls += 1
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.exit_calls = 0
+
+        async def __aenter__(self) -> _FakeSession:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+            self.exit_calls += 1
+
+        async def deploy_instruments(
+            self,
+            port_id: str,
+            *,
+            definitions: list[_Definition],
+            append: bool = False,
+        ) -> list[_InstrumentInfo]:
+            del append
+            return [
+                _InstrumentInfo(
+                    id=f"id:{port_id}",
+                    port_id=port_id,
+                    definition=definitions[0],
+                )
+            ]
+
+    class _FakeClient:
+        def __init__(self, session: _FakeSession) -> None:
+            self._session = session
+            self.failing_context = _FailingSessionContext()
+            self.create_session_calls: list[tuple[str, ...]] = []
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+
+        def create_session(self, resource_ids: list[str]) -> object:
+            self.create_session_calls.append(tuple(resource_ids))
+            if len(self.create_session_calls) == 1:
+                return self.failing_context
+            return self._session
+
+    session = _FakeSession()
+    client = _FakeClient(session)
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_client_factory",
+        lambda: lambda endpoint, port: client,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_load_instrument_entities",
+        lambda: (_Profile, _Definition, _Mode, _Role),
+    )
+
+    request = InstrumentDeployRequest(
+        port_id="quel3-02-a01:tx_p02",
+        role="TRANSMITTER",
+        frequency_range_min_hz=4.1e9,
+        frequency_range_max_hz=4.3e9,
+        alias="Q00",
+        target_labels=("Q00",),
+    )
+
+    deployed = manager.deploy_instruments(requests=(request,))
+
+    assert client.create_session_calls == [
+        ("quel3-02-a01:tx_p02",),
+        ("quel3-02-a01:tx_p02",),
+    ]
+    assert client.failing_context.exit_calls == 1
+    assert session.exit_calls == 1
+    assert set(deployed) == {"Q00"}
 
 
 def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
