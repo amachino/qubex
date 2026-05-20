@@ -18,6 +18,7 @@ from qubex.backend.quel3.interfaces import (
 )
 from qubex.backend.quel3.managers.session_workarounds import (
     enter_quelware_session_with_resource_retry,
+    quelware_session_token,
 )
 
 
@@ -46,6 +47,7 @@ class Quel3SessionManager:
         self._client: QuelwareClientProtocol | None = None
         self._session_cm = None
         self._session: SessionProtocol | None = None
+        self._session_token: str | None = None
         self._resource_ids: tuple[ResourceIdProtocol, ...] | None = None
 
     @property
@@ -91,6 +93,11 @@ class Quel3SessionManager:
         if self._session is None:
             raise RuntimeError("QuEL-3 execution session is not open.")
         return self._session
+
+    @property
+    def session_token(self) -> str | None:
+        """Return the token captured when the current session opened."""
+        return self._session_token
 
     @property
     def resource_ids(self) -> tuple[ResourceIdProtocol, ...] | None:
@@ -148,6 +155,7 @@ class Quel3SessionManager:
         except Exception:
             await self.close()
             raise
+        self._session_token = quelware_session_token(self._session)
         self._resource_ids = normalized_resource_ids
         return self._session
 
@@ -156,6 +164,7 @@ class Quel3SessionManager:
         session_cm = self._session_cm
         self._session_cm = None
         self._session = None
+        self._session_token = None
         self._resource_ids = None
         try:
             if session_cm is not None:

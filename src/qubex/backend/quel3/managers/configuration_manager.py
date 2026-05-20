@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -24,12 +25,17 @@ from qubex.backend.quel3.interfaces.client import (
 )
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
+    QuelwareSessionError,
     enter_quelware_session_with_resource_retry,
+    quelware_exception_summary,
+    quelware_session_token,
 )
 from qubex.backend.quel3.models import InstrumentDeployRequest
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 
 class _FixedTimelineProfileFactory(Protocol):
@@ -288,11 +294,20 @@ class Quel3ConfigurationManager:
                     instrument_mode=instrument_mode,
                     instrument_role=instrument_role,
                     parallel=parallel,
+                    attempt=attempt + 1,
+                    max_attempts=QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
                 )
                 break
-            except Exception:
+            except Exception as exc:
                 if attempt + 1 >= QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS:
-                    raise
+                    if isinstance(exc, QuelwareSessionError):
+                        raise
+                    missing_session_id = "<unavailable>"
+                    raise QuelwareSessionError(
+                        "QuEL-3 quelware deploy request failed after retries",
+                        session_token=missing_session_id,
+                        cause=exc,
+                    ) from exc
         else:
             raise RuntimeError("unreachable QuEL-3 deploy retry state")
 
@@ -318,6 +333,8 @@ class Quel3ConfigurationManager:
         instrument_mode: _EnumNamespace,
         instrument_role: _EnumNamespace,
         parallel: bool,
+        attempt: int,
+        max_attempts: int,
     ) -> list[_PortDeployResult]:
         """Deploy port batches in one quelware client/session context."""
         async with client_factory(
@@ -329,6 +346,7 @@ class Quel3ConfigurationManager:
                 client=client,
                 resource_ids=session_resource_ids,
             )
+            session_token = quelware_session_token(session)
             try:
                 deploy_coroutines = [
                     self._deploy_port_batch(
@@ -347,8 +365,32 @@ class Quel3ConfigurationManager:
                     if parallel
                     else [await coro for coro in deploy_coroutines]
                 )
+            except Exception as exc:
+                if attempt >= max_attempts:
+                    raise QuelwareSessionError(
+                        "QuEL-3 quelware deploy request failed after retries",
+                        session_token=session_token,
+                        cause=exc,
+                    ) from exc
+                logger.warning(
+                    "QuEL-3 quelware deploy request failed; session_token=%s; "
+                    "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                    session_token,
+                    attempt,
+                    max_attempts,
+                    quelware_exception_summary(exc),
+                )
+                raise
             finally:
-                await session_cm.__aexit__(None, None, None)
+                try:
+                    await session_cm.__aexit__(None, None, None)
+                except Exception as exc:
+                    logger.warning(
+                        "QuEL-3 quelware deploy session cleanup failed; "
+                        "session_token=%s; cause=%s",
+                        session_token,
+                        quelware_exception_summary(exc),
+                    )
 
     async def _deploy_port_batch(
         self,

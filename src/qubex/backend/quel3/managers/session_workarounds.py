@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Collection
 from contextlib import AbstractAsyncContextManager, suppress
 
@@ -20,6 +21,46 @@ QUELWARE_SESSION_CREATE_RETRY_DELAY_SECONDS = (
     QUELWARE_SESSION_CREATE_INITIAL_RETRY_DELAY_SECONDS
 )
 QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS = 4
+
+logger = logging.getLogger(__name__)
+
+
+class QuelwareSessionError(RuntimeError):
+    """Runtime error annotated with the captured quelware session token."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        session_token: str,
+        cause: BaseException,
+    ) -> None:
+        self.session_token = session_token
+        super().__init__(
+            f"{message}; session_token={session_token}; "
+            f"cause={type(cause).__name__}: {cause}"
+        )
+
+
+def quelware_session_token(session: object | None) -> str:
+    """Return a printable quelware session token for diagnostics."""
+    if session is None:
+        return "<unavailable>"
+    try:
+        token = getattr(session, "token", None)
+    except Exception:
+        return "<unavailable>"
+    if token is None:
+        return "<unavailable>"
+    try:
+        return str(token)
+    except Exception:
+        return "<unprintable>"
+
+
+def quelware_exception_summary(exc: BaseException) -> str:
+    """Return one-line exception context for retry logs."""
+    return f"{type(exc).__name__}: {exc}"
 
 
 def is_resource_allocation_error(exc: BaseException) -> bool:
@@ -68,20 +109,35 @@ async def enter_quelware_session_with_resource_retry(
     released them.
     """
     normalized_resource_ids = tuple(resource_ids)
-    for attempt in range(QUELWARE_SESSION_CREATE_MAX_ATTEMPTS):
+    max_attempts = max(1, int(QUELWARE_SESSION_CREATE_MAX_ATTEMPTS))
+    for attempt in range(max_attempts):
         session_cm: AbstractAsyncContextManager[SessionProtocol] | None = None
         try:
             session_cm = client.create_session(normalized_resource_ids)
             session = await session_cm.__aenter__()
         except Exception as exc:
+            session_token = quelware_session_token(session_cm)
             if session_cm is not None:
                 await _close_after_failed_enter(session_cm=session_cm, exc=exc)
-            if (
-                attempt + 1 >= QUELWARE_SESSION_CREATE_MAX_ATTEMPTS
-                or not is_resource_allocation_error(exc)
-            ):
-                raise
-            await asyncio.sleep(_session_create_retry_delay(attempt))
+            attempt_number = attempt + 1
+            retryable = is_resource_allocation_error(exc)
+            if attempt_number >= max_attempts or not retryable:
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session creation failed after retries",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            retry_delay = _session_create_retry_delay(attempt)
+            logger.warning(
+                "QuEL-3 quelware session creation failed; session_token=%s; "
+                "attempt=%d/%d; retrying in %.3g s; cause=%s",
+                session_token,
+                attempt_number,
+                max_attempts,
+                retry_delay,
+                quelware_exception_summary(exc),
+            )
+            await asyncio.sleep(retry_delay)
         else:
             return session_cm, session
     raise RuntimeError("unreachable quelware session retry state")

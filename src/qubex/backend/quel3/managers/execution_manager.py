@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import TypeGuard, TypeVar, cast
 
@@ -37,6 +37,10 @@ from qubex.backend.quel3.interfaces import (
     SetFrequencyFactory,
 )
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
+from qubex.backend.quel3.managers.session_workarounds import (
+    QuelwareSessionError,
+    quelware_exception_summary,
+)
 from qubex.backend.quel3.models import (
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
@@ -50,6 +54,8 @@ from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_br
 T = TypeVar("T")
 
 QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
+
+logger = logging.getLogger(__name__)
 
 
 def _run_async(
@@ -290,7 +296,8 @@ class Quel3ExecutionManager:
         for attempt in range(max_attempts):
             succeeded, result = await self._run_session_request_attempt(
                 operation,
-                raise_on_failure=attempt + 1 >= max_attempts,
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
             )
             if succeeded:
                 return result
@@ -300,23 +307,56 @@ class Quel3ExecutionManager:
         self,
         operation: Callable[[], Awaitable[T]],
         *,
-        raise_on_failure: bool,
+        attempt: int,
+        max_attempts: int,
     ) -> tuple[bool, T]:
         """Run one session request attempt and always close the session manager."""
         try:
             result = await operation()
-        except Exception:
+        except Exception as exc:
+            session_token = self._session_token_for_exception(exc)
             await self._close_session_manager_after_attempt()
-            if raise_on_failure:
-                raise
+            if attempt >= max_attempts:
+                if isinstance(exc, QuelwareSessionError):
+                    raise
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session request failed after retries",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            logger.warning(
+                "QuEL-3 quelware session request failed; session_token=%s; "
+                "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                session_token,
+                attempt,
+                max_attempts,
+                quelware_exception_summary(exc),
+            )
             return False, cast(T, None)
         await self._close_session_manager_after_attempt()
         return True, result
 
     async def _close_session_manager_after_attempt(self) -> None:
         """Close session state without masking request success or failure."""
-        with suppress(Exception):
+        session_token = self._active_session_token()
+        try:
             await self._session_manager.close()
+        except Exception as exc:
+            logger.warning(
+                "QuEL-3 quelware session cleanup failed; session_token=%s; cause=%s",
+                session_token,
+                quelware_exception_summary(exc),
+            )
+
+    def _active_session_token(self) -> str:
+        """Return the currently open session token for diagnostics."""
+        return self._session_manager.session_token or "<unavailable>"
+
+    def _session_token_for_exception(self, exc: BaseException) -> str:
+        """Return the best available session token for one exception."""
+        if isinstance(exc, QuelwareSessionError):
+            return exc.session_token
+        return self._active_session_token()
 
     async def _execute_once(
         self,
