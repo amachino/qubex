@@ -330,11 +330,8 @@ class Quel3ConfigurationManager:
         inst_infos = await session.deploy_instruments(
             port_id,
             definitions=definitions,
-            # Temporary limitation:
-            # quelware-client Session.deploy_instruments currently removes all
-            # instruments on the port even with append=True. Treat QuEL-3
-            # deploy as replacement-style semantics and pass append=False
-            # explicitly.
+            # Qubex push treats the current target registry as the source of
+            # truth for this port's selected instruments.
             append=False,
         )
         infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
