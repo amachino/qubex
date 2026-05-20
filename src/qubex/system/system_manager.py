@@ -162,11 +162,73 @@ class SystemManager:
     @staticmethod
     def _create_backend_controller(
         backend_kind: BackendKind,
+        backend_runtime_config: Mapping[str, Any] | None = None,
     ) -> SystemBackendController:
         """Create a backend controller instance for one experiment session."""
         if backend_kind == BACKEND_KIND_QUEL3:
-            return Quel3BackendController()
+            return Quel3BackendController(
+                **SystemManager._resolve_quel3_controller_kwargs(backend_runtime_config)
+            )
         return Quel1BackendController()
+
+    @staticmethod
+    def _resolve_quel3_controller_kwargs(
+        backend_runtime_config: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Return `Quel3BackendController` kwargs from system runtime config."""
+        if backend_runtime_config is None:
+            return {}
+        kwargs: dict[str, Any] = {}
+        endpoint = SystemManager._get_runtime_config_value(
+            backend_runtime_config,
+            "quelware_endpoint",
+            "endpoint",
+        )
+        port = SystemManager._get_runtime_config_value(
+            backend_runtime_config,
+            "quelware_port",
+            "port",
+        )
+        client_mode = SystemManager._get_runtime_config_value(
+            backend_runtime_config,
+            "client_mode",
+        )
+        standalone_unit_label = SystemManager._get_runtime_config_value(
+            backend_runtime_config,
+            "standalone_unit_label",
+        )
+        if endpoint is not None:
+            kwargs["quelware_endpoint"] = endpoint
+        if port is not None:
+            kwargs["quelware_port"] = port
+        if client_mode is not None:
+            kwargs["client_mode"] = client_mode
+        if standalone_unit_label is not None:
+            kwargs["standalone_unit_label"] = standalone_unit_label
+        return kwargs
+
+    @staticmethod
+    def _get_runtime_config_value(
+        backend_runtime_config: Mapping[str, Any],
+        *keys: str,
+    ) -> Any | None:
+        """Return the first present runtime config value for one alias set."""
+        for key in keys:
+            if key in backend_runtime_config:
+                return backend_runtime_config[key]
+        return None
+
+    @staticmethod
+    def _get_backend_runtime_config(
+        config_loader: ConfigLoader,
+    ) -> Mapping[str, Any]:
+        """Return backend runtime config from loaders that expose it."""
+        runtime_config = getattr(config_loader, "backend_runtime_config", {})
+        if runtime_config is None:
+            return {}
+        if not isinstance(runtime_config, Mapping):
+            raise TypeError("`backend_runtime_config` must be a mapping.")
+        return runtime_config
 
     @property
     def backend_kind(self) -> BackendKind:
@@ -367,6 +429,7 @@ class SystemManager:
         next_experiment_system = next_config_loader.get_experiment_system()
 
         resolved_backend_kind = next_config_loader.backend_kind
+        backend_runtime_config = self._get_backend_runtime_config(next_config_loader)
         self.set_backend_kind(resolved_backend_kind)
         if backend_controller is not None:
             self._validate_backend_controller_kind(
@@ -376,6 +439,16 @@ class SystemManager:
             self._backend_controller = backend_controller
             self._system_synchronizer = self._create_system_synchronizer(
                 backend_controller,
+                resolved_backend_kind,
+            )
+            self._backend_settings = BackendSettings()
+        elif resolved_backend_kind == BACKEND_KIND_QUEL3:
+            self._backend_controller = self._create_backend_controller(
+                resolved_backend_kind,
+                backend_runtime_config=backend_runtime_config,
+            )
+            self._system_synchronizer = self._create_system_synchronizer(
+                self._backend_controller,
                 resolved_backend_kind,
             )
             self._backend_settings = BackendSettings()
