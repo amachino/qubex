@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from shutil import copy2
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 from rich.console import Console
@@ -16,11 +16,17 @@ from qubex.backend.quel1.quel1_backend_constants import (
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContextReader
 
 if TYPE_CHECKING:
+    from typing import Protocol
+
     from qubex.backend.quel1.compat.qubecalib_protocols import (
         Quel1BoxCommonProtocol as Quel1Box,
         Quel1SystemProtocol as Quel1System,
         SkewRuntimeProtocol,
     )
+
+    class _SkewTargetPortMutable(Protocol):
+        _target_port: set[Any]
+
 
 console = Console()
 
@@ -290,7 +296,8 @@ class Quel1SkewManager:
             and len(target_port) >= 2
             and target_port[0] in target_boxes
         }
-        skew._target_port = filtered_target_ports  # noqa: SLF001
+        target_port_skew = cast("_SkewTargetPortMutable", skew)
+        target_port_skew._target_port = filtered_target_ports  # noqa: SLF001
         console.print(
             f"Skew target ports: {len(filtered_target_ports)} "
             f"from boxes {target_box_names}"
