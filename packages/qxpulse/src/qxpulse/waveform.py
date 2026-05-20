@@ -35,7 +35,7 @@ def _nearest_sampling_period_sample_count(
     return None
 
 
-def _is_sampling_period_multiple(
+def is_sampling_period_multiple(
     duration: float,
     sampling_period: float,
     *,
@@ -52,7 +52,7 @@ def _is_sampling_period_multiple(
     )
 
 
-def _floor_to_sampling_period(
+def floor_to_sampling_period(
     duration: float,
     sampling_period: float,
     *,

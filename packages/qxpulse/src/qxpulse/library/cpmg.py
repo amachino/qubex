@@ -6,7 +6,7 @@ from typing import Final
 
 from qxpulse.blank import Blank
 from qxpulse.pulse_array import PulseArray
-from qxpulse.waveform import Waveform, _is_sampling_period_multiple
+from qxpulse.waveform import Waveform, is_sampling_period_multiple
 
 
 class CPMG(PulseArray):
@@ -53,7 +53,7 @@ class CPMG(PulseArray):
         self.n: Final = n
         self.alternating: Final = alternating
 
-        if not _is_sampling_period_multiple(tau, self.SAMPLING_PERIOD):
+        if not is_sampling_period_multiple(tau, self.SAMPLING_PERIOD):
             raise ValueError(
                 f"Tau must be a multiple of the sampling period ({self.SAMPLING_PERIOD} ns)."
             )
