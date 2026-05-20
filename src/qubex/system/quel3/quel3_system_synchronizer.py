@@ -71,6 +71,9 @@ class Quel3SystemSynchronizer:
             box_ids=box_ids,
             target_labels=target_labels,
         )
+        # Treat QuEL-3 instrument deploy as the push-time hardware sync
+        # equivalent of QuEL-1 CNCO/FNCO updates. Execution paths should only
+        # resolve and use the instruments that push configured.
         self._backend_controller.deploy_instruments(
             requests=requests,
             parallel=True if parallel is None else parallel,
