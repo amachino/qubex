@@ -9,6 +9,7 @@ from numpy.typing import ArrayLike, NDArray
 from typing_extensions import override
 
 from qxpulse.pulse import Pulse
+from qxpulse.waveform import floor_to_sampling_period
 
 
 class Sintegral(Pulse):
@@ -123,7 +124,10 @@ class Sintegral(Pulse):
             np.where(
                 (
                     t
-                    <= (duration * 0.5) // Pulse.SAMPLING_PERIOD * Pulse.SAMPLING_PERIOD
+                    <= floor_to_sampling_period(
+                        duration * 0.5,
+                        Pulse.SAMPLING_PERIOD,
+                    )
                 ),
                 values,
                 values if is_odd else 2 * amplitude - values,
@@ -354,7 +358,10 @@ class MultiDerivativeSintegral(Pulse):
             np.where(
                 (
                     t
-                    <= (duration * 0.5) // Pulse.SAMPLING_PERIOD * Pulse.SAMPLING_PERIOD
+                    <= floor_to_sampling_period(
+                        duration * 0.5,
+                        Pulse.SAMPLING_PERIOD,
+                    )
                 ),
                 values,
                 values if is_odd else 2 * amplitude - values,
