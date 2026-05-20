@@ -4,6 +4,7 @@ import pytest
 from qxpulse.blank import Blank
 from qxpulse.library.xy4 import XY4
 from qxpulse.pulse import Pulse
+from qxpulse.waveform import Waveform
 
 
 def test_xy4_requires_multiple_of_sampling_period():
@@ -17,6 +18,20 @@ def test_xy4_requires_multiple_of_sampling_period():
             pi_x=Blank(duration=Pulse.SAMPLING_PERIOD),
             pi_y=Blank(duration=Pulse.SAMPLING_PERIOD),
         )
+
+
+def test_xy4_accepts_float_multiple_of_sampling_period(monkeypatch):
+    """Given a float multiple of dt, then XY4 accepts tau despite float remainder noise."""
+    monkeypatch.setattr(Waveform, "SAMPLING_PERIOD", 0.4)
+
+    xy4 = XY4(
+        tau=1.2,
+        pi_x=Blank(duration=0.4),
+        pi_y=Blank(duration=0.4),
+    )
+
+    # One XY4 cycle creates eight tau blanks and four pi pulses: 8 * 3 + 4 samples.
+    assert xy4.length == 28
 
 
 def test_xy4_requires_positive_cycle_count():
