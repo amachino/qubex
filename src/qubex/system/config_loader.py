@@ -397,6 +397,19 @@ class ConfigLoader:
         return self._backend_kind
 
     @property
+    def backend_runtime_config(self) -> dict[str, Any]:
+        """Return backend-specific runtime configuration for the loaded system."""
+        self._ensure_loaded()
+        value = self._system_dict.get(self._backend_kind)
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError(
+                f"`{self._backend_kind}` section in `{self._system_file}` must be a mapping."
+            )
+        return dict(value)
+
+    @property
     def measurement_defaults(self) -> MeasurementDefaults:
         """Return parsed partial measurement defaults for the loaded system."""
         self._ensure_loaded()

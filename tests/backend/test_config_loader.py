@@ -1224,6 +1224,49 @@ def test_load_uses_wiring_yaml_for_quel3_backend(tmp_path: Path) -> None:
     assert loader.wiring_file == "wiring.yaml"
 
 
+def test_backend_runtime_config_returns_selected_backend_section(
+    tmp_path: Path,
+) -> None:
+    """Given backend runtime settings, when loading, then ConfigLoader exposes that section."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    runtime_config = {
+        "endpoint": "192.0.2.10",
+        "port": 50052,
+        "client_mode": "standalone",
+        "standalone_unit_label": "quel3-02-a01",
+    }
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            BACKEND_KIND_QUEL3: runtime_config,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    loaded_config = loader.backend_runtime_config
+    loaded_config["endpoint"] = "mutated"
+
+    assert loaded_config != loader.backend_runtime_config
+    assert loader.backend_runtime_config == runtime_config
+
+
 def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
     """Given quel3 backend, when loading, then readout ports are configured without LO."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
