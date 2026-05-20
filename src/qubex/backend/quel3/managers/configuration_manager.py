@@ -119,6 +119,7 @@ class Quel3ConfigurationManager:
         quelware_port: int,
         client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
+        quelware_pat_path: str | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
             client_mode=client_mode,
@@ -128,6 +129,7 @@ class Quel3ConfigurationManager:
         self._quelware_port = quelware_port
         self._client_mode: Quel3ClientMode = normalized_client_mode
         self._standalone_unit_label = standalone_unit_label
+        self._quelware_pat_path = quelware_pat_path
         self._last_deployed_instrument_infos: dict[
             str, tuple[InstrumentInfoProtocol, ...]
         ] = {}
@@ -152,6 +154,11 @@ class Quel3ConfigurationManager:
     def standalone_unit_label(self) -> str | None:
         """Return configured standalone unit label."""
         return self._standalone_unit_label
+
+    @property
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._quelware_pat_path
 
     @property
     def last_deployed_instrument_infos(
@@ -449,6 +456,7 @@ class Quel3ConfigurationManager:
         return load_quelware_client_factory(
             client_mode=self._client_mode,
             standalone_unit_label=self._standalone_unit_label,
+            pat_path=self._quelware_pat_path,
         )
 
     @staticmethod

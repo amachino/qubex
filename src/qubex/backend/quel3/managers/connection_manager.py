@@ -36,6 +36,7 @@ class Quel3ConnectionManager:
         quelware_port: int,
         client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
+        quelware_pat_path: str | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
             client_mode=client_mode,
@@ -46,6 +47,7 @@ class Quel3ConnectionManager:
         self._quelware_port = quelware_port
         self._client_mode: Quel3ClientMode = normalized_client_mode
         self._standalone_unit_label = standalone_unit_label
+        self._quelware_pat_path = quelware_pat_path
 
     @property
     def hash(self) -> int:
@@ -57,6 +59,7 @@ class Quel3ConnectionManager:
                 self._quelware_port,
                 self._client_mode,
                 self._standalone_unit_label,
+                self._quelware_pat_path,
             )
         )
 
@@ -84,6 +87,11 @@ class Quel3ConnectionManager:
     def standalone_unit_label(self) -> str | None:
         """Return configured standalone unit label."""
         return self._standalone_unit_label
+
+    @property
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._quelware_pat_path
 
     def connect(
         self,
@@ -122,4 +130,5 @@ class Quel3ConnectionManager:
         return load_quelware_client_factory(
             client_mode=self._client_mode,
             standalone_unit_label=self._standalone_unit_label,
+            pat_path=self._quelware_pat_path,
         )

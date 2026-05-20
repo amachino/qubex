@@ -1259,6 +1259,7 @@ def test_load_creates_quel3_controller_from_runtime_config(
                 "port": 50052,
                 "client_mode": "standalone",
                 "standalone_unit_label": "quel3-02-a01",
+                "pat_path": "/run/secrets/quelware-pat",
             }
 
         def get_experiment_system(self) -> object:
@@ -1277,6 +1278,7 @@ def test_load_creates_quel3_controller_from_runtime_config(
     assert controller.quelware_port == 50052
     assert controller.client_mode == "standalone"
     assert controller.standalone_unit_label == "quel3-02-a01"
+    assert controller.quelware_pat_path == "/run/secrets/quelware-pat"
 
 
 def test_load_defaults_to_quel1_when_system_backend_is_missing(

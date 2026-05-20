@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from types import SimpleNamespace
 
 import pytest
@@ -51,6 +52,49 @@ def test_load_client_factory_returns_server_client(
     assert client_factory is create_quelware_client
 
 
+def test_load_client_factory_binds_pat_for_server_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Given PAT path, loading the server client factory should pass a file-backed provider."""
+    captured: dict[str, object] = {}
+    pat_path = tmp_path / "pat.txt"
+    pat_path.write_text("dummy-token\n", encoding="utf-8")
+
+    def _create_quelware_client(
+        endpoint: str,
+        port: int,
+        *,
+        pat: Callable[[], str],
+    ) -> tuple[str, int]:
+        captured["endpoint"] = endpoint
+        captured["port"] = port
+        captured["pat"] = pat
+        return (endpoint, port)
+
+    monkeypatch.setattr(
+        quelware_imports_module.importlib,
+        "import_module",
+        lambda _: SimpleNamespace(
+            create_quelware_client=_create_quelware_client,
+            create_standalone_client=object(),
+        ),
+    )
+
+    client_factory = quelware_imports_module.load_quelware_client_factory(
+        client_mode="server",
+        standalone_unit_label=None,
+        pat_path=str(pat_path),
+    )
+    context_manager = client_factory("worker-host", 61000)
+
+    assert context_manager == ("worker-host", 61000)
+    pat_provider = captured.pop("pat")
+    assert callable(pat_provider)
+    assert pat_provider() == "dummy-token"
+    assert captured == {"endpoint": "worker-host", "port": 61000}
+
+
 def test_load_client_factory_binds_unit_label_for_standalone_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -84,6 +128,55 @@ def test_load_client_factory_binds_unit_label_for_standalone_mode(
     context_manager = client_factory("worker-host", 61000)
 
     assert context_manager == ("worker-host", 61000, "quel3-02-a01")
+    assert captured == {
+        "endpoint": "worker-host",
+        "port": 61000,
+        "unit_label": "quel3-02-a01",
+    }
+
+
+def test_load_client_factory_binds_pat_for_standalone_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Given standalone mode with PAT path, loading the factory should pass a provider."""
+    captured: dict[str, object] = {}
+    pat_path = tmp_path / "pat.txt"
+    pat_path.write_text("dummy-token\n", encoding="utf-8")
+
+    def _create_standalone_client(
+        endpoint: str,
+        port: int,
+        *,
+        unit_label: str,
+        pat: Callable[[], str],
+    ) -> tuple[str, int, str]:
+        captured["endpoint"] = endpoint
+        captured["port"] = port
+        captured["unit_label"] = unit_label
+        captured["pat"] = pat
+        return (endpoint, port, unit_label)
+
+    monkeypatch.setattr(
+        quelware_imports_module.importlib,
+        "import_module",
+        lambda _: SimpleNamespace(
+            create_quelware_client=object(),
+            create_standalone_client=_create_standalone_client,
+        ),
+    )
+
+    client_factory = quelware_imports_module.load_quelware_client_factory(
+        client_mode="standalone",
+        standalone_unit_label="quel3-02-a01",
+        pat_path=str(pat_path),
+    )
+    context_manager = client_factory("worker-host", 61000)
+
+    assert context_manager == ("worker-host", 61000, "quel3-02-a01")
+    pat_provider = captured.pop("pat")
+    assert callable(pat_provider)
+    assert pat_provider() == "dummy-token"
     assert captured == {
         "endpoint": "worker-host",
         "port": 61000,
