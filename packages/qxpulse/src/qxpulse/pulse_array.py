@@ -209,7 +209,7 @@ class PulseArray(Waveform):
             raise ValueError(
                 f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
             )
-        blank = Blank(duration)
+        blank = Blank(duration, sampling_period=self.sampling_period)
         if pad_side == "right":
             self._elements.append(blank)
         elif pad_side == "left":
@@ -252,7 +252,7 @@ class PulseArray(Waveform):
             new_array = copy.deepcopy(self)
         else:
             new_array = copy.copy(self)
-        blank = Blank(duration=duration)
+        blank = Blank(duration=duration, sampling_period=self.sampling_period)
         if pad_side == "right":
             new_elements = [*new_array._elements, blank]
         elif pad_side == "left":

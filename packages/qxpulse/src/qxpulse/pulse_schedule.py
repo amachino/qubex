@@ -307,24 +307,20 @@ class PulseSchedule:
             If False, reuse nested waveform objects while detaching schedule
             and sequence containers.
         """
-        duration = total_duration - self.duration
-        if is_zero_within_sampling_grid(duration, self._resolve_sampling_period()):
-            duration = 0.0
-        if duration < 0:
-            raise ValueError(
-                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
-            )
+        self._validate_padding_total_duration(total_duration)
         with PulseSchedule() as new_sched:
             for label, channel in self._channels.items():
+                new_sequence = channel.sequence.padded(
+                    total_duration,
+                    pad_side,
+                    deepcopy=deepcopy,
+                )
                 new_sched.add(
                     label,
-                    channel.sequence.padded(
-                        total_duration,
-                        pad_side,
-                        deepcopy=deepcopy,
-                    ),
+                    new_sequence,
                 )
                 new_channel = new_sched._channels[label]
+                new_channel.sequence._sampling_period = new_sequence.sampling_period
                 new_channel.frequency = channel.frequency
                 new_channel.target = channel.target
                 new_channel.frame = channel.frame
@@ -345,13 +341,7 @@ class PulseSchedule:
         pad_side : {"right", "left"}, optional
             Side of the zero padding.
         """
-        duration = total_duration - self.duration
-        if is_zero_within_sampling_grid(duration, self._resolve_sampling_period()):
-            duration = 0.0
-        if duration < 0:
-            raise ValueError(
-                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
-            )
+        self._validate_padding_total_duration(total_duration)
         for channel in self._channels.values():
             channel.sequence.pad(total_duration, pad_side)
             self._offsets[channel.label] = total_duration
@@ -1002,6 +992,24 @@ class PulseSchedule:
         if len(sampling_periods) != 1:
             raise ValueError("Inconsistent sampling periods across channels.")
         return next(iter(sampling_periods))
+
+    def _validate_padding_total_duration(self, total_duration: float) -> None:
+        """Validate padding target duration against each channel sampling grid."""
+        if len(self._channels) == 0 and total_duration < 0:
+            raise ValueError(
+                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+            )
+        for label, channel in self._channels.items():
+            duration = total_duration - self._offsets[label]
+            if is_zero_within_sampling_grid(
+                duration,
+                channel.sequence.sampling_period,
+            ):
+                duration = 0.0
+            if duration < 0:
+                raise ValueError(
+                    f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+                )
 
     @staticmethod
     def _downsample(

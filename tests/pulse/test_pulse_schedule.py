@@ -142,6 +142,58 @@ def test_padding_accepts_float_equivalent_total_duration(method_name):
         qx.pulse.set_sampling_period(original_dt)
 
 
+@pytest.mark.parametrize("method_name", ["pad", "padded"])
+def test_padding_accepts_channel_sampling_periods(method_name):
+    """PulseSchedule padding should preserve channel-local sampling periods."""
+    original_dt = qx.pulse.get_sampling_period()
+    try:
+        schedule = PulseSchedule()
+        qx.pulse.set_sampling_period(0.4)
+        schedule.add("Q00", Blank(duration=4.0))
+        qx.pulse.set_sampling_period(0.8)
+        schedule.add("RQ00", Blank(duration=8.0))
+        qx.pulse.set_sampling_period(original_dt)
+
+        if method_name == "pad":
+            result = schedule
+            schedule.pad(8.0)
+        else:
+            result = schedule.padded(8.0)
+
+        q_sequence = result.get_sequence("Q00", copy=False)
+        readout_sequence = result.get_sequence("RQ00", copy=False)
+        assert q_sequence.sampling_period == pytest.approx(0.4)
+        assert readout_sequence.sampling_period == pytest.approx(0.8)
+        assert q_sequence.duration == pytest.approx(8.0)
+        assert readout_sequence.duration == pytest.approx(8.0)
+        assert q_sequence.length == 20
+        assert readout_sequence.length == 10
+        assert result.duration == pytest.approx(8.0)
+    finally:
+        qx.pulse.set_sampling_period(original_dt)
+
+
+def test_padding_rejects_shorter_channel_duration_without_mutation():
+    """PulseSchedule padding should reject shorter duration before mutating channels."""
+    original_dt = qx.pulse.get_sampling_period()
+    try:
+        schedule = PulseSchedule()
+        qx.pulse.set_sampling_period(0.4)
+        schedule.add("Q00", Blank(duration=4.0))
+        qx.pulse.set_sampling_period(0.8)
+        schedule.add("RQ00", Blank(duration=8.0))
+        qx.pulse.set_sampling_period(original_dt)
+
+        with pytest.raises(ValueError, match="Total duration"):
+            schedule.pad(7.2)
+
+        assert schedule.get_sequence("Q00", copy=False).duration == pytest.approx(4.0)
+        assert schedule.get_sequence("RQ00", copy=False).duration == pytest.approx(8.0)
+        assert schedule.duration == pytest.approx(8.0)
+    finally:
+        qx.pulse.set_sampling_period(original_dt)
+
+
 def test_scaled():
     """PulseSchedule should be scaled by a given parameter."""
     with PulseSchedule() as ps:
