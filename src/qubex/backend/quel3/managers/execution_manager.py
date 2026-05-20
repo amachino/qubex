@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import TypeGuard, TypeVar
+from typing import TypeGuard, TypeVar, cast
 
 import numpy as np
 
@@ -36,6 +37,10 @@ from qubex.backend.quel3.interfaces import (
     SetFrequencyFactory,
 )
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
+from qubex.backend.quel3.managers.session_workarounds import (
+    QuelwareSessionError,
+    quelware_exception_summary,
+)
 from qubex.backend.quel3.models import (
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
@@ -47,6 +52,10 @@ from qubex.backend.quel3.models import (
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
+
+QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
+
+logger = logging.getLogger(__name__)
 
 
 def _run_async(
@@ -202,53 +211,19 @@ class Quel3ExecutionManager:
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
             ) from exc
 
-        runtime, first_resolved_payload = await self._open_execution_runtime(
-            payload=payloads[0],
-            create_quelware_client=create_quelware_client,
-            instrument_resolver_factory=instrument_resolver_factory,
-            create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
-        )
-        results: list[Quel3BackendExecutionResult] = []
-        try:
-            expected_aliases = tuple(sorted(first_resolved_payload.fixed_timelines))
-            results.append(
-                await self._execute_resolved_payload(
-                    payload=first_resolved_payload,
-                    runtime=runtime,
-                    sequencer_factory=sequencer_factory,
-                    capture_mode_enum=capture_mode_enum,
-                    set_frequency_factory=set_frequency_factory,
-                    set_capture_mode_factory=set_capture_mode_factory,
-                    parallel=parallel,
-                )
+        return await self._run_with_session_request_retry(
+            lambda: self._execute_batch_once(
+                payloads=payloads,
+                create_quelware_client=create_quelware_client,
+                instrument_resolver_factory=instrument_resolver_factory,
+                sequencer_factory=sequencer_factory,
+                create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+                capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
+                set_capture_mode_factory=set_capture_mode_factory,
+                parallel=parallel,
             )
-            for payload in payloads[1:]:
-                resolved_payload = self._resolve_payload(
-                    payload=payload,
-                    resolver=runtime.resolver,
-                    default_unit_label=self._standalone_unit_label,
-                )
-                resolved_payload = self._filter_runnable_payload(resolved_payload)
-                resolved_aliases = tuple(sorted(resolved_payload.fixed_timelines))
-                if resolved_aliases != expected_aliases:
-                    raise ValueError(
-                        "Batched QuEL-3 execution requires all points to resolve "
-                        "to the same instrument alias set."
-                    )
-                results.append(
-                    await self._execute_resolved_payload(
-                        payload=resolved_payload,
-                        runtime=runtime,
-                        sequencer_factory=sequencer_factory,
-                        capture_mode_enum=capture_mode_enum,
-                        set_frequency_factory=set_frequency_factory,
-                        set_capture_mode_factory=set_capture_mode_factory,
-                        parallel=parallel,
-                    )
-                )
-            return results
-        finally:
-            await self._session_manager.close()
+        )
 
     async def execute(
         self,
@@ -298,15 +273,145 @@ class Quel3ExecutionManager:
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
             ) from exc
 
+        return await self._run_with_session_request_retry(
+            lambda: self._execute_once(
+                payload=payload,
+                create_quelware_client=create_quelware_client,
+                instrument_resolver_factory=instrument_resolver_factory,
+                sequencer_factory=sequencer_factory,
+                create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+                capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
+                set_capture_mode_factory=set_capture_mode_factory,
+                parallel=parallel,
+            )
+        )
+
+    async def _run_with_session_request_retry(
+        self,
+        operation: Callable[[], Awaitable[T]],
+    ) -> T:
+        """Run one session request, recreating the session after failures."""
+        max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
+        for attempt in range(max_attempts):
+            succeeded, result = await self._run_session_request_attempt(
+                operation,
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+            )
+            if succeeded:
+                return result
+        raise RuntimeError("unreachable QuEL-3 session request retry state")
+
+    async def _run_session_request_attempt(
+        self,
+        operation: Callable[[], Awaitable[T]],
+        *,
+        attempt: int,
+        max_attempts: int,
+    ) -> tuple[bool, T]:
+        """Run one session request attempt and always close the session manager."""
+        try:
+            result = await operation()
+        except Exception as exc:
+            session_token = self._session_token_for_exception(exc)
+            await self._close_session_manager_after_attempt()
+            if attempt >= max_attempts:
+                if isinstance(exc, QuelwareSessionError):
+                    raise
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session request failed after retries",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            logger.warning(
+                "QuEL-3 quelware session request failed; session_token=%s; "
+                "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                session_token,
+                attempt,
+                max_attempts,
+                quelware_exception_summary(exc),
+            )
+            return False, cast(T, None)
+        await self._close_session_manager_after_attempt()
+        return True, result
+
+    async def _close_session_manager_after_attempt(self) -> None:
+        """Close session state without masking request success or failure."""
+        session_token = self._active_session_token()
+        try:
+            await self._session_manager.close()
+        except Exception as exc:
+            logger.warning(
+                "QuEL-3 quelware session cleanup failed; session_token=%s; cause=%s",
+                session_token,
+                quelware_exception_summary(exc),
+            )
+
+    def _active_session_token(self) -> str:
+        """Return the currently open session token for diagnostics."""
+        return self._session_manager.session_token or "<unavailable>"
+
+    def _session_token_for_exception(self, exc: BaseException) -> str:
+        """Return the best available session token for one exception."""
+        if isinstance(exc, QuelwareSessionError):
+            return exc.session_token
+        return self._active_session_token()
+
+    async def _execute_once(
+        self,
+        *,
+        payload: Quel3ExecutionPayload,
+        create_quelware_client: QuelwareClientFactory,
+        instrument_resolver_factory: InstrumentResolverFactory,
+        sequencer_factory: Callable[..., SequencerProtocol],
+        create_instrument_driver_fixed_timeline: InstrumentDriverFactory,
+        capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
+        set_capture_mode_factory: SetCaptureModeFactory,
+        parallel: bool,
+    ) -> Quel3BackendExecutionResult:
+        """Execute one payload using a single fresh quelware session."""
         runtime, resolved_payload = await self._open_execution_runtime(
             payload=payload,
             create_quelware_client=create_quelware_client,
             instrument_resolver_factory=instrument_resolver_factory,
             create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
         )
-        try:
-            return await self._execute_resolved_payload(
-                payload=resolved_payload,
+        return await self._execute_resolved_payload(
+            payload=resolved_payload,
+            runtime=runtime,
+            sequencer_factory=sequencer_factory,
+            capture_mode_enum=capture_mode_enum,
+            set_frequency_factory=set_frequency_factory,
+            set_capture_mode_factory=set_capture_mode_factory,
+            parallel=parallel,
+        )
+
+    async def _execute_batch_once(
+        self,
+        *,
+        payloads: list[Quel3ExecutionPayload],
+        create_quelware_client: QuelwareClientFactory,
+        instrument_resolver_factory: InstrumentResolverFactory,
+        sequencer_factory: Callable[..., SequencerProtocol],
+        create_instrument_driver_fixed_timeline: InstrumentDriverFactory,
+        capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
+        set_capture_mode_factory: SetCaptureModeFactory,
+        parallel: bool,
+    ) -> list[Quel3BackendExecutionResult]:
+        """Execute one payload batch using a single fresh quelware session."""
+        runtime, first_resolved_payload = await self._open_execution_runtime(
+            payload=payloads[0],
+            create_quelware_client=create_quelware_client,
+            instrument_resolver_factory=instrument_resolver_factory,
+            create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+        )
+        expected_aliases = tuple(sorted(first_resolved_payload.fixed_timelines))
+        results = [
+            await self._execute_resolved_payload(
+                payload=first_resolved_payload,
                 runtime=runtime,
                 sequencer_factory=sequencer_factory,
                 capture_mode_enum=capture_mode_enum,
@@ -314,8 +419,32 @@ class Quel3ExecutionManager:
                 set_capture_mode_factory=set_capture_mode_factory,
                 parallel=parallel,
             )
-        finally:
-            await self._session_manager.close()
+        ]
+        for payload in payloads[1:]:
+            resolved_payload = self._resolve_payload(
+                payload=payload,
+                resolver=runtime.resolver,
+                default_unit_label=self._standalone_unit_label,
+            )
+            resolved_payload = self._filter_runnable_payload(resolved_payload)
+            resolved_aliases = tuple(sorted(resolved_payload.fixed_timelines))
+            if resolved_aliases != expected_aliases:
+                raise ValueError(
+                    "Batched QuEL-3 execution requires all points to resolve "
+                    "to the same instrument alias set."
+                )
+            results.append(
+                await self._execute_resolved_payload(
+                    payload=resolved_payload,
+                    runtime=runtime,
+                    sequencer_factory=sequencer_factory,
+                    capture_mode_enum=capture_mode_enum,
+                    set_frequency_factory=set_frequency_factory,
+                    set_capture_mode_factory=set_capture_mode_factory,
+                    parallel=parallel,
+                )
+            )
+        return results
 
     async def _open_execution_runtime(
         self,
