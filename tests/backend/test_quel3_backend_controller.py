@@ -247,10 +247,49 @@ def test_extract_capture_samples_from_waveform_result_container() -> None:
                 ]
             }
 
-    values = Quel3ExecutionManager._extract_capture_samples(_Result(), "RQ00:0")
+    values = Quel3ExecutionManager._extract_capture_samples(
+        _Result(),
+        "RQ00:0",
+        capture_mode=Quel3CaptureMode.AVERAGED_WAVEFORM,
+    )
 
     assert values is not None
     assert np.array_equal(values, np.array([2.0 + 0.0j], dtype=np.complex128))
+
+
+def test_extract_capture_samples_from_raw_waveform_result_container() -> None:
+    """Given raw waveform iq_result, extraction returns one waveform per shot."""
+
+    class _Waveform:
+        def __init__(self, values: np.ndarray) -> None:
+            self.iq_array = values
+
+    class _Result:
+        def __init__(self) -> None:
+            self.iq_result = {
+                "RQ00:0": [
+                    _Waveform(np.array([1.0 + 0.0j, 2.0 + 0.0j])),
+                    _Waveform(np.array([3.0 + 0.0j, 4.0 + 0.0j])),
+                ]
+            }
+
+    values = Quel3ExecutionManager._extract_capture_samples(
+        _Result(),
+        "RQ00:0",
+        capture_mode=Quel3CaptureMode.RAW_WAVEFORMS,
+    )
+
+    assert values is not None
+    assert np.array_equal(
+        values,
+        np.array(
+            [
+                [1.0 + 0.0j, 2.0 + 0.0j],
+                [3.0 + 0.0j, 4.0 + 0.0j],
+            ],
+            dtype=np.complex128,
+        ),
+    )
 
 
 def test_extract_capture_samples_from_point_result_container() -> None:
@@ -262,7 +301,11 @@ def test_extract_capture_samples_from_point_result_container() -> None:
                 "RQ00:0": [1.0 + 2.0j, 3.0 + 4.0j],
             }
 
-    values = Quel3ExecutionManager._extract_capture_samples(_Result(), "RQ00:0")
+    values = Quel3ExecutionManager._extract_capture_samples(
+        _Result(),
+        "RQ00:0",
+        capture_mode=Quel3CaptureMode.VALUES_PER_ITER,
+    )
 
     assert values is not None
     assert np.array_equal(

@@ -468,6 +468,7 @@ class Quel3ExecutionManager:
                 capture_samples = self._extract_capture_samples(
                     result,
                     window_key,
+                    capture_mode=payload.capture_mode,
                 )
                 if capture_samples is None:
                     continue
@@ -840,6 +841,8 @@ class Quel3ExecutionManager:
     def _extract_capture_samples(
         result: ResultContainerProtocol,
         window_key: str,
+        *,
+        capture_mode: Quel3CaptureMode,
     ) -> np.ndarray | None:
         """Extract one capture sample-array from a result container entry."""
         values = result.iq_result.get(window_key)
@@ -847,6 +850,13 @@ class Quel3ExecutionManager:
             return None
         first = values[0]
         if _has_iq_array(first):
+            if capture_mode is Quel3CaptureMode.RAW_WAVEFORMS:
+                waveforms = []
+                for value in values:
+                    if not _has_iq_array(value):
+                        return None
+                    waveforms.append(np.asarray(value.iq_array, dtype=np.complex128))
+                return np.stack(waveforms, axis=0)
             latest = values[-1]
             if not _has_iq_array(latest):
                 return None

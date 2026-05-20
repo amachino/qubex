@@ -330,6 +330,7 @@ class Quel3MeasurementBackendAdapter:
             Quel3CaptureMode.AVERAGED_VALUE,
             Quel3CaptureMode.AVERAGED_WAVEFORM,
             Quel3CaptureMode.VALUES_PER_ITER,
+            Quel3CaptureMode.RAW_WAVEFORMS,
         ):
             return shots
         return 1
