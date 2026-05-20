@@ -320,6 +320,46 @@ def test_quel3_adapter_embeds_schedule_frequency_in_payload() -> None:
     assert payload.fixed_timelines[target].frequency_hz == pytest.approx(6.25e9)
 
 
+def test_quel3_adapter_raw_waveforms_use_one_iteration_per_shot() -> None:
+    """Given raw waveform mode, payload iterations should preserve one waveform per shot."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.8,
+                ),
+            ]
+        ),
+    )
+    config = _make_config(mode="single", shots=3, time_integration=False)
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+
+    request = adapter.build_execution_request(schedule=schedule, config=config)
+
+    payload = request.payload
+    assert isinstance(payload, Quel3ExecutionPayload)
+    assert payload.capture_mode is Quel3CaptureMode.RAW_WAVEFORMS
+    assert payload.n_iterations == 3
+
+
 def test_quel3_adapter_falls_back_to_target_frequency_in_payload() -> None:
     """Given target frequency metadata, when schedule frequency is absent, then timeline frequency uses target frequency."""
     target = "RQ00"
@@ -1098,6 +1138,73 @@ def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> 
     assert np.array_equal(
         result.data["Q00"][0].data,
         np.array([8.0 + 4.0j, 12.0 + 6.0j], dtype=np.complex128),
+    )
+
+
+def test_quel3_adapter_build_measurement_result_accepts_raw_waveform_series() -> None:
+    """Given raw waveform data, adapter conversion should keep the shot axis."""
+    target = "RQ00"
+    alias = "alias-RQ00"
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=_FakePulseSchedule(
+            duration=1.2,
+            sequences={
+                target: _pulse_array(
+                    values=np.array([0.0 + 0.0j], dtype=np.complex128),
+                    sampling_period=0.4,
+                )
+            },
+        ),
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(
+                    channels=[target],
+                    start_time=0.4,
+                    duration=0.8,
+                ),
+            ]
+        ),
+    )
+    config = _make_config(mode="single", shots=2, time_integration=False)
+    backend_result = Quel3BackendExecutionResult(
+        status={},
+        data={
+            alias: [
+                np.array(
+                    [
+                        [8.0 + 4.0j, 10.0 + 5.0j],
+                        [12.0 + 6.0j, 14.0 + 7.0j],
+                    ],
+                    dtype=np.complex128,
+                )
+            ],
+        },
+        config={"sampling_period_ns": 0.8},
+    )
+    adapter = Quel3MeasurementBackendAdapter(
+        backend_controller=_make_backend_controller(),
+        experiment_system=cast(Any, _FakeExperimentSystem()),
+        constraint_profile=MeasurementConstraintProfile.quel3(0.4),
+        instrument_alias_map={target: alias},
+    )
+    _ = adapter.build_execution_request(schedule=schedule, config=config)
+
+    result = adapter.build_measurement_result(
+        backend_result=backend_result,
+        measurement_config=config,
+        device_config={},
+        sampling_period=1.0,
+    )
+
+    assert np.array_equal(
+        result.data["Q00"][0].data,
+        np.array(
+            [
+                [8.0 + 4.0j, 10.0 + 5.0j],
+                [12.0 + 6.0j, 14.0 + 7.0j],
+            ],
+            dtype=np.complex128,
+        ),
     )
 
 
