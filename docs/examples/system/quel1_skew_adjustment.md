@@ -8,7 +8,8 @@ This flow assumes:
 - your `system.yaml` entry uses the `quel1` backend and defines
   `quel1.clock_master`
 - your config directory already contains `box.yaml` and `skew.yaml`
-- `skew.yaml` lists the monitor path, reference port, and target boxes
+- `skew.yaml` lists the monitor path, reference port, and target-box
+  `port_wait` values
 
 ## Minimal setup
 
@@ -32,21 +33,25 @@ box_setting:
   S87R:
     slot: 0
     wait: 0
+    port_wait:
+      1: 0
   S89R:
     slot: 1
     wait: 0
+    port_wait:
+      8: 0
 monitor_port: S87R-12
 reference_port: S87R-1
 scale:
   S87R-1: 0.125
-target_port:
+target_port: !!set
   S87R-1: null
   S89R-8: null
 time_to_start: 0
 trigger_nport: 10
 ```
 
-`box_setting.*.wait` is the value you tune during skew correction.
+`box_setting.*.port_wait` is the value updated during skew correction.
 
 ## Check the current skew
 
@@ -82,7 +87,7 @@ exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
 
 This helper:
 
-- updates `box_setting.<box>.wait` in `skew.yaml`
+- updates `box_setting.<box>.port_wait` in `skew.yaml`
 - writes a timestamped backup file such as `skew.yaml.bak.20260520_124900`
   when `backup=True`
 - reloads the updated skew file into the active QuEL-1 backend
@@ -104,7 +109,7 @@ result = exp.tool.check_skew(["S87R", "S89R"])
 Inspect the returned figure and repeat the adjustment if needed.
 
 If the skew does not converge, one practical recovery path is to retry with
-`wait=0`, check again, and then restore the intended value.
+target `0`, check again, and then restore the intended value.
 
 ```python
 exp.tool.update_skew(0, ["S87R", "S89R"], backup=True)

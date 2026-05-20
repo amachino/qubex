@@ -119,6 +119,7 @@ class Quel1SkewManager:
         with path.open("w", encoding="utf-8") as file:
             yaml.safe_dump(payload, file, sort_keys=False)
         self.load_skew_yaml(path)
+        self._last_skew = None
         return {
             "file_path": path,
             "backup_path": backup_path,
@@ -152,15 +153,27 @@ class Quel1SkewManager:
 
     @classmethod
     def _validate_wait_values(cls, payload: object) -> None:
-        """Validate `box_setting.*.port_wait.*` values in one skew YAML payload."""
+        """Validate `box_setting.*.wait` and `port_wait.*` values in one skew YAML payload."""
         box_setting = cls._require_box_setting(payload)
         for box_name, setting in box_setting.items():
             if not isinstance(setting, dict):
                 raise TypeError(f"box_setting.{box_name} must be a mapping")
+            cls._validate_box_wait(setting, box_name=box_name)
             port_wait = cls._require_port_wait(setting, box_name=box_name)
             for port, wait in port_wait.items():
                 cls._validate_port_wait_key(port, box_name=box_name)
                 cls._validate_wait_value(wait, box_name=box_name)
+
+    @classmethod
+    def _validate_box_wait(cls, setting: dict[Any, Any], *, box_name: str) -> None:
+        """Validate one `box_setting.<box>.wait` value required by the driver."""
+        if "wait" not in setting:
+            raise KeyError(f"box_setting.{box_name}.wait is required")
+        wait = setting["wait"]
+        if not isinstance(wait, int) or isinstance(wait, bool):
+            raise TypeError(f"box_setting.{box_name}.wait must be an integer")
+        if wait < cls._WAIT_MIN:
+            raise ValueError(f"wait must be non-negative (box={box_name}, wait={wait})")
 
     @staticmethod
     def _require_port_wait(

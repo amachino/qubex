@@ -350,10 +350,12 @@ def test_update_skew_updates_selected_boxes_and_creates_backup(
 box_setting:
   A:
     slot: 0
+    wait: 0
     port_wait:
       1: 0
   B:
     slot: 1
+    wait: 0
     port_wait:
       8: 1
       9: 2
@@ -398,6 +400,8 @@ time_to_start: 0
     assert backup_payload["box_setting"]["A"]["port_wait"] == {1: 0}
     assert backup_payload["box_setting"]["B"]["port_wait"] == {8: 1, 9: 2}
     assert sysdb.load_skew_yaml_calls == [str(path)]
+    with pytest.raises(RuntimeError, match="Run check_skew before update_skew"):
+        manager.update_skew(file_path=path, wait=80, box_names=["B"])
 
 
 def test_update_skew_rejects_unknown_box_name(tmp_path: Path) -> None:
@@ -416,6 +420,7 @@ def test_update_skew_rejects_unknown_box_name(tmp_path: Path) -> None:
 box_setting:
   A:
     slot: 0
+    wait: 0
     port_wait:
       1: 0
 time_to_start: 0

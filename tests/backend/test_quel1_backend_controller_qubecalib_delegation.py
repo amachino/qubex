@@ -76,7 +76,7 @@ def _make_controller() -> Quel1BackendController:
 def _write_skew_yaml(tmp_path: Path, *, wait: int) -> Path:
     path = tmp_path / "skew.yaml"
     path.write_text(
-        f"box_setting:\n  Q00:\n    slot: 0\n    port_wait:\n      1: {wait}\ntime_to_start: 0\n",
+        f"box_setting:\n  Q00:\n    slot: 0\n    wait: {wait}\n    port_wait:\n      1: 0\ntime_to_start: 0\n",
         encoding="utf-8",
     )
     return path
@@ -155,6 +155,22 @@ def test_load_skew_yaml_rejects_negative_wait(tmp_path: Path) -> None:
     assert qubecalib.sysdb.load_skew_yaml_calls == []
 
 
+def test_load_skew_yaml_rejects_missing_wait(tmp_path: Path) -> None:
+    """Given a missing box wait, when loading skew yaml, then KeyError is raised before delegation."""
+    controller = _make_controller()
+    path = tmp_path / "skew.yaml"
+    path.write_text(
+        "box_setting:\n  Q00:\n    slot: 0\n    port_wait:\n      1: 0\ntime_to_start: 0\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KeyError, match=r"box_setting\.Q00\.wait is required"):
+        controller.load_skew_yaml(path)
+
+    qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
+    assert qubecalib.sysdb.load_skew_yaml_calls == []
+
+
 def test_update_skew_updates_yaml_and_reloads_sysdb(tmp_path: Path) -> None:
     """Given a skew file, when update_skew is called, then port waits are updated and sysdb reloads the file."""
     controller = _make_controller()
@@ -167,10 +183,12 @@ def test_update_skew_updates_yaml_and_reloads_sysdb(tmp_path: Path) -> None:
 box_setting:
   Q00:
     slot: 0
+    wait: 0
     port_wait:
       1: 0
   Q01:
     slot: 1
+    wait: 0
     port_wait:
       8: 1
 time_to_start: 0
