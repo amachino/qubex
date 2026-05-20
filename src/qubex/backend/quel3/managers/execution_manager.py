@@ -92,6 +92,7 @@ class Quel3ExecutionManager:
         capture_decimation_factor: int,
         client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
+        quelware_pat_path: str | None = None,
         session_manager: Quel3SessionManager | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
@@ -104,6 +105,7 @@ class Quel3ExecutionManager:
         self._capture_decimation_factor = capture_decimation_factor
         self._client_mode: Quel3ClientMode = normalized_client_mode
         self._standalone_unit_label = standalone_unit_label
+        self._quelware_pat_path = quelware_pat_path
         self._sequencer_builder = Quel3SequencerBuilder()
         self._session_manager = (
             session_manager
@@ -113,6 +115,7 @@ class Quel3ExecutionManager:
                 quelware_port=quelware_port,
                 client_mode=normalized_client_mode,
                 standalone_unit_label=standalone_unit_label,
+                quelware_pat_path=quelware_pat_path,
             )
         )
 
@@ -140,6 +143,11 @@ class Quel3ExecutionManager:
     def standalone_unit_label(self) -> str | None:
         """Return configured standalone unit label."""
         return self._standalone_unit_label
+
+    @property
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._quelware_pat_path
 
     def execute_sync(
         self,
@@ -941,6 +949,7 @@ class Quel3ExecutionManager:
         create_quelware_client: QuelwareClientFactory = load_quelware_client_factory(
             client_mode=self._client_mode,
             standalone_unit_label=self._standalone_unit_label,
+            pat_path=self._quelware_pat_path,
         )
         instrument_resolver_factory: InstrumentResolverFactory = (
             resolver_module.InstrumentResolver

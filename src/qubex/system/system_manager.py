@@ -197,6 +197,11 @@ class SystemManager:
             backend_runtime_config,
             "standalone_unit_label",
         )
+        quelware_pat_path = SystemManager._get_runtime_config_value(
+            backend_runtime_config,
+            "quelware_pat_path",
+            "pat_path",
+        )
         if endpoint is not None:
             kwargs["quelware_endpoint"] = endpoint
         if port is not None:
@@ -205,6 +210,8 @@ class SystemManager:
             kwargs["client_mode"] = client_mode
         if standalone_unit_label is not None:
             kwargs["standalone_unit_label"] = standalone_unit_label
+        if quelware_pat_path is not None:
+            kwargs["quelware_pat_path"] = quelware_pat_path
         return kwargs
 
     @staticmethod

@@ -345,6 +345,18 @@ def test_constructor_accepts_standalone_runtime_options() -> None:
     assert controller.execution_manager.client_mode == "standalone"
 
 
+def test_constructor_accepts_quelware_pat_path_runtime_option() -> None:
+    """Given PAT path runtime option, controller should propagate only the path."""
+    pat_path = "/run/secrets/quelware-pat"
+    controller = Quel3BackendController(quelware_pat_path=pat_path)
+
+    assert controller.quelware_pat_path == pat_path
+    assert controller.connection_manager.quelware_pat_path == pat_path
+    assert controller.session_manager.quelware_pat_path == pat_path
+    assert controller.configuration_manager.quelware_pat_path == pat_path
+    assert controller.execution_manager.quelware_pat_path == pat_path
+
+
 def test_constructor_rejects_standalone_mode_without_unit_label() -> None:
     """Given standalone mode without unit label, controller construction should fail fast."""
     with pytest.raises(ValueError, match="standalone_unit_label"):
@@ -360,6 +372,7 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_port=61000,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
+        quelware_pat_path="/run/secrets/quelware-pat",
         connect=lambda box_names=None, parallel=None: None,
         disconnect=lambda: None,
     )
@@ -369,6 +382,7 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_port=61000,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
+        quelware_pat_path="/run/secrets/quelware-pat",
         open=lambda box_names=None, parallel=None: None,
         close=lambda: None,
     )
@@ -377,6 +391,7 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_port=61000,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
+        quelware_pat_path="/run/secrets/quelware-pat",
         target_alias_map={"Q00": "Q00"},
         last_deployed_instrument_infos={"Q00": (object(),)},
         deploy_instruments=lambda *, requests: {"Q00": tuple(requests)},
@@ -387,6 +402,7 @@ def test_constructor_accepts_injected_managers() -> None:
         sampling_period_ns=0.8,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
+        quelware_pat_path="/run/secrets/quelware-pat",
         execute_sync=lambda *, request: request,
         execute_async=lambda *, request: request,
     )
@@ -407,6 +423,7 @@ def test_constructor_accepts_injected_managers() -> None:
     assert controller.sampling_period_ns == pytest.approx(0.8)
     assert controller.client_mode == "standalone"
     assert controller.standalone_unit_label == "quel3-02-a01"
+    assert controller.quelware_pat_path == "/run/secrets/quelware-pat"
 
 
 def test_constructor_accepts_injected_session_manager() -> None:
@@ -417,6 +434,7 @@ def test_constructor_accepts_injected_session_manager() -> None:
         quelware_port=61000,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
+        quelware_pat_path=None,
         open=lambda box_names=None, parallel=None: None,
         close=lambda: None,
     )
@@ -438,6 +456,7 @@ def test_connect_refreshes_existing_instrument_cache() -> None:
         quelware_port=50051,
         client_mode="server",
         standalone_unit_label=None,
+        quelware_pat_path=None,
         connect=lambda box_names=None, parallel=None: calls.append("connect"),
         disconnect=lambda: None,
     )
@@ -446,6 +465,7 @@ def test_connect_refreshes_existing_instrument_cache() -> None:
         quelware_port=50051,
         client_mode="server",
         standalone_unit_label=None,
+        quelware_pat_path=None,
         target_alias_map={},
         last_deployed_instrument_infos={},
         refresh_instrument_cache=lambda: calls.append("refresh") or {},
@@ -479,6 +499,7 @@ def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() ->
                 quelware_port=50051,
                 client_mode="server",
                 standalone_unit_label=None,
+                quelware_pat_path=None,
                 target_alias_map={},
                 last_deployed_instrument_infos={},
                 deploy_instruments=_deploy_instruments,
@@ -509,6 +530,9 @@ def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> Non
         is_connected=False,
         quelware_endpoint="host-a",
         quelware_port=50051,
+        client_mode="server",
+        standalone_unit_label=None,
+        quelware_pat_path=None,
         connect=lambda box_names=None, parallel=None: None,
         disconnect=lambda: None,
     )
@@ -517,6 +541,7 @@ def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> Non
         quelware_port=50051,
         client_mode="server",
         standalone_unit_label=None,
+        quelware_pat_path=None,
         target_alias_map={},
         last_deployed_instrument_infos={},
         deploy_instruments=lambda *, requests: {},
@@ -538,6 +563,7 @@ def test_constructor_rejects_mismatched_injected_client_runtime_values() -> None
         quelware_port=50051,
         client_mode="server",
         standalone_unit_label=None,
+        quelware_pat_path=None,
         connect=lambda box_names=None, parallel=None: None,
         disconnect=lambda: None,
     )
@@ -546,6 +572,7 @@ def test_constructor_rejects_mismatched_injected_client_runtime_values() -> None
         quelware_port=50051,
         client_mode="standalone",
         standalone_unit_label="quel3-02-a01",
+        quelware_pat_path=None,
         target_alias_map={},
         last_deployed_instrument_infos={},
         deploy_instruments=lambda *, requests: {},

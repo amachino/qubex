@@ -817,11 +817,12 @@ def test_load_client_factory_uses_configured_client_runtime(
     monkeypatch.setattr(
         configuration_manager_module,
         "load_quelware_client_factory",
-        lambda *, client_mode, standalone_unit_label: (
+        lambda *, client_mode, standalone_unit_label, pat_path=None: (
             captured.update(
                 {
                     "client_mode": client_mode,
                     "standalone_unit_label": standalone_unit_label,
+                    "pat_path": pat_path,
                 }
             )
             or fake_client_factory
@@ -840,6 +841,47 @@ def test_load_client_factory_uses_configured_client_runtime(
     assert captured == {
         "client_mode": "standalone",
         "standalone_unit_label": "quel3-02-a01",
+        "pat_path": None,
+    }
+
+
+def test_load_client_factory_uses_configured_pat_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given PAT path runtime option, client factory loading should forward only the path."""
+    captured: dict[str, object] = {}
+    fake_client_factory = object()
+    pat_path = "/run/secrets/quelware-pat"
+
+    def _load_quelware_client_factory(
+        *,
+        client_mode: str,
+        standalone_unit_label: str | None,
+        pat_path: str,
+    ) -> object:
+        captured["client_mode"] = client_mode
+        captured["standalone_unit_label"] = standalone_unit_label
+        captured["pat_path"] = pat_path
+        return fake_client_factory
+
+    monkeypatch.setattr(
+        configuration_manager_module,
+        "load_quelware_client_factory",
+        _load_quelware_client_factory,
+    )
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="worker-host",
+        quelware_port=61000,
+        quelware_pat_path=pat_path,
+    )
+
+    client_factory = manager._load_quelware_client_factory()  # noqa: SLF001
+
+    assert client_factory is fake_client_factory
+    assert captured == {
+        "client_mode": "server",
+        "standalone_unit_label": None,
+        "pat_path": pat_path,
     }
 
 
