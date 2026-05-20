@@ -104,9 +104,7 @@ class Quel1SkewManager:
                 box_name=box_name,
             )
             if port not in port_wait:
-                raise ValueError(
-                    f"box_setting.{box_name}.port_wait.{port} is required"
-                )
+                raise ValueError(f"box_setting.{box_name}.port_wait.{port} is required")
             current_wait = port_wait[port]
             self._validate_wait_value(current_wait, box_name=box_name)
             port_wait[port] = max(self._WAIT_MIN, current_wait + (wait - idx))
@@ -180,7 +178,9 @@ class Quel1SkewManager:
     def _validate_wait_value(cls, wait: object, *, box_name: str) -> None:
         """Validate one skew wait value."""
         if not isinstance(wait, int) or isinstance(wait, bool):
-            raise TypeError(f"box_setting.{box_name}.port_wait value must be an integer")
+            raise TypeError(
+                f"box_setting.{box_name}.port_wait value must be an integer"
+            )
         if wait < cls._WAIT_MIN:
             raise ValueError(f"wait must be non-negative (box={box_name}, wait={wait})")
 
@@ -195,7 +195,7 @@ class Quel1SkewManager:
 
         estimated = getattr(self._last_skew, "_estimated", None)
         if not isinstance(estimated, dict):
-            raise RuntimeError("The last skew measurement has no estimated indices.")
+            raise TypeError("The last skew measurement has no estimated indices.")
 
         selected_boxes = set(box_names)
         estimated_indices: list[tuple[str, int, int]] = []
@@ -290,7 +290,7 @@ class Quel1SkewManager:
             and len(target_port) >= 2
             and target_port[0] in target_boxes
         }
-        setattr(skew, "_target_port", filtered_target_ports)
+        skew._target_port = filtered_target_ports  # noqa: SLF001
         console.print(
             f"Skew target ports: {len(filtered_target_ports)} "
             f"from boxes {target_box_names}"

@@ -62,8 +62,14 @@ class _FakeSkewSystem:
 
 
 class _FakeSkewRuntime:
-    def __init__(self, *, system: _FakeSkewSystem) -> None:
+    def __init__(
+        self,
+        *,
+        system: _FakeSkewSystem,
+        estimated: dict[tuple[str, int], _FakeEstimatedPulseParams] | None = None,
+    ) -> None:
         self.system = system
+        self._estimated = dict(estimated or {})
         self.measure_calls = 0
         self.estimate_calls = 0
         self.plot_calls = 0
@@ -88,11 +94,6 @@ class _FakeNamedBox:
 @dataclass
 class _FakeEstimatedPulseParams:
     idx: int
-
-
-class _FakeSkewWithEstimated:
-    def __init__(self, estimated: dict[tuple[str, int], _FakeEstimatedPulseParams]):
-        self._estimated = estimated
 
 
 class _FakeQuel1SystemClass:
@@ -122,12 +123,16 @@ class _FakeQuel1SystemClass:
 class _FakeSkewClass:
     from_yaml_calls: ClassVar[list[dict[str, Any]]] = []
     created_runtimes: ClassVar[list[_FakeSkewRuntime]] = []
+    estimated_indices: ClassVar[dict[tuple[str, int], _FakeEstimatedPulseParams]] = {}
 
     @classmethod
     def from_yaml(cls, path: str, **kwargs: Any) -> _FakeSkewRuntime:
         cls.from_yaml_calls.append({"path": path, **kwargs})
         system = cast(_FakeSkewSystem, kwargs["system"])
-        runtime = _FakeSkewRuntime(system=system)
+        runtime = _FakeSkewRuntime(
+            system=system,
+            estimated=cls.estimated_indices,
+        )
         cls.created_runtimes.append(runtime)
         return runtime
 
@@ -182,6 +187,7 @@ class _FakeRuntimeContext:
 def _reset_fakes() -> None:
     _FakeSkewClass.from_yaml_calls.clear()
     _FakeSkewClass.created_runtimes.clear()
+    _FakeSkewClass.estimated_indices.clear()
     _FakeQuel1SystemClass.create_calls.clear()
     _FakeQuBEMasterClient.create_calls.clear()
 
@@ -332,7 +338,7 @@ def test_update_skew_updates_selected_boxes_and_creates_backup(
     """Given measured indices, when updating skew, then selected port waits shift toward the target."""
     sysdb = _FakeSysDb()
     runtime_context = _FakeRuntimeContext(
-        available_boxes=[],
+        available_boxes=["B"],
         is_connected=False,
         connected_system=None,
         sysdb=sysdb,
@@ -356,11 +362,15 @@ time_to_start: 0
         + "\n",
         encoding="utf-8",
     )
-    cast(Any, manager)._last_skew = _FakeSkewWithEstimated(
-        {
-            ("B", 8): _FakeEstimatedPulseParams(idx=70),
-            ("B", 9): _FakeEstimatedPulseParams(idx=90),
-        }
+    _FakeSkewClass.estimated_indices = {
+        ("B", 8): _FakeEstimatedPulseParams(idx=70),
+        ("B", 9): _FakeEstimatedPulseParams(idx=90),
+    }
+    manager.run_skew_measurement(
+        skew_yaml_path=path,
+        box_yaml_path="box.yaml",
+        clockmaster_ip="192.0.2.1",
+        box_names=["B"],
     )
 
     result = manager.update_skew(
