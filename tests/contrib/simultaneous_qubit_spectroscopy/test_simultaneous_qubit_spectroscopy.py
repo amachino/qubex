@@ -166,10 +166,11 @@ def test_simultaneous_qubit_spectroscopy_normalizes_phase_per_power_row() -> Non
     expected_phases -= np.median(expected_phases, axis=1, keepdims=True) - np.pi
     expected_phases %= 2 * np.pi
     expected_phases -= np.pi
-    assert result.figures is None
+    assert result.figures is not None
     assert result.figure is not None
-    assert_allclose(result.data["data"], expected_phases)
-    assert_allclose(result.data["signals"], expected_signals)
+    assert result.figure is result.figures["Q00"]
+    assert_allclose(result.data["Q00"]["data"], expected_phases)
+    assert_allclose(result.data["Q00"]["signals"], expected_signals)
 
 
 def test_simultaneous_qubit_spectroscopy_rejects_per_target_frequency_range() -> None:

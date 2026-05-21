@@ -87,10 +87,8 @@ def simultaneous_qubit_spectroscopy(
     Returns
     -------
     Result
-        Qubit spectroscopy result. For one target, the payload mirrors
-        `qubit_spectroscopy`: `frequency_range`, `power_range`, and `data`.
-        For multiple targets, the payload is keyed by target label and each
-        value uses that same structure.
+        Qubit spectroscopy result. The payload is keyed by target label, and
+        each value contains `frequency_range`, `power_range`, and `data`.
 
     Notes
     -----
@@ -232,10 +230,6 @@ def simultaneous_qubit_spectroscopy(
             # TODO: Remove this legacy payload key after callers migrate to .figure/.figures.
             "fig": fig,
         }
-
-    if len(qubits) == 1:
-        target = qubits[0]
-        return Result(data=payloads[target], figure=figures[target])
 
     return Result(
         data=payloads,
