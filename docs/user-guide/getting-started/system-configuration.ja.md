@@ -196,7 +196,8 @@ result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 ```
 
 `exp.tool.update_skew(target, ...)` は直前の `check_skew(...)` の推定結果を使い、
-各 measured port の `port_wait` を `target - measured_idx` だけずらしてから
+各 measured port の実効 wait を `target - measured_idx` だけずらし、
+box 共通部分を `wait`、port ごとの差分を `port_wait` に入れてから
 `skew.yaml` を上書きします。更新前のファイルを残したい場合は
 `backup=True` を指定してください。`skew.yaml.bak.20260520_124900` のような
 timestamp 付き backup が作られます。

@@ -355,10 +355,11 @@ box_setting:
       1: 0
   B:
     slot: 1
-    wait: 0
+    wait: 5
     port_wait:
       8: 1
-      9: 2
+      9: 4
+      10: 7
 time_to_start: 0
 """.strip()
         + "\n",
@@ -366,7 +367,7 @@ time_to_start: 0
     )
     _FakeSkewClass.estimated_indices = {
         ("B", 8): _FakeEstimatedPulseParams(idx=70),
-        ("B", 9): _FakeEstimatedPulseParams(idx=90),
+        ("B", 9): _FakeEstimatedPulseParams(idx=80),
     }
     manager.run_skew_measurement(
         skew_yaml_path=path,
@@ -396,9 +397,11 @@ time_to_start: 0
         "wait": 80,
     }
     assert payload["box_setting"]["A"]["port_wait"] == {1: 0}
-    assert payload["box_setting"]["B"]["port_wait"] == {8: 11, 9: 0}
+    assert payload["box_setting"]["B"]["wait"] == 9
+    assert payload["box_setting"]["B"]["port_wait"] == {8: 7, 9: 0, 10: 0}
     assert backup_payload["box_setting"]["A"]["port_wait"] == {1: 0}
-    assert backup_payload["box_setting"]["B"]["port_wait"] == {8: 1, 9: 2}
+    assert backup_payload["box_setting"]["B"]["wait"] == 5
+    assert backup_payload["box_setting"]["B"]["port_wait"] == {8: 1, 9: 4, 10: 7}
     assert sysdb.load_skew_yaml_calls == [str(path)]
     with pytest.raises(RuntimeError, match="Run check_skew before update_skew"):
         manager.update_skew(file_path=path, wait=80, box_names=["B"])

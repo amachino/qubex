@@ -213,10 +213,11 @@ exp.tool.update_skew(250, ["BOX_A", "BOX_B"], backup=True)
 result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 ```
 
-`exp.tool.update_skew(target, ...)` shifts each measured `port_wait` by
+`exp.tool.update_skew(target, ...)` shifts each measured effective wait by
 `target - measured_idx` based on the previous `check_skew(...)` result, then
-overwrites `skew.yaml`. Set `backup=True` when you want to save the previous
-file as a timestamped backup such as `skew.yaml.bak.20260520_124900`.
+writes the box-common part to `wait` and per-port residuals to `port_wait`.
+Set `backup=True` when you want to save the previous file as a timestamped
+backup such as `skew.yaml.bak.20260520_124900`.
 
 For a full walkthrough, see [QuEL-1 skew adjustment workflow](../../examples/system/quel1_skew_adjustment.md).
 

@@ -78,8 +78,8 @@ figure = result.figure
 ## Update the target skew value
 
 After `check_skew(...)` estimates the current pulse indices, call
-`exp.tool.update_skew(...)` to shift each measured `port_wait` so the indices
-align to a common target.
+`exp.tool.update_skew(...)` to update `wait` and `port_wait` so the measured
+indices align to a common target.
 
 ```python
 exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
@@ -87,7 +87,7 @@ exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
 
 This helper:
 
-- updates `box_setting.<box>.port_wait` in `skew.yaml`
+- updates `box_setting.<box>.wait` and `port_wait` in `skew.yaml`
 - writes a timestamped backup file such as `skew.yaml.bak.20260520_124900`
   when `backup=True`
 - reloads the updated skew file into the active QuEL-1 backend
