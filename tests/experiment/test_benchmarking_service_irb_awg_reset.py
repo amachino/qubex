@@ -38,12 +38,17 @@ def _patch_fit_helpers(monkeypatch: Any) -> None:
 
 def _rb_payload(targets: list[str]) -> Result:
     """Build minimal RB-like payload consumed by IRB post-processing."""
+    return _rb_payload_with_range(targets, np.array([0, 1], dtype=int))
+
+
+def _rb_payload_with_range(targets: list[str], n_cliffords: np.ndarray) -> Result:
+    """Build minimal RB-like payload with a specific Clifford sweep range."""
     return Result(
         data={
             target: {
-                "n_cliffords": np.array([0, 1], dtype=int),
-                "mean": np.array([1.0, 0.9], dtype=float),
-                "std": np.array([0.0, 0.01], dtype=float),
+                "n_cliffords": n_cliffords,
+                "mean": np.linspace(1.0, 0.9, len(n_cliffords), dtype=float),
+                "std": np.linspace(0.0, 0.01, len(n_cliffords), dtype=float),
             }
             for target in targets
         }
@@ -134,3 +139,105 @@ def test_irb_experiment_resets_awg_once_for_2q(monkeypatch: Any) -> None:
 
     assert reset_calls == [{"Q17", "Q18"}]
     assert reset_flags == [False, False]
+
+
+def test_irb_experiment_reuses_auto_reference_sweep_for_1q(
+    monkeypatch: Any,
+) -> None:
+    """Given auto 1Q IRB, when reference stops early, then interleaved uses the reference sweep."""
+    _patch_fit_helpers(monkeypatch)
+
+    calls: list[np.ndarray | None] = []
+    reference_range = np.array([0, 1, 2, 4], dtype=int)
+
+    service = cast(Any, object.__new__(BenchmarkingService))
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        experiment_system=SimpleNamespace(
+            get_target=lambda _label: SimpleNamespace(is_cr=False)
+        ),
+        resolve_qubit_label=lambda label: label,
+        reset_awg_and_capunits=lambda *, qubits: None,
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_clifford_generator"] = SimpleNamespace(
+        cliffords={"X90": Clifford.X90()}
+    )
+
+    def _rb_experiment_1q(
+        self: BenchmarkingService,
+        targets: list[str] | str,
+        **kwargs: object,
+    ) -> Result:
+        labels = [targets] if isinstance(targets, str) else list(targets)
+        n_cliffords_range = cast(np.ndarray | None, kwargs.get("n_cliffords_range"))
+        calls.append(n_cliffords_range)
+        if kwargs.get("interleaved_clifford") is None:
+            return _rb_payload_with_range(labels, reference_range)
+        if n_cliffords_range is None:
+            return _rb_payload(labels)
+        return _rb_payload_with_range(labels, n_cliffords_range)
+
+    service.__dict__["rb_experiment_1q"] = MethodType(_rb_experiment_1q, service)
+
+    service.irb_experiment(
+        targets=["Q17"],
+        interleaved_clifford="X90",
+        plot=False,
+        save_image=False,
+    )
+
+    assert calls[0] is None
+    assert calls[1] is not None
+    np.testing.assert_array_equal(calls[1], reference_range)
+
+
+def test_irb_experiment_reuses_auto_reference_sweep_for_2q(
+    monkeypatch: Any,
+) -> None:
+    """Given auto 2Q IRB, when reference stops early, then interleaved uses the reference sweep."""
+    _patch_fit_helpers(monkeypatch)
+
+    calls: list[np.ndarray | None] = []
+    reference_range = np.array([0, 2, 4], dtype=int)
+
+    service = cast(Any, object.__new__(BenchmarkingService))
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        experiment_system=SimpleNamespace(
+            get_target=lambda _label: SimpleNamespace(is_cr=True)
+        ),
+        cr_pair=lambda _label: ("Q17", "Q18"),
+        reset_awg_and_capunits=lambda *, qubits: None,
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+    service.__dict__["_clifford_generator"] = SimpleNamespace(
+        cliffords={"II": Clifford.II()}
+    )
+
+    def _rb_experiment_2q(
+        self: BenchmarkingService,
+        targets: list[str] | str,
+        **kwargs: object,
+    ) -> Result:
+        labels = [targets] if isinstance(targets, str) else list(targets)
+        n_cliffords_range = cast(np.ndarray | None, kwargs.get("n_cliffords_range"))
+        calls.append(n_cliffords_range)
+        if kwargs.get("interleaved_clifford") is None:
+            return _rb_payload_with_range(labels, reference_range)
+        if n_cliffords_range is None:
+            return _rb_payload(labels)
+        return _rb_payload_with_range(labels, n_cliffords_range)
+
+    service.__dict__["rb_experiment_2q"] = MethodType(_rb_experiment_2q, service)
+
+    service.irb_experiment(
+        targets=["CR17-18"],
+        interleaved_clifford="II",
+        plot=False,
+        save_image=False,
+    )
+
+    assert calls[0] is None
+    assert calls[1] is not None
+    np.testing.assert_array_equal(calls[1], reference_range)

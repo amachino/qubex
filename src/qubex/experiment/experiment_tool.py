@@ -17,6 +17,9 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 from qubex.diagnostics import ChipInspector
 from qubex.experiment.models.result import Result
 from qubex.system import LatticeGraph, PortType, SystemManager
@@ -59,10 +62,13 @@ def check_skew(
     config_dir: str | None = None,
     skew_file: str | None = None,
     box_file: str | None = None,
+    confirm: bool | None = None,
 ) -> Result:
     """Check the skew of the boxes."""
     if estimate is None:
         estimate = True
+    if confirm is None:
+        confirm = True
     if skew_file is None:
         skew_file = "skew.yaml"
     if box_file is None:
@@ -86,32 +92,43 @@ def check_skew(
     with open(skew_file_path) as file:
         config = yaml.safe_load(file)
     ref_port = config["reference_port"].split("-")[0]
+    monitor_port = config.get("monitor_port")
+    monitor_box_id = (
+        monitor_port.split("-")[0] if isinstance(monitor_port, str) else None
+    )
+    target_box_ids = (
+        list(dict.fromkeys([*box_ids, monitor_box_id]))
+        if monitor_box_id is not None
+        else box_ids
+    )
 
-    confirmed = Confirm.ask(
-        f"""
+    if confirm:
+        confirmed = Confirm.ask(
+            f"""
 You are going to check the skew of the following boxes using [bold bright_green]'{ref_port}'[/bold bright_green] as the reference.
 
-[bold bright_green]{box_ids}[/bold bright_green]
+[bold bright_green]{target_box_ids}[/bold bright_green]
 
 Do you want to continue?
 """
-    )
-    if not confirmed:
-        logger.info("Operation cancelled.")
-        return Result()
+        )
+        if not confirmed:
+            logger.info("Operation cancelled.")
+            return Result()
 
-    all_box_ids = list({*box_ids, ref_port})
+    all_box_ids = list(dict.fromkeys([*target_box_ids, ref_port]))
     run_skew_measurement = _require_backend_callable("run_skew_measurement")
     skew, fig = run_skew_measurement(
         skew_yaml_path=skew_file_path,
         box_yaml_path=box_file_path,
         clockmaster_ip=clock_master_address,
         box_names=all_box_ids,
+        target_box_names=target_box_ids,
         estimate=estimate,
     )
     figure = cast(_FigureLike, fig)
     figure.update_layout(
-        title=f"Skew : {', '.join(box_ids)!s} (Ref. {ref_port})",
+        title=f"Skew : {', '.join(target_box_ids)!s} (Ref. {ref_port})",
         width=800,
     )
     rendered_figure = go.Figure(fig)
@@ -134,7 +151,7 @@ def update_skew(
     skew_file: str | None = None,
     backup: bool | None = None,
 ) -> Result:
-    """Update skew waits in one skew YAML file and reload backend settings."""
+    """Shift skew `port_wait` values so measured indices match the target wait."""
     if skew_file is None:
         skew_file = "skew.yaml"
     if backup is None:
@@ -167,7 +184,9 @@ def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
     get_box = _require_backend_callable("get_box")
     box = cast("Quel1Box", get_box(box_id))
-    box.reconnect(background_noise_threshold=50_000)
+    box.reconnect(
+        background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+    )
     return box
 
 
@@ -197,7 +216,7 @@ def reboot_fpga(box_id: str) -> None:
 
 def relinkup_box(
     box_id: str | Collection[str],
-    noise_threshold: int | None = None,
+    noise_threshold: float | None = None,
 ) -> None:
     """Relink up the boxes."""
     if isinstance(box_id, str):
@@ -230,7 +249,7 @@ This operation will reset LO/NCO settings. Do you want to continue?
 
 
 @deprecated("relinkup_box is deprecated, please use relinkup_boxes instead.")
-def relinkup_boxes(box_ids: list[str], noise_threshold: int | None = None) -> None:
+def relinkup_boxes(box_ids: list[str], noise_threshold: float | None = None) -> None:
     """Relink up the boxes."""
     relinkup_box(box_ids, noise_threshold=noise_threshold)
 
@@ -263,6 +282,7 @@ def print_chip_info(
         "qubit_anharmonicity",
         "t1",
         "t2_star",
+        "t2_star_ef",
         "t2_echo",
         "static_zz_interaction",
         "qubit_qubit_coupling_strength",
@@ -310,6 +330,7 @@ def print_chip_info(
             "qubit_anharmonicity",
             "t1",
             "t2_star",
+            "t2_star_ef",
             "t2_echo",
             "static_zz_interaction",
             "qubit_qubit_coupling_strength",
@@ -445,6 +466,41 @@ def print_chip_info(
                     ],
                     save_image=save_image,
                     image_name="t2_star",
+                )
+
+        if "t2_star_ef" in info_type:
+            t2_star_values = loader.load_param_data("t2_star")
+            t2_star_ef_values = loader.load_param_data("t2_star_ef")
+            if t2_star_values and t2_star_ef_values:
+                values: dict[str, float] = {}
+                for qubit in graph.qubits:
+                    t2_star = cast(float | None, t2_star_values.get(qubit))
+                    t2_star_ef = cast(float | None, t2_star_ef_values.get(qubit))
+                    if (
+                        t2_star is not None
+                        and t2_star_ef is not None
+                        and not math.isnan(t2_star)
+                        and not math.isnan(t2_star_ef)
+                        and t2_star > 0.0
+                    ):
+                        values[qubit] = t2_star_ef / t2_star * 100.0
+                    else:
+                        values[qubit] = math.nan
+                graph.plot_lattice_data(
+                    title="T2* EF / T2* (%)",
+                    values=list(values.values()),
+                    texts=[
+                        f"{qubit}<br>{value:.2f}<br>%" if _is_valid(value) else "N/A"
+                        for qubit, value in values.items()
+                    ],
+                    hovertexts=[
+                        f"{qubit}: {value:.3f}%"
+                        if _is_valid(value)
+                        else f"{qubit}: N/A"
+                        for qubit, value in values.items()
+                    ],
+                    save_image=save_image,
+                    image_name="t2_star_ef",
                 )
 
         if "t2_echo" in info_type:

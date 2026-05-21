@@ -985,6 +985,7 @@ def test_register_custom_target_delegates_to_context() -> None:
         port_number=2,
         channel_number=0,
         qubit_label="Q00",
+        update_backend_settings=True,
     )
 
     assert context_stub.calls == [
@@ -998,7 +999,41 @@ def test_register_custom_target_delegates_to_context() -> None:
                 "channel_number": 0,
                 "qubit_label": "Q00",
                 "target_type": None,
-                "update_lsi": None,
+                "update_backend_settings": True,
+            },
+        )
+    ]
+
+
+def test_register_custom_target_delegates_legacy_update_lsi_to_context() -> None:
+    """Given update_lsi, when called, then it delegates normalized backend option."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    with pytest.warns(DeprecationWarning, match="`update_lsi` is deprecated"):
+        exp.register_custom_target(
+            label="CUSTOM",
+            frequency=5.1,
+            box_id="B0",
+            port_number=2,
+            channel_number=0,
+            qubit_label="Q00",
+            update_lsi=True,
+        )
+
+    assert context_stub.calls == [
+        (
+            "register_custom_target",
+            {
+                "label": "CUSTOM",
+                "frequency": 5.1,
+                "box_id": "B0",
+                "port_number": 2,
+                "channel_number": 0,
+                "qubit_label": "Q00",
+                "target_type": None,
+                "update_backend_settings": True,
             },
         )
     ]

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from .experiment.chevron_matched_transform import (
+    analyze_chevron_matched_transform,
+    estimate_qubit_frequency_from_chevron,
+    estimate_qubit_frequency_from_chevron_adaptive,
+    measure_chevron_pattern,
+)
 from .experiment.ckp_characterization import (
     ckp_measurement_v2,
     filtered_ckp_experiment,
@@ -11,6 +17,10 @@ from .experiment.crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
 )
+from .experiment.ef_measurement_with_one_channel import (
+    calibrate_cr_pi_pulse,
+    obtain_anharmonicity_with_cr,
+)
 from .experiment.gf_calibration import (
     calibrate_gf_hpi_pulse,
     calibrate_gf_pi_pulse,
@@ -19,6 +29,9 @@ from .experiment.gf_calibration import (
     gf_rabi_experiment,
     gf_ramsey_experiment,
     obtain_gf_rabi_params,
+)
+from .experiment.measurement_induced_decay import (
+    measurement_induced_decay_experiment,
 )
 from .experiment.multipartite_entanglement import (
     create_1d_cluster_sequence,
@@ -65,6 +78,7 @@ from .experiment.readout_parameters_characterization import (
     characterize_readout_parameters,
     fit_readout_parameters,
 )
+from .experiment.repeated_coherence_measurement import repeated_coherence_measurement
 from .experiment.rzx_gate import rzx, rzx_gate_property
 from .experiment.simultaneous_coherence_measurement import (
     simultaneous_coherence_measurement,
@@ -85,6 +99,8 @@ from .experiment.thermal_excitation_characterization import (
 )
 
 __all__ = [
+    "analyze_chevron_matched_transform",
+    "calibrate_cr_pi_pulse",
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
@@ -104,6 +120,8 @@ __all__ = [
     "create_measurement_rounds",
     "create_mqc_sequence",
     "decompose_cr_crosstalk",
+    "estimate_qubit_frequency_from_chevron",
+    "estimate_qubit_frequency_from_chevron_adaptive",
     "filtered_ckp_experiment",
     "fit_readout_parameters",
     "fourier_analysis",
@@ -118,12 +136,15 @@ __all__ = [
     "measure_1d_cluster_state",
     "measure_bell_state_fidelities",
     "measure_bell_states",
+    "measure_chevron_pattern",
     "measure_cr_crosstalk",
     "measure_ghz_state",
     "measure_graph_state",
+    "measurement_induced_decay_experiment",
     "measurement_induced_dephasing",
     "measurement_induced_dephasing_experiment",
     "mqc_experiment",
+    "obtain_anharmonicity_with_cr",
     "obtain_gf_rabi_params",
     "parity_oscillation",
     "partial_transpose",
@@ -134,6 +155,7 @@ __all__ = [
     "purity_sequence_2q",
     "quantum_efficiency_measurement",
     "readout_snr",
+    "repeated_coherence_measurement",
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",

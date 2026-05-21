@@ -1099,11 +1099,7 @@ class MeasurementService:
 
         sweep_range = np.array(sweep_range)
 
-        if rabi_level == "ge":
-            rabi_params = self.pulse.ge_rabi_params
-        elif rabi_level == "ef":
-            rabi_params = self.pulse.ef_rabi_params
-        else:
+        if rabi_level not in ("ge", "ef"):
             raise ValueError("Invalid Rabi level.")
 
         if callable(sequence):
@@ -1181,10 +1177,16 @@ class MeasurementService:
             plotter.clear()
             plotter.to_figure().show()
 
+        measured_targets = [target for target, values in signals.items() if values]
+        rabi_params = self._get_sweep_rabi_params(
+            targets=measured_targets,
+            rabi_level=rabi_level,
+        )
+
         sweep_data = {
             target: SweepData(
                 target=target,
-                data=np.array(values),
+                data=np.array(signals[target]),
                 sweep_range=sweep_range,
                 rabi_param=rabi_params.get(target),
                 state_centers=self.ctx.state_centers.get(target),
@@ -1194,14 +1196,30 @@ class MeasurementService:
                 xaxis_type=xaxis_type,
                 yaxis_type=yaxis_type,
             )
-            for target, values in signals.items()
-            if values
+            for target in measured_targets
         }
         result = ExperimentResult(
             data=sweep_data,
-            rabi_params=self.pulse.rabi_params,
+            rabi_params=rabi_params,
         )
         return result
+
+    def _get_sweep_rabi_params(
+        self,
+        *,
+        targets: Collection[str],
+        rabi_level: Literal["ge", "ef"],
+    ) -> dict[str, RabiParam]:
+        """Return Rabi parameters only for targets measured by one sweep."""
+        rabi_params: dict[str, RabiParam] = {}
+        for target in targets:
+            param_target = target
+            if rabi_level == "ef":
+                param_target = self.ctx.resolve_ef_label(target)
+            param = self.ctx.get_rabi_param(param_target)
+            if param is not None:
+                rabi_params[target] = param
+        return rabi_params
 
     def repeat_sequence(
         self,

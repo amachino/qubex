@@ -267,7 +267,7 @@ class MeasurementSessionService:
             "clocks": clock_statuses,
         }
 
-    def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
+    def linkup(self, box_list: list[str], noise_threshold: float | None = None) -> None:
         """Link up boxes and synchronize clocks."""
         backend_controller = self.backend_controller
         linkup_boxes = cast(

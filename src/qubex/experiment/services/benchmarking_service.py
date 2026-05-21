@@ -32,6 +32,29 @@ from .pulse_service import PulseService
 logger = logging.getLogger(__name__)
 
 
+def _n_cliffords_ranges_by_target(
+    rb_result: Result,
+    targets: Collection[str],
+) -> dict[str, np.ndarray]:
+    return {
+        target: np.asarray(rb_result[target]["n_cliffords"], dtype=int)
+        for target in targets
+    }
+
+
+def _shared_n_cliffords_range(
+    ranges_by_target: Mapping[str, np.ndarray],
+) -> np.ndarray | None:
+    ranges = list(ranges_by_target.values())
+    if not ranges:
+        return None
+
+    first_range = ranges[0]
+    if all(np.array_equal(first_range, n_cliffords) for n_cliffords in ranges[1:]):
+        return first_range
+    return None
+
+
 class BenchmarkingService:
     """Service for randomized benchmarking workflows."""
 
@@ -735,23 +758,52 @@ class BenchmarkingService:
                 save_image=False,
                 reset_awg_and_capunits=False,
             )
-            irb_result = self.rb_experiment_2q(
-                targets=targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                zx90=zx90,
-                interleaved_waveform=interleaved_waveform,  # type: ignore
-                interleaved_clifford=interleaved_clifford,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
+            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
+            irb_n_cliffords_range = (
+                n_cliffords_range
+                if n_cliffords_range is not None
+                else _shared_n_cliffords_range(reference_ranges)
             )
+            if irb_n_cliffords_range is None:
+                irb_data = {}
+                for target in targets:
+                    target_irb_result = self.rb_experiment_2q(
+                        targets=target,
+                        n_cliffords_range=reference_ranges[target],
+                        n_trials=n_trials,
+                        seeds=seeds,
+                        max_n_cliffords=max_n_cliffords,
+                        x90=x90,
+                        zx90=zx90,
+                        interleaved_waveform=interleaved_waveform,  # type: ignore
+                        interleaved_clifford=interleaved_clifford,
+                        in_parallel=False,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                        save_image=False,
+                        reset_awg_and_capunits=False,
+                    )
+                    irb_data[target] = target_irb_result[target]
+                irb_result = Result(data=irb_data)
+            else:
+                irb_result = self.rb_experiment_2q(
+                    targets=targets,
+                    n_cliffords_range=irb_n_cliffords_range,
+                    n_trials=n_trials,
+                    seeds=seeds,
+                    max_n_cliffords=max_n_cliffords,
+                    x90=x90,
+                    zx90=zx90,
+                    interleaved_waveform=interleaved_waveform,  # type: ignore
+                    interleaved_clifford=interleaved_clifford,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                    save_image=False,
+                    reset_awg_and_capunits=False,
+                )
         else:
             dimension = 2
             rb_result = self.rb_experiment_1q(
@@ -768,22 +820,50 @@ class BenchmarkingService:
                 save_image=False,
                 reset_awg_and_capunits=False,
             )
-            irb_result = self.rb_experiment_1q(
-                targets=targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                interleaved_waveform=interleaved_waveform,  # type: ignore
-                interleaved_clifford=interleaved_clifford,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
+            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
+            irb_n_cliffords_range = (
+                n_cliffords_range
+                if n_cliffords_range is not None
+                else _shared_n_cliffords_range(reference_ranges)
             )
+            if irb_n_cliffords_range is None:
+                irb_data = {}
+                for target in targets:
+                    target_irb_result = self.rb_experiment_1q(
+                        targets=target,
+                        n_cliffords_range=reference_ranges[target],
+                        n_trials=n_trials,
+                        seeds=seeds,
+                        max_n_cliffords=max_n_cliffords,
+                        x90=x90,
+                        interleaved_waveform=interleaved_waveform,  # type: ignore
+                        interleaved_clifford=interleaved_clifford,
+                        in_parallel=False,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                        save_image=False,
+                        reset_awg_and_capunits=False,
+                    )
+                    irb_data[target] = target_irb_result[target]
+                irb_result = Result(data=irb_data)
+            else:
+                irb_result = self.rb_experiment_1q(
+                    targets=targets,
+                    n_cliffords_range=irb_n_cliffords_range,
+                    n_trials=n_trials,
+                    seeds=seeds,
+                    max_n_cliffords=max_n_cliffords,
+                    x90=x90,
+                    interleaved_waveform=interleaved_waveform,  # type: ignore
+                    interleaved_clifford=interleaved_clifford,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                    save_image=False,
+                    reset_awg_and_capunits=False,
+                )
 
         results = {}
         for target in targets:
