@@ -72,6 +72,7 @@ from .quantum_efficiency_measurement import (
 )
 from .readout_parameters_characterization import characterize_readout_parameters
 from .repeated_coherence_measurement import repeated_coherence_measurement
+from .repetition_code import repetition_code
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .simultaneous_qubit_spectroscopy import simultaneous_qubit_spectroscopy
@@ -138,6 +139,7 @@ __all__ = [
     "quantum_efficiency_measurement",
     "readout_snr",
     "repeated_coherence_measurement",
+    "repetition_code",
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",

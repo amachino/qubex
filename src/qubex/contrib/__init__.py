@@ -79,6 +79,7 @@ from .experiment.readout_parameters_characterization import (
     fit_readout_parameters,
 )
 from .experiment.repeated_coherence_measurement import repeated_coherence_measurement
+from .experiment.repetition_code import repetition_code
 from .experiment.rzx_gate import rzx, rzx_gate_property
 from .experiment.simultaneous_coherence_measurement import (
     simultaneous_coherence_measurement,
@@ -156,6 +157,7 @@ __all__ = [
     "quantum_efficiency_measurement",
     "readout_snr",
     "repeated_coherence_measurement",
+    "repetition_code",
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
