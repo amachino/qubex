@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 from contextlib import ExitStack
-from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
@@ -36,11 +35,9 @@ def simultaneous_qubit_spectroscopy(
     *,
     frequency_range: ArrayLike | None = None,
     power_range: ArrayLike | None = None,
-    readout_amplitude: Mapping[str, float] | float | None = None,
     control_amplitudes: Mapping[str, float] | None = None,
-    readout_amplitudes: Mapping[str, float] | float | None = None,
-    readout_frequency: Mapping[str, float] | float | None = None,
-    readout_frequencies: Mapping[str, float] | float | None = None,
+    readout_amplitudes: Mapping[str, float] | None = None,
+    readout_frequencies: Mapping[str, float] | None = None,
     simultaneous_drive: bool | None = None,
     validate_resources: bool | None = None,
     shots: int | None = None,
@@ -63,19 +60,15 @@ def simultaneous_qubit_spectroscopy(
     power_range
         Drive power sweep points in dB. If omitted, the standard qubit
         spectroscopy power range is used.
-    readout_amplitude
-        Readout amplitude. A scalar is applied to all targets, while a mapping
-        provides per-target values.
     control_amplitudes
         Optional per-target amplitude scale factors applied to the power-derived
         drive amplitude. Missing values use a scale factor of `1.0`.
     readout_amplitudes
-        Alias for `readout_amplitude`.
-    readout_frequency
-        Readout frequency in GHz. A scalar is applied to all targets, while a
-        mapping provides per-target values.
+        Optional per-target readout amplitudes. Missing values use context
+        parameters.
     readout_frequencies
-        Alias for `readout_frequency`.
+        Optional per-target readout frequencies in GHz. Missing values use
+        context target frequencies.
     simultaneous_drive
         Whether readout starts with the drive pulse. If false, readout starts
         after all drive pulses in each sweep point.
@@ -122,19 +115,6 @@ def simultaneous_qubit_spectroscopy(
         save_image = True
 
     qubits = _resolve_targets(exp, targets)
-    resolved_readout_amplitude = _resolve_alias_value(
-        canonical=readout_amplitude,
-        alias=readout_amplitudes,
-        canonical_name="readout_amplitude",
-        alias_name="readout_amplitudes",
-    )
-    resolved_readout_frequency = _resolve_alias_value(
-        canonical=readout_frequency,
-        alias=readout_frequencies,
-        canonical_name="readout_frequency",
-        alias_name="readout_frequencies",
-    )
-
     shared_frequency_range = _normalize_frequency_range(exp, qubits, frequency_range)
     frequency_arrays = {qubit: shared_frequency_range.copy() for qubit in qubits}
     coarse_frequencies = _resolve_coarse_frequency_centers(frequency_arrays)
@@ -150,7 +130,7 @@ def simultaneous_qubit_spectroscopy(
     )
     readout_amplitude_map = _resolve_target_values(
         qubits,
-        provided=resolved_readout_amplitude,
+        provided=readout_amplitudes,
         defaults=exp.ctx.params.readout_amplitude,
         value_name="readout_amplitudes",
     )
@@ -158,7 +138,7 @@ def simultaneous_qubit_spectroscopy(
         exp,
         qubits,
         resonators=resonators,
-        provided=resolved_readout_frequency,
+        provided=readout_frequencies,
     )
 
     signals: dict[str, list[list[complex]]] = {qubit: [] for qubit in qubits}
@@ -321,19 +301,6 @@ def _find_duplicates(values: list[str]) -> list[str]:
     return duplicates
 
 
-def _resolve_alias_value(
-    *,
-    canonical: object | None,
-    alias: object | None,
-    canonical_name: str,
-    alias_name: str,
-) -> Any:
-    """Resolve canonical and alias keyword values."""
-    if canonical is not None and alias is not None:
-        raise ValueError(f"`{alias_name}` conflicts with `{canonical_name}`.")
-    return canonical if canonical is not None else alias
-
-
 def _normalize_frequency_range(
     exp: Experiment,
     qubits: list[str],
@@ -468,14 +435,13 @@ def _normalize_frequency_array(
 def _resolve_target_values(
     qubits: list[str],
     *,
-    provided: Mapping[str, float] | float | None,
+    provided: Mapping[str, float] | None,
     defaults: Mapping[str, float],
     value_name: str,
 ) -> dict[str, float]:
-    """Return per-target scalar values using provided overrides and defaults."""
+    """Return per-target values using provided overrides and defaults."""
     if provided is not None and not isinstance(provided, Mapping):
-        value = float(provided)
-        return dict.fromkeys(qubits, value)
+        raise TypeError(f"{value_name} must be a mapping keyed by target.")
 
     values: dict[str, float] = {}
     for qubit in qubits:
@@ -493,12 +459,11 @@ def _resolve_readout_frequencies(
     qubits: list[str],
     *,
     resonators: Mapping[str, str],
-    provided: Mapping[str, float] | float | None,
+    provided: Mapping[str, float] | None,
 ) -> dict[str, float]:
     """Return per-target readout frequencies from overrides or context targets."""
     if provided is not None and not isinstance(provided, Mapping):
-        value = float(provided)
-        return dict.fromkeys(qubits, value)
+        raise TypeError("readout_frequencies must be a mapping keyed by target.")
 
     values: dict[str, float] = {}
     for qubit in qubits:

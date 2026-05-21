@@ -219,19 +219,44 @@ def test_simultaneous_qubit_spectroscopy_accepts_shared_frequency_range() -> Non
         targets=["Q00", "Q01"],
         frequency_range=[5.10, 5.11],
         power_range=[-20],
-        readout_amplitude=0.5,
-        readout_frequency=7.2,
+        readout_amplitudes={"Q00": 0.5, "Q01": 0.6},
+        readout_frequencies={"Q00": 7.2, "Q01": 7.3},
         plot=False,
         save_image=False,
     )
 
     assert len(exp.measurement_service.calls) == 2
     assert exp.ctx.frequency_contexts == [
-        {"Q00": 5.10, "Q01": 5.10, "RQ00": 7.2, "RQ01": 7.2},
-        {"Q00": 5.11, "Q01": 5.11, "RQ00": 7.2, "RQ01": 7.2},
+        {"Q00": 5.10, "Q01": 5.10, "RQ00": 7.2, "RQ01": 7.3},
+        {"Q00": 5.11, "Q01": 5.11, "RQ00": 7.2, "RQ01": 7.3},
     ]
     assert_allclose(result.data["Q00"]["frequency_range"], [5.10, 5.11])
     assert_allclose(result.data["Q01"]["frequency_range"], [5.10, 5.11])
+
+
+def test_simultaneous_qubit_spectroscopy_rejects_scalar_readout_parameters() -> None:
+    """Given scalar readout overrides, when helper runs, then it rejects them."""
+    exp = _Experiment()
+
+    with pytest.raises(TypeError, match="readout_amplitudes must be a mapping"):
+        simultaneous_qubit_spectroscopy(
+            cast(Any, exp),
+            targets=["Q00", "Q01"],
+            frequency_range=[5.00],
+            readout_amplitudes=0.5,  # type: ignore[arg-type]
+            plot=False,
+            save_image=False,
+        )
+
+    with pytest.raises(TypeError, match="readout_frequencies must be a mapping"):
+        simultaneous_qubit_spectroscopy(
+            cast(Any, exp),
+            targets=["Q00", "Q01"],
+            frequency_range=[5.00],
+            readout_frequencies=7.2,  # type: ignore[arg-type]
+            plot=False,
+            save_image=False,
+        )
 
 
 def test_simultaneous_qubit_spectroscopy_rejects_duplicate_targets() -> None:
