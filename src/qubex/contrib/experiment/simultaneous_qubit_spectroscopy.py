@@ -92,12 +92,12 @@ def simultaneous_qubit_spectroscopy(
 
     Notes
     -----
-    This helper intentionally does not manage LO/CNCO retuning, resource
-    allocation, or crosstalk mitigation. It retunes control LO/CNCO settings
-    using the same subrange strategy as `scan_qubit_frequencies`. The built-in
-    validation only rejects duplicate target labels, duplicate readout labels,
-    and control/readout label collisions. Callers must provide shared sweep
-    points that are valid for the active hardware configuration.
+    This helper does not introduce a separate LO/CNCO retuning strategy,
+    resource allocation, or crosstalk mitigation. It retunes control LO/CNCO
+    settings using the same subrange strategy as `scan_qubit_frequencies`. The
+    built-in validation only rejects duplicate target labels, duplicate readout
+    labels, and control/readout label collisions. Callers must provide shared
+    sweep points that are valid for the active hardware configuration.
     """
     if simultaneous_drive is None:
         simultaneous_drive = True
