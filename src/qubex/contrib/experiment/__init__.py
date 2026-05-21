@@ -62,6 +62,7 @@ from .quantum_efficiency_measurement import (
 from .readout_parameters_characterization import characterize_readout_parameters
 from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
+from .simultaneous_qubit_spectroscopy import simultaneous_qubit_spectroscopy
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
 from .superconducting_gap import get_resistance_charge, get_superconducting_gap
 from .thermal_excitation_characterization import (
@@ -120,6 +121,7 @@ __all__ = [
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
+    "simultaneous_qubit_spectroscopy",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
     "sweep_readout_snr",

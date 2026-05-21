@@ -69,6 +69,9 @@ from .experiment.rzx_gate import rzx, rzx_gate_property
 from .experiment.simultaneous_coherence_measurement import (
     simultaneous_coherence_measurement,
 )
+from .experiment.simultaneous_qubit_spectroscopy import (
+    simultaneous_qubit_spectroscopy,
+)
 from .experiment.stark_characterization import (
     stark_ramsey_experiment,
     stark_t1_experiment,
@@ -134,6 +137,7 @@ __all__ = [
     "rzx",
     "rzx_gate_property",
     "simultaneous_coherence_measurement",
+    "simultaneous_qubit_spectroscopy",
     "stark_ramsey_experiment",
     "stark_t1_experiment",
     "sweep_readout_snr",
