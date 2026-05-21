@@ -95,17 +95,14 @@ class _Experiment:
 
 
 def test_simultaneous_qubit_spectroscopy_runs_one_combined_schedule_per_point() -> None:
-    """Given aligned sweep points, when helper runs, then each power-frequency point measures all targets."""
+    """Given shared sweep points, when helper runs, then each point measures all targets."""
     exp = _Experiment()
 
     result = simultaneous_qubit_spectroscopy(
         cast(Any, exp),
         targets=["Q00", "Q01"],
         power_range=[-20, -10],
-        frequency_ranges={
-            "Q00": [5.00, 5.01],
-            "Q01": [5.20, 5.21],
-        },
+        frequency_range=[5.00, 5.01],
         readout_frequencies={
             "Q00": 7.00,
             "Q01": 7.10,
@@ -119,10 +116,10 @@ def test_simultaneous_qubit_spectroscopy_runs_one_combined_schedule_per_point() 
     assert len(exp.measurement_service.calls) == 4
     assert exp.ctx.reset_calls == [{"Q00", "Q01"}] * 2
     assert exp.ctx.frequency_contexts == [
-        {"Q00": 5.00, "Q01": 5.20, "RQ00": 7.00, "RQ01": 7.10},
-        {"Q00": 5.01, "Q01": 5.21, "RQ00": 7.00, "RQ01": 7.10},
-        {"Q00": 5.00, "Q01": 5.20, "RQ00": 7.00, "RQ01": 7.10},
-        {"Q00": 5.01, "Q01": 5.21, "RQ00": 7.00, "RQ01": 7.10},
+        {"Q00": 5.00, "Q01": 5.00, "RQ00": 7.00, "RQ01": 7.10},
+        {"Q00": 5.01, "Q01": 5.01, "RQ00": 7.00, "RQ01": 7.10},
+        {"Q00": 5.00, "Q01": 5.00, "RQ00": 7.00, "RQ01": 7.10},
+        {"Q00": 5.01, "Q01": 5.01, "RQ00": 7.00, "RQ01": 7.10},
     ]
     first_schedule = exp.measurement_service.calls[0]["schedule"]
     assert first_schedule.labels == ["Q00", "Q01", "RQ00", "RQ01"]
@@ -137,7 +134,7 @@ def test_simultaneous_qubit_spectroscopy_runs_one_combined_schedule_per_point() 
     assert result.figure is result.figures["Q00"]
     assert set(result.figures) == {"Q00", "Q01"}
     assert_allclose(q00["frequency_range"], [5.00, 5.01])
-    assert_allclose(q01["frequency_range"], [5.20, 5.21])
+    assert_allclose(q01["frequency_range"], [5.00, 5.01])
     assert_allclose(q00["power_range"], [-20, -10])
     assert_allclose(q01["power_range"], [-20, -10])
     assert_allclose(q00["signals"], [[1 + 1j, 2 + 1j], [3 + 1j, 4 + 1j]])
@@ -158,7 +155,7 @@ def test_simultaneous_qubit_spectroscopy_normalizes_phase_per_power_row() -> Non
     result = simultaneous_qubit_spectroscopy(
         cast(Any, exp),
         targets=["Q00"],
-        frequency_ranges={"Q00": [5.00, 5.01]},
+        frequency_range=[5.00, 5.01],
         power_range=[-20, -10],
         plot=False,
         save_image=False,
@@ -175,15 +172,15 @@ def test_simultaneous_qubit_spectroscopy_normalizes_phase_per_power_row() -> Non
     assert_allclose(result.data["signals"], expected_signals)
 
 
-def test_simultaneous_qubit_spectroscopy_rejects_misaligned_sweep_lengths() -> None:
-    """Given mismatched sweep lengths, when helper runs, then it rejects the request."""
+def test_simultaneous_qubit_spectroscopy_rejects_per_target_frequency_range() -> None:
+    """Given per-target frequency range, when helper runs, then it rejects it."""
     exp = _Experiment()
 
-    with pytest.raises(ValueError, match="same number of sweep points"):
+    with pytest.raises(TypeError, match="frequency_range must be shared"):
         simultaneous_qubit_spectroscopy(
             cast(Any, exp),
             targets=["Q00", "Q01"],
-            frequency_ranges={
+            frequency_range={
                 "Q00": [5.00, 5.01],
                 "Q01": [5.20],
             },
@@ -192,8 +189,8 @@ def test_simultaneous_qubit_spectroscopy_rejects_misaligned_sweep_lengths() -> N
         )
 
 
-def test_simultaneous_qubit_spectroscopy_uses_default_frequency_ranges() -> None:
-    """Given no frequency ranges, when helper runs, then it uses target control defaults."""
+def test_simultaneous_qubit_spectroscopy_uses_default_frequency_range() -> None:
+    """Given no frequency range, when helper runs, then it uses the first target default."""
     exp = _Experiment()
 
     result = simultaneous_qubit_spectroscopy(
@@ -245,22 +242,7 @@ def test_simultaneous_qubit_spectroscopy_rejects_duplicate_targets() -> None:
         simultaneous_qubit_spectroscopy(
             cast(Any, exp),
             targets=["Q00", "Q00"],
-            frequency_ranges={"Q00": [5.00, 5.01]},
-            plot=False,
-            save_image=False,
-        )
-
-
-def test_simultaneous_qubit_spectroscopy_rejects_conflicting_aliases() -> None:
-    """Given canonical and alias options together, helper rejects ambiguous inputs."""
-    exp = _Experiment()
-
-    with pytest.raises(ValueError, match=r"frequency_ranges.*frequency_range"):
-        simultaneous_qubit_spectroscopy(
-            cast(Any, exp),
-            targets=["Q00"],
-            frequency_range=[5.00],
-            frequency_ranges={"Q00": [5.00]},
+            frequency_range=[5.00, 5.01],
             plot=False,
             save_image=False,
         )
@@ -274,10 +256,7 @@ def test_simultaneous_qubit_spectroscopy_rejects_duplicate_readout_labels() -> N
         simultaneous_qubit_spectroscopy(
             cast(Any, exp),
             targets=["Q00", "Q01"],
-            frequency_ranges={
-                "Q00": [5.00, 5.01],
-                "Q01": [5.20, 5.21],
-            },
+            frequency_range=[5.00, 5.01],
             plot=False,
             save_image=False,
         )
@@ -290,10 +269,7 @@ def test_simultaneous_qubit_spectroscopy_can_skip_resource_validation() -> None:
     result = simultaneous_qubit_spectroscopy(
         cast(Any, exp),
         targets=["Q00", "Q01"],
-        frequency_ranges={
-            "Q00": [5.00],
-            "Q01": [5.20],
-        },
+        frequency_range=[5.00],
         power_range=[-20],
         validate_resources=False,
         plot=False,
@@ -314,10 +290,7 @@ def test_simultaneous_qubit_spectroscopy_rejects_control_readout_label_collision
         simultaneous_qubit_spectroscopy(
             cast(Any, exp),
             targets=["Q00", "Q01"],
-            frequency_ranges={
-                "Q00": [5.00, 5.01],
-                "Q01": [5.20, 5.21],
-            },
+            frequency_range=[5.00, 5.01],
             plot=False,
             save_image=False,
         )

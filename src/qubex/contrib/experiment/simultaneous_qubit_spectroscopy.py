@@ -34,14 +34,13 @@ def simultaneous_qubit_spectroscopy(
     exp: Experiment,
     targets: Collection[str] | str | None = None,
     *,
-    frequency_range: Mapping[str, ArrayLike] | ArrayLike | None = None,
-    frequency_ranges: Mapping[str, ArrayLike] | ArrayLike | None = None,
+    frequency_range: ArrayLike | None = None,
     power_range: ArrayLike | None = None,
     readout_amplitude: Mapping[str, float] | float | None = None,
     control_amplitudes: Mapping[str, float] | None = None,
-    readout_amplitudes: Mapping[str, float] | None = None,
+    readout_amplitudes: Mapping[str, float] | float | None = None,
     readout_frequency: Mapping[str, float] | float | None = None,
-    readout_frequencies: Mapping[str, float] | None = None,
+    readout_frequencies: Mapping[str, float] | float | None = None,
     simultaneous_drive: bool | None = None,
     validate_resources: bool | None = None,
     shots: int | None = None,
@@ -50,7 +49,7 @@ def simultaneous_qubit_spectroscopy(
     save_image: bool | None = None,
 ) -> Result:
     """
-    Run aligned qubit spectroscopy sweeps for multiple targets simultaneously.
+    Run shared qubit spectroscopy sweeps for multiple targets simultaneously.
 
     Parameters
     ----------
@@ -59,12 +58,8 @@ def simultaneous_qubit_spectroscopy(
     targets
         Target qubits to scan. If omitted, all context qubits are used.
     frequency_range
-        Control frequency sweep points in GHz. If omitted, each target uses
-        its control box default range. A one-dimensional range is applied to
-        all targets, while a mapping provides per-target ranges. All targets
-        must have the same number of sweep points.
-    frequency_ranges
-        Alias for `frequency_range`.
+        Shared control frequency sweep points in GHz. If omitted, the first
+        target's control box default range is applied to all targets.
     power_range
         Drive power sweep points in dB. If omitted, the standard qubit
         spectroscopy power range is used.
@@ -110,7 +105,7 @@ def simultaneous_qubit_spectroscopy(
     allocation, or crosstalk mitigation. It retunes control LO/CNCO settings
     using the same subrange strategy as `scan_qubit_frequencies`. The built-in
     validation only rejects duplicate target labels, duplicate readout labels,
-    and control/readout label collisions. Callers must provide aligned sweep
+    and control/readout label collisions. Callers must provide shared sweep
     points that are valid for the active hardware configuration.
     """
     if simultaneous_drive is None:
@@ -127,12 +122,6 @@ def simultaneous_qubit_spectroscopy(
         save_image = True
 
     qubits = _resolve_targets(exp, targets)
-    resolved_frequency_range = _resolve_alias_value(
-        canonical=frequency_range,
-        alias=frequency_ranges,
-        canonical_name="frequency_range",
-        alias_name="frequency_ranges",
-    )
     resolved_readout_amplitude = _resolve_alias_value(
         canonical=readout_amplitude,
         alias=readout_amplitudes,
@@ -146,9 +135,8 @@ def simultaneous_qubit_spectroscopy(
         alias_name="readout_frequencies",
     )
 
-    frequency_arrays = _normalize_frequency_ranges(
-        exp, qubits, resolved_frequency_range
-    )
+    shared_frequency_range = _normalize_frequency_range(exp, qubits, frequency_range)
+    frequency_arrays = {qubit: shared_frequency_range.copy() for qubit in qubits}
     coarse_frequencies = _resolve_coarse_frequency_centers(frequency_arrays)
     powers = _normalize_power_range(power_range)
     resonators = {qubit: exp.ctx.resolve_read_label(qubit) for qubit in qubits}
@@ -346,34 +334,20 @@ def _resolve_alias_value(
     return canonical if canonical is not None else alias
 
 
-def _normalize_frequency_ranges(
+def _normalize_frequency_range(
     exp: Experiment,
     qubits: list[str],
-    frequency_ranges: Mapping[str, ArrayLike] | ArrayLike | None,
-) -> dict[str, NDArray[np.float64]]:
-    """Return float frequency arrays and validate aligned sweep lengths."""
-    if frequency_ranges is None:
-        arrays = {qubit: _default_frequency_range(exp, qubit) for qubit in qubits}
-        _validate_aligned_frequency_lengths(arrays)
-        return arrays
-
-    if not isinstance(frequency_ranges, Mapping):
-        shared_values = _normalize_frequency_array(
-            frequency_ranges,
-            label="frequency_ranges",
-        )
-        return {qubit: shared_values.copy() for qubit in qubits}
-
-    arrays: dict[str, NDArray[np.float64]] = {}
-    for qubit in qubits:
-        if qubit not in frequency_ranges:
-            raise ValueError(f"frequency_ranges is missing target: {qubit}")
-        arrays[qubit] = _normalize_frequency_array(
-            frequency_ranges[qubit],
-            label=f"frequency_ranges[{qubit!r}]",
-        )
-    _validate_aligned_frequency_lengths(arrays)
-    return arrays
+    frequency_range: ArrayLike | None,
+) -> NDArray[np.float64]:
+    """Return one shared float frequency array."""
+    if frequency_range is None:
+        return _default_frequency_range(exp, qubits[0])
+    if isinstance(frequency_range, Mapping):
+        raise TypeError("frequency_range must be shared and one-dimensional.")
+    return _normalize_frequency_array(
+        frequency_range,
+        label="frequency_range",
+    )
 
 
 def _normalize_power_range(
@@ -489,17 +463,6 @@ def _normalize_frequency_array(
     if len(array) == 0:
         raise ValueError(f"{label} must not be empty.")
     return array
-
-
-def _validate_aligned_frequency_lengths(
-    arrays: Mapping[str, NDArray[np.float64]],
-) -> None:
-    """Validate that all frequency arrays have the same length."""
-    lengths = {len(values) for values in arrays.values()}
-    if len(lengths) != 1:
-        raise ValueError(
-            "All frequency_ranges must have the same number of sweep points."
-        )
 
 
 def _resolve_target_values(
