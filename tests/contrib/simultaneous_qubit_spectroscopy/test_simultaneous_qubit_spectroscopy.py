@@ -180,10 +180,13 @@ def test_simultaneous_qubit_spectroscopy_rejects_per_target_frequency_range() ->
         simultaneous_qubit_spectroscopy(
             cast(Any, exp),
             targets=["Q00", "Q01"],
-            frequency_range={
-                "Q00": [5.00, 5.01],
-                "Q01": [5.20],
-            },
+            frequency_range=cast(
+                Any,
+                {
+                    "Q00": [5.00, 5.01],
+                    "Q01": [5.20],
+                },
+            ),
             plot=False,
             save_image=False,
         )
