@@ -179,14 +179,18 @@ box_setting:
   BOX_A:
     slot: 0
     wait: 0
+    port_wait:
+      1: 0
   BOX_B:
     slot: 1
     wait: 0
+    port_wait:
+      8: 0
 monitor_port: BOX_A-12
 reference_port: BOX_A-1
 scale:
   BOX_A-1: 0.125
-target_port:
+target_port: !!set
   BOX_A-1: null
   BOX_B-8: null
 time_to_start: 0
@@ -194,8 +198,8 @@ trigger_nport: 10
 ```
 
 - `box_setting.<box>.slot` defines the coarse timing slot for each box.
-- `box_setting.<box>.wait` defines the fine skew wait value you tune during
-  correction.
+- `box_setting.<box>.port_wait` defines the per-port wait value you tune during
+  skew correction.
 - `reference_port` selects the reference signal source.
 - `monitor_port` and `trigger_nport` define the monitor capture path.
 - `target_port` lists the ports included in the skew scan.
@@ -209,8 +213,10 @@ exp.tool.update_skew(250, ["BOX_A", "BOX_B"], backup=True)
 result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 ```
 
-`exp.tool.update_skew(...)` overwrites `skew.yaml`. Set `backup=True` when you
-want to save the previous file as `skew.yaml.bak`.
+`exp.tool.update_skew(target, ...)` shifts each measured `port_wait` by
+`target - measured_idx` based on the previous `check_skew(...)` result, then
+overwrites `skew.yaml`. Set `backup=True` when you want to save the previous
+file as a timestamped backup such as `skew.yaml.bak.20260520_124900`.
 
 For a full walkthrough, see [QuEL-1 skew adjustment workflow](../../examples/system/quel1_skew_adjustment.md).
 

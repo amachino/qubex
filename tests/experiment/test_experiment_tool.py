@@ -112,6 +112,7 @@ class FakeBackendControllerWithSkew(FakeBackendController):
         clockmaster_ip: str,
         box_names: list[str],
         estimate: bool,
+        target_box_names: list[str] | None = None,
     ) -> tuple[dict[str, str], go.FigureWidget]:
         """Return fake skew results and record render parameters."""
         self.run_skew_measurement_calls.append(
@@ -120,6 +121,7 @@ class FakeBackendControllerWithSkew(FakeBackendController):
                 "box_yaml_path": box_yaml_path,
                 "clockmaster_ip": clockmaster_ip,
                 "box_names": box_names,
+                "target_box_names": target_box_names,
                 "estimate": estimate,
             }
         )
@@ -142,9 +144,14 @@ class FakeBackendControllerWithSkew(FakeBackendController):
                 "backup": backup,
             }
         )
+        backup_path = (
+            file_path.with_name(f"{file_path.name}.bak.20260520_124900")
+            if backup
+            else None
+        )
         return {
             "file_path": file_path,
-            "backup_path": file_path.with_suffix(".yaml.bak") if backup else None,
+            "backup_path": backup_path,
             "box_names": box_names if box_names is not None else [],
             "wait": wait,
         }
@@ -341,7 +348,10 @@ def test_check_skew_renders_figure_widget_via_plotly_figure(
         backend_controller=backend,
         config_loader=SimpleNamespace(config_path=tmp_path),
     )
-    (tmp_path / "skew.yaml").write_text("reference_port: REF-1\n", encoding="utf-8")
+    (tmp_path / "skew.yaml").write_text(
+        "reference_port: REF-1\nmonitor_port: MON-4\n",
+        encoding="utf-8",
+    )
     (tmp_path / "box.yaml").write_text("boxes: {}\n", encoding="utf-8")
 
     shown: dict[str, object] = {}
@@ -358,7 +368,11 @@ def test_check_skew_renders_figure_widget_via_plotly_figure(
     monkeypatch.setattr(go.FigureWidget, "show", _fail_widget_show, raising=False)
     monkeypatch.setattr(go.Figure, "show", _record_figure_show, raising=False)
 
-    result = experiment_tool.check_skew(["BOX1"], config_dir=str(tmp_path))
+    result = experiment_tool.check_skew(
+        ["BOX1"],
+        config_dir=str(tmp_path),
+        confirm=False,
+    )
 
     rendered_figure = shown["figure"]
     assert isinstance(rendered_figure, go.Figure)
@@ -368,7 +382,7 @@ def test_check_skew_renders_figure_widget_via_plotly_figure(
     with pytest.warns(DeprecationWarning, match="figure` attribute"):
         assert result["fig"] is figure_widget
     rendered_layout = rendered_figure.to_dict()["layout"]
-    assert rendered_layout["title"]["text"] == "Skew : BOX1 (Ref. REF)"
+    assert rendered_layout["title"]["text"] == "Skew : BOX1, MON (Ref. REF)"
     assert rendered_layout["width"] == 800
     assert rendered_layout["template"]["layout"]["font"]["family"] == FONT_FAMILY
     assert len(backend.run_skew_measurement_calls) == 1
@@ -376,7 +390,8 @@ def test_check_skew_renders_figure_widget_via_plotly_figure(
     assert call["skew_yaml_path"] == tmp_path / "skew.yaml"
     assert call["box_yaml_path"] == tmp_path / "box.yaml"
     assert call["clockmaster_ip"] == "192.0.2.10"
-    assert set(cast(list[str], call["box_names"])) == {"BOX1", "REF"}
+    assert set(cast(list[str], call["box_names"])) == {"BOX1", "MON", "REF"}
+    assert call["target_box_names"] == ["BOX1", "MON"]
     assert call["estimate"] is True
 
 
@@ -393,7 +408,8 @@ def test_update_skew_uses_backend_and_returns_result(monkeypatch, tmp_path) -> N
 box_setting:
   BOX1:
     slot: 0
-    wait: 0
+    port_wait:
+      1: 0
 time_to_start: 0
 """.strip()
         + "\n",
@@ -412,7 +428,7 @@ time_to_start: 0
     assert isinstance(result, Result)
     assert result["wait"] == 250
     assert result["file_path"] == tmp_path / "skew.yaml"
-    assert result["backup_path"] == tmp_path / "skew.yaml.bak"
+    assert result["backup_path"] == tmp_path / "skew.yaml.bak.20260520_124900"
     assert result["box_names"] == ["BOX1"]
     assert backend.update_skew_calls == [
         {
