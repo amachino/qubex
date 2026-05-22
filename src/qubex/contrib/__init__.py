@@ -79,7 +79,12 @@ from .experiment.readout_parameters_characterization import (
     fit_readout_parameters,
 )
 from .experiment.repeated_coherence_measurement import repeated_coherence_measurement
-from .experiment.repetition_code import repetition_code
+from .experiment.repetition_code import (
+    plot_repetition_code_analysis,
+    plot_repetition_code_correlation,
+    plot_repetition_code_logical_summary,
+    repetition_code,
+)
 from .experiment.rzx_gate import rzx, rzx_gate_property
 from .experiment.simultaneous_coherence_measurement import (
     simultaneous_coherence_measurement,
@@ -151,6 +156,9 @@ __all__ = [
     "partial_transpose",
     "pb_experiment_1q",
     "pb_experiment_2q",
+    "plot_repetition_code_analysis",
+    "plot_repetition_code_correlation",
+    "plot_repetition_code_logical_summary",
     "purity_benchmarking",
     "purity_sequence_1q",
     "purity_sequence_2q",

@@ -31,6 +31,7 @@ def repetition_code(
     run_analysis: bool = True,
     return_raw_result: bool = False,
     plot_schedule: bool = False,
+    plot_analysis: bool = False,
     measure_readout_duration: float | None = None,
     data_readout_duration: float | None = None,
     readout_amplitudes: Mapping[str, float] | None = None,
@@ -75,6 +76,9 @@ def repetition_code(
         If True, include the raw execute result under ``raw_result``.
     plot_schedule
         If True, plot the constructed schedule before execution.
+    plot_analysis
+        If True, display a logical-error summary plot and detector-correlation
+        heatmap using the returned analysis payload.
     measure_readout_duration, data_readout_duration
         Optional readout-duration overrides for syndrome and final data readout.
     readout_amplitudes
@@ -179,7 +183,10 @@ def repetition_code(
     if return_raw_result:
         payload["raw_result"] = raw_result
 
-    return Result(data=payload)
+    result = Result(data=payload)
+    if plot_analysis:
+        plot_repetition_code_analysis(result)
+    return result
 
 
 class _Layout:
@@ -892,6 +899,208 @@ def _two_point_correlation(
     return matrix
 
 
+def plot_repetition_code_analysis(
+    results: Any,
+    *,
+    show: bool = True,
+    qec_camp_order: bool = True,
+) -> list[Any]:
+    """
+    Plot the repetition-code logical summary and detector correlations.
+
+    This mirrors the notebook workflow that first plots logical error rate
+    versus round count and then plots one two-point detector-correlation matrix
+    for each analysis payload.
+    """
+    payloads = _analysis_payloads(results)
+    figures: list[Any] = []
+    summary_figure = plot_repetition_code_logical_summary(payloads, show=show)
+    if summary_figure is not None:
+        figures.append(summary_figure)
+    figures.extend(
+        plot_repetition_code_correlation(
+            payload,
+            show=show,
+            qec_camp_order=qec_camp_order,
+        )
+        for payload in payloads
+    )
+    return figures
+
+
+def plot_repetition_code_logical_summary(
+    results: Any,
+    *,
+    show: bool = True,
+) -> Any | None:
+    """Plot logical error rate versus round count for one or more results."""
+    payloads = _analysis_payloads(results)
+    rows: list[tuple[str, str, int, float]] = []
+    for payload in payloads:
+        logical_error_rate = _payload_float(payload, "logical_error_rate")
+        if logical_error_rate is None:
+            continue
+        rows.append(
+            (
+                str(payload.get("basis", "")),
+                str(payload.get("initial", "")),
+                _payload_int(payload, "rounds", default=0),
+                logical_error_rate,
+            )
+        )
+    if not rows:
+        print("No logical-error analysis payloads were provided.")
+        return None
+
+    plt = _matplotlib_pyplot()
+    fig, ax = plt.subplots(figsize=(7, 4), dpi=120)
+    for basis, initial in sorted({(row[0], row[1]) for row in rows}):
+        group = sorted(
+            (rounds, rate)
+            for group_basis, group_initial, rounds, rate in rows
+            if (group_basis, group_initial) == (basis, initial)
+        )
+        ax.plot(
+            [rounds for rounds, _ in group],
+            [rate for _, rate in group],
+            marker="o",
+            label=f"{basis}:{initial}",
+        )
+    ax.set_xlabel("num_round")
+    ax.set_ylabel("logical error rate")
+    ax.set_title("repetition code logical error rate")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_repetition_code_correlation(
+    result: Any,
+    *,
+    show: bool = True,
+    qec_camp_order: bool = True,
+) -> Any:
+    """
+    Plot one two-point detector-correlation matrix.
+
+    When ``qec_camp_order`` is True and ``detector_array`` is available, the
+    plot uses the qec_camp-style order ``S0:r0, ..., S0:final, S1:r0, ...``.
+    """
+    payload = _analysis_payload(result)
+    matrix, labels, block = _correlation_matrix_for_plot(
+        payload,
+        qec_camp_order=qec_camp_order,
+    )
+    finite = matrix[np.isfinite(matrix)]
+    vmax = float(np.max(np.abs(finite))) if finite.size else 1.0
+    if vmax == 0:
+        vmax = 1.0
+
+    plt = _matplotlib_pyplot()
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=130)
+    im = ax.imshow(matrix, cmap="seismic", vmin=-vmax, vmax=vmax)
+    ax.set_title(
+        "repetition code p_ij: "
+        f"{payload.get('basis', '')}:{payload.get('initial', '')}, "
+        f"rounds={payload.get('rounds', '')}"
+    )
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(labels, rotation=90)
+    ax.set_yticklabels(labels)
+    if block > 0:
+        for boundary in range(block, len(labels), block):
+            ax.axhline(boundary - 0.5, color="black", lw=0.6, alpha=0.5)
+            ax.axvline(boundary - 0.5, color="black", lw=0.6, alpha=0.5)
+    fig.colorbar(im, ax=ax, label="p_ij")
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig
+
+
+def _analysis_payloads(results: Any) -> list[Mapping[str, object]]:
+    if isinstance(results, (Result, Mapping)):
+        return [_analysis_payload(results)]
+    return [_analysis_payload(result) for result in results]
+
+
+def _analysis_payload(result: Any) -> Mapping[str, object]:
+    if isinstance(result, Result):
+        return result.data
+    if isinstance(result, Mapping):
+        return result
+    raise TypeError("Expected a Result, a payload mapping, or a sequence of them.")
+
+
+def _correlation_matrix_for_plot(
+    payload: Mapping[str, object],
+    *,
+    qec_camp_order: bool,
+) -> tuple[NDArray[np.float64], list[str], int]:
+    detector_array = payload.get("detector_array")
+    if qec_camp_order and detector_array is not None:
+        detector_tensor = np.asarray(detector_array, dtype=np.int8)
+        if detector_tensor.ndim == 3:
+            _shots, rows, stabilizers = detector_tensor.shape
+            detector_flat = detector_tensor.transpose(0, 2, 1).reshape(
+                detector_tensor.shape[0],
+                -1,
+            )
+            return (
+                _two_point_correlation(detector_flat),
+                _detector_labels_qec_camp(stabilizers=stabilizers, rows=rows),
+                rows,
+            )
+
+    matrix = np.asarray(payload["correlation_matrix"], dtype=float)
+    fallback_labels = [f"D{index}" for index in range(matrix.shape[0])]
+    labels_obj = payload.get("detector_labels")
+    labels = (
+        [str(label) for label in labels_obj]
+        if isinstance(labels_obj, Sequence) and not isinstance(labels_obj, str)
+        else fallback_labels
+    )
+    block = max(_payload_int(payload, "distance", default=1) - 1, 0)
+    return matrix, labels, block
+
+
+def _detector_labels_qec_camp(*, stabilizers: int, rows: int) -> list[str]:
+    labels: list[str] = []
+    for stabilizer in range(stabilizers):
+        labels.extend(f"S{stabilizer}:r{row}" for row in range(rows - 1))
+        labels.append(f"S{stabilizer}:final")
+    return labels
+
+
+def _payload_int(
+    payload: Mapping[str, object],
+    key: str,
+    *,
+    default: int,
+) -> int:
+    value = payload.get(key)
+    if isinstance(value, int):
+        return value
+    return default
+
+
+def _payload_float(payload: Mapping[str, object], key: str) -> float | None:
+    value = payload.get(key)
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _matplotlib_pyplot() -> Any:
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
 def _decode_observables(
     detector_flat: NDArray[np.int8],
     *,
@@ -1012,4 +1221,9 @@ class _DecoderGraph:
         return pair_cost + rem_cost, pair_obs ^ rem_obs
 
 
-__all__ = ["repetition_code"]
+__all__ = [
+    "plot_repetition_code_analysis",
+    "plot_repetition_code_correlation",
+    "plot_repetition_code_logical_summary",
+    "repetition_code",
+]
