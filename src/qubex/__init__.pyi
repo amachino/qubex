@@ -1,3 +1,10 @@
+"""
+Typing stub for lazy top-level exports.
+
+The runtime module keeps selected exports lazy to avoid import overhead, while
+this stub makes those public names visible to completion and type checkers.
+"""
+
 import qxpulse as pulse
 from qxpulse import (
     Blank as Blank,
