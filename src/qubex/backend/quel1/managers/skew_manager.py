@@ -181,6 +181,8 @@ class Quel1SkewManager:
         """Return the `port_wait` mapping from one box skew setting."""
         port_wait = setting.get("port_wait")
         if port_wait is None:
+            # TODO: Replace this fallback when the full port_wait initialization
+            # path is defined.
             return {}
         if not isinstance(port_wait, dict):
             raise TypeError(f"box_setting.{box_name}.port_wait must be a mapping")
