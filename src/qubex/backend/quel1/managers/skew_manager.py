@@ -105,13 +105,10 @@ class Quel1SkewManager:
             box_names=resolved_box_names,
         )
         for box_name, port, idx in estimated_indices:
-            port_wait = self._require_port_wait(
-                box_setting[box_name],
-                box_name=box_name,
-            )
-            if port not in port_wait:
-                raise ValueError(f"box_setting.{box_name}.port_wait.{port} is required")
-            current_wait = port_wait[port]
+            port_wait = box_setting[box_name].setdefault("port_wait", {})
+            if not isinstance(port_wait, dict):
+                raise TypeError(f"box_setting.{box_name}.port_wait must be a mapping")
+            current_wait = port_wait.get(port, self._WAIT_MIN)
             self._validate_wait_value(current_wait, box_name=box_name)
             port_wait[port] = max(self._WAIT_MIN, current_wait + (wait - idx))
 
@@ -183,6 +180,8 @@ class Quel1SkewManager:
     ) -> dict[Any, Any]:
         """Return the `port_wait` mapping from one box skew setting."""
         port_wait = setting.get("port_wait")
+        if port_wait is None:
+            return {}
         if not isinstance(port_wait, dict):
             raise TypeError(f"box_setting.{box_name}.port_wait must be a mapping")
         return port_wait
