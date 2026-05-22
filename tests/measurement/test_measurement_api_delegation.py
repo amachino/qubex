@@ -20,6 +20,7 @@ from qubex.measurement.models import (
     CaptureData,
     MeasurementConfig,
     MeasurementSchedule,
+    MeasurementStabilitySnapshot,
     NDSweepMeasurementResult,
     Quel1MeasurementOptions,
     SweepMeasurementResult,
@@ -394,12 +395,1032 @@ def test_capture_loopback_delegates_to_execution_service() -> None:
         measurement.execution_service,
     )
 
-    result = measurement.capture_loopback(schedule=schedule, n_shots=128)
+    result = measurement.capture_loopback(
+        schedule=schedule,
+        n_shots=128,
+        block_outputs=False,
+    )
 
     assert result is loopback_result
     kwargs = cast(dict[str, object], called["kwargs"])
     assert kwargs["schedule"] is schedule
     assert kwargs["n_shots"] == 128
+    assert kwargs["block_outputs"] is False
+    assert kwargs["shot_averaging"] is True
+    assert kwargs["demodulation"] is True
+    assert kwargs["include_read_in"] is False
+    assert kwargs["configure_monitor_nco"] is True
+
+
+def test_measurement_stability_methods_delegate_to_stability_service() -> None:
+    """Given stability API calls, when invoked, then they delegate to the stability service."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called: list[tuple[str, dict[str, object]]] = []
+    baseline_result = object()
+    update_result = object()
+
+    def fake_establish(**kwargs: object) -> object:
+        called.append(("establish", kwargs))
+        return baseline_result
+
+    def fake_update(**kwargs: object) -> object:
+        called.append(("update", kwargs))
+        return update_result
+
+    cast(
+        Any, measurement.stability_service
+    ).establish_output_signal_baseline = fake_establish
+    cast(
+        Any, measurement.stability_service
+    ).update_output_signal_corrections = fake_update
+
+    baseline = measurement.establish_stability_baseline(
+        targets=["Q00"],
+        n_shots=128,
+        trim_samples=4,
+        estimate_gain_noise=False,
+        estimate_phase_noise=False,
+    )
+    update = measurement.update_stability_corrections(
+        targets=["RQ00"],
+        max_gain_relative_step=0.002,
+        gain_correction_deadband=0.003,
+        auto_gain_correction_deadband=False,
+        gain_correction_deadband_sigma=4.0,
+        max_phase_step=0.04,
+        phase_smoothing=0.2,
+        phase_correction_deadband=0.01,
+        auto_phase_correction_deadband=False,
+        phase_correction_deadband_sigma=4.0,
+        phase_min_resultant_length=0.8,
+        trim_samples=5,
+    )
+
+    assert baseline is baseline_result
+    assert update is update_result
+    assert called[0][0] == "establish"
+    assert callable(called[0][1]["capture"])
+    assert called[0][1]["targets"] == ["Q00"]
+    assert called[0][1]["n_shots"] == 128
+    assert called[0][1]["trim_samples"] == 4
+    assert called[0][1]["reference_scope"] == "box"
+    assert called[0][1]["estimate_gain_noise"] is False
+    assert called[0][1]["estimate_phase_noise"] is False
+    assert called[1][0] == "update"
+    assert callable(called[1][1]["capture"])
+    assert called[1][1]["targets"] == ["RQ00"]
+    assert called[1][1]["max_gain_relative_step"] == 0.002
+    assert called[1][1]["gain_correction_deadband"] == 0.003
+    assert called[1][1]["auto_gain_correction_deadband"] is False
+    assert called[1][1]["gain_correction_deadband_sigma"] == 4.0
+    assert called[1][1]["max_phase_step"] == 0.04
+    assert called[1][1]["phase_smoothing"] == 0.2
+    assert called[1][1]["phase_correction_deadband"] == 0.01
+    assert called[1][1]["auto_phase_correction_deadband"] is False
+    assert called[1][1]["phase_correction_deadband_sigma"] == 4.0
+    assert called[1][1]["phase_min_resultant_length"] == 0.8
+    assert called[1][1]["trim_samples"] == 5
+    assert called[1][1]["reference_scope"] is None
+
+
+def test_measurement_check_signal_stability_returns_snapshots() -> None:
+    """Given signal stability API, when invoked, then it returns snapshots."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    called: dict[str, object] = {}
+    snapshots = [MeasurementStabilitySnapshot(output_corrections={})]
+
+    def fake_check_signal_stability(
+        **kwargs: object,
+    ) -> list[MeasurementStabilitySnapshot]:
+        called.update(kwargs)
+        return snapshots
+
+    cast(
+        Any, measurement.stability_service
+    ).check_signal_stability = fake_check_signal_stability
+
+    result = measurement.check_signal_stability(
+        targets=["Q00"],
+        duration=12.0,
+        sample_interval=2.0,
+        n_shots=128,
+        trim_samples=4,
+        gain_correction_deadband=0.003,
+        auto_gain_correction_deadband=False,
+        gain_correction_deadband_sigma=4.0,
+        max_phase_step=0.04,
+        phase_smoothing=0.2,
+        phase_correction_deadband=0.01,
+        auto_phase_correction_deadband=False,
+        phase_correction_deadband_sigma=4.0,
+        phase_min_resultant_length=0.8,
+        update_corrections=True,
+    )
+
+    assert result is snapshots
+    assert callable(called["capture"])
+    assert called["targets"] == ["Q00"]
+    assert called["duration"] == 12.0
+    assert called["sample_interval"] == 2.0
+    assert called["n_shots"] == 128
+    assert called["trim_samples"] == 4
+    assert called["gain_correction_deadband"] == 0.003
+    assert called["auto_gain_correction_deadband"] is False
+    assert called["gain_correction_deadband_sigma"] == 4.0
+    assert called["max_phase_step"] == 0.04
+    assert called["phase_smoothing"] == 0.2
+    assert called["phase_correction_deadband"] == 0.01
+    assert called["auto_phase_correction_deadband"] is False
+    assert called["phase_correction_deadband_sigma"] == 4.0
+    assert called["phase_min_resultant_length"] == 0.8
+    assert called["reference_scope"] == "box"
+    assert called["update_corrections"] is True
+
+
+@pytest.mark.parametrize(
+    ("block_outputs", "expected_output_rfswitch", "expected_calls"),
+    [
+        (
+            True,
+            "block",
+            [
+                ("B0", 1, "block"),
+                ("B0", 4, "loop"),
+                ("B0", 1, "pass"),
+                ("B0", 4, "open"),
+            ],
+        ),
+        (
+            False,
+            "pass",
+            [
+                ("B0", 4, "loop"),
+                ("B0", 4, "open"),
+            ],
+        ),
+    ],
+)
+def test_capture_loopback_block_outputs_controls_active_outputs_and_restores_ports(
+    block_outputs: bool,
+    expected_output_rfswitch: str,
+    expected_calls: list[tuple[str, int, str | None]],
+) -> None:
+    """Given loopback capture, when block_outputs is set, then active outputs follow it."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    output_port = SimpleNamespace(
+        id="B0.CTRL0.OUT",
+        box_id="B0",
+        number=1,
+        type=PortType.CTRL,
+        rfswitch="pass",
+    )
+    monitor_in_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+        rfswitch="open",
+    )
+    box = SimpleNamespace(id="B0", ports=[output_port, monitor_in_port])
+
+    class _ControlSystemStub:
+        def __init__(self) -> None:
+            self.boxes = [box]
+            self._port_by_id = {port.id: port for port in box.ports}
+            self._port_by_number = {
+                (port.box_id, port.number): port for port in box.ports
+            }
+
+        def get_port_by_id(self, port_id: str) -> Any:
+            return self._port_by_id[port_id]
+
+        def get_box(self, box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+        def set_port_params(
+            self,
+            box_id: str,
+            port_number: int,
+            *,
+            rfswitch: str | None = None,
+        ) -> None:
+            if rfswitch is None:
+                return
+            self._port_by_number[(box_id, port_number)].rfswitch = rfswitch
+
+    class _BackendControllerStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int, str | None]] = []
+
+        def config_port(
+            self,
+            box_name: str,
+            *,
+            port: int,
+            rfswitch: str | None = None,
+        ) -> None:
+            self.calls.append((box_name, port, rfswitch))
+
+    control_system = _ControlSystemStub()
+    backend_controller = _BackendControllerStub()
+    schedule_target = SimpleNamespace(
+        label="Q00",
+        channel=SimpleNamespace(port=output_port),
+    )
+
+    def _resolve_qubit_label(label: str) -> str:
+        raise ValueError(label)
+
+    experiment_system = SimpleNamespace(
+        control_system=control_system,
+        targets=[schedule_target],
+        read_in_targets=[],
+        resolve_qubit_label=_resolve_qubit_label,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+    )
+
+    execution_service = measurement.execution_service
+    built_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["Q00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    captured_build_kwargs: dict[str, Any] = {}
+
+    def _build(
+        self: MeasurementExecutionService,
+        pulse_schedule: PulseSchedule,
+        **kwargs: Any,
+    ) -> MeasurementSchedule:
+        _ = (self, pulse_schedule)
+        captured_build_kwargs.update(kwargs)
+        return built_schedule
+
+    async def _run(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        _ = (self, schedule, config, quel1_options)
+        assert output_port.rfswitch == expected_output_rfswitch
+        assert monitor_in_port.rfswitch == "loop"
+        return _make_measurement_result(
+            data={"B0.MNTR0.IN": [np.array([1.0 + 0.0j])]},
+            measurement_config=_make_config(),
+            sampling_period=2.0,
+        )
+
+    execution_service.build_measurement_schedule = MethodType(
+        _build,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        _run,
+        execution_service,
+    )
+
+    _ = measurement.capture_loopback(
+        schedule=PulseSchedule(["Q00"]),
+        n_shots=16,
+        block_outputs=block_outputs,
+    )
+
+    assert output_port.rfswitch == "pass"
+    assert monitor_in_port.rfswitch == "open"
+    assert captured_build_kwargs["capture_targets"] == ["B0.MNTR0.IN"]
+    assert backend_controller.calls == expected_calls
+
+
+def test_capture_loopback_syncs_monitor_nco_to_active_source() -> None:
+    """Given monitor loopback capture, when running, then monitor NCO follows the source output."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    source_channel = SimpleNamespace(number=0, fnco_freq=125_000_000)
+    output_port = SimpleNamespace(
+        id="B0.CTRL0",
+        box_id="B0",
+        number=1,
+        type=PortType.CTRL,
+        lo_freq=8_500_000_000,
+        cnco_freq=1_617_187_500,
+        channels=(source_channel,),
+        rfswitch="pass",
+    )
+    source_channel.port = output_port
+    monitor_channel = SimpleNamespace(number=0, fnco_freq=0)
+    monitor_in_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+        lo_freq=9_000_000_000,
+        cnco_freq=1_500_000_000,
+        channels=(monitor_channel,),
+        rfswitch="open",
+    )
+    monitor_channel.port = monitor_in_port
+    box = SimpleNamespace(id="B0", ports=[output_port, monitor_in_port])
+
+    class _ControlSystemStub:
+        def __init__(self) -> None:
+            self.boxes = [box]
+            self._port_by_id = {port.id: port for port in box.ports}
+            self._port_by_number = {
+                (port.box_id, port.number): port for port in box.ports
+            }
+
+        def get_port_by_id(self, port_id: str) -> Any:
+            return self._port_by_id[port_id]
+
+        def get_box(self, box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+        def set_port_params(
+            self,
+            box_id: str,
+            port_number: int,
+            **kwargs: Any,
+        ) -> None:
+            port = self._port_by_number[(box_id, port_number)]
+            if "rfswitch" in kwargs and kwargs["rfswitch"] is not None:
+                port.rfswitch = kwargs["rfswitch"]
+            if "lo_freq" in kwargs:
+                port.lo_freq = kwargs["lo_freq"]
+            if "cnco_freq" in kwargs and kwargs["cnco_freq"] is not None:
+                port.cnco_freq = kwargs["cnco_freq"]
+            fnco_freqs = kwargs.get("fnco_freqs")
+            if fnco_freqs is not None:
+                for channel, fnco_freq in zip(port.channels, fnco_freqs, strict=True):
+                    channel.fnco_freq = fnco_freq
+
+    class _BackendControllerStub:
+        def __init__(self) -> None:
+            self.port_config_calls: list[dict[str, Any]] = []
+            self.runit_config_calls: list[dict[str, Any]] = []
+
+        def initialize_awg_and_capunits(self, box_ids: list[str]) -> None:
+            _ = box_ids
+
+        def get_loopbacks_of_port(
+            self,
+            *,
+            box_name: str,
+            port_number: int,
+        ) -> set[int]:
+            _ = box_name
+            if port_number == 4:
+                return {1}
+            return set()
+
+        def config_port(
+            self,
+            box_name: str,
+            *,
+            port: int,
+            lo_freq_hz: int | None = None,
+            cnco_freq_hz: int | None = None,
+            cnco_locked_with: int | None = None,
+            rfswitch: str | None = None,
+        ) -> None:
+            if lo_freq_hz is not None or cnco_locked_with is not None:
+                self.port_config_calls.append(
+                    {
+                        "box_name": box_name,
+                        "port": port,
+                        "lo_freq_hz": lo_freq_hz,
+                        "cnco_freq_hz": cnco_freq_hz,
+                        "cnco_locked_with": cnco_locked_with,
+                    }
+                )
+            if rfswitch is not None:
+                control_system.set_port_params(
+                    box_name,
+                    port,
+                    rfswitch=rfswitch,
+                )
+
+        def config_runit(
+            self,
+            box_name: str,
+            *,
+            port: int,
+            runit: int,
+            fnco_freq_hz: int | None = None,
+        ) -> None:
+            self.runit_config_calls.append(
+                {
+                    "box_name": box_name,
+                    "port": port,
+                    "runit": runit,
+                    "fnco_freq_hz": fnco_freq_hz,
+                }
+            )
+
+    control_system = _ControlSystemStub()
+    backend_controller = _BackendControllerStub()
+    schedule_target = SimpleNamespace(
+        label="Q00",
+        channel=source_channel,
+    )
+    experiment_system = SimpleNamespace(
+        control_system=control_system,
+        targets=[schedule_target],
+        read_in_targets=[],
+        resolve_qubit_label=lambda label: label,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+    )
+
+    execution_service = measurement.execution_service
+
+    def _build(
+        self: MeasurementExecutionService,
+        pulse_schedule: PulseSchedule,
+        **kwargs: Any,
+    ) -> MeasurementSchedule:
+        _ = (self, pulse_schedule, kwargs)
+        return MeasurementSchedule(
+            pulse_schedule=PulseSchedule(["Q00"]),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def _run(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        _ = (self, schedule, config)
+        options = cast(Quel1MeasurementOptions, quel1_options)
+        assert options.demodulation is False
+        assert monitor_in_port.lo_freq == output_port.lo_freq
+        assert monitor_in_port.cnco_freq == output_port.cnco_freq
+        assert monitor_channel.fnco_freq == source_channel.fnco_freq
+        return _make_measurement_result(
+            data={"B0.MNTR0.IN": [np.array([1.0 + 0.0j])]},
+            measurement_config=_make_config(),
+            sampling_period=2.0,
+        )
+
+    execution_service.build_measurement_schedule = MethodType(
+        _build,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        _run,
+        execution_service,
+    )
+
+    _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+
+    assert backend_controller.port_config_calls == [
+        {
+            "box_name": "B0",
+            "port": 4,
+            "lo_freq_hz": 8_500_000_000,
+            "cnco_freq_hz": None,
+            "cnco_locked_with": 1,
+        }
+    ]
+    assert backend_controller.runit_config_calls == [
+        {
+            "box_name": "B0",
+            "port": 4,
+            "runit": 0,
+            "fnco_freq_hz": 125_000_000,
+        }
+    ]
+
+    backend_controller.port_config_calls.clear()
+    backend_controller.runit_config_calls.clear()
+
+    _ = measurement.capture_loopback(
+        schedule=PulseSchedule(["Q00"]),
+        n_shots=16,
+        configure_monitor_nco=False,
+    )
+
+    assert backend_controller.port_config_calls == []
+    assert backend_controller.runit_config_calls == []
+
+
+def test_capture_loopback_splits_monitor_runs_by_active_source_channel() -> None:
+    """Given multiple monitor sources, when capturing, then each source gets a matched NCO run."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00", "Q01"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    source_channel0 = SimpleNamespace(number=0, fnco_freq=125_000_000)
+    source_channel1 = SimpleNamespace(number=0, fnco_freq=175_000_000)
+    output_port0 = SimpleNamespace(
+        id="B0.CTRL0",
+        box_id="B0",
+        number=1,
+        type=PortType.CTRL,
+        lo_freq=8_500_000_000,
+        cnco_freq=1_617_187_500,
+        channels=(source_channel0,),
+        rfswitch="pass",
+    )
+    output_port1 = SimpleNamespace(
+        id="B0.CTRL1",
+        box_id="B0",
+        number=2,
+        type=PortType.CTRL,
+        lo_freq=8_700_000_000,
+        cnco_freq=1_700_000_000,
+        channels=(source_channel1,),
+        rfswitch="pass",
+    )
+    source_channel0.port = output_port0
+    source_channel1.port = output_port1
+    monitor_channel = SimpleNamespace(number=0, fnco_freq=0)
+    monitor_in_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+        lo_freq=9_000_000_000,
+        cnco_freq=1_500_000_000,
+        channels=(monitor_channel,),
+        rfswitch="open",
+    )
+    monitor_channel.port = monitor_in_port
+    box = SimpleNamespace(
+        id="B0",
+        ports=[output_port0, output_port1, monitor_in_port],
+    )
+
+    class _ControlSystemStub:
+        def __init__(self) -> None:
+            self.boxes = [box]
+            self._port_by_id = {port.id: port for port in box.ports}
+            self._port_by_number = {
+                (port.box_id, port.number): port for port in box.ports
+            }
+
+        def get_port_by_id(self, port_id: str) -> Any:
+            return self._port_by_id[port_id]
+
+        def get_box(self, box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+        def set_port_params(
+            self,
+            box_id: str,
+            port_number: int,
+            **kwargs: Any,
+        ) -> None:
+            port = self._port_by_number[(box_id, port_number)]
+            if "rfswitch" in kwargs and kwargs["rfswitch"] is not None:
+                port.rfswitch = kwargs["rfswitch"]
+            if "lo_freq" in kwargs:
+                port.lo_freq = kwargs["lo_freq"]
+            if "cnco_freq" in kwargs and kwargs["cnco_freq"] is not None:
+                port.cnco_freq = kwargs["cnco_freq"]
+            fnco_freqs = kwargs.get("fnco_freqs")
+            if fnco_freqs is not None:
+                for channel, fnco_freq in zip(port.channels, fnco_freqs, strict=True):
+                    channel.fnco_freq = fnco_freq
+
+    class _BackendControllerStub:
+        def __init__(self) -> None:
+            self.port_config_calls: list[dict[str, Any]] = []
+            self.runit_config_calls: list[dict[str, Any]] = []
+
+        def initialize_awg_and_capunits(self, box_ids: list[str]) -> None:
+            _ = box_ids
+
+        def get_loopbacks_of_port(
+            self,
+            *,
+            box_name: str,
+            port_number: int,
+        ) -> set[int]:
+            _ = box_name
+            if port_number == 4:
+                return {1, 2}
+            return set()
+
+        def config_port(
+            self,
+            box_name: str,
+            *,
+            port: int,
+            lo_freq_hz: int | None = None,
+            cnco_freq_hz: int | None = None,
+            cnco_locked_with: int | None = None,
+            rfswitch: str | None = None,
+        ) -> None:
+            if lo_freq_hz is not None or cnco_locked_with is not None:
+                self.port_config_calls.append(
+                    {
+                        "box_name": box_name,
+                        "port": port,
+                        "lo_freq_hz": lo_freq_hz,
+                        "cnco_freq_hz": cnco_freq_hz,
+                        "cnco_locked_with": cnco_locked_with,
+                    }
+                )
+            if rfswitch is not None:
+                control_system.set_port_params(
+                    box_name,
+                    port,
+                    rfswitch=rfswitch,
+                )
+
+        def config_runit(
+            self,
+            box_name: str,
+            *,
+            port: int,
+            runit: int,
+            fnco_freq_hz: int | None = None,
+        ) -> None:
+            self.runit_config_calls.append(
+                {
+                    "box_name": box_name,
+                    "port": port,
+                    "runit": runit,
+                    "fnco_freq_hz": fnco_freq_hz,
+                }
+            )
+
+    control_system = _ControlSystemStub()
+    backend_controller = _BackendControllerStub()
+    experiment_system = SimpleNamespace(
+        control_system=control_system,
+        targets=[
+            SimpleNamespace(label="Q00", channel=source_channel0),
+            SimpleNamespace(label="Q01", channel=source_channel1),
+        ],
+        read_in_targets=[],
+        resolve_qubit_label=lambda label: label,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+    )
+
+    execution_service = measurement.execution_service
+    built_source_labels: list[list[str]] = []
+    run_source_labels: list[list[str]] = []
+
+    def _build(
+        self: MeasurementExecutionService,
+        pulse_schedule: PulseSchedule,
+        **kwargs: Any,
+    ) -> MeasurementSchedule:
+        _ = (self, kwargs)
+        built_source_labels.append(list(pulse_schedule.labels))
+        return MeasurementSchedule(
+            pulse_schedule=pulse_schedule.copy(),
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def _run(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        _ = (self, quel1_options)
+        labels = list(schedule.pulse_schedule.labels)
+        run_source_labels.append(labels)
+        if labels == ["Q00"]:
+            assert monitor_in_port.lo_freq == output_port0.lo_freq
+            assert monitor_in_port.cnco_freq == output_port0.cnco_freq
+            assert monitor_channel.fnco_freq == source_channel0.fnco_freq
+            payload_value = 1.0
+        elif labels == ["Q01"]:
+            assert monitor_in_port.lo_freq == output_port1.lo_freq
+            assert monitor_in_port.cnco_freq == output_port1.cnco_freq
+            assert monitor_channel.fnco_freq == source_channel1.fnco_freq
+            payload_value = 2.0
+        else:
+            raise AssertionError(labels)
+        return _make_measurement_result(
+            data={
+                "B0.MNTR0.IN": [
+                    np.full((config.n_shots, 2), payload_value + 0.0j),
+                ],
+            },
+            measurement_config=config,
+            sampling_period=2.0,
+        )
+
+    execution_service.build_measurement_schedule = MethodType(
+        _build,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        _run,
+        execution_service,
+    )
+
+    result = measurement.capture_loopback(
+        schedule=PulseSchedule(["Q00", "Q01"]),
+        n_shots=16,
+        demodulation=False,
+    )
+
+    assert built_source_labels == [["Q00"], ["Q01"]]
+    assert run_source_labels == [["Q00"], ["Q01"]]
+    assert list(result.data) == ["Q00", "Q01"]
+    assert result.data["Q00"][0].target == "Q00"
+    assert result.data["Q00"][0].data.tolist() == [
+        (1.0 + 0.0j),
+        (1.0 + 0.0j),
+    ]
+    assert result.data["Q01"][0].target == "Q01"
+    assert result.data["Q01"][0].data.tolist() == [
+        (2.0 + 0.0j),
+        (2.0 + 0.0j),
+    ]
+    assert backend_controller.port_config_calls == [
+        {
+            "box_name": "B0",
+            "port": 4,
+            "lo_freq_hz": 8_500_000_000,
+            "cnco_freq_hz": None,
+            "cnco_locked_with": 1,
+        },
+        {
+            "box_name": "B0",
+            "port": 4,
+            "lo_freq_hz": 8_700_000_000,
+            "cnco_freq_hz": None,
+            "cnco_locked_with": 2,
+        },
+    ]
+    assert backend_controller.runit_config_calls == [
+        {
+            "box_name": "B0",
+            "port": 4,
+            "runit": 0,
+            "fnco_freq_hz": 125_000_000,
+        },
+        {
+            "box_name": "B0",
+            "port": 4,
+            "runit": 0,
+            "fnco_freq_hz": 175_000_000,
+        },
+    ]
+
+
+def test_capture_loopback_orders_merged_results_by_schedule_labels() -> None:
+    """Given split loopback results, final keys should follow schedule labels."""
+    config = _make_config(mode="avg", shots=1)
+    result = _make_measurement_result(
+        data={
+            "Q08": [np.array([1.0 + 0.0j])],
+            "Q09": [np.array([2.0 + 0.0j])],
+            "RQ08": [np.array([3.0 + 0.0j])],
+            "Q10": [np.array([4.0 + 0.0j])],
+            "Q11": [np.array([5.0 + 0.0j])],
+            "B0.MNTR0.IN": [np.array([6.0 + 0.0j])],
+        },
+        measurement_config=config,
+        sampling_period=2.0,
+    )
+
+    ordered = MeasurementExecutionService._order_loopback_result_by_targets(  # noqa: SLF001
+        result,
+        target_order=["Q08", "Q09", "Q10", "Q11", "RQ08"],
+    )
+
+    assert list(ordered.data) == [
+        "Q08",
+        "Q09",
+        "Q10",
+        "Q11",
+        "RQ08",
+        "B0.MNTR0.IN",
+    ]
+
+
+def test_loopback_demodulation_filter_rejects_rotated_dc_background() -> None:
+    """Given source demodulation, when DC background rotates, then FIR rejects it."""
+    sampling_period = 2.0
+    frequency_ghz = 0.05
+    sample_count = 512
+    sample_times = np.arange(sample_count) * sampling_period
+    source = np.exp(1j * 2 * np.pi * frequency_ghz * sample_times)
+    background = 0.5 + 0.0j
+    demodulated = MeasurementExecutionService._demodulate_loopback_capture(  # noqa: SLF001
+        data=source + background,
+        frequency_ghz=frequency_ghz,
+        sampling_period=sampling_period,
+    )
+    filtered = MeasurementExecutionService._filter_loopback_demodulated_capture(  # noqa: SLF001
+        data=demodulated,
+        frequency_ghz=frequency_ghz,
+        sampling_period=sampling_period,
+    )
+
+    center = filtered[160:-160]
+
+    assert np.mean(center) == pytest.approx(1.0 + 0.0j, abs=0.05)
+    assert np.std(center - np.mean(center)) < 0.05
+
+
+def test_stability_service_computes_trimmed_monitor_statistics() -> None:
+    """Given monitor captures, when statistics are computed, then trimmed data is used."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    result = _make_measurement_result(
+        data={
+            "B0.MNTR0.IN": [
+                np.array(
+                    [
+                        [0.0 + 0.0j, 2.0 + 0.0j, 2.0 + 0.0j, 0.0 + 0.0j],
+                        [0.0 + 0.0j, 4.0 + 0.0j, 4.0 + 0.0j, 0.0 + 0.0j],
+                    ]
+                )
+            ],
+            "B0.READ0.IN": [
+                np.array(
+                    [
+                        [10.0 + 0.0j, 10.0 + 0.0j],
+                        [10.0 + 0.0j, 10.0 + 0.0j],
+                    ]
+                )
+            ],
+        },
+        measurement_config=_make_config(mode="single"),
+        sampling_period=2.0,
+    )
+
+    stats = measurement.stability_service.compute_monitor_statistics(
+        result,
+        targets=["B0.MNTR0.IN"],
+        trim_samples=1,
+    )
+
+    assert len(stats) == 1
+    assert stats[0].reference_target == "B0.MNTR0.IN"
+    assert stats[0].covered_targets == ("B0.MNTR0.IN",)
+    assert stats[0].monitor_target == "B0.MNTR0.IN"
+    assert stats[0].amplitude_mean == pytest.approx(3.0)
+    assert stats[0].n_samples == 4
+
+
+def test_stability_service_keeps_monitor_phase_wrapped() -> None:
+    """Given phase near the wrap boundary, when statistics are computed, then phase stays bounded."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    phases = np.array([np.pi - 0.1, -np.pi + 0.1])
+    result = _make_measurement_result(
+        data={"B0.MNTR0.IN": [np.exp(1j * phases)]},
+        measurement_config=_make_config(mode="avg"),
+        sampling_period=2.0,
+    )
+
+    stats = measurement.stability_service.compute_monitor_statistics(result)
+
+    assert -np.pi <= stats[0].phase_mean_rad <= np.pi
+    assert abs(abs(stats[0].phase_mean_rad) - np.pi) == pytest.approx(0.0)
+    assert stats[0].phase_std_rad < 0.2
+    assert stats[0].phase_resultant_length > 0.99
+
+
+def test_stability_service_marks_ambiguous_monitor_phase() -> None:
+    """Given opposite phases, when statistics are computed, then phase mean is undefined."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    result = _make_measurement_result(
+        data={"B0.MNTR0.IN": [np.array([1.0 + 0.0j, -1.0 + 0.0j])]},
+        measurement_config=_make_config(mode="avg"),
+        sampling_period=2.0,
+    )
+
+    stats = measurement.stability_service.compute_monitor_statistics(result)
+
+    assert stats[0].phase_resultant_length == pytest.approx(0.0)
+    assert np.isnan(stats[0].phase_mean_rad)
+    assert np.isnan(stats[0].phase_std_rad)
+
+
+def test_loopback_capture_target_resolution_defaults_to_monitor_for_readout_outputs() -> (
+    None
+):
+    """Given a readout output schedule, default loopback targets should stay monitor-only."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    read_out_port = SimpleNamespace(
+        id="B0.READ0.OUT",
+        box_id="B0",
+        number=1,
+        type=PortType.READ_OUT,
+    )
+    read_in_port = SimpleNamespace(
+        id="B0.READ0.IN",
+        box_id="B0",
+        number=2,
+        type=PortType.READ_IN,
+    )
+    monitor_in_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+    )
+    box = SimpleNamespace(id="B0", ports=[read_out_port, read_in_port, monitor_in_port])
+
+    def _resolve_qubit_label(label: str) -> str:
+        if label == "RQ00":
+            return "Q00"
+        raise ValueError(label)
+
+    experiment_system = SimpleNamespace(
+        control_system=SimpleNamespace(boxes=[box]),
+        targets=[
+            SimpleNamespace(
+                label="RQ00",
+                channel=SimpleNamespace(port=read_out_port),
+            )
+        ],
+        read_in_targets=[
+            SimpleNamespace(
+                label="RQ00",
+                channel=SimpleNamespace(port=read_in_port),
+            )
+        ],
+        resolve_qubit_label=_resolve_qubit_label,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=SimpleNamespace(),
+        experiment_system=experiment_system,
+    )
+
+    service = measurement.execution_service
+    default_targets = service._resolve_loopback_capture_targets(  # noqa: SLF001
+        schedule=PulseSchedule(["RQ00"]),
+        include_read_in=False,
+    )
+    read_in_targets = service._resolve_loopback_capture_targets(  # noqa: SLF001
+        schedule=PulseSchedule(["RQ00"]),
+        include_read_in=True,
+    )
+
+    assert default_targets == ["B0.MNTR0.IN"]
+    assert read_in_targets == ["B0.READ0.IN", "B0.MNTR0.IN"]
 
 
 def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
@@ -487,7 +1508,7 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
     backend_controller = _BackendControllerStub()
     schedule_target = SimpleNamespace(
         label="Q00",
-        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0", type=PortType.CTRL)),
     )
     read_in_target = SimpleNamespace(
         label="RQ00",
@@ -522,7 +1543,8 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         pulse_schedule=PulseSchedule(["Q00"]),
         capture_schedule=CaptureSchedule(captures=[]),
     )
-    captured_build_kwargs: dict[str, Any] = {}
+    captured_build_targets: list[list[str]] = []
+    run_index = 0
 
     def _build(
         self: MeasurementExecutionService,
@@ -530,7 +1552,7 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         **kwargs: Any,
     ) -> MeasurementSchedule:
         _ = (self, pulse_schedule)
-        captured_build_kwargs.update(kwargs)
+        captured_build_targets.append(list(cast(list[str], kwargs["capture_targets"])))
         return built_schedule
 
     async def _run(
@@ -540,10 +1562,16 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
         config: MeasurementConfig,
         quel1_options: Quel1MeasurementOptions | None = None,
     ) -> MeasurementResult:
+        nonlocal run_index
         _ = (self, schedule, config, quel1_options)
-        assert read_in_port.rfswitch == "loop"
-        assert read_out_port.rfswitch == "block"
-        assert monitor_in_port.rfswitch == "loop"
+        capture_targets = captured_build_targets[run_index]
+        run_index += 1
+        if capture_targets == ["B0.MNTR0.IN"]:
+            assert read_in_port.rfswitch == "open"
+            assert read_out_port.rfswitch == "pass"
+            assert monitor_in_port.rfswitch == "loop"
+        else:
+            raise AssertionError(capture_targets)
         assert monitor_out_port.rfswitch == "pass"
         return _make_measurement_result(
             data={"Q00": [np.array([1.0 + 0.0j])]},
@@ -566,8 +1594,8 @@ def test_temporary_loopback_rfswitches_sets_and_restores_ports() -> None:
     assert read_out_port.rfswitch == "pass"
     assert monitor_in_port.rfswitch == "open"
     assert monitor_out_port.rfswitch == "pass"
-    assert captured_build_kwargs["capture_targets"] == ["B0.READ0.IN", "B0.MNTR0.IN"]
-    assert len(backend_controller.calls) == 6
+    assert captured_build_targets == [["B0.MNTR0.IN"]]
+    assert len(backend_controller.calls) == 2
     assert all(call[1] != 3 for call in backend_controller.calls)
 
 
@@ -634,8 +1662,8 @@ def test_temporary_loopback_rfswitches_restores_ports_on_error() -> None:
 
     control_system = _ControlSystemStub()
     schedule_target = SimpleNamespace(
-        label="Q00",
-        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+        label="RQ00",
+        channel=SimpleNamespace(port=read_out_port),
     )
     read_in_target = SimpleNamespace(
         label="RQ00",
@@ -699,7 +1727,10 @@ def test_temporary_loopback_rfswitches_restores_ports_on_error() -> None:
     )
 
     with pytest.raises(RuntimeError, match="test-error"):
-        _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]))
+        _ = measurement.capture_loopback(
+            schedule=PulseSchedule(["RQ00"]),
+            include_read_in=True,
+        )
 
     assert read_in_port.rfswitch == "open"
     assert read_out_port.rfswitch == "pass"
@@ -771,8 +1802,8 @@ def test_capture_loopback_skips_ports_without_rfswitch() -> None:
     control_system = _ControlSystemStub()
     backend_controller = _BackendControllerStub()
     schedule_target = SimpleNamespace(
-        label="Q00",
-        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+        label="RQ00",
+        channel=SimpleNamespace(port=read_out_port),
     )
     read_in_target = SimpleNamespace(
         label="RQ00",
@@ -841,7 +1872,10 @@ def test_capture_loopback_skips_ports_without_rfswitch() -> None:
         execution_service,
     )
 
-    result = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]))
+    result = measurement.capture_loopback(
+        schedule=PulseSchedule(["RQ00"]),
+        include_read_in=True,
+    )
 
     assert "Q00" in result.data
     assert read_in_port.rfswitch == "open"
@@ -920,8 +1954,8 @@ def test_capture_loopback_initializes_awg_and_capunits_when_supported() -> None:
     control_system = _ControlSystemStub()
     backend_controller = _BackendControllerStub()
     schedule_target = SimpleNamespace(
-        label="Q00",
-        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+        label="RQ00",
+        channel=SimpleNamespace(port=read_out_port),
     )
     read_in_target = SimpleNamespace(
         label="RQ00",
@@ -989,13 +2023,17 @@ def test_capture_loopback_initializes_awg_and_capunits_when_supported() -> None:
         execution_service,
     )
 
-    _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+    _ = measurement.capture_loopback(
+        schedule=PulseSchedule(["RQ00"]),
+        n_shots=16,
+        include_read_in=True,
+    )
 
     assert backend_controller.init_calls == [["B0"]]
 
 
-def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
-    """Given broken capture data errors, when loopback capture retries, then it falls back to READ_IN only."""
+def test_capture_loopback_retries_with_monitor_only_after_read_in_e7_error() -> None:
+    """Given READ_IN broken data errors, capture_loopback falls back to MNTR_IN only."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1085,8 +2123,8 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
     control_system = _ControlSystemStub()
     backend_controller = _BackendControllerStub()
     schedule_target = SimpleNamespace(
-        label="Q00",
-        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+        label="RQ00",
+        channel=SimpleNamespace(port=read_out_port),
     )
     read_in_target = SimpleNamespace(
         label="RQ00",
@@ -1161,17 +2199,20 @@ def test_capture_loopback_retries_with_read_in_only_after_e7_error() -> None:
         execution_service,
     )
 
-    result = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]))
+    result = measurement.capture_loopback(
+        schedule=PulseSchedule(["RQ00"]),
+        include_read_in=True,
+    )
 
     assert "Q00" in result.data
     assert call_count["run"] == 3
-    assert capture_target_calls[0] == ["B0.READ0.IN", "B0.MNTR0.IN"]
-    assert capture_target_calls[1] == ["B0.READ0.IN", "B0.MNTR0.IN"]
-    assert capture_target_calls[2] == ["B0.READ0.IN"]
+    assert capture_target_calls[0] == ["B0.READ0.IN"]
+    assert capture_target_calls[1] == ["B0.READ0.IN"]
+    assert capture_target_calls[2] == ["B0.MNTR0.IN"]
 
 
-def test_capture_loopback_runs_without_dsp_demodulation() -> None:
-    """Given loopback capture execution, when run_measurement is called, then QuEL-1 DSP demodulation is disabled."""
+def test_capture_loopback_uses_backend_dsp_demodulation_when_read_in_included() -> None:
+    """Given included READ_IN capture, when running, then QuEL-1 DSP demodulation is enabled."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1212,8 +2253,8 @@ def test_capture_loopback_runs_without_dsp_demodulation() -> None:
             _ = box_ids
 
     schedule_target = SimpleNamespace(
-        label="Q00",
-        channel=SimpleNamespace(port=SimpleNamespace(box_id="B0")),
+        label="RQ00",
+        channel=SimpleNamespace(port=read_out_port),
     )
     read_in_target = SimpleNamespace(
         label="RQ00",
@@ -1283,14 +2324,295 @@ def test_capture_loopback_runs_without_dsp_demodulation() -> None:
         execution_service,
     )
 
-    _ = measurement.capture_loopback(schedule=PulseSchedule(["Q00"]), n_shots=16)
+    _ = measurement.capture_loopback(
+        schedule=PulseSchedule(["RQ00"]),
+        n_shots=16,
+        include_read_in=True,
+    )
 
     options = cast(Quel1MeasurementOptions | None, called["quel1_options"])
     config = cast(MeasurementConfig, called["config"])
     assert config.shot_averaging is False
     assert config.n_shots == 16
     assert options is not None
-    assert options.demodulation is False
+    assert options.demodulation is True
+
+
+def test_capture_loopback_uses_backend_demodulated_read_in_before_shot_averaging() -> (
+    None
+):
+    """Given read-in waveforms, capture_loopback should use backend demodulation before averaging."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    read_out_port = SimpleNamespace(
+        id="B0.READ0.OUT",
+        box_id="B0",
+        number=1,
+        type=PortType.READ_OUT,
+        rfswitch="pass",
+    )
+    read_in_port = SimpleNamespace(
+        id="B0.READ0.IN",
+        box_id="B0",
+        number=2,
+        type=PortType.READ_IN,
+        rfswitch="open",
+        channels=(SimpleNamespace(fnco_freq=0),),
+    )
+    monitor_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+        rfswitch="open",
+        channels=(SimpleNamespace(fnco_freq=0),),
+    )
+    box = SimpleNamespace(id="B0", ports=[read_out_port, read_in_port, monitor_port])
+
+    class _ControlSystemStub:
+        boxes: ClassVar[list[Any]] = [box]
+
+        @staticmethod
+        def get_port_by_id(port_id: str) -> Any:
+            ports = {
+                read_out_port.id: read_out_port,
+                read_in_port.id: read_in_port,
+                monitor_port.id: monitor_port,
+            }
+            try:
+                return ports[port_id]
+            except KeyError:
+                raise KeyError(port_id) from None
+
+        @staticmethod
+        def get_box(box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+    class _BackendControllerStub:
+        def initialize_awg_and_capunits(self, box_ids: list[str]) -> None:
+            _ = box_ids
+
+    schedule_target = SimpleNamespace(
+        label="RQ00",
+        channel=SimpleNamespace(port=read_out_port),
+    )
+    read_in_target = SimpleNamespace(
+        label="RQ00",
+        channel=SimpleNamespace(port=read_in_port),
+    )
+
+    def _resolve_qubit_label(label: str) -> str:
+        if label in {"Q00", "RQ00"}:
+            return "Q00"
+        raise ValueError(label)
+
+    experiment_system = SimpleNamespace(
+        control_system=_ControlSystemStub(),
+        targets=[schedule_target],
+        read_in_targets=[read_in_target],
+        resolve_qubit_label=_resolve_qubit_label,
+        get_nco_frequency=lambda _label: 0.0,
+        get_target=lambda _label: SimpleNamespace(sideband="U"),
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=_BackendControllerStub(),
+        experiment_system=experiment_system,
+    )
+
+    execution_service = measurement.execution_service
+    frequency = 0.25
+    sampling_period = 1.0
+    samples = np.arange(4, dtype=np.float64)
+    rotating = np.exp(1j * 2 * np.pi * frequency * sampling_period * samples)
+    raw_waveforms = np.vstack([rotating, rotating])
+
+    def _build(
+        self: MeasurementExecutionService,
+        pulse_schedule: PulseSchedule,
+        **kwargs: Any,
+    ) -> MeasurementSchedule:
+        _ = (self, kwargs)
+        schedule = pulse_schedule.copy()
+        schedule.set_frequency("RQ00", frequency)
+        return MeasurementSchedule(
+            pulse_schedule=schedule,
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def _run(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        _ = (self, schedule)
+        options = cast(Quel1MeasurementOptions, quel1_options)
+        returned_waveforms = (
+            np.ones_like(raw_waveforms) if options.demodulation else raw_waveforms
+        )
+        return _make_measurement_result(
+            data={"Q00": [returned_waveforms]},
+            measurement_config=config,
+            sampling_period=sampling_period,
+        )
+
+    execution_service.build_measurement_schedule = MethodType(
+        _build,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        _run,
+        execution_service,
+    )
+
+    result = measurement.capture_loopback(
+        schedule=PulseSchedule(["RQ00"]),
+        n_shots=2,
+        include_read_in=True,
+    )
+
+    capture = result.data["Q00"][0]
+    assert result.measurement_config.shot_averaging is True
+    assert capture.config.shot_averaging is True
+    assert capture.data.shape == (4,)
+    np.testing.assert_allclose(capture.data, np.ones(4, dtype=np.complex128))
+    assert abs(np.mean(capture.data)) == pytest.approx(1.0)
+
+    raw_result = measurement.capture_loopback(
+        schedule=PulseSchedule(["RQ00"]),
+        n_shots=2,
+        shot_averaging=False,
+        demodulation=False,
+        include_read_in=True,
+    )
+    raw_capture = raw_result.data["Q00"][0]
+    assert raw_result.measurement_config.shot_averaging is False
+    assert raw_capture.config.shot_averaging is False
+    assert raw_capture.data.shape == (2, 4)
+    np.testing.assert_allclose(raw_capture.data, raw_waveforms)
+
+
+def test_capture_loopback_does_not_source_demodulate_monitor_capture() -> None:
+    """Given monitor DC capture, source frequency metadata should not create a sine wave."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    monitor_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+        rfswitch="open",
+        channels=(SimpleNamespace(fnco_freq=0),),
+    )
+    box = SimpleNamespace(id="B0", ports=[monitor_port])
+
+    class _ControlSystemStub:
+        boxes: ClassVar[list[Any]] = [box]
+
+        @staticmethod
+        def get_port_by_id(port_id: str) -> Any:
+            if port_id != "B0.MNTR0.IN":
+                raise KeyError(port_id)
+            return monitor_port
+
+        @staticmethod
+        def get_box(box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+    class _BackendControllerStub:
+        def initialize_awg_and_capunits(self, box_ids: list[str]) -> None:
+            _ = box_ids
+
+    source_channel = SimpleNamespace(number=0, fnco_freq=0)
+    source_port = SimpleNamespace(
+        id="B0.CTRL0.OUT",
+        box_id="B0",
+        number=1,
+        type=PortType.CTRL,
+        channels=(source_channel,),
+    )
+    source_channel.port = source_port
+    schedule_target = SimpleNamespace(
+        label="Q00",
+        channel=source_channel,
+    )
+    experiment_system = SimpleNamespace(
+        control_system=_ControlSystemStub(),
+        targets=[schedule_target],
+        read_in_targets=[],
+        resolve_qubit_label=lambda label: label,
+        get_awg_frequency=lambda _label: 0.25,
+    )
+    _bind_runtime(
+        measurement,
+        backend_controller=_BackendControllerStub(),
+        experiment_system=experiment_system,
+    )
+
+    execution_service = measurement.execution_service
+    raw_waveforms = np.ones((2, 4), dtype=np.complex128)
+
+    def _build(
+        self: MeasurementExecutionService,
+        pulse_schedule: PulseSchedule,
+        **kwargs: Any,
+    ) -> MeasurementSchedule:
+        _ = (self, kwargs)
+        schedule = pulse_schedule.copy()
+        schedule.set_frequency("Q00", 0.25)
+        return MeasurementSchedule(
+            pulse_schedule=schedule,
+            capture_schedule=CaptureSchedule(captures=[]),
+        )
+
+    async def _run(
+        self: MeasurementExecutionService,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+        quel1_options: Quel1MeasurementOptions | None = None,
+    ) -> MeasurementResult:
+        _ = (self, schedule, quel1_options)
+        return _make_measurement_result(
+            data={"B0.MNTR0.IN": [raw_waveforms]},
+            measurement_config=config,
+            sampling_period=1.0,
+        )
+
+    execution_service.build_measurement_schedule = MethodType(
+        _build,
+        execution_service,
+    )
+    execution_service.run_measurement = MethodType(
+        _run,
+        execution_service,
+    )
+
+    result = measurement.capture_loopback(
+        schedule=PulseSchedule(["Q00"]),
+        n_shots=2,
+        demodulation=False,
+    )
+
+    capture = result.data["Q00"][0]
+    assert capture.config.shot_averaging is True
+    assert capture.data.shape == (4,)
+    assert capture.target == "Q00"
+    np.testing.assert_allclose(capture.data, np.ones(4, dtype=np.complex128))
 
 
 def test_measure_delegates_to_execute_and_returns_first_capture() -> None:

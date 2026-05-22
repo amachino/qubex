@@ -67,6 +67,7 @@ class Quel1ConfigurationManager:
         port: int | tuple[int, int],
         lo_freq_hz: int | None,
         cnco_freq_hz: int | None,
+        cnco_locked_with: int | tuple[int, int] | None,
         vatt: int | None,
         sideband: str | None,
         fullscale_current: int | None,
@@ -86,6 +87,7 @@ class Quel1ConfigurationManager:
             port=port,
             lo_freq=lo_freq_hz,
             cnco_freq=cnco_freq_hz,
+            cnco_locked_with=cnco_locked_with,
             vatt=vatt,
             sideband=sideband,
             fullscale_current=fullscale_current,
@@ -129,6 +131,25 @@ class Quel1ConfigurationManager:
             runit=runit,
             fnco_freq=fnco_freq_hz,
         )
+
+    def get_loopbacks_of_port(
+        self,
+        *,
+        box_name: str,
+        port_number: int | tuple[int, int],
+    ) -> set[int | tuple[int, int]]:
+        """Return output ports that can loop back to one input port."""
+        try:
+            box = self._resolve_box(
+                box_name=box_name,
+                reconnect=True,
+            )
+            return set(box.get_loopbacks_of_port(port_number))
+        except Exception:
+            logger.exception(
+                f"Failed to resolve loopback sources for port {port_number} of box {box_name}."
+            )
+            return set()
 
     def define_clockmaster(
         self,

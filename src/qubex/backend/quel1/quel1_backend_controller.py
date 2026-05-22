@@ -583,6 +583,7 @@ class Quel1BackendController(BackendController):
         port: int | tuple[int, int],
         lo_freq_hz: int | None = None,
         cnco_freq_hz: int | None = None,
+        cnco_locked_with: int | tuple[int, int] | None = None,
         vatt: int | None = None,
         sideband: str | None = None,
         fullscale_current: int | None = None,
@@ -601,6 +602,8 @@ class Quel1BackendController(BackendController):
             Local oscillator frequency in Hz.
         cnco_freq_hz : int | None, optional
             CNCO frequency in Hz.
+        cnco_locked_with : int | tuple[int, int] | None, optional
+            Output port whose CNCO should be locked to this input port.
         vatt : int | None, optional
             VATT value.
         sideband : str | None, optional
@@ -615,6 +618,7 @@ class Quel1BackendController(BackendController):
             port=port,
             lo_freq_hz=lo_freq_hz,
             cnco_freq_hz=cnco_freq_hz,
+            cnco_locked_with=cnco_locked_with,
             vatt=vatt,
             sideband=sideband,
             fullscale_current=fullscale_current,
@@ -724,6 +728,18 @@ class Quel1BackendController(BackendController):
             If the box is not in the available boxes.
         """
         return self._configuration_manager.dump_port(
+            box_name=box_name,
+            port_number=port_number,
+        )
+
+    def get_loopbacks_of_port(
+        self,
+        *,
+        box_name: str,
+        port_number: int | tuple[int, int],
+    ) -> set[int | tuple[int, int]]:
+        """Return output ports that can loop back to one input port."""
+        return self._configuration_manager.get_loopbacks_of_port(
             box_name=box_name,
             port_number=port_number,
         )
