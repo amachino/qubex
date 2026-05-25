@@ -852,47 +852,101 @@ class Experiment:
     def stark_target(
         self,
         target: str,
-    ):
-        return f"{target}_stark"
+    ) -> str:
+        """Return the custom Stark target label for a qubit-like target."""
+        from qubex.contrib.experiment.stark_characterization import stark_target
+
+        return stark_target(self, target)
 
     def insitu_target(
         self,
         target: str,
-    ):
-        return f"{target}_insitu"
+    ) -> str:
+        """Return the custom in-situ target label for a qubit-like target."""
+        from qubex.contrib.experiment.stark_characterization import insitu_target
+
+        return insitu_target(self, target)
 
     def make_stark_channel(
         self,
         target: str,
-        detuning: float,
-        lsi: bool,
-        channel: int,
-    ):
-        qubit = self.targets[target]
-        self.register_custom_target(
-            label=self.stark_target(target=target),
-            frequency=qubit.frequency + detuning,
-            box_id=qubit.channel._port.box_id,
-            port_number=qubit.channel._port.number,
-            channel_number=qubit.channel.number + channel,
-            update_lsi=lsi,
+        detuning: float = 0.0,
+        lsi: bool = False,
+        channel: int = 0,
+    ) -> None:
+        """Register a custom Stark-drive target channel."""
+        from qubex.contrib.experiment.stark_characterization import make_stark_channel
+
+        make_stark_channel(
+            self,
+            target=target,
+            detuning=detuning,
+            lsi=lsi,
+            channel=channel,
         )
 
     def make_insitu_channel(
         self,
         target: str,
-        detuning: float,
-        lsi: bool,
-        channel: int,
-    ):
-        qubit = self.targets[target]
-        self.register_custom_target(
-            label=self.insitu_target(target=target),
-            frequency=qubit.frequency + detuning,
-            box_id=qubit.channel._port.box_id,
-            port_number=qubit.channel._port.number,
-            channel_number=qubit.channel.number + channel,
-            update_lsi=lsi,
+        detuning: float = 0.0,
+        lsi: bool = False,
+        channel: int = 0,
+    ) -> None:
+        """Register a custom in-situ target channel."""
+        from qubex.contrib.experiment.stark_characterization import (
+            make_insitu_channel,
+        )
+
+        make_insitu_channel(
+            self,
+            target=target,
+            detuning=detuning,
+            lsi=lsi,
+            channel=channel,
+        )
+
+    def stark_cr_target(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        stark_drive_qubit: Literal["control", "target"] = "target",
+    ) -> str:
+        """Return the custom CR target label for Stark-driven CR calibration."""
+        from qubex.contrib.experiment.stark_characterization import stark_cr_target
+
+        return stark_cr_target(
+            self,
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            stark_drive_qubit=stark_drive_qubit,
+        )
+
+    def make_stark_cr_channel(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        stark_drive_qubit: Literal["control", "target"] = "target",
+        frequency: float | None = None,
+        detuning: float = 0.0,
+        lsi: bool = False,
+        channel: int = 0,
+    ) -> None:
+        """Register a custom CR target for Stark-driven CR calibration."""
+        from qubex.contrib.experiment.stark_characterization import (
+            make_stark_cr_channel,
+        )
+
+        make_stark_cr_channel(
+            self,
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            stark_drive_qubit=stark_drive_qubit,
+            frequency=frequency,
+            detuning=detuning,
+            lsi=lsi,
+            channel=channel,
         )
 
     @contextmanager
@@ -4141,6 +4195,82 @@ class Experiment:
             interval=shot_interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
+        )
+
+    def obtain_cr_params_under_stark(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        stark_amplitude: float,
+        stark_drive_qubit: Literal["control", "target"] = "target",
+        stark_ramptime: float | None = None,
+        cr_frequency: float | None = None,
+        time_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        n_iterations: int | None = None,
+        n_cycles: int | None = None,
+        n_points_per_cycle: int | None = None,
+        use_stored_params: bool | None = None,
+        tolerance: float | None = None,
+        adiabatic_safe_factor: float | None = None,
+        max_amplitude: float | None = None,
+        max_time_range: float | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        use_zvalues: bool = False,
+        n_shots: int | None = None,
+        shot_interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        auto_register_cr_channel: bool = True,
+        update_lsi: bool = False,
+        plot: bool | None = None,
+    ) -> Result:
+        """Obtain CR parameters while one qubit is Stark-driven."""
+        from qubex.contrib.experiment.stark_characterization import (
+            obtain_cr_params_under_stark,
+        )
+
+        return obtain_cr_params_under_stark(
+            self,
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            stark_amplitude=stark_amplitude,
+            stark_drive_qubit=stark_drive_qubit,
+            stark_ramptime=stark_ramptime,
+            cr_frequency=cr_frequency,
+            time_range=time_range,
+            ramptime=ramptime,
+            cr_amplitude=cr_amplitude,
+            n_iterations=n_iterations,
+            n_cycles=n_cycles,
+            n_points_per_cycle=n_points_per_cycle,
+            use_stored_params=use_stored_params,
+            tolerance=tolerance,
+            adiabatic_safe_factor=adiabatic_safe_factor,
+            max_amplitude=max_amplitude,
+            max_time_range=max_time_range,
+            x90=x90,
+            use_zvalues=use_zvalues,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            auto_register_cr_channel=auto_register_cr_channel,
+            update_lsi=update_lsi,
+            plot=plot,
+        )
+
+    def stark_obtain_cr_params(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        **kwargs: Any,
+    ) -> Result:
+        """Alias for `obtain_cr_params_under_stark`."""
+        return self.obtain_cr_params_under_stark(
+            control_qubit,
+            target_qubit,
+            **kwargs,
         )
 
     def calibrate_zx90(
