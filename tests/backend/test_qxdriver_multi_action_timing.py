@@ -7,6 +7,7 @@ from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 from quel_ic_config.quel1_wave_subsystem import CaptureReturnCode
 from qxdriver_quel1.driver import multi
 from qxdriver_quel1.driver.single import (
@@ -33,6 +34,15 @@ class _Task:
     def result(self, timeout: float | None = None) -> Any:
         _ = timeout
         return self._payload
+
+
+class _FailingTask:
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+
+    def result(self, timeout: float | None = None) -> Any:
+        _ = timeout
+        raise self._error
 
 
 class _TriggeredCaptureBox:
@@ -70,6 +80,28 @@ def test_single_action_capture_start_forwards_scheduled_timecounter() -> None:
     assert box.calls == [({(1, 0)}, {(0, 0)}, 1234)]
     assert status == {1: CaptureReturnCode.SUCCESS}
     assert (1, 0) in data
+
+
+def test_single_action_capture_stop_surfaces_trigger_awg_failure_first() -> None:
+    """Triggered single action should surface AWG scheduling failures before capture waits."""
+    action = SingleAction(
+        box=cast(Any, object()),
+        wseqs=MappingProxyType({AwgId(port=0, channel=0): WaveSequence(0, 1)}),
+        cprms=MappingProxyType({RunitId(port=1, runit=0): CaptureParam()}),
+        triggers=MappingProxyType({1: AwgId(port=0, channel=0)}),
+    )
+
+    futures = {
+        _TRIGGERED_CAPTURE_KEY: (
+            _FailingTask(AssertionError("capture task should not be awaited first")),
+            _FailingTask(
+                RuntimeError("specified timecount (= 1) is too late to schedule")
+            ),
+        )
+    }
+
+    with pytest.raises(RuntimeError, match="too late to schedule"):
+        action.capture_stop(cast(Any, futures))
 
 
 @dataclass

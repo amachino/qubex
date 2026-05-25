@@ -1492,6 +1492,79 @@ class CalibrationService:
         #     return 0.5
         return 0.75
 
+    def _calc_classical_crosstalk(
+        self,
+        *,
+        control_qubit: str,
+        coeffs: dict[str, float],
+        f_delta: float,
+        cr_rabi_rate: float,
+        plot: bool | None = None,
+    ):
+        if plot is None:
+            plot = True
+
+        IX = coeffs["IX"]
+        IY = coeffs["IY"]
+        ZX = coeffs["ZX"]
+        ZY = coeffs["ZY"]
+
+        alpha_c = self.ctx.qubits[control_qubit].anharmonicity
+        eps = 1e-12
+        if np.abs(alpha_c) < eps:
+            raise ValueError(
+                f"Anharmonicity is too small (alpha_c={alpha_c}). Cannot compute quantum crosstalk."
+            )
+
+        IX_quantum = ZX * f_delta / alpha_c
+        IY_quantum = ZY * f_delta / alpha_c
+
+        IX_classical = IX - IX_quantum
+        IY_classical = IY - IY_quantum
+
+        xt_total = IX + 1j * IY
+        xt_quantum = IX_quantum + 1j * IY_quantum
+        xt_classical = IX_classical + 1j * IY_classical
+
+        mag_classical = np.abs(xt_classical)
+        mag_quantum = np.abs(xt_quantum)
+        mag_total = np.abs(xt_total)
+
+        classical_xt_leakage_ratio = mag_classical / max(abs(cr_rabi_rate), eps)
+        classical_xt_leakage_db = 20 * np.log10(max(classical_xt_leakage_ratio, eps))
+
+        if plot:
+            print(
+                "\nCrosstalk decomposition:\n"
+                f"  IX_quantum     : {IX_quantum * 1e3:+.4f} MHz"
+                f"    IX_classical   : {IX_classical * 1e3:+.4f} MHz"
+                f"    IX_total       : {IX * 1e3:+.4f} MHz\n"
+                f"  IY_quantum     : {IY_quantum * 1e3:+.4f} MHz"
+                f"    IY_classical   : {IY_classical * 1e3:+.4f} MHz"
+                f"    IY_total       : {IY * 1e3:+.4f} MHz\n"
+                f"  |XT_quantum|   : {mag_quantum * 1e3:+.4f} MHz"
+                f"    |XT_classical| : {mag_classical * 1e3:+.4f} MHz"
+                f"    |XT_total|     : {mag_total * 1e3:+.4f} MHz\n"
+                f"  classical XT leakage relative to CR drive Rabi : "
+                f"{classical_xt_leakage_db:+.2f} dB\n"
+                f"(The anharmonicity of the control qubit: {alpha_c * 1e3:+.4f} MHz is expected to be measured\n"
+                "   independently and is used here for estimating quantum crosstalk.)"
+            )
+
+        return {
+            "IX_quantum": IX_quantum,
+            "IY_quantum": IY_quantum,
+            "IX_classical": IX_classical,
+            "IY_classical": IY_classical,
+            "xt_total": xt_total,
+            "xt_quantum": xt_quantum,
+            "xt_classical": xt_classical,
+            "mag_classical": mag_classical,
+            "mag_quantum": mag_quantum,
+            "mag_total": mag_total,
+            "classical_xt_leakage_db": classical_xt_leakage_db,
+        }
+
     def cr_hamiltonian_tomography(
         self,
         *,
@@ -1509,6 +1582,7 @@ class CalibrationService:
         interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
+        calc_classical_xt: bool | None = None,
     ) -> Result:
         """Run CR Hamiltonian tomography for a qubit pair."""
         if shots is None:
@@ -1519,6 +1593,8 @@ class CalibrationService:
             reset_awg_and_capunits = True
         if plot is None:
             plot = True
+        if calc_classical_xt is None:
+            calc_classical_xt = False
 
         cr_label = f"{control_qubit}-{target_qubit}"
 
@@ -1841,6 +1917,16 @@ class CalibrationService:
 
             print(f"Estimated ZX90 gate length : {zx90_duration:.1f} ns")
 
+        classical_crosstalk = None
+        if calc_classical_xt:
+            classical_crosstalk = self._calc_classical_crosstalk(
+                control_qubit=control_qubit,
+                coeffs=coeffs,
+                f_delta=f_delta,
+                cr_rabi_rate=cr_rabi_rate,
+                plot=plot,
+            )
+
         return Result(
             data={
                 "Omega": Omega,
@@ -1858,6 +1944,7 @@ class CalibrationService:
                 "result_1": result_1,
                 "fig_c": fig_c,
                 "fig_t": fig_t,
+                "classical_crosstalk": classical_crosstalk,
             }
         )
 
@@ -1880,6 +1967,7 @@ class CalibrationService:
         interval: float | None = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
+        calc_classical_xt: bool | None = None,
     ) -> Result:
         """Update CR calibration parameters for a qubit pair."""
         if update_cr_phase is None:
@@ -1904,6 +1992,8 @@ class CalibrationService:
             cancel_amplitude = 0.0
         if cancel_phase is None:
             cancel_phase = 0.0
+        if calc_classical_xt is None:
+            calc_classical_xt = False
 
         current_cr_pulse = cr_amplitude * np.exp(1j * cr_phase)
         current_cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase)
@@ -1923,6 +2013,7 @@ class CalibrationService:
             interval=interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
+            calc_classical_xt=calc_classical_xt,
         )
 
         shift = -result["cr_rotation_phase"]
@@ -2120,6 +2211,7 @@ class CalibrationService:
                 interval=interval,
                 reset_awg_and_capunits=reset_awg_and_capunits,
                 plot=plot,
+                calc_classical_xt=i == 0,
             )
             next_time_range = _create_time_range(result["zx90_duration"])
             params_history.append(
@@ -2651,7 +2743,7 @@ class CalibrationService:
                 self.ctx.save_calib_note()
 
             except Exception as e:
-                print(f"Error calibrating 1Q gates for {targets}: {e}")
+                print(f"Error calibrating 1Q gates for {target}: {e}")
                 continue
 
         return Result(data=data)
@@ -2679,8 +2771,6 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        pairs = [self.ctx.cr_pair(target) for target in targets]
-
         data = {
             "obtain_cr_params": {},
             "calibrate_zx90": {},
@@ -2688,9 +2778,12 @@ class CalibrationService:
 
         cr_calib_params = cr_calib_params or {}
 
-        for control_qubit, target_qubit in pairs:
-            cr_label = f"{control_qubit}-{target_qubit}"
+        def _calibrate_pair(target: str) -> None:
+            label = target
             try:
+                control_qubit, target_qubit = self.ctx.cr_pair(target)
+                cr_label = f"{control_qubit}-{target_qubit}"
+                label = cr_label if target == cr_label else f"{target} ({cr_label})"
                 param = cr_calib_params.get(cr_label, {})
                 result = self.obtain_cr_params(
                     control_qubit=control_qubit,
@@ -2731,8 +2824,10 @@ class CalibrationService:
 
                 self.ctx.save_calib_note()
             except Exception as e:
-                print(f"Error calibrating {cr_label}: {e}")
-                continue
+                print(f"Error calibrating {label}: {e}")
+
+        for target in targets:
+            _calibrate_pair(target)
 
         return Result(data=data)
 

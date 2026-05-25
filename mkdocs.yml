@@ -30,6 +30,8 @@ plugins:
       execute: false
       include_source: true
       ignore_h1_titles: true
+      no_input: false
+      include_requirejs: false
   - mkdocstrings:
       handlers:
         python:
@@ -100,6 +102,8 @@ plugins:
 
 markdown_extensions:
   - admonition
+  - pymdownx.arithmatex:
+      generic: true
   - pymdownx.highlight
   - pymdownx.inlinehilite
   - pymdownx.superfences
@@ -111,6 +115,10 @@ extra:
 
 extra_css:
   - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
 nav:
   - Home: index.md

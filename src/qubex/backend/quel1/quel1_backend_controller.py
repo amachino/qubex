@@ -227,7 +227,7 @@ class Quel1BackendController(BackendController):
     def linkup(
         self,
         box_name: str,
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         **kwargs: Any,
     ) -> Quel1Box:
         """
@@ -258,7 +258,7 @@ class Quel1BackendController(BackendController):
     def linkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         *,
         parallel: bool | None = None,
     ) -> dict[str, Quel1Box]:
@@ -269,7 +269,7 @@ class Quel1BackendController(BackendController):
         ----------
         box_list : list[str]
             List of box names.
-        noise_threshold : int | None, optional
+        noise_threshold : float | None, optional
             Threshold for linkup noise checks.
         parallel : bool | None, optional
             Whether to link up boxes in parallel. If `None`, it follows
@@ -286,7 +286,7 @@ class Quel1BackendController(BackendController):
             parallel=parallel,
         )
 
-    def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
+    def relinkup(self, box_name: str, noise_threshold: float | None = None) -> None:
         """
         Relink a box.
 
@@ -303,7 +303,7 @@ class Quel1BackendController(BackendController):
     def relinkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         *,
         parallel: bool | None = None,
     ) -> None:
@@ -314,7 +314,7 @@ class Quel1BackendController(BackendController):
         ----------
         box_list : list[str]
             List of box names.
-        noise_threshold : int | None, optional
+        noise_threshold : float | None, optional
             Threshold for relinkup noise checks.
         parallel : bool | None, optional
             Whether to relink boxes in parallel. If `None`, it follows
@@ -785,12 +785,14 @@ class Quel1BackendController(BackendController):
         file_path : str | Path
             Path to the skew calibration YAML file.
         wait : int
-            New skew wait value applied to the selected boxes.
+            Target skew index. Existing `port_wait` values are shifted by
+            `wait - measured_idx` for each measured port.
         box_names : list[str] | None, optional
             Box names to update. When omitted, all boxes in the file are
             updated.
         backup : bool, optional
-            Whether to save the original file as `*.bak` before overwriting it.
+            Whether to save the original file as `*.bak.YYYYMMDD_HHMMSS`
+            before overwriting it.
 
         Returns
         -------
@@ -811,6 +813,7 @@ class Quel1BackendController(BackendController):
         box_yaml_path: str | Path,
         clockmaster_ip: str,
         box_names: list[str],
+        target_box_names: list[str] | None = None,
         estimate: bool = True,
     ) -> tuple[Any, Any]:
         """Measure skew from YAML settings and return skew object and figure."""
@@ -819,6 +822,7 @@ class Quel1BackendController(BackendController):
             box_yaml_path=box_yaml_path,
             clockmaster_ip=clockmaster_ip,
             box_names=box_names,
+            target_box_names=target_box_names,
             estimate=estimate,
         )
 

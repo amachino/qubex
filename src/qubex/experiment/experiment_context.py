@@ -23,6 +23,7 @@ from qubex.backend.backend_controller import (
     BACKEND_KIND_QUEL3,
     SystemBackendController,
 )
+from qubex.compat.deprecated_options import resolve_deprecated_option
 from qubex.measurement import (
     Measurement,
     StateClassifier,
@@ -802,11 +803,13 @@ class ExperimentContext:
 
     def get_edge_pairs(
         self,
+        *,
+        in_same_mux: bool = True,
     ) -> list[tuple[str, str]]:
         """Get the qubit edge pairs."""
         edge_pairs = []
         for qubit in self.qubit_labels:
-            spectators = self.get_spectators(qubit, in_same_mux=True)
+            spectators = self.get_spectators(qubit, in_same_mux=in_same_mux)
             for spectator in spectators:
                 pair = (qubit, spectator.label)
                 edge_pairs.append(pair)
@@ -814,9 +817,14 @@ class ExperimentContext:
 
     def get_edge_labels(
         self,
+        *,
+        in_same_mux: bool = True,
     ) -> list[str]:
         """Get the qubit edge labels."""
-        return [f"{pair[0]}-{pair[1]}" for pair in self.get_edge_pairs()]
+        return [
+            f"{pair[0]}-{pair[1]}"
+            for pair in self.get_edge_pairs(in_same_mux=in_same_mux)
+        ]
 
     def cr_pair(self, cr_label: str) -> tuple[str, str]:
         """Return the control/target qubit pair for a CR label."""
@@ -1036,13 +1044,24 @@ class ExperimentContext:
         channel_number: int,
         qubit_label: str | None = None,
         target_type: TargetType | None = None,
-        update_lsi: bool | None = None,
+        update_backend_settings: bool | None = None,
+        **deprecated_options: Any,
     ) -> None:
         """Register a custom target with the control system."""
         if target_type is None:
             target_type = TargetType.CTRL_GE
-        if update_lsi is None:
-            update_lsi = False
+        update_backend_settings = resolve_deprecated_option(
+            value=update_backend_settings,
+            deprecated_options=deprecated_options,
+            deprecated_name="update_lsi",
+            replacement_name="update_backend_settings",
+            stacklevel=3,
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+        if update_backend_settings is None:
+            update_backend_settings = False
         if not np.isfinite(frequency):
             raise ValueError("Target frequency must be finite.")
 
@@ -1082,7 +1101,7 @@ class ExperimentContext:
             target_frequency_ghz=target.frequency,
         )
         self.experiment_system.add_target(target)
-        if update_lsi:
+        if update_backend_settings:
             cnco = port.cnco_freq
             if cnco is None:
                 raise ValueError("CNCO frequency is not set for the target port.")

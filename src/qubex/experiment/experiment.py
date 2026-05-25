@@ -782,7 +782,7 @@ class Experiment:
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
     ) -> None:
         """Link up specified boxes with optional noise threshold."""
         return self.session_service.linkup(
@@ -835,9 +835,19 @@ class Experiment:
         channel_number: int,
         qubit_label: str | None = None,
         target_type: TargetType | None = None,
-        update_lsi: bool | None = None,
+        update_backend_settings: bool | None = None,
+        **deprecated_options: Any,
     ) -> None:
         """Register a custom target with the control system."""
+        update_backend_settings = self._resolve_deprecated_option(
+            value=update_backend_settings,
+            deprecated_options=deprecated_options,
+            deprecated_name="update_lsi",
+            replacement_name="update_backend_settings",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
         return self.ctx.register_custom_target(
             label=label,
             frequency=frequency,
@@ -846,7 +856,7 @@ class Experiment:
             channel_number=channel_number,
             qubit_label=qubit_label,
             target_type=target_type,
-            update_lsi=update_lsi,
+            update_backend_settings=update_backend_settings,
         )
 
     def stark_target(
@@ -1897,6 +1907,7 @@ class Experiment:
         mode: MeasurementMode | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1928,6 +1939,8 @@ class Experiment:
             Number of shots.
         shot_interval : float, optional
             Interval between shots in ns.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
         frequencies : Optional[dict[str, float]], optional
             Frequencies of the qubits.
         readout_amplitudes : dict[str, float], optional
@@ -1982,6 +1995,7 @@ class Experiment:
             mode=mode,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            time_integration=time_integration,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -2036,6 +2050,7 @@ class Experiment:
         mode: MeasurementMode | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -2070,6 +2085,8 @@ class Experiment:
             Number of shots.
         shot_interval : float, optional
             Interval between shots in ns.
+        time_integration : bool | None, optional
+            Whether to integrate captured waveforms over time.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional
@@ -2119,6 +2136,7 @@ class Experiment:
             mode=mode,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            time_integration=time_integration,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -4479,6 +4497,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        pruned_fit: bool | None = None,
     ) -> Result:
         """Measure a chevron pattern for targets."""
         return self.characterization_service.chevron_pattern(
@@ -4492,6 +4511,7 @@ class Experiment:
             interval=shot_interval,
             plot=plot,
             save_image=save_image,
+            pruned_fit=pruned_fit,
         )
 
     def obtain_freq_rabi_relation(
@@ -4981,7 +5001,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ) -> float:
+    ) -> Result:
         """Estimate control amplitude from a resonance scan."""
         return self.characterization_service.estimate_control_amplitude(
             target=target,
@@ -5105,15 +5125,30 @@ class Experiment:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Find the readout amplitude maximizing state separation."""
+        """
+        Find the readout amplitude maximizing state separation or fidelity.
+
+        Parameters
+        ----------
+        objective
+            Optimization objective: ``"fidelity"`` maximizes GMM-based readout
+            fidelity (default), ``"distance"`` maximizes IQ state distance.
+        fidelity_ratio
+            Fraction of peak fidelity used as the acceptance threshold (0--1).
+            Only used when ``objective="fidelity"``.
+        """
         return self.characterization_service.find_optimal_readout_amplitude(
             target=target,
             amplitude_range=amplitude_range,
+            objective=objective,
+            fidelity_ratio=fidelity_ratio,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,
@@ -5223,6 +5258,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
+        in_same_mux: bool = True,
         n_shots: int | None = None,
         shot_interval: int | None = None,
         plot: bool | None = None,
@@ -5231,6 +5267,7 @@ class Experiment:
         """Run basic two-qubit characterization routines."""
         return self.characterization_service.characterize_2q(
             targets=targets,
+            in_same_mux=in_same_mux,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,

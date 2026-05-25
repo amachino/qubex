@@ -174,6 +174,13 @@ class MeasurementService:
         """Return measurement schedule, building only when pulse schedule is provided."""
         if isinstance(schedule, MeasurementSchedule):
             return schedule
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         return self.ctx.measurement.build_measurement_schedule(
             pulse_schedule=schedule,
             frequencies=frequencies,
@@ -187,6 +194,22 @@ class MeasurementService:
             readout_amplification=readout_amplification,
             final_measurement=final_measurement,
         )
+
+    def _resolve_readout_timing_defaults(
+        self,
+        *,
+        readout_duration: float | None,
+        readout_pre_margin: float | None,
+        readout_post_margin: float | None,
+    ) -> tuple[float, float, float]:
+        """Return Experiment readout timing defaults for omitted measurement options."""
+        if readout_duration is None:
+            readout_duration = self.pulse.readout_duration
+        if readout_pre_margin is None:
+            readout_pre_margin = self.pulse.readout_pre_margin
+        if readout_post_margin is None:
+            readout_post_margin = self.pulse.readout_post_margin
+        return readout_duration, readout_pre_margin, readout_post_margin
 
     @classmethod
     def resolve_deprecated_option(
@@ -260,6 +283,13 @@ class MeasurementService:
         plot: bool | None = None,
     ) -> MeasurementSchedule:
         """Build a measurement schedule through the measurement facade."""
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         return self.ctx.measurement.build_measurement_schedule(
             pulse_schedule=pulse_schedule,
             frequencies=frequencies,
@@ -638,6 +668,13 @@ class MeasurementService:
             }
             self.ctx.reset_awg_and_capunits(qubits=qubits)
 
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         with self.ctx.modified_frequencies(frequencies):
             result = self.ctx.measurement.execute(
                 schedule=schedule,
@@ -807,6 +844,13 @@ class MeasurementService:
             qubits = {self.ctx.resolve_qubit_label(target) for target in waveforms}
             self.ctx.reset_awg_and_capunits(qubits=qubits)
 
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing_defaults(
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
         with self.ctx.modified_frequencies(frequencies):
             result = self.ctx.measurement.measure(
                 waveforms=waveforms,
@@ -1055,11 +1099,7 @@ class MeasurementService:
 
         sweep_range = np.array(sweep_range)
 
-        if rabi_level == "ge":
-            rabi_params = self.pulse.ge_rabi_params
-        elif rabi_level == "ef":
-            rabi_params = self.pulse.ef_rabi_params
-        else:
+        if rabi_level not in ("ge", "ef"):
             raise ValueError("Invalid Rabi level.")
 
         if callable(sequence):
@@ -1134,12 +1174,19 @@ class MeasurementService:
                     )
 
         if plot:
-            plotter.show()
+            plotter.clear()
+            plotter.to_figure().show()
+
+        measured_targets = [target for target, values in signals.items() if values]
+        rabi_params = self._get_sweep_rabi_params(
+            targets=measured_targets,
+            rabi_level=rabi_level,
+        )
 
         sweep_data = {
             target: SweepData(
                 target=target,
-                data=np.array(values),
+                data=np.array(signals[target]),
                 sweep_range=sweep_range,
                 rabi_param=rabi_params.get(target),
                 state_centers=self.ctx.state_centers.get(target),
@@ -1149,14 +1196,30 @@ class MeasurementService:
                 xaxis_type=xaxis_type,
                 yaxis_type=yaxis_type,
             )
-            for target, values in signals.items()
-            if values
+            for target in measured_targets
         }
         result = ExperimentResult(
             data=sweep_data,
-            rabi_params=self.pulse.rabi_params,
+            rabi_params=rabi_params,
         )
         return result
+
+    def _get_sweep_rabi_params(
+        self,
+        *,
+        targets: Collection[str],
+        rabi_level: Literal["ge", "ef"],
+    ) -> dict[str, RabiParam]:
+        """Return Rabi parameters only for targets measured by one sweep."""
+        rabi_params: dict[str, RabiParam] = {}
+        for target in targets:
+            param_target = target
+            if rabi_level == "ef":
+                param_target = self.ctx.resolve_ef_label(target)
+            param = self.ctx.get_rabi_param(param_target)
+            if param is not None:
+                rabi_params[target] = param
+        return rabi_params
 
     def repeat_sequence(
         self,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import Literal, cast
@@ -17,6 +18,51 @@ logger = logging.getLogger(__name__)
 
 # Default sampling period in ns
 DEFAULT_SAMPLING_PERIOD = 2.0
+SAMPLING_PERIOD_TOLERANCE = 1e-9
+
+
+def _nearest_sampling_period_sample_count(
+    duration: float,
+    sampling_period: float,
+    *,
+    tolerance: float = SAMPLING_PERIOD_TOLERANCE,
+) -> int | None:
+    """Return the nearest sample count when `duration` is on the sampling grid."""
+    samples = duration / sampling_period
+    sample_count = round(samples)
+    if abs(samples - sample_count) <= tolerance:
+        return sample_count
+    return None
+
+
+def is_sampling_period_multiple(
+    duration: float,
+    sampling_period: float,
+    *,
+    tolerance: float = SAMPLING_PERIOD_TOLERANCE,
+) -> bool:
+    """Return whether `duration` is an integer multiple of the sampling period."""
+    return (
+        _nearest_sampling_period_sample_count(
+            duration,
+            sampling_period,
+            tolerance=tolerance,
+        )
+        is not None
+    )
+
+
+def floor_to_sampling_period(
+    duration: float,
+    sampling_period: float,
+    *,
+    tolerance: float = SAMPLING_PERIOD_TOLERANCE,
+) -> float:
+    """Return `duration` floored to the sampling grid."""
+    sample_count = math.floor(duration / sampling_period + tolerance)
+    # Multiplication can round slightly above `duration` (for example 3 * 0.1),
+    # so clamp the snapped value to keep the floor contract.
+    return min(sample_count * sampling_period, duration)
 
 
 class Waveform(ABC):
@@ -180,11 +226,8 @@ class Waveform(ABC):
         if duration < 0:
             raise ValueError("Duration must be positive.")
 
-        # Tolerance for floating point comparison
-        tolerance = 1e-9
-        frac = duration / dt
-        N = round(frac)
-        if abs(frac - N) > tolerance:
+        N = _nearest_sampling_period_sample_count(duration, dt)
+        if N is None:
             raise ValueError(
                 f"Duration must be a multiple of the sampling period ({dt} ns)."
             )

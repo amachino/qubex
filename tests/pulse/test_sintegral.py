@@ -12,6 +12,7 @@ from qxpulse.library.sintegral import (
     sin_pow_integral,
 )
 from qxpulse.pulse import Pulse
+from qxpulse.waveform import Waveform
 
 
 def test_sin_pow_integral_derivative_matches():
@@ -80,6 +81,15 @@ def test_sintegral_func_requires_positive_duration():
     """Given a zero duration, then Sintegral.func raises ValueError."""
     with pytest.raises(ValueError, match=r"Duration cannot be zero\."):
         Sintegral.func([0.0], duration=0, amplitude=1.0, power=2)
+
+
+def test_sintegral_func_snaps_half_threshold_to_float_sampling_grid(monkeypatch):
+    """Given a float dt grid, then Sintegral keeps near-grid midpoints stable."""
+    monkeypatch.setattr(Waveform, "SAMPLING_PERIOD", 0.4)
+
+    values = Sintegral.func([1.0], duration=2.4, amplitude=1.0, power=2)
+
+    assert 0.0 < values[0].real < 1.0
 
 
 def test_multiderivative_sintegral_even_odd_contributions():

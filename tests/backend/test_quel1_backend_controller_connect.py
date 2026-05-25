@@ -9,7 +9,9 @@ from typing import Any, cast
 
 import pytest
 
-from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
 
@@ -189,6 +191,12 @@ def test_create_boxpool_reconnects_all_boxes(monkeypatch) -> None:
     assert set(boxpool._boxes) == {"A", "B"}
     assert boxpool._boxes["A"][0].reconnect_count == 1
     assert boxpool._boxes["B"][0].reconnect_count == 1
+    assert boxpool._boxes["A"][0].reconnect_calls == [
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
+    ]
+    assert boxpool._boxes["B"][0].reconnect_calls == [
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
+    ]
 
 
 def test_create_boxpool_raises_for_unknown_box(monkeypatch) -> None:
@@ -238,7 +246,7 @@ def test_get_box_creates_box_without_reconnect(monkeypatch) -> None:
     assert cast(Any, box).name == "B"
     assert qubecalib.sysdb.create_box_calls[-1] == ("B", False)
     assert qubecalib.sysdb.created_boxes[-1].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
 
 
@@ -255,7 +263,7 @@ def test_dump_box_creates_box_without_reconnect_when_disconnected(monkeypatch) -
     assert dumped == {"box": "A"}
     assert qubecalib.sysdb.create_box_calls[-1] == ("A", False)
     assert qubecalib.sysdb.created_boxes[-1].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
 
 

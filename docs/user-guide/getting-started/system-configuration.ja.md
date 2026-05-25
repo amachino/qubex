@@ -163,14 +163,18 @@ box_setting:
   BOX_A:
     slot: 0
     wait: 0
+    port_wait:
+      1: 0
   BOX_B:
     slot: 1
     wait: 0
+    port_wait:
+      8: 0
 monitor_port: BOX_A-12
 reference_port: BOX_A-1
 scale:
   BOX_A-1: 0.125
-target_port:
+target_port: !!set
   BOX_A-1: null
   BOX_B-8: null
 time_to_start: 0
@@ -178,7 +182,7 @@ trigger_nport: 10
 ```
 
 - `box_setting.<box>.slot` は各 box の粗いタイミング slot を表します。
-- `box_setting.<box>.wait` は skew 調整時に更新する細かい wait 値です。
+- `box_setting.<box>.port_wait` は skew 調整時に更新する port ごとの wait 値です。
 - `reference_port` は基準信号源を選びます。
 - `monitor_port` と `trigger_nport` は monitor capture 経路を定義します。
 - `target_port` は skew scan に含める port を列挙します。
@@ -191,7 +195,11 @@ exp.tool.update_skew(250, ["BOX_A", "BOX_B"], backup=True)
 result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 ```
 
-`exp.tool.update_skew(...)` は `skew.yaml` を上書きします。更新前のファイルを残したい場合は `backup=True` を指定してください。
+`exp.tool.update_skew(target, ...)` は直前の `check_skew(...)` の推定結果を使い、
+各 measured port の `port_wait` を `target - measured_idx` だけずらしてから
+`skew.yaml` を上書きします。更新前のファイルを残したい場合は
+`backup=True` を指定してください。`skew.yaml.bak.20260520_124900` のような
+timestamp 付き backup が作られます。
 
 手順全体は [QuEL-1 skew 調整ワークフロー](../../examples/system/quel1_skew_adjustment.md) を参照してください。
 

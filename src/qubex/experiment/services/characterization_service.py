@@ -6,7 +6,8 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable, Collection
 from copy import deepcopy
-from typing import Literal
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
@@ -26,7 +27,7 @@ from tqdm import tqdm
 from typing_extensions import deprecated
 
 import qubex.visualization as viz
-from qubex.analysis import FitStatus, fitting
+from qubex.analysis import FitResult, FitStatus, fitting
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_INTERVAL,
@@ -57,6 +58,296 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+_CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
+# Candidate gates for removing unreliable per-detuning Rabi estimates.
+_DETUNED_RABI_PRUNING_R2_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.3)
+_DETUNED_RABI_MIN_R2_IMPROVEMENT = 0.01
+_READOUT_FREQUENCY_MIN_FIT_R2 = 0.9
+
+
+@dataclass(frozen=True)
+class _DetunedRabiFitCandidate:
+    """Candidate detuned-Rabi fit after applying one Rabi-fit quality gate."""
+
+    rates: NDArray
+    threshold: float
+    r2: float
+    retained_count: int
+
+
+def _filter_low_quality_rabi_rates(
+    rabi_rates: NDArray,
+    rabi_fit_r2: NDArray,
+    *,
+    min_r2: float,
+) -> NDArray:
+    """
+    Mask unreliable Rabi-rate estimates before detuned Rabi fitting.
+
+    Parameters
+    ----------
+    rabi_rates : NDArray
+        Estimated Rabi rates in GHz.
+    rabi_fit_r2 : NDArray
+        R² values from the per-frequency Rabi fits.
+    min_r2 : float
+        Minimum R² required to keep one rate estimate.
+
+    Returns
+    -------
+    NDArray
+        Copy of `rabi_rates` with low-quality entries replaced by NaN. The
+        original rates are returned when fewer than three entries pass the
+        quality threshold.
+    """
+    rates = np.asarray(rabi_rates, dtype=np.float64)
+    quality = np.asarray(rabi_fit_r2, dtype=np.float64)
+    reliable = np.isfinite(rates) & np.isfinite(quality) & (quality >= min_r2)
+    if np.count_nonzero(reliable) < 3:
+        return rates.copy()
+    return np.where(reliable, rates, np.nan)
+
+
+def _select_detuned_rabi_fit(
+    *,
+    target: str,
+    control_frequencies: NDArray,
+    rabi_rates: NDArray,
+    rabi_fit_r2: NDArray,
+    plot: bool,
+) -> tuple[FitResult, NDArray, float | None]:
+    """
+    Fit detuned Rabi after choosing the best Rabi-fit quality gate.
+
+    The selection keeps the unfiltered fit unless pruning gives a meaningful
+    detuned-Rabi R² improvement, and favors retaining more points when R²
+    values are close.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    control_frequencies : NDArray
+        Control frequencies in GHz.
+    rabi_rates : NDArray
+        Estimated Rabi rates in GHz.
+    rabi_fit_r2 : NDArray
+        R² values from per-frequency Rabi fits.
+    plot : bool
+        Whether to plot the selected detuned Rabi fit.
+
+    Returns
+    -------
+    tuple[FitResult, NDArray, float | None]
+        Selected fit result, selected Rabi-rate array, and the selected R²
+        threshold. The threshold is `None` when the unfiltered rates are kept.
+    """
+    baseline_rates = np.asarray(rabi_rates, dtype=np.float64)
+    baseline_fit = fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=baseline_rates,
+        plot=False,
+        warn_low_r2=False,
+    )
+    baseline_r2 = baseline_fit.get("r2", np.nan)
+    seen_masks = {tuple(np.isnan(baseline_rates))}
+    candidates: list[_DetunedRabiFitCandidate] = []
+
+    for threshold in _DETUNED_RABI_PRUNING_R2_THRESHOLDS:
+        candidate_rates = _filter_low_quality_rabi_rates(
+            baseline_rates,
+            rabi_fit_r2,
+            min_r2=threshold,
+        )
+        mask_key = tuple(np.isnan(candidate_rates))
+        if mask_key in seen_masks:
+            continue
+        seen_masks.add(mask_key)
+
+        candidate_fit = fitting.fit_detuned_rabi(
+            target=target,
+            control_frequencies=control_frequencies,
+            rabi_frequencies=candidate_rates,
+            plot=False,
+            warn_low_r2=False,
+        )
+        candidate_r2 = candidate_fit.get("r2", np.nan)
+        if np.isfinite(candidate_r2):
+            candidates.append(
+                _DetunedRabiFitCandidate(
+                    rates=candidate_rates,
+                    threshold=threshold,
+                    r2=float(candidate_r2),
+                    retained_count=int(np.count_nonzero(np.isfinite(candidate_rates))),
+                )
+            )
+
+    selected_rates = baseline_rates
+    selected_threshold: float | None = None
+    if candidates:
+        best_pruned_r2 = max(candidate.r2 for candidate in candidates)
+        # Keep the unfiltered fit unless pruning improves the best pruned R² enough.
+        pruning_improves_fit = not np.isfinite(baseline_r2) or (
+            best_pruned_r2 >= baseline_r2 + _DETUNED_RABI_MIN_R2_IMPROVEMENT
+        )
+        if pruning_improves_fit:
+            # Among near-best pruned fits, prefer the one that retains more data.
+            close_to_best = [
+                candidate
+                for candidate in candidates
+                if candidate.r2 >= best_pruned_r2 - _DETUNED_RABI_MIN_R2_IMPROVEMENT
+            ]
+            selected_candidate = max(
+                close_to_best,
+                key=lambda candidate: (candidate.retained_count, candidate.r2),
+            )
+            selected_rates = selected_candidate.rates
+            selected_threshold = selected_candidate.threshold
+
+    selected_fit = fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=selected_rates,
+        plot=plot,
+        warn_low_r2=True,
+    )
+    return selected_fit, selected_rates, selected_threshold
+
+
+def _fit_chevron_detuned_rabi(
+    *,
+    target: str,
+    control_frequencies: NDArray,
+    rabi_rates: NDArray,
+    rabi_fit_r2: NDArray,
+    plot: bool,
+    pruned_fit: bool,
+) -> FitResult:
+    """
+    Fit chevron detuned Rabi with the configured pruning policy.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    control_frequencies : NDArray
+        Control frequencies in GHz.
+    rabi_rates : NDArray
+        Estimated Rabi rates in GHz.
+    rabi_fit_r2 : NDArray
+        R² values from per-frequency Rabi fits.
+    plot : bool
+        Whether to plot the detuned Rabi fit.
+    pruned_fit : bool
+        Whether to prune low-quality Rabi-rate estimates before fitting.
+
+    Returns
+    -------
+    FitResult
+        Result for the selected detuned Rabi fit.
+    """
+    if pruned_fit:
+        fit_result, _selected_rates, selected_threshold = _select_detuned_rabi_fit(
+            target=target,
+            control_frequencies=control_frequencies,
+            rabi_rates=rabi_rates,
+            rabi_fit_r2=rabi_fit_r2,
+            plot=plot,
+        )
+        if selected_threshold is not None:
+            logger.info(
+                "Selected chevron Rabi-fit R² threshold %.1f for %s.",
+                selected_threshold,
+                target,
+            )
+        return fit_result
+
+    return fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=rabi_rates,
+        plot=plot,
+    )
+
+
+def _is_reliable_detuned_rabi_fit(fit_result: Any) -> bool:
+    """Return whether a detuned Rabi fit is good enough for chevron calibration."""
+    if getattr(fit_result, "status", FitStatus.SUCCESS) is FitStatus.ERROR:
+        return False
+    r2 = fit_result.get("r2", np.nan)
+    return bool(np.isfinite(r2) and r2 >= 0.5)
+
+
+def _is_low_quality_readout_frequency_fit(fit_result: Any) -> bool:
+    """Return whether a readout-frequency fit should fall back to measured peak."""
+    status = getattr(fit_result, "status", FitStatus.SUCCESS)
+    if status is not FitStatus.SUCCESS and status != FitStatus.SUCCESS.value:
+        return True
+
+    r2 = fit_result.get("r2", None)
+    if r2 is None:
+        return False
+
+    try:
+        r2_value = float(r2)
+    except (TypeError, ValueError):
+        return True
+    return not np.isfinite(r2_value) or r2_value < _READOUT_FREQUENCY_MIN_FIT_R2
+
+
+def _make_readout_frequency_fallback_figure(
+    *,
+    target: str,
+    frequencies: NDArray,
+    values: NDArray,
+    peak_frequency: float | None,
+    peak_value: float | None,
+) -> go.Figure:
+    """Build a readout-frequency figure when Lorentzian fitting fails."""
+    finite_mask = np.isfinite(frequencies) & np.isfinite(values)
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
+            x=frequencies[finite_mask],
+            y=values[finite_mask],
+            mode="lines+markers",
+            name="Data",
+        )
+    )
+    if peak_frequency is not None and peak_value is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=[peak_frequency],
+                y=[peak_value],
+                mode="markers",
+                marker=dict(color=COLORS[3], size=10, symbol="x"),
+                name="Maximum response",
+            )
+        )
+        fig.add_annotation(
+            x=peak_frequency,
+            y=peak_value,
+            text=f"max: {peak_frequency:.6f}",
+            showarrow=True,
+            arrowhead=1,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+    fig.update_layout(
+        title=dict(
+            text=f"Readout frequency calibration : {target}",
+            subtitle=dict(
+                text="fit failed; using maximum response",
+                font=dict(size=11, family="monospace"),
+            ),
+        ),
+        xaxis_title="Readout frequency (GHz)",
+        yaxis_title="Rabi amplitude (arb. units)",
+        width=600,
+        height=300,
+        margin=dict(t=80),
+    )
+    return fig
 
 
 def _build_ramsey_sequence(
@@ -166,6 +457,29 @@ class CharacterizationService:
     def calibration_service(self) -> CalibrationService:
         """Return the calibration service."""
         return self._calibration_service
+
+    @staticmethod
+    def _is_valid_chevron_rabi_param(param: Any) -> bool:
+        """Return whether a shared Rabi parameter is safe for chevron normalization."""
+        if param is None:
+            return False
+        amplitude = getattr(param, "amplitude", np.nan)
+        return bool(
+            np.isfinite(amplitude) and abs(amplitude) > _CHEVRON_RABI_AMPLITUDE_EPS
+        )
+
+    @staticmethod
+    def _get_chevron_plot_values(
+        data: Any,
+        *,
+        use_fallback: bool,
+    ) -> NDArray[np.float64]:
+        """Return heatmap values for chevron plotting."""
+        if not use_fallback:
+            return np.asarray(data.normalized, dtype=np.float64)
+        # When normalization is invalid, use one fixed raw quadrature.
+        # Real/imag are equivalent here because link-up resets the phase basis.
+        return np.asarray(np.real(data.data), dtype=np.float64)
 
     def measure_readout_snr(
         self,
@@ -487,6 +801,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        pruned_fit: bool | None = None,
     ) -> Result:
         """Measure chevron patterns for targets."""
         if targets is None:
@@ -506,6 +821,8 @@ class CharacterizationService:
             plot = True
         if save_image is None:
             save_image = True
+        if pruned_fit is None:
+            pruned_fit = True
 
         if frequencies is None:
             frequencies = {
@@ -541,8 +858,15 @@ class CharacterizationService:
             shared_rabi_params = rabi_params
 
         rabi_rates: dict[str, NDArray] = {}
+        rabi_fit_r2: dict[str, NDArray] = {}
         chevron_data: dict[str, NDArray] = {}
         resonant_frequencies: dict[str, float] = {}
+        use_fallback_by_target = {
+            target: not self._is_valid_chevron_rabi_param(
+                shared_rabi_params.get(target)
+            )
+            for target in targets
+        }
 
         print(f"Targets : {targets}")
         subgroups = self.ctx.util.create_qubit_subgroups(targets)
@@ -554,6 +878,7 @@ class CharacterizationService:
             print(f"Subgroup ({idx + 1}/{len(subgroups)}) : {subgroup}")
 
             rabi_rates_buffer: dict[str, list[float]] = defaultdict(list)
+            rabi_fit_r2_buffer: dict[str, list[float]] = defaultdict(list)
             chevron_data_buffer: dict[str, list[NDArray]] = defaultdict(list)
 
             for detuning in tqdm(detuning_range):
@@ -584,17 +909,25 @@ class CharacterizationService:
                         rabi_rates_buffer[target].append(
                             fit_result.get("frequency", np.nan)
                         )
+                        rabi_fit_r2_buffer[target].append(fit_result.get("r2", np.nan))
                         data.rabi_param = shared_rabi_params[target]
-                        chevron_data_buffer[target].append(data.normalized)
+                        chevron_data_buffer[target].append(
+                            self._get_chevron_plot_values(
+                                data,
+                                use_fallback=use_fallback_by_target[target],
+                            )
+                        )
 
             for target in subgroup:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
+                rabi_fit_r2[target] = np.array(rabi_fit_r2_buffer[target])
                 chevron_data[target] = np.array(chevron_data_buffer[target]).T
+                control_frequencies = detuning_range + frequencies[target]
 
                 fig = viz.make_figure()
                 fig.add_trace(
                     go.Heatmap(
-                        x=detuning_range + frequencies[target],
+                        x=control_frequencies,
                         y=time_range,
                         z=chevron_data[target],
                         colorscale="Viridis",
@@ -604,7 +937,14 @@ class CharacterizationService:
                     title=dict(
                         text=f"Chevron pattern : {target}",
                         subtitle=dict(
-                            text=f"control_amplitude={amplitudes[target]:.6g}",
+                            text=(
+                                f"control_amplitude={amplitudes[target]:.6g}"
+                                if not use_fallback_by_target[target]
+                                else (
+                                    f"control_amplitude={amplitudes[target]:.6g}, "
+                                    "fallback=data.real"
+                                )
+                            ),
                             font=dict(
                                 size=13,
                                 family="monospace",
@@ -621,13 +961,21 @@ class CharacterizationService:
                 if plot:
                     fig.show()
 
-                fit_result = fitting.fit_detuned_rabi(
+                fit_result = _fit_chevron_detuned_rabi(
                     target=target,
-                    control_frequencies=detuning_range + frequencies[target],
-                    rabi_frequencies=rabi_rates[target],
+                    control_frequencies=control_frequencies,
+                    rabi_rates=rabi_rates[target],
+                    rabi_fit_r2=rabi_fit_r2[target],
                     plot=plot,
+                    pruned_fit=pruned_fit,
                 )
-                resonant_frequencies[target] = fit_result["f_resonance"]
+                if not _is_reliable_detuned_rabi_fit(fit_result):
+                    logger.warning(
+                        "Chevron resonance estimate for %s is based on an "
+                        "unreliable detuned Rabi fit.",
+                        target,
+                    )
+                resonant_frequencies[target] = fit_result.get("f_resonance", np.nan)
 
                 if save_image:
                     viz.save_figure(
@@ -646,6 +994,7 @@ class CharacterizationService:
                         )
 
         rabi_rates = dict(sorted(rabi_rates.items()))
+        rabi_fit_r2 = dict(sorted(rabi_fit_r2.items()))
         chevron_data = dict(sorted(chevron_data.items()))
         resonant_frequencies = dict(sorted(resonant_frequencies.items()))
 
@@ -656,6 +1005,7 @@ class CharacterizationService:
                 "frequencies": frequencies,
                 "chevron_data": chevron_data,
                 "rabi_rates": rabi_rates,
+                "rabi_fit_r2": rabi_fit_r2,
                 "resonant_frequencies": resonant_frequencies,
                 # TODO: Remove this legacy payload key after callers migrate to .figures.
                 "fig": figs,
@@ -1026,29 +1376,76 @@ class CharacterizationService:
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
             values_array = np.array(values, dtype=np.float64)
-            y_med = np.median(values_array)
-            f0_guess = detuning_range[np.argmax(values_array)] + freq
-            gamma_guess = (
-                np.max(detuning_range + freq) - np.min(detuning_range + freq)
-            ) / 4
-            A_guess = max(np.max(values_array) - y_med, np.finfo(np.float64).eps)
-            fit_result = fitting.fit_lorentzian(
-                target=target,
-                x=detuning_range + freq,
-                y=values_array,
-                p0=(A_guess, f0_guess, gamma_guess, y_med),
-                bounds=(
-                    (0, np.min(detuning_range + freq), 0, -np.inf),
-                    (np.inf, np.max(detuning_range + freq), np.inf, np.inf),
-                ),
-                plot=plot,
-                title="Readout frequency calibration",
-                xlabel="Readout frequency (GHz)",
+            frequency_values = detuning_range + freq
+            peak_frequency = None
+            peak_value = None
+            fit_result = FitResult(
+                status=FitStatus.ERROR,
+                message="No finite readout-frequency calibration data.",
             )
-            if "f0" in fit_result:
+            finite_mask = np.isfinite(values_array) & np.isfinite(frequency_values)
+            if np.any(finite_mask):
+                fit_frequencies = frequency_values[finite_mask]
+                fit_values = values_array[finite_mask]
+                peak_index = int(np.argmax(fit_values))
+                peak_frequency = float(fit_frequencies[peak_index])
+                peak_value = float(fit_values[peak_index])
+                y_med = float(np.median(fit_values))
+                frequency_min = float(np.min(fit_frequencies))
+                frequency_max = float(np.max(fit_frequencies))
+                f0_lower = float(np.nextafter(frequency_min, -np.inf))
+                f0_upper = float(np.nextafter(frequency_max, np.inf))
+                gamma_guess = max(
+                    (frequency_max - frequency_min) / 4,
+                    np.finfo(np.float64).eps,
+                )
+                A_guess = max(
+                    float(np.max(fit_values) - y_med),
+                    np.finfo(np.float64).eps,
+                )
+                try:
+                    fit_result = fitting.fit_lorentzian(
+                        target=target,
+                        x=fit_frequencies,
+                        y=fit_values,
+                        p0=(A_guess, peak_frequency, gamma_guess, y_med),
+                        bounds=(
+                            (0, f0_lower, 0, -np.inf),
+                            (np.inf, f0_upper, np.inf, np.inf),
+                        ),
+                        plot=plot,
+                        title="Readout frequency calibration",
+                        xlabel="Readout frequency (GHz)",
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        "Failed to fit readout frequency for %s; using "
+                        "maximum-response frequency. %s",
+                        target,
+                        exc,
+                    )
+            if (
+                _is_low_quality_readout_frequency_fit(fit_result)
+                or "f0" not in fit_result
+            ):
+                if peak_frequency is not None:
+                    fit_data[target] = peak_frequency
+            elif "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
 
             fig = fit_result.figure
+            if fig is None:
+                fig = _make_readout_frequency_fallback_figure(
+                    target=target,
+                    frequencies=frequency_values,
+                    values=values_array,
+                    peak_frequency=peak_frequency,
+                    peak_value=peak_value,
+                )
+                if plot:
+                    fig.show(
+                        config=viz.get_config(filename=f"readout_frequency_{target}")
+                    )
             if fig is not None:
                 figs[target] = fig
 
@@ -2120,8 +2517,12 @@ class CharacterizationService:
                 window_length // 2 * 2 + 1,
             )
             polyorder = DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_POLYORDER
-            phases_unwrap_for_peak = savgol_filter(
-                phases_unwrap, window_length=window_length, polyorder=polyorder
+            phases_unwrap_for_peak = np.asarray(
+                savgol_filter(
+                    phases_unwrap,
+                    window_length=window_length,
+                    polyorder=polyorder,
+                )
             )
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
             peaks, props = find_peaks(
@@ -2849,7 +3250,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ) -> float:
+    ) -> Result:
         """
         Estimate control amplitude from a resonance scan.
 
@@ -2889,23 +3290,36 @@ class CharacterizationService:
             plot=plot,
             save_image=save_image,
         )["phases"]
-        result = fitting.fit_sqrt_lorentzian(
+        fit_result = fitting.fit_sqrt_lorentzian(
             target=target,
             x=frequency_range,
             y=data,
-            plot=plot,
+            plot=False,
             title="Qubit resonance fit",
         )
-        rabi_rate = result["Omega"]
+
+        rabi_rate = fit_result.get("Omega")
+        if rabi_rate is None:
+            return Result(
+                data={
+                    "frequency_range": frequency_range,
+                    "phases": data,
+                    "rabi_rate": None,
+                    "estimated_amplitude": None,
+                    "fig": None,
+                },
+                figure=None,
+            )
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
+        fig = None
         if plot:
-            fig = result.get_figure()
+            fig = fit_result.get_figure()
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
                     subtitle=dict(
-                        text=f"readout_amplitude={readout_amplitude:.6g}",
+                        text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
                         font=dict(size=13, family="monospace"),
                     ),
                 ),
@@ -2922,14 +3336,24 @@ class CharacterizationService:
             print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
             print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
 
-        if save_image:
+        if save_image and fig is not None:
             viz.save_figure(
                 fig,
                 name=f"control_amplitude_estimation_{target}",
                 width=600,
                 height=300,
             )
-        return estimated_amplitude
+        return Result(
+            data={
+                "frequency_range": frequency_range,
+                "phases": data,
+                "rabi_rate": rabi_rate,
+                "estimated_amplitude": estimated_amplitude,
+                "fig": fig,
+                **fit_result,
+            },
+            figure=fig,
+        )
 
     def measure_qubit_resonance(
         self,
@@ -3475,13 +3899,15 @@ class CharacterizationService:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
         """
-        Find readout amplitude maximizing state separation.
+        Find readout amplitude maximizing state separation or readout fidelity.
 
         Parameters
         ----------
@@ -3489,7 +3915,17 @@ class CharacterizationService:
             Target qubit label.
         amplitude_range
             Readout amplitude sweep range.
+        objective
+            Optimization objective: ``"fidelity"`` maximizes GMM-based readout
+            fidelity (default), ``"distance"`` maximizes IQ state distance.
+        fidelity_ratio
+            Fraction of peak fidelity used as the acceptance threshold (0--1).
+            Only used when ``objective="fidelity"``.
         """
+        if objective is None:
+            objective = "fidelity"
+        if fidelity_ratio is None:
+            fidelity_ratio = 0.99
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -3503,25 +3939,70 @@ class CharacterizationService:
         else:
             amplitude_range = np.array(amplitude_range)
 
-        buffer_0 = []
-        buffer_1 = []
+        if objective == "fidelity":
+            return self._find_optimal_readout_amplitude_by_fidelity(
+                target=target,
+                amplitude_range=amplitude_range,
+                fidelity_ratio=fidelity_ratio,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            return self._find_optimal_readout_amplitude_by_distance(
+                target=target,
+                amplitude_range=amplitude_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+
+    def _sweep_readout_amplitude(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        mode: Literal["avg", "single"],
+        shots: int,
+        interval: float,
+    ) -> tuple[list[NDArray], list[NDArray]]:
+        """Sweep readout amplitude and collect IQ data for states 0 and 1."""
+        buffer_0: list[NDArray] = []
+        buffer_1: list[NDArray] = []
         for amplitude in tqdm(amplitude_range):
+            readout_amp = {target: float(amplitude)}
             result_0 = self._measurement_service.measure_state(
                 {target: "0"},
-                mode="avg",
-                readout_amplitudes={target: amplitude},
+                mode=mode,
+                readout_amplitudes=readout_amp,
                 shots=shots,
                 interval=interval,
             )
             result_1 = self._measurement_service.measure_state(
                 {target: "1"},
-                mode="avg",
-                readout_amplitudes={target: amplitude},
+                mode=mode,
+                readout_amplitudes=readout_amp,
                 shots=shots,
                 interval=interval,
             )
             buffer_0.append(result_0.data[target].kerneled)
             buffer_1.append(result_1.data[target].kerneled)
+        return buffer_0, buffer_1
+
+    def _find_optimal_readout_amplitude_by_distance(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing IQ state distance."""
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="avg", shots=shots, interval=interval
+        )
         signals_0 = np.array(buffer_0)
         signals_1 = np.array(buffer_1)
 
@@ -3585,6 +4066,114 @@ class CharacterizationService:
                 "fig": fig,
             },
             figure=fig,
+        )
+
+    def _find_optimal_readout_amplitude_by_fidelity(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        fidelity_ratio: float,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing GMM-based readout fidelity."""
+        from qubex.measurement.classifiers.state_classifier_gmm import (
+            StateClassifierGMM,
+        )
+
+        phase = self.ctx.reference_phases.get(target, 0.0)
+
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="single", shots=shots, interval=interval
+        )
+
+        fidelities: list[float] = []
+        for iq_0, iq_1 in zip(buffer_0, buffer_1, strict=True):
+            classifier = StateClassifierGMM.fit({0: iq_0, 1: iq_1}, phase=phase)
+            fid_per_state = []
+            for state, iq in enumerate([iq_0, iq_1]):
+                predicted = classifier.predict(iq)
+                correct = int(np.sum(predicted == state))
+                fid_per_state.append(correct / len(iq))
+            fidelities.append(float(np.mean(fid_per_state)))
+
+        fid_arr = np.array(fidelities)
+        fid_peak = float(fid_arr.max())
+        plateau_mask = fid_arr >= fid_peak * fidelity_ratio
+        best_idx = int(np.where(plateau_mask)[0][0])
+        optimal_amplitude = float(amplitude_range[best_idx])
+
+        fig = viz.make_figure(width=600, height=300)
+        fig.add_scatter(
+            x=list(amplitude_range),
+            y=list(fid_arr),
+            name="Readout fidelity",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_amplitude,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=(
+                f"amp_opt: {optimal_amplitude:.4f}<br>"
+                f"fidelity: {fid_arr[best_idx]:.4f}<br>"
+                f"peak: {fid_peak:.4f}"
+            ),
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"Readout fidelity : {target}",
+            xaxis_title="Amplitude (arb. units)",
+            yaxis_title="Readout fidelity",
+        )
+
+        figures: dict[str, Any] = {"readout_fidelity": fig}
+
+        classifier_result = self._measurement_service.build_classifier(
+            targets=target,
+            readout_amplitudes={target: optimal_amplitude},
+            n_shots=shots,
+            shot_interval=interval,
+            plot=plot,
+        )
+        if classifier_result.figures is not None:
+            figures.update(classifier_result.figures)
+
+        if plot:
+            fig.show()
+            print(
+                f"amp_opt: {optimal_amplitude:.4f}  "
+                f"readout_fidelity: {fid_arr[best_idx]:.4f}  "
+                f"peak: {fid_peak:.4f}"
+            )
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"optimal_readout_amplitude_fidelity_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "optimal_amplitude": optimal_amplitude,
+                "amplitude_range": amplitude_range,
+                "readout_fidelity": fid_arr,
+                "classifier_result": classifier_result,
+            },
+            figure=fig,
+            figures=figures,
         )
 
     def ckp_sequence(
@@ -4058,36 +4647,27 @@ class CharacterizationService:
             "ramsey_experiment": {},
         }
 
-        try:
-            for target in targets:
-                result = self.t1_experiment(
+        def _run_step(
+            target: str,
+            name: str,
+            experiment: Callable[..., Any],
+        ) -> None:
+            try:
+                result = experiment(
                     target,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                     save_image=save_image,
                 )
-                data["t1_experiment"][target] = result.data[target]
+                data[name][target] = result.data[target]
+            except Exception as e:
+                print(f"{name} failed for {target}: {e}")
 
-                result = self.t2_experiment(
-                    target,
-                    shots=shots,
-                    interval=interval,
-                    plot=plot,
-                    save_image=save_image,
-                )
-                data["t2_experiment"][target] = result.data[target]
-
-                result = self.ramsey_experiment(
-                    target,
-                    shots=shots,
-                    interval=interval,
-                    plot=plot,
-                    save_image=save_image,
-                )
-                data["ramsey_experiment"][target] = result.data[target]
-        except Exception as e:
-            print(f"Characterization failed for {target}: {e}")
+        for target in targets:
+            _run_step(target, "t1_experiment", self.t1_experiment)
+            _run_step(target, "t2_experiment", self.t2_experiment)
+            _run_step(target, "ramsey_experiment", self.ramsey_experiment)
 
         if plot:
             print()
@@ -4137,6 +4717,7 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
+        in_same_mux: bool = True,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -4149,6 +4730,8 @@ class CharacterizationService:
         ----------
         targets
             Target edges to characterize.
+        in_same_mux
+            Whether to restrict default target edges to the same mux.
         shots
             Number of shots per experiment.
         plot
@@ -4163,7 +4746,7 @@ class CharacterizationService:
         if save_image is None:
             save_image = True
         if targets is None:
-            targets = self.ctx.edge_labels
+            targets = self.ctx.get_edge_labels(in_same_mux=in_same_mux)
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -4173,8 +4756,8 @@ class CharacterizationService:
             "obtain_coupling_strength": {},
         }
 
-        try:
-            for target in targets:
+        def _run_coupling_strength(target: str) -> None:
+            try:
                 pair = target.split("-")
                 result = self.obtain_coupling_strength(
                     *pair,
@@ -4183,8 +4766,11 @@ class CharacterizationService:
                     plot=plot,
                 )
                 data["obtain_coupling_strength"][target] = result.data
-        except Exception as e:
-            print(f"Characterization failed for {target}: {e}")
+            except Exception as e:
+                print(f"obtain_coupling_strength failed for {target}: {e}")
+
+        for target in targets:
+            _run_coupling_strength(target)
 
         if plot:
             print()

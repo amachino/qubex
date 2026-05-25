@@ -73,7 +73,7 @@ docs = [
 ]
 
 [tool.setuptools.package-data]
-qubex = ["py.typed", "clifford/**/*.json"]
+qubex = ["py.typed", "*.pyi", "clifford/**/*.json"]
 
 [tool.uv]
 cache-dir = ".cache/uv"
