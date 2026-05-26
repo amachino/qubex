@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Collection, Mapping
 from datetime import datetime, timezone
 from itertools import product
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -41,7 +41,11 @@ from qubex.experiment.experiment_constants import (
     PI_RAMPTIME,
 )
 from qubex.experiment.models import Result
-from qubex.experiment.models.calibration_note import DragParam, FlatTopParam
+from qubex.experiment.models.calibration_note import (
+    CrossResonanceParam,
+    DragParam,
+    FlatTopParam,
+)
 from qubex.experiment.models.experiment_result import (
     AmplCalibData,
     ExperimentResult,
@@ -82,6 +86,12 @@ def _get_source_target(exp: Experiment, target: str) -> Target:
         return exp.targets[target]
     except KeyError:
         raise KeyError(f"Target `{target}` is not registered.") from None
+
+
+def _single_port_number(port_number: int | tuple[int, int]) -> int:
+    if isinstance(port_number, tuple):
+        raise TypeError("Custom target registration requires a single port number.")
+    return port_number
 
 
 def stark_target(exp: Experiment, target: str) -> str:
@@ -177,7 +187,7 @@ def make_stark_channel(
         label=stark_target(exp, target),
         frequency=source_target.frequency + detuning,
         box_id=port.box_id,
-        port_number=port.number,
+        port_number=_single_port_number(port.number),
         channel_number=source_target.channel.number + channel,
         qubit_label=qubit_label,
         update_lsi=lsi,
@@ -214,7 +224,7 @@ def make_insitu_channel(
         label=insitu_target(exp, target),
         frequency=source_target.frequency + detuning,
         box_id=port.box_id,
-        port_number=port.number,
+        port_number=_single_port_number(port.number),
         channel_number=source_target.channel.number + channel,
         qubit_label=qubit_label,
         update_lsi=lsi,
@@ -266,7 +276,7 @@ def make_stark_cr_channel(
         label=cr_label,
         frequency=frequency + detuning,
         box_id=port.box_id,
-        port_number=port.number,
+        port_number=_single_port_number(port.number),
         channel_number=source_cr.channel.number + channel,
         qubit_label=control_label,
         target_type=TargetType.CTRL_CR,
@@ -283,6 +293,13 @@ def _plot_sequence_sample(
     if plot:
         sequence.plot(title=title)
     return sequence
+
+
+def _as_scalar_float(value: Any) -> float:
+    values = np.asarray(value, dtype=float)
+    if values.ndim == 0:
+        return float(values.item())
+    return float(np.mean(values))
 
 
 def _normalize_targets(
@@ -1115,7 +1132,7 @@ def stark_rb_experiment_1q(
             )
             for qubit, data in result.data.items():
                 z_value = exp.pulse.rabi_params[qubit].normalize(data.kerneled)
-                trial_data[qubit].append((z_value + 1) / 2)
+                trial_data[qubit].append((_as_scalar_float(z_value) + 1) / 2)
         mean_data[target].append(float(np.mean(trial_data[target])))
         std_data[target].append(float(np.std(trial_data[target])))
         if (
@@ -1246,7 +1263,9 @@ def stark_purity_experiment_1q(
                 )
                 for qubit, data in result.data.items():
                     basis_values[qubit].append(
-                        exp.pulse.rabi_params[qubit].normalize(data.kerneled)
+                        _as_scalar_float(
+                            exp.pulse.rabi_params[qubit].normalize(data.kerneled)
+                        )
                     )
             for qubit, values in basis_values.items():
                 x_val, y_val, z_val = values
@@ -2991,19 +3010,19 @@ def _clifford_sweep_range(
     max_n_cliffords: int,
 ) -> np.ndarray:
     if n_cliffords_range is not None:
-        values = np.asarray(n_cliffords_range, dtype=int)
-        if values.ndim != 1:  # pyright: ignore[reportAttributeAccessIssue]
+        range_values = np.asarray(n_cliffords_range, dtype=int)
+        if range_values.ndim != 1:
             raise ValueError("`n_cliffords_range` must be a 1-D array.")
-        return values
-    values: list[int] = []
+        return range_values
+    generated_values: list[int] = []
     idx = 0
     while True:
         n_clifford = 0 if idx == 0 else 2 ** (idx - 1)
         if n_clifford > max_n_cliffords:
             break
-        values.append(n_clifford)
+        generated_values.append(n_clifford)
         idx += 1
-    return np.asarray(values, dtype=int)
+    return np.asarray(generated_values, dtype=int)
 
 
 def _stark_drive_qubit_label(
@@ -3647,13 +3666,14 @@ def stark_cr_hamiltonian_tomography(
             result["control_states"],
         )
         for trace in fig_src.data:
+            scatter = cast(Any, trace)
             data = go.Scatter(
-                x=trace.x,
-                y=trace.y,
-                mode=trace.mode,
-                line=trace.line,
-                marker=trace.marker,
-                name=trace.name,
+                x=scatter.x,
+                y=scatter.y,
+                mode=scatter.mode,
+                line=scatter.line,
+                marker=scatter.marker,
+                name=scatter.name,
                 showlegend=row == 1,
             )
             fig_c.add_trace(data, row=row, col=1)
@@ -3683,13 +3703,14 @@ def stark_cr_hamiltonian_tomography(
     for row, result in enumerate((result_0, result_1), start=1):
         fig_src = result["fit_result"].get_figure()
         for trace in fig_src.data:
+            scatter = cast(Any, trace)
             data = go.Scatter(
-                x=trace.x,
-                y=trace.y,
-                mode=trace.mode,
-                line=trace.line,
-                marker=trace.marker,
-                name=trace.name,
+                x=scatter.x,
+                y=scatter.y,
+                mode=scatter.mode,
+                line=scatter.line,
+                marker=scatter.marker,
+                name=scatter.name,
                 showlegend=row == 1,
             )
             fig_t.add_trace(data, row=row, col=1)
@@ -3843,8 +3864,9 @@ def stark_update_cr_params(
         else current_cancel_pulse
     )
 
-    cr_param = {
-        "target": result["cr_label"],
+    cr_label = str(result["cr_label"])
+    cr_param: CrossResonanceParam = {
+        "target": cr_label,
         "duration": 0.0,
         "ramptime": ramptime,
         "cr_amplitude": float(np.abs(new_cr_pulse)),
@@ -3857,11 +3879,11 @@ def stark_update_cr_params(
         "zx_rotation_rate": float(result["coeffs"]["ZX"] / cr_amplitude),
     }
     if store_params:
-        exp.ctx.calib_note.update_cr_param(result["cr_label"], cr_param)
+        exp.ctx.calib_note.update_cr_param(cr_label, cr_param)
 
     if plot:
         print("Updated Stark CR params:")
-        print(f"  target           : {result['cr_label']}")
+        print(f"  target           : {cr_label}")
         print(
             f"  CR amplitude     : {cr_amplitude:+.4f} -> {cr_param['cr_amplitude']:+.4f}"
         )
@@ -4992,8 +5014,9 @@ def stark_bell_state_tomography(
     target_label = exp.ctx.resolve_qubit_label(target_qubit)
     dim = 4
     probabilities = {}
+    basis_labels: tuple[Literal["X", "Y", "Z"], ...] = ("X", "Y", "Z")
     for control_basis, target_basis in tqdm(
-        product(["X", "Y", "Z"], repeat=2),
+        product(basis_labels, repeat=2),
         desc="Measuring Stark Bell state",
     ):
         result = stark_measure_bell_state(

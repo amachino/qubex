@@ -167,7 +167,8 @@ def test_ac_stark_shift_spectroscopy_can_plot_applied_amplitude_axis(
     assert result.data["x_axis"] == "stark_amplitude"
     assert np.asarray(result.data["p1"]).shape == (2, 3)
     assert result.figure is not None
-    assert result.figure.data[0].type == "heatmap"
+    heatmap_trace = cast(Any, result.figure.data[0])
+    assert heatmap_trace.type == "heatmap"
     assert result.figure.layout.xaxis.title.text == "Stark amplitude (GHz)"
     assert [call["wait_time"] for call in calls] == [10, 20]
 
@@ -201,7 +202,8 @@ def test_ac_stark_shift_spectroscopy_over_time_uses_line_plot_for_one_iteration(
     assert result.data["n_iterations"] == 1
     assert np.asarray(result.data["p1"]).shape == (1, 3)
     assert result.figure is not None
-    assert result.figure.data[0].type == "scatter"
+    scatter_trace = cast(Any, result.figure.data[0])
+    assert scatter_trace.type == "scatter"
     assert result.figure.layout.yaxis.title.text == "P1"
 
 
@@ -240,8 +242,9 @@ def test_ac_stark_shift_spectroscopy_over_time_uses_heatmap_for_repetitions(
     assert len(result.data["elapsed_time_s"]) == 2
     assert len(calls) == 2
     assert result.figure is not None
-    assert result.figure.data[0].type == "heatmap"
-    np.testing.assert_allclose(result.figure.data[0].y, [1, 2])
+    heatmap_trace = cast(Any, result.figure.data[0])
+    assert heatmap_trace.type == "heatmap"
+    np.testing.assert_allclose(heatmap_trace.y, [1, 2])
     assert result.figure.layout.yaxis.title.text == "Iteration"
 
 
