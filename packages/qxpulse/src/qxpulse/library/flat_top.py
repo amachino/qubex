@@ -9,6 +9,7 @@ from numpy.typing import ArrayLike, NDArray
 from typing_extensions import override
 
 from qxpulse.pulse import Pulse
+from qxpulse.waveform import floor_to_sampling_period
 
 from .bump import Bump
 from .gaussian import Gaussian
@@ -265,7 +266,10 @@ def _ramp_func(
             t=t,
             duration=duration,
             amplitude=amplitude,
-            tau=(duration * 0.5) // Pulse.SAMPLING_PERIOD * Pulse.SAMPLING_PERIOD,
+            tau=floor_to_sampling_period(
+                duration * 0.5,
+                Pulse.SAMPLING_PERIOD,
+            ),
             delta=delta,
             factor=0,
             **kwargs,

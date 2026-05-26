@@ -113,7 +113,9 @@ class Quel1SkewManager:
             if not isinstance(setting, dict):
                 raise TypeError(f"box_setting.{box_name} must be a mapping")
             box_wait = self._require_box_wait(setting, box_name=box_name)
-            port_wait = self._require_port_wait(setting, box_name=box_name)
+            port_wait = setting.setdefault("port_wait", {})
+            if not isinstance(port_wait, dict):
+                raise TypeError(f"box_setting.{box_name}.port_wait must be a mapping")
             adjusted_waits = {}
             for port, idx in estimated_ports:
                 current_port_wait = port_wait.get(port, 0)
@@ -199,6 +201,10 @@ class Quel1SkewManager:
     ) -> dict[Any, Any]:
         """Return the `port_wait` mapping from one box skew setting."""
         port_wait = setting.get("port_wait")
+        if port_wait is None:
+            # TODO: Replace this fallback when the full port_wait initialization
+            # path is defined.
+            return {}
         if not isinstance(port_wait, dict):
             raise TypeError(f"box_setting.{box_name}.port_wait must be a mapping")
         return port_wait
