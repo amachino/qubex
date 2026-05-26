@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
 from collections.abc import Collection, Mapping
+from datetime import datetime, timezone
 from itertools import product
 from typing import Any, Literal
 
@@ -67,11 +69,12 @@ from qubex.typing import TargetMap
 
 from ._deprecated_options import resolve_shot_options
 
-StarkShiftModel = Literal["ideal", "duffing", "experimental"]
+StarkShiftModel = Literal["ideal", "duffing", "experimental", "amplitude"]
 StarkShiftLookup = (
     ArrayLike | Mapping[float, float] | Mapping[float, Mapping[float, float]]
 )
 StarkDriveQubit = Literal["control", "target"]
+AcStarkSpectroscopyXAxis = Literal["stark_shift", "stark_amplitude"]
 
 
 def _get_source_target(exp: Experiment, target: str) -> Target:
@@ -2261,125 +2264,46 @@ def _normalize_ac_stark_detuning_range(
     return detuning_range
 
 
-def ac_stark_shift_spectroscopy(
-    exp: Experiment,
-    target: str,
+def _normalize_ac_stark_spectroscopy_x_axis(
     *,
-    stark_detuning: float | ArrayLike | None = None,
-    stark_ramptime: float | None = None,
-    stark_amplitude_range: ArrayLike | None = None,
-    stark_shift_model: StarkShiftModel = "duffing",
-    stark_shift_lookup: StarkShiftLookup | None = None,
-    wait_time_range: ArrayLike | None = None,
-    n_shots: int | None = None,
-    shot_interval: float | None = None,
-    plot: bool | None = None,
-    save_image: bool | None = None,
-    **deprecated_options: Any,
-) -> Result:
-    """
-    Sweep Stark-induced qubit-frequency shift and wait time, then plot P1.
-
-    This helper builds a P1(T1)-style Stark spectroscopy map by repeatedly
-    calling :func:`stark_p1_spectroscopy` at each wait time. The horizontal
-    axis is an AC Stark shift from either a theoretical model or an
-    experimentally calibrated lookup table.
-
-    Parameters
-    ----------
-    exp
-        Experiment instance to use for pulse generation and measurements.
-    target
-        Target qubit to characterize.
-    stark_detuning
-        Stark-tone detuning in GHz, defined as drive frequency minus qubit
-        frequency. A scalar produces one signed branch; a 1-D array such as
-        ``[-0.15, 0.15]`` measures both positive and negative shift branches.
-        When omitted, both branches are measured with ``[-0.15, 0.15]``.
-    stark_ramptime
-        Stark-tone ramp time in ns.
-    stark_amplitude_range
-        Sweep range for Stark-tone relative drive amplitude.
-    stark_shift_model
-        Theoretical model used to map Stark amplitude to frequency shift.
-        ``"ideal"`` uses the exact dressed-state two-level formula.
-        ``"duffing"`` uses the perturbative transmon Duffing model with the
-        qubit anharmonicity. ``"experimental"`` uses ``stark_shift_lookup``.
-        Defaults to ``"duffing"``.
-    stark_shift_lookup
-        Experimental amplitude-to-shift lookup table used only with
-        ``stark_shift_model="experimental"``. For multiple detunings, pass
-        either a three-column table ``[stark_detuning, stark_amplitude,
-        ac_stark_shift]`` or a nested dictionary
-        ``{stark_detuning: {stark_amplitude: ac_stark_shift}}``. For a single
-        detuning, a two-column table ``[stark_amplitude, ac_stark_shift]`` or
-        a dictionary ``{stark_amplitude: ac_stark_shift}`` is also accepted.
-        All values are in GHz.
-    wait_time_range
-        Sweep range for Stark-tone flat-top wait time in ns.
-    n_shots
-        Number of shots per sweep point.
-    shot_interval
-        Measurement interval in seconds.
-    plot
-        Whether to render the spectroscopy heatmap.
-    save_image
-        Whether to save the generated figure.
-
-    Returns
-    -------
-    Result
-        Spectroscopy result containing wait times, theoretical shifts, P1 map,
-        raw nested Stark P1 spectroscopy results, and the heatmap figure.
-    """
-    n_shots, shot_interval = resolve_shot_options(
-        n_shots=n_shots,
-        shot_interval=shot_interval,
-        deprecated_options=deprecated_options,
-        function_name="ac_stark_shift_spectroscopy",
-    )
-    if n_shots is None:
-        n_shots = DEFAULT_SHOTS
-    if shot_interval is None:
-        shot_interval = DEFAULT_INTERVAL
-    if plot is None:
-        plot = True
-    if save_image is None:
-        save_image = False
-    if stark_shift_model not in ("ideal", "duffing", "experimental"):
+    stark_shift_model: StarkShiftModel,
+    x_axis: AcStarkSpectroscopyXAxis | None,
+) -> AcStarkSpectroscopyXAxis:
+    if stark_shift_model not in ("ideal", "duffing", "experimental", "amplitude"):
         raise ValueError(
-            "`stark_shift_model` must be 'ideal', 'duffing', or 'experimental'."
+            "`stark_shift_model` must be 'ideal', 'duffing', 'experimental', or 'amplitude'."
+        )
+    if x_axis is None:
+        if stark_shift_model == "amplitude":
+            return "stark_amplitude"
+        return "stark_shift"
+    if x_axis not in ("stark_shift", "stark_amplitude"):
+        raise ValueError("`x_axis` must be 'stark_shift' or 'stark_amplitude'.")
+    if stark_shift_model == "amplitude" and x_axis != "stark_amplitude":
+        raise ValueError(
+            "`stark_shift_model='amplitude'` can only be used with "
+            "`x_axis='stark_amplitude'`."
+        )
+    return x_axis
+
+
+def _resolve_ac_stark_shift_axis(
+    exp: Experiment,
+    *,
+    target: str,
+    stark_shift_model: StarkShiftModel,
+    stark_shift_lookup: StarkShiftLookup | None,
+    detuning_range: np.ndarray,
+    amplitude_range: np.ndarray,
+) -> tuple[np.ndarray, float | None]:
+    if stark_shift_model == "amplitude":
+        raise ValueError(
+            "`stark_shift_model='amplitude'` does not define a shift axis."
         )
     if stark_shift_model != "experimental" and stark_shift_lookup is not None:
         raise ValueError(
             "`stark_shift_lookup` is only used when stark_shift_model='experimental'."
         )
-
-    detuning_range = _normalize_ac_stark_detuning_range(stark_detuning)
-    if stark_amplitude_range is None:
-        stark_amplitude_range = np.linspace(0, 0.1, 51)
-    amplitude_range = np.asarray(stark_amplitude_range, dtype=float)
-    if amplitude_range.ndim != 1:
-        raise ValueError("`stark_amplitude_range` must be a 1-D array.")
-    if len(amplitude_range) == 0:
-        raise ValueError("`stark_amplitude_range` must not be empty.")
-    if np.any(amplitude_range < 0):
-        raise ValueError("`stark_amplitude_range` must contain non-negative values.")
-
-    if wait_time_range is None:
-        wait_time_range = np.arange(0, 20_001, 2_000)
-    sampling_period = exp.ctx.measurement.sampling_period
-    wait_times = np.asarray(
-        exp.ctx.util.discretize_time_range(
-            np.asarray(wait_time_range),
-            sampling_period=sampling_period,
-        ),
-        dtype=int,
-    )
-    if wait_times.ndim != 1:
-        raise ValueError("`wait_time_range` must be a 1-D array.")
-    if len(wait_times) == 0:
-        raise ValueError("`wait_time_range` must not be empty.")
 
     resolved_anharmonicity = (
         _resolve_anharmonicity(
@@ -2409,45 +2333,259 @@ def ac_stark_shift_spectroscopy(
             )
             for detuning in detuning_range
         ]
-    shift_axis = np.concatenate(shift_chunks)
+    return np.concatenate(shift_chunks), resolved_anharmonicity
+
+
+def _prepare_ac_stark_spectroscopy_axes(
+    exp: Experiment,
+    *,
+    target: str,
+    stark_shift_model: StarkShiftModel,
+    stark_shift_lookup: StarkShiftLookup | None,
+    x_axis: AcStarkSpectroscopyXAxis | None,
+    detuning_range: np.ndarray,
+    amplitude_range: np.ndarray,
+) -> dict[str, Any]:
+    resolved_x_axis = _normalize_ac_stark_spectroscopy_x_axis(
+        stark_shift_model=stark_shift_model,
+        x_axis=x_axis,
+    )
     detuning_axis = np.repeat(detuning_range, len(amplitude_range))
     amplitude_axis = np.tile(amplitude_range, len(detuning_range))
-    sort_order = np.argsort(shift_axis, kind="stable")
-    shift_axis = shift_axis[sort_order]
+    resolved_anharmonicity: float | None = None
+
+    if resolved_x_axis == "stark_amplitude":
+        if len(detuning_range) != 1:
+            raise ValueError(
+                "`x_axis='stark_amplitude'` requires a single Stark detuning. "
+                "Pass scalar `stark_detuning`."
+            )
+        return {
+            "x_axis": resolved_x_axis,
+            "x_axis_range": amplitude_range.copy(),
+            "xaxis_title": "Stark amplitude (GHz)",
+            "ac_stark_shift_range": None,
+            "shift_detuning_axis": detuning_axis,
+            "shift_amplitude_axis": amplitude_axis,
+            "sort_order": np.arange(len(amplitude_range)),
+            "axis_mask": np.ones(len(amplitude_range), dtype=bool),
+            "anharmonicity": resolved_anharmonicity,
+        }
+
+    shift_values, resolved_anharmonicity = _resolve_ac_stark_shift_axis(
+        exp,
+        target=target,
+        stark_shift_model=stark_shift_model,
+        stark_shift_lookup=stark_shift_lookup,
+        detuning_range=detuning_range,
+        amplitude_range=amplitude_range,
+    )
+    sort_order = np.argsort(shift_values, kind="stable")
+    shift_axis = shift_values[sort_order]
     detuning_axis = detuning_axis[sort_order]
     amplitude_axis = amplitude_axis[sort_order]
     unique_shift_mask = np.ones(len(shift_axis), dtype=bool)
     unique_shift_mask[1:] = np.diff(shift_axis) != 0
-    shift_axis = shift_axis[unique_shift_mask]
-    detuning_axis = detuning_axis[unique_shift_mask]
-    amplitude_axis = amplitude_axis[unique_shift_mask]
+
+    return {
+        "x_axis": resolved_x_axis,
+        "x_axis_range": shift_axis[unique_shift_mask],
+        "xaxis_title": "AC Stark shift from qubit frequency (GHz)",
+        "ac_stark_shift_range": shift_axis[unique_shift_mask],
+        "shift_detuning_axis": detuning_axis[unique_shift_mask],
+        "shift_amplitude_axis": amplitude_axis[unique_shift_mask],
+        "sort_order": sort_order,
+        "axis_mask": unique_shift_mask,
+        "anharmonicity": resolved_anharmonicity,
+    }
+
+
+def _measure_ac_stark_p1_row(
+    exp: Experiment,
+    *,
+    target: str,
+    detuning_range: np.ndarray,
+    amplitude_range: np.ndarray,
+    stark_ramptime: float | None,
+    wait_time: int,
+    n_shots: int,
+    shot_interval: float,
+    sort_order: np.ndarray,
+    axis_mask: np.ndarray,
+) -> tuple[np.ndarray, dict[float, Result]]:
+    row_by_detuning: dict[float, np.ndarray] = {}
+    raw_row: dict[float, Result] = {}
+    for detuning in detuning_range:
+        result = stark_p1_spectroscopy(
+            exp,
+            target=target,
+            stark_detuning=float(detuning),
+            stark_ramptime=stark_ramptime,
+            stark_amplitude_range=amplitude_range,
+            wait_time=int(wait_time),
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            plot=False,
+            save_image=False,
+        )
+        p1 = np.asarray(result.data["p1"], dtype=float)
+        row_by_detuning[float(detuning)] = p1
+        raw_row[float(detuning)] = result
+
+    row = np.concatenate(
+        [row_by_detuning[float(detuning)] for detuning in detuning_range]
+    )
+    return row[sort_order][axis_mask], raw_row
+
+
+def ac_stark_shift_spectroscopy(
+    exp: Experiment,
+    target: str,
+    *,
+    stark_detuning: float | ArrayLike | None = None,
+    stark_ramptime: float | None = None,
+    stark_amplitude_range: ArrayLike | None = None,
+    stark_shift_model: StarkShiftModel = "duffing",
+    stark_shift_lookup: StarkShiftLookup | None = None,
+    x_axis: AcStarkSpectroscopyXAxis | None = None,
+    wait_time_range: ArrayLike | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
+    plot: bool | None = None,
+    save_image: bool | None = None,
+    **deprecated_options: Any,
+) -> Result:
+    """
+    Sweep Stark-induced qubit-frequency shift and wait time, then plot P1.
+
+    This helper builds a P1(T1)-style Stark spectroscopy map by repeatedly
+    calling :func:`stark_p1_spectroscopy` at each wait time. The horizontal
+    axis is an AC Stark shift from either a theoretical model or an
+    experimentally calibrated lookup table by default. Use
+    ``x_axis="stark_amplitude"`` or ``stark_shift_model="amplitude"`` to plot
+    the applied Stark amplitude directly.
+
+    Parameters
+    ----------
+    exp
+        Experiment instance to use for pulse generation and measurements.
+    target
+        Target qubit to characterize.
+    stark_detuning
+        Stark-tone detuning in GHz, defined as drive frequency minus qubit
+        frequency. A scalar produces one signed branch; a 1-D array such as
+        ``[-0.15, 0.15]`` measures both positive and negative shift branches.
+        When omitted, both branches are measured with ``[-0.15, 0.15]``.
+    stark_ramptime
+        Stark-tone ramp time in ns.
+    stark_amplitude_range
+        Sweep range for Stark-tone relative drive amplitude.
+    stark_shift_model
+        Theoretical model used to map Stark amplitude to frequency shift.
+        ``"ideal"`` uses the exact dressed-state two-level formula.
+        ``"duffing"`` uses the perturbative transmon Duffing model with the
+        qubit anharmonicity. ``"experimental"`` uses ``stark_shift_lookup``.
+        ``"amplitude"`` is a shortcut for plotting ``stark_amplitude_range``
+        directly on the horizontal axis. Defaults to ``"duffing"``.
+    stark_shift_lookup
+        Experimental amplitude-to-shift lookup table used only with
+        ``stark_shift_model="experimental"``. For multiple detunings, pass
+        either a three-column table ``[stark_detuning, stark_amplitude,
+        ac_stark_shift]`` or a nested dictionary
+        ``{stark_detuning: {stark_amplitude: ac_stark_shift}}``. For a single
+        detuning, a two-column table ``[stark_amplitude, ac_stark_shift]`` or
+        a dictionary ``{stark_amplitude: ac_stark_shift}`` is also accepted.
+        All values are in GHz.
+    x_axis
+        Horizontal axis. ``"stark_shift"`` plots the AC Stark shift selected by
+        ``stark_shift_model``. ``"stark_amplitude"`` plots the applied
+        ``stark_amplitude_range`` values directly and requires a single Stark
+        detuning.
+    wait_time_range
+        Sweep range for Stark-tone flat-top wait time in ns.
+    n_shots
+        Number of shots per sweep point.
+    shot_interval
+        Measurement interval in seconds.
+    plot
+        Whether to render the spectroscopy heatmap.
+    save_image
+        Whether to save the generated figure.
+
+    Returns
+    -------
+    Result
+        Spectroscopy result containing wait times, resolved horizontal axis,
+        P1 map, raw nested Stark P1 spectroscopy results, and the heatmap
+        figure.
+    """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="ac_stark_shift_spectroscopy",
+    )
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
+    if plot is None:
+        plot = True
+    if save_image is None:
+        save_image = False
+
+    detuning_range = _normalize_ac_stark_detuning_range(stark_detuning)
+    if stark_amplitude_range is None:
+        stark_amplitude_range = np.linspace(0, 0.1, 51)
+    amplitude_range = np.asarray(stark_amplitude_range, dtype=float)
+    if amplitude_range.ndim != 1:
+        raise ValueError("`stark_amplitude_range` must be a 1-D array.")
+    if len(amplitude_range) == 0:
+        raise ValueError("`stark_amplitude_range` must not be empty.")
+    if np.any(amplitude_range < 0):
+        raise ValueError("`stark_amplitude_range` must contain non-negative values.")
+
+    if wait_time_range is None:
+        wait_time_range = np.arange(0, 20_001, 2_000)
+    sampling_period = exp.ctx.measurement.sampling_period
+    wait_times = np.asarray(
+        exp.ctx.util.discretize_time_range(
+            np.asarray(wait_time_range),
+            sampling_period=sampling_period,
+        ),
+        dtype=int,
+    )
+    if wait_times.ndim != 1:
+        raise ValueError("`wait_time_range` must be a 1-D array.")
+    if len(wait_times) == 0:
+        raise ValueError("`wait_time_range` must not be empty.")
+
+    axes = _prepare_ac_stark_spectroscopy_axes(
+        exp,
+        target=target,
+        stark_shift_model=stark_shift_model,
+        stark_shift_lookup=stark_shift_lookup,
+        x_axis=x_axis,
+        detuning_range=detuning_range,
+        amplitude_range=amplitude_range,
+    )
 
     p1_rows: list[np.ndarray] = []
     raw_results: list[dict[float, Result]] = []
     for wait_time in wait_times:
-        row_by_detuning: dict[float, np.ndarray] = {}
-        raw_row: dict[float, Result] = {}
-        for detuning in detuning_range:
-            result = stark_p1_spectroscopy(
-                exp,
-                target=target,
-                stark_detuning=float(detuning),
-                stark_ramptime=stark_ramptime,
-                stark_amplitude_range=amplitude_range,
-                wait_time=int(wait_time),
-                n_shots=n_shots,
-                shot_interval=shot_interval,
-                plot=False,
-                save_image=False,
-            )
-            p1 = np.asarray(result.data["p1"], dtype=float)
-            row_by_detuning[float(detuning)] = p1
-            raw_row[float(detuning)] = result
-
-        row = np.concatenate(
-            [row_by_detuning[float(detuning)] for detuning in detuning_range]
+        row, raw_row = _measure_ac_stark_p1_row(
+            exp,
+            target=target,
+            detuning_range=detuning_range,
+            amplitude_range=amplitude_range,
+            stark_ramptime=stark_ramptime,
+            wait_time=int(wait_time),
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            sort_order=axes["sort_order"],
+            axis_mask=axes["axis_mask"],
         )
-        p1_rows.append(row[sort_order][unique_shift_mask])
+        p1_rows.append(row)
         raw_results.append(raw_row)
 
     p1_map = np.vstack(p1_rows)
@@ -2456,7 +2594,7 @@ def ac_stark_shift_spectroscopy(
     fig = go.Figure()
     fig.add_trace(
         go.Heatmap(
-            x=shift_axis,
+            x=axes["x_axis_range"],
             y=wait_time_us,
             z=p1_map,
             zmin=0,
@@ -2467,7 +2605,7 @@ def ac_stark_shift_spectroscopy(
     )
     fig.update_layout(
         title="Stark P1(T1) spectroscopy",
-        xaxis_title="AC Stark shift from qubit frequency (GHz)",
+        xaxis_title=axes["xaxis_title"],
         yaxis_title="Wait Time (μs)",
     )
 
@@ -2483,12 +2621,226 @@ def ac_stark_shift_spectroscopy(
             "stark_amplitude_range": amplitude_range,
             "stark_shift_model": stark_shift_model,
             "stark_shift_lookup": stark_shift_lookup,
-            "anharmonicity": resolved_anharmonicity,
-            "ac_stark_shift_range": shift_axis,
-            "shift_detuning_axis": detuning_axis,
-            "shift_amplitude_axis": amplitude_axis,
+            "x_axis": axes["x_axis"],
+            "x_axis_range": axes["x_axis_range"],
+            "anharmonicity": axes["anharmonicity"],
+            "ac_stark_shift_range": axes["ac_stark_shift_range"],
+            "shift_detuning_axis": axes["shift_detuning_axis"],
+            "shift_amplitude_axis": axes["shift_amplitude_axis"],
             "wait_time_range": wait_times,
             "wait_time_us": wait_time_us,
+            "p1": p1_map,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
+            "fig": fig,
+        },
+        figure=fig,
+    )
+
+
+def ac_stark_shift_spectroscopy_over_time(
+    exp: Experiment,
+    target: str,
+    *,
+    stark_detuning: float | ArrayLike | None = None,
+    stark_ramptime: float | None = None,
+    stark_amplitude_range: ArrayLike | None = None,
+    stark_shift_model: StarkShiftModel = "duffing",
+    stark_shift_lookup: StarkShiftLookup | None = None,
+    x_axis: AcStarkSpectroscopyXAxis | None = None,
+    wait_time: int | None = None,
+    n_iterations: int | None = None,
+    n_shots: int | None = None,
+    shot_interval: float | None = None,
+    plot: bool | None = None,
+    save_image: bool | None = None,
+    **deprecated_options: Any,
+) -> Result:
+    """
+    Repeat fixed-wait AC Stark spectroscopy and plot P1 drift by iteration.
+
+    Unlike :func:`ac_stark_shift_spectroscopy`, this helper keeps
+    ``wait_time`` fixed and repeats the same Stark-amplitude sweep. With one
+    iteration it returns a P1 line plot. With multiple iterations it stacks P1
+    rows into a heatmap whose vertical axis is the iteration number.
+
+    Parameters
+    ----------
+    exp
+        Experiment instance to use for pulse generation and measurements.
+    target
+        Target qubit to characterize.
+    stark_detuning
+        Stark-tone detuning in GHz. ``x_axis="stark_amplitude"`` requires a
+        scalar detuning.
+    stark_ramptime
+        Stark-tone ramp time in ns.
+    stark_amplitude_range
+        Sweep range for Stark-tone relative drive amplitude.
+    stark_shift_model
+        Horizontal-axis shift model. Use ``"amplitude"`` as a shortcut for
+        ``x_axis="stark_amplitude"``.
+    stark_shift_lookup
+        Experimental amplitude-to-shift lookup table used with
+        ``stark_shift_model="experimental"``.
+    x_axis
+        Horizontal axis. ``"stark_shift"`` plots an AC Stark shift, and
+        ``"stark_amplitude"`` plots the applied Stark amplitudes directly.
+    wait_time
+        Fixed Stark-tone flat-top wait time in ns. When omitted, half of the
+        stored T1 is used, matching :func:`stark_p1_spectroscopy`.
+    n_iterations
+        Number of repeated spectroscopy measurements.
+    n_shots
+        Number of shots per sweep point.
+    shot_interval
+        Measurement interval in seconds.
+    plot
+        Whether to render the generated figure.
+    save_image
+        Whether to save the generated figure.
+
+    Returns
+    -------
+    Result
+        Result containing repeated P1 data, elapsed experiment times, raw
+        nested Stark P1 spectroscopy results, and the generated figure.
+    """
+    n_shots, shot_interval = resolve_shot_options(
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        deprecated_options=deprecated_options,
+        function_name="ac_stark_shift_spectroscopy_over_time",
+    )
+    if n_iterations is None:
+        n_iterations = 1
+    if n_iterations < 1:
+        raise ValueError("`n_iterations` must be at least 1.")
+    if n_shots is None:
+        n_shots = DEFAULT_SHOTS
+    if shot_interval is None:
+        shot_interval = DEFAULT_INTERVAL
+    if plot is None:
+        plot = True
+    if save_image is None:
+        save_image = False
+
+    detuning_range = _normalize_ac_stark_detuning_range(stark_detuning)
+    if stark_amplitude_range is None:
+        stark_amplitude_range = np.linspace(0, 0.1, 51)
+    amplitude_range = np.asarray(stark_amplitude_range, dtype=float)
+    if amplitude_range.ndim != 1:
+        raise ValueError("`stark_amplitude_range` must be a 1-D array.")
+    if len(amplitude_range) == 0:
+        raise ValueError("`stark_amplitude_range` must not be empty.")
+    if np.any(amplitude_range < 0):
+        raise ValueError("`stark_amplitude_range` must contain non-negative values.")
+
+    resolved_wait_time = _resolve_wait_time(
+        exp,
+        target=target,
+        wait_time=wait_time,
+    )
+    axes = _prepare_ac_stark_spectroscopy_axes(
+        exp,
+        target=target,
+        stark_shift_model=stark_shift_model,
+        stark_shift_lookup=stark_shift_lookup,
+        x_axis=x_axis,
+        detuning_range=detuning_range,
+        amplitude_range=amplitude_range,
+    )
+
+    p1_rows: list[np.ndarray] = []
+    raw_results: list[dict[float, Result]] = []
+    started_at: list[str] = []
+    finished_at: list[str] = []
+    elapsed_time_s: list[float] = []
+    start_clock = time.perf_counter()
+    for _ in range(n_iterations):
+        started_at.append(datetime.now(timezone.utc).isoformat())
+        elapsed_time_s.append(time.perf_counter() - start_clock)
+        row, raw_row = _measure_ac_stark_p1_row(
+            exp,
+            target=target,
+            detuning_range=detuning_range,
+            amplitude_range=amplitude_range,
+            stark_ramptime=stark_ramptime,
+            wait_time=resolved_wait_time,
+            n_shots=n_shots,
+            shot_interval=shot_interval,
+            sort_order=axes["sort_order"],
+            axis_mask=axes["axis_mask"],
+        )
+        finished_at.append(datetime.now(timezone.utc).isoformat())
+        p1_rows.append(row)
+        raw_results.append(raw_row)
+
+    p1_map = np.vstack(p1_rows)
+    iteration_range = np.arange(1, n_iterations + 1)
+    elapsed_time_s_array = np.asarray(elapsed_time_s, dtype=float)
+    elapsed_time_min = elapsed_time_s_array / 60
+
+    fig = go.Figure()
+    if n_iterations == 1:
+        fig.add_scatter(
+            name="P1",
+            x=axes["x_axis_range"],
+            y=p1_map[0],
+            mode="lines+markers",
+        )
+        fig.update_layout(
+            title="Stark P1 spectroscopy",
+            xaxis_title=axes["xaxis_title"],
+            yaxis_title="P1",
+            yaxis_range=[0, 1],
+            showlegend=True,
+        )
+    else:
+        fig.add_trace(
+            go.Heatmap(
+                x=axes["x_axis_range"],
+                y=iteration_range,
+                z=p1_map,
+                zmin=0,
+                zmax=1,
+                colorscale="RdBu_r",
+                colorbar=dict(title="P1"),
+            )
+        )
+        fig.update_layout(
+            title="Repeated Stark P1 spectroscopy",
+            xaxis_title=axes["xaxis_title"],
+            yaxis_title="Iteration",
+        )
+
+    if plot:
+        fig.show()
+    if save_image:
+        viz.save_figure(
+            fig,
+            name=f"ac_stark_shift_spectroscopy_over_time_{target}",
+        )
+
+    return Result(
+        data={
+            "raw_result": raw_results,
+            "stark_detuning_range": detuning_range,
+            "stark_amplitude_range": amplitude_range,
+            "stark_shift_model": stark_shift_model,
+            "stark_shift_lookup": stark_shift_lookup,
+            "x_axis": axes["x_axis"],
+            "x_axis_range": axes["x_axis_range"],
+            "anharmonicity": axes["anharmonicity"],
+            "ac_stark_shift_range": axes["ac_stark_shift_range"],
+            "shift_detuning_axis": axes["shift_detuning_axis"],
+            "shift_amplitude_axis": axes["shift_amplitude_axis"],
+            "wait_time": resolved_wait_time,
+            "n_iterations": n_iterations,
+            "iteration_range": iteration_range,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "elapsed_time_s": elapsed_time_s_array,
+            "elapsed_time_min": elapsed_time_min,
             "p1": p1_map,
             # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,

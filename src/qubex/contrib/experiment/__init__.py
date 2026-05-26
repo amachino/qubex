@@ -77,6 +77,7 @@ from .simultaneous_coherence_measurement import simultaneous_coherence_measureme
 from .simultaneous_qubit_spectroscopy import simultaneous_qubit_spectroscopy
 from .stark_characterization import (
     ac_stark_shift_spectroscopy,
+    ac_stark_shift_spectroscopy_over_time,
     calibrate_stark_default_pulse,
     calibrate_stark_drag_amplitude,
     calibrate_stark_drag_beta,
@@ -134,6 +135,7 @@ from .thermal_excitation_characterization import (
 
 __all__ = [
     "ac_stark_shift_spectroscopy",
+    "ac_stark_shift_spectroscopy_over_time",
     "analyze_chevron_matched_transform",
     "calibrate_cr_pi_pulse",
     "calibrate_gf_hpi_pulse",
