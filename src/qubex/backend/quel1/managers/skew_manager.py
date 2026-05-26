@@ -127,8 +127,6 @@ class Quel1SkewManager:
 
             common_wait = min(adjusted_waits.values())
             setting["wait"] = common_wait
-            for port in port_wait:
-                port_wait[port] = 0
             for port, adjusted_wait in adjusted_waits.items():
                 port_wait[port] = adjusted_wait - common_wait
 

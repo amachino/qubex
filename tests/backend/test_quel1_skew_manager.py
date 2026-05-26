@@ -398,7 +398,7 @@ time_to_start: 0
     }
     assert payload["box_setting"]["A"]["port_wait"] == {1: 0}
     assert payload["box_setting"]["B"]["wait"] == 9
-    assert payload["box_setting"]["B"]["port_wait"] == {8: 7, 9: 0, 10: 0}
+    assert payload["box_setting"]["B"]["port_wait"] == {8: 7, 9: 0, 10: 7}
     assert backup_payload["box_setting"]["A"]["port_wait"] == {1: 0}
     assert backup_payload["box_setting"]["B"]["wait"] == 5
     assert backup_payload["box_setting"]["B"]["port_wait"] == {8: 1, 9: 4, 10: 7}

@@ -215,7 +215,7 @@ result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 
 `exp.tool.update_skew(target, ...)` shifts each measured effective wait by
 `target - measured_idx` based on the previous `check_skew(...)` result, then
-writes the box-common part to `wait` and per-port residuals to `port_wait`.
+writes the box-common part to `wait` and measured-port residuals to `port_wait`.
 Set `backup=True` when you want to save the previous file as a timestamped
 backup such as `skew.yaml.bak.20260520_124900`.
 
