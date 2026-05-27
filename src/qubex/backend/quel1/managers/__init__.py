@@ -4,6 +4,7 @@ from .clock_manager import Quel1ClockManager
 from .configuration_manager import Quel1ConfigurationManager
 from .connection_manager import Quel1ConnectionManager
 from .continuous_wave_manager import (
+    Quel1ContinuousWaveChannelSpec,
     Quel1ContinuousWaveConfig,
     Quel1ContinuousWaveManager,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "Quel1ClockManager",
     "Quel1ConfigurationManager",
     "Quel1ConnectionManager",
+    "Quel1ContinuousWaveChannelSpec",
     "Quel1ContinuousWaveConfig",
     "Quel1ContinuousWaveManager",
     "Quel1ExecutionManager",

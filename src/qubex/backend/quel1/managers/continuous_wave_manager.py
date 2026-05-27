@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final, TypeAlias
 
@@ -31,7 +32,21 @@ CONTINUOUS_WAVE_ALIAS_WARNING_THRESHOLD_HZ: Final[float] = 800_000_000.0
 
 logger = logging.getLogger(__name__)
 
-ContinuousWaveKey: TypeAlias = tuple[str, Any, int]
+ContinuousWaveKey: TypeAlias = tuple[str, Any]
+
+
+@dataclass(frozen=True)
+class Quel1ContinuousWaveChannelSpec:
+    """Per-channel settings for one QuEL-1 continuous-wave output."""
+
+    channel: int
+    amplitude: float = 1.0
+    phase_rad: float = 0.0
+    fnco_freq_hz: float | None = None
+    awg_freq_hz: float | None = None
+
+
+ContinuousWaveSpecInput: TypeAlias = Quel1ContinuousWaveChannelSpec | Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -65,7 +80,9 @@ class Quel1ContinuousWaveManager:
 
     def __init__(self, *, runtime_context: Quel1RuntimeContextReader) -> None:
         self._runtime_context = runtime_context
-        self._configs: dict[ContinuousWaveKey, Quel1ContinuousWaveConfig] = {}
+        self._configs: dict[
+            ContinuousWaveKey, tuple[Quel1ContinuousWaveConfig, ...]
+        ] = {}
         self._tasks: dict[ContinuousWaveKey, Any] = {}
 
     def start_continuous_wave(
@@ -134,91 +151,186 @@ class Quel1ContinuousWaveManager:
         Quel1ContinuousWaveConfig
             Resolved continuous-wave configuration.
         """
+        configs = self.start_continuous_waves(
+            box_name=box_name,
+            port=port,
+            waves=[
+                Quel1ContinuousWaveChannelSpec(
+                    channel=channel,
+                    amplitude=amplitude,
+                    phase_rad=phase_rad,
+                    fnco_freq_hz=fnco_freq_hz,
+                    awg_freq_hz=awg_freq_hz,
+                )
+            ],
+            lo_freq_hz=lo_freq_hz,
+            cnco_freq_hz=cnco_freq_hz,
+            sideband=sideband,
+            vatt=vatt,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+            configure_port=configure_port,
+            chunk_repeats=chunk_repeats,
+            awg_repeats=awg_repeats,
+        )
+        return configs[0]
+
+    def start_continuous_waves(
+        self,
+        *,
+        box_name: str,
+        port: PortType,
+        waves: Sequence[ContinuousWaveSpecInput],
+        lo_freq_hz: float | None = None,
+        cnco_freq_hz: float | None = None,
+        sideband: str | None = None,
+        vatt: int | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+        configure_port: bool = False,
+        chunk_repeats: int = MAX_CONTINUOUS_WAVE_REPEAT,
+        awg_repeats: int = MAX_CONTINUOUS_WAVE_REPEAT,
+    ) -> tuple[Quel1ContinuousWaveConfig, ...]:
+        """
+        Configure and start one port-scoped continuous-wave AWG group.
+
+        Parameters
+        ----------
+        box_name : str
+            Connected QuEL-1 box name.
+        port : PortType
+            Output port identifier.
+        waves : Sequence[ContinuousWaveSpecInput]
+            Per-channel CW settings. All channels are configured before one
+            `start_wavegen()` call starts the group.
+        lo_freq_hz : float | None, optional
+            LO frequency to apply when `configure_port=True`.
+        cnco_freq_hz : float | None, optional
+            CNCO frequency to apply when `configure_port=True`.
+        sideband : str | None, optional
+            Sideband setting to apply when `configure_port=True`.
+        vatt : int | None, optional
+            VATT setting to apply when `configure_port=True`.
+        fullscale_current : int | None, optional
+            Full-scale current setting to apply when `configure_port=True`.
+        rfswitch : str | None, optional
+            RF switch setting to apply when `configure_port=True`.
+        configure_port : bool, optional
+            Whether to update output path settings before starting the AWG.
+            The default preserves current hardware output and phase state.
+        chunk_repeats : int, optional
+            Repeat count for each generated 128 ns chunk.
+        awg_repeats : int, optional
+            Repeat count for each AWG sequence.
+
+        Returns
+        -------
+        tuple[Quel1ContinuousWaveConfig, ...]
+            Resolved continuous-wave configurations in input order.
+        """
+        specs = self._normalize_wave_specs(waves)
+        has_fnco_freq_hz = any(spec.fnco_freq_hz is not None for spec in specs)
         self._validate_output_update_options(
             configure_port=configure_port,
             lo_freq_hz=lo_freq_hz,
             cnco_freq_hz=cnco_freq_hz,
-            fnco_freq_hz=fnco_freq_hz,
+            fnco_freq_hz=0.0 if has_fnco_freq_hz else None,
             sideband=sideband,
             vatt=vatt,
             fullscale_current=fullscale_current,
             rfswitch=rfswitch,
         )
-        key = self._key(box_name=box_name, port=port, channel=channel)
+        key = self._key(box_name=box_name, port=port)
         task = self._tasks.get(key)
         if task is not None and self._is_task_active(task):
             raise RuntimeError(
-                f"Continuous wave is already running on box={box_name}, "
-                f"port={port}, channel={channel}."
+                f"Continuous wave is already running on box={box_name}, port={port}."
             )
 
-        requested_awg_freq_hz = 0.0 if awg_freq_hz is None else float(awg_freq_hz)
-        cycles_per_chunk, actual_awg_freq_hz = self._awg_frequency_to_chunk_cycles(
-            requested_awg_freq_hz
-        )
-        iq = self._make_iq_chunk(
-            cycles_per_chunk=cycles_per_chunk,
-            amplitude=amplitude,
-            phase_rad=phase_rad,
-        )
-        waveform_name = self._waveform_name(
-            box_name=box_name,
-            port=port,
-            channel=channel,
-            cycles_per_chunk=cycles_per_chunk,
-        )
+        wave_artifacts = []
+        for spec in specs:
+            requested_awg_freq_hz = (
+                0.0 if spec.awg_freq_hz is None else float(spec.awg_freq_hz)
+            )
+            cycles_per_chunk, actual_awg_freq_hz = self._awg_frequency_to_chunk_cycles(
+                requested_awg_freq_hz
+            )
+            iq = self._make_iq_chunk(
+                cycles_per_chunk=cycles_per_chunk,
+                amplitude=spec.amplitude,
+                phase_rad=spec.phase_rad,
+            )
+            waveform_name = self._waveform_name(
+                box_name=box_name,
+                port=port,
+                channel=spec.channel,
+                cycles_per_chunk=cycles_per_chunk,
+            )
+            wave_artifacts.append(
+                (spec, cycles_per_chunk, actual_awg_freq_hz, iq, waveform_name)
+            )
         box = self._resolve_connected_box(box_name)
-        (
-            resolved_lo_freq_hz,
-            resolved_cnco_freq_hz,
-            resolved_fnco_freq_hz,
-            resolved_sideband,
-            resolved_vatt,
-            resolved_fullscale_current,
-            resolved_rfswitch,
-        ) = self._resolve_output_frequencies(
-            box=box,
-            port=port,
-            channel=int(channel),
-            configure_port=configure_port,
-            lo_freq_hz=lo_freq_hz,
-            cnco_freq_hz=cnco_freq_hz,
-            fnco_freq_hz=fnco_freq_hz,
-            sideband=sideband,
-            vatt=vatt,
-            fullscale_current=fullscale_current,
-            rfswitch=rfswitch,
-        )
-        config = Quel1ContinuousWaveConfig(
-            box_name=box_name,
-            port=port,
-            channel=int(channel),
-            awg_freq_hz=actual_awg_freq_hz,
-            cycles_per_chunk=cycles_per_chunk,
-            amplitude=float(amplitude),
-            phase_rad=float(phase_rad),
-            lo_freq_hz=resolved_lo_freq_hz,
-            cnco_freq_hz=resolved_cnco_freq_hz,
-            fnco_freq_hz=resolved_fnco_freq_hz,
-            actual_output_freq_hz=self._resolve_actual_output_frequency_hz(
-                lo_freq_hz=resolved_lo_freq_hz,
-                cnco_freq_hz=resolved_cnco_freq_hz,
-                fnco_freq_hz=resolved_fnco_freq_hz,
-                awg_freq_hz=actual_awg_freq_hz,
-                sideband=resolved_sideband,
-            ),
-            sideband=resolved_sideband,
-            vatt=resolved_vatt,
-            fullscale_current=resolved_fullscale_current,
-            rfswitch=resolved_rfswitch,
-            configure_port=configure_port,
-            waveform_name=waveform_name,
-            chunk_repeats=int(chunk_repeats),
-            awg_repeats=int(awg_repeats),
-            duration_s=(BLOCK_DURATION_NS * 1e-9)
-            * int(chunk_repeats)
-            * int(awg_repeats),
-        )
+        configs: list[Quel1ContinuousWaveConfig] = []
+        for (
+            spec,
+            cycles_per_chunk,
+            actual_awg_freq_hz,
+            _iq,
+            waveform_name,
+        ) in wave_artifacts:
+            (
+                resolved_lo_freq_hz,
+                resolved_cnco_freq_hz,
+                resolved_fnco_freq_hz,
+                resolved_sideband,
+                resolved_vatt,
+                resolved_fullscale_current,
+                resolved_rfswitch,
+            ) = self._resolve_output_frequencies(
+                box=box,
+                port=port,
+                channel=spec.channel,
+                configure_port=configure_port,
+                lo_freq_hz=lo_freq_hz,
+                cnco_freq_hz=cnco_freq_hz,
+                fnco_freq_hz=spec.fnco_freq_hz,
+                sideband=sideband,
+                vatt=vatt,
+                fullscale_current=fullscale_current,
+                rfswitch=rfswitch,
+            )
+            configs.append(
+                Quel1ContinuousWaveConfig(
+                    box_name=box_name,
+                    port=port,
+                    channel=spec.channel,
+                    awg_freq_hz=actual_awg_freq_hz,
+                    cycles_per_chunk=cycles_per_chunk,
+                    amplitude=float(spec.amplitude),
+                    phase_rad=float(spec.phase_rad),
+                    lo_freq_hz=resolved_lo_freq_hz,
+                    cnco_freq_hz=resolved_cnco_freq_hz,
+                    fnco_freq_hz=resolved_fnco_freq_hz,
+                    actual_output_freq_hz=self._resolve_actual_output_frequency_hz(
+                        lo_freq_hz=resolved_lo_freq_hz,
+                        cnco_freq_hz=resolved_cnco_freq_hz,
+                        fnco_freq_hz=resolved_fnco_freq_hz,
+                        awg_freq_hz=actual_awg_freq_hz,
+                        sideband=resolved_sideband,
+                    ),
+                    sideband=resolved_sideband,
+                    vatt=resolved_vatt,
+                    fullscale_current=resolved_fullscale_current,
+                    rfswitch=resolved_rfswitch,
+                    configure_port=configure_port,
+                    waveform_name=waveform_name,
+                    chunk_repeats=int(chunk_repeats),
+                    awg_repeats=int(awg_repeats),
+                    duration_s=(BLOCK_DURATION_NS * 1e-9)
+                    * int(chunk_repeats)
+                    * int(awg_repeats),
+                )
+            )
 
         config_port_kwargs = self._build_config_port_kwargs(
             port=port,
@@ -232,44 +344,48 @@ class Quel1ContinuousWaveManager:
         )
         if config_port_kwargs is not None:
             box.config_port(**config_port_kwargs)
-        box.register_wavedata(
-            port=port,
-            channel=int(channel),
-            name=waveform_name,
-            iq=iq,
-            allow_update=True,
-        )
+        for spec, _cycles, _actual_awg_freq_hz, iq, waveform_name in wave_artifacts:
+            box.register_wavedata(
+                port=port,
+                channel=spec.channel,
+                name=waveform_name,
+                iq=iq,
+                allow_update=True,
+            )
 
-        awg_param = self._build_awg_param(
-            waveform_name=waveform_name,
-            chunk_repeats=int(chunk_repeats),
-            awg_repeats=int(awg_repeats),
-        )
-        config_channel_kwargs: dict[str, Any] = {
-            "port": port,
-            "channel": int(channel),
-            "awg_param": awg_param,
-        }
-        if configure_port and fnco_freq_hz is not None:
-            config_channel_kwargs["fnco_freq"] = fnco_freq_hz
-        box.config_channel(**config_channel_kwargs)
+        for spec, _cycles, _actual_awg_freq_hz, _iq, waveform_name in wave_artifacts:
+            awg_param = self._build_awg_param(
+                waveform_name=waveform_name,
+                chunk_repeats=int(chunk_repeats),
+                awg_repeats=int(awg_repeats),
+            )
+            config_channel_kwargs: dict[str, Any] = {
+                "port": port,
+                "channel": spec.channel,
+                "awg_param": awg_param,
+            }
+            if configure_port and spec.fnco_freq_hz is not None:
+                config_channel_kwargs["fnco_freq"] = spec.fnco_freq_hz
+            box.config_channel(**config_channel_kwargs)
 
         task = box.start_wavegen(
-            {(port, int(channel))},
+            {(port, spec.channel) for spec in specs},
             disable_timeout=True,
             return_after_start_emission=True,
         )
-        self._configs[key] = config
+        config_tuple = tuple(configs)
+        self._configs[key] = config_tuple
         self._tasks[key] = task
-        self._log_started_frequencies(config)
-        return config
+        for config in config_tuple:
+            self._log_started_frequencies(config)
+        return config_tuple
 
     def stop_continuous_wave(
         self,
         *,
         box_name: str,
         port: PortType,
-        channel: int,
+        channel: int | None = None,
         timeout: float = 2.0,
         polling_period: float = 0.01,
     ) -> bool:
@@ -282,10 +398,23 @@ class Quel1ContinuousWaveManager:
             `True` when a remembered task was stopped or cleared, otherwise
             `False`.
         """
-        key = self._key(box_name=box_name, port=port, channel=channel)
+        key = self._key(box_name=box_name, port=port)
         task = self._tasks.get(key)
         if task is None:
             return False
+        if channel is not None:
+            active_channels = {config.channel for config in self._configs.get(key, ())}
+            requested_channel = int(channel)
+            if len(active_channels) > 1:
+                raise RuntimeError(
+                    f"Continuous wave on box={box_name}, port={port} "
+                    "contains multiple channels; omit channel to stop the port group."
+                )
+            if active_channels and requested_channel not in active_channels:
+                raise RuntimeError(
+                    f"Continuous wave on box={box_name}, port={port} "
+                    f"does not include channel={requested_channel}."
+                )
         try:
             if self._is_task_active(task):
                 self._cancel_task(
@@ -305,11 +434,10 @@ class Quel1ContinuousWaveManager:
         polling_period: float = 0.01,
     ) -> None:
         """Stop all remembered continuous-wave outputs."""
-        for box_name, port, channel in list(self._tasks):
+        for box_name, port in list(self._tasks):
             self.stop_continuous_wave(
                 box_name=box_name,
                 port=port,
-                channel=channel,
                 timeout=timeout,
                 polling_period=polling_period,
             )
@@ -350,10 +478,56 @@ class Quel1ContinuousWaveManager:
         *,
         box_name: str,
         port: PortType,
-        channel: int,
     ) -> ContinuousWaveKey:
         """Return normalized state key."""
-        return (box_name, port, int(channel))
+        return (box_name, port)
+
+    @classmethod
+    def _normalize_wave_specs(
+        cls,
+        waves: Sequence[ContinuousWaveSpecInput],
+    ) -> tuple[Quel1ContinuousWaveChannelSpec, ...]:
+        """Return validated CW wave specs in input order."""
+        specs = tuple(cls._coerce_wave_spec(wave) for wave in waves)
+        if not specs:
+            raise ValueError("waves must contain at least one channel spec.")
+        channels = [spec.channel for spec in specs]
+        duplicate_channels = sorted(
+            {channel for channel in channels if channels.count(channel) > 1}
+        )
+        if duplicate_channels:
+            raise ValueError(
+                f"waves must not contain duplicate channels: {duplicate_channels}."
+            )
+        return specs
+
+    @classmethod
+    def _coerce_wave_spec(
+        cls,
+        wave: ContinuousWaveSpecInput,
+    ) -> Quel1ContinuousWaveChannelSpec:
+        """Return one structured CW wave spec."""
+        if isinstance(wave, Quel1ContinuousWaveChannelSpec):
+            return wave
+        if not isinstance(wave, Mapping):
+            raise TypeError(
+                "Each wave must be a Quel1ContinuousWaveChannelSpec or mapping."
+            )
+        if "channel" not in wave:
+            raise ValueError("Each wave mapping must include `channel`.")
+        return Quel1ContinuousWaveChannelSpec(
+            channel=cls._as_int(wave["channel"], name="channel"),
+            amplitude=cls._as_float(wave.get("amplitude", 1.0), name="amplitude"),
+            phase_rad=cls._as_float(wave.get("phase_rad", 0.0), name="phase_rad"),
+            fnco_freq_hz=cls._as_optional_float_strict(
+                wave.get("fnco_freq_hz"),
+                name="fnco_freq_hz",
+            ),
+            awg_freq_hz=cls._as_optional_float_strict(
+                wave.get("awg_freq_hz"),
+                name="awg_freq_hz",
+            ),
+        )
 
     def _resolve_connected_box(self, box_name: str) -> Any:
         """Return connected box through the compatibility adapter."""
@@ -544,6 +718,29 @@ class Quel1ContinuousWaveManager:
         if channel_dump is None:
             channel_dump = channels.get(str(channel))
         return channel_dump if isinstance(channel_dump, dict) else None
+
+    @staticmethod
+    def _as_int(value: Any, *, name: str) -> int:
+        """Return one required integer value."""
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise TypeError(f"{name} must be an integer.") from None
+
+    @staticmethod
+    def _as_float(value: Any, *, name: str) -> float:
+        """Return one required numeric value as float."""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise TypeError(f"{name} must be numeric.") from None
+
+    @classmethod
+    def _as_optional_float_strict(cls, value: Any, *, name: str) -> float | None:
+        """Return one optional numeric value as float."""
+        if value is None:
+            return None
+        return cls._as_float(value, name=name)
 
     @staticmethod
     def _as_optional_float(value: Any) -> float | None:

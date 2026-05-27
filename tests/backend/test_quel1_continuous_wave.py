@@ -11,6 +11,9 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from qubex.backend.quel1.managers.continuous_wave_manager import (
+    Quel1ContinuousWaveChannelSpec,
+)
 from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
 
 
@@ -321,6 +324,87 @@ def test_start_continuous_wave_rejects_duplicate_active_channel() -> None:
         )
 
 
+def test_start_continuous_wave_rejects_same_port_second_channel() -> None:
+    """Given active CW on a port, starting another channel on that port raises."""
+    box = _FakeBox()
+    controller = _make_connected_controller(box)
+
+    controller.start_continuous_wave(
+        box_name="A",
+        port=2,
+        channel=0,
+        awg_freq_hz=0.0,
+    )
+
+    with pytest.raises(RuntimeError, match="already running"):
+        controller.start_continuous_wave(
+            box_name="A",
+            port=2,
+            channel=1,
+            awg_freq_hz=0.0,
+        )
+
+
+def test_start_continuous_waves_starts_all_channels_in_one_wavegen() -> None:
+    """Given multi-channel CW specs, start configures channels before one start."""
+    box = _FakeBox()
+    controller = _make_connected_controller(box)
+
+    configs = controller.start_continuous_waves(
+        box_name="A",
+        port=2,
+        waves=[
+            Quel1ContinuousWaveChannelSpec(
+                channel=0,
+                awg_freq_hz=0.0,
+                amplitude=0.25,
+                fnco_freq_hz=100_000_000,
+            ),
+            {
+                "channel": 1,
+                "awg_freq_hz": 7_812_500.0 * 4,
+                "phase_rad": 0.5,
+                "fnco_freq_hz": 200_000_000,
+            },
+        ],
+        configure_port=True,
+        lo_freq_hz=10_500_000_000,
+        cnco_freq_hz=2_250_000_000,
+        sideband="U",
+        rfswitch="pass",
+    )
+
+    assert [config.channel for config in configs] == [0, 1]
+    assert [config.awg_freq_hz for config in configs] == [
+        pytest.approx(0.0),
+        pytest.approx(31_250_000.0),
+    ]
+    assert [config.actual_output_freq_hz for config in configs] == [
+        pytest.approx(12_850_000_000.0),
+        pytest.approx(12_981_250_000.0),
+    ]
+    assert box.config_port_calls == [
+        {
+            "port": 2,
+            "lo_freq": 10_500_000_000,
+            "cnco_freq": 2_250_000_000,
+            "sideband": "U",
+            "rfswitch": "pass",
+        }
+    ]
+    assert [call["channel"] for call in box.register_wavedata_calls] == [0, 1]
+    assert [
+        (call["channel"], call["fnco_freq"]) for call in box.config_channel_calls
+    ] == [(0, 100_000_000), (1, 200_000_000)]
+    assert box.start_wavegen_calls == [
+        {
+            "channels": {(2, 0), (2, 1)},
+            "disable_timeout": True,
+            "return_after_start_emission": True,
+        }
+    ]
+
+
 def test_stop_continuous_wave_cancels_active_task_and_forgets_it() -> None:
     """Given active CW, stop cancels the wavegen task and clears state."""
     box = _FakeBox()
@@ -337,7 +421,6 @@ def test_stop_continuous_wave_cancels_active_task_and_forgets_it() -> None:
         controller.stop_continuous_wave(
             box_name="A",
             port=2,
-            channel=0,
             timeout=3.0,
             polling_period=0.02,
         )
@@ -349,14 +432,83 @@ def test_stop_continuous_wave_cancels_active_task_and_forgets_it() -> None:
         controller.stop_continuous_wave(
             box_name="A",
             port=2,
-            channel=0,
         )
         is False
     )
 
 
-def test_stop_all_continuous_waves_cancels_every_active_task() -> None:
-    """Given multiple active CW channels, stop all cancels each task."""
+def test_stop_continuous_wave_accepts_legacy_channel_argument() -> None:
+    """Given legacy channel stop call, stop still cancels the port CW task."""
+    box = _FakeBox()
+    controller = _make_connected_controller(box)
+    controller.start_continuous_wave(
+        box_name="A",
+        port=2,
+        channel=0,
+        awg_freq_hz=0.0,
+    )
+    task = box.tasks[0]
+
+    assert (
+        controller.stop_continuous_wave(
+            box_name="A",
+            port=2,
+            channel=0,
+        )
+        is True
+    )
+
+    assert task.cancel_calls == [{"timeout": 2.0, "polling_period": 0.01}]
+
+
+def test_stop_continuous_wave_rejects_wrong_legacy_channel() -> None:
+    """Given mismatched legacy channel stop call, stop raises without cancelling."""
+    box = _FakeBox()
+    controller = _make_connected_controller(box)
+    controller.start_continuous_wave(
+        box_name="A",
+        port=2,
+        channel=0,
+        awg_freq_hz=0.0,
+    )
+    task = box.tasks[0]
+
+    with pytest.raises(RuntimeError, match="does not include channel=1"):
+        controller.stop_continuous_wave(
+            box_name="A",
+            port=2,
+            channel=1,
+        )
+
+    assert task.cancel_calls == []
+
+
+def test_stop_continuous_wave_rejects_legacy_channel_for_multi_channel_group() -> None:
+    """Given multi-channel CW group, channel-qualified stop raises."""
+    box = _FakeBox()
+    controller = _make_connected_controller(box)
+    controller.start_continuous_waves(
+        box_name="A",
+        port=2,
+        waves=[
+            {"channel": 0, "awg_freq_hz": 0.0},
+            {"channel": 1, "awg_freq_hz": 0.0},
+        ],
+    )
+    task = box.tasks[0]
+
+    with pytest.raises(RuntimeError, match="omit channel"):
+        controller.stop_continuous_wave(
+            box_name="A",
+            port=2,
+            channel=0,
+        )
+
+    assert task.cancel_calls == []
+
+
+def test_stop_all_continuous_waves_cancels_every_active_port_task() -> None:
+    """Given active CW on multiple ports, stop all cancels each task."""
     box = _FakeBox()
     controller = _make_connected_controller(box)
     controller.start_continuous_wave(
@@ -367,8 +519,8 @@ def test_stop_all_continuous_waves_cancels_every_active_task() -> None:
     )
     controller.start_continuous_wave(
         box_name="A",
-        port=2,
-        channel=1,
+        port=3,
+        channel=0,
         awg_freq_hz=0.0,
     )
 

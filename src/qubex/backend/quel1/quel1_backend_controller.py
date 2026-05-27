@@ -9,7 +9,7 @@ capabilities, while delegating concrete operations to QuEL-1 managers.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
         QuelDriverClassesProtocol,
         SequencerProtocol as Sequencer,
     )
-    from .managers import Quel1ContinuousWaveConfig
+    from .managers import Quel1ContinuousWaveChannelSpec, Quel1ContinuousWaveConfig
 
 
 class Quel1BackendController(BackendController):
@@ -863,17 +863,105 @@ class Quel1BackendController(BackendController):
             **kwargs,
         )
 
+    def start_continuous_waves(
+        self,
+        *,
+        box_name: str,
+        port: PortType,
+        waves: Sequence[Quel1ContinuousWaveChannelSpec | Mapping[str, Any]],
+        lo_freq_hz: float | None = None,
+        cnco_freq_hz: float | None = None,
+        sideband: str | None = None,
+        vatt: int | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+        configure_port: bool = False,
+        chunk_repeats: int | None = None,
+        awg_repeats: int | None = None,
+    ) -> tuple[Quel1ContinuousWaveConfig, ...]:
+        """
+        Start one port-scoped QuEL-1 continuous-wave output group.
+
+        Parameters
+        ----------
+        box_name : str
+            Connected QuEL-1 box name.
+        port : PortType
+            Output port identifier.
+        waves : Sequence[Quel1ContinuousWaveChannelSpec | Mapping[str, Any]]
+            Per-channel CW settings. The group starts with one `start_wavegen()`
+            call after all channels are configured.
+        lo_freq_hz : float | None, optional
+            LO frequency to apply when `configure_port=True`.
+        cnco_freq_hz : float | None, optional
+            CNCO frequency to apply when `configure_port=True`.
+        sideband : str | None, optional
+            Sideband setting to apply when `configure_port=True`.
+        vatt : int | None, optional
+            VATT setting to apply when `configure_port=True`.
+        fullscale_current : int | None, optional
+            Full-scale current setting to apply when `configure_port=True`.
+        rfswitch : str | None, optional
+            RF switch setting to apply when `configure_port=True`.
+        configure_port : bool, optional
+            Whether to update output path settings before starting. The
+            default keeps current hardware output and phase state.
+        chunk_repeats : int | None, optional
+            Repeat count for each generated chunk. When omitted, uses the
+            hardware maximum.
+        awg_repeats : int | None, optional
+            Repeat count for each AWG sequence. When omitted, uses the hardware
+            maximum.
+
+        Returns
+        -------
+        tuple[Quel1ContinuousWaveConfig, ...]
+            Resolved continuous-wave configurations in input order.
+        """
+        kwargs: dict[str, Any] = {}
+        if chunk_repeats is not None:
+            kwargs["chunk_repeats"] = chunk_repeats
+        if awg_repeats is not None:
+            kwargs["awg_repeats"] = awg_repeats
+        return self._continuous_wave_manager.start_continuous_waves(
+            box_name=box_name,
+            port=port,
+            waves=waves,
+            lo_freq_hz=lo_freq_hz,
+            cnco_freq_hz=cnco_freq_hz,
+            sideband=sideband,
+            vatt=vatt,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+            configure_port=configure_port,
+            **kwargs,
+        )
+
     def stop_continuous_wave(
         self,
         *,
         box_name: str,
         port: PortType,
-        channel: int,
+        channel: int | None = None,
         timeout: float = 2.0,
         polling_period: float = 0.01,
     ) -> bool:
         """
-        Stop one QuEL-1 continuous-wave output.
+        Stop the active QuEL-1 continuous-wave output group on a port.
+
+        Parameters
+        ----------
+        box_name : str
+            Connected QuEL-1 box name.
+        port : PortType
+            Output port identifier.
+        channel : int | None, optional
+            Legacy channel selector. The canonical stop target is the active
+            CW group on the port.
+        timeout : float, optional
+            Stop timeout in seconds for cancellable task implementations.
+        polling_period : float, optional
+            Polling period in seconds for cancellable task implementations.
 
         Returns
         -------

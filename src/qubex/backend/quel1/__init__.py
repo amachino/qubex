@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .managers import Quel1ContinuousWaveConfig
+from .managers import Quel1ContinuousWaveChannelSpec, Quel1ContinuousWaveConfig
 from .quel1_backend_constants import (
     BLOCK_DURATION_NS,
     BLOCK_LENGTH,
@@ -37,6 +37,7 @@ __all__ = [
     "ExecutionMode",
     "Quel1BackendController",
     "Quel1BackendExecutionResult",
+    "Quel1ContinuousWaveChannelSpec",
     "Quel1ContinuousWaveConfig",
     "Quel1ExecutionPayload",
     "Quel1Sequencer",
