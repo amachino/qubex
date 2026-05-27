@@ -107,12 +107,26 @@ class Quel1BoxAdapter:
         self,
         channels: set[tuple[Any, int]],
         timecounter: int | None = None,
+        *,
+        disable_timeout: bool = False,
+        return_after_start_emission: bool = False,
     ) -> Any:
         """Start or reserve waveform generation across API generations."""
         if hasattr(self._box, "start_wavegen"):
-            return self._box.start_wavegen(channels, timecounter=timecounter)
+            kwargs: dict[str, Any] = {}
+            if timecounter is not None:
+                kwargs["timecounter"] = timecounter
+            if disable_timeout:
+                kwargs["disable_timeout"] = disable_timeout
+            if return_after_start_emission:
+                kwargs["return_after_start_emission"] = return_after_start_emission
+            return self._box.start_wavegen(channels, **kwargs)
 
         # legacy path
+        if disable_timeout or return_after_start_emission:
+            raise NotImplementedError(
+                "Cancellable continuous-wave start requires modern start_wavegen."
+            )
         if timecounter is None:
             self._box.start_emission(channels)
         else:
