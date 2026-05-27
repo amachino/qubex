@@ -182,7 +182,8 @@ trigger_nport: 10
 ```
 
 - `box_setting.<box>.slot` は各 box の粗いタイミング slot を表します。
-- `box_setting.<box>.port_wait` は skew 調整時に更新する port ごとの wait 値です。
+- `box_setting.<box>.wait` は box 共通の wait 値です。
+- `box_setting.<box>.port_wait` は port ごとの差分 wait 値です。
 - `reference_port` は基準信号源を選びます。
 - `monitor_port` と `trigger_nport` は monitor capture 経路を定義します。
 - `target_port` は skew scan に含める port を列挙します。

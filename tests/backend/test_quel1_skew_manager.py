@@ -395,6 +395,8 @@ time_to_start: 0
         "backup_path": backup_path,
         "box_names": ["B"],
         "wait": 80,
+        "updated_ports": {"B": [8, 9]},
+        "unmeasured_ports": {"B": [10]},
     }
     assert payload["box_setting"]["A"]["port_wait"] == {1: 0}
     assert payload["box_setting"]["B"]["wait"] == 9

@@ -51,7 +51,8 @@ time_to_start: 0
 trigger_nport: 10
 ```
 
-`box_setting.*.port_wait` is the value updated during skew correction.
+`box_setting.*.wait` is the box-common wait, and `box_setting.*.port_wait`
+stores per-port residuals.
 
 ## Check the current skew
 

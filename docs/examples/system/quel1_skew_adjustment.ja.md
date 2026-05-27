@@ -48,7 +48,7 @@ time_to_start: 0
 trigger_nport: 10
 ```
 
-`box_setting.*.port_wait` が skew 調整時に更新する値です。
+`box_setting.*.wait` が box 共通の wait、`box_setting.*.port_wait` が port ごとの差分です。
 
 ## 現在の skew を確認する
 

@@ -214,6 +214,8 @@ time_to_start: 0
     assert backup_path.name.startswith("skew.yaml.bak.")
     assert len(backup_path.name.removeprefix("skew.yaml.bak.")) == 15
     assert result["box_names"] == ["Q01"]
+    assert result["updated_ports"] == {"Q01": [8]}
+    assert result["unmeasured_ports"] == {"Q01": []}
     assert payload["box_setting"]["Q00"]["port_wait"] == {1: 0}
     assert payload["box_setting"]["Q01"]["wait"] == 11
     assert payload["box_setting"]["Q01"]["port_wait"] == {8: 0}

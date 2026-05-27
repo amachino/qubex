@@ -108,6 +108,8 @@ class Quel1SkewManager:
         for box_name, port, idx in estimated_indices:
             estimated_by_box.setdefault(box_name, []).append((port, idx))
 
+        updated_ports: dict[str, list[int]] = {}
+        unmeasured_ports: dict[str, list[int]] = {}
         for box_name, estimated_ports in estimated_by_box.items():
             setting = box_setting[box_name]
             if not isinstance(setting, dict):
@@ -116,6 +118,14 @@ class Quel1SkewManager:
             port_wait = setting.setdefault("port_wait", {})
             if not isinstance(port_wait, dict):
                 raise TypeError(f"box_setting.{box_name}.port_wait must be a mapping")
+            measured_ports = {port for port, _ in estimated_ports}
+            existing_ports = {
+                port
+                for port in port_wait
+                if isinstance(port, int) and not isinstance(port, bool)
+            }
+            updated_ports[box_name] = sorted(measured_ports)
+            unmeasured_ports[box_name] = sorted(existing_ports - measured_ports)
             adjusted_waits = {}
             for port, idx in estimated_ports:
                 current_port_wait = port_wait.get(port, 0)
@@ -140,6 +150,8 @@ class Quel1SkewManager:
             "backup_path": backup_path,
             "box_names": resolved_box_names,
             "wait": wait,
+            "updated_ports": updated_ports,
+            "unmeasured_ports": unmeasured_ports,
         }
 
     @staticmethod

@@ -198,8 +198,8 @@ trigger_nport: 10
 ```
 
 - `box_setting.<box>.slot` defines the coarse timing slot for each box.
-- `box_setting.<box>.port_wait` defines the per-port wait value you tune during
-  skew correction.
+- `box_setting.<box>.wait` defines the box-common wait value.
+- `box_setting.<box>.port_wait` defines the per-port residual wait value.
 - `reference_port` selects the reference signal source.
 - `monitor_port` and `trigger_nport` define the monitor capture path.
 - `target_port` lists the ports included in the skew scan.
