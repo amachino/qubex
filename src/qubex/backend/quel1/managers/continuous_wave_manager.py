@@ -64,7 +64,7 @@ class Quel1ContinuousWaveConfig:
     lo_freq_hz: float | None
     cnco_freq_hz: float | None
     fnco_freq_hz: float | None
-    actual_output_freq_hz: float | None
+    output_freq_hz: float | None
     sideband: str | None
     vatt: int | None
     fullscale_current: int | None
@@ -327,7 +327,7 @@ class Quel1ContinuousWaveManager:
                     lo_freq_hz=resolved_lo_freq_hz,
                     cnco_freq_hz=resolved_cnco_freq_hz,
                     fnco_freq_hz=resolved_fnco_freq_hz,
-                    actual_output_freq_hz=self._resolve_actual_output_frequency_hz(
+                    output_freq_hz=self._resolve_output_frequency_hz(
                         lo_freq_hz=resolved_lo_freq_hz,
                         cnco_freq_hz=resolved_cnco_freq_hz,
                         fnco_freq_hz=resolved_fnco_freq_hz,
@@ -796,15 +796,13 @@ class Quel1ContinuousWaveManager:
             if config.fnco_freq_hz is None
             else config.fnco_freq_hz + config.awg_freq_hz
         )
-        actual_output_freq_ghz = (
-            None
-            if config.actual_output_freq_hz is None
-            else config.actual_output_freq_hz * 1e-9
+        output_freq_ghz = (
+            None if config.output_freq_hz is None else config.output_freq_hz * 1e-9
         )
         logger.info(
             "Continuous wave frequencies: box=%s port=%s channel=%s "
             "lo_freq_hz=%s cnco_freq_hz=%s fnco_freq_hz=%s "
-            "awg_freq_hz=%s fnco_plus_awg_hz=%s actual_output_freq_ghz=%s",
+            "awg_freq_hz=%s fnco_plus_awg_hz=%s output_freq_ghz=%s",
             config.box_name,
             config.port,
             config.channel,
@@ -813,7 +811,7 @@ class Quel1ContinuousWaveManager:
             config.fnco_freq_hz,
             config.awg_freq_hz,
             fnco_plus_awg_hz,
-            actual_output_freq_ghz,
+            output_freq_ghz,
         )
         if (
             fnco_plus_awg_hz is not None
@@ -831,7 +829,7 @@ class Quel1ContinuousWaveManager:
             )
 
     @staticmethod
-    def _resolve_actual_output_frequency_hz(
+    def _resolve_output_frequency_hz(
         *,
         lo_freq_hz: float | None,
         cnco_freq_hz: float | None,

@@ -154,7 +154,7 @@ def test_start_continuous_wave_registers_repeated_chunk_and_starts_wavegen(
     assert config.lo_freq_hz == 10_500_000_000
     assert config.cnco_freq_hz == 2_250_000_000
     assert config.fnco_freq_hz == 750_000_000
-    assert config.actual_output_freq_hz == pytest.approx(13_515_625_000.0)
+    assert config.output_freq_hz == pytest.approx(13_515_625_000.0)
     assert config.sideband == "U"
     assert config.vatt == 2048
     assert config.fullscale_current == 39000
@@ -165,7 +165,7 @@ def test_start_continuous_wave_registers_repeated_chunk_and_starts_wavegen(
     assert config.duration_s > 0
     assert "Continuous wave frequencies" in caplog.text
     assert "awg_freq_hz=15625000.0" in caplog.text
-    assert "actual_output_freq_ghz=13.515625" in caplog.text
+    assert "output_freq_ghz=13.515625" in caplog.text
     assert box.config_port_calls == [
         {
             "port": 2,
@@ -282,7 +282,7 @@ def test_start_continuous_wave_preserves_current_frequencies_by_default() -> Non
     assert config.lo_freq_hz == 9_000_000_000
     assert config.cnco_freq_hz == 1_500_000_000
     assert config.fnco_freq_hz == 100_000_000
-    assert config.actual_output_freq_hz == pytest.approx(7_400_000_000.0)
+    assert config.output_freq_hz == pytest.approx(7_400_000_000.0)
     assert config.sideband == "L"
     assert config.vatt == 1234
     assert config.fullscale_current == 40500
@@ -305,7 +305,7 @@ def test_start_continuous_wave_allows_awg_freq_without_configure_port() -> None:
 
     assert config.awg_freq_hz == pytest.approx(23_437_500.0)
     assert config.cycles_per_chunk == 3
-    assert config.actual_output_freq_hz == pytest.approx(7_376_562_500.0)
+    assert config.output_freq_hz == pytest.approx(7_376_562_500.0)
     assert box.config_port_calls == []
     assert "fnco_freq" not in box.config_channel_calls[0]
 
@@ -425,7 +425,7 @@ def test_start_continuous_waves_starts_all_channels_in_one_wavegen() -> None:
         pytest.approx(0.0),
         pytest.approx(31_250_000.0),
     ]
-    assert [config.actual_output_freq_hz for config in configs] == [
+    assert [config.output_freq_hz for config in configs] == [
         pytest.approx(12_850_000_000.0),
         pytest.approx(12_981_250_000.0),
     ]
