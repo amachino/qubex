@@ -151,7 +151,7 @@ def update_skew(
     skew_file: str | None = None,
     backup: bool | None = None,
 ) -> Result:
-    """Shift skew `port_wait` values so measured indices match the target wait."""
+    """Shift measured skew waits to the target and normalize `wait`/`port_wait`."""
     if skew_file is None:
         skew_file = "skew.yaml"
     if backup is None:

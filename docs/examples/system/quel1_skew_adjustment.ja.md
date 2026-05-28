@@ -48,7 +48,7 @@ time_to_start: 0
 trigger_nport: 10
 ```
 
-`box_setting.*.port_wait` が skew 調整時に更新する値です。
+`box_setting.*.wait` が box 共通の wait、`box_setting.*.port_wait` が port ごとの差分です。
 
 ## 現在の skew を確認する
 
@@ -75,7 +75,7 @@ figure = result.figure
 ## 目標 skew 値を設定する
 
 `check_skew(...)` で現在の pulse index を推定したあと、
-各 measured port の index が共通 target に揃うように `port_wait` をずらすには
+各 measured port の index が共通 target に揃うように `wait` と `port_wait` を更新するには
 `exp.tool.update_skew(...)` を使います。
 
 ```python
@@ -84,7 +84,7 @@ exp.tool.update_skew(250, ["S87R", "S89R"], backup=True)
 
 この helper は次を行います。
 
-- `skew.yaml` の `box_setting.<box>.port_wait` を更新する
+- `skew.yaml` の `box_setting.<box>.wait` と `port_wait` を更新する
 - `backup=True` なら `skew.yaml.bak.20260520_124900` のような timestamp 付き backup を作る
 - 更新後の skew file を有効な QuEL-1 backend に再読込する
 

@@ -63,8 +63,8 @@ class Quel1SkewManager:
         file_path : str | Path
             Path to the skew calibration YAML file.
         wait : int
-            Target skew index. Existing `port_wait` values are shifted by
-            `wait - measured_idx` for each measured port.
+            Target skew index. Measured effective waits are shifted by
+            `wait - measured_idx`, then normalized into `wait` and `port_wait`.
         box_names : list[str] | None, optional
             Box names to update. When omitted, all boxes in `box_setting` are
             updated.
@@ -104,13 +104,41 @@ class Quel1SkewManager:
         estimated_indices = self._require_estimated_indices(
             box_names=resolved_box_names,
         )
+        estimated_by_box: dict[str, list[tuple[int, int]]] = {}
         for box_name, port, idx in estimated_indices:
-            port_wait = box_setting[box_name].setdefault("port_wait", {})
+            estimated_by_box.setdefault(box_name, []).append((port, idx))
+
+        updated_ports: dict[str, list[int]] = {}
+        unmeasured_ports: dict[str, list[int]] = {}
+        for box_name, estimated_ports in estimated_by_box.items():
+            setting = box_setting[box_name]
+            if not isinstance(setting, dict):
+                raise TypeError(f"box_setting.{box_name} must be a mapping")
+            box_wait = self._require_box_wait(setting, box_name=box_name)
+            port_wait = setting.setdefault("port_wait", {})
             if not isinstance(port_wait, dict):
                 raise TypeError(f"box_setting.{box_name}.port_wait must be a mapping")
-            current_wait = port_wait.get(port, self._WAIT_MIN)
-            self._validate_wait_value(current_wait, box_name=box_name)
-            port_wait[port] = max(self._WAIT_MIN, current_wait + (wait - idx))
+            measured_ports = {port for port, _ in estimated_ports}
+            existing_ports = {
+                port
+                for port in port_wait
+                if isinstance(port, int) and not isinstance(port, bool)
+            }
+            updated_ports[box_name] = sorted(measured_ports)
+            unmeasured_ports[box_name] = sorted(existing_ports - measured_ports)
+            adjusted_waits = {}
+            for port, idx in estimated_ports:
+                current_port_wait = port_wait.get(port, 0)
+                self._validate_wait_value(current_port_wait, box_name=box_name)
+                adjusted_waits[port] = max(
+                    self._WAIT_MIN,
+                    box_wait + current_port_wait + (wait - idx),
+                )
+
+            common_wait = min(adjusted_waits.values())
+            setting["wait"] = common_wait
+            for port, adjusted_wait in adjusted_waits.items():
+                port_wait[port] = adjusted_wait - common_wait
 
         self._validate_wait_values(payload)
         with path.open("w", encoding="utf-8") as file:
@@ -122,6 +150,8 @@ class Quel1SkewManager:
             "backup_path": backup_path,
             "box_names": resolved_box_names,
             "wait": wait,
+            "updated_ports": updated_ports,
+            "unmeasured_ports": unmeasured_ports,
         }
 
     @staticmethod
@@ -155,15 +185,15 @@ class Quel1SkewManager:
         for box_name, setting in box_setting.items():
             if not isinstance(setting, dict):
                 raise TypeError(f"box_setting.{box_name} must be a mapping")
-            cls._validate_box_wait(setting, box_name=box_name)
+            cls._require_box_wait(setting, box_name=box_name)
             port_wait = cls._require_port_wait(setting, box_name=box_name)
             for port, wait in port_wait.items():
                 cls._validate_port_wait_key(port, box_name=box_name)
                 cls._validate_wait_value(wait, box_name=box_name)
 
     @classmethod
-    def _validate_box_wait(cls, setting: dict[Any, Any], *, box_name: str) -> None:
-        """Validate one `box_setting.<box>.wait` value required by the driver."""
+    def _require_box_wait(cls, setting: dict[Any, Any], *, box_name: str) -> int:
+        """Return one `box_setting.<box>.wait` value required by the driver."""
         if "wait" not in setting:
             raise KeyError(f"box_setting.{box_name}.wait is required")
         wait = setting["wait"]
@@ -171,6 +201,7 @@ class Quel1SkewManager:
             raise TypeError(f"box_setting.{box_name}.wait must be an integer")
         if wait < cls._WAIT_MIN:
             raise ValueError(f"wait must be non-negative (box={box_name}, wait={wait})")
+        return wait
 
     @staticmethod
     def _require_port_wait(

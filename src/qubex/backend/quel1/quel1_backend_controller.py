@@ -785,8 +785,8 @@ class Quel1BackendController(BackendController):
         file_path : str | Path
             Path to the skew calibration YAML file.
         wait : int
-            Target skew index. Existing `port_wait` values are shifted by
-            `wait - measured_idx` for each measured port.
+            Target skew index. Measured effective waits are shifted by
+            `wait - measured_idx`, then normalized into `wait` and `port_wait`.
         box_names : list[str] | None, optional
             Box names to update. When omitted, all boxes in the file are
             updated.
