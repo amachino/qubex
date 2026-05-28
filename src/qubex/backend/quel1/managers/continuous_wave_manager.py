@@ -29,6 +29,7 @@ MAX_CONTINUOUS_WAVE_REPEAT: Final[int] = 0xFFFF_FFFF
 CONTINUOUS_WAVE_FREQUENCY_UNIT_HZ: Final[float] = 1e9 / BLOCK_DURATION_NS
 FREQUENCY_MULTIPLE_TOLERANCE_HZ: Final[float] = 1e-3
 CONTINUOUS_WAVE_ALIAS_WARNING_THRESHOLD_HZ: Final[float] = 800_000_000.0
+DEFAULT_CONTINUOUS_WAVE_BLOCKS_PER_CHUNK: Final[int] = 1
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,9 @@ class Quel1ContinuousWaveConfig:
     rfswitch: str | None
     configure_port: bool
     waveform_name: str
+    blocks_per_chunk: int
+    chunk_duration_ns: float
+    frequency_step_hz: float
     chunk_repeats: int
     awg_repeats: int
     duration_s: float
@@ -102,6 +106,7 @@ class Quel1ContinuousWaveManager:
         fullscale_current: int | None = None,
         rfswitch: str | None = None,
         configure_port: bool = False,
+        blocks_per_chunk: int = DEFAULT_CONTINUOUS_WAVE_BLOCKS_PER_CHUNK,
         chunk_repeats: int = MAX_CONTINUOUS_WAVE_REPEAT,
         awg_repeats: int = MAX_CONTINUOUS_WAVE_REPEAT,
     ) -> Quel1ContinuousWaveConfig:
@@ -141,8 +146,10 @@ class Quel1ContinuousWaveManager:
         configure_port : bool, optional
             Whether to update output path settings before starting the AWG.
             The default preserves current hardware output and phase state.
+        blocks_per_chunk : int, optional
+            Number of 128 ns hardware blocks in one generated chunk.
         chunk_repeats : int, optional
-            Repeat count for the generated 128 ns chunk.
+            Repeat count for the generated chunk.
         awg_repeats : int, optional
             Repeat count for the AWG sequence.
 
@@ -170,6 +177,7 @@ class Quel1ContinuousWaveManager:
             fullscale_current=fullscale_current,
             rfswitch=rfswitch,
             configure_port=configure_port,
+            blocks_per_chunk=blocks_per_chunk,
             chunk_repeats=chunk_repeats,
             awg_repeats=awg_repeats,
         )
@@ -188,6 +196,7 @@ class Quel1ContinuousWaveManager:
         fullscale_current: int | None = None,
         rfswitch: str | None = None,
         configure_port: bool = False,
+        blocks_per_chunk: int = DEFAULT_CONTINUOUS_WAVE_BLOCKS_PER_CHUNK,
         chunk_repeats: int = MAX_CONTINUOUS_WAVE_REPEAT,
         awg_repeats: int = MAX_CONTINUOUS_WAVE_REPEAT,
     ) -> tuple[Quel1ContinuousWaveConfig, ...]:
@@ -218,8 +227,10 @@ class Quel1ContinuousWaveManager:
         configure_port : bool, optional
             Whether to update output path settings before starting the AWG.
             The default preserves current hardware output and phase state.
+        blocks_per_chunk : int, optional
+            Number of 128 ns hardware blocks in each generated chunk.
         chunk_repeats : int, optional
-            Repeat count for each generated 128 ns chunk.
+            Repeat count for each generated chunk.
         awg_repeats : int, optional
             Repeat count for each AWG sequence.
 
@@ -240,6 +251,9 @@ class Quel1ContinuousWaveManager:
             fullscale_current=fullscale_current,
             rfswitch=rfswitch,
         )
+        blocks_per_chunk = self._validate_blocks_per_chunk(blocks_per_chunk)
+        chunk_duration_ns = BLOCK_DURATION_NS * blocks_per_chunk
+        frequency_step_hz = 1e9 / chunk_duration_ns
         key = self._key(box_name=box_name, port=port)
         task = self._tasks.get(key)
         if task is not None and self._is_task_active(task):
@@ -253,10 +267,12 @@ class Quel1ContinuousWaveManager:
                 0.0 if spec.awg_freq_hz is None else float(spec.awg_freq_hz)
             )
             cycles_per_chunk, actual_awg_freq_hz = self._awg_frequency_to_chunk_cycles(
-                requested_awg_freq_hz
+                requested_awg_freq_hz,
+                blocks_per_chunk=blocks_per_chunk,
             )
             iq = self._make_iq_chunk(
                 cycles_per_chunk=cycles_per_chunk,
+                blocks_per_chunk=blocks_per_chunk,
                 amplitude=spec.amplitude,
                 phase_rad=spec.phase_rad,
             )
@@ -324,9 +340,12 @@ class Quel1ContinuousWaveManager:
                     rfswitch=resolved_rfswitch,
                     configure_port=configure_port,
                     waveform_name=waveform_name,
+                    blocks_per_chunk=blocks_per_chunk,
+                    chunk_duration_ns=chunk_duration_ns,
+                    frequency_step_hz=frequency_step_hz,
                     chunk_repeats=int(chunk_repeats),
                     awg_repeats=int(awg_repeats),
-                    duration_s=(BLOCK_DURATION_NS * 1e-9)
+                    duration_s=(chunk_duration_ns * 1e-9)
                     * int(chunk_repeats)
                     * int(awg_repeats),
                 )
@@ -836,12 +855,25 @@ class Quel1ContinuousWaveManager:
         return None
 
     @staticmethod
-    def _awg_frequency_to_chunk_cycles(awg_freq_hz: float) -> tuple[int, float]:
-        """Convert one AWG frequency to integer cycles per 128 ns chunk."""
+    def _validate_blocks_per_chunk(blocks_per_chunk: int) -> int:
+        """Return validated number of hardware blocks in one CW chunk."""
+        value = int(blocks_per_chunk)
+        if value <= 0:
+            raise ValueError("blocks_per_chunk must be a positive integer")
+        return value
+
+    @staticmethod
+    def _awg_frequency_to_chunk_cycles(
+        awg_freq_hz: float,
+        *,
+        blocks_per_chunk: int,
+    ) -> tuple[int, float]:
+        """Convert one AWG frequency to integer cycles per generated chunk."""
         requested = float(awg_freq_hz)
-        cycles_per_chunk_float = requested / CONTINUOUS_WAVE_FREQUENCY_UNIT_HZ
+        frequency_unit_hz = CONTINUOUS_WAVE_FREQUENCY_UNIT_HZ / blocks_per_chunk
+        cycles_per_chunk_float = requested / frequency_unit_hz
         cycles_per_chunk = round(cycles_per_chunk_float)
-        allowed_frequency_hz = cycles_per_chunk * CONTINUOUS_WAVE_FREQUENCY_UNIT_HZ
+        allowed_frequency_hz = cycles_per_chunk * frequency_unit_hz
         if not math.isclose(
             requested,
             allowed_frequency_hz,
@@ -850,13 +882,14 @@ class Quel1ContinuousWaveManager:
         ):
             raise ValueError(
                 "continuous-wave frequency is generated by repeating one "
-                f"{BLOCK_DURATION_NS:g} ns wave chunk, so awg_freq_hz must be "
-                f"an integer multiple of {CONTINUOUS_WAVE_FREQUENCY_UNIT_HZ:.0f} Hz. "
+                f"{BLOCK_DURATION_NS * blocks_per_chunk:g} ns wave chunk, so "
+                "awg_freq_hz must be an integer multiple of "
+                f"{frequency_unit_hz:.6f} Hz. "
                 f"requested={requested:.6f} Hz, "
                 f"nearest_allowed={allowed_frequency_hz:.6f} Hz, "
                 f"cycles_per_chunk={cycles_per_chunk}."
             )
-        max_cycles_per_chunk = BLOCK_LENGTH // 2
+        max_cycles_per_chunk = (BLOCK_LENGTH * blocks_per_chunk) // 2
         sample_rate_hz = 1e9 / SAMPLING_PERIOD_NS
         if not (-max_cycles_per_chunk <= cycles_per_chunk <= max_cycles_per_chunk):
             raise ValueError(
@@ -870,14 +903,16 @@ class Quel1ContinuousWaveManager:
     def _make_iq_chunk(
         *,
         cycles_per_chunk: int,
+        blocks_per_chunk: int,
         amplitude: float,
         phase_rad: float,
     ) -> npt.NDArray[np.complex64]:
         """Build one complex IQ chunk for repeated CW output."""
         if not 0.0 <= amplitude <= 1.0:
             raise ValueError("amplitude must satisfy 0.0 <= amplitude <= 1.0")
-        n = np.arange(BLOCK_LENGTH, dtype=np.float64)
-        phase = 2.0 * np.pi * cycles_per_chunk * n / BLOCK_LENGTH + float(phase_rad)
+        chunk_length = BLOCK_LENGTH * blocks_per_chunk
+        n = np.arange(chunk_length, dtype=np.float64)
+        phase = 2.0 * np.pi * cycles_per_chunk * n / chunk_length + float(phase_rad)
         iq = float(amplitude) * MAX_DAC_CODE * np.exp(1j * phase)
         return np.asarray(
             np.round(iq.real) + 1j * np.round(iq.imag), dtype=np.complex64

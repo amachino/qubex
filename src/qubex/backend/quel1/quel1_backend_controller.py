@@ -790,6 +790,7 @@ class Quel1BackendController(BackendController):
         fullscale_current: int | None = None,
         rfswitch: str | None = None,
         configure_port: bool = False,
+        blocks_per_chunk: int | None = None,
         chunk_repeats: int | None = None,
         awg_repeats: int | None = None,
     ) -> Quel1ContinuousWaveConfig:
@@ -828,6 +829,9 @@ class Quel1BackendController(BackendController):
         configure_port : bool, optional
             Whether to update output path settings before starting. The
             default keeps current hardware output and phase state.
+        blocks_per_chunk : int | None, optional
+            Number of 128 ns hardware blocks in one generated chunk. When
+            omitted, uses one block.
         chunk_repeats : int | None, optional
             Repeat count for the generated chunk. When omitted, uses the
             hardware maximum.
@@ -841,6 +845,8 @@ class Quel1BackendController(BackendController):
             Resolved continuous-wave configuration.
         """
         kwargs: dict[str, Any] = {}
+        if blocks_per_chunk is not None:
+            kwargs["blocks_per_chunk"] = blocks_per_chunk
         if chunk_repeats is not None:
             kwargs["chunk_repeats"] = chunk_repeats
         if awg_repeats is not None:
@@ -876,6 +882,7 @@ class Quel1BackendController(BackendController):
         fullscale_current: int | None = None,
         rfswitch: str | None = None,
         configure_port: bool = False,
+        blocks_per_chunk: int | None = None,
         chunk_repeats: int | None = None,
         awg_repeats: int | None = None,
     ) -> tuple[Quel1ContinuousWaveConfig, ...]:
@@ -906,6 +913,9 @@ class Quel1BackendController(BackendController):
         configure_port : bool, optional
             Whether to update output path settings before starting. The
             default keeps current hardware output and phase state.
+        blocks_per_chunk : int | None, optional
+            Number of 128 ns hardware blocks in each generated chunk. When
+            omitted, uses one block.
         chunk_repeats : int | None, optional
             Repeat count for each generated chunk. When omitted, uses the
             hardware maximum.
@@ -919,6 +929,8 @@ class Quel1BackendController(BackendController):
             Resolved continuous-wave configurations in input order.
         """
         kwargs: dict[str, Any] = {}
+        if blocks_per_chunk is not None:
+            kwargs["blocks_per_chunk"] = blocks_per_chunk
         if chunk_repeats is not None:
             kwargs["chunk_repeats"] = chunk_repeats
         if awg_repeats is not None:

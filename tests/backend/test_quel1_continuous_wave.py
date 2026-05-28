@@ -159,6 +159,9 @@ def test_start_continuous_wave_registers_repeated_chunk_and_starts_wavegen(
     assert config.vatt == 2048
     assert config.fullscale_current == 39000
     assert config.rfswitch == "pass"
+    assert config.blocks_per_chunk == 1
+    assert config.chunk_duration_ns == pytest.approx(128.0)
+    assert config.frequency_step_hz == pytest.approx(7_812_500.0)
     assert config.duration_s > 0
     assert "Continuous wave frequencies" in caplog.text
     assert "awg_freq_hz=15625000.0" in caplog.text
@@ -215,6 +218,49 @@ def test_start_continuous_wave_rejects_non_grid_frequency() -> None:
             port=2,
             channel=0,
             awg_freq_hz=1_000_000.0,
+        )
+
+    assert box.register_wavedata_calls == []
+    assert box.start_wavegen_calls == []
+
+
+def test_start_continuous_wave_uses_long_chunk_frequency_grid() -> None:
+    """Given longer CW chunk, start accepts the finer frequency grid."""
+    box = _FakeBox()
+    controller = _make_connected_controller(box)
+
+    config = controller.start_continuous_wave(
+        box_name="A",
+        port=2,
+        channel=0,
+        awg_freq_hz=7_812.5 * 17,
+        blocks_per_chunk=1000,
+        chunk_repeats=3,
+        awg_repeats=5,
+    )
+
+    assert config.blocks_per_chunk == 1000
+    assert config.chunk_duration_ns == pytest.approx(128_000.0)
+    assert config.frequency_step_hz == pytest.approx(7_812.5)
+    assert config.cycles_per_chunk == 17
+    assert config.awg_freq_hz == pytest.approx(132_812.5)
+    assert config.duration_s == pytest.approx(128_000.0e-9 * 3 * 5)
+    iq = box.register_wavedata_calls[0]["iq"]
+    assert iq.shape == (64_000,)
+    assert iq.dtype == np.complex64
+
+
+def test_start_continuous_wave_rejects_invalid_blocks_per_chunk() -> None:
+    """Given invalid chunk block count, start raises before touching hardware."""
+    box = _FakeBox()
+    controller = _make_connected_controller(box)
+
+    with pytest.raises(ValueError, match="blocks_per_chunk"):
+        controller.start_continuous_wave(
+            box_name="A",
+            port=2,
+            channel=0,
+            blocks_per_chunk=0,
         )
 
     assert box.register_wavedata_calls == []
