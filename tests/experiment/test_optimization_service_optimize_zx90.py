@@ -28,7 +28,9 @@ def _cr_param() -> dict[str, float | str]:
     }
 
 
-def _make_service(monkeypatch: Any, stored: dict[str, Any]) -> tuple[Any, list[dict[str, Any]]]:
+def _make_service(
+    monkeypatch: Any, stored: dict[str, Any]
+) -> tuple[Any, list[dict[str, Any]]]:
     updates: list[dict[str, Any]] = []
 
     def update_cr_param(_target: str, value: dict[str, Any]) -> None:
