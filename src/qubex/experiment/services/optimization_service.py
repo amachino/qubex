@@ -414,9 +414,11 @@ class OptimizationService:
             }
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_param = self.ctx.calib_note.get_cr_param(cr_label)
-        if cr_param is None:
+        stored_cr_param = self.ctx.calib_note.get_cr_param(cr_label)
+        if stored_cr_param is None:
             raise ValueError("CR parameters are not stored.")
+        # Work on a copy so update_cr_param=False does not mutate calibration state.
+        cr_param = dict(stored_cr_param)
 
         if duration is None:
             duration = cr_param["duration"]
