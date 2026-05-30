@@ -168,7 +168,9 @@ def test_iq_plotter_clear_closes_widget_once(monkeypatch) -> None:
     plotter = IQPlotter()
     closed = []
 
-    monkeypatch.setattr(plotter.__dict__["_widget"], "close", lambda: closed.append(True))
+    monkeypatch.setattr(
+        plotter.__dict__["_widget"], "close", lambda: closed.append(True)
+    )
 
     plotter.clear()
     plotter.clear()
