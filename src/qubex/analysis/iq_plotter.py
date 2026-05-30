@@ -52,6 +52,7 @@ class IQPlotter:
         )
         self._max_val_center = 0.0
         self._state_trace_count = 0
+        self._closed = False
 
         if len(self._state_centers) > 0:
             colors = get_colors(alpha=0.1)
@@ -153,14 +154,23 @@ class IQPlotter:
                     trace.y = np.imag(values)
 
     def clear(self) -> None:
-        """Clear and close the widget output."""
+        """Clear and close the live widget output."""
         self._output.clear_output()
+        if self._closed:
+            return
         self._output.close()
+        self._widget.close()
+        self._closed = True
+
+    def close(self) -> None:
+        """Close the live widget resources."""
+        self.clear()
 
     def show(self) -> None:
-        """Show the plot widget."""
-        self.clear()
-        self._widget.show(config=get_config())
+        """Show a static Plotly figure copied from the live widget."""
+        fig = self.to_figure()
+        self.close()
+        fig.show(config=get_config())
 
     def to_figure(self) -> go.Figure:
         """Return a detached Plotly figure copied from the current widget state."""
@@ -176,6 +186,7 @@ class IQPlotterPolar:
         self._normalize = normalize
         self._num_scatters: int | None = None
         self._widget = go.FigureWidget()
+        self._closed = False
         self._widget.update_layout(
             template="qubex",
             title="I/Q plane",
@@ -237,3 +248,26 @@ class IQPlotterPolar:
             if isinstance(trace, go.Scatterpolar):
                 trace.r = np.abs(signals[qubit])
                 trace.theta = np.angle(signals[qubit], deg=True)
+
+    def clear(self) -> None:
+        """Close the live widget."""
+        if self._closed:
+            return
+        self._widget.close()
+        self._closed = True
+
+    def close(self) -> None:
+        """Close the live widget resources."""
+        self.clear()
+
+    def show(self) -> None:
+        """Show a static Plotly figure copied from the live widget."""
+        fig = self.to_figure()
+        self.close()
+        fig.show(config=get_config())
+
+    def to_figure(self) -> go.Figure:
+        """Return a detached Plotly figure copied from the current widget state."""
+        fig = go.Figure(self._widget)
+        fig.update_layout(template="qubex")
+        return fig

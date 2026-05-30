@@ -423,8 +423,7 @@ def measurement_induced_decay_experiment(
                     plotter.update({measurement_target: np.asarray(signals)})
 
             if plot:
-                plotter.clear()
-                plotter.to_figure().show()
+                plotter.show()
 
             iq_values = np.asarray(signals, dtype=np.complex128)
             sweep_data = SweepData(
