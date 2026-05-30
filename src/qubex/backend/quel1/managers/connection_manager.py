@@ -228,6 +228,15 @@ class Quel1ConnectionManager:
         self.set_cap_resource_map(cap_resource_map)
         self.set_gen_resource_map(gen_resource_map)
 
+    def requires_reconnect(self, box_names: str | list[str] | None) -> bool:
+        """Return whether connecting these boxes would rebuild runtime state."""
+        if not self.is_connected:
+            return False
+        resolved_box_names = self._resolve_box_names(box_names)
+        connected_box_names = self._connected_box_names()
+        requested_box_names = set(resolved_box_names)
+        return not requested_box_names.issubset(connected_box_names)
+
     def disconnect(self) -> None:
         """Disconnect all currently held resources."""
         if not self.is_connected:

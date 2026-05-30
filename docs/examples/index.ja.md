@@ -39,6 +39,7 @@ Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-sta
 
 ### `backend`
 
+- [QuEL-1 連続波出力](backend/quel1_continuous_wave.ipynb)
 - [PulseSchedule to QuEL-3 Sequencer Flow](measurement/quel3_sequencer_builder_flow.ipynb)
 - [QuEL-3 Deploy Check](system/quel3_deploy_check.ipynb)
 

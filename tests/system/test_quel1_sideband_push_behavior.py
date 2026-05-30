@@ -237,6 +237,68 @@ def test_sync_model_skips_clockmaster_for_single_box_without_address() -> None:
     assert backend_controller.define_clockmaster_calls == []
 
 
+def test_sync_model_defines_clockmaster_without_reset_option() -> None:
+    """Given clock master address, when syncing model, then reset option is not forwarded."""
+
+    class _BackendController:
+        def __init__(self) -> None:
+            self.define_clockmaster_calls: list[dict[str, Any]] = []
+
+        def define_clockmaster(self, **kwargs: Any) -> None:
+            self.define_clockmaster_calls.append(dict(kwargs))
+
+        def set_box_options(self, *_: Any, **__: Any) -> None:
+            return None
+
+        def define_box(self, **_: Any) -> None:
+            return None
+
+        def define_port(self, **_: Any) -> None:
+            return None
+
+        def define_channel(self, **_: Any) -> None:
+            return None
+
+        def add_channel_target_relation(self, **_: Any) -> None:
+            return None
+
+        def define_target(self, **_: Any) -> None:
+            return None
+
+        def clear_command_queue(self) -> None:
+            return None
+
+        def clear_cache(self) -> None:
+            return None
+
+    backend_controller = _BackendController()
+    synchronizer = Quel1SystemSynchronizer(
+        backend_controller=cast(Any, backend_controller)
+    )
+    box = Box.new(
+        id="B0",
+        name="BOX0",
+        type="quel1-a",
+        address="127.0.0.1",
+        adapter="A0",
+        port_numbers=[],
+    )
+    experiment_system = SimpleNamespace(
+        control_system=SimpleNamespace(
+            clock_master_address="192.0.2.10",
+            boxes=[box],
+        ),
+        control_params=SimpleNamespace(),
+        all_targets=[],
+    )
+
+    synchronizer.sync_experiment_system_to_backend_controller(
+        cast(Any, experiment_system)
+    )
+
+    assert backend_controller.define_clockmaster_calls == [{"ipaddr": "192.0.2.10"}]
+
+
 def test_sync_model_requires_clockmaster_for_multiple_boxes() -> None:
     """Given multiple QuEL-1 boxes without clock master, when syncing model, then ValueError is raised."""
 

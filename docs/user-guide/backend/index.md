@@ -19,6 +19,8 @@ This page sits under [Low-level APIs](../low-level-apis/index.md).
 - `Quel1BackendController` and `Quel3BackendController`: concrete implementations for supported backend families
 - Backend-specific models and builders such as `Quel1ExecutionPayload`, `Quel3ExecutionPayload`, and `Quel3SequencerBuilder`
 - `qubex.measurement.adapters`: the bridge from measurement schedules/configs to backend requests
+- QuEL-1 optional controller capabilities such as
+  [`start_continuous_wave()`](continuous-wave.md) for hardware-level CW output
 
 ## Direct use is advanced
 
@@ -30,8 +32,9 @@ controller-level behavior itself is the subject.
 
 1. Read the section overview: [Low-level APIs](../low-level-apis/index.md)
 2. Read [`measurement`](../measurement/index.md) first if your work starts from schedules or results
-3. Continue with [`backend` example workflows](examples.md)
-4. Use the [API reference](../../api-reference/qubex/backend/index.md) for concrete controller details
+3. For QuEL-1 CW checks, read [QuEL-1 continuous-wave output](continuous-wave.md)
+4. Continue with [`backend` example workflows](examples.md)
+5. Use the [API reference](../../api-reference/qubex/backend/index.md) for concrete controller details
 
 ## Choose another module instead when
 
