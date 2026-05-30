@@ -570,6 +570,7 @@ class Quel1BoxCommonProtocol(Protocol):
         port: PortType,
         channel: int,
         fnco_freq: float | None = None,
+        awg_param: Any | None = None,
     ) -> None:
         """Apply channel-level configuration."""
         ...
@@ -600,6 +601,9 @@ class Quel1BoxProtocol(Quel1BoxCommonProtocol, Protocol):
         self,
         channels: set[tuple[PortType, int]],
         timecounter: int | None = None,
+        *,
+        disable_timeout: bool = False,
+        return_after_start_emission: bool = False,
     ) -> Any:
         """Start wave generation immediately or at reserved time."""
         ...

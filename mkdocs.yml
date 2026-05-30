@@ -78,6 +78,7 @@ plugins:
                 - system モジュール: user-guide/system/index.md
                 - system サンプルワークフロー: user-guide/system/examples.md
                 - backend モジュール: user-guide/backend/index.md
+                - QuEL-1 連続波出力: user-guide/backend/continuous-wave.md
                 - backend サンプルワークフロー: user-guide/backend/examples.md
             - リリースノート:
                 - 概要: release-notes/index.md
@@ -143,6 +144,7 @@ nav:
       - system module: user-guide/system/index.md
       - system example workflows: user-guide/system/examples.md
       - backend module: user-guide/backend/index.md
+      - QuEL-1 continuous-wave output: user-guide/backend/continuous-wave.md
       - backend example workflows: user-guide/backend/examples.md
   - Release notes:
       - Overview: release-notes/index.md

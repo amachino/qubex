@@ -54,7 +54,6 @@ class Quel1SystemSynchronizer:
         if clock_master_address is not None:
             self._backend_controller.define_clockmaster(
                 ipaddr=clock_master_address,
-                reset=True,
             )
         self._backend_controller.set_box_options(
             {box.id: box.options for box in control_system.boxes}

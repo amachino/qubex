@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import numpy as np
+import pytest
 
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
 
@@ -80,8 +81,20 @@ class _ModernBox:
         self,
         channels: set[tuple[int, int]],
         timecounter: int | None = None,
+        disable_timeout: bool = False,
+        return_after_start_emission: bool = False,
     ) -> object:
-        self.calls.append(("start_wavegen", (channels, timecounter)))
+        self.calls.append(
+            (
+                "start_wavegen",
+                (
+                    channels,
+                    timecounter,
+                    disable_timeout,
+                    return_after_start_emission,
+                ),
+            )
+        )
 
         class _Task:
             def result(self, timeout: float | None = None) -> None:
@@ -171,7 +184,37 @@ def test_adapter_passthroughs_modern_methods() -> None:
 
     task = box.start_wavegen({(2, 0)}, timecounter=10_000)
     task.result()
-    assert ("start_wavegen", ({(2, 0)}, 10_000)) in modern.calls
+    assert ("start_wavegen", ({(2, 0)}, 10_000, False, False)) in modern.calls
+
+
+def test_adapter_passthroughs_modern_wavegen_start_options() -> None:
+    """Given modern box, adapter forwards wavegen start options."""
+    modern = _ModernBox()
+    box = adapt_quel1_box(modern)
+
+    box.start_wavegen(
+        {(2, 0)},
+        disable_timeout=True,
+        return_after_start_emission=True,
+    )
+
+    assert (
+        "start_wavegen",
+        ({(2, 0)}, None, True, True),
+    ) in modern.calls
+
+
+def test_adapter_rejects_legacy_wavegen_start_options() -> None:
+    """Given legacy box, cancellable wavegen options are rejected."""
+    legacy = _LegacyBox()
+    box = adapt_quel1_box(legacy)
+
+    with pytest.raises(NotImplementedError, match="requires modern"):
+        box.start_wavegen(
+            {(2, 0)},
+            disable_timeout=True,
+            return_after_start_emission=True,
+        )
 
 
 def test_adapter_passthroughs_modern_capture_methods() -> None:

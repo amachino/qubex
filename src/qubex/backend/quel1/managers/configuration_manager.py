@@ -134,12 +134,11 @@ class Quel1ConfigurationManager:
         self,
         *,
         ipaddr: str,
-        reset: bool = True,
     ) -> None:
         """Define clockmaster in qubecalib."""
         self._runtime_context.qubecalib.define_clockmaster(
             ipaddr=ipaddr,
-            reset=reset,
+            reset=False,
         )
 
     def define_box(

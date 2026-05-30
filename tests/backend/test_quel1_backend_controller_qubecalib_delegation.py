@@ -86,7 +86,7 @@ def test_define_helpers_delegate_to_qubecalib() -> None:
     """Given helper methods, when called, then qubecalib methods receive the same kwargs."""
     controller = _make_controller()
 
-    controller.define_clockmaster(ipaddr="192.0.2.11", reset=True)
+    controller.define_clockmaster(ipaddr="192.0.2.11")
     controller.define_box(
         box_name="Q00",
         ipaddr_wss="192.0.2.21",
@@ -106,7 +106,7 @@ def test_define_helpers_delegate_to_qubecalib() -> None:
 
     qubecalib = cast(_FakeQubeCalib, controller.qubecalib)
     assert qubecalib.define_clockmaster_calls == [
-        {"ipaddr": "192.0.2.11", "reset": True}
+        {"ipaddr": "192.0.2.11", "reset": False}
     ]
     assert qubecalib.define_box_calls == [
         {
