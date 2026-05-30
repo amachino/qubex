@@ -1174,8 +1174,7 @@ class MeasurementService:
                     )
 
         if plot:
-            plotter.clear()
-            plotter.to_figure().show()
+            plotter.show()
 
         measured_targets = [target for target, values in signals.items() if values]
         rabi_params = self._get_sweep_rabi_params(
