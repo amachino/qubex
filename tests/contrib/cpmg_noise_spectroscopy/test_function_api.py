@@ -8,9 +8,7 @@ from qubex.contrib import (
 )
 
 
-def test_all_cpmg_noise_spectroscopy_functions_are_exported_from_contrib() -> (
-    None
-):
+def test_all_cpmg_noise_spectroscopy_functions_are_exported_from_contrib() -> None:
     """Given contrib package, when imported, then CPMG noise spectroscopy helpers are available."""
     assert callable(cpmg_noise_spectroscopy)
     assert callable(plot_cpmg_results)
