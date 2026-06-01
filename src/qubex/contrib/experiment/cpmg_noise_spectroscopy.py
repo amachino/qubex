@@ -23,6 +23,7 @@ from tqdm.auto import tqdm
 import qubex as qx
 from qubex import visualization as viz
 from qubex.analysis import FitStatus, fitting
+from qubex.experiment.experiment_util import ExperimentUtil
 from qubex.experiment.models.experiment_result import (
     T2Data,
 )
@@ -34,6 +35,43 @@ __all__ = [
     "plot_cpmg_results",
 ]
 
+SAMPLING_PERIOD_NS = ExperimentUtil.resolve_sampling_period()
+_GRID_ATOL_NS = 1e-9
+
+
+def _sampling_ticks(duration_ns: float, *, name: str) -> int:
+    if not np.isfinite(duration_ns):
+        raise ValueError(f"{name} must be finite, got {duration_ns}.")
+    if SAMPLING_PERIOD_NS <= 0:
+        raise ValueError(
+            f"SAMPLING_PERIOD_NS must be positive, got {SAMPLING_PERIOD_NS}."
+        )
+
+    ticks = round(duration_ns / SAMPLING_PERIOD_NS)
+    snapped = ticks * SAMPLING_PERIOD_NS
+    if not np.isclose(duration_ns, snapped, rtol=0.0, atol=_GRID_ATOL_NS):
+        raise ValueError(
+            f"{name} must be on the {SAMPLING_PERIOD_NS} ns sampling grid, "
+            f"got {duration_ns} ns."
+        )
+    return ticks
+
+
+def _snap_to_sampling_grid(duration_ns: float) -> float:
+    if SAMPLING_PERIOD_NS <= 0:
+        raise ValueError(
+            f"SAMPLING_PERIOD_NS must be positive, got {SAMPLING_PERIOD_NS}."
+        )
+    return round(duration_ns / SAMPLING_PERIOD_NS) * SAMPLING_PERIOD_NS
+
+
+def _floor_to_sampling_grid(values_ns: np.ndarray) -> np.ndarray:
+    if SAMPLING_PERIOD_NS <= 0:
+        raise ValueError(
+            f"SAMPLING_PERIOD_NS must be positive, got {SAMPLING_PERIOD_NS}."
+        )
+    return np.floor(values_ns / SAMPLING_PERIOD_NS) * SAMPLING_PERIOD_NS
+
 
 class CPMGResult(TypedDict):
     """Serialized result bundle used for plotting and on-disk storage."""
@@ -42,7 +80,7 @@ class CPMGResult(TypedDict):
     targets: list[str]
     n_repeats: int
     frequency_range: list[float]
-    tau_spacing_list_ns: list[int]
+    tau_spacing_list_ns: list[float]
     time_range: list[float]
     data: np.ndarray
 
@@ -200,7 +238,7 @@ def cpmg_noise_spectroscopy(
 
     Notes
     -----
-    - The hardware timing grid is assumed to be 2 ns.
+    - The hardware timing grid is assumed to be ``SAMPLING_PERIOD_NS``.
     - Input frequencies are converted to half-tau values and rounded to that grid.
       Distinct input frequencies may therefore collapse onto the same realized
       half-tau and be merged.
@@ -277,8 +315,8 @@ def cpmg_noise_spectroscopy(
     if save_t2_image or save_cpmg_data or save_cpmg_fig:
         base_dir.mkdir(parents=True, exist_ok=True)
 
-    def get_pi_duration(targets: list[str]) -> int:
-        pi_durations = np.array([int(ex.x180(target).duration) for target in targets])
+    def get_pi_duration(targets: list[str]) -> float:
+        pi_durations = np.array([float(ex.x180(target).duration) for target in targets])
         if pi_durations.size == 0:
             raise ValueError(f"No valid targets provided: {targets}")
         if np.isnan(pi_durations).any():
@@ -289,11 +327,12 @@ def cpmg_noise_spectroscopy(
             raise ValueError(
                 f"Inconsistent pi pulse durations for targets {targets}: {pi_durations}"
             )
+        _ = _sampling_ticks(pi_durations[0], name="pi pulse duration")
         return pi_durations[0]
 
     def build_cpmg_sequence(
         target: str,
-        half_tau: int,
+        half_tau: float,
         n: int,
         pattern: Literal["++++", "+--+", "+-+-"] = "++++",
     ) -> PulseSchedule:
@@ -301,10 +340,9 @@ def cpmg_noise_spectroscopy(
             raise ValueError(f"Target {target} not found in exp.hpi_pulse")
         if n <= 0:
             raise ValueError(f"Number of pi pulses n must be positive, got {n}")
-        if half_tau <= 0 or half_tau % 2 != 0:
-            raise ValueError(
-                f"Half tau must be a positive even integer, got {half_tau}"
-            )
+        if half_tau <= 0:
+            raise ValueError(f"Half tau must be positive, got {half_tau}")
+        _ = _sampling_ticks(half_tau, name="half_tau")
 
         with PulseSchedule() as ps:
             ps.add(target, ex.hpi_pulse[target])
@@ -335,7 +373,7 @@ def cpmg_noise_spectroscopy(
 
     def build_no_pi_sequence(
         target: str,
-        tau: int,
+        tau: float,
     ) -> PulseSchedule:
         if target not in ex.hpi_pulse:
             raise ValueError(f"Target {target} not found in exp.hpi_pulse")
@@ -359,7 +397,7 @@ def cpmg_noise_spectroscopy(
             ):
                 if half_tau == 0:
                     # f=0 case: do not apply any pi pulse between the two hpi pulses.
-                    actual_time_range = (time_range // 2) * 2
+                    actual_time_range = _floor_to_sampling_grid(time_range)
                     result = ex.sweep_parameter(
                         sequence=lambda tau, target=target: build_no_pi_sequence(
                             target=target, tau=tau
@@ -517,13 +555,17 @@ def _cpmg_effective_frequencies(
     half_tau_list = []
     non_0_idx = np.where(frequency_range != 0)[0]
     for _i, f in enumerate(frequency_range[non_0_idx]):
-        # Convert f (GHz) to half-tau (ns) and snap to the 2 ns hardware grid.
+        # Convert f (GHz) to half-tau (ns) and snap to the hardware timing grid.
         half_tau_ns = 1 / (4 * float(f))
-        half_tau_rounded = int(max(2, int(round(half_tau_ns / 2.0) * 2)))
-        half_tau_list.append(half_tau_rounded)
+        half_tau_rounded = max(
+            SAMPLING_PERIOD_NS,
+            _snap_to_sampling_grid(half_tau_ns),
+        )
+        half_tau_list.append(_sampling_ticks(half_tau_rounded, name="half_tau"))
 
-    half_tau_list = np.array(half_tau_list, dtype=int)
-    half_tau_list = np.sort(np.unique(half_tau_list))[::-1]
+    half_tau_ticks = np.array(half_tau_list, dtype=int)
+    half_tau_ticks = np.sort(np.unique(half_tau_ticks))[::-1]
+    half_tau_list = half_tau_ticks.astype(float) * SAMPLING_PERIOD_NS
     _frequency_range = 0.25 / half_tau_list
 
     if non_0_idx.size != frequency_range.size:
