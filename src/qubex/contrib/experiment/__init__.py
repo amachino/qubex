@@ -10,6 +10,10 @@ from .ckp_characterization import (
     ckp_measurement_v2,
     filtered_ckp_experiment,
 )
+from .cpmg_noise_spectroscopy import (
+    cpmg_noise_spectroscopy,
+    plot_cpmg_results,
+)
 from .cr_xt_decomposition import decompose_cr_crosstalk
 from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
@@ -89,6 +93,7 @@ __all__ = [
     "calibrate_gf_pulse",
     "characterize_readout_parameters",
     "ckp_measurement_v2",
+    "cpmg_noise_spectroscopy",
     "cr_crosstalk_hamiltonian_tomography",
     "create_1d_cluster_sequence",
     "create_connected_graphs",
@@ -132,6 +137,7 @@ __all__ = [
     "partial_transpose",
     "pb_experiment_1q",
     "pb_experiment_2q",
+    "plot_cpmg_results",
     "purity_benchmarking",
     "purity_sequence_1q",
     "purity_sequence_2q",
