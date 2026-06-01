@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Protocol, TypeAlias
+from typing import Protocol
 
 import numpy.typing as npt
 
@@ -23,15 +23,17 @@ class IqWaveformResultProtocol(Protocol):
         ...
 
 
-CaptureResultValues: TypeAlias = Sequence[complex] | Sequence[IqWaveformResultProtocol]
-
-
 class ResultContainerProtocol(Protocol):
     """Minimal fixed-timeline result container protocol."""
 
     @property
-    def iq_result(self) -> Mapping[str, CaptureResultValues]:
-        """Return capture-window IQ results keyed by window name."""
+    def iq_waveform_result(self) -> Mapping[str, Sequence[IqWaveformResultProtocol]]:
+        """Return waveform capture-window IQ results keyed by window name."""
+        ...
+
+    @property
+    def iq_point_result(self) -> Mapping[str, Sequence[complex]]:
+        """Return point capture-window IQ results keyed by window name."""
         ...
 
 

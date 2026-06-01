@@ -235,7 +235,7 @@ def test_build_measurement_result_keeps_backend_alias_labels() -> None:
 
 
 def test_extract_capture_samples_from_waveform_result_container() -> None:
-    """Given waveform-style iq_result, extraction returns latest waveform samples."""
+    """Given waveform result container, extraction returns latest waveform samples."""
 
     class _Waveform:
         def __init__(self, values: np.ndarray) -> None:
@@ -243,12 +243,13 @@ def test_extract_capture_samples_from_waveform_result_container() -> None:
 
     class _Result:
         def __init__(self) -> None:
-            self.iq_result = {
+            self.iq_waveform_result = {
                 "RQ00:0": [
                     _Waveform(np.array([1.0 + 0.0j], dtype=np.complex128)),
                     _Waveform(np.array([2.0 + 0.0j], dtype=np.complex128)),
                 ]
             }
+            self.iq_point_result = {}
 
     values = Quel3ExecutionManager._extract_capture_samples(
         _Result(),
@@ -261,7 +262,7 @@ def test_extract_capture_samples_from_waveform_result_container() -> None:
 
 
 def test_extract_capture_samples_from_raw_waveform_result_container() -> None:
-    """Given raw waveform iq_result, extraction returns one waveform per shot."""
+    """Given raw waveform result container, extraction returns one waveform per shot."""
 
     class _Waveform:
         def __init__(self, values: np.ndarray) -> None:
@@ -269,12 +270,13 @@ def test_extract_capture_samples_from_raw_waveform_result_container() -> None:
 
     class _Result:
         def __init__(self) -> None:
-            self.iq_result = {
+            self.iq_waveform_result = {
                 "RQ00:0": [
                     _Waveform(np.array([1.0 + 0.0j, 2.0 + 0.0j])),
                     _Waveform(np.array([3.0 + 0.0j, 4.0 + 0.0j])),
                 ]
             }
+            self.iq_point_result = {}
 
     values = Quel3ExecutionManager._extract_capture_samples(
         _Result(),
@@ -296,11 +298,12 @@ def test_extract_capture_samples_from_raw_waveform_result_container() -> None:
 
 
 def test_extract_capture_samples_from_point_result_container() -> None:
-    """Given point-style iq_result, extraction returns complex-point array."""
+    """Given point result container, extraction returns complex-point array."""
 
     class _Result:
         def __init__(self) -> None:
-            self.iq_result = {
+            self.iq_waveform_result = {}
+            self.iq_point_result = {
                 "RQ00:0": [1.0 + 2.0j, 3.0 + 4.0j],
             }
 
@@ -841,11 +844,8 @@ class _FakeWaveformResult:
 
 class _FakeResultContainer:
     def __init__(self) -> None:
-        self.iq_result = {
-            "alias-rq00:0": [
-                _FakeWaveformResult(np.array([1.0 + 0.0j], dtype=np.complex128))
-            ]
-        }
+        self.iq_waveform_result = {}
+        self.iq_point_result = {"alias-rq00:0": [1.0 + 0.0j]}
 
 
 class _FakeInstrumentDriver:
@@ -931,9 +931,8 @@ class _PhaseBarrier:
 
 class _ParallelResultContainer:
     def __init__(self, alias: str, value: complex) -> None:
-        self.iq_result = {
-            f"{alias}:0": [_FakeWaveformResult(np.array([value], dtype=np.complex128))]
-        }
+        self.iq_waveform_result = {}
+        self.iq_point_result = {f"{alias}:0": [value]}
 
 
 class _ParallelInstrumentDriver:
