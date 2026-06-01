@@ -1680,7 +1680,11 @@ class CharacterizationService:
                         if n_cpmg is not None:
                             total_blank = T - pi.duration * n_cpmg
                             if total_blank > 0:
-                                tau = total_blank // (2 * n_cpmg)
+                                total_blank_samples = int(
+                                    np.floor(total_blank / sampling_period + 1e-9)
+                                )
+                                tau_samples = total_blank_samples // (2 * n_cpmg)
+                                tau = tau_samples * sampling_period
                                 ps.add(
                                     target,
                                     CPMG(
