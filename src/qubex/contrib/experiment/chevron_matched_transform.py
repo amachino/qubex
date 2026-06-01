@@ -264,6 +264,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
     amplitudes: dict[str, float] | None = None,
     omega_rabi_range: ArrayLike | None = None,
     target_omega_rabi: float | None = None,
+    target_amplitude_scale_bounds: tuple[float, float] | None = None,
     n_shots: int | None = None,
     search_n_shots: int | None = None,
     shot_interval: float | None = None,
@@ -295,8 +296,8 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         [-search_detuning_width / 2, search_detuning_width / 2].
         Default: 0.2.
     search_duration_max : float, optional
-        Maximum pulse duration in ns for search measurements.
-        The minimum duration is 0.
+        Nominal maximum pulse duration in ns for search measurements.
+        The generated axis is rounded to the qxpulse sampling period.
         Default: 400.0.
     search_detuning_points_per_half : int, optional
         Number of detuning intervals per half-width in the initial search.
@@ -307,7 +308,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
     search_duration_points : int, optional
         Number of duration intervals in the initial search.
         The generated duration axis has search_duration_points + 1 samples
-        before sampling-period rounding and de-duplication.
+        before sampling-period rounding.
         Default: 15.
     search_duration_alpha : float, optional
         Exponent for nonlinear search duration spacing:
@@ -335,6 +336,11 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         Target resonant Rabi frequency (GHz) used to rescale the final
         measurement amplitude from the coarse-search estimate.
         Default: 0.0125.
+    target_amplitude_scale_bounds : tuple[float, float], optional
+        Lower and upper clipping bounds for amplitude rescaling.
+        Used both for the search-to-final amplitude update and for the
+        clipped target_amplitudes recommendation.
+        Default: (0.1, 10.0).
     n_shots : int, optional
         Number of shots for the final regular chevron measurement.
         Default: max(1, DEFAULT_SHOTS // 4).
@@ -377,8 +383,8 @@ def estimate_qubit_frequency_from_chevron_adaptive(
                 "detuning_range": final detuning axis (GHz),
                 "resonant_frequencies": final estimated qubit frequencies,
                 "target_amplitudes":
-                    amplitudes estimated to realize target_omega_rabi from
-                    the final measurement,
+                    clipped amplitudes estimated to realize target_omega_rabi
+                    from the final measurement,
                 "peak_background_rms_ratios":
                     final peak-to-background-RMS ratios for each target,
                 "search_results":
@@ -399,7 +405,8 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         measured on the outer detuning bands of the doubled detuning range.
     - The final drive frequency is set to the search omega_q estimate.
     - The final drive amplitude is multiplied by
-        target_omega_rabi / omega_rabi_est, clipped to [0.1, 10.0].
+        target_omega_rabi / omega_rabi_est, clipped to
+        target_amplitude_scale_bounds.
     """
     if targets is None:
         targets = exp.ctx.qubit_labels
@@ -428,6 +435,8 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         omega_rabi_range = 0.1 * (10 ** np.linspace(0, 1, 256) - 1) / 9
     if target_omega_rabi is None:
         target_omega_rabi = 0.0125
+    if target_amplitude_scale_bounds is None:
+        target_amplitude_scale_bounds = (0.1, 10.0)
     if n_shots is None:
         n_shots = max(1, DEFAULT_SHOTS // 4)
     if search_n_shots is None:
@@ -449,6 +458,12 @@ def estimate_qubit_frequency_from_chevron_adaptive(
     search_duration_points = int(search_duration_points)
     search_duration_alpha = float(search_duration_alpha)
     peak_background_rms_threshold = float(peak_background_rms_threshold)
+    if len(target_amplitude_scale_bounds) != 2:
+        raise ValueError("target_amplitude_scale_bounds must contain two values.")
+    target_amplitude_scale_bounds = (
+        float(target_amplitude_scale_bounds[0]),
+        float(target_amplitude_scale_bounds[1]),
+    )
     final_detuning_range = np.asarray(final_detuning_range, dtype=float)
     final_time_range = np.asarray(final_time_range, dtype=float)
     if final_time_range.size < 2:
@@ -464,6 +479,14 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         raise ValueError("search_duration_points must be positive.")
     if search_duration_alpha <= 0:
         raise ValueError("search_duration_alpha must be positive.")
+    scale_min, scale_max = target_amplitude_scale_bounds
+    if scale_min <= 0 or scale_max <= 0:
+        raise ValueError("target_amplitude_scale_bounds must be positive.")
+    if scale_min > scale_max:
+        raise ValueError(
+            "target_amplitude_scale_bounds lower bound must be less than or "
+            "equal to upper bound."
+        )
 
     search_detuning_range, search_time_range = _make_adaptive_search_ranges(
         detuning_width=search_detuning_width,
@@ -587,7 +610,7 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         freq = omega_q_est
 
         scale = target_omega_rabi / max(omega_rabi_est, 1e-12)
-        scale = np.clip(scale, 0.1, 10.0)
+        scale = np.clip(scale, scale_min, scale_max)
         amp *= scale
 
         print(
@@ -643,7 +666,11 @@ def estimate_qubit_frequency_from_chevron_adaptive(
         )
 
         target_amplitude_scale = target_omega_rabi / max(omega_rabi_final, 1e-12)
-        target_amplitude_scale = np.clip(target_amplitude_scale, 0.1, 10.0)
+        target_amplitude_scale = np.clip(
+            target_amplitude_scale,
+            scale_min,
+            scale_max,
+        )
         target_amplitude = amp * target_amplitude_scale
         print(
             f"[target amplitude] amp={target_amplitude:.6g}"
@@ -759,7 +786,6 @@ def _make_adaptive_search_ranges(
     time_range = duration_max * (k / duration_points) ** duration_alpha
     sampling_period = get_sampling_period()
     time_range = np.round(time_range / sampling_period) * sampling_period
-    time_range = np.unique(np.clip(time_range, 0.0, duration_max))
     if time_range.size < 2:
         raise ValueError("adaptive search time_range must contain at least two points.")
     return detuning_range, time_range
