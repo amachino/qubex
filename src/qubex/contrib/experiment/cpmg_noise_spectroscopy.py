@@ -247,14 +247,15 @@ def cpmg_noise_spectroscopy(
         ``(t2_matrix, fig)`` where ``t2_matrix`` has shape
         ``(n_targets, n_repeats, n_frequencies)`` and stores fitted ``T2`` in ns.
     """
-    if not targets:
-        raise ValueError("targets must contain at least one target.")
     if targets is None:
         targets = list(ex.qubit_labels)
     elif isinstance(targets, str):
         targets = [targets]
     else:
         targets = list(targets)
+
+    if not targets:
+        raise ValueError("targets must contain at least one target.")
 
     time_range = np.asarray(time_range, dtype=float)
     if time_range.ndim != 1 or time_range.size == 0:
@@ -277,9 +278,7 @@ def cpmg_noise_spectroscopy(
         base_dir.mkdir(parents=True, exist_ok=True)
 
     def get_pi_duration(targets: list[str]) -> int:
-        pi_durations = np.array(
-            [int(ex.hpi_pulse[target].duration * 2) for target in targets]
-        )
+        pi_durations = np.array([int(ex.x180(target).duration) for target in targets])
         if pi_durations.size == 0:
             raise ValueError(f"No valid targets provided: {targets}")
         if np.isnan(pi_durations).any():
