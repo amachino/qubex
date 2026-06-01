@@ -45,7 +45,7 @@ dependencies = [
 [project.optional-dependencies]
 backend = ["qxdriver-quel1 == 1.5.0b4"]
 quel1 = ["qxdriver-quel1 == 1.5.0b4"]
-quel3 = ["quelware-client >= 0.1.4.post1"]
+quel3 = ["quelware-client >= 0.2.0"]
 
 [project.scripts]
 qubex = "qubex.cli:main"
@@ -117,11 +117,7 @@ exclude = [
 typeCheckingMode = "basic"
 
 [tool.ruff]
-extend-exclude = [
-    "lib",
-    "packages/qube-calib",
-    "packages/qxdriver-quel1",
-]
+extend-exclude = ["lib", "packages/qube-calib", "packages/qxdriver-quel1"]
 
 [tool.ruff.lint]
 select = [
