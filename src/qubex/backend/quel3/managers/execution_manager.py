@@ -982,11 +982,13 @@ class Quel3ExecutionManager:
         capture_mode: Quel3CaptureMode,
     ) -> np.ndarray | None:
         """Extract one capture sample-array from a result container entry."""
-        values = result.iq_result.get(window_key)
-        if values is None or len(values) == 0:
-            return None
-        first = values[0]
-        if _has_iq_array(first):
+        if capture_mode in (
+            Quel3CaptureMode.AVERAGED_WAVEFORM,
+            Quel3CaptureMode.RAW_WAVEFORMS,
+        ):
+            values = result.iq_waveform_result.get(window_key)
+            if values is None or len(values) == 0:
+                return None
             if capture_mode is Quel3CaptureMode.RAW_WAVEFORMS:
                 waveforms = []
                 for value in values:
@@ -998,7 +1000,17 @@ class Quel3ExecutionManager:
             if not _has_iq_array(latest):
                 return None
             return np.asarray(latest.iq_array, dtype=np.complex128)
-        return np.asarray(values, dtype=np.complex128)
+
+        if capture_mode in (
+            Quel3CaptureMode.AVERAGED_VALUE,
+            Quel3CaptureMode.VALUES_PER_ITER,
+        ):
+            values = result.iq_point_result.get(window_key)
+            if values is None or len(values) == 0:
+                return None
+            return np.asarray(values, dtype=np.complex128)
+
+        raise ValueError(f"Unsupported capture mode: {capture_mode}.")
 
     @staticmethod
     def _build_measurement_result(
