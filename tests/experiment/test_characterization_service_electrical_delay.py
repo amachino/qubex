@@ -3,13 +3,45 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
 import pytest
 
 from qubex.experiment.services.characterization_service import CharacterizationService
+
+
+class _FakeFigure:
+    """Plotly-like figure stub for resonator scan tests."""
+
+    def set_subplots(self, **_kwargs) -> None:
+        """Accept subplot configuration."""
+        return
+
+    def add_scatter(self, **_kwargs) -> None:
+        """Accept scatter traces."""
+        return
+
+    def add_vline(self, **_kwargs) -> None:
+        """Accept vertical markers."""
+        return
+
+    def add_annotation(self, **_kwargs) -> None:
+        """Accept annotations."""
+        return
+
+    def update_xaxes(self, **_kwargs) -> None:
+        """Accept x-axis updates."""
+        return
+
+    def update_yaxes(self, **_kwargs) -> None:
+        """Accept y-axis updates."""
+        return
+
+    def update_layout(self, **_kwargs) -> None:
+        """Accept layout updates."""
+        return
 
 
 class _FakeSystemManager:
@@ -125,28 +157,6 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
     service.__dict__["_calibration_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
 
-    class _FakeFigure:
-        def set_subplots(self, **_kwargs) -> None:
-            return
-
-        def add_scatter(self, **_kwargs) -> None:
-            return
-
-        def add_vline(self, **_kwargs) -> None:
-            return
-
-        def add_annotation(self, **_kwargs) -> None:
-            return
-
-        def update_xaxes(self, **_kwargs) -> None:
-            return
-
-        def update_yaxes(self, **_kwargs) -> None:
-            return
-
-        def update_layout(self, **_kwargs) -> None:
-            return
-
     monkeypatch.setattr(
         "qubex.experiment.services.characterization_service.ExperimentUtil.split_frequency_range",
         lambda **_kwargs: [
@@ -182,3 +192,77 @@ def test_scan_resonator_frequencies_avoids_duplicate_reset_per_subrange(
     assert "peaks" in result.data
     assert ctx.system_manager.modified_backend_settings_calls == 2
     assert ctx.reset_calls == []
+
+
+def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given scan interval, internal electrical-delay measurement receives it."""
+    service = cast(Any, object.__new__(CharacterizationService))
+    ctx = _FakeContext()
+    service.__dict__["_experiment_context"] = ctx
+
+    electrical_delay_calls: list[dict[str, Any]] = []
+
+    def _fake_measure_electrical_delay(
+        self: CharacterizationService,
+        target: str,
+        **kwargs: Any,
+    ) -> float:
+        _ = self
+        electrical_delay_calls.append({"target": target, **kwargs})
+        return 0.0
+
+    def _fake_measure(*_args, **_kwargs):
+        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
+        return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
+
+    service.measure_electrical_delay = MethodType(
+        _fake_measure_electrical_delay,
+        service,
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.ExperimentUtil.split_frequency_range",
+        lambda **_kwargs: [
+            np.array([9.8, 9.9]),
+        ],
+    )
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.MixingUtil.calc_lo_cnco",
+        lambda *_args, **_kwargs: (10_000_000_000, 1_500_000_000, 0),
+    )
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.viz.make_figure",
+        lambda **_kwargs: _FakeFigure(),
+    )
+    monkeypatch.setattr(
+        "scipy.signal.find_peaks",
+        lambda values, **_kwargs: (np.array([], dtype=int), {}),
+    )
+
+    result = service.scan_resonator_frequencies(
+        target="Q00",
+        frequency_range=np.array([9.8, 9.9]),
+        readout_amplitude=0.1,
+        plot=False,
+        save_image=False,
+        subrange_width=0.2,
+        shots=7,
+        interval=123.0,
+    )
+
+    assert "peaks" in result.data
+    assert electrical_delay_calls == [
+        {
+            "target": "Q00",
+            "f_start": 9.8,
+            "shots": 7,
+            "interval": 123.0,
+            "plot": False,
+            "confirm": False,
+        }
+    ]
