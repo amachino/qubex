@@ -223,59 +223,13 @@ For a full walkthrough, see [QuEL-1 skew adjustment workflow](../../examples/sys
 
 ## Define parameter files
 
-The current format is one structured YAML file per parameter family. Each file
-uses `meta` for annotations and `data` for the actual values.
+Put system-specific parameter files in the `params_dir` that you pass to Qubex.
+The preferred format is one structured YAML file per parameter family, with
+legacy `params.yaml` and `props.yaml` used only as compatibility fallbacks.
 
-```yaml
-meta:
-  description: Example low-frequency control frequencies
-  unit: GHz
-data:
-  0: 3.000
-  1: 3.031
-  2: 3.062
-```
-
-- Put the file in the `params_dir` that you pass to Qubex.
-- For qubit-scoped parameters, keys may be integer indices such as `0` and `1`,
-  or labels such as `Q000` and `Q001`.
-- When string labels are used, keep in mind that the zero-padding width depends
-  on the number of qubits on the chip.
-- When `meta.unit` is set, Qubex converts values into its internal base units
-  (`GHz`, `ns`).
-- When `meta.default` is set, `None` values in `data` fall back to that default.
-
-Legacy `params.yaml` and `props.yaml` are still supported as compatibility
-inputs. When both legacy maps and per-file YAMLs exist, Qubex loads the
-per-file YAML first and uses the legacy files only as fallback for missing keys.
-
-### `measurement_defaults.yaml`
-
-Use `measurement_defaults.yaml` when one system should carry different default
-measurement execution or readout timing values.
-
-```yaml
-schema_version: 1
-
-execution:
-  n_shots: 2048
-  shot_interval_ns: 200000.0
-
-readout:
-  duration_ns: 512.0
-  ramp_time_ns: 24.0
-  pre_margin_ns: 16.0
-  post_margin_ns: 96.0
-```
-
-- Put the file directly under `params/<system_id>/`.
-- The file is optional. If it is missing, Qubex keeps the built-in defaults.
-- `execution.n_shots` and `execution.shot_interval_ns` become the defaults for
-  measurement APIs when those arguments are omitted.
-- `readout.*` becomes the default timing source for readout pulse generation
-  and `ExperimentContext` readout timing when explicit overrides are omitted.
-- Explicit API arguments still take precedence over `measurement_defaults.yaml`.
-- All time values are in `ns`.
+For the complete file catalog, source-priority rules, and frequency fallback
+rules such as `control_frequency.yaml` taking precedence over
+`qubit_frequency.yaml`, see [Parameter files](params-configuration.md).
 
 ## Load configuration from code
 
