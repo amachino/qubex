@@ -61,6 +61,7 @@ plugins:
                 - インストール: user-guide/getting-started/installation.md
                 - 始め方を選ぶ: user-guide/getting-started/choose-where-to-start.md
                 - システム設定: user-guide/getting-started/system-configuration.md
+                - パラメータファイル: user-guide/getting-started/params-configuration.md
             - パルスシーケンス:
                 - パルスシーケンスの組み方: user-guide/pulse-sequences/index.md
             - 実験インタフェース:
@@ -126,6 +127,7 @@ nav:
       - Installation: user-guide/getting-started/installation.md
       - Choose where to start: user-guide/getting-started/choose-where-to-start.md
       - System configuration: user-guide/getting-started/system-configuration.md
+      - Parameter files: user-guide/getting-started/params-configuration.md
   - Pulse sequences:
       - Build pulse sequences with PulseSchedule: user-guide/pulse-sequences/index.md
   - Experiment interface:

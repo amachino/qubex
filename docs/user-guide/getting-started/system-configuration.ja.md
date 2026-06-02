@@ -205,50 +205,13 @@ timestamp 付き backup が作られます。
 
 ## パラメータファイルを定義する
 
-現在の形式では、パラメータファミリごとに 1 つの構造化 YAML ファイルを使います。各ファイルは、注釈用の `meta` と実データ用の `data` を持ちます。
+system 固有の parameter file は、Qubex に渡す `params_dir` の下に置いてください。
+推奨形式は parameter family ごとに 1 つの構造化 YAML を置く形式で、旧来の
+`params.yaml` と `props.yaml` は互換 fallback として使われます。
 
-```yaml
-meta:
-  description: Example low-frequency control frequencies
-  unit: GHz
-data:
-  0: 3.000
-  1: 3.031
-  2: 3.062
-```
-
-- ファイルは、Qubex に渡す `params_dir` の下に置いてください。
-- qubit 単位のパラメータでは、キーに `0` や `1` のような整数インデックス、あるいは `Q000` や `Q001` のようなラベルを使えます。
-- 文字列ラベルを使う場合は、チップの量子ビット数に応じて桁数が変わることに注意してください。
-- `meta.unit` を設定すると、Qubex は値を内部の基底単位 (`GHz`, `ns`) へ変換します。
-- `meta.default` を設定すると、`data` 中の `None` はその既定値にフォールバックします。
-
-旧来の `params.yaml` と `props.yaml` も互換入力としてサポートされています。旧形式の map と分割 YAML が両方ある場合、Qubex はまず分割 YAML を読み込み、足りないキーだけ旧形式ファイルから補います。
-
-### `measurement_defaults.yaml`
-
-system ごとに既定の measurement 実行条件や readout timing を変えたい場合は、`measurement_defaults.yaml` を使います。
-
-```yaml
-schema_version: 1
-
-execution:
-  n_shots: 2048
-  shot_interval_ns: 200000.0
-
-readout:
-  duration_ns: 512.0
-  ramp_time_ns: 24.0
-  pre_margin_ns: 16.0
-  post_margin_ns: 96.0
-```
-
-- ファイルは `params/<system_id>/` の直下に置いてください。
-- このファイルは任意です。無い場合は、Qubex の組み込み既定値を使います。
-- `execution.n_shots` と `execution.shot_interval_ns` は、measurement API で対応引数を省略したときの既定値になります。
-- `readout.*` は、明示 override が無い場合の readout pulse 生成と `ExperimentContext` の readout timing の既定値になります。
-- API に明示的に渡した引数は、常に `measurement_defaults.yaml` より優先されます。
-- 時間値はすべて `ns` です。
+認識される file の一覧、読み込み優先度、`control_frequency.yaml` が
+`qubit_frequency.yaml` より優先されるような周波数 fallback ルールについては
+[パラメータファイル](params-configuration.md) を参照してください。
 
 ## コードから設定を読み込む
 
