@@ -2390,12 +2390,16 @@ class CharacterizationService:
         if readout_amplitude is None:
             readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
 
+        if interval is None:
+            interval = DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL
+
         if electrical_delay is None:
             # measure electrical delay if not provided
             tau = self.measure_electrical_delay(
                 target,
                 f_start=frequency_range[0],
                 shots=shots,
+                interval=interval,
                 plot=plot,
                 confirm=False,
             )
@@ -2410,8 +2414,6 @@ class CharacterizationService:
             readout_ramptime = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMPTIME
         if readout_ramp_type is None:
             readout_ramp_type = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMP_TYPE
-        if interval is None:
-            interval = DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
