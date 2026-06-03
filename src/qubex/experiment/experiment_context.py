@@ -118,9 +118,9 @@ class ExperimentContext:
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : ConfigurationMode, optional
         Priority-ordered control layout. `"ge-ef-cr"` assigns channels to GE,
-        then EF, then CR. `"ge-cr-cr"` assigns GE, then two CR channels.
-        Ports with fewer channels keep the leftmost roles. Defaults to
-        `"ge-cr-cr"`.
+        then EF, then CR. `"ge-ef-fh"` assigns GE, then EF, then FH.
+        `"ge-cr-cr"` assigns GE, then two CR channels. Ports with fewer
+        channels keep the leftmost roles. Defaults to `"ge-cr-cr"`.
 
     Examples
     --------
@@ -553,6 +553,15 @@ class ExperimentContext:
         }
 
     @property
+    def fh_targets(self) -> dict[str, Target]:
+        """Return available FH targets."""
+        return {
+            label: target
+            for label, target in self.available_targets.items()
+            if target.is_fh
+        }
+
+    @property
     def cr_targets(self) -> dict[str, Target]:
         """Return available CR targets."""
         return {
@@ -857,6 +866,10 @@ class ExperimentContext:
     def resolve_ef_label(self, label: str) -> str:
         """Resolve EF label through the experiment system."""
         return self.experiment_system.resolve_ef_label(label)
+
+    def resolve_fh_label(self, label: str) -> str:
+        """Resolve FH label through the experiment system."""
+        return self.experiment_system.resolve_fh_label(label)
 
     def ordered_qubit_labels(self, labels: Sequence[str]) -> list[str]:
         """Resolve labels to qubits while preserving first appearance order."""

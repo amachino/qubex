@@ -150,6 +150,7 @@ class Quel3TargetDeployPlanner:
         if target_type in (
             TargetType.CTRL_GE,
             TargetType.CTRL_EF,
+            TargetType.CTRL_FH,
             TargetType.CTRL_2Q,
             TargetType.CTRL_CR,
             TargetType.PUMP,

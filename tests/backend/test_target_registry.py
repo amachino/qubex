@@ -77,6 +77,7 @@ def _build_registry() -> TargetRegistry:
 
     ge0 = Target.new_ge_target(qubit=qubit0, channel=gen_channel)
     ef0 = Target.new_ef_target(qubit=qubit0, channel=gen_channel)
+    fh0 = Target.new_fh_target(qubit=qubit0, channel=gen_channel)
     readout0 = Target.new_read_target(resonator=read0, channel=gen_channel)
     readout1 = Target.new_read_target(resonator=read1, channel=gen_channel)
     cr_default = Target.new_cr_target(control_qubit=qubit0, channel=gen_channel)
@@ -94,6 +95,7 @@ def _build_registry() -> TargetRegistry:
         gen_targets={
             ge0.label: ge0,
             ef0.label: ef0,
+            fh0.label: fh0,
             readout0.label: readout0,
             readout1.label: readout1,
             cr_default.label: cr_default,
@@ -104,14 +106,16 @@ def _build_registry() -> TargetRegistry:
 
 
 def test_target_registry_resolves_qubit_and_phase_labels() -> None:
-    """Given mixed labels, when resolving labels, then qubit/GE/EF/read labels are returned."""
+    """Given mixed labels, when resolving labels, then qubit/control/read labels are returned."""
     registry = _build_registry()
 
     assert registry.resolve_qubit_label("Q00") == "Q00"
     assert registry.resolve_qubit_label("Q00-ef") == "Q00"
+    assert registry.resolve_qubit_label("Q00-fh") == "Q00"
     assert registry.resolve_qubit_label("RQ00") == "Q00"
     assert registry.resolve_ge_label("RQ00") == "Q00"
     assert registry.resolve_ef_label("RQ00") == "Q00-ef"
+    assert registry.resolve_fh_label("RQ00") == "Q00-fh"
     assert registry.resolve_read_label("Q00-ef") == "RQ00"
 
 

@@ -279,6 +279,44 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     assert mux_ro.index == mux_ri.index == 0
 
 
+def test_load_control_frequency_fh(tmp_path: Path):
+    """Given FH control frequencies, when loading config, then qubits expose FH values."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "control_frequency.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {"Q0": 5.0, "Q1": 6.0},
+        },
+    )
+    _write_yaml(
+        params_dir / "control_frequency_ef.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {"Q0": 4.7, "Q1": 5.6},
+        },
+    )
+    _write_yaml(
+        params_dir / "control_frequency_fh.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {"Q0": 4.4},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    quantum_system = loader.get_experiment_system().quantum_system
+
+    q0 = quantum_system.get_qubit("Q0")
+    q1 = quantum_system.get_qubit("Q1")
+    assert math.isclose(q0.control_frequency_fh, 4.4, rel_tol=0, abs_tol=1e-9)
+    assert math.isclose(q1.control_frequency_fh, 5.2, rel_tol=0, abs_tol=1e-9)
+
+
 def test_load_uses_empty_measurement_defaults_when_file_is_missing(
     tmp_path: Path,
 ) -> None:
@@ -1505,6 +1543,26 @@ def test_r8_awg1331_with_ge_ef_cr_uses_prefix_layouts(tmp_path: Path) -> None:
     _assert_target_channel(system, "Q3", port_number=9, channel_number=0)
 
 
+def test_r8_awg1331_with_ge_ef_fh_uses_fh_channel(tmp_path: Path) -> None:
+    """Given awg1331 and ge-ef-fh, when building targets, then channel 2 is FH."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg1331",
+        configuration_mode="ge-ef-fh",
+    )
+
+    assert "Q0" in system.gen_targets
+    assert "Q0-ef" not in system.gen_targets
+    assert "Q0-fh" not in system.gen_targets
+    _assert_target_channel(system, "Q0", port_number=6, channel_number=0)
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(system, "Q1-ef", port_number=7, channel_number=1)
+    _assert_target_channel(system, "Q1-fh", port_number=7, channel_number=2)
+    assert system.resolve_fh_label("Q1") == "Q1-fh"
+    assert "Q1-CR" not in system.gen_targets
+
+
 def test_r8_awg1331_with_ge_cr_cr_keeps_two_cr_channels(tmp_path: Path) -> None:
     """Given awg1331 and ge-cr-cr, when building targets, then 3-channel ports dedicate both extra channels to CR targets."""
     system = _load_r8_experiment_system(
@@ -1531,6 +1589,7 @@ def test_r8_awg1331_with_ge_cr_cr_keeps_two_cr_channels(tmp_path: Path) -> None:
     ("configuration_mode", "expected_extra_label", "missing_label"),
     [
         ("ge-ef-cr", "Q0-ef", "Q0-CR"),
+        ("ge-ef-fh", "Q0-ef", "Q0-fh"),
         ("ge-cr-cr", "Q0-CR", "Q0-ef"),
     ],
 )

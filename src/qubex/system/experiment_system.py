@@ -160,6 +160,11 @@ class ExperimentSystem:
         return [target for target in self.gen_targets.values() if target.is_ef]
 
     @property
+    def fh_targets(self) -> list[Target]:
+        """Return the fh targets."""
+        return [target for target in self.gen_targets.values() if target.is_fh]
+
+    @property
     def cr_targets(self) -> list[Target]:
         """Return the cr targets."""
         return [target for target in self.gen_targets.values() if target.is_cr]
@@ -172,7 +177,7 @@ class ExperimentSystem:
     @property
     def ctrl_targets(self) -> list[Target]:
         """Return the control targets."""
-        return self.ge_targets + self.ef_targets + self.two_qubit_targets
+        return self.ge_targets + self.ef_targets + self.fh_targets + self.two_qubit_targets
 
     @property
     def read_out_targets(self) -> list[Target]:
@@ -287,6 +292,10 @@ class ExperimentSystem:
         """Resolve EF label via target registry."""
         return self.target_registry.resolve_ef_label(label, allow_legacy=True)
 
+    def resolve_fh_label(self, label: str) -> str:
+        """Resolve FH label via target registry."""
+        return self.target_registry.resolve_fh_label(label, allow_legacy=True)
+
     def resolve_read_label(self, label: str) -> str:
         """Resolve readout label via target registry."""
         return self.target_registry.resolve_read_label(label, allow_legacy=True)
@@ -321,6 +330,10 @@ class ExperimentSystem:
     def get_ef_target(self, label: str) -> Target:
         """Return an ef target by label."""
         return self.get_target(self.resolve_ef_label(label))
+
+    def get_fh_target(self, label: str) -> Target:
+        """Return an fh target by label."""
+        return self.get_target(self.resolve_fh_label(label))
 
     def get_cr_target(self, label: str) -> Target:
         """Return a cr target by label."""
@@ -797,6 +810,10 @@ class ExperimentSystem:
         if match := re.match(r"^(Q\d+)-ef$", target_label):
             qubit = self.get_qubit(match.group(1))
             return Target.new_ef_target(qubit=qubit, channel=channel)
+
+        if match := re.match(r"^(Q\d+)-fh$", target_label):
+            qubit = self.get_qubit(match.group(1))
+            return Target.new_fh_target(qubit=qubit, channel=channel)
 
         if match := re.match(r"^(Q\d+)-CR$", target_label):
             control_qubit = self.get_qubit(match.group(1))

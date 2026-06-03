@@ -289,6 +289,28 @@ def create_control_configuration(
             },
         }
 
+    if layout == "ge-ef-fh":
+        f_ge = qubit.frequency * 1e9
+        f_ef = qubit.control_frequency_ef * 1e9
+        f_fh = qubit.control_frequency_fh * 1e9
+        f_min = min(f_ge, f_ef, f_fh)
+        f_max = max(f_ge, f_ef, f_fh)
+        lo, cnco, _ = MixingUtil.calc_lo_cnco(
+            f=(f_min + f_max) / 2, ssb=ssb, cnco_center=cnco_center
+        )
+        fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
+        fnco_ef, _ = MixingUtil.calc_fnco(f=f_ef, ssb=ssb, lo=lo, cnco=cnco)
+        fnco_fh, _ = MixingUtil.calc_fnco(f=f_fh, ssb=ssb, lo=lo, cnco=cnco)
+        return {
+            "lo": lo,
+            "cnco": cnco,
+            "channels": {
+                0: {"fnco": fnco_ge, "targets": [qubit.label]},
+                1: {"fnco": fnco_ef, "targets": [f"{qubit.label}-ef"]},
+                2: {"fnco": fnco_fh, "targets": [f"{qubit.label}-fh"]},
+            },
+        }
+
     if layout == "ge-cr-cr":
         f_ge = qubit.frequency * 1e9
         cr_targets = _collect_cr_targets(
@@ -350,7 +372,7 @@ def _resolve_control_layout(*, mode: ConfigurationMode, n_channels: int) -> str:
     if n_channels == 1:
         return "ge"
     if n_channels == 2:
-        return "ge-ef" if mode == "ge-ef-cr" else "ge-cr"
+        return "ge-ef" if mode in {"ge-ef-cr", "ge-ef-fh"} else "ge-cr"
     if n_channels == 3:
         return mode
     raise ValueError(f"Unsupported control channel count: {n_channels}.")

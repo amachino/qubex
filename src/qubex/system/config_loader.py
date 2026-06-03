@@ -55,6 +55,7 @@ PARAMS_MAP = {
     "resonator_frequency": ("resonator_frequency", "props"),
     "control_frequency": ("control_frequency", "props"),
     "control_frequency_ef": (None, "props"),
+    "control_frequency_fh": (None, "props"),
     "readout_frequency": (None, "props"),
     "control_amplitude": ("control_amplitude", "params"),
     "readout_amplitude": ("readout_amplitude", "params"),
@@ -89,6 +90,7 @@ QUBIT_KEYED_PARAMS = frozenset(
         "resonator_frequency",
         "control_frequency",
         "control_frequency_ef",
+        "control_frequency_fh",
         "readout_frequency",
         "control_amplitude",
         "readout_amplitude",
@@ -175,9 +177,10 @@ class ConfigLoader:
         Qubit/resonator labels to exclude when assembling the ExperimentSystem.
     configuration_mode : ConfigurationMode | None, optional
         Priority-ordered control layout. `"ge-ef-cr"` assigns channels to GE,
-        then EF, then CR. `"ge-cr-cr"` assigns GE, then two CR channels.
-        Ports with fewer channels keep the leftmost roles. Defaults to
-        `"ge-cr-cr"` if not provided.
+        then EF, then CR. `"ge-ef-fh"` assigns GE, then EF, then FH.
+        `"ge-cr-cr"` assigns GE, then two CR channels. Ports with fewer
+        channels keep the leftmost roles. Defaults to `"ge-cr-cr"` if not
+        provided.
     autoload : bool, optional
         If `True`, configuration is loaded during initialization.
 
@@ -1016,6 +1019,7 @@ class ConfigLoader:
         resonator_frequency_dict = self.load_param_data("resonator_frequency")
         control_frequency_dict = self.load_param_data("control_frequency")
         control_frequency_ef_dict = self.load_param_data("control_frequency_ef")
+        control_frequency_fh_dict = self.load_param_data("control_frequency_fh")
         readout_frequency_dict = self.load_param_data("readout_frequency")
 
         # TODO: Fix SLF001
@@ -1024,6 +1028,7 @@ class ConfigLoader:
             qubit._anharmonicity = qubit_anharmonicity_dict.get(qubit.label)  # noqa: SLF001
             qubit._control_frequency_ge = control_frequency_dict.get(qubit.label)  # noqa: SLF001
             qubit._control_frequency_ef = control_frequency_ef_dict.get(qubit.label)  # noqa: SLF001
+            qubit._control_frequency_fh = control_frequency_fh_dict.get(qubit.label)  # noqa: SLF001
         for resonator in chip.resonators:
             resonator._frequency_g = resonator_frequency_dict.get(resonator.qubit)  # noqa: SLF001
             resonator._readout_frequency = readout_frequency_dict.get(resonator.qubit)  # noqa: SLF001

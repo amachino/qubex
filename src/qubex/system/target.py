@@ -117,6 +117,11 @@ class Target(MutableModel):
         return self.type == TargetType.CTRL_EF
 
     @property
+    def is_fh(self) -> bool:
+        """Report whether this is an FH control target."""
+        return self.type == TargetType.CTRL_FH
+
+    @property
     def is_cr(self) -> bool:
         """Report whether this is a CR control target."""
         return self.type == TargetType.CTRL_CR
@@ -212,6 +217,22 @@ class Target(MutableModel):
         )
 
     @classmethod
+    def new_fh_target(
+        cls,
+        *,
+        qubit: Qubit,
+        channel: GenChannel,
+    ) -> Target:
+        """Create an FH control target for a qubit."""
+        return cls(
+            label=Target.fh_label(qubit.label),
+            object=qubit,
+            frequency=qubit.control_frequency_fh,
+            channel=channel,
+            type=TargetType.CTRL_FH,
+        )
+
+    @classmethod
     def new_cr_target(
         cls,
         *,
@@ -288,6 +309,7 @@ class Target(MutableModel):
             (match := re.match(r"^R(Q\d+)$", label))
             or (match := re.match(r"^(Q\d+)$", label))
             or (match := re.match(r"^(Q\d+)-ef$", label))
+            or (match := re.match(r"^(Q\d+)-fh$", label))
             or (match := re.match(r"^(Q\d+)-CR$", label))
             or (match := re.match(r"^(Q\d+)-(Q\d+)$", label))
             or (match := re.match(r"^(Q\d+)(-|_)[a-zA-Z0-9]+$", label))
@@ -308,6 +330,12 @@ class Target(MutableModel):
         """Return the EF target label for a qubit label."""
         qubit = cls.qubit_label(label)
         return f"{qubit}-ef"
+
+    @classmethod
+    def fh_label(cls, label: str) -> str:
+        """Return the FH target label for a qubit label."""
+        qubit = cls.qubit_label(label)
+        return f"{qubit}-fh"
 
     @classmethod
     def cr_label(cls, control_label: str, target_label: str | None = None) -> str:

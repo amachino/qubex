@@ -149,9 +149,9 @@ class Experiment:
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : ConfigurationMode, optional
         Priority-ordered control layout. `"ge-ef-cr"` assigns channels to GE,
-        then EF, then CR. `"ge-cr-cr"` assigns GE, then two CR channels.
-        Ports with fewer channels keep the leftmost roles. Defaults to
-        `"ge-cr-cr"`.
+        then EF, then CR. `"ge-ef-fh"` assigns GE, then EF, then FH.
+        `"ge-cr-cr"` assigns GE, then two CR channels. Ports with fewer
+        channels keep the leftmost roles. Defaults to `"ge-cr-cr"`.
 
     Examples
     --------
@@ -446,6 +446,11 @@ class Experiment:
     def ef_targets(self) -> dict[str, Target]:
         """Return available EF targets."""
         return self.ctx.ef_targets
+
+    @property
+    def fh_targets(self) -> dict[str, Target]:
+        """Return available FH targets."""
+        return self.ctx.fh_targets
 
     @property
     def cr_targets(self) -> dict[str, Target]:
