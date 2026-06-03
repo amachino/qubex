@@ -78,6 +78,7 @@ from .models.experiment_result import (
     FreqRabiData,
     RabiData,
     RamseyData,
+    ReadoutFrequencyData,
     SweepData,
     T1Data,
     T2Data,
@@ -4435,7 +4436,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         fit_func: Literal["lorentzian", "double_lorentzian"] | None = None,
-    ) -> Result:
+    ) -> ExperimentResult[ReadoutFrequencyData]:
         """Calibrate readout frequencies for targets."""
         return self.characterization_service.calibrate_readout_frequency(
             targets=targets,

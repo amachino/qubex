@@ -43,6 +43,7 @@ from qubex.experiment.models.experiment_result import (
     FreqRabiData,
     RabiData,
     RamseyData,
+    ReadoutFrequencyData,
     T1Data,
     T2Data,
 )
@@ -1487,7 +1488,7 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
         fit_func: Literal["lorentzian", "double_lorentzian"] | None = None,
-    ) -> Result:
+    ) -> ExperimentResult[ReadoutFrequencyData]:
         """Calibrate readout frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -1551,8 +1552,7 @@ class CharacterizationService:
         # restore the original readout amplitudes
         self.ctx.params.readout_amplitude = original_readout_amplitudes
 
-        fit_data = {}
-        figs = {}
+        data: dict[str, ReadoutFrequencyData] = {}
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
             values_array = np.array(values, dtype=np.float64)
@@ -1590,10 +1590,13 @@ class CharacterizationService:
                 _is_low_quality_readout_frequency_fit(fit_result)
                 or "f0" not in fit_result
             ):
+                readout_frequency = np.nan
                 if peak_frequency is not None:
-                    fit_data[target] = peak_frequency
+                    readout_frequency = peak_frequency
             elif "f0" in fit_result:
-                fit_data[target] = fit_result["f0"]
+                readout_frequency = float(fit_result["f0"])
+            else:
+                readout_frequency = np.nan
 
             fig = fit_result.figure
             if fig is None:
@@ -1608,29 +1611,30 @@ class CharacterizationService:
                     fig.show(
                         config=viz.get_config(filename=f"readout_frequency_{target}")
                     )
-            if fig is not None:
-                figs[target] = fig
-
-                if save_image:
-                    viz.save_figure(
-                        fig,
-                        name=f"readout_frequency_{target}",
-                        width=600,
-                        height=300,
-                    )
+            if fig is not None and save_image:
+                viz.save_figure(
+                    fig,
+                    name=f"readout_frequency_{target}",
+                    width=600,
+                    height=300,
+                )
+            data[target] = ReadoutFrequencyData(
+                target=target,
+                data=values_array,
+                frequency_range=frequency_values,
+                readout_frequency=float(readout_frequency),
+                fit_func=fit_func,
+                fit_result=fit_result,
+                peak_frequency=peak_frequency,
+                peak_value=peak_value,
+                figure=fig,
+            )
 
         print("\nResults\n-------")
-        for target, freq in fit_data.items():
-            print(f"{target}: {freq:.6f}")
+        for target, entry in data.items():
+            print(f"{target}: {entry.readout_frequency:.6f}")
 
-        return Result(
-            data={
-                "data": fit_data,
-                # TODO: Remove this legacy payload key after callers migrate to .figures.
-                "fig": figs,
-            },
-            figures=figs,
-        )
+        return ExperimentResult(data=data)
 
     def t1_experiment(
         self,
