@@ -84,7 +84,7 @@ class _ExecutionRuntime:
 
     resolver: InstrumentResolverProtocol
     session: SessionProtocol
-    alias_to_id: dict[str, ResourceIdProtocol]
+    alias_to_resource_id: dict[str, ResourceIdProtocol]
     alias_to_driver: dict[str, InstrumentDriverProtocol]
     capture_sampling_period_ns: float | None
 
@@ -466,14 +466,14 @@ class Quel3ExecutionManager:
         )
         resolved_payload = self._filter_runnable_payload(resolved_payload)
         aliases = sorted(resolved_payload.fixed_timelines.keys())
-        alias_to_id = self._resolve_alias_to_id_map(
+        alias_to_resource_id = self._resolve_alias_to_resource_id_map(
             resolver=resolver,
             aliases=aliases,
             default_unit_label=self._standalone_unit_label,
         )
-        instrument_ids = [alias_to_id[alias] for alias in aliases]
+        instrument_resource_ids = [alias_to_resource_id[alias] for alias in aliases]
         await self._session_manager.open(
-            instrument_ids,
+            instrument_resource_ids,
             client_factory=create_quelware_client,
         )
         session = self._session_manager.session
@@ -481,7 +481,7 @@ class Quel3ExecutionManager:
         alias_to_driver: dict[str, InstrumentDriverProtocol] = {}
         capture_sampling_period_ns: float | None = None
         for alias in aliases:
-            instrument_info = self._find_inst_info_by_alias(
+            instrument_info = self._find_instrument_info_by_alias(
                 resolver=resolver,
                 alias=alias,
                 default_unit_label=self._standalone_unit_label,
@@ -514,7 +514,7 @@ class Quel3ExecutionManager:
             _ExecutionRuntime(
                 resolver=resolver,
                 session=session,
-                alias_to_id=alias_to_id,
+                alias_to_resource_id=alias_to_resource_id,
                 alias_to_driver=alias_to_driver,
                 capture_sampling_period_ns=capture_sampling_period_ns,
             ),
@@ -535,7 +535,7 @@ class Quel3ExecutionManager:
         """Execute one payload using an already-open runtime."""
         aliases = sorted(payload.fixed_timelines.keys())
         alias_bindings: dict[str, tuple[int, int]] = {}
-        instrument_ids: list[ResourceIdProtocol] = []
+        instrument_resource_ids: list[ResourceIdProtocol] = []
         for alias in aliases:
             driver = runtime.alias_to_driver[alias]
             sampling_period_fs = getattr(
@@ -560,7 +560,7 @@ class Quel3ExecutionManager:
                 sampling_period_fs,
                 timeline_step_samples,
             )
-            instrument_ids.append(runtime.alias_to_id[alias])
+            instrument_resource_ids.append(runtime.alias_to_resource_id[alias])
 
         sequencer = self._sequencer_builder.build(
             payload=payload,
@@ -579,7 +579,7 @@ class Quel3ExecutionManager:
                 set_frequency_factory=set_frequency_factory,
                 set_capture_mode_factory=set_capture_mode_factory,
             )
-            for alias in runtime.alias_to_driver
+            for alias in aliases
         }
         await self._initialize_drivers(
             drivers=tuple(runtime.alias_to_driver.values()),
@@ -592,7 +592,7 @@ class Quel3ExecutionManager:
         )
 
         shot_samples = self._initialize_shot_samples(payload)
-        await runtime.session.trigger(instrument_ids=instrument_ids)
+        await runtime.session.trigger(instrument_ids=instrument_resource_ids)
         alias_results = await self._fetch_alias_results(
             aliases=aliases,
             alias_to_driver=runtime.alias_to_driver,
@@ -614,7 +614,7 @@ class Quel3ExecutionManager:
         return self._build_measurement_result(
             payload=payload,
             shot_samples=shot_samples,
-            sampling_period_ns=runtime.capture_sampling_period_ns,
+            capture_sampling_period_ns=runtime.capture_sampling_period_ns,
             backend_sampling_period_ns=self._sampling_period_ns,
             capture_decimation_factor=self._capture_decimation_factor,
         )
@@ -696,7 +696,7 @@ class Quel3ExecutionManager:
         return alias_results
 
     @classmethod
-    def _resolve_alias_to_id_map(
+    def _resolve_alias_to_resource_id_map(
         cls,
         *,
         resolver: InstrumentResolverProtocol,
@@ -704,32 +704,32 @@ class Quel3ExecutionManager:
         default_unit_label: str | None = None,
     ) -> dict[str, ResourceIdProtocol]:
         """Resolve alias-to-resource-id mapping using InstrumentResolver."""
-        alias_to_id: dict[str, ResourceIdProtocol] = {}
-        aliases_needing_legacy_resolve: list[str] = []
+        alias_to_resource_id: dict[str, ResourceIdProtocol] = {}
+        aliases_without_resource_id: list[str] = []
         for alias in aliases:
-            instrument_info = cls._find_inst_info_by_alias(
+            instrument_info = cls._find_instrument_info_by_alias(
                 resolver=resolver,
                 alias=alias,
                 default_unit_label=default_unit_label,
             )
             resource_id = getattr(instrument_info, "id", None)
             if isinstance(resource_id, str) and len(resource_id) > 0:
-                alias_to_id[alias] = resource_id
+                alias_to_resource_id[alias] = resource_id
             else:
-                aliases_needing_legacy_resolve.append(alias)
+                aliases_without_resource_id.append(alias)
 
-        if len(aliases_needing_legacy_resolve) == 0:
-            return alias_to_id
+        if len(aliases_without_resource_id) == 0:
+            return alias_to_resource_id
 
-        resource_ids = resolver.resolve(aliases_needing_legacy_resolve)
-        if len(resource_ids) != len(aliases_needing_legacy_resolve):
+        resource_ids = resolver.resolve(aliases_without_resource_id)
+        if len(resource_ids) != len(aliases_without_resource_id):
             raise ValueError(
                 "InstrumentResolver returned inconsistent alias resolution length."
             )
-        alias_to_id.update(
-            zip(aliases_needing_legacy_resolve, resource_ids, strict=True)
+        alias_to_resource_id.update(
+            zip(aliases_without_resource_id, resource_ids, strict=True)
         )
-        return alias_to_id
+        return alias_to_resource_id
 
     @classmethod
     def _resolve_payload(
@@ -879,7 +879,7 @@ class Quel3ExecutionManager:
             if len(alias) == 0:
                 raise ValueError("Empty alias binding is not allowed.")
             try:
-                instrument_info = cls._find_inst_info_by_alias(
+                instrument_info = cls._find_instrument_info_by_alias(
                     resolver=resolver,
                     alias=alias,
                     default_unit_label=default_unit_label,
@@ -895,7 +895,7 @@ class Quel3ExecutionManager:
         raise ValueError(f"Unsupported instrument binding: `{binding}`.")
 
     @classmethod
-    def _find_inst_info_by_alias(
+    def _find_instrument_info_by_alias(
         cls,
         *,
         resolver: InstrumentResolverProtocol,
@@ -924,7 +924,7 @@ class Quel3ExecutionManager:
     @staticmethod
     def _runtime_alias_from_instrument_info(
         *,
-        instrument_info: object,
+        instrument_info: InstrumentInfoProtocol,
         fallback_alias: str,
     ) -> str:
         """Return the runtime alias stored on one runtime instrument info."""
@@ -1017,7 +1017,7 @@ class Quel3ExecutionManager:
         *,
         payload: Quel3ExecutionPayload,
         shot_samples: dict[str, dict[str, list[np.ndarray]]],
-        sampling_period_ns: float | None,
+        capture_sampling_period_ns: float | None,
         backend_sampling_period_ns: float,
         capture_decimation_factor: int,
     ) -> Quel3BackendExecutionResult:
@@ -1048,11 +1048,9 @@ class Quel3ExecutionManager:
                 else:
                     measurement_data[alias].append(samples[0])
 
-        base_sampling_period_ns = (
-            sampling_period_ns
-            if sampling_period_ns is not None
-            else backend_sampling_period_ns
-        )
+        base_sampling_period_ns = capture_sampling_period_ns
+        if base_sampling_period_ns is None:
+            base_sampling_period_ns = backend_sampling_period_ns
         effective_sampling_period_ns = (
             base_sampling_period_ns * capture_decimation_factor
             if is_averaged

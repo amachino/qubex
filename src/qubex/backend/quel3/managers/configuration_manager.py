@@ -419,32 +419,36 @@ class Quel3ConfigurationManager:
                 )
             )
 
-        inst_infos = await session.deploy_instruments(
+        instrument_infos = await session.deploy_instruments(
             port_id,
             definitions=definitions,
             # Qubex push treats the current target registry as the source of
             # truth for this port's selected instruments.
             append=False,
         )
-        infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
-        for inst_info in inst_infos:
+        instrument_infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = (
+            defaultdict(list)
+        )
+        for instrument_info in instrument_infos:
             local_alias, _runtime_alias = self._split_alias_for_port(
-                alias=inst_info.definition.alias,
-                port_id=inst_info.port_id,
+                alias=instrument_info.definition.alias,
+                port_id=instrument_info.port_id,
             )
-            infos_by_alias[local_alias].append(inst_info)
+            instrument_infos_by_alias[local_alias].append(instrument_info)
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
         target_alias_map: dict[str, str] = {}
         for request in port_requests:
-            matched_infos = tuple(infos_by_alias.get(request.alias, ()))
-            if len(matched_infos) != 1:
+            matched_instrument_infos = tuple(
+                instrument_infos_by_alias.get(request.alias, ())
+            )
+            if len(matched_instrument_infos) != 1:
                 raise ValueError(
                     "quelware did not return the deployed instrument info for one request."
                 )
-            deployed[request.alias] = matched_infos
+            deployed[request.alias] = matched_instrument_infos
             runtime_alias = self._runtime_alias_from_instrument_info(
-                instrument_info=matched_infos[0],
+                instrument_info=matched_instrument_infos[0],
                 fallback_alias=request.alias,
             )
             for target_label in request.target_labels:

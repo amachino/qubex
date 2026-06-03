@@ -191,7 +191,7 @@ def test_build_measurement_result_averages_shot_samples() -> None:
     result = Quel3ExecutionManager._build_measurement_result(
         payload=payload,
         shot_samples=shot_samples,
-        sampling_period_ns=0.8,
+        capture_sampling_period_ns=0.8,
         backend_sampling_period_ns=0.4,
         capture_decimation_factor=1,
     )
@@ -225,7 +225,7 @@ def test_build_measurement_result_keeps_backend_alias_labels() -> None:
     result = Quel3ExecutionManager._build_measurement_result(
         payload=payload,
         shot_samples=shot_samples,
-        sampling_period_ns=0.4,
+        capture_sampling_period_ns=0.4,
         backend_sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
