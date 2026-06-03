@@ -42,7 +42,7 @@ def test_calibrate_readout_frequency_constrains_lorentzian_amplitude_positive(
 
     def _fit_lorentzian(**kwargs: Any) -> FitResult:
         fit_calls.append(kwargs)
-        return FitResult(data={"f0": 5.0})
+        return FitResult(status=FitStatus.SUCCESS, data={"f0": 5.0})
 
     service = cast(Any, object.__new__(CharacterizationService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
@@ -115,7 +115,7 @@ def test_calibrate_readout_frequency_double_lorentzian_starts_from_two_peaks(
 
     def _fit_lorentzian(**kwargs: Any) -> FitResult:
         fit_calls.append(kwargs)
-        return FitResult(data={"f0": 5.0})
+        return FitResult(status=FitStatus.SUCCESS, data={"f0": 5.0})
 
     service = cast(Any, object.__new__(CharacterizationService))
     service.__dict__["_experiment_context"] = SimpleNamespace(

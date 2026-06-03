@@ -1545,8 +1545,8 @@ class CharacterizationService:
                     interval=interval,
                     plot=False,
                 )
-                for qubit, data in rabi_result.data.items():
-                    rabi_amplitude = data.rabi_param.amplitude
+                for qubit, rabi_data in rabi_result.data.items():
+                    rabi_amplitude = rabi_data.rabi_param.amplitude
                     result[qubit].append(rabi_amplitude)
 
         # restore the original readout amplitudes
