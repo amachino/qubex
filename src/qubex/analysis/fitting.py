@@ -202,6 +202,43 @@ def func_lorentzian(
     return A / (1 + ((f - f0) / gamma) ** 2) + C
 
 
+def func_double_lorentzian(
+    f: NDArray,
+    A1: float,
+    f01: float,
+    gamma1: float,
+    A2: float,
+    f02: float,
+    gamma2: float,
+    C: float,
+) -> NDArray:
+    """
+    Calculate a sum of two Lorentzian peaks.
+
+    Parameters
+    ----------
+    f : NDArray[np.float64]
+        Frequency points for the function evaluation.
+    A1 : float
+        Amplitude of the first Lorentzian peak.
+    f01 : float
+        Center frequency of the first Lorentzian peak.
+    gamma1 : float
+        Width of the first Lorentzian peak.
+    A2 : float
+        Amplitude of the second Lorentzian peak.
+    f02 : float
+        Center frequency of the second Lorentzian peak.
+    gamma2 : float
+        Width of the second Lorentzian peak.
+    C : float
+        Vertical offset.
+    """
+    return (
+        A1 / (1 + ((f - f01) / gamma1) ** 2) + A2 / (1 + ((f - f02) / gamma2) ** 2) + C
+    )
+
+
 def func_sqrt_lorentzian(
     f: NDArray,
     A: float,
@@ -1240,6 +1277,205 @@ def fit_lorentzian(
             "A_err": A_err,
             "f0_err": f0_err,
             "gamma_err": gamma_err,
+            "C_err": C_err,
+            "r2": r2,
+            "popt": popt,
+            "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
+            "fig": fig,
+        },
+        figure=fig,
+    )
+
+
+def fit_double_lorentzian(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    p0: Any | None = None,
+    bounds: Any | None = None,
+    sigma: ArrayLike | None = None,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Double Lorentzian fit",
+    xlabel: str = "Frequency (GHz)",
+    ylabel: str = "Signal (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> FitResult:
+    """
+    Fit data to a sum of two Lorentzian peaks.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Frequency range for the Lorentzian data.
+    y : ArrayLike
+        Amplitude data for the Lorentzian data.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Lower and upper bounds for the fitting parameters.
+    sigma : ArrayLike, optional
+        Standard deviation estimates used to weight the fit.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    target : str, optional
+        Identifier of the target.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    FitResult
+        Result with fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+    if sigma is not None:
+        sigma = np.array(sigma, dtype=np.float64)[mask]
+
+    if p0 is None:
+        y_base = float(np.percentile(y, 20))
+        peak_indices = np.argsort(y)[-2:]
+        f01_guess = float(x[peak_indices[0]])
+        f02_guess = float(x[peak_indices[1]])
+        A1_guess = max(float(y[peak_indices[0]] - y_base), 0)
+        A2_guess = max(float(y[peak_indices[1]] - y_base), 0)
+        gamma_guess = max(float(np.max(x) - np.min(x)) / 12, np.finfo(float).eps)
+        p0 = (
+            A1_guess,
+            f01_guess,
+            gamma_guess,
+            A2_guess,
+            f02_guess,
+            gamma_guess,
+            y_base,
+        )
+
+    if bounds is None:
+        bounds = (
+            (0, np.min(x), 0, 0, np.min(x), 0, -np.inf),
+            (np.inf, np.max(x), np.inf, np.inf, np.max(x), np.inf, np.inf),
+        )
+
+    try:
+        popt, pcov = _curve_fit(
+            func_double_lorentzian,
+            x,
+            y,
+            p0=p0,
+            bounds=bounds,
+            sigma=sigma,
+        )
+    except RuntimeError:
+        logger.warning(f"Failed to fit the data for {target}.")
+        return FitResult(
+            status=FitStatus.ERROR,
+            message="Failed to fit the data.",
+        )
+
+    A1, f01, gamma1, A2, f02, gamma2, C = popt
+    A1_err, f01_err, gamma1_err, A2_err, f02_err, gamma2_err, C_err = np.sqrt(
+        np.diag(pcov)
+    )
+
+    residual = y - func_double_lorentzian(x, *popt)
+    total = np.sum((y - np.mean(y)) ** 2)
+    r2 = 1 - np.sum(residual**2) / total if total > 0 else np.nan
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_double_lorentzian(x_fine, *popt)
+    max_index = int(np.argmax(y_fine))
+    f0 = float(x_fine[max_index])
+    y0 = float(y_fine[max_index])
+
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        x=f0,
+        y=y0,
+        text=f"ext: {f0:.6f}",
+        showarrow=True,
+        arrowhead=1,
+        bgcolor="rgba(255, 255, 255, 0.8)",
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = (
+            f"fit_double_lorentzian_{target}" if target else "fit_double_lorentzian"
+        )
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            logger.info(f"Target: {target}")
+        logger.info("Fit : two Lorentzian peaks plus offset")
+        logger.info(f"  f0 = {f0:.6f}")
+        logger.info(f"  f01 = {f01:.6f} ± {f01_err:.1g}")
+        logger.info(f"  f02 = {f02:.6f} ± {f02_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+
+    return FitResult(
+        status=FitStatus.SUCCESS,
+        message="Fitting successful.",
+        data={
+            "A1": A1,
+            "f01": f01,
+            "gamma1": gamma1,
+            "A2": A2,
+            "f02": f02,
+            "gamma2": gamma2,
+            "C": C,
+            "f0": f0,
+            "A1_err": A1_err,
+            "f01_err": f01_err,
+            "gamma1_err": gamma1_err,
+            "A2_err": A2_err,
+            "f02_err": f02_err,
+            "gamma2_err": gamma2_err,
             "C_err": C_err,
             "r2": r2,
             "popt": popt,

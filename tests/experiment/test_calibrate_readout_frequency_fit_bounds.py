@@ -74,12 +74,85 @@ def test_calibrate_readout_frequency_constrains_lorentzian_amplitude_positive(
         time_range=np.array([0.0, 4.0, 8.0]),
         plot=False,
         save_image=False,
+        fit_func="lorentzian",
     )
 
     assert len(fit_calls) == 1
     fit_call = fit_calls[0]
     assert fit_call["p0"][0] > 0
     assert fit_call["bounds"][0][0] == 0
+
+
+def test_calibrate_readout_frequency_double_lorentzian_starts_from_two_peaks(
+    monkeypatch,
+) -> None:
+    """Given two-peaked readout data, when double fitting, then the initial guess uses both peaks."""
+    fit_calls: list[dict[str, Any]] = []
+
+    @contextmanager
+    def _no_output() -> Any:
+        yield
+
+    readout_amplitude = {"Q00": 0.2}
+    control_amplitude = defaultdict(lambda: 0.1, {"Q00": 0.1})
+
+    def _rabi_experiment(**kwargs: Any) -> SimpleNamespace:
+        resonator_freq = kwargs["frequencies"]["RQ00"]
+        amplitude_by_frequency = {
+            4.996: 0.05,
+            4.998: 0.90,
+            5.000: 0.20,
+            5.002: 0.80,
+            5.004: 0.05,
+        }
+        amplitude = amplitude_by_frequency[round(float(resonator_freq), 3)]
+        return SimpleNamespace(
+            data={
+                "Q00": SimpleNamespace(
+                    rabi_param=SimpleNamespace(amplitude=float(amplitude))
+                )
+            }
+        )
+
+    def _fit_lorentzian(**kwargs: Any) -> Result:
+        fit_calls.append(kwargs)
+        return Result(data={"f0": 5.0}, figures={})
+
+    service = cast(Any, object.__new__(CharacterizationService))
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        qubit_labels=["Q00"],
+        resonators={"Q00": SimpleNamespace(label="RQ00", frequency=5.0)},
+        resonator_labels=["RQ00"],
+        params=SimpleNamespace(
+            readout_amplitude=readout_amplitude,
+            control_amplitude=control_amplitude,
+        ),
+        util=SimpleNamespace(no_output=_no_output),
+        resolve_qubit_label=lambda label: label,
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace(
+        rabi_experiment=_rabi_experiment
+    )
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.fitting.fit_double_lorentzian",
+        _fit_lorentzian,
+    )
+
+    service.calibrate_readout_frequency(
+        targets=["Q00"],
+        detuning_range=np.array([-0.004, -0.002, 0.0, 0.002, 0.004]),
+        time_range=np.array([0.0, 4.0, 8.0]),
+        plot=False,
+        save_image=False,
+    )
+
+    fit_call = fit_calls[0]
+    assert fit_call["p0"][1] == pytest.approx(4.998, abs=1e-12)
+    assert fit_call["p0"][4] == pytest.approx(5.002, abs=1e-12)
+    assert fit_call["p0"][6] == pytest.approx(0.05, abs=1e-12)
 
 
 def test_calibrate_readout_frequency_returns_peak_frequency_for_low_quality_fit(
@@ -146,6 +219,7 @@ def test_calibrate_readout_frequency_returns_peak_frequency_for_low_quality_fit(
         time_range=np.array([0.0, 4.0, 8.0]),
         plot=False,
         save_image=False,
+        fit_func="lorentzian",
     )
 
     assert result.data["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)
@@ -212,6 +286,7 @@ def test_calibrate_readout_frequency_returns_peak_frequency_when_fit_rejects_gue
         time_range=np.array([0.0, 4.0, 8.0]),
         plot=False,
         save_image=False,
+        fit_func="lorentzian",
     )
 
     assert result.data["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)
@@ -285,6 +360,7 @@ def test_calibrate_readout_frequency_shows_peak_figure_when_fit_has_no_figure(
         time_range=np.array([0.0, 4.0, 8.0]),
         plot=True,
         save_image=False,
+        fit_func="lorentzian",
     )
 
     fig = result.figures["Q00"]
