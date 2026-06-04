@@ -66,6 +66,7 @@ plugins:
                 - パルスシーケンスの組み方: user-guide/pulse-sequences/index.md
             - 実験インタフェース:
                 - Experiment クラス: user-guide/experiment/index.md
+                - データ保存: user-guide/experiment/data-persistence.md
                 - クイックスタート: user-guide/getting-started/quickstart.md
                 - サンプルワークフロー: user-guide/experiment/examples.md
                 - コミュニティ提供ワークフロー: user-guide/getting-started/contrib-workflows.md
@@ -133,6 +134,7 @@ nav:
       - Build pulse sequences with PulseSchedule: user-guide/pulse-sequences/index.md
   - Experiment interface:
       - Experiment class: user-guide/experiment/index.md
+      - Data persistence: user-guide/experiment/data-persistence.md
       - Quickstart: user-guide/getting-started/quickstart.md
       - Example workflows: user-guide/experiment/examples.md
       - Community-contributed workflows: user-guide/getting-started/contrib-workflows.md

@@ -2,6 +2,9 @@
 
 `Experiment` is the recommended starting point for most hardware-backed Qubex users.
 It provides a high-level workflow for configuring systems, connecting to instruments, building pulse sequences, running measurements, and analyzing results.
+Use [Data persistence](data-persistence.md) when you need to save analyzed
+`ExperimentResult` objects or raw `MeasurementResult` files from measurement
+execution.
 
 ## Who should use Experiment
 
@@ -14,8 +17,9 @@ It provides a high-level workflow for configuring systems, connecting to instrum
 1. Install Qubex: [Installation](../getting-started/installation.md)
 2. Prepare your configuration files: [System configuration](../getting-started/system-configuration.md)
 3. Work through the basic workflow: [Quickstart](../getting-started/quickstart.md)
-4. Continue with curated notebooks: [Experiment example workflows](examples.md)
-5. Explore extra routines when needed: [Community-contributed workflows](../getting-started/contrib-workflows.md)
+4. Decide how to save results: [Data persistence](data-persistence.md)
+5. Continue with curated notebooks: [Experiment example workflows](examples.md)
+6. Explore extra routines when needed: [Community-contributed workflows](../getting-started/contrib-workflows.md)
 
 ## Experimental async APIs
 

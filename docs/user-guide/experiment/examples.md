@@ -23,5 +23,6 @@ Use these notebooks after completing the [Quickstart](../getting-started/quickst
 
 - [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
 - [`Experiment`](index.md)
+- [Data persistence](data-persistence.md)
 - [Community-contributed workflows](../getting-started/contrib-workflows.md)
 - [Full examples index](../../examples/index.md)
