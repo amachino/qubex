@@ -5,6 +5,8 @@ flows from the models exposed by the measurement layer. It sits between
 [`system`](../system/index.md) and
 [`backend`](../backend/index.md): it consumes loaded system state and turns
 schedules into capture/readout and sweep execution flows.
+For result storage, see [Data persistence](../experiment/data-persistence.md),
+especially the sections on raw `MeasurementResult` NetCDF4 files.
 
 This page sits under [Low-level APIs](../low-level-apis/index.md).
 
@@ -33,8 +35,9 @@ This page sits under [Low-level APIs](../low-level-apis/index.md).
 1. Read the section overview: [Low-level APIs](../low-level-apis/index.md)
 2. Learn the shared pulse-sequence model if needed: [Build pulse sequences with PulseSchedule](../pulse-sequences/index.md)
 3. Start with curated notebooks: [`measurement` example workflows](examples.md)
-4. Move to [`system`](../system/index.md) when configuration or synchronization is the main issue
-5. Move to [`backend`](../backend/index.md) when controller-level payloads or execution paths are the main issue
+4. Review raw result storage: [Data persistence](../experiment/data-persistence.md)
+5. Move to [`system`](../system/index.md) when configuration or synchronization is the main issue
+6. Move to [`backend`](../backend/index.md) when controller-level payloads or execution paths are the main issue
 
 ## Choose `Experiment` instead when
 

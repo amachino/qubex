@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import numpy as np
 import plotly.graph_objects as go
 import pytest
 
+from qubex.experiment.models.experiment_record import ExperimentRecord
+from qubex.experiment.models.experiment_result import ExperimentResult, TargetData
 from qubex.experiment.models.result import Result
 
 
@@ -21,6 +24,31 @@ def test_result_should_preserve_mapping_payload_access() -> None:
     assert datetime.fromisoformat(result.created_at).tzinfo == timezone.utc
     assert result.figure is None
     assert result.figures is None
+
+
+def test_experiment_result_save_round_trips_experiment_record(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given ExperimentResult.save, when loading the record, then data is restored."""
+    monkeypatch.chdir(tmp_path)
+    result = ExperimentResult(
+        data={"Q00": TargetData(target="Q00", data=np.array([1.0, 2.0]))}
+    )
+
+    record = result.save(
+        name="q00_rabi",
+        description="Rabi calibration for Q00.",
+    )
+    second_record = result.save(name="q00_rabi")
+    loaded = ExperimentRecord.load(record.file_name, data_dir="data")
+
+    assert record.file_name.endswith("_q00_rabi_1.json")
+    assert second_record.file_name.endswith("_q00_rabi_2.json")
+    assert loaded.name == "q00_rabi"
+    assert loaded.description == "Rabi calibration for Q00."
+    assert isinstance(loaded.data, ExperimentResult)
+    assert np.array_equal(loaded.data.data["Q00"].data, np.array([1.0, 2.0]))
 
 
 def test_result_should_not_derive_figure_fields_from_legacy_payload_keys() -> None:

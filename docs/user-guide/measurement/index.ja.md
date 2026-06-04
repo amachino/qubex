@@ -5,6 +5,8 @@
 [`backend`](../backend/index.md) のあいだに位置し、読み込まれた
 システム状態を使って schedule からキャプチャ/読み出しや sweep の実行フローを
 組み立てます。
+結果保存については、raw `MeasurementResult` の NetCDF4 保存を含む
+[データ保存](../experiment/data-persistence.md) を参照してください。
 
 このページは [低レベル API](../low-level-apis/index.md) セクションの一部です。
 
@@ -33,8 +35,9 @@
 1. [低レベル API 概要](../low-level-apis/index.md) で全体像を確認する
 2. パルスシーケンスから始まる場合は [パルスシーケンスの組み方](../pulse-sequences/index.md) を読む
 3. [`measurement` サンプルワークフロー](examples.md) から notebook を始める
-4. 設定読み込みや同期が主題なら [`system`](../system/index.md) に進む
-5. controller や payload が主題なら [`backend`](../backend/index.md) に進む
+4. raw result の保存が必要なら [データ保存](../experiment/data-persistence.md) を確認する
+5. 設定読み込みや同期が主題なら [`system`](../system/index.md) に進む
+6. controller や payload が主題なら [`backend`](../backend/index.md) に進む
 
 ## 次のような場合は `Experiment` を選ぶ
 
