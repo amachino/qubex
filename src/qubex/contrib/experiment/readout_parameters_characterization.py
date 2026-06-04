@@ -68,7 +68,7 @@ def characterize_readout_parameters(
     )
 
 
-def characterize_readout_parameters_2d(
+def characterize_coarse_readout_parameters(
     exp: Experiment,
     *,
     target: str | None = None,
@@ -124,7 +124,7 @@ def characterize_readout_parameters_2d(
     read_label = resonator.label
     if frequency_range is None:
         if detuning_range is None:
-            detuning_range = np.linspace(-0.05, 0.05, 11)
+            detuning_range = np.linspace(-0.025, 0.025, 21)
         detuning_values = np.asarray(detuning_range, dtype=np.float64)
         frequency_values = float(resonator.frequency) + detuning_values
     else:
@@ -231,8 +231,6 @@ def characterize_readout_parameters_2d(
             "optimal_response_range": optimal_response_range,
             "optimal_rabi_amplitude": optimal_response_range,
             "rabi_results": rabi_results,
-            # TODO: Remove this legacy payload key after callers migrate to .figure.
-            "fig": fig,
         },
         figure=fig,
     )

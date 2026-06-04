@@ -1,4 +1,4 @@
-"""Tests for readout parameter 2D characterization."""
+"""Tests for coarse readout parameter characterization."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 
 from qubex.contrib.experiment import readout_parameters_characterization as rpc
 from qubex.contrib.experiment.readout_parameters_characterization import (
-    characterize_readout_parameters_2d,
+    characterize_coarse_readout_parameters,
 )
 
 
@@ -63,7 +63,7 @@ class _TqdmStub:
         self.updated += n
 
 
-def test_characterize_readout_parameters_2d_builds_heatmap_payload(
+def test_characterize_coarse_readout_parameters_builds_heatmap_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given amplitude and frequency ranges, when Rabi is measured, then heatmap data is returned."""
@@ -79,7 +79,7 @@ def test_characterize_readout_parameters_2d_builds_heatmap_payload(
 
     monkeypatch.setattr(rpc, "tqdm", _tqdm_stub)
 
-    result = characterize_readout_parameters_2d(
+    result = characterize_coarse_readout_parameters(
         exp,  # type: ignore[arg-type]
         frequency_range=frequency_range,
         readout_amplitudes=readout_amplitudes,
@@ -138,15 +138,16 @@ def test_characterize_readout_parameters_2d_builds_heatmap_payload(
         atol=0,
     )
     assert result.figure is not None
+    assert "fig" not in result.data
 
 
-def test_characterize_readout_parameters_2d_uses_current_settings_for_defaults() -> (
+def test_characterize_coarse_readout_parameters_uses_current_settings_for_defaults() -> (
     None
 ):
     """Given no sweep ranges, when Rabi is measured, then current settings define the grid."""
     exp = _ExperimentStub()
 
-    result = characterize_readout_parameters_2d(
+    result = characterize_coarse_readout_parameters(
         exp,  # type: ignore[arg-type]
         plot=False,
         save_image=False,
@@ -155,17 +156,17 @@ def test_characterize_readout_parameters_2d_uses_current_settings_for_defaults()
     frequency_range = cast(NDArray[np.float64], result.data["frequency_range"])
     detuning_range = cast(NDArray[np.float64], result.data["detuning_range"])
     readout_amplitudes = cast(NDArray[np.float64], result.data["readout_amplitudes"])
-    assert len(exp.calls) == 77
+    assert len(exp.calls) == 147
     assert exp.calls[0]["kwargs"]["n_shots"] == 256
     np.testing.assert_allclose(
         frequency_range,
-        np.linspace(4.95, 5.05, 11),
+        np.linspace(4.975, 5.025, 21),
         rtol=0,
         atol=1e-12,
     )
     np.testing.assert_allclose(
         detuning_range,
-        np.linspace(-0.05, 0.05, 11),
+        np.linspace(-0.025, 0.025, 21),
         rtol=0,
         atol=1e-12,
     )
@@ -175,7 +176,7 @@ def test_characterize_readout_parameters_2d_uses_current_settings_for_defaults()
         rtol=0,
         atol=1e-12,
     )
-    assert result.data["optimal_readout_frequency"] == 5.05
+    assert result.data["optimal_readout_frequency"] == 5.025
     np.testing.assert_allclose(
         result.data["optimal_readout_amplitude"],
         0.2,
@@ -185,14 +186,14 @@ def test_characterize_readout_parameters_2d_uses_current_settings_for_defaults()
     assert exp.ctx.params.readout_amplitude == {"Q00": 0.2}
 
 
-def test_characterize_readout_parameters_2d_clips_default_amplitudes_to_unit_range() -> (
+def test_characterize_coarse_readout_parameters_clips_default_amplitudes_to_unit_range() -> (
     None
 ):
     """Given high current amplitude, when defaults are used, then amplitudes stay within [0, 1]."""
     exp = _ExperimentStub()
     exp.ctx.params.readout_amplitude["Q00"] = 0.8
 
-    result = characterize_readout_parameters_2d(
+    result = characterize_coarse_readout_parameters(
         exp,  # type: ignore[arg-type]
         frequency_range=np.array([5.0], dtype=np.float64),
         plot=False,
@@ -211,12 +212,14 @@ def test_characterize_readout_parameters_2d_clips_default_amplitudes_to_unit_ran
     assert exp.ctx.params.readout_amplitude == {"Q00": 0.8}
 
 
-def test_characterize_readout_parameters_2d_rejects_out_of_range_amplitudes() -> None:
+def test_characterize_coarse_readout_parameters_rejects_out_of_range_amplitudes() -> (
+    None
+):
     """Given out-of-range amplitudes, when scanning, then a value error is raised."""
     exp = _ExperimentStub()
 
     with pytest.raises(ValueError, match=r"within \[0, 1\]"):
-        characterize_readout_parameters_2d(
+        characterize_coarse_readout_parameters(
             exp,  # type: ignore[arg-type]
             frequency_range=np.array([5.0], dtype=np.float64),
             readout_amplitudes=np.array([-0.1, 0.5, 1.1], dtype=np.float64),

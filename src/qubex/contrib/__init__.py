@@ -79,8 +79,8 @@ from .experiment.quantum_efficiency_measurement import (
     sweep_readout_snr,
 )
 from .experiment.readout_parameters_characterization import (
+    characterize_coarse_readout_parameters,
     characterize_readout_parameters,
-    characterize_readout_parameters_2d,
     fit_readout_parameters,
 )
 from .experiment.repeated_coherence_measurement import repeated_coherence_measurement
@@ -109,8 +109,8 @@ __all__ = [
     "calibrate_gf_hpi_pulse",
     "calibrate_gf_pi_pulse",
     "calibrate_gf_pulse",
+    "characterize_coarse_readout_parameters",
     "characterize_readout_parameters",
-    "characterize_readout_parameters_2d",
     "ckp_measurement_v2",
     "cpmg_noise_spectroscopy",
     "cr_crosstalk_hamiltonian_tomography",
