@@ -25,6 +25,7 @@ Manage development notes and operational documents.
 - [run_sweep_measurement Minimal Spec](run-sweep-measurement-minimal-spec.md)
 - [Sweep / NDSweep Measurement API Spec](sweep-ndsweep-measurement-spec.md)
 - [qxschema Measurement Protocol Design](qxschema-measurement-protocol-design.md)
+- [Data Persistence Integration Roadmap](data-persistence-integration-roadmap.md)
 - [System Configuration Schema](system-configuration-schema-draft.md)
 - [Configuration Module Migration Plan](configuration-module-migration.md)
 - [Analysis Package Layering Plan](analysis-package-layering-plan.md)
