@@ -19,6 +19,7 @@ Use these notebooks when you want a measurement-centric workflow built around
 
 - [Low-level APIs](../low-level-apis/index.md)
 - [`measurement` module](index.md)
+- [Data persistence](../experiment/data-persistence.md)
 - [`system` module](../system/index.md)
 - [`backend` module](../backend/index.md)
 - [Full examples index](../../examples/index.md)

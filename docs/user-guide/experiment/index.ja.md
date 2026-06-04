@@ -2,6 +2,8 @@
 
 `Experiment` は、実機を使う Qubex ユーザーの多くにとって推奨される入口です。
 system の設定、装置接続、パルスシーケンスの構築、測定実行、結果解析までを高レベルなワークフローとして提供します。
+解析済みの `ExperimentResult` や、測定実行から得られる raw `MeasurementResult`
+を保存したい場合は [データ保存](data-persistence.md) を参照してください。
 
 ## Experiment を使うべき人
 
@@ -14,8 +16,9 @@ system の設定、装置接続、パルスシーケンスの構築、測定実�
 1. [インストール](../getting-started/installation.md) で Qubex を入れる
 2. [システム設定](../getting-started/system-configuration.md) で設定ファイルを用意する
 3. [クイックスタート](../getting-started/quickstart.md) で基本ワークフローを確認する
-4. [Experiment サンプルワークフロー](examples.md) で notebook をたどる
-5. 必要に応じて [コミュニティ提供ワークフロー](../getting-started/contrib-workflows.md) を使う
+4. [データ保存](data-persistence.md) で結果の残し方を決める
+5. [Experiment サンプルワークフロー](examples.md) で notebook をたどる
+6. 必要に応じて [コミュニティ提供ワークフロー](../getting-started/contrib-workflows.md) を使う
 
 ## Experimental な非同期 API
 
