@@ -9,7 +9,7 @@ Qubex には、結果を保存する経路が 2 つあります。解析済み�
 | --- | --- | --- | --- | --- |
 | 解析済みの実験結果を保存する | `ExperimentResult.save()` | `ExperimentRecord[ExperimentResult]` | `data/` | jsonpickle JSON |
 | 特定の実験処理において raw data と metadata を保存する | `exp.system_manager.save_rawdata(...)` | `MeasurementResult` | `.rawdata/` | NetCDF4 `.nc` |
-| セッション中の raw-data 保存を有効にし続ける | `exp.system_manager.set_rawdata_dir(...)` | `MeasurementResult` | ユーザーが指定したディレクトリ | NetCDF4 `.nc` |
+| `execute()` / `measure()` の raw-data 保存を有効にし続ける | `exp.system_manager.set_rawdata_dir(...)` | `MeasurementResult` | ユーザーが指定したディレクトリ | NetCDF4 `.nc` |
 
 ## `ExperimentResult` を保存する
 
@@ -98,10 +98,11 @@ raw_result = MeasurementResult.load(".rawdata/q00-rabi/20260604_101530_123456.nc
 context manager を抜けると、例外が発生した場合も含めて、以前の raw-data 設定へ
 戻ります。
 
-## セッション中の測定を常に保存する
+## `execute()` / `measure()` の raw-data 保存を有効にし続ける
 
-notebook や実験セッション中の測定をすべて保存したい場合は、最初に raw-data
-directory を設定し、セッション終了時に明示的に無効化します。
+notebook や実験セッション中に `execute()` または `measure()` を繰り返し実行し、
+それらの raw data を保存したい場合は、最初に raw-data directory を設定し、
+セッション終了時に明示的に無効化します。
 
 ```python
 exp.system_manager.set_rawdata_dir(".rawdata/20260604-q00-session")
@@ -114,13 +115,18 @@ finally:
 ```
 
 !!! note
-    セッション全体で raw-data 保存を有効にすると、測定条件によっては保存容量が
-    大きくなることがあります。長時間の実験や共有サーバーで使う場合は、保存先の
-    空き容量とセッションごとの整理に注意してください。
+    多くの `execute()` / `measure()` 呼び出しで raw-data 保存を有効にしたままに
+    すると、測定条件によっては保存容量が大きくなることがあります。長時間の実験や
+    共有サーバーで使う場合は、保存先の空き容量とセッションごとの整理に注意して
+    ください。
 
 `SystemManager` の状態は active な実験 stack から共有されることがあるため、
-session-wide raw-data capture を有効にするときは `try` / `finally` を使うことを
-推奨します。
+raw-data 保存を複数の呼び出しにまたがって有効にするときは `try` / `finally` を
+使うことを推奨します。
+
+この設定が効くのは、`execute()` や `measure()` のように自動 raw-data 保存の経路を
+通る API です。API から `MeasurementResult` を直接受け取る場合は、次のように返り値
+を明示的に保存してください。
 
 ## 返された `MeasurementResult` を明示的に保存する
 

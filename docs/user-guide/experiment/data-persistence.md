@@ -9,7 +9,7 @@ during measurement execution.
 | --- | --- | --- | --- | --- |
 | Save an analyzed experiment result | `ExperimentResult.save()` | `ExperimentRecord[ExperimentResult]` | `data/` | jsonpickle JSON |
 | Save raw data and metadata for a specific experiment operation | `exp.system_manager.save_rawdata(...)` | `MeasurementResult` | `.rawdata/` | NetCDF4 `.nc` |
-| Keep raw-data capture enabled for a session | `exp.system_manager.set_rawdata_dir(...)` | `MeasurementResult` | User-selected directory | NetCDF4 `.nc` |
+| Keep raw-data capture enabled for `execute()` / `measure()` calls | `exp.system_manager.set_rawdata_dir(...)` | `MeasurementResult` | User-selected directory | NetCDF4 `.nc` |
 
 ## Save `ExperimentResult`
 
@@ -99,10 +99,11 @@ raw_result = MeasurementResult.load(".rawdata/q00-rabi/20260604_101530_123456.nc
 The context manager restores the previous raw-data setting when the context
 exits, including when an exception is raised.
 
-## Save every measurement in a session
+## Keep raw-data capture enabled for `execute()` / `measure()`
 
-For notebook or lab sessions where every measurement should be captured, set
-the raw-data directory once and disable it explicitly when the session is over.
+For notebook or lab sessions where repeated `execute()` or `measure()` calls
+should be captured, set the raw-data directory once and disable it explicitly
+when the session is over.
 
 ```python
 exp.system_manager.set_rawdata_dir(".rawdata/20260604-q00-session")
@@ -115,13 +116,19 @@ finally:
 ```
 
 !!! note
-    Enabling raw-data capture for a whole session can use a large amount of
-    storage depending on the measurement settings. For long-running sessions or
-    shared servers, pay attention to available storage and session-level
-    organization.
+    Keeping raw-data capture enabled for many `execute()` / `measure()` calls
+    can use a large amount of storage depending on the measurement settings.
+    For long-running sessions or shared servers, pay attention to available
+    storage and session-level organization.
 
 Because `SystemManager` state can be shared by the active experiment stack,
-prefer `try` / `finally` when enabling session-wide raw-data capture.
+prefer `try` / `finally` when keeping raw-data capture enabled across repeated
+calls.
+
+This setting only affects calls that go through the automatic raw-data capture
+path, such as `execute()` and `measure()`. If an API returns a
+`MeasurementResult` directly, save the returned object explicitly as shown
+below.
 
 ## Save returned `MeasurementResult` objects explicitly
 
