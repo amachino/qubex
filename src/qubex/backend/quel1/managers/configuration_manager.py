@@ -80,8 +80,12 @@ class Quel1ConfigurationManager:
         if box.boxtype == "quel1se-riken8":
             port_info = box.dump_port(port)
             if port_info == {}:
-                raise ValueError('No ports information provided.')
-            if not (port_info.get("direction") == "out" and "lo_freq" in port_info and "sideband" in port_info):
+                raise ValueError("No ports information provided.")
+            if not (
+                port_info.get("direction") == "out"
+                and "lo_freq" in port_info
+                and "sideband" in port_info
+            ):
                 lo_freq_hz = None
                 vatt = None
                 sideband = None
