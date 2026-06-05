@@ -1552,11 +1552,6 @@ class CharacterizationService:
         self.ctx.params.readout_amplitude = original_readout_amplitudes
 
         fit_data: dict[str, float] = {}
-        response_data: dict[str, NDArray[np.float64]] = {}
-        frequency_data: dict[str, NDArray[np.float64]] = {}
-        fit_results: dict[str, FitResult] = {}
-        peak_frequencies: dict[str, float | None] = {}
-        peak_values: dict[str, float | None] = {}
         figs: dict[str, go.Figure] = {}
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
@@ -1624,11 +1619,6 @@ class CharacterizationService:
                     height=300,
                 )
             fit_data[target] = float(readout_frequency)
-            response_data[target] = values_array
-            frequency_data[target] = frequency_values
-            fit_results[target] = fit_result
-            peak_frequencies[target] = peak_frequency
-            peak_values[target] = peak_value
             if fig is not None:
                 figs[target] = fig
 
@@ -1636,20 +1626,12 @@ class CharacterizationService:
         for target, freq in fit_data.items():
             print(f"{target}: {freq:.6f}")
 
-        figure = next(iter(figs.values())) if len(figs) == 1 else None
         return Result(
             data={
                 "data": fit_data,
-                "response": response_data,
-                "frequency_range": frequency_data,
-                "fit_result": fit_results,
-                "peak_frequency": peak_frequencies,
-                "peak_value": peak_values,
-                "fit_func": fit_func,
                 # TODO: Remove this legacy payload key after callers migrate to .figures.
                 "fig": figs,
             },
-            figure=figure,
             figures=figs,
         )
 

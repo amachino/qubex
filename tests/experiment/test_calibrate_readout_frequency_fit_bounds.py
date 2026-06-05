@@ -223,6 +223,7 @@ def test_calibrate_readout_frequency_returns_peak_frequency_for_low_quality_fit(
     )
 
     assert isinstance(result, Result)
+    assert set(result.data) == {"data", "fig"}
     assert result["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)
 
 
@@ -291,6 +292,7 @@ def test_calibrate_readout_frequency_returns_peak_frequency_when_fit_rejects_gue
     )
 
     assert isinstance(result, Result)
+    assert set(result.data) == {"data", "fig"}
     assert result["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)
 
 
@@ -366,6 +368,7 @@ def test_calibrate_readout_frequency_shows_peak_figure_when_fit_has_no_figure(
     )
 
     assert isinstance(result, Result)
+    assert set(result.data) == {"data", "fig"}
     assert result.figures is not None
     fig = result.figures["Q00"]
     assert fig is not None
