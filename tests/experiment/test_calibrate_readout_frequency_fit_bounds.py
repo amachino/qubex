@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 import pytest
 
 from qubex.analysis import FitResult, FitStatus
+from qubex.experiment.models.result import Result
 from qubex.experiment.services.characterization_service import CharacterizationService
 
 
@@ -221,7 +222,8 @@ def test_calibrate_readout_frequency_returns_peak_frequency_for_low_quality_fit(
         fit_func="lorentzian",
     )
 
-    assert result.data["Q00"].readout_frequency == pytest.approx(5.002, abs=1e-12)
+    assert isinstance(result, Result)
+    assert result["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)
 
 
 def test_calibrate_readout_frequency_returns_peak_frequency_when_fit_rejects_guess(
@@ -288,7 +290,8 @@ def test_calibrate_readout_frequency_returns_peak_frequency_when_fit_rejects_gue
         fit_func="lorentzian",
     )
 
-    assert result.data["Q00"].readout_frequency == pytest.approx(5.002, abs=1e-12)
+    assert isinstance(result, Result)
+    assert result["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)
 
 
 def test_calibrate_readout_frequency_shows_peak_figure_when_fit_has_no_figure(
@@ -362,9 +365,11 @@ def test_calibrate_readout_frequency_shows_peak_figure_when_fit_has_no_figure(
         fit_func="lorentzian",
     )
 
-    fig = result.data["Q00"].figure
+    assert isinstance(result, Result)
+    assert result.figures is not None
+    fig = result.figures["Q00"]
     assert fig is not None
     assert show_calls == [fig]
     assert fig.data[0].name == "Data"
     assert fig.data[1].name == "Maximum response"
-    assert result.data["Q00"].readout_frequency == pytest.approx(5.002, abs=1e-12)
+    assert result["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)

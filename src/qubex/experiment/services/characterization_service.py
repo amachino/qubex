@@ -43,7 +43,6 @@ from qubex.experiment.models.experiment_result import (
     FreqRabiData,
     RabiData,
     RamseyData,
-    ReadoutFrequencyData,
     T1Data,
     T2Data,
 )
@@ -1488,7 +1487,7 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
         fit_func: Literal["lorentzian", "double_lorentzian"] | None = None,
-    ) -> ExperimentResult[ReadoutFrequencyData]:
+    ) -> Result:
         """Calibrate readout frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -1517,13 +1516,13 @@ class CharacterizationService:
         if time_range is None:
             time_range = range(0, 101, 4)
 
-        detuning_range = np.array(detuning_range, dtype=np.float64)
+        detuning_values = np.array(detuning_range, dtype=np.float64)
 
         # store the original readout amplitudes
         original_readout_amplitudes = deepcopy(self.ctx.params.readout_amplitude)
 
         result = defaultdict(list)
-        for detuning in tqdm(detuning_range):
+        for detuning in tqdm(detuning_values):
             with self.ctx.util.no_output():
                 if readout_amplitudes is not None:
                     # modify the readout amplitudes if necessary
@@ -1552,11 +1551,17 @@ class CharacterizationService:
         # restore the original readout amplitudes
         self.ctx.params.readout_amplitude = original_readout_amplitudes
 
-        data: dict[str, ReadoutFrequencyData] = {}
+        fit_data: dict[str, float] = {}
+        response_data: dict[str, NDArray[np.float64]] = {}
+        frequency_data: dict[str, NDArray[np.float64]] = {}
+        fit_results: dict[str, FitResult] = {}
+        peak_frequencies: dict[str, float | None] = {}
+        peak_values: dict[str, float | None] = {}
+        figs: dict[str, go.Figure] = {}
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
             values_array = np.array(values, dtype=np.float64)
-            frequency_values = detuning_range + freq
+            frequency_values = detuning_values + freq
             peak_frequency = None
             peak_value = None
             fit_result = FitResult(
@@ -1618,23 +1623,35 @@ class CharacterizationService:
                     width=600,
                     height=300,
                 )
-            data[target] = ReadoutFrequencyData(
-                target=target,
-                data=values_array,
-                frequency_range=frequency_values,
-                readout_frequency=float(readout_frequency),
-                fit_func=fit_func,
-                fit_result=fit_result,
-                peak_frequency=peak_frequency,
-                peak_value=peak_value,
-                figure=fig,
-            )
+            fit_data[target] = float(readout_frequency)
+            response_data[target] = values_array
+            frequency_data[target] = frequency_values
+            fit_results[target] = fit_result
+            peak_frequencies[target] = peak_frequency
+            peak_values[target] = peak_value
+            if fig is not None:
+                figs[target] = fig
 
         print("\nResults\n-------")
-        for target, entry in data.items():
-            print(f"{target}: {entry.readout_frequency:.6f}")
+        for target, freq in fit_data.items():
+            print(f"{target}: {freq:.6f}")
 
-        return ExperimentResult(data=data)
+        figure = next(iter(figs.values())) if len(figs) == 1 else None
+        return Result(
+            data={
+                "data": fit_data,
+                "response": response_data,
+                "frequency_range": frequency_data,
+                "fit_result": fit_results,
+                "peak_frequency": peak_frequencies,
+                "peak_value": peak_values,
+                "fit_func": fit_func,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
+                "fig": figs,
+            },
+            figure=figure,
+            figures=figs,
+        )
 
     def t1_experiment(
         self,
