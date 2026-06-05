@@ -373,6 +373,6 @@ def test_calibrate_readout_frequency_shows_peak_figure_when_fit_has_no_figure(
     fig = result.figures["Q00"]
     assert fig is not None
     assert show_calls == [fig]
-    assert fig.data[0].name == "Data"
-    assert fig.data[1].name == "Maximum response"
+    assert cast(Any, fig.data[0]).name == "Data"
+    assert cast(Any, fig.data[1]).name == "Maximum response"
     assert result["data"]["Q00"] == pytest.approx(5.002, abs=1e-12)

@@ -1516,13 +1516,13 @@ class CharacterizationService:
         if time_range is None:
             time_range = range(0, 101, 4)
 
-        detuning_values = np.array(detuning_range, dtype=np.float64)
+        detuning_range = np.array(detuning_range, dtype=np.float64)
 
         # store the original readout amplitudes
         original_readout_amplitudes = deepcopy(self.ctx.params.readout_amplitude)
 
         result = defaultdict(list)
-        for detuning in tqdm(detuning_values):
+        for detuning in tqdm(detuning_range):
             with self.ctx.util.no_output():
                 if readout_amplitudes is not None:
                     # modify the readout amplitudes if necessary
@@ -1556,7 +1556,7 @@ class CharacterizationService:
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
             values_array = np.array(values, dtype=np.float64)
-            frequency_values = detuning_values + freq
+            frequency_values = detuning_range + freq
             peak_frequency = None
             peak_value = None
             fit_result = FitResult(
