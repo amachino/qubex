@@ -94,8 +94,8 @@ def characterize_coarse_readout_parameters(
         Absolute readout frequencies to sweep in GHz. When omitted, uses the
         current resonator frequency plus `detuning_range`.
     detuning_range : ArrayLike, optional
-        Readout-frequency detunings in GHz. Defaults to 11 points from -0.05
-        to 0.05 GHz.
+        Readout-frequency detunings in GHz. Defaults to 21 points from -0.025
+        to 0.025 GHz.
     readout_amplitudes : ArrayLike, optional
         Readout pulse amplitudes to sweep. When omitted, uses 7 points from 0
         to the currently configured readout amplitude, clipped to [0, 1].
