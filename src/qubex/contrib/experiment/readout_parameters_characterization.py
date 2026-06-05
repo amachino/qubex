@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 import numpy as np
 import plotly.graph_objects as go
 import qxvisualizer as viz
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
+from tqdm import tqdm
 
 from qubex.analysis import FitResult, FitStatus
 from qubex.experiment.experiment import Experiment
@@ -62,6 +65,174 @@ def characterize_readout_parameters(
             "frequency_range": frequency_range,
             "readout_amplitude": readout_amplitude,
         }
+    )
+
+
+def characterize_coarse_readout_parameters(
+    exp: Experiment,
+    *,
+    target: str | None = None,
+    frequency_range: ArrayLike | None = None,
+    detuning_range: ArrayLike | None = None,
+    readout_amplitudes: ArrayLike | None = None,
+    time_range: ArrayLike | None = None,
+    n_shots: int = 256,
+    shot_interval: float | None = None,
+    plot: bool = True,
+    save_image: bool = True,
+) -> Result:
+    """
+    Characterize readout frequency and amplitude with Rabi-response heatmap.
+
+    Parameters
+    ----------
+    exp : Experiment
+        Qubex experiment instance.
+    target : str, optional
+        Target qubit label. Defaults to the first configured qubit.
+    frequency_range : ArrayLike, optional
+        Absolute readout frequencies to sweep in GHz. When omitted, uses the
+        current resonator frequency plus `detuning_range`.
+    detuning_range : ArrayLike, optional
+        Readout-frequency detunings in GHz. Defaults to 21 points from -0.025
+        to 0.025 GHz.
+    readout_amplitudes : ArrayLike, optional
+        Readout pulse amplitudes to sweep. When omitted, uses 7 points from 0
+        to the currently configured readout amplitude, clipped to [0, 1].
+    time_range : ArrayLike, optional
+        Rabi drive time range in ns.
+    n_shots : int, optional
+        Number of shots for each Rabi experiment.
+    shot_interval : float, optional
+        Shot interval in ns.
+    plot : bool, optional
+        Whether to display the heatmap.
+    save_image : bool, optional
+        Whether to save the heatmap.
+
+    Returns
+    -------
+    Result
+        Rabi response-range heatmap and the maximum-response readout point.
+
+    """
+    if target is None:
+        target = exp.qubit_labels[0]
+
+    qubit_label = exp.ctx.resolve_qubit_label(target)
+    resonator = exp.ctx.resonators[qubit_label]
+    read_label = resonator.label
+    if frequency_range is None:
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.025, 0.025, 21)
+        detuning_values = np.asarray(detuning_range, dtype=np.float64)
+        frequency_values = float(resonator.frequency) + detuning_values
+    else:
+        frequency_values = np.asarray(frequency_range, dtype=np.float64)
+        detuning_values = frequency_values - float(resonator.frequency)
+
+    current_readout_amplitude = float(exp.ctx.params.readout_amplitude[qubit_label])
+    if readout_amplitudes is None:
+        amplitude_stop = np.clip(current_readout_amplitude, 0.0, 1.0)
+        amplitude_values = np.linspace(0.0, amplitude_stop, 7)
+    else:
+        amplitude_values = np.asarray(readout_amplitudes, dtype=np.float64)
+    if time_range is None:
+        time_range = range(0, 101, 4)
+
+    if frequency_values.ndim != 1 or frequency_values.size == 0:
+        raise ValueError("frequency_range must be a non-empty 1D array.")
+    if detuning_values.ndim != 1 or detuning_values.size == 0:
+        raise ValueError("detuning_range must be a non-empty 1D array.")
+    if amplitude_values.ndim != 1 or amplitude_values.size == 0:
+        raise ValueError("readout_amplitudes must be a non-empty 1D array.")
+    if np.any((amplitude_values < 0.0) | (amplitude_values > 1.0)):
+        raise ValueError("readout_amplitudes must be within [0, 1].")
+
+    heatmap_data = np.full(
+        (amplitude_values.size, frequency_values.size),
+        np.nan,
+        dtype=np.float64,
+    )
+    rabi_results: list[object] = []
+    original_readout_amplitudes = deepcopy(exp.ctx.params.readout_amplitude)
+    try:
+        with tqdm(
+            total=amplitude_values.size * frequency_values.size,
+            desc=f"readout rabi {qubit_label}",
+        ) as progress:
+            for amplitude_index, readout_amplitude in enumerate(amplitude_values):
+                exp.ctx.params.readout_amplitude[qubit_label] = float(readout_amplitude)
+                for frequency_index, readout_frequency in enumerate(frequency_values):
+                    rabi_result = exp.rabi_experiment(
+                        time_range=time_range,
+                        amplitudes={
+                            qubit_label: exp.ctx.params.control_amplitude[qubit_label]
+                        },
+                        frequencies={read_label: float(readout_frequency)},
+                        n_shots=n_shots,
+                        shot_interval=shot_interval,
+                        plot=False,
+                        store_params=False,
+                    )
+                    rabi_results.append(rabi_result)
+                    rabi_data = rabi_result.data.get(qubit_label)
+                    if rabi_data is None:
+                        rabi_data = next(iter(rabi_result.data.values()))
+                    heatmap_data[amplitude_index, frequency_index] = (
+                        _rabi_response_range(rabi_data.data)
+                    )
+                    progress.update()
+    finally:
+        exp.ctx.params.readout_amplitude = original_readout_amplitudes
+
+    finite_mask = np.isfinite(heatmap_data)
+    if np.any(finite_mask):
+        max_index = int(np.nanargmax(heatmap_data))
+        amplitude_index, frequency_index = np.unravel_index(
+            max_index,
+            heatmap_data.shape,
+        )
+        optimal_readout_amplitude = float(amplitude_values[amplitude_index])
+        optimal_readout_frequency = float(frequency_values[frequency_index])
+        optimal_response_range = float(heatmap_data[amplitude_index, frequency_index])
+    else:
+        optimal_readout_amplitude = float("nan")
+        optimal_readout_frequency = float("nan")
+        optimal_response_range = float("nan")
+
+    fig = _make_readout_rabi_heatmap_figure(
+        target=qubit_label,
+        frequency_range=frequency_values,
+        readout_amplitudes=amplitude_values,
+        heatmap_data=heatmap_data,
+        optimal_readout_frequency=optimal_readout_frequency,
+        optimal_readout_amplitude=optimal_readout_amplitude,
+    )
+    if plot:
+        fig.show(config=viz.get_config(filename=f"readout_rabi_heatmap_{qubit_label}"))
+    if save_image:
+        viz.save_figure(
+            fig,
+            name=f"readout_rabi_heatmap_{qubit_label}",
+            width=600,
+            height=360,
+        )
+
+    return Result(
+        data={
+            "target": qubit_label,
+            "frequency_range": frequency_values,
+            "detuning_range": detuning_values,
+            "readout_amplitudes": amplitude_values,
+            "heatmap_data": heatmap_data,
+            "optimal_readout_frequency": optimal_readout_frequency,
+            "optimal_readout_amplitude": optimal_readout_amplitude,
+            "optimal_response_range": optimal_response_range,
+            "optimal_rabi_amplitude": optimal_response_range,
+            "rabi_results": rabi_results,
+        },
+        figure=fig,
     )
 
 
@@ -281,6 +452,69 @@ def fit_readout_parameters(
             data=data_payload,
             figure=fig,
         )
+
+
+def _rabi_response_range(values: ArrayLike) -> float:
+    """Return the maximum finite IQ-plane distance in a Rabi trace."""
+    value_array = np.asarray(values)
+    finite_values = value_array[np.isfinite(value_array)]
+    if finite_values.size < 2:
+        return float("nan")
+    distances = np.abs(finite_values[:, np.newaxis] - finite_values[np.newaxis, :])
+    return float(np.max(distances))
+
+
+def _make_readout_rabi_heatmap_figure(
+    *,
+    target: str,
+    frequency_range: NDArray[np.float64],
+    readout_amplitudes: NDArray[np.float64],
+    heatmap_data: NDArray[np.float64],
+    optimal_readout_frequency: float,
+    optimal_readout_amplitude: float,
+) -> go.Figure:
+    """Return a readout Rabi-amplitude heatmap figure."""
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Heatmap(
+            x=frequency_range,
+            y=readout_amplitudes,
+            z=heatmap_data,
+            colorscale="Viridis",
+            colorbar=dict(
+                title=dict(
+                    text="Rabi response range",
+                    side="right",
+                )
+            ),
+        )
+    )
+    if np.isfinite(optimal_readout_frequency) and np.isfinite(
+        optimal_readout_amplitude
+    ):
+        fig.add_trace(
+            go.Scatter(
+                x=[optimal_readout_frequency],
+                y=[optimal_readout_amplitude],
+                mode="markers",
+                marker=dict(
+                    color="red",
+                    size=10,
+                    symbol="x",
+                    line=dict(color="white", width=1),
+                ),
+                name="Max",
+            )
+        )
+    fig.update_layout(
+        title=f"Readout Rabi response range : {target}",
+        xaxis_title="Readout frequency (GHz)",
+        yaxis_title="Readout amplitude",
+        width=600,
+        height=360,
+        margin=dict(t=70),
+    )
+    return fig
 
 
 def _Gamma(
