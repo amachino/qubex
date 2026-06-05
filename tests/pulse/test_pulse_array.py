@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import qubex as qx
-from qubex.pulse import Arbitrary, PulseArray, Waveform
+from qubex.pulse import Arbitrary, Blank, PulseArray, Waveform
 
 dt = qx.pulse.get_sampling_period()
 
@@ -76,6 +76,39 @@ def test_paddded():
 
     padded_left = arr.padded(10 * dt, "left")
     assert padded_left.values == pytest.approx([0, 0, 0, 0, 0, 0, 1, 1, 2, 2])
+
+
+@pytest.mark.parametrize("method_name", ["pad", "padded"])
+def test_padding_accepts_float_equivalent_total_duration(method_name):
+    """PulseArray padding should accept total duration equal within float roundoff."""
+    original_dt = qx.pulse.get_sampling_period()
+    try:
+        qx.pulse.set_sampling_period(0.4)
+        arr = PulseArray([Blank(duration=183.2)])
+
+        if method_name == "pad":
+            result = arr
+            arr.pad(183.2)
+        else:
+            result = arr.padded(183.2)
+
+        assert result.length == 458
+        assert result.duration == pytest.approx(183.2, abs=1e-12)
+    finally:
+        qx.pulse.set_sampling_period(original_dt)
+
+
+def test_padding_rejects_total_duration_below_float_tolerance():
+    """PulseArray padding should reject meaningfully shorter total duration."""
+    original_dt = qx.pulse.get_sampling_period()
+    try:
+        qx.pulse.set_sampling_period(0.4)
+        arr = PulseArray([Blank(duration=183.2)])
+
+        with pytest.raises(ValueError, match="Total duration"):
+            arr.padded(183.2 - 1e-6)
+    finally:
+        qx.pulse.set_sampling_period(original_dt)
 
 
 def test_scaled():

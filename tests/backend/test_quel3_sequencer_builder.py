@@ -212,6 +212,91 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
     assert sequencer.iterations == 16
 
 
+def test_builder_aligns_timeline_items_to_alias_sampling_grid() -> None:
+    """Given off-grid resolved timeline items, builder should align them to the alias grid."""
+    waveform_name = "wf_shared_0000"
+    timeline = Quel3FixedTimeline(
+        events=(
+            Quel3WaveformEvent(
+                waveform_name=waveform_name,
+                start_offset_ns=2484.4,
+            ),
+        ),
+        capture_windows=(
+            Quel3CaptureWindow(
+                name="capture_0",
+                start_offset_ns=2484.4,
+                length_ns=0.4,
+            ),
+        ),
+        length_ns=2484.8,
+    )
+    payload = _make_payload(
+        waveform_library={
+            waveform_name: Quel3Waveform(
+                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.8,
+            )
+        },
+        fixed_timelines={"alias-RQ00": timeline},
+    )
+
+    builder = Quel3SequencerBuilder()
+    sequencer = builder.build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=0.4,
+        alias_bindings={"alias-RQ00": (800_000, 64)},
+    )
+
+    assert sequencer.events[0].start_offset_ns == pytest.approx(2484.8)
+    assert sequencer.capture_windows[0].start_offset_ns == pytest.approx(2484.8)
+    assert sequencer.capture_windows[0].length_ns == pytest.approx(0.8)
+
+
+def test_builder_accepts_near_grid_timing_roundoff() -> None:
+    """Given sub-millisample timing roundoff, builder should keep the nearest grid time."""
+    waveform_name = "wf_shared_0000"
+    sample_roundoff_ns = 0.8 * 5e-4
+    timeline = Quel3FixedTimeline(
+        events=(
+            Quel3WaveformEvent(
+                waveform_name=waveform_name,
+                start_offset_ns=2484.8 + sample_roundoff_ns,
+            ),
+        ),
+        capture_windows=(
+            Quel3CaptureWindow(
+                name="capture_0",
+                start_offset_ns=2484.8 + sample_roundoff_ns,
+                length_ns=0.8 + sample_roundoff_ns,
+            ),
+        ),
+        length_ns=2485.6,
+    )
+    payload = _make_payload(
+        waveform_library={
+            waveform_name: Quel3Waveform(
+                iq_array=np.array([1.0 + 0.0j], dtype=np.complex128),
+                sampling_period_ns=0.8,
+            )
+        },
+        fixed_timelines={"alias-RQ00": timeline},
+    )
+
+    builder = Quel3SequencerBuilder()
+    sequencer = builder.build(
+        payload=payload,
+        sequencer_factory=_RecordingSequencer,
+        default_sampling_period_ns=0.4,
+        alias_bindings={"alias-RQ00": (800_000, 64)},
+    )
+
+    assert sequencer.events[0].start_offset_ns == pytest.approx(2484.8)
+    assert sequencer.capture_windows[0].start_offset_ns == pytest.approx(2484.8)
+    assert sequencer.capture_windows[0].length_ns == pytest.approx(0.8)
+
+
 def test_builder_reuses_payload_waveform_across_targets() -> None:
     """Given shared waveform name in payload, when building, both targets reuse one registered waveform."""
     waveform_name = "wf_shared_0000"

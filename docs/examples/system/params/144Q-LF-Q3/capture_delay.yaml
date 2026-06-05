@@ -1,5 +1,6 @@
 meta:
   description: Example capture delay settings for 144Q-LF chip
+  unit: ns
 data:
   0: 8
   1: 8

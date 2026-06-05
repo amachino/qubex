@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Final, Literal, cast
 
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
@@ -48,13 +49,17 @@ def _create_standalone_client_safely(
     endpoint: str,
     port: int,
     unit_label: str | None,
+    pat: Callable[[], str] | None,
 ):
     """Create standalone client while suppressing the repeated testing notice."""
     with _suppress_standalone_notice():
+        kwargs: dict[str, object] = {"unit_label": unit_label}
+        if pat is not None:
+            kwargs["pat"] = pat
         return client_module.create_standalone_client(
             endpoint,
             port,
-            unit_label=unit_label,
+            **kwargs,
         )
 
 
@@ -91,6 +96,7 @@ def load_quelware_client_factory(
     *,
     client_mode: Quel3ClientMode,
     standalone_unit_label: str | None,
+    pat_path: str | None = None,
 ) -> QuelwareClientFactory:
     """Load one quelware client factory for the configured runtime mode."""
     normalized_client_mode = validate_quelware_client_runtime(
@@ -98,7 +104,20 @@ def load_quelware_client_factory(
         standalone_unit_label=standalone_unit_label,
     )
     client_module = importlib.import_module("quelware_client.client")
+    pat_provider: Callable[[], str] | None = None
+    if pat_path is not None:
+        path = Path(pat_path)
+        pat_provider = lambda: path.read_text(encoding="utf-8").rstrip("\r\n")
     if normalized_client_mode == "server":
+        if pat_provider is not None:
+            return cast(
+                QuelwareClientFactory,
+                lambda endpoint, port: client_module.create_quelware_client(
+                    endpoint,
+                    port,
+                    pat=pat_provider,
+                ),
+            )
         return cast(QuelwareClientFactory, client_module.create_quelware_client)
     unit_label = standalone_unit_label
     return cast(
@@ -108,5 +127,6 @@ def load_quelware_client_factory(
             endpoint=endpoint,
             port=port,
             unit_label=unit_label,
+            pat=pat_provider,
         ),
     )

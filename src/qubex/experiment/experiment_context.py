@@ -520,6 +520,9 @@ class ExperimentContext:
     @property
     def available_targets(self) -> dict[str, Target]:
         """Return available targets keyed by label."""
+        if self.config_loader.backend_kind == BACKEND_KIND_QUEL3:
+            return dict(self.targets)
+
         return {
             label: target
             for label, target in self.targets.items()

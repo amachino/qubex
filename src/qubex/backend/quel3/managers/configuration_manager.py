@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -22,10 +23,19 @@ from qubex.backend.quel3.interfaces.client import (
     ResourceInfoProtocol,
     SessionProtocol,
 )
+from qubex.backend.quel3.managers.session_workarounds import (
+    QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
+    QuelwareSessionError,
+    enter_quelware_session_with_resource_retry,
+    quelware_exception_summary,
+    quelware_session_token,
+)
 from qubex.backend.quel3.models import InstrumentDeployRequest
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 
 class _FixedTimelineProfileFactory(Protocol):
@@ -119,6 +129,7 @@ class Quel3ConfigurationManager:
         quelware_port: int,
         client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
+        quelware_pat_path: str | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
             client_mode=client_mode,
@@ -128,6 +139,7 @@ class Quel3ConfigurationManager:
         self._quelware_port = quelware_port
         self._client_mode: Quel3ClientMode = normalized_client_mode
         self._standalone_unit_label = standalone_unit_label
+        self._quelware_pat_path = quelware_pat_path
         self._last_deployed_instrument_infos: dict[
             str, tuple[InstrumentInfoProtocol, ...]
         ] = {}
@@ -154,6 +166,11 @@ class Quel3ConfigurationManager:
         return self._standalone_unit_label
 
     @property
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._quelware_pat_path
+
+    @property
     def last_deployed_instrument_infos(
         self,
     ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
@@ -162,7 +179,7 @@ class Quel3ConfigurationManager:
 
     @property
     def target_alias_map(self) -> dict[str, str]:
-        """Return last deployed target-to-alias mapping."""
+        """Return last deployed target-to-runtime-alias mapping."""
         return dict(self._target_alias_map)
 
     def deploy_instruments(
@@ -232,7 +249,7 @@ class Quel3ConfigurationManager:
                         definition=definition,
                     ),
                 )
-                target_alias_map[alias] = alias
+                target_alias_map[alias] = definition.alias
 
         self._last_deployed_instrument_infos = deployed
         self._target_alias_map = target_alias_map
@@ -266,12 +283,71 @@ class Quel3ConfigurationManager:
             (port_id, tuple(port_requests))
             for port_id, port_requests in requests_by_port.items()
         )
+        port_results: list[_PortDeployResult]
+        for attempt in range(QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS):
+            try:
+                port_results = await self._deploy_port_batches(
+                    client_factory=client_factory,
+                    port_request_batches=port_request_batches,
+                    fixed_timeline_profile_cls=fixed_timeline_profile_cls,
+                    instrument_definition_cls=instrument_definition_cls,
+                    instrument_mode=instrument_mode,
+                    instrument_role=instrument_role,
+                    parallel=parallel,
+                    attempt=attempt + 1,
+                    max_attempts=QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
+                )
+                break
+            except Exception as exc:
+                if attempt + 1 >= QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS:
+                    if isinstance(exc, QuelwareSessionError):
+                        raise
+                    missing_session_id = "<unavailable>"
+                    raise QuelwareSessionError(
+                        "QuEL-3 quelware deploy request failed after retries",
+                        session_token=missing_session_id,
+                        cause=exc,
+                    ) from exc
+        else:
+            raise RuntimeError("unreachable QuEL-3 deploy retry state")
+
+        for port_result in port_results:
+            deployed.update(port_result.deployed)
+            target_alias_map.update(port_result.target_alias_map)
+
+        self._last_deployed_instrument_infos = dict(deployed)
+        # Keep local alias/instrument cache aligned with the explicitly deployed
+        # subset so it matches this replacement-style call behavior.
+        self._target_alias_map = target_alias_map
+        return deployed
+
+    async def _deploy_port_batches(
+        self,
+        *,
+        client_factory: QuelwareClientFactory,
+        port_request_batches: tuple[
+            tuple[str, tuple[InstrumentDeployRequest, ...]], ...
+        ],
+        fixed_timeline_profile_cls: _FixedTimelineProfileFactory,
+        instrument_definition_cls: _InstrumentDefinitionFactory,
+        instrument_mode: _EnumNamespace,
+        instrument_role: _EnumNamespace,
+        parallel: bool,
+        attempt: int,
+        max_attempts: int,
+    ) -> list[_PortDeployResult]:
+        """Deploy port batches in one quelware client/session context."""
         async with client_factory(
             self._quelware_endpoint,
             self._quelware_port,
         ) as client:
             session_resource_ids = [port_id for port_id, _ in port_request_batches]
-            async with client.create_session(session_resource_ids) as session:
+            session_cm, session = await enter_quelware_session_with_resource_retry(
+                client=client,
+                resource_ids=session_resource_ids,
+            )
+            session_token = quelware_session_token(session)
+            try:
                 deploy_coroutines = [
                     self._deploy_port_batch(
                         session=session,
@@ -284,23 +360,37 @@ class Quel3ConfigurationManager:
                     )
                     for port_id, port_requests in port_request_batches
                 ]
-                port_results = (
-                    await asyncio.gather(*deploy_coroutines)
+                return (
+                    list(await asyncio.gather(*deploy_coroutines))
                     if parallel
                     else [await coro for coro in deploy_coroutines]
                 )
-
-        for port_result in port_results:
-            deployed.update(port_result.deployed)
-            target_alias_map.update(port_result.target_alias_map)
-
-        # Temporary limitation:
-        # quelware `append=True` is currently broken, so QuEL-3 deploy uses
-        # per-request replacement semantics. Until quelware is fixed, keep the
-        # local alias/instrument cache aligned with the explicit deploy subset.
-        self._last_deployed_instrument_infos = dict(deployed)
-        self._target_alias_map = target_alias_map
-        return deployed
+            except Exception as exc:
+                if attempt >= max_attempts:
+                    raise QuelwareSessionError(
+                        "QuEL-3 quelware deploy request failed after retries",
+                        session_token=session_token,
+                        cause=exc,
+                    ) from exc
+                logger.warning(
+                    "QuEL-3 quelware deploy request failed; session_token=%s; "
+                    "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                    session_token,
+                    attempt,
+                    max_attempts,
+                    quelware_exception_summary(exc),
+                )
+                raise
+            finally:
+                try:
+                    await session_cm.__aexit__(None, None, None)
+                except Exception as exc:
+                    logger.warning(
+                        "QuEL-3 quelware deploy session cleanup failed; "
+                        "session_token=%s; cause=%s",
+                        session_token,
+                        quelware_exception_summary(exc),
+                    )
 
     async def _deploy_port_batch(
         self,
@@ -332,11 +422,17 @@ class Quel3ConfigurationManager:
         inst_infos = await session.deploy_instruments(
             port_id,
             definitions=definitions,
-            append=True,
+            # Qubex push treats the current target registry as the source of
+            # truth for this port's selected instruments.
+            append=False,
         )
         infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
         for inst_info in inst_infos:
-            infos_by_alias[inst_info.definition.alias].append(inst_info)
+            local_alias, _runtime_alias = self._split_alias_for_port(
+                alias=inst_info.definition.alias,
+                port_id=inst_info.port_id,
+            )
+            infos_by_alias[local_alias].append(inst_info)
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
         target_alias_map: dict[str, str] = {}
@@ -347,8 +443,12 @@ class Quel3ConfigurationManager:
                     "quelware did not return the deployed instrument info for one request."
                 )
             deployed[request.alias] = matched_infos
+            runtime_alias = self._runtime_alias_from_instrument_info(
+                instrument_info=matched_infos[0],
+                fallback_alias=request.alias,
+            )
             for target_label in request.target_labels:
-                target_alias_map[target_label] = request.alias
+                target_alias_map[target_label] = runtime_alias
         return _PortDeployResult(
             deployed=deployed,
             target_alias_map=target_alias_map,
@@ -374,9 +474,12 @@ class Quel3ConfigurationManager:
             alias = instrument_info.definition.alias
             if len(alias.strip()) == 0:
                 continue
-            normalized_alias = alias.strip()
-            deployed[normalized_alias] = (instrument_info,)
-            target_alias_map[normalized_alias] = normalized_alias
+            local_alias, runtime_alias = self._split_alias_for_port(
+                alias=alias,
+                port_id=instrument_info.port_id,
+            )
+            deployed[local_alias] = (instrument_info,)
+            target_alias_map[local_alias] = runtime_alias
 
         self._last_deployed_instrument_infos = deployed
         self._target_alias_map = target_alias_map
@@ -413,7 +516,10 @@ class Quel3ConfigurationManager:
             box_id = box_id_by_unit_label.get(unit_label)
             if box_id is None:
                 continue
-            alias = instrument_info.definition.alias.strip()
+            alias, _runtime_alias = self._split_alias_for_port(
+                alias=instrument_info.definition.alias,
+                port_id=instrument_info.port_id,
+            )
             if len(alias) == 0:
                 continue
             definition = self._serialize_instrument_definition(
@@ -432,6 +538,7 @@ class Quel3ConfigurationManager:
         return load_quelware_client_factory(
             client_mode=self._client_mode,
             standalone_unit_label=self._standalone_unit_label,
+            pat_path=self._quelware_pat_path,
         )
 
     @staticmethod
@@ -474,6 +581,37 @@ class Quel3ConfigurationManager:
     def _extract_unit_label(resource_id: str) -> str:
         """Extract unit label prefix from one quelware resource ID."""
         return resource_id.split(":", maxsplit=1)[0]
+
+    @classmethod
+    def _split_alias_for_port(cls, *, alias: str, port_id: str) -> tuple[str, str]:
+        """Return local and runtime aliases for one instrument on a port."""
+        runtime_alias = alias.strip()
+        unit_label = cls._extract_unit_label(str(port_id))
+        local_alias = cls._strip_unit_label_prefix(
+            alias=runtime_alias,
+            unit_label=unit_label,
+        )
+        return local_alias, runtime_alias
+
+    @staticmethod
+    def _strip_unit_label_prefix(*, alias: str, unit_label: str) -> str:
+        """Strip the quelware unit prefix from an alias when it matches the port."""
+        prefix = f"{unit_label}:"
+        if alias.startswith(prefix):
+            return alias.removeprefix(prefix)
+        return alias
+
+    @staticmethod
+    def _runtime_alias_from_instrument_info(
+        *,
+        instrument_info: InstrumentInfoProtocol,
+        fallback_alias: str,
+    ) -> str:
+        """Return the runtime alias stored on one quelware instrument info."""
+        alias = instrument_info.definition.alias.strip()
+        if len(alias) > 0:
+            return alias
+        return fallback_alias
 
     @staticmethod
     def _normalize_role_name(role: object) -> str:
@@ -528,6 +666,13 @@ class Quel3ConfigurationManager:
         if not isinstance(definition_config, Mapping):
             return _CachedInstrumentDefinition(alias=alias, role=role_name)
 
+        definition_alias = definition_config.get("alias")
+        runtime_alias = (
+            definition_alias.strip()
+            if isinstance(definition_alias, str) and len(definition_alias.strip()) > 0
+            else alias
+        )
+
         mode = definition_config.get("mode")
         mode_name = None
         if mode is not None:
@@ -548,7 +693,7 @@ class Quel3ConfigurationManager:
             )
 
         return _CachedInstrumentDefinition(
-            alias=alias,
+            alias=runtime_alias,
             role=role_name,
             mode=mode_name,
             profile=profile,

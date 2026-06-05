@@ -41,21 +41,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
-      # TODO: Remove once quelware-client ships generated pb.
-      - name: Setup buf
-        uses: bufbuild/buf-setup-action@v1
-        with:
-          github_token: ${{ github.token }}
-
       - name: Install dependencies
         run: uv sync --locked --dev --group docs --extra backend
 
       - name: Check release version drift
         run: uv run python scripts/check_release_version.py
-
-      # TODO: Remove once quelware-client ships generated pb.
-      - name: Generate quelware-core protobufs
-        run: make -C packages/quelware-client/quelware-core generate
 
       - name: Type check (pyright)
         run: uv run pyright

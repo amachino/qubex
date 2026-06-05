@@ -22,7 +22,12 @@ class InstrumentResolverProtocol(Protocol):
         """Resolve instrument aliases to resource IDs."""
         ...
 
-    def find_inst_info_by_alias(self, alias: str) -> InstrumentInfoProtocol:
+    def find_inst_info_by_alias(
+        self,
+        alias: str,
+        *,
+        unit: str | None = None,
+    ) -> InstrumentInfoProtocol:
         """Return one instrument info resolved by alias."""
         ...
 

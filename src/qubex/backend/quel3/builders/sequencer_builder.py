@@ -15,6 +15,7 @@ _QUEL3_CLOCK_FREQUENCY_HZ = 312_500_000
 _TRIGGER_GRID_TICKS = 32
 _TRIGGER_GRID_NS = _TRIGGER_GRID_TICKS * (1e9 / _QUEL3_CLOCK_FREQUENCY_HZ)
 _MIN_SHOT_INTERVAL_NS = 1_024.0
+_TIME_GRID_SAMPLE_ATOL = 1e-3
 
 
 class Quel3SequencerBuilder:
@@ -26,6 +27,21 @@ class Quel3SequencerBuilder:
         return (
             math.ceil(effective_shot_interval_ns / _TRIGGER_GRID_NS) * _TRIGGER_GRID_NS
         )
+
+    @staticmethod
+    def _ceil_to_sampling_grid_ns(time_ns: float, sampling_period_fs: int) -> float:
+        """Return time ceiled to the alias sampling grid in ns."""
+        sampling_period_ns = sampling_period_fs / 1e6
+        samples = time_ns / sampling_period_ns
+        rounded_samples = round(samples)
+        if math.isclose(
+            samples,
+            rounded_samples,
+            rel_tol=0.0,
+            abs_tol=_TIME_GRID_SAMPLE_ATOL,
+        ):
+            return float(rounded_samples) * sampling_period_ns
+        return float(math.ceil(samples)) * sampling_period_ns
 
     def build(
         self,
@@ -80,6 +96,7 @@ class Quel3SequencerBuilder:
             )
 
         for instrument_alias, timeline in payload.fixed_timelines.items():
+            sampling_period_fs = alias_bindings[instrument_alias][0]
             for event in timeline.events:
                 if event.waveform_name not in payload.waveform_library:
                     raise ValueError(
@@ -88,7 +105,10 @@ class Quel3SequencerBuilder:
                 sequencer.add_event(
                     instrument_alias,
                     event.waveform_name,
-                    start_offset_ns=event.start_offset_ns,
+                    start_offset_ns=self._ceil_to_sampling_grid_ns(
+                        event.start_offset_ns,
+                        sampling_period_fs,
+                    ),
                     gain=event.gain,
                     phase_offset_deg=event.phase_offset_deg,
                 )
@@ -97,8 +117,14 @@ class Quel3SequencerBuilder:
                 sequencer.add_capture_window(
                     instrument_alias,
                     capture_window.name,
-                    start_offset_ns=capture_window.start_offset_ns,
-                    length_ns=capture_window.length_ns,
+                    start_offset_ns=self._ceil_to_sampling_grid_ns(
+                        capture_window.start_offset_ns,
+                        sampling_period_fs,
+                    ),
+                    length_ns=self._ceil_to_sampling_grid_ns(
+                        capture_window.length_ns,
+                        sampling_period_fs,
+                    ),
                 )
 
         if payload.shot_interval_ns > 0:

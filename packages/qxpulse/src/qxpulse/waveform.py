@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Default sampling period in ns
 DEFAULT_SAMPLING_PERIOD = 2.0
-SAMPLING_PERIOD_TOLERANCE = 1e-9
+SAMPLING_PERIOD_TOLERANCE = 1e-8
 
 
 def _nearest_sampling_period_sample_count(
@@ -63,6 +63,23 @@ def floor_to_sampling_period(
     # Multiplication can round slightly above `duration` (for example 3 * 0.1),
     # so clamp the snapped value to keep the floor contract.
     return min(sample_count * sampling_period, duration)
+
+
+def is_zero_within_sampling_grid(
+    duration: float,
+    sampling_period: float,
+    *,
+    tolerance: float = SAMPLING_PERIOD_TOLERANCE,
+) -> bool:
+    """Return whether `duration` is zero samples within sampling-grid tolerance."""
+    return (
+        _nearest_sampling_period_sample_count(
+            duration,
+            sampling_period,
+            tolerance=tolerance,
+        )
+        == 0
+    )
 
 
 class Waveform(ABC):

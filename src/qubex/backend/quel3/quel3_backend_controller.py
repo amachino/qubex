@@ -54,6 +54,7 @@ class Quel3BackendController(BackendController):
         quelware_port: int | None = None,
         client_mode: Quel3ClientMode | None = None,
         standalone_unit_label: str | None = None,
+        quelware_pat_path: str | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
@@ -149,6 +150,21 @@ class Quel3BackendController(BackendController):
             client_mode=resolved_client_mode,
             standalone_unit_label=resolved_standalone_unit_label,
         )
+        resolved_quelware_pat_path = self._resolve_optional_runtime_value(
+            name="quelware_pat_path",
+            explicit_value=quelware_pat_path,
+            candidates=[
+                getattr(manager, "quelware_pat_path", None)
+                for manager in (
+                    connection_manager,
+                    session_manager,
+                    configuration_manager,
+                    execution_manager,
+                )
+                if manager is not None
+            ],
+            default=None,
+        )
         self._sampling_period_ns = (
             execution_manager.sampling_period_ns
             if execution_manager is not None
@@ -158,6 +174,7 @@ class Quel3BackendController(BackendController):
         self._quelware_port = port
         self._client_mode: Quel3ClientMode = resolved_client_mode
         self._standalone_unit_label = resolved_standalone_unit_label
+        self._quelware_pat_path = resolved_quelware_pat_path
 
         self._connection_manager = (
             connection_manager
@@ -167,6 +184,7 @@ class Quel3BackendController(BackendController):
                 quelware_port=port,
                 client_mode=resolved_client_mode,
                 standalone_unit_label=resolved_standalone_unit_label,
+                quelware_pat_path=resolved_quelware_pat_path,
             )
         )
         self._session_manager = (
@@ -177,6 +195,7 @@ class Quel3BackendController(BackendController):
                 quelware_port=port,
                 client_mode=resolved_client_mode,
                 standalone_unit_label=resolved_standalone_unit_label,
+                quelware_pat_path=resolved_quelware_pat_path,
             )
         )
         self._configuration_manager = (
@@ -187,6 +206,7 @@ class Quel3BackendController(BackendController):
                 quelware_port=port,
                 client_mode=resolved_client_mode,
                 standalone_unit_label=resolved_standalone_unit_label,
+                quelware_pat_path=resolved_quelware_pat_path,
             )
         )
         self._execution_manager = (
@@ -199,6 +219,7 @@ class Quel3BackendController(BackendController):
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 client_mode=resolved_client_mode,
                 standalone_unit_label=resolved_standalone_unit_label,
+                quelware_pat_path=resolved_quelware_pat_path,
                 session_manager=self._session_manager,
             )
         )
@@ -290,6 +311,11 @@ class Quel3BackendController(BackendController):
         return self._standalone_unit_label
 
     @property
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._quelware_pat_path
+
+    @property
     def configuration_manager(self) -> Quel3ConfigurationManager:
         """Return backend-side QuEL-3 configuration manager."""
         return self._configuration_manager
@@ -311,7 +337,7 @@ class Quel3BackendController(BackendController):
 
     @property
     def target_alias_map(self) -> dict[str, str]:
-        """Return deployed target-to-alias mapping from backend runtime state."""
+        """Return deployed target-to-runtime-alias mapping from backend runtime state."""
         return self._configuration_manager.target_alias_map
 
     @property

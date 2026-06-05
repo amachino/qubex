@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import TypeGuard, TypeVar
+from typing import TypeGuard, TypeVar, cast
 
 import numpy as np
 
@@ -23,6 +24,7 @@ from qubex.backend.quel3.interfaces import (
     DirectiveProtocol,
     InstrumentDriverFactory,
     InstrumentDriverProtocol,
+    InstrumentInfoProtocol,
     InstrumentResolverFactory,
     InstrumentResolverProtocol,
     IqWaveformResultProtocol,
@@ -32,8 +34,13 @@ from qubex.backend.quel3.interfaces import (
     SequencerProtocol,
     SessionProtocol,
     SetCaptureModeFactory,
+    SetFrequencyFactory,
 )
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
+from qubex.backend.quel3.managers.session_workarounds import (
+    QuelwareSessionError,
+    quelware_exception_summary,
+)
 from qubex.backend.quel3.models import (
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
@@ -45,6 +52,10 @@ from qubex.backend.quel3.models import (
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
+
+QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
+
+logger = logging.getLogger(__name__)
 
 
 def _run_async(
@@ -90,6 +101,7 @@ class Quel3ExecutionManager:
         capture_decimation_factor: int,
         client_mode: Quel3ClientMode = "server",
         standalone_unit_label: str | None = None,
+        quelware_pat_path: str | None = None,
         session_manager: Quel3SessionManager | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
@@ -102,6 +114,7 @@ class Quel3ExecutionManager:
         self._capture_decimation_factor = capture_decimation_factor
         self._client_mode: Quel3ClientMode = normalized_client_mode
         self._standalone_unit_label = standalone_unit_label
+        self._quelware_pat_path = quelware_pat_path
         self._sequencer_builder = Quel3SequencerBuilder()
         self._session_manager = (
             session_manager
@@ -111,6 +124,7 @@ class Quel3ExecutionManager:
                 quelware_port=quelware_port,
                 client_mode=normalized_client_mode,
                 standalone_unit_label=standalone_unit_label,
+                quelware_pat_path=quelware_pat_path,
             )
         )
 
@@ -138,6 +152,11 @@ class Quel3ExecutionManager:
     def standalone_unit_label(self) -> str | None:
         """Return configured standalone unit label."""
         return self._standalone_unit_label
+
+    @property
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._quelware_pat_path
 
     def execute_sync(
         self,
@@ -184,6 +203,7 @@ class Quel3ExecutionManager:
                 sequencer_factory,
                 create_instrument_driver_fixed_timeline,
                 capture_mode_enum,
+                set_frequency_factory,
                 set_capture_mode_factory,
             ) = self._load_quelware_api()
         except (ModuleNotFoundError, SyntaxError) as exc:
@@ -191,50 +211,19 @@ class Quel3ExecutionManager:
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
             ) from exc
 
-        runtime, first_resolved_payload = await self._open_execution_runtime(
-            payload=payloads[0],
-            create_quelware_client=create_quelware_client,
-            instrument_resolver_factory=instrument_resolver_factory,
-            create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
-        )
-        results: list[Quel3BackendExecutionResult] = []
-        try:
-            expected_aliases = tuple(sorted(first_resolved_payload.fixed_timelines))
-            results.append(
-                await self._execute_resolved_payload(
-                    payload=first_resolved_payload,
-                    runtime=runtime,
-                    sequencer_factory=sequencer_factory,
-                    capture_mode_enum=capture_mode_enum,
-                    set_capture_mode_factory=set_capture_mode_factory,
-                    parallel=parallel,
-                )
+        return await self._run_with_session_request_retry(
+            lambda: self._execute_batch_once(
+                payloads=payloads,
+                create_quelware_client=create_quelware_client,
+                instrument_resolver_factory=instrument_resolver_factory,
+                sequencer_factory=sequencer_factory,
+                create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+                capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
+                set_capture_mode_factory=set_capture_mode_factory,
+                parallel=parallel,
             )
-            for payload in payloads[1:]:
-                resolved_payload = self._resolve_payload(
-                    payload=payload,
-                    resolver=runtime.resolver,
-                )
-                resolved_payload = self._filter_runnable_payload(resolved_payload)
-                resolved_aliases = tuple(sorted(resolved_payload.fixed_timelines))
-                if resolved_aliases != expected_aliases:
-                    raise ValueError(
-                        "Batched QuEL-3 execution requires all points to resolve "
-                        "to the same instrument alias set."
-                    )
-                results.append(
-                    await self._execute_resolved_payload(
-                        payload=resolved_payload,
-                        runtime=runtime,
-                        sequencer_factory=sequencer_factory,
-                        capture_mode_enum=capture_mode_enum,
-                        set_capture_mode_factory=set_capture_mode_factory,
-                        parallel=parallel,
-                    )
-                )
-            return results
-        finally:
-            await self._session_manager.close()
+        )
 
     async def execute(
         self,
@@ -276,6 +265,7 @@ class Quel3ExecutionManager:
                 sequencer_factory,
                 create_instrument_driver_fixed_timeline,
                 capture_mode_enum,
+                set_frequency_factory,
                 set_capture_mode_factory,
             ) = self._load_quelware_api()
         except (ModuleNotFoundError, SyntaxError) as exc:
@@ -283,23 +273,178 @@ class Quel3ExecutionManager:
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
             ) from exc
 
+        return await self._run_with_session_request_retry(
+            lambda: self._execute_once(
+                payload=payload,
+                create_quelware_client=create_quelware_client,
+                instrument_resolver_factory=instrument_resolver_factory,
+                sequencer_factory=sequencer_factory,
+                create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+                capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
+                set_capture_mode_factory=set_capture_mode_factory,
+                parallel=parallel,
+            )
+        )
+
+    async def _run_with_session_request_retry(
+        self,
+        operation: Callable[[], Awaitable[T]],
+    ) -> T:
+        """Run one session request, recreating the session after failures."""
+        max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
+        for attempt in range(max_attempts):
+            succeeded, result = await self._run_session_request_attempt(
+                operation,
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+            )
+            if succeeded:
+                return result
+        raise RuntimeError("unreachable QuEL-3 session request retry state")
+
+    async def _run_session_request_attempt(
+        self,
+        operation: Callable[[], Awaitable[T]],
+        *,
+        attempt: int,
+        max_attempts: int,
+    ) -> tuple[bool, T]:
+        """Run one session request attempt and always close the session manager."""
+        try:
+            result = await operation()
+        except Exception as exc:
+            session_token = self._session_token_for_exception(exc)
+            await self._close_session_manager_after_attempt()
+            if attempt >= max_attempts:
+                if isinstance(exc, QuelwareSessionError):
+                    raise
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session request failed after retries",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+            logger.warning(
+                "QuEL-3 quelware session request failed; session_token=%s; "
+                "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                session_token,
+                attempt,
+                max_attempts,
+                quelware_exception_summary(exc),
+            )
+            return False, cast(T, None)
+        await self._close_session_manager_after_attempt()
+        return True, result
+
+    async def _close_session_manager_after_attempt(self) -> None:
+        """Close session state without masking request success or failure."""
+        session_token = self._active_session_token()
+        try:
+            await self._session_manager.close()
+        except Exception as exc:
+            logger.warning(
+                "QuEL-3 quelware session cleanup failed; session_token=%s; cause=%s",
+                session_token,
+                quelware_exception_summary(exc),
+            )
+
+    def _active_session_token(self) -> str:
+        """Return the currently open session token for diagnostics."""
+        return self._session_manager.session_token or "<unavailable>"
+
+    def _session_token_for_exception(self, exc: BaseException) -> str:
+        """Return the best available session token for one exception."""
+        if isinstance(exc, QuelwareSessionError):
+            return exc.session_token
+        return self._active_session_token()
+
+    async def _execute_once(
+        self,
+        *,
+        payload: Quel3ExecutionPayload,
+        create_quelware_client: QuelwareClientFactory,
+        instrument_resolver_factory: InstrumentResolverFactory,
+        sequencer_factory: Callable[..., SequencerProtocol],
+        create_instrument_driver_fixed_timeline: InstrumentDriverFactory,
+        capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
+        set_capture_mode_factory: SetCaptureModeFactory,
+        parallel: bool,
+    ) -> Quel3BackendExecutionResult:
+        """Execute one payload using a single fresh quelware session."""
         runtime, resolved_payload = await self._open_execution_runtime(
             payload=payload,
             create_quelware_client=create_quelware_client,
             instrument_resolver_factory=instrument_resolver_factory,
             create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
         )
-        try:
-            return await self._execute_resolved_payload(
-                payload=resolved_payload,
+        return await self._execute_resolved_payload(
+            payload=resolved_payload,
+            runtime=runtime,
+            sequencer_factory=sequencer_factory,
+            capture_mode_enum=capture_mode_enum,
+            set_frequency_factory=set_frequency_factory,
+            set_capture_mode_factory=set_capture_mode_factory,
+            parallel=parallel,
+        )
+
+    async def _execute_batch_once(
+        self,
+        *,
+        payloads: list[Quel3ExecutionPayload],
+        create_quelware_client: QuelwareClientFactory,
+        instrument_resolver_factory: InstrumentResolverFactory,
+        sequencer_factory: Callable[..., SequencerProtocol],
+        create_instrument_driver_fixed_timeline: InstrumentDriverFactory,
+        capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
+        set_capture_mode_factory: SetCaptureModeFactory,
+        parallel: bool,
+    ) -> list[Quel3BackendExecutionResult]:
+        """Execute one payload batch using a single fresh quelware session."""
+        runtime, first_resolved_payload = await self._open_execution_runtime(
+            payload=payloads[0],
+            create_quelware_client=create_quelware_client,
+            instrument_resolver_factory=instrument_resolver_factory,
+            create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+        )
+        expected_aliases = tuple(sorted(first_resolved_payload.fixed_timelines))
+        results = [
+            await self._execute_resolved_payload(
+                payload=first_resolved_payload,
                 runtime=runtime,
                 sequencer_factory=sequencer_factory,
                 capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
                 set_capture_mode_factory=set_capture_mode_factory,
                 parallel=parallel,
             )
-        finally:
-            await self._session_manager.close()
+        ]
+        for payload in payloads[1:]:
+            resolved_payload = self._resolve_payload(
+                payload=payload,
+                resolver=runtime.resolver,
+                default_unit_label=self._standalone_unit_label,
+            )
+            resolved_payload = self._filter_runnable_payload(resolved_payload)
+            resolved_aliases = tuple(sorted(resolved_payload.fixed_timelines))
+            if resolved_aliases != expected_aliases:
+                raise ValueError(
+                    "Batched QuEL-3 execution requires all points to resolve "
+                    "to the same instrument alias set."
+                )
+            results.append(
+                await self._execute_resolved_payload(
+                    payload=resolved_payload,
+                    runtime=runtime,
+                    sequencer_factory=sequencer_factory,
+                    capture_mode_enum=capture_mode_enum,
+                    set_frequency_factory=set_frequency_factory,
+                    set_capture_mode_factory=set_capture_mode_factory,
+                    parallel=parallel,
+                )
+            )
+        return results
 
     async def _open_execution_runtime(
         self,
@@ -317,12 +462,14 @@ class Quel3ExecutionManager:
         resolved_payload = self._resolve_payload(
             payload=payload,
             resolver=resolver,
+            default_unit_label=self._standalone_unit_label,
         )
         resolved_payload = self._filter_runnable_payload(resolved_payload)
         aliases = sorted(resolved_payload.fixed_timelines.keys())
         alias_to_id = self._resolve_alias_to_id_map(
             resolver=resolver,
             aliases=aliases,
+            default_unit_label=self._standalone_unit_label,
         )
         instrument_ids = [alias_to_id[alias] for alias in aliases]
         await self._session_manager.open(
@@ -334,7 +481,11 @@ class Quel3ExecutionManager:
         alias_to_driver: dict[str, InstrumentDriverProtocol] = {}
         capture_sampling_period_ns: float | None = None
         for alias in aliases:
-            instrument_info = resolver.find_inst_info_by_alias(alias)
+            instrument_info = self._find_inst_info_by_alias(
+                resolver=resolver,
+                alias=alias,
+                default_unit_label=self._standalone_unit_label,
+            )
             driver = create_instrument_driver_fixed_timeline(
                 session,
                 instrument_info,
@@ -377,6 +528,7 @@ class Quel3ExecutionManager:
         runtime: _ExecutionRuntime,
         sequencer_factory: Callable[..., SequencerProtocol],
         capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
         set_capture_mode_factory: SetCaptureModeFactory,
         parallel: bool,
     ) -> Quel3BackendExecutionResult:
@@ -421,8 +573,10 @@ class Quel3ExecutionManager:
             alias: self._build_driver_directives(
                 alias=alias,
                 sequencer=sequencer,
+                frequency_hz=payload.fixed_timelines[alias].frequency_hz,
                 capture_mode=payload.capture_mode,
                 capture_mode_enum=capture_mode_enum,
+                set_frequency_factory=set_frequency_factory,
                 set_capture_mode_factory=set_capture_mode_factory,
             )
             for alias in runtime.alias_to_driver
@@ -451,6 +605,7 @@ class Quel3ExecutionManager:
                 capture_samples = self._extract_capture_samples(
                     result,
                     window_key,
+                    capture_mode=payload.capture_mode,
                 )
                 if capture_samples is None:
                     continue
@@ -470,12 +625,16 @@ class Quel3ExecutionManager:
         *,
         alias: str,
         sequencer: SequencerProtocol,
+        frequency_hz: float | None,
         capture_mode: Quel3CaptureMode,
         capture_mode_enum: CaptureModeNamespaceProtocol,
+        set_frequency_factory: SetFrequencyFactory,
         set_capture_mode_factory: SetCaptureModeFactory,
     ) -> list[DirectiveProtocol]:
         """Build the directives applied to one instrument driver."""
         directives: list[DirectiveProtocol] = []
+        if frequency_hz is not None:
+            directives.append(set_frequency_factory(hz=frequency_hz))
         capture_mode_directive = cls._build_capture_mode_directive(
             capture_mode=capture_mode,
             capture_mode_enum=capture_mode_enum,
@@ -536,19 +695,41 @@ class Quel3ExecutionManager:
             alias_results[alias] = await alias_to_driver[alias].fetch_result()
         return alias_results
 
-    @staticmethod
+    @classmethod
     def _resolve_alias_to_id_map(
+        cls,
         *,
         resolver: InstrumentResolverProtocol,
         aliases: list[str],
+        default_unit_label: str | None = None,
     ) -> dict[str, ResourceIdProtocol]:
         """Resolve alias-to-resource-id mapping using InstrumentResolver."""
-        resource_ids = resolver.resolve(aliases)
-        if len(resource_ids) != len(aliases):
+        alias_to_id: dict[str, ResourceIdProtocol] = {}
+        aliases_needing_legacy_resolve: list[str] = []
+        for alias in aliases:
+            instrument_info = cls._find_inst_info_by_alias(
+                resolver=resolver,
+                alias=alias,
+                default_unit_label=default_unit_label,
+            )
+            resource_id = getattr(instrument_info, "id", None)
+            if isinstance(resource_id, str) and len(resource_id) > 0:
+                alias_to_id[alias] = resource_id
+            else:
+                aliases_needing_legacy_resolve.append(alias)
+
+        if len(aliases_needing_legacy_resolve) == 0:
+            return alias_to_id
+
+        resource_ids = resolver.resolve(aliases_needing_legacy_resolve)
+        if len(resource_ids) != len(aliases_needing_legacy_resolve):
             raise ValueError(
                 "InstrumentResolver returned inconsistent alias resolution length."
             )
-        return dict(zip(aliases, resource_ids, strict=True))
+        alias_to_id.update(
+            zip(aliases_needing_legacy_resolve, resource_ids, strict=True)
+        )
+        return alias_to_id
 
     @classmethod
     def _resolve_payload(
@@ -556,6 +737,7 @@ class Quel3ExecutionManager:
         *,
         payload: Quel3ExecutionPayload,
         resolver: InstrumentResolverProtocol,
+        default_unit_label: str | None = None,
     ) -> Quel3ExecutionPayload:
         """Resolve timeline bindings to concrete instrument aliases."""
         bindings = (
@@ -572,6 +754,7 @@ class Quel3ExecutionManager:
             list[tuple[float, float, int, str]],
         ] = defaultdict(list)
         alias_to_length_ns: dict[str, float] = {}
+        alias_to_frequency_hz: dict[str, float] = {}
         sequence_index = 0
 
         for target, timeline in payload.fixed_timelines.items():
@@ -588,11 +771,23 @@ class Quel3ExecutionManager:
                 capture_port_binding=capture_port_binding,
                 has_events=len(timeline.events) > 0,
                 has_captures=len(timeline.capture_windows) > 0,
+                default_unit_label=default_unit_label,
             )
             alias_to_length_ns[alias] = max(
                 alias_to_length_ns.get(alias, 0.0),
                 timeline.length_ns,
             )
+            if timeline.frequency_hz is not None:
+                current_frequency_hz = alias_to_frequency_hz.get(alias)
+                if (
+                    current_frequency_hz is not None
+                    and current_frequency_hz != timeline.frequency_hz
+                ):
+                    raise ValueError(
+                        "Conflicting frequency directives resolved to the same "
+                        f"instrument alias `{alias}`."
+                    )
+                alias_to_frequency_hz[alias] = timeline.frequency_hz
             for event in timeline.events:
                 alias_to_events[alias].append((sequence_index, event))
                 sequence_index += 1
@@ -636,6 +831,7 @@ class Quel3ExecutionManager:
                 events=events,
                 capture_windows=tuple(capture_windows),
                 length_ns=length_ns,
+                frequency_hz=alias_to_frequency_hz.get(alias),
             )
 
         return Quel3ExecutionPayload(
@@ -674,20 +870,69 @@ class Quel3ExecutionManager:
         capture_port_binding: str | None,
         has_events: bool,
         has_captures: bool,
+        default_unit_label: str | None = None,
     ) -> str:
         """Resolve one target binding to one instrument alias with fail-fast rules."""
+        del target, capture_port_binding, has_events, has_captures
         if binding.startswith("alias:"):
             alias = binding.removeprefix("alias:").strip()
             if len(alias) == 0:
                 raise ValueError("Empty alias binding is not allowed.")
             try:
-                resolver.find_inst_info_by_alias(alias)
+                instrument_info = cls._find_inst_info_by_alias(
+                    resolver=resolver,
+                    alias=alias,
+                    default_unit_label=default_unit_label,
+                )
             except ValueError as exc:
                 raise ValueError(
                     f"Instrument alias `{alias}` could not be resolved."
                 ) from exc
-            return alias
+            return cls._runtime_alias_from_instrument_info(
+                instrument_info=instrument_info,
+                fallback_alias=alias,
+            )
         raise ValueError(f"Unsupported instrument binding: `{binding}`.")
+
+    @classmethod
+    def _find_inst_info_by_alias(
+        cls,
+        *,
+        resolver: InstrumentResolverProtocol,
+        alias: str,
+        default_unit_label: str | None = None,
+    ) -> InstrumentInfoProtocol:
+        """Find one instrument info, passing unit when the alias is unit-qualified."""
+        local_alias, alias_unit_label = cls._split_unit_qualified_alias(alias)
+        unit_label = alias_unit_label or default_unit_label
+        if unit_label is not None:
+            try:
+                return resolver.find_inst_info_by_alias(local_alias, unit=unit_label)
+            except TypeError:
+                return resolver.find_inst_info_by_alias(alias)
+        return resolver.find_inst_info_by_alias(alias)
+
+    @staticmethod
+    def _split_unit_qualified_alias(alias: str) -> tuple[str, str | None]:
+        """Split `unit_label:alias` into local alias and unit label."""
+        stripped_alias = alias.strip()
+        unit_label, separator, local_alias = stripped_alias.partition(":")
+        if separator and len(unit_label) > 0 and len(local_alias) > 0:
+            return local_alias, unit_label
+        return stripped_alias, None
+
+    @staticmethod
+    def _runtime_alias_from_instrument_info(
+        *,
+        instrument_info: object,
+        fallback_alias: str,
+    ) -> str:
+        """Return the runtime alias stored on one runtime instrument info."""
+        definition = getattr(instrument_info, "definition", None)
+        alias = getattr(definition, "alias", None)
+        if isinstance(alias, str) and len(alias.strip()) > 0:
+            return alias.strip()
+        return fallback_alias
 
     @staticmethod
     def _build_capture_mode_directive(
@@ -733,18 +978,39 @@ class Quel3ExecutionManager:
     def _extract_capture_samples(
         result: ResultContainerProtocol,
         window_key: str,
+        *,
+        capture_mode: Quel3CaptureMode,
     ) -> np.ndarray | None:
         """Extract one capture sample-array from a result container entry."""
-        values = result.iq_result.get(window_key)
-        if values is None or len(values) == 0:
-            return None
-        first = values[0]
-        if _has_iq_array(first):
+        if capture_mode in (
+            Quel3CaptureMode.AVERAGED_WAVEFORM,
+            Quel3CaptureMode.RAW_WAVEFORMS,
+        ):
+            values = result.iq_waveform_result.get(window_key)
+            if values is None or len(values) == 0:
+                return None
+            if capture_mode is Quel3CaptureMode.RAW_WAVEFORMS:
+                waveforms = []
+                for value in values:
+                    if not _has_iq_array(value):
+                        return None
+                    waveforms.append(np.asarray(value.iq_array, dtype=np.complex128))
+                return np.stack(waveforms, axis=0)
             latest = values[-1]
             if not _has_iq_array(latest):
                 return None
             return np.asarray(latest.iq_array, dtype=np.complex128)
-        return np.asarray(values, dtype=np.complex128)
+
+        if capture_mode in (
+            Quel3CaptureMode.AVERAGED_VALUE,
+            Quel3CaptureMode.VALUES_PER_ITER,
+        ):
+            values = result.iq_point_result.get(window_key)
+            if values is None or len(values) == 0:
+                return None
+            return np.asarray(values, dtype=np.complex128)
+
+        raise ValueError(f"Unsupported capture mode: {capture_mode}.")
 
     @staticmethod
     def _build_measurement_result(
@@ -807,6 +1073,7 @@ class Quel3ExecutionManager:
         Callable[..., SequencerProtocol],
         InstrumentDriverFactory,
         CaptureModeNamespaceProtocol,
+        SetFrequencyFactory,
         SetCaptureModeFactory,
     ]:
         """Import quelware helpers lazily and return required symbols."""
@@ -823,6 +1090,7 @@ class Quel3ExecutionManager:
         create_quelware_client: QuelwareClientFactory = load_quelware_client_factory(
             client_mode=self._client_mode,
             standalone_unit_label=self._standalone_unit_label,
+            pat_path=self._quelware_pat_path,
         )
         instrument_resolver_factory: InstrumentResolverFactory = (
             resolver_module.InstrumentResolver
@@ -832,6 +1100,7 @@ class Quel3ExecutionManager:
             driver_module.create_instrument_driver_fixed_timeline
         )
         capture_mode_enum: CaptureModeNamespaceProtocol = directive_module.CaptureMode
+        set_frequency_factory: SetFrequencyFactory = directive_module.SetFrequency
         set_capture_mode_factory: SetCaptureModeFactory = (
             directive_module.SetCaptureMode
         )
@@ -841,5 +1110,6 @@ class Quel3ExecutionManager:
             sequencer_factory,
             create_instrument_driver_fixed_timeline,
             capture_mode_enum,
+            set_frequency_factory,
             set_capture_mode_factory,
         )
