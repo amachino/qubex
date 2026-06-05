@@ -122,7 +122,7 @@ class SessionService:
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
     ) -> None:
         """Link up boxes through measurement lifecycle path."""
         selected_box_ids = box_ids if box_ids is not None else self.ctx.box_ids

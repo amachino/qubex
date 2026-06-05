@@ -7,7 +7,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 from qubex.backend.quel1.quel1_runtime_context import Quel1RuntimeContext
 
 logger = logging.getLogger(__name__)
@@ -132,12 +134,11 @@ class Quel1ConfigurationManager:
         self,
         *,
         ipaddr: str,
-        reset: bool = True,
     ) -> None:
         """Define clockmaster in qubecalib."""
         self._runtime_context.qubecalib.define_clockmaster(
             ipaddr=ipaddr,
-            reset=reset,
+            reset=False,
         )
 
     def define_box(
@@ -281,7 +282,9 @@ class Quel1ConfigurationManager:
             db = self._runtime_context.qubecalib.system_config_database
             box = db.create_box(box_name, reconnect=False)
             if reconnect:
-                box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+                box.reconnect(
+                    background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+                )
             return box
         boxpool = self._runtime_context.boxpool
         if box_name in boxpool._boxes:
@@ -289,5 +292,7 @@ class Quel1ConfigurationManager:
         db = self._runtime_context.qubecalib.system_config_database
         box = db.create_box(box_name, reconnect=False)
         if reconnect:
-            box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+            box.reconnect(
+                background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+            )
         return box

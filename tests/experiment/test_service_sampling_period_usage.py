@@ -7,10 +7,13 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from qxpulse import PulseSchedule, Rect
+from qxpulse import Blank, PulseSchedule, Rect, Waveform
 
 import qubex.visualization as viz
 from qubex.experiment.models.experiment_result import ExperimentResult
+from qubex.experiment.services import (
+    characterization_service as characterization_module,
+)
 from qubex.experiment.services.characterization_service import CharacterizationService
 from qubex.experiment.services.measurement_service import MeasurementService
 
@@ -100,6 +103,77 @@ def test_t2_experiment_discretization_uses_measurement_sampling_period() -> None
 
     assert isinstance(result, ExperimentResult)
     assert captured["sampling_period"] == 2 * 0.4 * 3
+
+
+def test_t2_experiment_builds_cpmg_with_sampling_grid_tau(monkeypatch) -> None:
+    """Given QuEL-3 dt, when building T2 CPMG, then tau stays on the sampling grid."""
+    captured: dict[str, float] = {}
+    target = "Q00"
+
+    def _discretize_time_range(
+        *,
+        time_range: np.ndarray,
+        sampling_period: float,
+    ) -> np.ndarray:
+        captured["sampling_period"] = sampling_period
+        return np.array([3.2], dtype=float)
+
+    def _fake_cpmg(
+        *,
+        tau: float,
+        pi: Any,
+        n: int,
+        **_: object,
+    ) -> Blank:
+        samples = tau / 0.4
+        if not np.isclose(samples, round(samples), atol=1e-9):
+            raise ValueError("Tau must be a multiple of the sampling period")
+        captured["tau"] = tau
+        return Blank(duration=2 * tau * n + pi.duration * n)
+
+    def _sweep_parameter(
+        *,
+        sequence: Any,
+        sweep_range: np.ndarray,
+        **_: object,
+    ) -> Any:
+        schedule = sequence(float(sweep_range[0]))
+        captured["duration"] = schedule.get_sequence(target, copy=False).duration
+        return SimpleNamespace(data={})
+
+    monkeypatch.setattr(Waveform, "SAMPLING_PERIOD", 0.4)
+    monkeypatch.setattr(characterization_module, "CPMG", _fake_cpmg)
+
+    service = cast(Any, object.__new__(CharacterizationService))
+    service.__dict__["_experiment_context"] = SimpleNamespace(
+        qubit_labels=[target],
+        measurement=SimpleNamespace(sampling_period=0.4),
+        util=SimpleNamespace(
+            discretize_time_range=_discretize_time_range,
+            create_qubit_subgroups=lambda targets: [[target]],
+        ),
+    )
+    service.__dict__["_measurement_service"] = SimpleNamespace(
+        sweep_parameter=_sweep_parameter
+    )
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace(
+        validate_rabi_params=lambda _targets: None,
+        get_hpi_pulse=lambda _target: Blank(duration=0.4),
+    )
+
+    result = service.t2_experiment(
+        targets=[target],
+        time_range=np.array([3.2], dtype=float),
+        n_cpmg=1,
+        plot=False,
+        save_image=False,
+    )
+
+    assert isinstance(result, ExperimentResult)
+    assert captured["sampling_period"] == pytest.approx(0.8)
+    assert captured["tau"] == pytest.approx(1.2)
+    assert captured["duration"] == pytest.approx(4.0)
 
 
 def test_t1_experiment_discretization_uses_measurement_sampling_period() -> None:

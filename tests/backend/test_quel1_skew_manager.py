@@ -10,7 +10,9 @@ import pytest
 import yaml
 
 from qubex.backend.quel1.managers.skew_manager import Quel1SkewManager
-from qubex.backend.quel1.quel1_backend_constants import RELAXED_NOISE_THRESHOLD
+from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+)
 
 
 class _FakeBox:
@@ -60,8 +62,14 @@ class _FakeSkewSystem:
 
 
 class _FakeSkewRuntime:
-    def __init__(self, *, system: _FakeSkewSystem) -> None:
+    def __init__(
+        self,
+        *,
+        system: _FakeSkewSystem,
+        estimated: dict[tuple[str, int], _FakeEstimatedPulseParams] | None = None,
+    ) -> None:
         self.system = system
+        self._estimated = dict(estimated or {})
         self.measure_calls = 0
         self.estimate_calls = 0
         self.plot_calls = 0
@@ -81,6 +89,11 @@ class _FakeSkewRuntime:
 class _FakeNamedBox:
     name: str
     box: _FakeBox
+
+
+@dataclass
+class _FakeEstimatedPulseParams:
+    idx: int
 
 
 class _FakeQuel1SystemClass:
@@ -110,12 +123,16 @@ class _FakeQuel1SystemClass:
 class _FakeSkewClass:
     from_yaml_calls: ClassVar[list[dict[str, Any]]] = []
     created_runtimes: ClassVar[list[_FakeSkewRuntime]] = []
+    estimated_indices: ClassVar[dict[tuple[str, int], _FakeEstimatedPulseParams]] = {}
 
     @classmethod
     def from_yaml(cls, path: str, **kwargs: Any) -> _FakeSkewRuntime:
         cls.from_yaml_calls.append({"path": path, **kwargs})
         system = cast(_FakeSkewSystem, kwargs["system"])
-        runtime = _FakeSkewRuntime(system=system)
+        runtime = _FakeSkewRuntime(
+            system=system,
+            estimated=cls.estimated_indices,
+        )
         cls.created_runtimes.append(runtime)
         return runtime
 
@@ -170,6 +187,7 @@ class _FakeRuntimeContext:
 def _reset_fakes() -> None:
     _FakeSkewClass.from_yaml_calls.clear()
     _FakeSkewClass.created_runtimes.clear()
+    _FakeSkewClass.estimated_indices.clear()
     _FakeQuel1SystemClass.create_calls.clear()
     _FakeQuBEMasterClient.create_calls.clear()
 
@@ -215,10 +233,10 @@ def test_run_skew_measurement_reuses_connected_boxes_without_reconnect() -> None
     assert create_call["update_copnfig_cache"] is True
 
 
-def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect() -> (
+def test_run_skew_measurement_adds_missing_reference_box_with_default_reconnect() -> (
     None
 ):
-    """Given connected runtime missing reference box, when measuring skew, then manager creates missing box with relaxed reconnect."""
+    """Given connected runtime missing reference box, when measuring skew, then manager creates missing box with default reconnect."""
     _reset_fakes()
     sysdb = _FakeSysDb()
     connected_system = _FakeSkewSystem(
@@ -243,7 +261,7 @@ def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect(
 
     assert sysdb.create_box_calls == [("R", False)]
     assert sysdb.created_boxes["R"].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
     assert _FakeQuBEMasterClient.create_calls == []
     create_call = _FakeQuel1SystemClass.create_calls[-1]
@@ -253,7 +271,7 @@ def test_run_skew_measurement_adds_missing_reference_box_with_relaxed_reconnect(
     assert create_call["update_copnfig_cache"] is True
 
 
-def test_run_skew_measurement_creates_all_boxes_with_relaxed_reconnect_when_disconnected() -> (
+def test_run_skew_measurement_creates_all_boxes_with_default_reconnect_when_disconnected() -> (
     None
 ):
     """Given disconnected runtime, when measuring skew, then manager creates all boxes and clockmaster explicitly."""
@@ -277,10 +295,10 @@ def test_run_skew_measurement_creates_all_boxes_with_relaxed_reconnect_when_disc
 
     assert sysdb.create_box_calls == [("A", False), ("R", False)]
     assert sysdb.created_boxes["A"].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
     assert sysdb.created_boxes["R"].reconnect_calls == [
-        {"background_noise_threshold": RELAXED_NOISE_THRESHOLD}
+        {"background_noise_threshold": DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT}
     ]
     assert _FakeQuBEMasterClient.create_calls == ["192.0.2.1"]
     from_yaml_call = _FakeSkewClass.from_yaml_calls[-1]
@@ -317,10 +335,10 @@ def test_run_skew_measurement_passes_empty_boxes_when_system_is_provided() -> No
 def test_update_skew_updates_selected_boxes_and_creates_backup(
     tmp_path: Path,
 ) -> None:
-    """Given selected boxes, when updating skew, then only those waits change and a backup is created."""
+    """Given measured indices, when updating skew, then selected port waits shift toward the target."""
     sysdb = _FakeSysDb()
     runtime_context = _FakeRuntimeContext(
-        available_boxes=[],
+        available_boxes=["B"],
         is_connected=False,
         connected_system=None,
         sysdb=sysdb,
@@ -333,36 +351,62 @@ box_setting:
   A:
     slot: 0
     wait: 0
+    port_wait:
+      1: 0
   B:
     slot: 1
-    wait: 1
+    wait: 5
+    port_wait:
+      8: 1
+      9: 4
+      10: 7
 time_to_start: 0
 """.strip()
         + "\n",
         encoding="utf-8",
     )
+    _FakeSkewClass.estimated_indices = {
+        ("B", 8): _FakeEstimatedPulseParams(idx=70),
+        ("B", 9): _FakeEstimatedPulseParams(idx=80),
+    }
+    manager.run_skew_measurement(
+        skew_yaml_path=path,
+        box_yaml_path="box.yaml",
+        clockmaster_ip="192.0.2.1",
+        box_names=["B"],
+    )
 
     result = manager.update_skew(
         file_path=path,
-        wait=250,
+        wait=80,
         box_names=["B"],
         backup=True,
     )
 
-    backup_path = path.with_suffix(f"{path.suffix}.bak")
+    backup_path = result["backup_path"]
+    assert isinstance(backup_path, Path)
+    assert backup_path.parent == path.parent
+    assert backup_path.name.startswith("skew.yaml.bak.")
+    assert len(backup_path.name.removeprefix("skew.yaml.bak.")) == 15
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     backup_payload = yaml.safe_load(backup_path.read_text(encoding="utf-8"))
     assert result == {
         "file_path": path,
         "backup_path": backup_path,
         "box_names": ["B"],
-        "wait": 250,
+        "wait": 80,
+        "updated_ports": {"B": [8, 9]},
+        "unmeasured_ports": {"B": [10]},
     }
-    assert payload["box_setting"]["A"]["wait"] == 0
-    assert payload["box_setting"]["B"]["wait"] == 250
-    assert backup_payload["box_setting"]["A"]["wait"] == 0
-    assert backup_payload["box_setting"]["B"]["wait"] == 1
+    assert payload["box_setting"]["A"]["port_wait"] == {1: 0}
+    assert payload["box_setting"]["B"]["wait"] == 9
+    assert payload["box_setting"]["B"]["port_wait"] == {8: 7, 9: 0, 10: 7}
+    assert backup_payload["box_setting"]["A"]["port_wait"] == {1: 0}
+    assert backup_payload["box_setting"]["B"]["wait"] == 5
+    assert backup_payload["box_setting"]["B"]["port_wait"] == {8: 1, 9: 4, 10: 7}
     assert sysdb.load_skew_yaml_calls == [str(path)]
+    with pytest.raises(RuntimeError, match="Run check_skew before update_skew"):
+        manager.update_skew(file_path=path, wait=80, box_names=["B"])
 
 
 def test_update_skew_rejects_unknown_box_name(tmp_path: Path) -> None:
@@ -382,6 +426,8 @@ box_setting:
   A:
     slot: 0
     wait: 0
+    port_wait:
+      1: 0
 time_to_start: 0
 """.strip()
         + "\n"

@@ -18,6 +18,8 @@ QuEL-1 / QuEL-3 の具体実装を定義するモジュールです。低レベ�
 - `Quel1BackendController` と `Quel3BackendController`: サポート対象 backend family の具体実装です
 - `Quel1ExecutionPayload`、`Quel3ExecutionPayload`、`Quel3SequencerBuilder` などの backend 固有 model / builder
 - `qubex.measurement.adapters`: measurement schedule / config から backend request へ橋渡しする層です
+- [`start_continuous_wave()`](continuous-wave.md) など、hardware-level CW 出力のための
+  QuEL-1 optional controller capability
 
 ## 直接利用は上級者向けです
 
@@ -29,8 +31,9 @@ QuEL-1 / QuEL-3 の具体実装を定義するモジュールです。低レベ�
 
 1. [低レベル API 概要](../low-level-apis/index.md) で全体像を確認する
 2. schedule や result から話を始めるなら、先に [`measurement`](../measurement/index.md) を読む
-3. [`backend` サンプルワークフロー](examples.md) に進む
-4. controller の詳細は [API リファレンス](../../api-reference/qubex/backend/index.md) を参照する
+3. QuEL-1 の CW 確認では [QuEL-1 連続波出力](continuous-wave.md) を読む
+4. [`backend` サンプルワークフロー](examples.md) に進む
+5. controller の詳細は [API リファレンス](../../api-reference/qubex/backend/index.md) を参照する
 
 ## 次のような場合は別のモジュールを選ぶ
 

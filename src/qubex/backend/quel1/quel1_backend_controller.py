@@ -9,7 +9,7 @@ capabilities, while delegating concrete operations to QuEL-1 managers.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,6 +24,7 @@ from .managers import (
     Quel1ClockManager,
     Quel1ConfigurationManager,
     Quel1ConnectionManager,
+    Quel1ContinuousWaveManager,
     Quel1ExecutionManager,
     Quel1SkewManager,
 )
@@ -38,12 +39,14 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from .compat.qubecalib_protocols import (
         BoxPoolProtocol as BoxPool,
+        PortType,
         QubeCalibProtocol as QubeCalib,
         Quel1BoxCommonProtocol as Quel1Box,
         Quel1SystemProtocol as Quel1System,
         QuelDriverClassesProtocol,
         SequencerProtocol as Sequencer,
     )
+    from .managers import Quel1ContinuousWaveChannelSpec, Quel1ContinuousWaveConfig
 
 
 class Quel1BackendController(BackendController):
@@ -66,6 +69,7 @@ class Quel1BackendController(BackendController):
         clock_manager: Quel1ClockManager | None = None,
         execution_manager: Quel1ExecutionManager | None = None,
         configuration_manager: Quel1ConfigurationManager | None = None,
+        continuous_wave_manager: Quel1ContinuousWaveManager | None = None,
         skew_manager: Quel1SkewManager | None = None,
     ):
         """
@@ -83,6 +87,8 @@ class Quel1BackendController(BackendController):
             Injected execution manager for testing or customization.
         configuration_manager : Quel1ConfigurationManager | None, optional
             Injected configuration manager for testing or customization.
+        continuous_wave_manager : Quel1ContinuousWaveManager | None, optional
+            Injected continuous-wave manager for testing or customization.
         skew_manager : Quel1SkewManager | None, optional
             Injected skew manager for testing or customization.
         """
@@ -108,6 +114,11 @@ class Quel1BackendController(BackendController):
             configuration_manager
             if configuration_manager is not None
             else Quel1ConfigurationManager(runtime_context=self._runtime_context)
+        )
+        self._continuous_wave_manager = (
+            continuous_wave_manager
+            if continuous_wave_manager is not None
+            else Quel1ContinuousWaveManager(runtime_context=self._runtime_context)
         )
         self._skew_manager = (
             skew_manager
@@ -184,10 +195,16 @@ class Quel1BackendController(BackendController):
             Whether to reconnect boxes in parallel. If `None`, it follows
             `qubex.backend.quel1.DEFAULT_EXECUTION_MODE`.
         """
+        if self._connection_manager.requires_reconnect(box_names):
+            self.stop_all_continuous_waves()
         self._connection_manager.connect(box_names=box_names, parallel=parallel)
 
     def disconnect(self) -> None:
         """Disconnect backend resources and reset connection-related state."""
+        try:
+            self.stop_all_continuous_waves()
+        except Exception:
+            logger.exception("Failed to stop continuous waves during disconnect.")
         self._connection_manager.clear_cache()
         self._connection_manager.disconnect()
 
@@ -227,7 +244,7 @@ class Quel1BackendController(BackendController):
     def linkup(
         self,
         box_name: str,
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         **kwargs: Any,
     ) -> Quel1Box:
         """
@@ -258,7 +275,7 @@ class Quel1BackendController(BackendController):
     def linkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         *,
         parallel: bool | None = None,
     ) -> dict[str, Quel1Box]:
@@ -269,7 +286,7 @@ class Quel1BackendController(BackendController):
         ----------
         box_list : list[str]
             List of box names.
-        noise_threshold : int | None, optional
+        noise_threshold : float | None, optional
             Threshold for linkup noise checks.
         parallel : bool | None, optional
             Whether to link up boxes in parallel. If `None`, it follows
@@ -286,7 +303,7 @@ class Quel1BackendController(BackendController):
             parallel=parallel,
         )
 
-    def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
+    def relinkup(self, box_name: str, noise_threshold: float | None = None) -> None:
         """
         Relink a box.
 
@@ -303,7 +320,7 @@ class Quel1BackendController(BackendController):
     def relinkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
         *,
         parallel: bool | None = None,
     ) -> None:
@@ -314,7 +331,7 @@ class Quel1BackendController(BackendController):
         ----------
         box_list : list[str]
             List of box names.
-        noise_threshold : int | None, optional
+        noise_threshold : float | None, optional
             Threshold for relinkup noise checks.
         parallel : bool | None, optional
             Whether to relink boxes in parallel. If `None`, it follows
@@ -398,7 +415,7 @@ class Quel1BackendController(BackendController):
         return self._clock_manager.reset_clockmaster(ipaddr=ipaddr)
 
     # Configuration Operations
-    def define_clockmaster(self, *, ipaddr: str, reset: bool = True) -> None:
+    def define_clockmaster(self, *, ipaddr: str) -> None:
         """
         Define the clock master in qube-calib.
 
@@ -406,10 +423,8 @@ class Quel1BackendController(BackendController):
         ----------
         ipaddr : str
             Clock master IP address.
-        reset : bool, optional
-            Whether to reset clock master on define.
         """
-        self._configuration_manager.define_clockmaster(ipaddr=ipaddr, reset=reset)
+        self._configuration_manager.define_clockmaster(ipaddr=ipaddr)
 
     def define_box(
         self,
@@ -757,6 +772,235 @@ class Quel1BackendController(BackendController):
         """Build a resource map for the requested targets."""
         return self._configuration_manager.get_resource_map(targets=targets)
 
+    # Continuous Wave Operations
+    def start_continuous_wave(
+        self,
+        *,
+        box_name: str,
+        port: PortType,
+        channel: int,
+        amplitude: float = 1.0,
+        phase_rad: float = 0.0,
+        lo_freq_hz: float | None = None,
+        cnco_freq_hz: float | None = None,
+        fnco_freq_hz: float | None = None,
+        awg_freq_hz: float | None = None,
+        sideband: str | None = None,
+        vatt: int | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+        configure_port: bool = False,
+        blocks_per_chunk: int | None = None,
+        chunk_repeats: int | None = None,
+        awg_repeats: int | None = None,
+    ) -> Quel1ContinuousWaveConfig:
+        """
+        Start one QuEL-1 continuous-wave output.
+
+        Parameters
+        ----------
+        box_name : str
+            Connected QuEL-1 box name.
+        port : PortType
+            Output port identifier.
+        channel : int
+            AWG channel number on the output port.
+        amplitude : float, optional
+            Peak amplitude normalized to the DAC code range. Valid range is
+            0.0 to 1.0.
+        phase_rad : float, optional
+            Initial waveform phase in radians.
+        lo_freq_hz : float | None, optional
+            LO frequency to apply when `configure_port=True`.
+        cnco_freq_hz : float | None, optional
+            CNCO frequency to apply when `configure_port=True`.
+        fnco_freq_hz : float | None, optional
+            FNCO frequency to apply when `configure_port=True`.
+        awg_freq_hz : float | None, optional
+            AWG-baseband frequency in Hz. If omitted, uses 0 Hz.
+        sideband : str | None, optional
+            Sideband setting to apply when `configure_port=True`.
+        vatt : int | None, optional
+            VATT setting to apply when `configure_port=True`.
+        fullscale_current : int | None, optional
+            Full-scale current setting to apply when `configure_port=True`.
+        rfswitch : str | None, optional
+            RF switch setting to apply when `configure_port=True`.
+        configure_port : bool, optional
+            Whether to update output path settings before starting. The
+            default keeps current hardware output and phase state.
+        blocks_per_chunk : int | None, optional
+            Number of 128 ns hardware blocks in one generated chunk. When
+            omitted, uses one block.
+        chunk_repeats : int | None, optional
+            Repeat count for the generated chunk. When omitted, uses the
+            hardware maximum.
+        awg_repeats : int | None, optional
+            Repeat count for the AWG sequence. When omitted, uses the hardware
+            maximum.
+
+        Returns
+        -------
+        Quel1ContinuousWaveConfig
+            Resolved continuous-wave configuration.
+        """
+        kwargs: dict[str, Any] = {}
+        if blocks_per_chunk is not None:
+            kwargs["blocks_per_chunk"] = blocks_per_chunk
+        if chunk_repeats is not None:
+            kwargs["chunk_repeats"] = chunk_repeats
+        if awg_repeats is not None:
+            kwargs["awg_repeats"] = awg_repeats
+        return self._continuous_wave_manager.start_continuous_wave(
+            box_name=box_name,
+            port=port,
+            channel=channel,
+            amplitude=amplitude,
+            phase_rad=phase_rad,
+            lo_freq_hz=lo_freq_hz,
+            cnco_freq_hz=cnco_freq_hz,
+            fnco_freq_hz=fnco_freq_hz,
+            awg_freq_hz=awg_freq_hz,
+            sideband=sideband,
+            vatt=vatt,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+            configure_port=configure_port,
+            **kwargs,
+        )
+
+    def start_continuous_waves(
+        self,
+        *,
+        box_name: str,
+        port: PortType,
+        waves: Sequence[Quel1ContinuousWaveChannelSpec | Mapping[str, Any]],
+        lo_freq_hz: float | None = None,
+        cnco_freq_hz: float | None = None,
+        sideband: str | None = None,
+        vatt: int | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+        configure_port: bool = False,
+        blocks_per_chunk: int | None = None,
+        chunk_repeats: int | None = None,
+        awg_repeats: int | None = None,
+    ) -> tuple[Quel1ContinuousWaveConfig, ...]:
+        """
+        Start one port-scoped QuEL-1 continuous-wave output group.
+
+        Parameters
+        ----------
+        box_name : str
+            Connected QuEL-1 box name.
+        port : PortType
+            Output port identifier.
+        waves : Sequence[Quel1ContinuousWaveChannelSpec | Mapping[str, Any]]
+            Per-channel CW settings. The group starts with one `start_wavegen()`
+            call after all channels are configured.
+        lo_freq_hz : float | None, optional
+            LO frequency to apply when `configure_port=True`.
+        cnco_freq_hz : float | None, optional
+            CNCO frequency to apply when `configure_port=True`.
+        sideband : str | None, optional
+            Sideband setting to apply when `configure_port=True`.
+        vatt : int | None, optional
+            VATT setting to apply when `configure_port=True`.
+        fullscale_current : int | None, optional
+            Full-scale current setting to apply when `configure_port=True`.
+        rfswitch : str | None, optional
+            RF switch setting to apply when `configure_port=True`.
+        configure_port : bool, optional
+            Whether to update output path settings before starting. The
+            default keeps current hardware output and phase state.
+        blocks_per_chunk : int | None, optional
+            Number of 128 ns hardware blocks in each generated chunk. When
+            omitted, uses one block.
+        chunk_repeats : int | None, optional
+            Repeat count for each generated chunk. When omitted, uses the
+            hardware maximum.
+        awg_repeats : int | None, optional
+            Repeat count for each AWG sequence. When omitted, uses the hardware
+            maximum.
+
+        Returns
+        -------
+        tuple[Quel1ContinuousWaveConfig, ...]
+            Resolved continuous-wave configurations in input order.
+        """
+        kwargs: dict[str, Any] = {}
+        if blocks_per_chunk is not None:
+            kwargs["blocks_per_chunk"] = blocks_per_chunk
+        if chunk_repeats is not None:
+            kwargs["chunk_repeats"] = chunk_repeats
+        if awg_repeats is not None:
+            kwargs["awg_repeats"] = awg_repeats
+        return self._continuous_wave_manager.start_continuous_waves(
+            box_name=box_name,
+            port=port,
+            waves=waves,
+            lo_freq_hz=lo_freq_hz,
+            cnco_freq_hz=cnco_freq_hz,
+            sideband=sideband,
+            vatt=vatt,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+            configure_port=configure_port,
+            **kwargs,
+        )
+
+    def stop_continuous_wave(
+        self,
+        *,
+        box_name: str,
+        port: PortType,
+        channel: int | None = None,
+        timeout: float = 2.0,
+        polling_period: float = 0.01,
+    ) -> bool:
+        """
+        Stop the active QuEL-1 continuous-wave output group on a port.
+
+        Parameters
+        ----------
+        box_name : str
+            Connected QuEL-1 box name.
+        port : PortType
+            Output port identifier.
+        channel : int | None, optional
+            Legacy channel selector. The canonical stop target is the active
+            CW group on the port.
+        timeout : float, optional
+            Stop timeout in seconds for cancellable task implementations.
+        polling_period : float, optional
+            Polling period in seconds for cancellable task implementations.
+
+        Returns
+        -------
+        bool
+            `True` when a remembered task was stopped or cleared, otherwise
+            `False`.
+        """
+        return self._continuous_wave_manager.stop_continuous_wave(
+            box_name=box_name,
+            port=port,
+            channel=channel,
+            timeout=timeout,
+            polling_period=polling_period,
+        )
+
+    def stop_all_continuous_waves(
+        self,
+        *,
+        timeout: float = 2.0,
+        polling_period: float = 0.01,
+    ) -> None:
+        """Stop all active QuEL-1 continuous-wave outputs."""
+        self._continuous_wave_manager.stop_all_continuous_waves(
+            timeout=timeout,
+            polling_period=polling_period,
+        )
+
     # QuEL-1 Optional Capabilities
     def load_skew_yaml(self, file_path: str | Path) -> None:
         """
@@ -785,12 +1029,14 @@ class Quel1BackendController(BackendController):
         file_path : str | Path
             Path to the skew calibration YAML file.
         wait : int
-            New skew wait value applied to the selected boxes.
+            Target skew index. Measured effective waits are shifted by
+            `wait - measured_idx`, then normalized into `wait` and `port_wait`.
         box_names : list[str] | None, optional
             Box names to update. When omitted, all boxes in the file are
             updated.
         backup : bool, optional
-            Whether to save the original file as `*.bak` before overwriting it.
+            Whether to save the original file as `*.bak.YYYYMMDD_HHMMSS`
+            before overwriting it.
 
         Returns
         -------
@@ -811,6 +1057,7 @@ class Quel1BackendController(BackendController):
         box_yaml_path: str | Path,
         clockmaster_ip: str,
         box_names: list[str],
+        target_box_names: list[str] | None = None,
         estimate: bool = True,
     ) -> tuple[Any, Any]:
         """Measure skew from YAML settings and return skew object and figure."""
@@ -819,6 +1066,7 @@ class Quel1BackendController(BackendController):
             box_yaml_path=box_yaml_path,
             clockmaster_ip=clockmaster_ip,
             box_names=box_names,
+            target_box_names=target_box_names,
             estimate=estimate,
         )
 

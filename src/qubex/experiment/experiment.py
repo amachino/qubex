@@ -782,7 +782,7 @@ class Experiment:
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int | None = None,
+        noise_threshold: float | None = None,
     ) -> None:
         """Link up specified boxes with optional noise threshold."""
         return self.session_service.linkup(
@@ -835,9 +835,19 @@ class Experiment:
         channel_number: int,
         qubit_label: str | None = None,
         target_type: TargetType | None = None,
-        update_lsi: bool | None = None,
+        update_backend_settings: bool | None = None,
+        **deprecated_options: Any,
     ) -> None:
         """Register a custom target with the control system."""
+        update_backend_settings = self._resolve_deprecated_option(
+            value=update_backend_settings,
+            deprecated_options=deprecated_options,
+            deprecated_name="update_lsi",
+            replacement_name="update_backend_settings",
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
         return self.ctx.register_custom_target(
             label=label,
             frequency=frequency,
@@ -846,7 +856,7 @@ class Experiment:
             channel_number=channel_number,
             qubit_label=qubit_label,
             target_type=target_type,
-            update_lsi=update_lsi,
+            update_backend_settings=update_backend_settings,
         )
 
     @contextmanager
@@ -4311,6 +4321,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        pruned_fit: bool | None = None,
     ) -> Result:
         """Measure a chevron pattern for targets."""
         return self.characterization_service.chevron_pattern(
@@ -4324,6 +4335,7 @@ class Experiment:
             interval=shot_interval,
             plot=plot,
             save_image=save_image,
+            pruned_fit=pruned_fit,
         )
 
     def obtain_freq_rabi_relation(
@@ -4813,7 +4825,7 @@ class Experiment:
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ) -> float:
+    ) -> Result:
         """Estimate control amplitude from a resonance scan."""
         return self.characterization_service.estimate_control_amplitude(
             target=target,
@@ -5126,6 +5138,7 @@ class Experiment:
         xaxis_type: Literal["linear", "log"] | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -5142,6 +5155,7 @@ class Experiment:
             xaxis_type=xaxis_type,
             shots=n_shots,
             interval=shot_interval,
+            time_integration=time_integration,
             plot=plot,
             save_image=save_image,
         )
@@ -5163,6 +5177,7 @@ class Experiment:
         in_parallel: bool | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -5180,6 +5195,7 @@ class Experiment:
             in_parallel=in_parallel,
             shots=n_shots,
             interval=shot_interval,
+            time_integration=time_integration,
             plot=plot,
             save_image=save_image,
         )

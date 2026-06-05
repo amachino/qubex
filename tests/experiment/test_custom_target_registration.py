@@ -254,6 +254,79 @@ def test_register_custom_target_registers_with_explicit_qubit_label() -> None:
     assert experiment_system.added_targets[0].qubit == "Q00"
 
 
+def test_register_custom_target_updates_backend_settings_with_official_keyword() -> (
+    None
+):
+    """Given update_backend_settings, when registering target, then backend settings are pushed."""
+    context, _, _, system_manager = _make_context()
+
+    context.register_custom_target(
+        label="CUSTOM",
+        frequency=5.2,
+        box_id="B0",
+        port_number=2,
+        channel_number=0,
+        qubit_label="Q00",
+        update_backend_settings=True,
+    )
+
+    assert system_manager.push_calls == [["B0"]]
+
+
+def test_register_custom_target_preserves_update_lsi_alias() -> None:
+    """Given update_lsi, when registering target, then legacy backend update behavior is preserved."""
+    context, _, _, system_manager = _make_context()
+
+    with pytest.warns(DeprecationWarning, match="`update_lsi` is deprecated"):
+        context.register_custom_target(
+            label="CUSTOM",
+            frequency=5.2,
+            box_id="B0",
+            port_number=2,
+            channel_number=0,
+            qubit_label="Q00",
+            update_lsi=True,
+        )
+
+    assert system_manager.push_calls == [["B0"]]
+
+
+def test_register_custom_target_rejects_conflicting_backend_update_keywords() -> None:
+    """Given both update keywords, when registering target, then ValueError is raised."""
+    context, _, _, _ = _make_context()
+
+    with (
+        pytest.warns(DeprecationWarning, match="`update_lsi` is deprecated"),
+        pytest.raises(ValueError, match="`update_lsi` conflicts"),
+    ):
+        context.register_custom_target(
+            label="CUSTOM",
+            frequency=5.2,
+            box_id="B0",
+            port_number=2,
+            channel_number=0,
+            qubit_label="Q00",
+            update_backend_settings=True,
+            update_lsi=False,
+        )
+
+
+def test_register_custom_target_rejects_unexpected_deprecated_options() -> None:
+    """Given unknown keyword option, when registering target, then TypeError is raised."""
+    context, _, _, _ = _make_context()
+
+    with pytest.raises(TypeError, match="Unexpected keyword arguments"):
+        context.register_custom_target(
+            label="CUSTOM",
+            frequency=5.2,
+            box_id="B0",
+            port_number=2,
+            channel_number=0,
+            qubit_label="Q00",
+            unexpected_option=True,
+        )
+
+
 @pytest.mark.parametrize(
     ("target_type", "expected_attr"),
     [

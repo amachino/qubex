@@ -32,6 +32,38 @@ from .pulse_service import PulseService
 logger = logging.getLogger(__name__)
 
 
+def _n_cliffords_ranges_by_target(
+    rb_result: Result,
+    targets: Collection[str],
+) -> dict[str, np.ndarray]:
+    return {
+        target: np.asarray(rb_result[target]["n_cliffords"], dtype=int)
+        for target in targets
+    }
+
+
+def _shared_n_cliffords_range(
+    ranges_by_target: Mapping[str, np.ndarray],
+) -> np.ndarray | None:
+    ranges = list(ranges_by_target.values())
+    if not ranges:
+        return None
+
+    first_range = ranges[0]
+    if all(np.array_equal(first_range, n_cliffords) for n_cliffords in ranges[1:]):
+        return first_range
+    return None
+
+
+def _rb_curve_data(entry: Mapping[str, object]) -> dict[str, object]:
+    """Return RB curve payload fields that should be preserved in IRB results."""
+    return {
+        key: entry[key]
+        for key in ("n_cliffords", "mean", "std", "trials", "seeds")
+        if key in entry
+    }
+
+
 class BenchmarkingService:
     """Service for randomized benchmarking workflows."""
 
@@ -269,6 +301,7 @@ class BenchmarkingService:
         in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
+        time_integration: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
@@ -313,6 +346,9 @@ class BenchmarkingService:
         if interval is None:
             interval = DEFAULT_INTERVAL
 
+        if time_integration is None:
+            time_integration = True
+
         if xaxis_type is None:
             xaxis_type = "linear"
 
@@ -353,6 +389,7 @@ class BenchmarkingService:
             sweep_range = []
             mean_data = defaultdict(list)
             std_data = defaultdict(list)
+            trial_matrix_data = defaultdict(list)
             while True:
                 if n_cliffords_range is None:
                     n_clifford = 0 if idx == 0 else 2 ** (idx - 1)
@@ -378,6 +415,7 @@ class BenchmarkingService:
                         mode="avg",
                         shots=shots,
                         interval=interval,
+                        time_integration=time_integration,
                         reset_awg_and_capunits=reset_awg_and_capunits,
                         plot=False,
                     )
@@ -389,8 +427,10 @@ class BenchmarkingService:
                 check_vals = {}
 
                 for target in target_group:
-                    mean = np.mean(trial_data[target])
-                    std = np.std(trial_data[target])
+                    trial_values = np.asarray(trial_data[target], dtype=float)
+                    mean = np.mean(trial_values)
+                    std = np.std(trial_values)
+                    trial_matrix_data[target].append(trial_values)
                     mean_data[target].append(mean)
                     std_data[target].append(std)
                     check_vals[target] = mean - std * 0.5
@@ -403,6 +443,9 @@ class BenchmarkingService:
 
             mean_data = {target: np.array(data) for target, data in mean_data.items()}
             std_data = {target: np.array(data) for target, data in std_data.items()}
+            trial_matrix_data = {
+                target: np.vstack(data) for target, data in trial_matrix_data.items()
+            }
 
             for target in target_group:
                 mean = mean_data[target]
@@ -433,6 +476,8 @@ class BenchmarkingService:
                     "n_cliffords": sweep_range,
                     "mean": mean,
                     "std": std,
+                    "trials": trial_matrix_data[target],
+                    "seeds": np.asarray(seeds, dtype=int),
                     **fit_result,
                 }
 
@@ -457,6 +502,7 @@ class BenchmarkingService:
         mitigate_readout: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
+        time_integration: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
@@ -522,6 +568,9 @@ class BenchmarkingService:
         if xaxis_type is None:
             xaxis_type = "linear"
 
+        if time_integration is None:
+            time_integration = True
+
         if in_parallel:
             target_groups = [targets]
         else:
@@ -569,6 +618,7 @@ class BenchmarkingService:
             sweep_range = []
             mean_data = defaultdict(list)
             std_data = defaultdict(list)
+            trial_matrix_data = defaultdict(list)
             while True:
                 if n_cliffords_range is None:
                     n_clifford = 0 if idx == 0 else 2 ** (idx - 1)
@@ -594,6 +644,7 @@ class BenchmarkingService:
                         mode="single",
                         shots=shots,
                         interval=interval,
+                        time_integration=time_integration,
                         reset_awg_and_capunits=reset_awg_and_capunits,
                         plot=False,
                     )
@@ -613,8 +664,10 @@ class BenchmarkingService:
                 check_vals = {}
 
                 for target in target_group:
-                    mean = np.mean(trial_data[target])
-                    std = np.std(trial_data[target])
+                    trial_values = np.asarray(trial_data[target], dtype=float)
+                    mean = np.mean(trial_values)
+                    std = np.std(trial_values)
+                    trial_matrix_data[target].append(trial_values)
                     mean_data[target].append(mean)
                     std_data[target].append(std)
                     check_vals[target] = mean - std * 0.5
@@ -627,6 +680,9 @@ class BenchmarkingService:
 
             mean_data = {target: np.array(data) for target, data in mean_data.items()}
             std_data = {target: np.array(data) for target, data in std_data.items()}
+            trial_matrix_data = {
+                target: np.vstack(data) for target, data in trial_matrix_data.items()
+            }
 
             for target in target_group:
                 mean = mean_data[target]
@@ -657,6 +713,8 @@ class BenchmarkingService:
                     "n_cliffords": sweep_range,
                     "mean": mean,
                     "std": std,
+                    "trials": trial_matrix_data[target],
+                    "seeds": np.asarray(seeds, dtype=int),
                     **fit_result,
                 }
 
@@ -682,6 +740,7 @@ class BenchmarkingService:
         in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
+        time_integration: bool | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -697,6 +756,8 @@ class BenchmarkingService:
             plot = True
         if save_image is None:
             save_image = True
+        if time_integration is None:
+            time_integration = True
 
         if isinstance(interleaved_clifford, str):
             clifford = self.clifford.get(interleaved_clifford)
@@ -731,27 +792,59 @@ class BenchmarkingService:
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
+                time_integration=time_integration,
                 plot=False,
                 save_image=False,
                 reset_awg_and_capunits=False,
             )
-            irb_result = self.rb_experiment_2q(
-                targets=targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                zx90=zx90,
-                interleaved_waveform=interleaved_waveform,  # type: ignore
-                interleaved_clifford=interleaved_clifford,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
+            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
+            irb_n_cliffords_range = (
+                n_cliffords_range
+                if n_cliffords_range is not None
+                else _shared_n_cliffords_range(reference_ranges)
             )
+            if irb_n_cliffords_range is None:
+                irb_data = {}
+                for target in targets:
+                    target_irb_result = self.rb_experiment_2q(
+                        targets=target,
+                        n_cliffords_range=reference_ranges[target],
+                        n_trials=n_trials,
+                        seeds=seeds,
+                        max_n_cliffords=max_n_cliffords,
+                        x90=x90,
+                        zx90=zx90,
+                        interleaved_waveform=interleaved_waveform,  # type: ignore
+                        interleaved_clifford=interleaved_clifford,
+                        in_parallel=False,
+                        shots=shots,
+                        interval=interval,
+                        time_integration=time_integration,
+                        plot=False,
+                        save_image=False,
+                        reset_awg_and_capunits=False,
+                    )
+                    irb_data[target] = target_irb_result[target]
+                irb_result = Result(data=irb_data)
+            else:
+                irb_result = self.rb_experiment_2q(
+                    targets=targets,
+                    n_cliffords_range=irb_n_cliffords_range,
+                    n_trials=n_trials,
+                    seeds=seeds,
+                    max_n_cliffords=max_n_cliffords,
+                    x90=x90,
+                    zx90=zx90,
+                    interleaved_waveform=interleaved_waveform,  # type: ignore
+                    interleaved_clifford=interleaved_clifford,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    time_integration=time_integration,
+                    plot=False,
+                    save_image=False,
+                    reset_awg_and_capunits=False,
+                )
         else:
             dimension = 2
             rb_result = self.rb_experiment_1q(
@@ -764,26 +857,57 @@ class BenchmarkingService:
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
+                time_integration=time_integration,
                 plot=False,
                 save_image=False,
                 reset_awg_and_capunits=False,
             )
-            irb_result = self.rb_experiment_1q(
-                targets=targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                interleaved_waveform=interleaved_waveform,  # type: ignore
-                interleaved_clifford=interleaved_clifford,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=False,
-                save_image=False,
-                reset_awg_and_capunits=False,
+            reference_ranges = _n_cliffords_ranges_by_target(rb_result, targets)
+            irb_n_cliffords_range = (
+                n_cliffords_range
+                if n_cliffords_range is not None
+                else _shared_n_cliffords_range(reference_ranges)
             )
+            if irb_n_cliffords_range is None:
+                irb_data = {}
+                for target in targets:
+                    target_irb_result = self.rb_experiment_1q(
+                        targets=target,
+                        n_cliffords_range=reference_ranges[target],
+                        n_trials=n_trials,
+                        seeds=seeds,
+                        max_n_cliffords=max_n_cliffords,
+                        x90=x90,
+                        interleaved_waveform=interleaved_waveform,  # type: ignore
+                        interleaved_clifford=interleaved_clifford,
+                        in_parallel=False,
+                        shots=shots,
+                        interval=interval,
+                        time_integration=time_integration,
+                        plot=False,
+                        save_image=False,
+                        reset_awg_and_capunits=False,
+                    )
+                    irb_data[target] = target_irb_result[target]
+                irb_result = Result(data=irb_data)
+            else:
+                irb_result = self.rb_experiment_1q(
+                    targets=targets,
+                    n_cliffords_range=irb_n_cliffords_range,
+                    n_trials=n_trials,
+                    seeds=seeds,
+                    max_n_cliffords=max_n_cliffords,
+                    x90=x90,
+                    interleaved_waveform=interleaved_waveform,  # type: ignore
+                    interleaved_clifford=interleaved_clifford,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    time_integration=time_integration,
+                    plot=False,
+                    save_image=False,
+                    reset_awg_and_capunits=False,
+                )
 
         results = {}
         for target in targets:
@@ -889,6 +1013,8 @@ class BenchmarkingService:
                 "gate_fidelity_err": gate_fidelity_err,
                 "rb_fit_result": rb_fit_result,
                 "irb_fit_result": irb_fit_result,
+                "rb_data": _rb_curve_data(rb_result[target]),
+                "irb_data": _rb_curve_data(irb_result[target]),
                 # TODO: Remove this legacy payload key after callers migrate to result.figures.
                 "fig": fig,
             }
@@ -911,6 +1037,7 @@ class BenchmarkingService:
         xaxis_type: Literal["linear", "log"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
+        time_integration: bool | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -935,6 +1062,7 @@ class BenchmarkingService:
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
+                time_integration=time_integration,
                 xaxis_type=xaxis_type,
                 plot=plot,
                 save_image=save_image,
@@ -950,6 +1078,7 @@ class BenchmarkingService:
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
+                time_integration=time_integration,
                 xaxis_type=xaxis_type,
                 plot=plot,
                 save_image=save_image,
@@ -972,6 +1101,7 @@ class BenchmarkingService:
         in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
+        time_integration: bool | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -998,6 +1128,7 @@ class BenchmarkingService:
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
+                time_integration=time_integration,
                 plot=plot,
                 save_image=save_image,
             )
@@ -1017,6 +1148,7 @@ class BenchmarkingService:
                     in_parallel=in_parallel,
                     shots=shots,
                     interval=interval,
+                    time_integration=time_integration,
                     plot=plot,
                     save_image=save_image,
                 )
@@ -1057,52 +1189,41 @@ class BenchmarkingService:
         if save_image is None:
             save_image = True
 
-        if in_parallel:
-            self.interleaved_randomized_benchmarking(
-                targets,
-                interleaved_clifford="X90",
-                n_trials=n_trials,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                save_image=save_image,
-            )
-            self.interleaved_randomized_benchmarking(
-                targets,
-                interleaved_clifford="X180",
-                n_trials=n_trials,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                save_image=save_image,
-            )
-        else:
+        def _run_irb(
+            benchmark_targets: Collection[str] | str,
+            *,
+            interleaved_clifford: str,
+            label: object,
+        ) -> None:
             try:
-                for target in targets:
-                    self.interleaved_randomized_benchmarking(
-                        target,
-                        interleaved_clifford="X90",
-                        n_trials=n_trials,
-                        in_parallel=in_parallel,
-                        shots=shots,
-                        interval=interval,
-                        plot=plot,
-                        save_image=save_image,
-                    )
-                    self.interleaved_randomized_benchmarking(
-                        target,
-                        interleaved_clifford="X180",
-                        n_trials=n_trials,
-                        in_parallel=in_parallel,
-                        shots=shots,
-                        interval=interval,
-                        plot=plot,
-                        save_image=save_image,
-                    )
+                self.interleaved_randomized_benchmarking(
+                    benchmark_targets,
+                    interleaved_clifford=interleaved_clifford,
+                    n_trials=n_trials,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                    save_image=save_image,
+                )
             except Exception as e:
-                print(f"Failed to benchmark {target}: {e}")
+                print(f"Failed to benchmark {label} with {interleaved_clifford}: {e}")
+
+        if in_parallel:
+            for interleaved_clifford in ("X90", "X180"):
+                _run_irb(
+                    targets,
+                    interleaved_clifford=interleaved_clifford,
+                    label=targets,
+                )
+        else:
+            for target in targets:
+                for interleaved_clifford in ("X90", "X180"):
+                    _run_irb(
+                        target,
+                        interleaved_clifford=interleaved_clifford,
+                        label=target,
+                    )
 
     def benchmark_2q(
         self,
@@ -1130,29 +1251,23 @@ class BenchmarkingService:
         if save_image is None:
             save_image = True
 
-        if in_parallel:
-            self.interleaved_randomized_benchmarking(
-                targets,
-                interleaved_clifford="ZX90",
-                n_trials=n_trials,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                save_image=save_image,
-            )
-        else:
+        def _run_zx90(benchmark_targets: Collection[str] | str, label: object) -> None:
             try:
-                for target in targets:
-                    self.interleaved_randomized_benchmarking(
-                        target,
-                        interleaved_clifford="ZX90",
-                        n_trials=n_trials,
-                        in_parallel=in_parallel,
-                        shots=shots,
-                        interval=interval,
-                        plot=plot,
-                        save_image=save_image,
-                    )
+                self.interleaved_randomized_benchmarking(
+                    benchmark_targets,
+                    interleaved_clifford="ZX90",
+                    n_trials=n_trials,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                    save_image=save_image,
+                )
             except Exception as e:
-                print(f"Failed to benchmark {target}: {e}")
+                print(f"Failed to benchmark {label} with ZX90: {e}")
+
+        if in_parallel:
+            _run_zx90(targets, targets)
+        else:
+            for target in targets:
+                _run_zx90(target, target)

@@ -23,5 +23,6 @@
 
 - [パルスシーケンスの組み方](../pulse-sequences/index.md)
 - [`Experiment` クラス](index.md)
+- [データ保存](data-persistence.md)
 - [コミュニティ提供ワークフロー](../getting-started/contrib-workflows.md)
 - [サンプル集全体](../../examples/index.md)

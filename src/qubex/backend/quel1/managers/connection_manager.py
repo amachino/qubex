@@ -14,8 +14,9 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from qubex.backend.quel1.compat.box_adapter import adapt_quel1_box
 from qubex.backend.quel1.quel1_backend_constants import (
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+    DEFAULT_BACKGROUND_NOISE_THRESHOLD_RELINKUP,
     DEFAULT_EXECUTION_MODE,
-    RELAXED_NOISE_THRESHOLD,
 )
 from qubex.backend.quel1.quel1_runtime_context import (
     Quel1RuntimeContext,
@@ -227,6 +228,15 @@ class Quel1ConnectionManager:
         self.set_cap_resource_map(cap_resource_map)
         self.set_gen_resource_map(gen_resource_map)
 
+    def requires_reconnect(self, box_names: str | list[str] | None) -> bool:
+        """Return whether connecting these boxes would rebuild runtime state."""
+        if not self.is_connected:
+            return False
+        resolved_box_names = self._resolve_box_names(box_names)
+        connected_box_names = self._connected_box_names()
+        requested_box_names = set(resolved_box_names)
+        return not requested_box_names.issubset(connected_box_names)
+
     def disconnect(self) -> None:
         """Disconnect all currently held resources."""
         if not self.is_connected:
@@ -265,21 +275,27 @@ class Quel1ConnectionManager:
         self,
         *,
         box_name: str,
-        noise_threshold: int | None,
+        noise_threshold: float | None,
         **kwargs: Any,
     ) -> Quel1Box:
         """Linkup one box and return the connected box."""
         self._runtime_context.validate_box_availability(box_name)
         box = self._get_existing_or_create_box(box_name=box_name, reconnect=False)
-        if noise_threshold is None:
-            noise_threshold = RELAXED_NOISE_THRESHOLD
+        reconnect_noise_threshold = (
+            DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+            if noise_threshold is None
+            else noise_threshold
+        )
         if not all(box.link_status().values()):
             raise ConnectionError(
                 f"Linkup failed for box '{box_name}'. "
                 f"Try relinkup('{box_name}') and retry."
             )
         with self._capture_quel_ic_linkup_messages() as linkup_messages:
-            box.reconnect(background_noise_threshold=noise_threshold, **kwargs)
+            box.reconnect(
+                background_noise_threshold=reconnect_noise_threshold,
+                **kwargs,
+            )
         self._reemit_box_scoped_linkup_messages(
             box_name=box_name,
             linkup_messages=linkup_messages,
@@ -293,7 +309,7 @@ class Quel1ConnectionManager:
         self,
         *,
         box_list: list[str],
-        noise_threshold: int | None,
+        noise_threshold: float | None,
         parallel: bool | None,
     ) -> dict[str, Quel1Box]:
         """Linkup all requested boxes."""
@@ -336,28 +352,36 @@ class Quel1ConnectionManager:
         self,
         *,
         box_name: str,
-        noise_threshold: int | None,
+        noise_threshold: float | None,
     ) -> None:
         """Relink one box."""
         self._runtime_context.validate_box_availability(box_name)
-        if noise_threshold is None:
-            noise_threshold = RELAXED_NOISE_THRESHOLD
+        relinkup_noise_threshold = (
+            DEFAULT_BACKGROUND_NOISE_THRESHOLD_RELINKUP
+            if noise_threshold is None
+            else noise_threshold
+        )
+        reconnect_noise_threshold = (
+            DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+            if noise_threshold is None
+            else noise_threshold
+        )
         box = self._get_existing_or_create_box(box_name=box_name, reconnect=False)
         config_options = self._resolve_config_options(
             box_name=box_name, boxtype=box.boxtype
         )
         box.relinkup(
             use_204b=False,
-            background_noise_threshold=noise_threshold,
+            background_noise_threshold=relinkup_noise_threshold,
             config_options=config_options,
         )
-        box.reconnect(background_noise_threshold=noise_threshold)
+        box.reconnect(background_noise_threshold=reconnect_noise_threshold)
 
     def relinkup_boxes(
         self,
         *,
         box_list: list[str],
-        noise_threshold: int | None,
+        noise_threshold: float | None,
         parallel: bool | None,
     ) -> None:
         """Relink all requested boxes."""
@@ -407,7 +431,9 @@ class Quel1ConnectionManager:
         db = self._runtime_context.qubecalib.system_config_database
         box = db.create_box(box_name, reconnect=False)
         if reconnect:
-            box.reconnect(background_noise_threshold=RELAXED_NOISE_THRESHOLD)
+            box.reconnect(
+                background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+            )
         return box
 
     def get_existing_or_create_box(
@@ -504,12 +530,20 @@ class Quel1ConnectionManager:
             with ThreadPoolExecutor(
                 max_workers=max(1, len(boxes_to_reconnect))
             ) as executor:
-                futures = [executor.submit(box.reconnect) for box in boxes_to_reconnect]
+                futures = [
+                    executor.submit(
+                        box.reconnect,
+                        background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT,
+                    )
+                    for box in boxes_to_reconnect
+                ]
                 for future in futures:
                     future.result()
         else:
             for box in boxes_to_reconnect:
-                box.reconnect()
+                box.reconnect(
+                    background_noise_threshold=DEFAULT_BACKGROUND_NOISE_THRESHOLD_AT_RECONNECT
+                )
         return boxpool
 
     def _create_quel1system_from_boxpool(self, box_names: list[str]) -> Quel1System:
@@ -682,7 +716,7 @@ class Quel1ConnectionManager:
         self,
         *,
         box_name: str,
-        noise_threshold: int | None,
+        noise_threshold: float | None,
     ) -> Quel1Box | None:
         """Link up one box and log failures without raising."""
         try:

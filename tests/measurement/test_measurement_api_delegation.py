@@ -211,6 +211,85 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule(
     assert called["run_config"].shot_averaging is True
 
 
+def test_execute_saves_raw_measurement_result_when_rawdata_dir_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Given rawdata_dir, when execute runs, then raw MeasurementResult is saved."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    pulse_schedule = PulseSchedule(["Q00"])
+    built_schedule = MeasurementSchedule(
+        pulse_schedule=PulseSchedule(["RQ00"]),
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    measurement_config = _make_config(mode="avg", shots=2)
+    raw_result = _make_measurement_result(
+        data={"Q00": [np.array([1.0 + 0.0j])]},
+        measurement_config=measurement_config,
+        sampling_period=2.0,
+        device_config={"backend": "stub"},
+    )
+
+    def fake_build(
+        self: MeasurementExecutionService,
+        *,
+        pulse_schedule: PulseSchedule,
+        **kwargs: object,
+    ) -> MeasurementSchedule:
+        _ = (self, pulse_schedule, kwargs)
+        return built_schedule
+
+    class _Executor:
+        def execute_sync(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+            quel1_options: Quel1MeasurementOptions | None = None,
+        ) -> MeasurementResult:
+            _ = (self, schedule, config, quel1_options)
+            return raw_result
+
+    execution_service = measurement.execution_service
+    execution_service.build_measurement_schedule = MethodType(
+        fake_build, execution_service
+    )
+    monkeypatch.setattr(
+        MeasurementExecutionService,
+        "measurement_schedule_runner",
+        property(lambda self: _Executor()),
+    )
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 2}})()
+    _bind_runtime(
+        measurement,
+        backend_controller=backend_controller,
+        experiment_system=experiment_system,
+        rawdata_dir=tmp_path,
+    )
+
+    converted = measurement.execute(schedule=pulse_schedule)
+
+    saved_files = list(tmp_path.glob("*.nc"))
+    assert len(saved_files) == 1
+    restored = MeasurementResult.load(saved_files[0])
+    assert np.array_equal(restored.data["Q00"][0].data, np.array([1.0 + 0.0j]))
+    assert restored.device_config == {"backend": "stub"}
+    assert np.array_equal(converted.data["Q00"][0].raw, np.array([1.0 + 0.0j]))
+
+
 def test_execute_forwards_frequency_overrides_to_schedule_builder(
     monkeypatch,
 ) -> None:

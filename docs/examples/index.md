@@ -39,6 +39,7 @@ If you are new to Qubex, start with [Choose where to start](../user-guide/gettin
 
 ### `backend`
 
+- [QuEL-1 continuous-wave output](backend/quel1_continuous_wave.ipynb)
 - [PulseSchedule to QuEL-3 Sequencer Flow](measurement/quel3_sequencer_builder_flow.ipynb)
 - [QuEL-3 Deploy Check](system/quel3_deploy_check.ipynb)
 

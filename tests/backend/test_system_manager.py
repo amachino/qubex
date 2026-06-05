@@ -125,6 +125,37 @@ class FakeExperimentSystemForBackendSettings:
         return self.control_system.hash
 
 
+def test_save_rawdata_context_sets_tagged_directory_and_restores(
+    tmp_path: Path,
+) -> None:
+    """Given save_rawdata context, when exiting, then raw-data directory is restored."""
+    manager = SystemManager.shared()
+    original_rawdata_dir = manager.rawdata_dir
+    previous_dir = tmp_path / "previous"
+    tagged_dir = tmp_path / "raw" / "q00-rabi"
+
+    def raise_inside_rawdata_context() -> None:
+        with manager.save_rawdata(rawdata_dir=tmp_path / "raw-error"):
+            assert manager.rawdata_dir == tmp_path / "raw-error"
+            raise RuntimeError("stop")
+
+    try:
+        manager.set_rawdata_dir(previous_dir)
+
+        with manager.save_rawdata(rawdata_dir=tmp_path / "raw", tag="q00-rabi"):
+            assert manager.rawdata_dir == tagged_dir
+            assert tagged_dir.exists()
+
+        assert manager.rawdata_dir == previous_dir
+
+        with pytest.raises(RuntimeError, match="stop"):
+            raise_inside_rawdata_context()
+
+        assert manager.rawdata_dir == previous_dir
+    finally:
+        manager.set_rawdata_dir(original_rawdata_dir)
+
+
 def test_backend_settings_hash_is_order_independent() -> None:
     """Given the same nested content, when hashing backend settings, then hash is independent of key insertion order."""
     settings_a = BackendSettings(

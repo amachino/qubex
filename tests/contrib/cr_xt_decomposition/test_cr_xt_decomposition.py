@@ -59,7 +59,8 @@ class DummyCalibrationService:
                     "IY": 0.020,
                     "ZX": 0.030,
                     "ZY": 0.040,
-                }
+                },
+                "cr_drive_amplitude": 0.10,
             }
         )
 

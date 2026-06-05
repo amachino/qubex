@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from qxpulse import (
@@ -16,6 +16,7 @@ from qxpulse import (
 
 from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.experiment.experiment_context import ExperimentContext
+from qubex.experiment.models.calibration_note import CrossResonanceParam
 from qubex.typing import TargetMap
 
 from .benchmarking_service import BenchmarkingService
@@ -414,9 +415,11 @@ class OptimizationService:
             }
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_param = self.ctx.calib_note.get_cr_param(cr_label)
-        if cr_param is None:
+        stored_cr_param = self.ctx.calib_note.get_cr_param(cr_label)
+        if stored_cr_param is None:
             raise ValueError("CR parameters are not stored.")
+        # Work on a copy so update_cr_param=False does not mutate calibration state.
+        cr_param = cast(CrossResonanceParam, dict(stored_cr_param))
 
         if duration is None:
             duration = cr_param["duration"]

@@ -163,14 +163,18 @@ box_setting:
   BOX_A:
     slot: 0
     wait: 0
+    port_wait:
+      1: 0
   BOX_B:
     slot: 1
     wait: 0
+    port_wait:
+      8: 0
 monitor_port: BOX_A-12
 reference_port: BOX_A-1
 scale:
   BOX_A-1: 0.125
-target_port:
+target_port: !!set
   BOX_A-1: null
   BOX_B-8: null
 time_to_start: 0
@@ -178,7 +182,8 @@ trigger_nport: 10
 ```
 
 - `box_setting.<box>.slot` は各 box の粗いタイミング slot を表します。
-- `box_setting.<box>.wait` は skew 調整時に更新する細かい wait 値です。
+- `box_setting.<box>.wait` は box 共通の wait 値です。
+- `box_setting.<box>.port_wait` は port ごとの差分 wait 値です。
 - `reference_port` は基準信号源を選びます。
 - `monitor_port` と `trigger_nport` は monitor capture 経路を定義します。
 - `target_port` は skew scan に含める port を列挙します。
@@ -191,56 +196,24 @@ exp.tool.update_skew(250, ["BOX_A", "BOX_B"], backup=True)
 result = exp.tool.check_skew(["BOX_A", "BOX_B"])
 ```
 
-`exp.tool.update_skew(...)` は `skew.yaml` を上書きします。更新前のファイルを残したい場合は `backup=True` を指定してください。
+`exp.tool.update_skew(target, ...)` は直前の `check_skew(...)` の推定結果を使い、
+各 measured port の実効 wait を `target - measured_idx` だけずらし、
+box 共通部分を `wait`、測定した port の差分を `port_wait` に入れてから
+`skew.yaml` を上書きします。更新前のファイルを残したい場合は
+`backup=True` を指定してください。`skew.yaml.bak.20260520_124900` のような
+timestamp 付き backup が作られます。
 
 手順全体は [QuEL-1 skew 調整ワークフロー](../../examples/system/quel1_skew_adjustment.md) を参照してください。
 
 ## パラメータファイルを定義する
 
-現在の形式では、パラメータファミリごとに 1 つの構造化 YAML ファイルを使います。各ファイルは、注釈用の `meta` と実データ用の `data` を持ちます。
+system 固有の parameter file は、Qubex に渡す `params_dir` の下に置いてください。
+推奨形式は parameter family ごとに 1 つの構造化 YAML を置く形式で、旧来の
+`params.yaml` と `props.yaml` は互換 fallback として使われます。
 
-```yaml
-meta:
-  description: Example low-frequency control frequencies
-  unit: GHz
-data:
-  0: 3.000
-  1: 3.031
-  2: 3.062
-```
-
-- ファイルは、Qubex に渡す `params_dir` の下に置いてください。
-- qubit 単位のパラメータでは、キーに `0` や `1` のような整数インデックス、あるいは `Q000` や `Q001` のようなラベルを使えます。
-- 文字列ラベルを使う場合は、チップの量子ビット数に応じて桁数が変わることに注意してください。
-- `meta.unit` を設定すると、Qubex は値を内部の基底単位 (`GHz`, `ns`) へ変換します。
-- `meta.default` を設定すると、`data` 中の `None` はその既定値にフォールバックします。
-
-旧来の `params.yaml` と `props.yaml` も互換入力としてサポートされています。旧形式の map と分割 YAML が両方ある場合、Qubex はまず分割 YAML を読み込み、足りないキーだけ旧形式ファイルから補います。
-
-### `measurement_defaults.yaml`
-
-system ごとに既定の measurement 実行条件や readout timing を変えたい場合は、`measurement_defaults.yaml` を使います。
-
-```yaml
-schema_version: 1
-
-execution:
-  n_shots: 2048
-  shot_interval_ns: 200000.0
-
-readout:
-  duration_ns: 512.0
-  ramp_time_ns: 24.0
-  pre_margin_ns: 16.0
-  post_margin_ns: 96.0
-```
-
-- ファイルは `params/<system_id>/` の直下に置いてください。
-- このファイルは任意です。無い場合は、Qubex の組み込み既定値を使います。
-- `execution.n_shots` と `execution.shot_interval_ns` は、measurement API で対応引数を省略したときの既定値になります。
-- `readout.*` は、明示 override が無い場合の readout pulse 生成と `ExperimentContext` の readout timing の既定値になります。
-- API に明示的に渡した引数は、常に `measurement_defaults.yaml` より優先されます。
-- 時間値はすべて `ns` です。
+認識される file の一覧、読み込み優先度、`control_frequency.yaml` が
+`qubit_frequency.yaml` より優先されるような周波数 fallback ルールについては
+[パラメータファイル](params-configuration.md) を参照してください。
 
 ## コードから設定を読み込む
 

@@ -23,6 +23,7 @@ from qubex.backend.backend_controller import (
     BACKEND_KIND_QUEL3,
     SystemBackendController,
 )
+from qubex.compat.deprecated_options import resolve_deprecated_option
 from qubex.measurement import (
     Measurement,
     StateClassifier,
@@ -1046,13 +1047,24 @@ class ExperimentContext:
         channel_number: int,
         qubit_label: str | None = None,
         target_type: TargetType | None = None,
-        update_lsi: bool | None = None,
+        update_backend_settings: bool | None = None,
+        **deprecated_options: Any,
     ) -> None:
         """Register a custom target with the control system."""
         if target_type is None:
             target_type = TargetType.CTRL_GE
-        if update_lsi is None:
-            update_lsi = False
+        update_backend_settings = resolve_deprecated_option(
+            value=update_backend_settings,
+            deprecated_options=deprecated_options,
+            deprecated_name="update_lsi",
+            replacement_name="update_backend_settings",
+            stacklevel=3,
+        )
+        if deprecated_options:
+            unexpected = ", ".join(sorted(deprecated_options))
+            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+        if update_backend_settings is None:
+            update_backend_settings = False
         if not np.isfinite(frequency):
             raise ValueError("Target frequency must be finite.")
 
@@ -1092,7 +1104,7 @@ class ExperimentContext:
             target_frequency_ghz=target.frequency,
         )
         self.experiment_system.add_target(target)
-        if update_lsi:
+        if update_backend_settings:
             cnco = port.cnco_freq
             if cnco is None:
                 raise ValueError("CNCO frequency is not set for the target port.")
