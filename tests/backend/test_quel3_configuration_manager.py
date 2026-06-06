@@ -1734,6 +1734,79 @@ def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
     }
 
 
+def test_fetch_backend_settings_skips_unselected_unit_instrument_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given selected unit labels, hardware fetch should not inspect instruments on other units."""
+    manager = Quel3ConfigurationManager(
+        quelware_endpoint="localhost",
+        quelware_port=50051,
+    )
+
+    class _InstrumentCategory:
+        name = "INSTRUMENT"
+
+    class _ResourceInfo:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+            self.category = _InstrumentCategory()
+
+    class _Role:
+        name = "TRANSMITTER"
+
+    class _Definition:
+        alias = "Q00"
+        role = _Role()
+        mode = None
+        profile = None
+
+    class _InstrumentInfo:
+        id = "quel3-02-a01:inst-q00"
+        port_id = "quel3-02-a01:tx_p04"
+        definition = _Definition()
+
+    get_calls: list[str] = []
+
+    class _FakeClient:
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            _ = (exc_type, exc, tb)
+
+        async def list_resource_infos(self) -> list[object]:
+            return [
+                _ResourceInfo("quel3-02-a01:inst-q00"),
+                _ResourceInfo("quel3-02-a22:inst-q22"),
+            ]
+
+        async def get_instrument_info(self, resource_id: str) -> object:
+            get_calls.append(resource_id)
+            if resource_id != "quel3-02-a01:inst-q00":
+                raise AssertionError(f"Unexpected instrument fetch: {resource_id}")
+            return _InstrumentInfo()
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_client_factory",
+        lambda: lambda endpoint, port: _FakeClient(),
+    )
+
+    fetched = manager.fetch_backend_settings_from_hardware(
+        unit_labels_by_box_id={"BOX1": "quel3-02-a01"},
+    )
+
+    assert get_calls == ["quel3-02-a01:inst-q00"]
+    assert fetched["BOX1"]["instruments"]["Q00"]["resource_id"] == (
+        "quel3-02-a01:inst-q00"
+    )
+
+
 def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -> None:
     """Given hardware snapshot, cache sync should restore alias mappings."""
     manager = Quel3ConfigurationManager(

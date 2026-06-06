@@ -6,7 +6,7 @@ import asyncio
 import importlib
 import logging
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
@@ -470,6 +470,7 @@ class Quel3ConfigurationManager:
             instrument_infos = await self._list_instrument_infos(
                 client=client,
                 parallel=True,
+                unit_labels=None,
             )
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
@@ -513,6 +514,7 @@ class Quel3ConfigurationManager:
             instrument_infos = await self._list_instrument_infos(
                 client=client,
                 parallel=parallel,
+                unit_labels=set(unit_labels_by_box_id.values()),
             )
 
         for instrument_info in instrument_infos:
@@ -559,13 +561,27 @@ class Quel3ConfigurationManager:
         *,
         client: QuelwareClientProtocol,
         parallel: bool,
+        unit_labels: Collection[str] | None,
     ) -> list[InstrumentInfoProtocol]:
         """List instrument infos from one quelware client session."""
         resource_infos = await client.list_resource_infos()
-        instrument_resource_ids = [
-            resource_info.id
+        instrument_resource_infos = [
+            resource_info
             for resource_info in resource_infos
             if self._is_instrument_resource(resource_info)
+        ]
+        if unit_labels is not None:
+            selected_unit_labels = set(unit_labels)
+            instrument_resource_infos = [
+                resource_info
+                for resource_info in instrument_resource_infos
+                if self._is_resource_info_in_selected_units(
+                    resource_info=resource_info,
+                    unit_labels=selected_unit_labels,
+                )
+            ]
+        instrument_resource_ids = [
+            resource_info.id for resource_info in instrument_resource_infos
         ]
         if parallel:
             return list(
@@ -580,6 +596,19 @@ class Quel3ConfigurationManager:
             await client.get_instrument_info(resource_id)
             for resource_id in instrument_resource_ids
         ]
+
+    @classmethod
+    def _is_resource_info_in_selected_units(
+        cls,
+        *,
+        resource_info: ResourceInfoProtocol,
+        unit_labels: Collection[str],
+    ) -> bool:
+        """Return whether one resource can be matched to the selected units."""
+        resource_id = str(resource_info.id)
+        if ":" not in resource_id:
+            return True
+        return cls._extract_unit_label(resource_id) in unit_labels
 
     @staticmethod
     def _extract_unit_label(resource_id: str) -> str:
