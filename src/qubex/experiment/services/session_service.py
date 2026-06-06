@@ -151,6 +151,7 @@ class SessionService:
         box_ids: str | list[str] | None = None,
         exclude: str | list[str] | None = None,
         mode: ConfigurationMode | None = None,
+        confirm: bool = True,
     ) -> None:
         """Reload configuration through SystemManager and push to boxes."""
         if isinstance(box_ids, str):
@@ -173,6 +174,7 @@ class SessionService:
         system_manager.push(
             box_ids=resolved_box_ids,
             target_labels=list(self.ctx.targets),
+            confirm=confirm,
         )
         self._sync_pulse_sampling_period()
 
