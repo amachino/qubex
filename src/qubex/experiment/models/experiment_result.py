@@ -692,15 +692,21 @@ class RamseyData(SweepData):
         T2* time.
     ramsey_freq : float, optional
         Frequency of the Ramsey fringes.
+    ramsey_freq_err : float, optional
+        Standard error of the Ramsey fringe frequency.
     bare_freq : float, optional
         Bare frequency of the qubit.
+    bare_freq_err : float, optional
+        Standard error of the bare frequency.
     r2 : float, optional
         Coefficient of determination.
     """
 
     t2: float = np.nan
     ramsey_freq: float = np.nan
+    ramsey_freq_err: float = np.nan
     bare_freq: float = np.nan
+    bare_freq_err: float = np.nan
     r2: float = np.nan
 
     @classmethod
@@ -711,6 +717,8 @@ class RamseyData(SweepData):
         ramsey_freq: float,
         bare_freq: float,
         r2: float,
+        ramsey_freq_err: float = np.nan,
+        bare_freq_err: float = np.nan,
     ) -> RamseyData:
         """Create Ramsey data from sweep results."""
         return cls(
@@ -725,7 +733,9 @@ class RamseyData(SweepData):
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
             ramsey_freq=ramsey_freq,
+            ramsey_freq_err=ramsey_freq_err,
             bare_freq=bare_freq,
+            bare_freq_err=bare_freq_err,
             r2=r2,
         )
 
