@@ -24,6 +24,11 @@ class _DemoDataModelWithNestedConfig(DataModel):
     config: _DemoConfig
 
 
+class _DemoDataModelWithTupleKeyedMapping(DataModel):
+    values: np.ndarray
+    metadata: dict[tuple[str, int], np.ndarray]
+
+
 def test_netcdf_roundtrip_handles_int64_arrays(tmp_path) -> None:
     """Given int64 arrays, when round-tripped via NetCDF, then values are preserved."""
     original = _DemoDataModel(
@@ -73,3 +78,21 @@ def test_netcdf_roundtrip_handles_nested_model_fields(tmp_path) -> None:
     assert np.array_equal(restored.values, original.values)
     assert restored.config.shots == original.config.shots
     assert np.array_equal(restored.config.thresholds, original.config.thresholds)
+
+
+def test_netcdf_roundtrip_handles_tuple_keyed_mappings(tmp_path) -> None:
+    """Given tuple-keyed metadata, when round-tripped via NetCDF, then keys are preserved."""
+    original = _DemoDataModelWithTupleKeyedMapping(
+        values=np.array([1.0], dtype=np.float64),
+        metadata={
+            ("box0", 1): np.array([2.0 + 3.0j], dtype=np.complex128),
+        },
+    )
+
+    path = original.save_netcdf(tmp_path / "tuple-keyed.nc")
+    restored = _DemoDataModelWithTupleKeyedMapping.load_netcdf(path)
+
+    assert set(restored.metadata) == {("box0", 1)}
+    assert np.array_equal(
+        restored.metadata[("box0", 1)], original.metadata[("box0", 1)]
+    )

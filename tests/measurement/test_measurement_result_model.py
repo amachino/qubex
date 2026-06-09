@@ -324,6 +324,34 @@ def test_netcdf_roundtrip_preserves_capture_data(tmp_path) -> None:
     assert restored.data["Q01"][0].sampling_period == pytest.approx(1.0)
 
 
+def test_netcdf_roundtrip_handles_tuple_keyed_device_config(tmp_path) -> None:
+    """Given tuple-keyed device config, NetCDF save/load preserves metadata."""
+    config = _make_config(mode="avg", shots=1)
+    original = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([[1.0 + 2.0j]]),
+                    measurement_config=config,
+                    sampling_period=2.0,
+                )
+            ]
+        },
+        device_config={
+            "ports": {
+                (0, 1): {"lo_freq": 8.0e9},
+            },
+        },
+        measurement_config=config,
+    )
+
+    path = original.save_netcdf(tmp_path / "tuple-keyed-device-config.nc")
+    restored = MeasurementResult.load_netcdf(path)
+
+    assert restored.device_config == original.device_config
+
+
 def test_save_writes_netcdf_file(tmp_path) -> None:
     """Given save(), when called, then it writes a readable NetCDF file."""
     config = _make_config(mode="avg", shots=2)

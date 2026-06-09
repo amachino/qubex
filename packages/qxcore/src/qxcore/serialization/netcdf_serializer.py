@@ -28,6 +28,14 @@ from .json_serializer import (
 )
 
 _VARIABLE_REF_KEY: Final[str] = "__variable__"
+_MAPPING_TYPE_KEY: Final[str] = "__mapping_type__"
+_MAPPING_TYPE_VALUE: Final[str] = "mapping"
+_MAPPING_ITEMS_KEY: Final[str] = "__mapping_items__"
+_MAPPING_KEY_KEY: Final[str] = "key"
+_MAPPING_VALUE_KEY: Final[str] = "value"
+_KEY_TYPE_KEY: Final[str] = "type"
+_KEY_VALUE_KEY: Final[str] = "value"
+_KEY_ITEMS_KEY: Final[str] = "items"
 _ATTR_FORMAT: Final[str] = "format"
 _ATTR_FORMAT_VERSION: Final[str] = "format_version"
 _ATTR_MODEL_CLASS: Final[str] = "model_class"
@@ -253,6 +261,21 @@ def _encode_value(
             path=path,
         )
     if isinstance(value, dict):
+        if any(not _is_json_object_key(k) for k in value):
+            return {
+                _MAPPING_TYPE_KEY: _MAPPING_TYPE_VALUE,
+                _MAPPING_ITEMS_KEY: [
+                    {
+                        _MAPPING_KEY_KEY: _encode_mapping_key(k),
+                        _MAPPING_VALUE_KEY: _encode_value(
+                            v,
+                            arrays,
+                            path=(*path, str(k)),
+                        ),
+                    }
+                    for k, v in value.items()
+                ],
+            }
         return {
             k: _encode_value(v, arrays, path=(*path, str(k))) for k, v in value.items()
         }
@@ -293,6 +316,14 @@ def _decode_value(value: Any, ds: Dataset) -> Any:
                     values=array,
                 )
             return array
+        if _is_encoded_mapping(value):
+            return {
+                _decode_mapping_key(item[_MAPPING_KEY_KEY]): _decode_value(
+                    item[_MAPPING_VALUE_KEY],
+                    ds,
+                )
+                for item in value[_MAPPING_ITEMS_KEY]
+            }
         return {k: _decode_value(v, ds) for k, v in value.items()}
     if isinstance(value, list):
         return [_decode_value(v, ds) for v in value]
@@ -321,6 +352,118 @@ def _is_variable_ref(value: Any) -> TypeGuard[_VariableRef]:
         and isinstance(value.get("shape"), list)
         and isinstance(value.get("units"), list)
     )
+
+
+def _is_encoded_mapping(value: Any) -> TypeGuard[dict[str, Any]]:
+    """
+    Return whether a value is an encoded non-JSON-key mapping payload.
+
+    Parameters
+    ----------
+    value : Any
+        Candidate payload to inspect.
+
+    Returns
+    -------
+    bool
+        `True` if the payload matches the encoded mapping shape.
+    """
+    if (
+        not isinstance(value, dict)
+        or set(value) != {_MAPPING_TYPE_KEY, _MAPPING_ITEMS_KEY}
+        or value.get(_MAPPING_TYPE_KEY) != _MAPPING_TYPE_VALUE
+    ):
+        return False
+    items = value.get(_MAPPING_ITEMS_KEY)
+    if not isinstance(items, list):
+        return False
+    return all(
+        isinstance(item, dict)
+        and _MAPPING_KEY_KEY in item
+        and _MAPPING_VALUE_KEY in item
+        for item in items
+    )
+
+
+def _is_json_object_key(value: Any) -> bool:
+    """
+    Return whether a mapping key can be written by Python's JSON encoder.
+
+    Parameters
+    ----------
+    value : Any
+        Mapping key to inspect.
+
+    Returns
+    -------
+    bool
+        `True` for JSON-supported object key types.
+    """
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _encode_mapping_key(value: Any) -> dict[str, Any]:
+    """
+    Encode a mapping key while preserving tuple keys for round-trip loading.
+
+    Parameters
+    ----------
+    value : Any
+        Mapping key to encode.
+
+    Returns
+    -------
+    dict[str, Any]
+        JSON-compatible key payload.
+    """
+    if isinstance(value, tuple):
+        return {
+            _KEY_TYPE_KEY: "tuple",
+            _KEY_ITEMS_KEY: [_encode_mapping_key(item) for item in value],
+        }
+    if value is None:
+        return {_KEY_TYPE_KEY: "none", _KEY_VALUE_KEY: None}
+    if isinstance(value, bool):
+        return {_KEY_TYPE_KEY: "bool", _KEY_VALUE_KEY: value}
+    if isinstance(value, int):
+        return {_KEY_TYPE_KEY: "int", _KEY_VALUE_KEY: value}
+    if isinstance(value, float):
+        return {_KEY_TYPE_KEY: "float", _KEY_VALUE_KEY: value}
+    if isinstance(value, str):
+        return {_KEY_TYPE_KEY: "str", _KEY_VALUE_KEY: value}
+    return {
+        _KEY_TYPE_KEY: "serialized",
+        _KEY_VALUE_KEY: serialize_value(value),
+    }
+
+
+def _decode_mapping_key(value: Any) -> Any:
+    """
+    Decode a mapping key encoded by `_encode_mapping_key`.
+
+    Parameters
+    ----------
+    value : Any
+        Encoded key payload.
+
+    Returns
+    -------
+    Any
+        Restored mapping key.
+    """
+    if not isinstance(value, dict):
+        return value
+    key_type = value.get(_KEY_TYPE_KEY)
+    if key_type == "tuple":
+        items = value.get(_KEY_ITEMS_KEY)
+        if not isinstance(items, list):
+            raise TypeError("Encoded tuple mapping key must include item list.")
+        return tuple(_decode_mapping_key(item) for item in items)
+    if key_type in {"none", "bool", "int", "float", "str"}:
+        return value.get(_KEY_VALUE_KEY)
+    if key_type == "serialized":
+        return deserialize_value(value.get(_KEY_VALUE_KEY))
+    raise TypeError(f"Unknown encoded mapping key type: {key_type}")
 
 
 def _write_array(ds: Dataset, item: _EncodedArray) -> None:
