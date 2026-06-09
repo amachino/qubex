@@ -120,7 +120,8 @@ class ExperimentContext:
         Priority-ordered control layout. `"ge-ef-cr"` assigns channels to GE,
         then EF, then CR. `"ge-ef-fh"` assigns GE, then EF, then FH.
         `"ge-cr-cr"` assigns GE, then two CR channels. Ports with fewer
-        channels keep the leftmost roles. Defaults to `"ge-cr-cr"`.
+        channels keep the leftmost roles, except two-channel `"ge-ef-fh"`
+        ports share channel 1 between EF and FH. Defaults to `"ge-cr-cr"`.
 
     Examples
     --------

@@ -1589,7 +1589,6 @@ def test_r8_awg1331_with_ge_cr_cr_keeps_two_cr_channels(tmp_path: Path) -> None:
     ("configuration_mode", "expected_extra_label", "missing_label"),
     [
         ("ge-ef-cr", "Q0-ef", "Q0-CR"),
-        ("ge-ef-fh", "Q0-ef", "Q0-fh"),
         ("ge-cr-cr", "Q0-CR", "Q0-ef"),
     ],
 )
@@ -1629,6 +1628,39 @@ def test_r8_awg2222_uses_two_channel_prefix_for_each_mode(
         system, f"Q3{expected_extra_label[2:]}", port_number=9, channel_number=1
     )
     assert f"Q3{missing_label[2:]}" not in system.gen_targets
+
+
+def test_r8_awg2222_with_ge_ef_fh_shares_second_channel_for_ef_and_fh(
+    tmp_path: Path,
+) -> None:
+    """Given awg2222 and ge-ef-fh, then EF and FH share channel 1."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg2222",
+        configuration_mode="ge-ef-fh",
+    )
+
+    for qubit, port_number in {
+        "Q0": 6,
+        "Q1": 7,
+        "Q2": 8,
+        "Q3": 9,
+    }.items():
+        ge = system.get_target(qubit)
+        ef = system.get_target(f"{qubit}-ef")
+        fh = system.get_target(f"{qubit}-fh")
+
+        assert ge.channel.port.number == port_number
+        assert ge.channel.number == 0
+        assert ef.channel.port.number == port_number
+        assert ef.channel.number == 1
+        assert fh.channel is ef.channel
+        assert ef.fine_frequency == fh.fine_frequency
+        assert ef.frequency != fh.frequency
+        assert ef.awg_frequency != fh.awg_frequency
+        assert system.resolve_fh_label(qubit) == f"{qubit}-fh"
+
+    assert "Q0-CR" not in system.gen_targets
 
 
 def test_quel3_target_registry_is_independent_of_configuration_mode(

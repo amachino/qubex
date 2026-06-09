@@ -130,8 +130,9 @@ class Measurement:
             Priority-ordered control layout passed to `load`. `"ge-ef-cr"`
             assigns channels to GE, then EF, then CR. `"ge-ef-fh"` assigns
             GE, then EF, then FH. `"ge-cr-cr"` assigns GE, then two CR
-            channels. Ports with fewer channels keep the leftmost roles. If
-            `None`, `DEFAULT_CONFIGURATION_MODE` is used.
+            channels. Ports with fewer channels keep the leftmost roles, except
+            two-channel `"ge-ef-fh"` ports share channel 1 between EF and FH.
+            If `None`, `DEFAULT_CONFIGURATION_MODE` is used.
         backend_kind : BackendKind | None, optional
             Backend family to initialize through configuration loading.
         _execution_mode : ExecutionMode | None, optional
@@ -212,8 +213,9 @@ class Measurement:
             Priority-ordered control layout. `"ge-ef-cr"` assigns channels to
             GE, then EF, then CR. `"ge-ef-fh"` assigns GE, then EF, then FH.
             `"ge-cr-cr"` assigns GE, then two CR channels. Ports with fewer
-            channels keep the leftmost roles. If `None`, backend defaults are
-            used.
+            channels keep the leftmost roles, except two-channel `"ge-ef-fh"`
+            ports share channel 1 between EF and FH. If `None`, backend
+            defaults are used.
         backend_kind : BackendKind | None, optional
             Backend family used when creating the backend controller.
 
@@ -268,8 +270,9 @@ class Measurement:
             Priority-ordered control layout passed to `load`. `"ge-ef-cr"`
             assigns channels to GE, then EF, then CR. `"ge-ef-fh"` assigns
             GE, then EF, then FH. `"ge-cr-cr"` assigns GE, then two CR
-            channels. Ports with fewer channels keep the leftmost roles. If
-            `None`, the previously configured value is reused by the
+            channels. Ports with fewer channels keep the leftmost roles, except
+            two-channel `"ge-ef-fh"` ports share channel 1 between EF and FH.
+            If `None`, the previously configured value is reused by the
             loader/service.
 
         Notes
