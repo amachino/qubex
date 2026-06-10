@@ -8,7 +8,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol, TypeVar
+from typing import TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import (
     Quel3ClientMode,
@@ -16,8 +16,13 @@ from qubex.backend.quel3.infra.quelware_imports import (
     validate_quelware_client_runtime,
 )
 from qubex.backend.quel3.interfaces.client import (
+    FixedTimelineProfileFactory,
+    InstrumentDefinitionFactory,
     InstrumentDefinitionProtocol,
     InstrumentInfoProtocol,
+    InstrumentModeNamespaceProtocol,
+    InstrumentRoleNamespaceProtocol,
+    InstrumentRoleProtocol,
     QuelwareClientFactory,
     QuelwareClientProtocol,
     ResourceInfoProtocol,
@@ -30,7 +35,7 @@ from qubex.backend.quel3.managers.session_workarounds import (
     quelware_exception_summary,
     quelware_session_token,
 )
-from qubex.backend.quel3.models import InstrumentDeployRequest
+from qubex.backend.quel3.models import InstrumentDeployRequest, RoleName
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
@@ -38,40 +43,26 @@ T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
 
-class _FixedTimelineProfileFactory(Protocol):
-    """Factory protocol for fixed-timeline profile entities."""
+@dataclass(frozen=True)
+class _QuelwareInstrumentEntities:
+    """Lazy-loaded quelware instrument entities needed for deployment."""
 
-    def __call__(
-        self,
-        *,
-        frequency_range_min: float,
-        frequency_range_max: float,
-    ) -> object:
-        """Create one fixed-timeline profile."""
-        ...
+    fixed_timeline_profile_factory: FixedTimelineProfileFactory
+    instrument_definition_factory: InstrumentDefinitionFactory
+    instrument_mode_namespace: InstrumentModeNamespaceProtocol
+    instrument_role_namespace: InstrumentRoleNamespaceProtocol
 
-
-class _InstrumentDefinitionFactory(Protocol):
-    """Factory protocol for instrument-definition entities."""
-
-    def __call__(
-        self,
-        *,
-        alias: str,
-        mode: object,
-        role: object,
-        profile: object,
-    ) -> InstrumentDefinitionProtocol:
-        """Create one instrument definition."""
-        ...
-
-
-class _EnumNamespace(Protocol):
-    """Protocol for enum-like namespaces loaded from quelware."""
-
-    def __getattr__(self, name: str) -> object:
-        """Return one enum-like member by attribute name."""
-        ...
+    def role_value(self, role: RoleName) -> InstrumentRoleProtocol:
+        """Return quelware instrument-role value for one deploy role name."""
+        if role == "TRANSMITTER":
+            return self.instrument_role_namespace.TRANSMITTER
+        if role == "TRANSCEIVER":
+            return self.instrument_role_namespace.TRANSCEIVER
+        if role == "TRANSCEIVER_LOOPBACK":
+            return self.instrument_role_namespace.TRANSCEIVER
+        if role == "RECEIVER":
+            return self.instrument_role_namespace.TRANSCEIVER
+        raise ValueError(f"Unsupported QuEL-3 instrument role: {role!r}")
 
 
 @dataclass(frozen=True)
@@ -267,12 +258,7 @@ class Quel3ConfigurationManager:
             return {}
 
         client_factory = self._load_quelware_client_factory()
-        (
-            fixed_timeline_profile_cls,
-            instrument_definition_cls,
-            instrument_mode,
-            instrument_role,
-        ) = self._load_instrument_entities()
+        instrument_entities = self._load_instrument_entities()
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
         target_alias_map: dict[str, str] = {}
@@ -289,10 +275,7 @@ class Quel3ConfigurationManager:
                 port_results = await self._deploy_port_batches(
                     client_factory=client_factory,
                     port_request_batches=port_request_batches,
-                    fixed_timeline_profile_cls=fixed_timeline_profile_cls,
-                    instrument_definition_cls=instrument_definition_cls,
-                    instrument_mode=instrument_mode,
-                    instrument_role=instrument_role,
+                    instrument_entities=instrument_entities,
                     parallel=parallel,
                     attempt=attempt + 1,
                     max_attempts=QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
@@ -328,10 +311,7 @@ class Quel3ConfigurationManager:
         port_request_batches: tuple[
             tuple[str, tuple[InstrumentDeployRequest, ...]], ...
         ],
-        fixed_timeline_profile_cls: _FixedTimelineProfileFactory,
-        instrument_definition_cls: _InstrumentDefinitionFactory,
-        instrument_mode: _EnumNamespace,
-        instrument_role: _EnumNamespace,
+        instrument_entities: _QuelwareInstrumentEntities,
         parallel: bool,
         attempt: int,
         max_attempts: int,
@@ -353,10 +333,7 @@ class Quel3ConfigurationManager:
                         session=session,
                         port_id=port_id,
                         port_requests=port_requests,
-                        fixed_timeline_profile_cls=fixed_timeline_profile_cls,
-                        instrument_definition_cls=instrument_definition_cls,
-                        instrument_mode=instrument_mode,
-                        instrument_role=instrument_role,
+                        instrument_entities=instrument_entities,
                     )
                     for port_id, port_requests in port_request_batches
                 ]
@@ -398,23 +375,20 @@ class Quel3ConfigurationManager:
         session: SessionProtocol,
         port_id: str,
         port_requests: tuple[InstrumentDeployRequest, ...],
-        fixed_timeline_profile_cls: _FixedTimelineProfileFactory,
-        instrument_definition_cls: _InstrumentDefinitionFactory,
-        instrument_mode: _EnumNamespace,
-        instrument_role: _EnumNamespace,
+        instrument_entities: _QuelwareInstrumentEntities,
     ) -> _PortDeployResult:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
         for request in port_requests:
-            profile = fixed_timeline_profile_cls(
+            profile = instrument_entities.fixed_timeline_profile_factory(
                 frequency_range_min=request.frequency_range_min_hz,
                 frequency_range_max=request.frequency_range_max_hz,
             )
             definitions.append(
-                instrument_definition_cls(
+                instrument_entities.instrument_definition_factory(
                     alias=request.alias,
-                    mode=instrument_mode.FIXED_TIMELINE,
-                    role=getattr(instrument_role, request.role),
+                    mode=instrument_entities.instrument_mode_namespace.FIXED_TIMELINE,
+                    role=instrument_entities.role_value(request.role),
                     profile=profile,
                 )
             )
@@ -733,17 +707,24 @@ class Quel3ConfigurationManager:
         )
 
     @staticmethod
-    def _load_instrument_entities() -> tuple[
-        _FixedTimelineProfileFactory,
-        _InstrumentDefinitionFactory,
-        _EnumNamespace,
-        _EnumNamespace,
-    ]:
+    def _load_instrument_entities() -> _QuelwareInstrumentEntities:
         """Import instrument entities lazily from quelware core package."""
         instrument_module = importlib.import_module("quelware_core.entities.instrument")
-        return (
-            instrument_module.FixedTimelineProfile,
-            instrument_module.InstrumentDefinition,
-            instrument_module.InstrumentMode,
-            instrument_module.InstrumentRole,
+        fixed_timeline_profile_factory: FixedTimelineProfileFactory = (
+            instrument_module.FixedTimelineProfile
+        )
+        instrument_definition_factory: InstrumentDefinitionFactory = (
+            instrument_module.InstrumentDefinition
+        )
+        instrument_mode_namespace: InstrumentModeNamespaceProtocol = (
+            instrument_module.InstrumentMode
+        )
+        instrument_role_namespace: InstrumentRoleNamespaceProtocol = (
+            instrument_module.InstrumentRole
+        )
+        return _QuelwareInstrumentEntities(
+            fixed_timeline_profile_factory=fixed_timeline_profile_factory,
+            instrument_definition_factory=instrument_definition_factory,
+            instrument_mode_namespace=instrument_mode_namespace,
+            instrument_role_namespace=instrument_role_namespace,
         )
