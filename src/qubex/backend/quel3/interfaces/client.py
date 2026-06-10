@@ -48,6 +48,79 @@ class InstrumentDefinitionProtocol(Protocol):
         ...
 
 
+class InstrumentModeProtocol(Protocol):
+    """Instrument-mode enum value protocol."""
+
+    @property
+    def name(self) -> str:
+        """Return instrument mode name."""
+        ...
+
+    @property
+    def value(self) -> int:
+        """Return instrument mode value."""
+        ...
+
+
+class InstrumentRoleProtocol(Protocol):
+    """Instrument-role enum value protocol."""
+
+    @property
+    def name(self) -> str:
+        """Return instrument role name."""
+        ...
+
+    @property
+    def value(self) -> int:
+        """Return instrument role value."""
+        ...
+
+
+class FixedTimelineProfileFactory(Protocol):
+    """Factory protocol for fixed-timeline profile entities."""
+
+    def __call__(
+        self,
+        *,
+        frequency_range_min: float,
+        frequency_range_max: float,
+    ) -> FixedTimelineProfileProtocol:
+        """Create one fixed-timeline profile."""
+        ...
+
+
+class InstrumentDefinitionFactory(Protocol):
+    """Factory protocol for instrument-definition entities."""
+
+    def __call__(
+        self,
+        *,
+        alias: str,
+        mode: InstrumentModeProtocol,
+        role: InstrumentRoleProtocol,
+        profile: FixedTimelineProfileProtocol,
+    ) -> InstrumentDefinitionProtocol:
+        """Create one instrument definition."""
+        ...
+
+
+class InstrumentModeNamespaceProtocol(Protocol):
+    """Instrument-mode enum namespace protocol."""
+
+    UNSPECIFIED: InstrumentModeProtocol
+    FIXED_TIMELINE: InstrumentModeProtocol
+
+
+class InstrumentRoleNamespaceProtocol(Protocol):
+    """Instrument-role enum namespace protocol."""
+
+    UNSPECIFIED: InstrumentRoleProtocol
+    TRANSMITTER: InstrumentRoleProtocol
+    TRANSCEIVER: InstrumentRoleProtocol
+    TRANSCEIVER_LOOPBACK: InstrumentRoleProtocol
+    RECEIVER: InstrumentRoleProtocol
+
+
 class InstrumentInfoProtocol(Protocol):
     """Minimal instrument-info protocol."""
 

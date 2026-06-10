@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -41,6 +42,21 @@ class _CachedInstrumentInfo:
     id: str
     port_id: str
     definition: _CachedDefinition
+
+
+def _make_instrument_entities(
+    profile_factory: Any,
+    definition_factory: Any,
+    mode_namespace: Any,
+    role_namespace: Any,
+) -> Any:
+    """Create one fake instrument-entity boundary for configuration tests."""
+    return configuration_manager_module._QuelwareInstrumentEntities(  # noqa: SLF001
+        fixed_timeline_profile_factory=profile_factory,
+        instrument_definition_factory=definition_factory,
+        instrument_mode_namespace=mode_namespace,
+        instrument_role_namespace=role_namespace,
+    )
 
 
 def test_deploy_instruments_calls_session_api(
@@ -136,7 +152,7 @@ def test_deploy_instruments_calls_session_api(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     request = InstrumentDeployRequest(
@@ -293,7 +309,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     request = InstrumentDeployRequest(
@@ -426,7 +442,7 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     request = InstrumentDeployRequest(
@@ -541,7 +557,7 @@ def test_deploy_instruments_wraps_final_request_failure(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     request = InstrumentDeployRequest(
@@ -686,7 +702,7 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     request = InstrumentDeployRequest(
@@ -803,7 +819,7 @@ def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     request = InstrumentDeployRequest(
@@ -945,7 +961,7 @@ def test_deploy_instruments_groups_requests_by_port(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     requests = (
@@ -1076,7 +1092,7 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     requests = (
@@ -1204,7 +1220,7 @@ def test_deploy_instruments_parallelizes_ports_by_default(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     manager.deploy_instruments(
@@ -1328,7 +1344,7 @@ def test_deploy_instruments_parallel_false_serializes_ports(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     manager.deploy_instruments(
@@ -1969,7 +1985,7 @@ def test_deploy_instruments_replaces_cached_alias(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     deployed = manager.deploy_instruments(
@@ -2096,7 +2112,7 @@ def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
     monkeypatch.setattr(
         manager,
         "_load_instrument_entities",
-        lambda: (_Profile, _Definition, _Mode, _Role),
+        lambda: _make_instrument_entities(_Profile, _Definition, _Mode, _Role),
     )
 
     deployed = manager.deploy_instruments(
