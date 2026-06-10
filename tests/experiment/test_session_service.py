@@ -202,12 +202,13 @@ def test_configure_uses_system_manager_and_sync_hook(monkeypatch) -> None:
         ),
         (
             "system_manager.push",
-            {
-                "box_ids": ["Q2A"],
-                "target_labels": ["Q00", "RQ00"],
-            },
-        ),
-    ]
+                {
+                    "box_ids": ["Q2A"],
+                    "target_labels": ["Q00", "RQ00"],
+                    "confirm": True,
+                },
+            ),
+        ]
     assert sync_calls == ["sync", "sync"]
 
 

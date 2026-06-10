@@ -3414,7 +3414,7 @@ wheels = [
 
 [[package]]
 name = "qubex"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "." }
 dependencies = [
     { name = "anywidget" },
@@ -3666,7 +3666,7 @@ wheels = [
 
 [[package]]
 name = "qxcore"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "packages/qxcore" }
 dependencies = [
     { name = "netcdf4" },
@@ -3691,7 +3691,7 @@ requires-dist = [
 
 [[package]]
 name = "qxdriver-quel1"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "packages/qxdriver-quel1" }
 dependencies = [
     { name = "numpy" },
@@ -3726,12 +3726,12 @@ dev = [
 
 [[package]]
 name = "qxfitting"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "packages/qxfitting" }
 
 [[package]]
 name = "qxpulse"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "packages/qxpulse" }
 dependencies = [
     { name = "numpy" },
@@ -3753,7 +3753,7 @@ requires-dist = [
 
 [[package]]
 name = "qxschema"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "packages/qxschema" }
 dependencies = [
     { name = "numpy" },
@@ -3768,7 +3768,7 @@ requires-dist = [
 
 [[package]]
 name = "qxsimulator"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "packages/qxsimulator" }
 dependencies = [
     { name = "ipython", version = "8.39.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -3806,7 +3806,7 @@ requires-dist = [
 
 [[package]]
 name = "qxvisualizer"
-version = "1.5.0b4"
+version = "1.5.0rc1"
 source = { editable = "packages/qxvisualizer" }
 dependencies = [
     { name = "numpy" },
