@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, TypeAlias
+from typing import Protocol
 
 
 class DirectiveProtocol(Protocol):
@@ -10,30 +10,32 @@ class DirectiveProtocol(Protocol):
 
 
 class CaptureModeProtocol(Protocol):
-    """Minimal capture-mode enum value protocol."""
+    """Capture-mode enum value protocol."""
 
     @property
     def name(self) -> str:
         """Return capture mode name."""
         ...
 
-
-CaptureModeValue: TypeAlias = CaptureModeProtocol | str
+    @property
+    def value(self) -> int:
+        """Return capture mode value."""
+        ...
 
 
 class CaptureModeNamespaceProtocol(Protocol):
-    """Minimal capture-mode namespace protocol."""
+    """Capture-mode enum namespace protocol."""
 
-    RAW_WAVEFORMS: CaptureModeValue
-    AVERAGED_WAVEFORM: CaptureModeValue
-    AVERAGED_VALUE: CaptureModeValue
-    VALUES_PER_ITER: CaptureModeValue
+    RAW_WAVEFORMS: CaptureModeProtocol
+    AVERAGED_WAVEFORM: CaptureModeProtocol
+    AVERAGED_VALUE: CaptureModeProtocol
+    VALUES_PER_ITER: CaptureModeProtocol
 
 
 class SetCaptureModeFactory(Protocol):
     """Factory protocol for `SetCaptureMode` directives."""
 
-    def __call__(self, *, mode: CaptureModeValue) -> DirectiveProtocol:
+    def __call__(self, *, mode: CaptureModeProtocol) -> DirectiveProtocol:
         """Create one capture-mode directive."""
         ...
 

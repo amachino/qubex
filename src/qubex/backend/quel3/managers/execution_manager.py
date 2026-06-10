@@ -20,7 +20,7 @@ from qubex.backend.quel3.infra.quelware_imports import (
 )
 from qubex.backend.quel3.interfaces import (
     CaptureModeNamespaceProtocol,
-    CaptureModeValue,
+    CaptureModeProtocol,
     DirectiveProtocol,
     InstrumentDriverFactory,
     InstrumentDriverProtocol,
@@ -68,11 +68,6 @@ def _run_async(
     return bridge.run(factory, timeout=timeout)
 
 
-def _is_capture_mode_value(value: object) -> TypeGuard[CaptureModeValue]:
-    """Return whether one runtime value behaves like quelware capture mode."""
-    return isinstance(value, str) or isinstance(getattr(value, "name", None), str)
-
-
 def _has_iq_array(value: object) -> TypeGuard[IqWaveformResultProtocol]:
     """Return whether one runtime value exposes waveform IQ samples."""
     return hasattr(value, "iq_array")
@@ -87,6 +82,38 @@ class _ExecutionRuntime:
     alias_to_resource_id: dict[str, ResourceIdProtocol]
     alias_to_driver: dict[str, InstrumentDriverProtocol]
     capture_sampling_period_ns: float | None
+
+
+@dataclass(frozen=True)
+class _QuelwareExecutionApi:
+    """Lazy-loaded quelware API symbols needed for fixed-timeline execution."""
+
+    client_factory: QuelwareClientFactory
+    instrument_resolver_factory: InstrumentResolverFactory
+    sequencer_factory: Callable[..., SequencerProtocol]
+    fixed_timeline_driver_factory: InstrumentDriverFactory
+    set_frequency_directive_factory: SetFrequencyFactory
+    set_capture_mode_directive_factory: SetCaptureModeFactory
+    capture_mode_namespace: CaptureModeNamespaceProtocol
+
+    def build_capture_mode_directive(
+        self,
+        capture_mode: Quel3CaptureMode,
+    ) -> DirectiveProtocol:
+        """Build one capture-mode directive from payload capture mode."""
+        if capture_mode is Quel3CaptureMode.UNSPECIFIED:
+            raise ValueError(f"Unsupported capture mode: {capture_mode}.")
+        try:
+            mode = cast(
+                CaptureModeProtocol,
+                getattr(self.capture_mode_namespace, capture_mode.name),
+            )
+        except AttributeError as exc:
+            raise RuntimeError(
+                "quelware runtime does not expose required "
+                f"`CaptureMode.{capture_mode.name}`."
+            ) from exc
+        return self.set_capture_mode_directive_factory(mode=mode)
 
 
 class Quel3ExecutionManager:
@@ -197,15 +224,7 @@ class Quel3ExecutionManager:
             return []
 
         try:
-            (
-                create_quelware_client,
-                instrument_resolver_factory,
-                sequencer_factory,
-                create_instrument_driver_fixed_timeline,
-                capture_mode_enum,
-                set_frequency_factory,
-                set_capture_mode_factory,
-            ) = self._load_quelware_api()
+            quelware_api = self._load_quelware_api()
         except (ModuleNotFoundError, SyntaxError) as exc:
             raise RuntimeError(
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
@@ -214,13 +233,7 @@ class Quel3ExecutionManager:
         return await self._run_with_session_request_retry(
             lambda: self._execute_batch_once(
                 payloads=payloads,
-                create_quelware_client=create_quelware_client,
-                instrument_resolver_factory=instrument_resolver_factory,
-                sequencer_factory=sequencer_factory,
-                create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
-                capture_mode_enum=capture_mode_enum,
-                set_frequency_factory=set_frequency_factory,
-                set_capture_mode_factory=set_capture_mode_factory,
+                quelware_api=quelware_api,
                 parallel=parallel,
             )
         )
@@ -259,15 +272,7 @@ class Quel3ExecutionManager:
             raise ValueError("Quel3ExecutionPayload must include fixed timelines.")
 
         try:
-            (
-                create_quelware_client,
-                instrument_resolver_factory,
-                sequencer_factory,
-                create_instrument_driver_fixed_timeline,
-                capture_mode_enum,
-                set_frequency_factory,
-                set_capture_mode_factory,
-            ) = self._load_quelware_api()
+            quelware_api = self._load_quelware_api()
         except (ModuleNotFoundError, SyntaxError) as exc:
             raise RuntimeError(
                 "quelware-client is not available. Install compatible quelware packages or configure PYTHONPATH."
@@ -276,13 +281,7 @@ class Quel3ExecutionManager:
         return await self._run_with_session_request_retry(
             lambda: self._execute_once(
                 payload=payload,
-                create_quelware_client=create_quelware_client,
-                instrument_resolver_factory=instrument_resolver_factory,
-                sequencer_factory=sequencer_factory,
-                create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
-                capture_mode_enum=capture_mode_enum,
-                set_frequency_factory=set_frequency_factory,
-                set_capture_mode_factory=set_capture_mode_factory,
+                quelware_api=quelware_api,
                 parallel=parallel,
             )
         )
@@ -362,29 +361,18 @@ class Quel3ExecutionManager:
         self,
         *,
         payload: Quel3ExecutionPayload,
-        create_quelware_client: QuelwareClientFactory,
-        instrument_resolver_factory: InstrumentResolverFactory,
-        sequencer_factory: Callable[..., SequencerProtocol],
-        create_instrument_driver_fixed_timeline: InstrumentDriverFactory,
-        capture_mode_enum: CaptureModeNamespaceProtocol,
-        set_frequency_factory: SetFrequencyFactory,
-        set_capture_mode_factory: SetCaptureModeFactory,
+        quelware_api: _QuelwareExecutionApi,
         parallel: bool,
     ) -> Quel3BackendExecutionResult:
         """Execute one payload using a single fresh quelware session."""
         runtime, resolved_payload = await self._open_execution_runtime(
             payload=payload,
-            create_quelware_client=create_quelware_client,
-            instrument_resolver_factory=instrument_resolver_factory,
-            create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+            quelware_api=quelware_api,
         )
         return await self._execute_resolved_payload(
             payload=resolved_payload,
             runtime=runtime,
-            sequencer_factory=sequencer_factory,
-            capture_mode_enum=capture_mode_enum,
-            set_frequency_factory=set_frequency_factory,
-            set_capture_mode_factory=set_capture_mode_factory,
+            quelware_api=quelware_api,
             parallel=parallel,
         )
 
@@ -392,31 +380,20 @@ class Quel3ExecutionManager:
         self,
         *,
         payloads: list[Quel3ExecutionPayload],
-        create_quelware_client: QuelwareClientFactory,
-        instrument_resolver_factory: InstrumentResolverFactory,
-        sequencer_factory: Callable[..., SequencerProtocol],
-        create_instrument_driver_fixed_timeline: InstrumentDriverFactory,
-        capture_mode_enum: CaptureModeNamespaceProtocol,
-        set_frequency_factory: SetFrequencyFactory,
-        set_capture_mode_factory: SetCaptureModeFactory,
+        quelware_api: _QuelwareExecutionApi,
         parallel: bool,
     ) -> list[Quel3BackendExecutionResult]:
         """Execute one payload batch using a single fresh quelware session."""
         runtime, first_resolved_payload = await self._open_execution_runtime(
             payload=payloads[0],
-            create_quelware_client=create_quelware_client,
-            instrument_resolver_factory=instrument_resolver_factory,
-            create_instrument_driver_fixed_timeline=create_instrument_driver_fixed_timeline,
+            quelware_api=quelware_api,
         )
         expected_aliases = tuple(sorted(first_resolved_payload.fixed_timelines))
         results = [
             await self._execute_resolved_payload(
                 payload=first_resolved_payload,
                 runtime=runtime,
-                sequencer_factory=sequencer_factory,
-                capture_mode_enum=capture_mode_enum,
-                set_frequency_factory=set_frequency_factory,
-                set_capture_mode_factory=set_capture_mode_factory,
+                quelware_api=quelware_api,
                 parallel=parallel,
             )
         ]
@@ -437,10 +414,7 @@ class Quel3ExecutionManager:
                 await self._execute_resolved_payload(
                     payload=resolved_payload,
                     runtime=runtime,
-                    sequencer_factory=sequencer_factory,
-                    capture_mode_enum=capture_mode_enum,
-                    set_frequency_factory=set_frequency_factory,
-                    set_capture_mode_factory=set_capture_mode_factory,
+                    quelware_api=quelware_api,
                     parallel=parallel,
                 )
             )
@@ -450,13 +424,11 @@ class Quel3ExecutionManager:
         self,
         *,
         payload: Quel3ExecutionPayload,
-        create_quelware_client: QuelwareClientFactory,
-        instrument_resolver_factory: InstrumentResolverFactory,
-        create_instrument_driver_fixed_timeline: InstrumentDriverFactory,
+        quelware_api: _QuelwareExecutionApi,
     ) -> tuple[_ExecutionRuntime, Quel3ExecutionPayload]:
         """Open one reusable quelware runtime for a resolved alias set."""
-        await self._session_manager.open(client_factory=create_quelware_client)
-        resolver = instrument_resolver_factory()
+        await self._session_manager.open(client_factory=quelware_api.client_factory)
+        resolver = quelware_api.instrument_resolver_factory()
         await resolver.refresh(self._session_manager.client)
 
         resolved_payload = self._resolve_payload(
@@ -474,7 +446,7 @@ class Quel3ExecutionManager:
         instrument_resource_ids = [alias_to_resource_id[alias] for alias in aliases]
         await self._session_manager.open(
             instrument_resource_ids,
-            client_factory=create_quelware_client,
+            client_factory=quelware_api.client_factory,
         )
         session = self._session_manager.session
 
@@ -486,7 +458,7 @@ class Quel3ExecutionManager:
                 alias=alias,
                 default_unit_label=self._standalone_unit_label,
             )
-            driver = create_instrument_driver_fixed_timeline(
+            driver = quelware_api.fixed_timeline_driver_factory(
                 session,
                 instrument_info,
             )
@@ -526,10 +498,7 @@ class Quel3ExecutionManager:
         *,
         payload: Quel3ExecutionPayload,
         runtime: _ExecutionRuntime,
-        sequencer_factory: Callable[..., SequencerProtocol],
-        capture_mode_enum: CaptureModeNamespaceProtocol,
-        set_frequency_factory: SetFrequencyFactory,
-        set_capture_mode_factory: SetCaptureModeFactory,
+        quelware_api: _QuelwareExecutionApi,
         parallel: bool,
     ) -> Quel3BackendExecutionResult:
         """Execute one payload using an already-open runtime."""
@@ -564,7 +533,7 @@ class Quel3ExecutionManager:
 
         sequencer = self._sequencer_builder.build(
             payload=payload,
-            sequencer_factory=sequencer_factory,
+            sequencer_factory=quelware_api.sequencer_factory,
             default_sampling_period_ns=self._sampling_period_ns,
             alias_bindings=alias_bindings,
         )
@@ -575,9 +544,7 @@ class Quel3ExecutionManager:
                 sequencer=sequencer,
                 frequency_hz=payload.fixed_timelines[alias].frequency_hz,
                 capture_mode=payload.capture_mode,
-                capture_mode_enum=capture_mode_enum,
-                set_frequency_factory=set_frequency_factory,
-                set_capture_mode_factory=set_capture_mode_factory,
+                quelware_api=quelware_api,
             )
             for alias in aliases
         }
@@ -627,19 +594,15 @@ class Quel3ExecutionManager:
         sequencer: SequencerProtocol,
         frequency_hz: float | None,
         capture_mode: Quel3CaptureMode,
-        capture_mode_enum: CaptureModeNamespaceProtocol,
-        set_frequency_factory: SetFrequencyFactory,
-        set_capture_mode_factory: SetCaptureModeFactory,
+        quelware_api: _QuelwareExecutionApi,
     ) -> list[DirectiveProtocol]:
         """Build the directives applied to one instrument driver."""
         directives: list[DirectiveProtocol] = []
         if frequency_hz is not None:
-            directives.append(set_frequency_factory(hz=frequency_hz))
-        capture_mode_directive = cls._build_capture_mode_directive(
-            capture_mode=capture_mode,
-            capture_mode_enum=capture_mode_enum,
-            set_capture_mode_factory=set_capture_mode_factory,
-        )
+            directives.append(
+                quelware_api.set_frequency_directive_factory(hz=frequency_hz)
+            )
+        capture_mode_directive = quelware_api.build_capture_mode_directive(capture_mode)
         if capture_mode_directive is not None:
             directives.append(capture_mode_directive)
         directives.append(sequencer.export_set_fixed_timeline_directive(alias))
@@ -935,36 +898,6 @@ class Quel3ExecutionManager:
         return fallback_alias
 
     @staticmethod
-    def _build_capture_mode_directive(
-        *,
-        capture_mode: Quel3CaptureMode,
-        capture_mode_enum: CaptureModeNamespaceProtocol,
-        set_capture_mode_factory: SetCaptureModeFactory,
-    ) -> DirectiveProtocol:
-        """Build one capture-mode directive from payload capture mode."""
-        candidates_by_mode: dict[Quel3CaptureMode, tuple[str, ...]] = {
-            Quel3CaptureMode.RAW_WAVEFORMS: ("RAW_WAVEFORMS",),
-            Quel3CaptureMode.AVERAGED_WAVEFORM: ("AVERAGED_WAVEFORM",),
-            Quel3CaptureMode.AVERAGED_VALUE: ("AVERAGED_VALUE",),
-            Quel3CaptureMode.VALUES_PER_ITER: ("VALUES_PER_ITER",),
-        }
-        candidates = candidates_by_mode.get(capture_mode)
-        if candidates is None:
-            raise ValueError(f"Unsupported capture mode: {capture_mode}.")
-        mode: CaptureModeValue | None = None
-        for candidate in candidates:
-            resolved_mode = getattr(capture_mode_enum, candidate, None)
-            if _is_capture_mode_value(resolved_mode):
-                mode = resolved_mode
-                break
-        if mode is None:
-            raise RuntimeError(
-                "quelware runtime does not expose required "
-                f"`CaptureMode.{candidates[0]}`."
-            )
-        return set_capture_mode_factory(mode=mode)
-
-    @staticmethod
     def _initialize_shot_samples(
         payload: Quel3ExecutionPayload,
     ) -> dict[str, dict[str, list[np.ndarray]]]:
@@ -1065,15 +998,7 @@ class Quel3ExecutionManager:
 
     def _load_quelware_api(
         self,
-    ) -> tuple[
-        QuelwareClientFactory,
-        InstrumentResolverFactory,
-        Callable[..., SequencerProtocol],
-        InstrumentDriverFactory,
-        CaptureModeNamespaceProtocol,
-        SetFrequencyFactory,
-        SetCaptureModeFactory,
-    ]:
+    ) -> _QuelwareExecutionApi:
         """Import quelware helpers lazily and return required symbols."""
         resolver_module = importlib.import_module(
             "quelware_client.client.helpers.instrument_resolver"
@@ -1085,7 +1010,7 @@ class Quel3ExecutionManager:
         driver_module = importlib.import_module(
             "quelware_client.core.instrument_driver"
         )
-        create_quelware_client: QuelwareClientFactory = load_quelware_client_factory(
+        client_factory: QuelwareClientFactory = load_quelware_client_factory(
             client_mode=self._client_mode,
             standalone_unit_label=self._standalone_unit_label,
             pat_path=self._quelware_pat_path,
@@ -1094,20 +1019,24 @@ class Quel3ExecutionManager:
             resolver_module.InstrumentResolver
         )
         sequencer_factory: Callable[..., SequencerProtocol] = sequencer_module.Sequencer
-        create_instrument_driver_fixed_timeline: InstrumentDriverFactory = (
+        fixed_timeline_driver_factory: InstrumentDriverFactory = (
             driver_module.create_instrument_driver_fixed_timeline
         )
-        capture_mode_enum: CaptureModeNamespaceProtocol = directive_module.CaptureMode
-        set_frequency_factory: SetFrequencyFactory = directive_module.SetFrequency
-        set_capture_mode_factory: SetCaptureModeFactory = (
+        capture_mode_namespace: CaptureModeNamespaceProtocol = (
+            directive_module.CaptureMode
+        )
+        set_frequency_directive_factory: SetFrequencyFactory = (
+            directive_module.SetFrequency
+        )
+        set_capture_mode_directive_factory: SetCaptureModeFactory = (
             directive_module.SetCaptureMode
         )
-        return (
-            create_quelware_client,
-            instrument_resolver_factory,
-            sequencer_factory,
-            create_instrument_driver_fixed_timeline,
-            capture_mode_enum,
-            set_frequency_factory,
-            set_capture_mode_factory,
+        return _QuelwareExecutionApi(
+            client_factory=client_factory,
+            instrument_resolver_factory=instrument_resolver_factory,
+            sequencer_factory=sequencer_factory,
+            fixed_timeline_driver_factory=fixed_timeline_driver_factory,
+            capture_mode_namespace=capture_mode_namespace,
+            set_frequency_directive_factory=set_frequency_directive_factory,
+            set_capture_mode_directive_factory=set_capture_mode_directive_factory,
         )

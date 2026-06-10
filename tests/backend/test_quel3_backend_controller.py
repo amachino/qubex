@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, replace
+from enum import Enum
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -29,6 +30,14 @@ from qubex.backend.quel3 import (
 from qubex.backend.quel3.managers import execution_manager as execution_manager_module
 from qubex.backend.quel3.managers.execution_manager import Quel3ExecutionManager
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
+
+
+class _FakeCaptureMode(Enum):
+    UNSPECIFIED = 1
+    RAW_WAVEFORMS = 2
+    AVERAGED_WAVEFORM = 3
+    AVERAGED_VALUE = 4
+    VALUES_PER_ITER = 5
 
 
 @dataclass(frozen=True)
@@ -804,14 +813,10 @@ def test_execute_resolves_unit_prefixed_alias_binding(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda _session, _instrument_info: driver,
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda _session, _instrument_info: driver,
         ),
     )
 
@@ -825,7 +830,10 @@ def test_execute_resolves_unit_prefixed_alias_binding(
         ("Q00", "quel3-02-a01"),
     ]
     assert driver.apply_calls == [
-        [("capture_mode", "avg"), ("timeline", "quel3-02-a01:Q00")]
+        [
+            ("capture_mode", _FakeCaptureMode.AVERAGED_VALUE),
+            ("timeline", "quel3-02-a01:Q00"),
+        ]
     ]
     assert session.trigger_calls == [["inst-q00"]]
     assert "quel3-02-a01:Q00" in result.data
@@ -1055,6 +1063,45 @@ class _FakeClient:
         return self._session
 
 
+def _make_fake_execution_api(
+    *,
+    client_factory: Any,
+    instrument_resolver_factory: Any,
+    fixed_timeline_driver_factory: Any,
+    capture_mode_namespace: Any = _FakeCaptureMode,
+    sequencer_factory: Any = _FakeSequencer,
+) -> Any:
+    """Create one fake quelware API boundary for execution-manager tests."""
+    return execution_manager_module._QuelwareExecutionApi(
+        client_factory=client_factory,
+        instrument_resolver_factory=instrument_resolver_factory,
+        sequencer_factory=sequencer_factory,
+        fixed_timeline_driver_factory=fixed_timeline_driver_factory,
+        capture_mode_namespace=capture_mode_namespace,
+        set_frequency_directive_factory=lambda *, hz: ("frequency", hz),
+        set_capture_mode_directive_factory=lambda *, mode: ("capture_mode", mode),
+    )
+
+
+def test_execution_api_resolves_only_requested_capture_mode() -> None:
+    """Given one capture mode, execution API resolves only the requested mode."""
+    api = _make_fake_execution_api(
+        client_factory=lambda endpoint, port: _FakeClient(_FakeSession()),
+        instrument_resolver_factory=lambda: _FakeInstrumentResolver(alias_to_info={}),
+        fixed_timeline_driver_factory=lambda _session, _instrument_info: (
+            _FakeInstrumentDriver()
+        ),
+        capture_mode_namespace=SimpleNamespace(
+            AVERAGED_VALUE=_FakeCaptureMode.AVERAGED_VALUE,
+        ),
+    )
+
+    assert api.build_capture_mode_directive(Quel3CaptureMode.AVERAGED_VALUE) == (
+        "capture_mode",
+        _FakeCaptureMode.AVERAGED_VALUE,
+    )
+
+
 class _FlakyTriggerSession(_FakeSession):
     def __init__(
         self,
@@ -1165,14 +1212,10 @@ def test_execute_recreates_session_after_transient_request_failure(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            _create_client,
-            lambda: resolver,
-            _FakeSequencer,
-            _create_driver,
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=_create_client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=_create_driver,
         ),
     )
 
@@ -1228,14 +1271,12 @@ def test_execute_ignores_session_close_failure_after_success(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda session, instrument_info: _FakeInstrumentDriver(),
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda session, instrument_info: (
+                _FakeInstrumentDriver()
+            ),
         ),
     )
 
@@ -1289,14 +1330,12 @@ def test_execute_preserves_request_failure_when_session_close_also_fails(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda session, instrument_info: _FakeInstrumentDriver(),
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda session, instrument_info: (
+                _FakeInstrumentDriver()
+            ),
         ),
     )
 
@@ -1356,14 +1395,12 @@ def test_execute_uses_configured_session_request_retry_limit(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            _create_client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda session, instrument_info: _FakeInstrumentDriver(),
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=_create_client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda session, instrument_info: (
+                _FakeInstrumentDriver()
+            ),
         ),
     )
 
@@ -1421,14 +1458,12 @@ def test_execute_batch_recreates_session_after_transient_request_failure(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            _create_client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda session, instrument_info: _FakeInstrumentDriver(),
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=_create_client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda session, instrument_info: (
+                _FakeInstrumentDriver()
+            ),
         ),
     )
 
@@ -1475,14 +1510,10 @@ def test_execute_batches_capture_mode_with_timeline_directive(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda _session, _instrument_info: driver,
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda _session, _instrument_info: driver,
         ),
     )
 
@@ -1491,7 +1522,9 @@ def test_execute_batches_capture_mode_with_timeline_directive(
     )
 
     assert driver.initialized is True
-    assert driver.apply_calls == [[("capture_mode", "avg"), ("timeline", "alias-rq00")]]
+    assert driver.apply_calls == [
+        [("capture_mode", _FakeCaptureMode.AVERAGED_VALUE), ("timeline", "alias-rq00")]
+    ]
     assert session.trigger_calls == [["alias-rq00"]]
     assert np.array_equal(
         result.data["alias-rq00"][0],
@@ -1525,21 +1558,21 @@ def test_execute_batches_frequency_capture_mode_with_timeline_directive(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda _session, _instrument_info: driver,
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda _session, _instrument_info: driver,
         ),
     )
 
     asyncio.run(manager.execute_async(request=BackendExecutionRequest(payload=payload)))
 
     assert driver.apply_calls == [
-        [("frequency", 6.25e9), ("capture_mode", "avg"), ("timeline", "alias-rq00")]
+        [
+            ("frequency", 6.25e9),
+            ("capture_mode", _FakeCaptureMode.AVERAGED_VALUE),
+            ("timeline", "alias-rq00"),
+        ]
     ]
 
 
@@ -1569,14 +1602,15 @@ def test_execute_rejects_runtime_without_required_capture_mode(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda _session, _instrument_info: driver,
-            SimpleNamespace(),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda _session, _instrument_info: driver,
+            capture_mode_namespace=SimpleNamespace(
+                RAW_WAVEFORMS=_FakeCaptureMode.RAW_WAVEFORMS,
+                AVERAGED_WAVEFORM=_FakeCaptureMode.AVERAGED_WAVEFORM,
+                VALUES_PER_ITER=_FakeCaptureMode.VALUES_PER_ITER,
+            ),
         ),
     )
 
@@ -1643,14 +1677,12 @@ def test_execute_parallelizes_driver_phases(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda _session, instrument_info: drivers[instrument_info.alias],
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda _session, instrument_info: drivers[
+                instrument_info.alias
+            ],
         ),
     )
 
@@ -1659,10 +1691,10 @@ def test_execute_parallelizes_driver_phases(
     )
 
     assert drivers["alias-rq00"].apply_calls == [
-        [("capture_mode", "avg"), ("timeline", "alias-rq00")]
+        [("capture_mode", _FakeCaptureMode.AVERAGED_VALUE), ("timeline", "alias-rq00")]
     ]
     assert drivers["alias-rq01"].apply_calls == [
-        [("capture_mode", "avg"), ("timeline", "alias-rq01")]
+        [("capture_mode", _FakeCaptureMode.AVERAGED_VALUE), ("timeline", "alias-rq01")]
     ]
     assert session.trigger_calls == [["alias-rq00", "alias-rq01"]]
     assert np.array_equal(
@@ -1709,14 +1741,10 @@ def test_execute_batch_async_reuses_one_session(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda _session, _instrument_info: driver,
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda _session, _instrument_info: driver,
         ),
     )
 
@@ -1793,14 +1821,12 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
     monkeypatch.setattr(
         manager,
         "_load_quelware_api",
-        lambda: (
-            lambda endpoint, port: client,
-            lambda: resolver,
-            _FakeSequencer,
-            lambda _session, instrument_info: drivers[instrument_info.alias],
-            SimpleNamespace(AVERAGED_VALUE="avg"),
-            lambda *, hz: ("frequency", hz),
-            lambda *, mode: ("capture_mode", mode),
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: client,
+            instrument_resolver_factory=lambda: resolver,
+            fixed_timeline_driver_factory=lambda _session, instrument_info: drivers[
+                instrument_info.alias
+            ],
         ),
     )
 
