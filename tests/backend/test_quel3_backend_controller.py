@@ -43,12 +43,14 @@ class _FakeCaptureMode(Enum):
 @dataclass(frozen=True)
 class _FakeInstrumentDefinition:
     role: str
+    alias: str = ""
 
 
 @dataclass(frozen=True)
 class _FakeInstrumentInfo:
     port_id: str
     definition: _FakeInstrumentDefinition
+    id: str = ""
     alias: str | None = None
 
 
@@ -58,8 +60,26 @@ class _FakeInstrumentResolver:
         *,
         alias_to_info: dict[str, _FakeInstrumentInfo],
     ) -> None:
-        self._alias_to_info = dict(alias_to_info)
-        self._alias_to_id = {alias: alias for alias in self._alias_to_info}
+        self._alias_to_info = {
+            alias: self._with_required_fields(alias=alias, instrument_info=info)
+            for alias, info in alias_to_info.items()
+        }
+
+    @staticmethod
+    def _with_required_fields(
+        *,
+        alias: str,
+        instrument_info: _FakeInstrumentInfo,
+    ) -> _FakeInstrumentInfo:
+        runtime_alias = (
+            instrument_info.alias or instrument_info.definition.alias or alias
+        )
+        return replace(
+            instrument_info,
+            id=instrument_info.id or alias,
+            definition=replace(instrument_info.definition, alias=runtime_alias),
+            alias=runtime_alias,
+        )
 
     async def refresh(self, client: object) -> None:
         del client
@@ -1479,7 +1499,7 @@ def test_execute_batch_recreates_session_after_transient_request_failure(
     assert len(results) == 2
     assert len(clients) == 2
     assert [client.exit_calls for client in clients] == [1, 1]
-    assert [session.exit_calls for session in sessions] == [1, 1]
+    assert [session.exit_calls for session in sessions] == [1, 2]
     assert sessions[0].trigger_calls == [["alias-rq00"]]
     assert sessions[1].trigger_calls == [["alias-rq00"], ["alias-rq00"]]
 
@@ -1707,10 +1727,10 @@ def test_execute_parallelizes_driver_phases(
     )
 
 
-def test_execute_batch_async_reuses_one_session(
+def test_execute_batch_async_reopens_session_per_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given multiple requests, execute_batch_async should reuse one session and resolver refresh."""
+    """Given multiple requests, execute_batch_async should reopen each payload session."""
     payload_a = _make_payload()
     payload_b = _make_payload()
     manager = Quel3ExecutionManager(
@@ -1758,7 +1778,7 @@ def test_execute_batch_async_reuses_one_session(
     )
 
     assert resolver.refresh_calls == 1
-    assert create_session_calls == [("alias-rq00",)]
+    assert create_session_calls == [("alias-rq00",), ("alias-rq00",)]
     assert len(session.trigger_calls) == 2
     assert len(driver.apply_calls) == 2
     assert len(results) == 2
