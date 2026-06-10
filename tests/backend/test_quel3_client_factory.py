@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from types import SimpleNamespace
 
@@ -11,23 +10,21 @@ import pytest
 from qubex.backend.quel3.infra import quelware_imports as quelware_imports_module
 
 
-def test_validate_client_runtime_rejects_missing_unit_label() -> None:
-    """Given standalone mode without unit label, validation should fail fast."""
-    with pytest.raises(ValueError, match="standalone_unit_label"):
+def test_validate_client_runtime_rejects_standalone_mode() -> None:
+    """Given standalone mode, validation should reject the unsupported runtime."""
+    with pytest.raises(ValueError, match="Unsupported QuEL-3 client mode"):
         quelware_imports_module.validate_quelware_client_runtime(
             client_mode="standalone",
-            standalone_unit_label=None,
         )
 
 
 def test_validate_client_runtime_normalizes_string_input() -> None:
     """Given mixed-case client-mode input, validation should normalize it."""
     client_mode = quelware_imports_module.validate_quelware_client_runtime(
-        client_mode=" Standalone ",
-        standalone_unit_label="quel3-02-a01",
+        client_mode=" Server ",
     )
 
-    assert client_mode == "standalone"
+    assert client_mode == "server"
 
 
 def test_load_client_factory_returns_server_client(
@@ -40,13 +37,11 @@ def test_load_client_factory_returns_server_client(
         "import_module",
         lambda _: SimpleNamespace(
             create_quelware_client=create_quelware_client,
-            create_standalone_client=object(),
         ),
     )
 
     client_factory = quelware_imports_module.load_quelware_client_factory(
         client_mode="server",
-        standalone_unit_label=None,
     )
 
     assert client_factory is create_quelware_client
@@ -77,13 +72,11 @@ def test_load_client_factory_binds_pat_for_server_mode(
         "import_module",
         lambda _: SimpleNamespace(
             create_quelware_client=_create_quelware_client,
-            create_standalone_client=object(),
         ),
     )
 
     client_factory = quelware_imports_module.load_quelware_client_factory(
         client_mode="server",
-        standalone_unit_label=None,
         pat_path=str(pat_path),
     )
     context_manager = client_factory("worker-host", 61000)
@@ -93,135 +86,3 @@ def test_load_client_factory_binds_pat_for_server_mode(
     assert callable(pat_provider)
     assert pat_provider() == "dummy-token"
     assert captured == {"endpoint": "worker-host", "port": 61000}
-
-
-def test_load_client_factory_binds_unit_label_for_standalone_mode(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given standalone mode, loading the client factory should bind the configured unit label."""
-    captured: dict[str, object] = {}
-
-    def _create_standalone_client(
-        endpoint: str,
-        port: int,
-        *,
-        unit_label: str,
-    ) -> tuple[str, int, str]:
-        captured["endpoint"] = endpoint
-        captured["port"] = port
-        captured["unit_label"] = unit_label
-        return (endpoint, port, unit_label)
-
-    monkeypatch.setattr(
-        quelware_imports_module.importlib,
-        "import_module",
-        lambda _: SimpleNamespace(
-            create_quelware_client=object(),
-            create_standalone_client=_create_standalone_client,
-        ),
-    )
-
-    client_factory = quelware_imports_module.load_quelware_client_factory(
-        client_mode="standalone",
-        standalone_unit_label="quel3-02-a01",
-    )
-    context_manager = client_factory("worker-host", 61000)
-
-    assert context_manager == ("worker-host", 61000, "quel3-02-a01")
-    assert captured == {
-        "endpoint": "worker-host",
-        "port": 61000,
-        "unit_label": "quel3-02-a01",
-    }
-
-
-def test_load_client_factory_binds_pat_for_standalone_mode(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    """Given standalone mode with PAT path, loading the factory should pass a provider."""
-    captured: dict[str, object] = {}
-    pat_path = tmp_path / "pat.txt"
-    pat_path.write_text("dummy-token\n", encoding="utf-8")
-
-    def _create_standalone_client(
-        endpoint: str,
-        port: int,
-        *,
-        unit_label: str,
-        pat: Callable[[], str],
-    ) -> tuple[str, int, str]:
-        captured["endpoint"] = endpoint
-        captured["port"] = port
-        captured["unit_label"] = unit_label
-        captured["pat"] = pat
-        return (endpoint, port, unit_label)
-
-    monkeypatch.setattr(
-        quelware_imports_module.importlib,
-        "import_module",
-        lambda _: SimpleNamespace(
-            create_quelware_client=object(),
-            create_standalone_client=_create_standalone_client,
-        ),
-    )
-
-    client_factory = quelware_imports_module.load_quelware_client_factory(
-        client_mode="standalone",
-        standalone_unit_label="quel3-02-a01",
-        pat_path=str(pat_path),
-    )
-    context_manager = client_factory("worker-host", 61000)
-
-    assert context_manager == ("worker-host", 61000, "quel3-02-a01")
-    pat_provider = captured.pop("pat")
-    assert callable(pat_provider)
-    assert pat_provider() == "dummy-token"
-    assert captured == {
-        "endpoint": "worker-host",
-        "port": 61000,
-        "unit_label": "quel3-02-a01",
-    }
-
-
-def test_load_client_factory_suppresses_only_standalone_notice(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Standalone factory should suppress only the noisy testing notice."""
-
-    def _create_standalone_client(
-        endpoint: str,
-        port: int,
-        *,
-        unit_label: str,
-    ) -> tuple[str, int, str]:
-        del endpoint, port, unit_label
-        logging.getLogger("quelware_client.client._standalone_grpc").warning(
-            "NOTE: Standalone client is for testing purposes."
-        )
-        logging.getLogger("quelware_client.client._standalone_grpc").warning(
-            "another standalone warning"
-        )
-        return ("ok", 0, "unit")
-
-    monkeypatch.setattr(
-        quelware_imports_module.importlib,
-        "import_module",
-        lambda _: SimpleNamespace(
-            create_quelware_client=object(),
-            create_standalone_client=_create_standalone_client,
-        ),
-    )
-
-    client_factory = quelware_imports_module.load_quelware_client_factory(
-        client_mode="standalone",
-        standalone_unit_label="quel3-02-a01",
-    )
-
-    with caplog.at_level(logging.WARNING):
-        _ = client_factory("worker-host", 61000)
-
-    messages = [record.getMessage() for record in caplog.records]
-    assert "NOTE: Standalone client is for testing purposes." not in messages
-    assert "another standalone warning" in messages

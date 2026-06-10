@@ -179,6 +179,10 @@ class SystemManager:
         if backend_runtime_config is None:
             return {}
         kwargs: dict[str, Any] = {}
+        if "standalone_unit_label" in backend_runtime_config:
+            raise ValueError(
+                "QuEL-3 standalone runtime config `standalone_unit_label` is no longer supported."
+            )
         endpoint = SystemManager._get_runtime_config_value(
             backend_runtime_config,
             "quelware_endpoint",
@@ -193,10 +197,6 @@ class SystemManager:
             backend_runtime_config,
             "client_mode",
         )
-        standalone_unit_label = SystemManager._get_runtime_config_value(
-            backend_runtime_config,
-            "standalone_unit_label",
-        )
         quelware_pat_path = SystemManager._get_runtime_config_value(
             backend_runtime_config,
             "quelware_pat_path",
@@ -208,8 +208,6 @@ class SystemManager:
             kwargs["quelware_port"] = port
         if client_mode is not None:
             kwargs["client_mode"] = client_mode
-        if standalone_unit_label is not None:
-            kwargs["standalone_unit_label"] = standalone_unit_label
         if quelware_pat_path is not None:
             kwargs["quelware_pat_path"] = quelware_pat_path
         return kwargs

@@ -125,21 +125,18 @@ class Quel3ExecutionManager:
         quelware_port: int,
         sampling_period_ns: float,
         capture_decimation_factor: int,
-        client_mode: Quel3ClientMode = "server",
-        standalone_unit_label: str | None = None,
+        client_mode: str = "server",
         quelware_pat_path: str | None = None,
         session_manager: Quel3SessionManager | None = None,
     ) -> None:
         normalized_client_mode = validate_quelware_client_runtime(
             client_mode=client_mode,
-            standalone_unit_label=standalone_unit_label,
         )
         self._quelware_endpoint = quelware_endpoint
         self._quelware_port = quelware_port
         self._sampling_period_ns = sampling_period_ns
         self._capture_decimation_factor = capture_decimation_factor
         self._client_mode: Quel3ClientMode = normalized_client_mode
-        self._standalone_unit_label = standalone_unit_label
         self._quelware_pat_path = quelware_pat_path
         self._sequencer_builder = Quel3SequencerBuilder()
         self._session_manager = (
@@ -149,7 +146,6 @@ class Quel3ExecutionManager:
                 quelware_endpoint=quelware_endpoint,
                 quelware_port=quelware_port,
                 client_mode=normalized_client_mode,
-                standalone_unit_label=standalone_unit_label,
                 quelware_pat_path=quelware_pat_path,
             )
         )
@@ -173,11 +169,6 @@ class Quel3ExecutionManager:
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
         return self._client_mode
-
-    @property
-    def standalone_unit_label(self) -> str | None:
-        """Return configured standalone unit label."""
-        return self._standalone_unit_label
 
     @property
     def quelware_pat_path(self) -> str | None:
@@ -399,7 +390,6 @@ class Quel3ExecutionManager:
         resolved_payload = self._resolve_payload(
             payload=payload,
             resolver=resolver,
-            default_unit_label=self._standalone_unit_label,
         )
         return self._filter_runnable_payload(resolved_payload)
 
@@ -415,7 +405,6 @@ class Quel3ExecutionManager:
         alias_to_resource_id = self._resolve_alias_to_resource_id_map(
             resolver=resolver,
             aliases=aliases,
-            default_unit_label=self._standalone_unit_label,
         )
         instrument_resource_ids = self._resource_ids_for_aliases(
             alias_to_resource_id=alias_to_resource_id,
@@ -521,7 +510,6 @@ class Quel3ExecutionManager:
             instrument_info = self._find_instrument_info_by_alias(
                 resolver=resolver,
                 alias=alias,
-                default_unit_label=self._standalone_unit_label,
             )
             try:
                 driver = quelware_api.fixed_timeline_driver_factory(
@@ -691,7 +679,6 @@ class Quel3ExecutionManager:
         *,
         resolver: InstrumentResolverProtocol,
         aliases: Sequence[str],
-        default_unit_label: str | None = None,
     ) -> dict[str, ResourceIdProtocol]:
         """Resolve alias-to-resource-id mapping using InstrumentResolver."""
         alias_to_resource_id: dict[str, ResourceIdProtocol] = {}
@@ -699,7 +686,6 @@ class Quel3ExecutionManager:
             instrument_info = cls._find_instrument_info_by_alias(
                 resolver=resolver,
                 alias=alias,
-                default_unit_label=default_unit_label,
             )
             resource_id = instrument_info.id
             if isinstance(resource_id, str) and len(resource_id) > 0:
@@ -713,7 +699,6 @@ class Quel3ExecutionManager:
         *,
         payload: Quel3ExecutionPayload,
         resolver: InstrumentResolverProtocol,
-        default_unit_label: str | None = None,
     ) -> Quel3ExecutionPayload:
         """Resolve timeline bindings to concrete instrument aliases."""
         bindings = (
@@ -747,7 +732,6 @@ class Quel3ExecutionManager:
                 capture_port_binding=capture_port_binding,
                 has_events=len(timeline.events) > 0,
                 has_captures=len(timeline.capture_windows) > 0,
-                default_unit_label=default_unit_label,
             )
             alias_to_length_ns[alias] = max(
                 alias_to_length_ns.get(alias, 0.0),
@@ -846,7 +830,6 @@ class Quel3ExecutionManager:
         capture_port_binding: str | None,
         has_events: bool,
         has_captures: bool,
-        default_unit_label: str | None = None,
     ) -> str:
         """Resolve one target binding to one instrument alias with fail-fast rules."""
         del target, capture_port_binding, has_events, has_captures
@@ -858,7 +841,6 @@ class Quel3ExecutionManager:
                 instrument_info = cls._find_instrument_info_by_alias(
                     resolver=resolver,
                     alias=alias,
-                    default_unit_label=default_unit_label,
                 )
             except ValueError as exc:
                 raise ValueError(
@@ -876,14 +858,15 @@ class Quel3ExecutionManager:
         *,
         resolver: InstrumentResolverProtocol,
         alias: str,
-        default_unit_label: str | None = None,
     ) -> InstrumentInfoProtocol:
         """Find one instrument info, passing unit when the alias is unit-qualified."""
         local_alias, alias_unit_label = cls._split_unit_qualified_alias(alias)
-        unit_label = alias_unit_label or default_unit_label
-        if unit_label is not None:
+        if alias_unit_label is not None:
             try:
-                return resolver.find_inst_info_by_alias(local_alias, unit=unit_label)
+                return resolver.find_inst_info_by_alias(
+                    local_alias,
+                    unit=alias_unit_label,
+                )
             except TypeError:
                 return resolver.find_inst_info_by_alias(alias)
         return resolver.find_inst_info_by_alias(alias)
@@ -1025,7 +1008,6 @@ class Quel3ExecutionManager:
         )
         client_factory: QuelwareClientFactory = load_quelware_client_factory(
             client_mode=self._client_mode,
-            standalone_unit_label=self._standalone_unit_label,
             pat_path=self._quelware_pat_path,
         )
         instrument_resolver_factory: InstrumentResolverFactory = (
