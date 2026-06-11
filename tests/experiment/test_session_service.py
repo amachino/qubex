@@ -205,6 +205,7 @@ def test_configure_uses_system_manager_and_sync_hook(monkeypatch) -> None:
             {
                 "box_ids": ["Q2A"],
                 "target_labels": ["Q00", "RQ00"],
+                "confirm": True,
             },
         ),
     ]
