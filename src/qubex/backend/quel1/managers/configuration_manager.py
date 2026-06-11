@@ -78,15 +78,11 @@ class Quel1ConfigurationManager:
             reconnect=True,
         )
         if box.boxtype == "quel1se-riken8":
-            port_info = box.dump_port(port)
-            if port_info == {}:
-                raise ValueError("No ports information provided.")
-            if not (
-                port_info.get("direction") == "out"
-                and "lo_freq" in port_info
-                and "sideband" in port_info
-            ):
+            QUEL1SE_R8_MIXER_PORTS = frozenset({1, 2})
+            input_ports = box.get_input_ports()
+            if port not in (set(input_ports) | QUEL1SE_R8_MIXER_PORTS):
                 lo_freq_hz = None
+            if port not in QUEL1SE_R8_MIXER_PORTS:
                 vatt = None
                 sideband = None
         box.config_port(
