@@ -1289,6 +1289,36 @@ def test_backend_runtime_config_returns_selected_backend_section(
     assert loader.backend_runtime_config == runtime_config
 
 
+def test_experiment_config_returns_top_level_experiment_section(
+    tmp_path: Path,
+) -> None:
+    """Given experiment settings, when loading, then ConfigLoader exposes that section."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    experiment_config = {"sweep_execution": "batch"}
+
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL1,
+            "experiment": experiment_config,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    loaded_config = loader.experiment_config
+    loaded_config["sweep_execution"] = "sequential"
+
+    assert loaded_config != loader.experiment_config
+    assert loader.experiment_config == experiment_config
+    assert loader.backend_runtime_config == {}
+
+
 def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
     """Given quel3 backend, when loading, then readout ports are configured without LO."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)

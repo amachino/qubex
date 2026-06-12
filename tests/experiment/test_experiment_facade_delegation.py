@@ -926,6 +926,7 @@ def test_sweep_parameter_delegates_legacy_shot_arguments_to_measurement_service(
                 "readout_post_margin": None,
                 "plot": None,
                 "enable_tqdm": None,
+                "sweep_execution": None,
                 "title": None,
                 "xlabel": None,
                 "ylabel": None,
@@ -933,6 +934,49 @@ def test_sweep_parameter_delegates_legacy_shot_arguments_to_measurement_service(
                 "yaxis_type": None,
                 "shots": 32,
                 "interval": 44.0,
+            },
+        )
+    ]
+
+
+def test_sweep_parameter_delegates_sweep_execution_to_measurement_service() -> None:
+    """Given batch sweep execution, when sweep_parameter is called, then the option is delegated."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+    sequence = cast(Any, lambda value: {"Q00": [value + 0.0j]})
+
+    result = exp.sweep_parameter(
+        sequence=sequence,
+        sweep_range=[0.1, 0.2],
+        sweep_execution="batch",
+    )
+
+    assert result == "sweep_parameter_result"
+    assert measurement_stub.calls == [
+        (
+            "sweep_parameter",
+            {
+                "sequence": sequence,
+                "sweep_range": [0.1, 0.2],
+                "repetitions": None,
+                "frequencies": None,
+                "initial_states": None,
+                "rabi_level": None,
+                "n_shots": None,
+                "shot_interval": None,
+                "readout_amplitudes": None,
+                "readout_duration": None,
+                "readout_pre_margin": None,
+                "readout_post_margin": None,
+                "plot": None,
+                "enable_tqdm": None,
+                "sweep_execution": "batch",
+                "title": None,
+                "xlabel": None,
+                "ylabel": None,
+                "xaxis_type": None,
+                "yaxis_type": None,
             },
         )
     ]
