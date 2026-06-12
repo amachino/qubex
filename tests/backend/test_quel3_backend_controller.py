@@ -778,6 +778,88 @@ def test_execute_resolves_unit_prefixed_alias_binding(
     assert "quel3-02-a01:Q00" in result.data
 
 
+def test_execute_rejects_invalid_payload_before_opening_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given invalid payload bindings, execute should fail before session setup."""
+    payload = _make_payload()
+    base_timeline = payload.fixed_timelines["alias-rq00"]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "RQ00": replace(base_timeline, frequency_hz=6.0e9),
+            "RQ01": replace(base_timeline, frequency_hz=6.1e9),
+        },
+        instrument_bindings={
+            "RQ00": "alias:quel3-02-a01:Q00",
+            "RQ01": "alias:quel3-02-a01:Q00",
+        },
+    )
+    manager = Quel3ExecutionManager(
+        runtime_config=Quel3RuntimeConfig(),
+        sampling_period_ns=0.4,
+        capture_decimation_factor=4,
+    )
+    create_session_calls: list[tuple[str, ...]] = []
+    driver_factory_calls = 0
+
+    class _UnitAwareResolver:
+        async def refresh(self, client: object) -> None:
+            del client
+
+        def resolve(self, aliases: list[str]) -> list[str]:
+            return aliases
+
+        def find_inst_info_by_alias(
+            self,
+            alias: str,
+            *,
+            unit: str | None = None,
+        ) -> _FakeInstrumentInfo:
+            if (alias, unit) != ("Q00", "quel3-02-a01"):
+                raise ValueError(alias)
+            return _FakeInstrumentInfo(
+                id="inst-q00",
+                port_id="quel3-02-a01:tx_p04",
+                definition=_FakeInstrumentDefinition(
+                    alias="Q00",
+                    role="TRANSMITTER",
+                ),
+            )
+
+    class _OrderProbeClient(_FakeClient):
+        def create_session(self, resource_ids: list[str]) -> _FakeSession:
+            create_session_calls.append(tuple(resource_ids))
+            return super().create_session(resource_ids)
+
+    def _create_driver(
+        session: object,
+        instrument_info: object,
+    ) -> _FakeInstrumentDriver:
+        nonlocal driver_factory_calls
+        del session, instrument_info
+        driver_factory_calls += 1
+        return _FakeInstrumentDriver()
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=lambda endpoint, port: _OrderProbeClient(_FakeSession()),
+            instrument_resolver_factory=_UnitAwareResolver,
+            fixed_timeline_driver_factory=_create_driver,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Conflicting frequency"):
+        asyncio.run(
+            manager.execute_async(request=BackendExecutionRequest(payload=payload))
+        )
+
+    assert create_session_calls == []
+    assert driver_factory_calls == 0
+
+
 @dataclass(frozen=True)
 class _FakeInstrumentConfig:
     sampling_period_fs: int
