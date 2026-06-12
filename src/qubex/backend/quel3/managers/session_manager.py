@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
+from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 
 from qubex.backend.quel3.infra.quelware_imports import (
@@ -17,6 +18,7 @@ from qubex.backend.quel3.interfaces import (
     SessionProtocol,
 )
 from qubex.backend.quel3.managers.session_workarounds import (
+    QuelwareSessionError,
     enter_quelware_session_with_resource_retry,
     quelware_session_token,
 )
@@ -40,9 +42,11 @@ class Quel3SessionManager:
         self._quelware_port = quelware_port
         self._client_mode: Quel3ClientMode = normalized_client_mode
         self._quelware_pat_path = quelware_pat_path
-        self._client_cm = None
+        self._client_cm: AbstractAsyncContextManager[QuelwareClientProtocol] | None = (
+            None
+        )
         self._client: QuelwareClientProtocol | None = None
-        self._session_cm = None
+        self._session_cm: AbstractAsyncContextManager[SessionProtocol] | None = None
         self._session: SessionProtocol | None = None
         self._session_token: str | None = None
         self._resource_ids: tuple[ResourceIdProtocol, ...] | None = None
@@ -151,13 +155,26 @@ class Quel3SessionManager:
         self._resource_ids = normalized_resource_ids
         return self._session
 
+    async def reopen_session(
+        self,
+        resource_ids: Collection[ResourceIdProtocol] | None = None,
+    ) -> SessionProtocol | None:
+        """Close the current session and open a replacement on the same client."""
+        session_cm, session_token = self._detach_session_context()
+        if session_cm is not None:
+            try:
+                await session_cm.__aexit__(None, None, None)
+            except Exception as exc:
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session close failed before reopening",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+        return await self.open(resource_ids)
+
     async def close(self) -> None:
         """Close any open quelware session and client contexts."""
-        session_cm = self._session_cm
-        self._session_cm = None
-        self._session = None
-        self._session_token = None
-        self._resource_ids = None
+        session_cm, _ = self._detach_session_context()
         try:
             if session_cm is not None:
                 await session_cm.__aexit__(None, None, None)
@@ -168,6 +185,18 @@ class Quel3SessionManager:
 
             if client_cm is not None:
                 await client_cm.__aexit__(None, None, None)
+
+    def _detach_session_context(
+        self,
+    ) -> tuple[AbstractAsyncContextManager[SessionProtocol] | None, str]:
+        """Clear stored session state and return the previous context."""
+        session_cm = self._session_cm
+        session_token = self._session_token or quelware_session_token(self._session)
+        self._session_cm = None
+        self._session = None
+        self._session_token = None
+        self._resource_ids = None
+        return session_cm, session_token
 
     async def __aenter__(self) -> Quel3SessionManager:
         """Open the underlying quelware client context and return self."""
