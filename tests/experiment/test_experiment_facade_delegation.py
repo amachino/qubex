@@ -793,6 +793,7 @@ def test_configure_delegates_to_session_service() -> None:
                 "box_ids": "Q2A",
                 "exclude": "Q00",
                 "mode": "ge-cr-cr",
+                "confirm": True,
             },
         )
     ]
