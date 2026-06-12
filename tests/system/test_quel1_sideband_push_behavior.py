@@ -178,6 +178,61 @@ def test_sync_capture_port_passes_sideband_none_to_backend() -> None:
     assert read_in_call["sideband"] is None
 
 
+def test_sync_box_configures_capture_ports_before_generator_ports() -> None:
+    """Given QuEL-1 box sync, capture ports are configured before generator ports."""
+
+    class _BackendController:
+        def __init__(self) -> None:
+            self.config_port_calls: list[dict[str, Any]] = []
+            self.config_channel_calls: list[dict[str, Any]] = []
+            self.config_runit_calls: list[dict[str, Any]] = []
+
+        def config_port(self, **kwargs: Any) -> None:
+            self.config_port_calls.append(dict(kwargs))
+
+        def config_channel(self, **kwargs: Any) -> None:
+            self.config_channel_calls.append(dict(kwargs))
+
+        def config_runit(self, **kwargs: Any) -> None:
+            self.config_runit_calls.append(dict(kwargs))
+
+    backend_controller = _BackendController()
+    synchronizer = Quel1SystemSynchronizer(
+        backend_controller=cast(Any, backend_controller)
+    )
+    box = Box.new(
+        id="B0",
+        name="BOX0",
+        type="qube-riken-b",
+        address="127.0.0.1",
+        adapter="A0",
+        port_numbers=[2],
+    )
+    ctrl_port = box.get_port(2)
+    monitor_port = box.get_port(4)
+    assert isinstance(ctrl_port, GenPort)
+    assert isinstance(monitor_port, CapPort)
+
+    ctrl_port.lo_freq = 11_000_000_000
+    ctrl_port.cnco_freq = 2_179_687_500
+    ctrl_port.sideband = "L"
+    ctrl_port.vatt = None
+    ctrl_port.fullscale_current = None
+    ctrl_port.rfswitch = "pass"
+    ctrl_port.channels[0].fnco_freq = 0
+    monitor_port.lo_freq = 9_000_000_000
+    monitor_port.cnco_freq = 1_500_000_000
+    monitor_port.rfswitch = "open"
+    monitor_port.channels[0].fnco_freq = 0
+
+    synchronizer.sync_box_to_hardware(cast(Any, box))
+
+    config_port_order = [call["port"] for call in backend_controller.config_port_calls]
+    assert config_port_order.index(monitor_port.number) < config_port_order.index(
+        ctrl_port.number
+    )
+
+
 def test_sync_model_skips_clockmaster_for_single_box_without_address() -> None:
     """Given one QuEL-1 box without clock master, when syncing model, then clock master setup is skipped."""
 
