@@ -334,6 +334,11 @@ class Quel3ExecutionManager:
         parallel: bool,
     ) -> list[Quel3BackendExecutionResult]:
         """Execute one payload batch with per-payload quelware sessions."""
+        # Batch flow:
+        # 1. Open one quelware client and refresh the instrument resolver once.
+        # 2. Resolve instrument info for each precomputed payload plan.
+        # 3. Reopen a per-payload session for the resolved instrument resource IDs.
+        # 4. Execute the resolved payload and collect results.
         await self._session_manager.open(client_factory=quelware_api.client_factory)
         resolver = quelware_api.instrument_resolver_factory()
         await resolver.refresh(self._session_manager.client)
