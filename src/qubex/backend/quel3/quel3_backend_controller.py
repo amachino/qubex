@@ -391,7 +391,7 @@ class Quel3BackendController(BackendController):
         clock_health_checks: bool | None = None,
         parallel: bool = True,
     ) -> list[BackendExecutionResult]:
-        """Execute multiple backend requests while reusing one QuEL-3 session."""
+        """Execute multiple backend requests as one resolved QuEL-3 batch."""
         del execution_mode, clock_health_checks
         return await self._execution_manager.execute_batch_async(
             requests=tuple(requests),
