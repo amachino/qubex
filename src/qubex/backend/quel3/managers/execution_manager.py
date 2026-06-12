@@ -13,11 +13,7 @@ from typing import TypeGuard, TypeVar, cast
 import numpy as np
 
 from qubex.backend.quel3.builders.sequencer_builder import Quel3SequencerBuilder
-from qubex.backend.quel3.infra.quelware_imports import (
-    Quel3ClientMode,
-    load_quelware_client_factory,
-    validate_quelware_client_runtime,
-)
+from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces import (
     CaptureModeNamespaceProtocol,
     CaptureModeProtocol,
@@ -36,6 +32,7 @@ from qubex.backend.quel3.interfaces import (
     SetCaptureModeFactory,
     SetFrequencyFactory,
 )
+from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_manager import Quel3SessionManager
 from qubex.backend.quel3.managers.session_workarounds import (
     QuelwareSessionError,
@@ -122,44 +119,37 @@ class Quel3ExecutionManager:
     def __init__(
         self,
         *,
-        quelware_endpoint: str,
-        quelware_port: int,
+        runtime_config: Quel3RuntimeConfig | None = None,
         sampling_period_ns: float,
         capture_decimation_factor: int,
-        client_mode: str = "server",
-        quelware_pat_path: str | None = None,
         session_manager: Quel3SessionManager | None = None,
     ) -> None:
-        normalized_client_mode = validate_quelware_client_runtime(
-            client_mode=client_mode,
-        )
-        self._quelware_endpoint = quelware_endpoint
-        self._quelware_port = quelware_port
+        self._runtime_config = runtime_config or Quel3RuntimeConfig()
         self._sampling_period_ns = sampling_period_ns
         self._capture_decimation_factor = capture_decimation_factor
-        self._client_mode: Quel3ClientMode = normalized_client_mode
-        self._quelware_pat_path = quelware_pat_path
         self._sequencer_builder = Quel3SequencerBuilder()
         self._session_manager = (
             session_manager
             if session_manager is not None
             else Quel3SessionManager(
-                quelware_endpoint=quelware_endpoint,
-                quelware_port=quelware_port,
-                client_mode=normalized_client_mode,
-                quelware_pat_path=quelware_pat_path,
+                runtime_config=self._runtime_config,
             )
         )
 
     @property
+    def runtime_config(self) -> Quel3RuntimeConfig:
+        """Return the shared quelware runtime config."""
+        return self._runtime_config
+
+    @property
     def quelware_endpoint(self) -> str:
         """Return quelware endpoint used for execution."""
-        return self._quelware_endpoint
+        return self._runtime_config.endpoint
 
     @property
     def quelware_port(self) -> int:
         """Return quelware port used for execution."""
-        return self._quelware_port
+        return self._runtime_config.port
 
     @property
     def sampling_period_ns(self) -> float:
@@ -169,12 +159,12 @@ class Quel3ExecutionManager:
     @property
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
-        return self._client_mode
+        return self._runtime_config.client_mode_value
 
     @property
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
-        return self._quelware_pat_path
+        return self._runtime_config.pat_path
 
     def execute_sync(
         self,
@@ -1076,9 +1066,8 @@ class Quel3ExecutionManager:
         driver_module = importlib.import_module(
             "quelware_client.core.instrument_driver"
         )
-        client_factory: QuelwareClientFactory = load_quelware_client_factory(
-            client_mode=self._client_mode,
-            pat_path=self._quelware_pat_path,
+        client_factory: QuelwareClientFactory = (
+            self._runtime_config.load_client_factory()
         )
         instrument_resolver_factory: InstrumentResolverFactory = (
             resolver_module.InstrumentResolver

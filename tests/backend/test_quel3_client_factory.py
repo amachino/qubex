@@ -8,6 +8,13 @@ from types import SimpleNamespace
 import pytest
 
 from qubex.backend.quel3.infra import quelware_imports as quelware_imports_module
+from qubex.backend.quel3.managers import (
+    Quel3ConfigurationManager,
+    Quel3ConnectionManager,
+    Quel3ExecutionManager,
+    Quel3RuntimeConfig,
+    Quel3SessionManager,
+)
 
 
 def test_validate_client_runtime_rejects_standalone_mode() -> None:
@@ -86,3 +93,38 @@ def test_load_client_factory_binds_pat_for_server_mode(
     assert callable(pat_provider)
     assert pat_provider() == "dummy-token"
     assert captured == {"endpoint": "worker-host", "port": 61000}
+
+
+def test_runtime_config_normalizes_client_runtime() -> None:
+    """Given mixed-case runtime input, runtime config should expose canonical values."""
+    config = Quel3RuntimeConfig(
+        endpoint="worker-host",
+        port=61000,
+        client_mode=" Server ",
+        pat_path="/run/secrets/quelware-pat",
+    )
+
+    assert config.endpoint == "worker-host"
+    assert config.port == 61000
+    assert config.client_mode == "server"
+    assert config.pat_path == "/run/secrets/quelware-pat"
+
+
+def test_managers_accept_shared_runtime_config() -> None:
+    """Given one runtime config, all QuEL-3 managers should expose that shared config."""
+    config = Quel3RuntimeConfig(endpoint="worker-host", port=61000)
+    session_manager = Quel3SessionManager(runtime_config=config)
+
+    managers = (
+        Quel3ConnectionManager(runtime_config=config),
+        session_manager,
+        Quel3ConfigurationManager(runtime_config=config),
+        Quel3ExecutionManager(
+            runtime_config=config,
+            sampling_period_ns=0.4,
+            capture_decimation_factor=4,
+            session_manager=session_manager,
+        ),
+    )
+
+    assert all(manager.runtime_config is config for manager in managers)

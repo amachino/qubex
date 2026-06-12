@@ -2,7 +2,7 @@
 
 from .builders import Quel3SequencerBuilder
 from .infra import Quel3ClientMode
-from .managers import Quel3ConfigurationManager
+from .managers import Quel3ConfigurationManager, Quel3RuntimeConfig
 from .models import (
     InstrumentDeployRequest,
     Quel3BackendExecutionResult,
@@ -25,6 +25,7 @@ __all__ = [
     "Quel3ConfigurationManager",
     "Quel3ExecutionPayload",
     "Quel3FixedTimeline",
+    "Quel3RuntimeConfig",
     "Quel3SequencerBuilder",
     "Quel3Waveform",
     "Quel3WaveformEvent",

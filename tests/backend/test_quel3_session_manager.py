@@ -136,10 +136,7 @@ def test_open_retries_transient_resource_allocation_failure(
     client = _FakeClient(successful_session=session)
     client_context = _FakeClientContext(client)
     sleep_delays = _patch_session_retry_sleep(monkeypatch)
-    manager = Quel3SessionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3SessionManager()
 
     async def _run() -> object:
         opened_session = await manager.open(
@@ -202,10 +199,7 @@ def test_open_retries_when_failed_session_token_is_unavailable(
     client = _FakeClientWithUnopenedFailure()
     client_context = _FakeClientContext(cast(Any, client))
     _patch_session_retry_sleep(monkeypatch)
-    manager = Quel3SessionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3SessionManager()
 
     async def _run() -> object:
         opened_session = await manager.open(
@@ -239,10 +233,7 @@ def test_open_logs_session_token_on_session_create_failure(
     client = _FakeClient(successful_session=session, failures_before_success=1)
     client_context = _FakeClientContext(client)
     _patch_session_retry_sleep(monkeypatch)
-    manager = Quel3SessionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3SessionManager()
 
     async def _run() -> None:
         await manager.open(
@@ -266,10 +257,7 @@ def test_open_captures_session_token_on_success(
     session = _SuccessfulSession(session_id="opened-session")
     client = _FakeClient(successful_session=session, failures_before_success=0)
     client_context = _FakeClientContext(client)
-    manager = Quel3SessionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3SessionManager()
 
     async def _run() -> tuple[str | None, str | None]:
         await manager.open(
@@ -319,10 +307,7 @@ def test_open_retries_transient_unit_unavailable_failure(
     )
     client_context = _FakeClientContext(client)
     sleep_delays = _patch_session_retry_sleep(monkeypatch)
-    manager = Quel3SessionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3SessionManager()
 
     async def _run() -> object:
         opened_session = await manager.open(
@@ -357,10 +342,7 @@ def test_open_stops_after_session_create_retry_limit(
     client_context = _FakeClientContext(client)
     sleep_delays = _patch_session_retry_sleep(monkeypatch)
     expected_session_id = "failed-create-session-4"
-    manager = Quel3SessionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3SessionManager()
 
     async def _run() -> QuelwareSessionError:
         with pytest.raises(
@@ -405,10 +387,7 @@ def test_open_succeeds_on_final_session_create_retry(
     )
     client_context = _FakeClientContext(client)
     sleep_delays = _patch_session_retry_sleep(monkeypatch)
-    manager = Quel3SessionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3SessionManager()
 
     async def _run() -> object:
         opened_session = await manager.open(
