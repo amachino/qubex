@@ -226,13 +226,47 @@ def _get_hpi_pulse(exp: Experiment, target: str) -> Waveform:
     pulse_service = getattr(exp, "pulse", None)
     get_hpi_pulse = getattr(pulse_service, "get_hpi_pulse", None)
     if callable(get_hpi_pulse):
-        return get_hpi_pulse(target)
+        return _require_waveform(
+            get_hpi_pulse(target),
+            source="exp.pulse.get_hpi_pulse()",
+            target=target,
+        )
 
     hpi_pulses = getattr(exp, "hpi_pulse", None)
     if isinstance(hpi_pulses, Mapping) and target in hpi_pulses:
-        return hpi_pulses[target]
+        return _require_waveform(
+            hpi_pulses[target],
+            source="exp.hpi_pulse",
+            target=target,
+        )
 
     raise ValueError(f"No half-pi pulse is available for target `{target}`.")
+
+
+def _require_waveform(value: object, *, source: str, target: str) -> Waveform:
+    """Return ``value`` after checking that it follows the Qubex waveform API."""
+    if isinstance(value, Waveform):
+        return value
+    raise TypeError(
+        f"{source} for target `{target}` must return a Waveform, "
+        f"got {type(value).__name__}."
+    )
+
+
+def _try_get_waveform(
+    provider: object,
+    *,
+    target: str,
+    source: str,
+) -> Waveform | None:
+    """Call a dynamic pulse provider and return a validated waveform."""
+    if not callable(provider):
+        return None
+    try:
+        value = provider(target)
+    except Exception:
+        return None
+    return _require_waveform(value, source=source, target=target)
 
 
 def _resolve_pi_pulse(
@@ -242,19 +276,37 @@ def _resolve_pi_pulse(
 ) -> Waveform:
     """Return the CPMG pi pulse for ``target``."""
     if pi_pulses is not None and target in pi_pulses:
-        return pi_pulses[target]
+        return _require_waveform(
+            pi_pulses[target],
+            source="pi_pulses",
+            target=target,
+        )
 
     pulse_service = getattr(exp, "pulse", None)
-    get_pi_pulse = getattr(pulse_service, "get_pi_pulse", None)
-    if callable(get_pi_pulse):
-        try:
-            return get_pi_pulse(target).shifted(np.pi / 2)
-        except Exception:
-            get_pi_pulse = None
+    pi_pulse = _try_get_waveform(
+        getattr(pulse_service, "x180", None),
+        target=target,
+        source="exp.pulse.x180()",
+    )
+    if pi_pulse is not None:
+        return pi_pulse.shifted(np.pi / 2)
 
-    x180 = getattr(exp, "x180", None)
-    if callable(x180):
-        return x180(target).shifted(np.pi / 2)
+    pi_pulse = _try_get_waveform(
+        getattr(exp, "x180", None),
+        target=target,
+        source="exp.x180()",
+    )
+    if pi_pulse is not None:
+        return pi_pulse.shifted(np.pi / 2)
+
+    get_pi_pulse = getattr(pulse_service, "get_pi_pulse", None)
+    pi_pulse = _try_get_waveform(
+        get_pi_pulse,
+        target=target,
+        source="exp.pulse.get_pi_pulse()",
+    )
+    if pi_pulse is not None:
+        return pi_pulse.shifted(np.pi / 2)
 
     return _get_hpi_pulse(exp, target).repeated(2).shifted(np.pi / 2)
 
