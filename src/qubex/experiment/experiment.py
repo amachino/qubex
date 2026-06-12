@@ -802,12 +802,14 @@ class Experiment:
         box_ids: str | list[str] | None = None,
         exclude: str | list[str] | None = None,
         mode: ConfigurationMode | None = None,
+        confirm: bool = True,
     ) -> None:
         """Configure hardware targets and push settings to devices."""
         return self.session_service.configure(
             box_ids=box_ids,
             exclude=exclude,
             mode=mode,
+            confirm=confirm,
         )
 
     def reload(self) -> None:
