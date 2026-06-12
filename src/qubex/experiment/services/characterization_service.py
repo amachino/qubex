@@ -65,6 +65,7 @@ _CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
 _DETUNED_RABI_PRUNING_R2_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.3)
 _DETUNED_RABI_MIN_R2_IMPROVEMENT = 0.01
 _READOUT_FREQUENCY_MIN_FIT_R2 = 0.9
+_ReadoutFrequencyFitFunc = Literal["lorentzian", "double_lorentzian"]
 
 
 @dataclass(frozen=True)
@@ -296,6 +297,178 @@ def _is_low_quality_readout_frequency_fit(fit_result: Any) -> bool:
     except (TypeError, ValueError):
         return True
     return not np.isfinite(r2_value) or r2_value < _READOUT_FREQUENCY_MIN_FIT_R2
+
+
+def _estimate_readout_lorentzian_width(
+    frequencies: NDArray,
+    values: NDArray,
+    *,
+    baseline: float,
+    amplitude: float,
+) -> float:
+    """Estimate a Lorentzian half width from the measured half maximum."""
+    frequency_span = float(np.max(frequencies) - np.min(frequencies))
+    min_width = float(np.finfo(np.float64).eps)
+    fallback_width = float(max(frequency_span / 8, min_width))
+    if amplitude <= 0 or not np.isfinite(amplitude):
+        return fallback_width
+
+    half_max = baseline + amplitude / 2
+    half_max_mask = values >= half_max
+    if np.count_nonzero(half_max_mask) < 2:
+        return fallback_width
+
+    full_width = float(np.ptp(frequencies[half_max_mask]))
+    return float(max(full_width / 2, min_width))
+
+
+def _find_readout_double_peak_indices(values: NDArray) -> tuple[int, int]:
+    """Find two separated peak indices for a double-Lorentzian initial guess."""
+    if values.size < 2:
+        return 0, 0
+
+    peak_index = int(np.argmax(values))
+    min_separation = max(1, values.size // 10)
+    local_peak_indices = [
+        index
+        for index in range(values.size)
+        if (
+            (index == 0 or values[index] >= values[index - 1])
+            and (index == values.size - 1 or values[index] >= values[index + 1])
+        )
+    ]
+    candidate_indices = sorted(
+        (
+            index
+            for index in local_peak_indices
+            if abs(index - peak_index) >= min_separation
+        ),
+        key=lambda index: values[index],
+        reverse=True,
+    )
+    if not candidate_indices:
+        candidate_indices = sorted(
+            (
+                index
+                for index in range(values.size)
+                if abs(index - peak_index) >= min_separation
+            ),
+            key=lambda index: values[index],
+            reverse=True,
+        )
+    if not candidate_indices:
+        return peak_index, peak_index
+    return peak_index, int(candidate_indices[0])
+
+
+def _make_readout_double_lorentzian_initial_guess(
+    frequencies: NDArray,
+    values: NDArray,
+) -> tuple[float, float, float, float, float, float, float]:
+    """Build an initial guess for a double-Lorentzian readout fit."""
+    baseline = float(np.percentile(values, 20))
+    first_index, second_index = _find_readout_double_peak_indices(values)
+    frequency_span = float(np.max(frequencies) - np.min(frequencies))
+    fallback_width = float(max(frequency_span / 12, float(np.finfo(np.float64).eps)))
+    first_amplitude = float(
+        max(float(values[first_index] - baseline), float(np.finfo(np.float64).eps))
+    )
+    second_amplitude = float(
+        max(float(values[second_index] - baseline), float(np.finfo(np.float64).eps))
+    )
+    first_width = _estimate_readout_lorentzian_width(
+        frequencies,
+        values,
+        baseline=baseline,
+        amplitude=first_amplitude,
+    )
+    second_width = _estimate_readout_lorentzian_width(
+        frequencies,
+        values,
+        baseline=baseline,
+        amplitude=second_amplitude,
+    )
+    return (
+        first_amplitude,
+        float(frequencies[first_index]),
+        min(first_width, fallback_width),
+        second_amplitude,
+        float(frequencies[second_index]),
+        min(second_width, fallback_width),
+        baseline,
+    )
+
+
+def _make_readout_lorentzian_initial_guess(
+    frequencies: NDArray,
+    values: NDArray,
+    *,
+    peak_frequency: float,
+) -> tuple[float, float, float, float]:
+    """Build an initial guess for a single-Lorentzian readout fit."""
+    baseline = float(np.median(values))
+    frequency_span = float(np.max(frequencies) - np.min(frequencies))
+    min_width = float(np.finfo(np.float64).eps)
+    width = float(max(frequency_span / 4, min_width))
+    amplitude = float(max(float(np.max(values) - baseline), min_width))
+    return amplitude, peak_frequency, width, baseline
+
+
+def _fit_readout_frequency_response(
+    *,
+    target: str,
+    frequencies: NDArray,
+    values: NDArray,
+    peak_frequency: float,
+    fit_func: _ReadoutFrequencyFitFunc,
+    plot: bool,
+) -> FitResult:
+    """Fit readout-frequency response data with the selected model."""
+    frequency_min = float(np.min(frequencies))
+    frequency_max = float(np.max(frequencies))
+    f0_lower = float(np.nextafter(frequency_min, -np.inf))
+    f0_upper = float(np.nextafter(frequency_max, np.inf))
+
+    if fit_func == "double_lorentzian":
+        return fitting.fit_double_lorentzian(
+            target=target,
+            x=frequencies,
+            y=values,
+            p0=_make_readout_double_lorentzian_initial_guess(frequencies, values),
+            bounds=(
+                (0, f0_lower, 0, 0, f0_lower, 0, -np.inf),
+                (
+                    np.inf,
+                    f0_upper,
+                    np.inf,
+                    np.inf,
+                    f0_upper,
+                    np.inf,
+                    np.inf,
+                ),
+            ),
+            plot=plot,
+            title="Readout frequency calibration",
+            xlabel="Readout frequency (GHz)",
+        )
+
+    return fitting.fit_lorentzian(
+        target=target,
+        x=frequencies,
+        y=values,
+        p0=_make_readout_lorentzian_initial_guess(
+            frequencies,
+            values,
+            peak_frequency=peak_frequency,
+        ),
+        bounds=(
+            (0, f0_lower, 0, -np.inf),
+            (np.inf, f0_upper, np.inf, np.inf),
+        ),
+        plot=plot,
+        title="Readout frequency calibration",
+        xlabel="Readout frequency (GHz)",
+    )
 
 
 def _make_readout_frequency_fallback_figure(
@@ -1320,6 +1493,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
+        fit_func: Literal["lorentzian", "double_lorentzian"] | None = None,
     ) -> Result:
         """Calibrate readout frequency for targets."""
         if shots is None:
@@ -1330,6 +1504,12 @@ class CharacterizationService:
             plot = True
         if save_image is None:
             save_image = False
+        if fit_func is None:
+            fit_func = "double_lorentzian"
+        if fit_func not in {"lorentzian", "double_lorentzian"}:
+            raise ValueError(
+                "fit_func must be either 'lorentzian' or 'double_lorentzian'."
+            )
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1371,15 +1551,15 @@ class CharacterizationService:
                     interval=interval,
                     plot=False,
                 )
-                for qubit, data in rabi_result.data.items():
-                    rabi_amplitude = data.rabi_param.amplitude
+                for qubit, rabi_data in rabi_result.data.items():
+                    rabi_amplitude = rabi_data.rabi_param.amplitude
                     result[qubit].append(rabi_amplitude)
 
         # restore the original readout amplitudes
         self.ctx.params.readout_amplitude = original_readout_amplitudes
 
-        fit_data = {}
-        figs = {}
+        fit_data: dict[str, float] = {}
+        figs: dict[str, go.Figure] = {}
         for target, values in result.items():
             freq = self.ctx.resonators[target].frequency
             values_array = np.array(values, dtype=np.float64)
@@ -1397,32 +1577,14 @@ class CharacterizationService:
                 peak_index = int(np.argmax(fit_values))
                 peak_frequency = float(fit_frequencies[peak_index])
                 peak_value = float(fit_values[peak_index])
-                y_med = float(np.median(fit_values))
-                frequency_min = float(np.min(fit_frequencies))
-                frequency_max = float(np.max(fit_frequencies))
-                f0_lower = float(np.nextafter(frequency_min, -np.inf))
-                f0_upper = float(np.nextafter(frequency_max, np.inf))
-                gamma_guess = max(
-                    (frequency_max - frequency_min) / 4,
-                    np.finfo(np.float64).eps,
-                )
-                A_guess = max(
-                    float(np.max(fit_values) - y_med),
-                    np.finfo(np.float64).eps,
-                )
                 try:
-                    fit_result = fitting.fit_lorentzian(
+                    fit_result = _fit_readout_frequency_response(
                         target=target,
-                        x=fit_frequencies,
-                        y=fit_values,
-                        p0=(A_guess, peak_frequency, gamma_guess, y_med),
-                        bounds=(
-                            (0, f0_lower, 0, -np.inf),
-                            (np.inf, f0_upper, np.inf, np.inf),
-                        ),
+                        frequencies=fit_frequencies,
+                        values=fit_values,
+                        peak_frequency=peak_frequency,
+                        fit_func=fit_func,
                         plot=plot,
-                        title="Readout frequency calibration",
-                        xlabel="Readout frequency (GHz)",
                     )
                 except ValueError as exc:
                     logger.warning(
@@ -1435,10 +1597,13 @@ class CharacterizationService:
                 _is_low_quality_readout_frequency_fit(fit_result)
                 or "f0" not in fit_result
             ):
+                readout_frequency = np.nan
                 if peak_frequency is not None:
-                    fit_data[target] = peak_frequency
+                    readout_frequency = peak_frequency
             elif "f0" in fit_result:
-                fit_data[target] = fit_result["f0"]
+                readout_frequency = float(fit_result["f0"])
+            else:
+                readout_frequency = np.nan
 
             fig = fit_result.figure
             if fig is None:
@@ -1453,16 +1618,16 @@ class CharacterizationService:
                     fig.show(
                         config=viz.get_config(filename=f"readout_frequency_{target}")
                     )
+            if fig is not None and save_image:
+                viz.save_figure(
+                    fig,
+                    name=f"readout_frequency_{target}",
+                    width=600,
+                    height=300,
+                )
+            fit_data[target] = float(readout_frequency)
             if fig is not None:
                 figs[target] = fig
-
-                if save_image:
-                    viz.save_figure(
-                        fig,
-                        name=f"readout_frequency_{target}",
-                        width=600,
-                        height=300,
-                    )
 
         print("\nResults\n-------")
         for target, freq in fit_data.items():

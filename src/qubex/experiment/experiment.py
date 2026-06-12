@@ -802,12 +802,14 @@ class Experiment:
         box_ids: str | list[str] | None = None,
         exclude: str | list[str] | None = None,
         mode: ConfigurationMode | None = None,
+        confirm: bool = True,
     ) -> None:
         """Configure hardware targets and push settings to devices."""
         return self.session_service.configure(
             box_ids=box_ids,
             exclude=exclude,
             mode=mode,
+            confirm=confirm,
         )
 
     def reload(self) -> None:
@@ -4434,6 +4436,7 @@ class Experiment:
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
+        fit_func: Literal["lorentzian", "double_lorentzian"] | None = None,
     ) -> Result:
         """Calibrate readout frequencies for targets."""
         return self.characterization_service.calibrate_readout_frequency(
@@ -4444,6 +4447,7 @@ class Experiment:
             shots=n_shots,
             interval=shot_interval,
             plot=plot,
+            fit_func=fit_func,
         )
 
     def t1_experiment(
