@@ -461,15 +461,7 @@ class Quel3ExecutionManager:
         capture_sampling_period_ns: float | None = None
         for alias in aliases:
             driver = alias_to_driver[alias]
-            sampling_period_fs = getattr(
-                driver.instrument_config,
-                "sampling_period_fs",
-                None,
-            )
-            if not isinstance(sampling_period_fs, int):
-                raise TypeError(
-                    "Instrument config must expose integer `sampling_period_fs`."
-                )
+            sampling_period_fs = driver.instrument_config.sampling_period_fs
             if len(payload.fixed_timelines[alias].capture_windows) == 0:
                 continue
             alias_sampling_period_ns = sampling_period_fs / 1e6
@@ -536,24 +528,8 @@ class Quel3ExecutionManager:
         instrument_resource_ids: list[ResourceIdProtocol] = []
         for alias in aliases:
             driver = session_state.alias_to_driver[alias]
-            sampling_period_fs = getattr(
-                driver.instrument_config,
-                "sampling_period_fs",
-                None,
-            )
-            timeline_step_samples = getattr(
-                driver.instrument_config,
-                "timeline_step_samples",
-                None,
-            )
-            if not isinstance(sampling_period_fs, int):
-                raise TypeError(
-                    "Instrument config must expose integer `sampling_period_fs`."
-                )
-            if not isinstance(timeline_step_samples, int):
-                raise TypeError(
-                    "Instrument config must expose integer `timeline_step_samples`."
-                )
+            sampling_period_fs = driver.instrument_config.sampling_period_fs
+            timeline_step_samples = driver.instrument_config.timeline_step_samples
             alias_bindings[alias] = (
                 sampling_period_fs,
                 timeline_step_samples,
@@ -712,26 +688,12 @@ class Quel3ExecutionManager:
     ) -> dict[str, ResourceIdProtocol]:
         """Resolve alias-to-resource-id mapping from resolved instrument infos."""
         alias_to_resource_id: dict[str, ResourceIdProtocol] = {}
-        aliases_without_resource_id: list[str] = []
         for alias in aliases:
             instrument_info = alias_to_instrument_info[alias]
-            resource_id = getattr(instrument_info, "id", None)
+            resource_id = instrument_info.id
             if isinstance(resource_id, str) and len(resource_id) > 0:
                 alias_to_resource_id[alias] = resource_id
-            else:
-                aliases_without_resource_id.append(alias)
 
-        if len(aliases_without_resource_id) == 0:
-            return alias_to_resource_id
-
-        resource_ids = resolver.resolve(aliases_without_resource_id)
-        if len(resource_ids) != len(aliases_without_resource_id):
-            raise ValueError(
-                "InstrumentResolver returned inconsistent alias resolution length."
-            )
-        alias_to_resource_id.update(
-            zip(aliases_without_resource_id, resource_ids, strict=True)
-        )
         return alias_to_resource_id
 
     @classmethod
