@@ -1255,8 +1255,7 @@ def test_backend_runtime_config_returns_selected_backend_section(
     runtime_config = {
         "endpoint": "192.0.2.10",
         "port": 50052,
-        "client_mode": "standalone",
-        "standalone_unit_label": "quel3-02-a01",
+        "client_mode": "server",
     }
 
     _write_yaml(
