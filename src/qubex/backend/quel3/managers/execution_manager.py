@@ -389,10 +389,7 @@ class Quel3ExecutionManager:
             )
         ]
         for payload in payloads[1:]:
-            resolved_payload = self._resolve_payload(
-                payload=payload,
-                resolver=runtime.resolver,
-            )
+            resolved_payload = self._resolve_payload(payload=payload)
             resolved_payload = self._filter_runnable_payload(resolved_payload)
             resolved_aliases = tuple(sorted(resolved_payload.fixed_timelines))
             if resolved_aliases != expected_aliases:
@@ -421,14 +418,16 @@ class Quel3ExecutionManager:
         resolver = quelware_api.instrument_resolver_factory()
         await resolver.refresh(self._session_manager.client)
 
-        resolved_payload = self._resolve_payload(
-            payload=payload,
-            resolver=resolver,
-        )
+        resolved_payload = self._resolve_payload(payload=payload)
         resolved_payload = self._filter_runnable_payload(resolved_payload)
         aliases = sorted(resolved_payload.fixed_timelines.keys())
+        alias_to_instrument_info = self._resolve_alias_to_instrument_info_map(
+            resolver=resolver,
+            aliases=aliases,
+        )
         alias_to_resource_id = self._resolve_alias_to_resource_id_map(
             resolver=resolver,
+            alias_to_instrument_info=alias_to_instrument_info,
             aliases=aliases,
         )
         instrument_resource_ids = [alias_to_resource_id[alias] for alias in aliases]
@@ -441,10 +440,7 @@ class Quel3ExecutionManager:
         alias_to_driver: dict[str, InstrumentDriverProtocol] = {}
         capture_sampling_period_ns: float | None = None
         for alias in aliases:
-            instrument_info = self._find_instrument_info_by_alias(
-                resolver=resolver,
-                alias=alias,
-            )
+            instrument_info = alias_to_instrument_info[alias]
             driver = quelware_api.fixed_timeline_driver_factory(
                 session,
                 instrument_info,
@@ -646,20 +642,33 @@ class Quel3ExecutionManager:
         return alias_results
 
     @classmethod
-    def _resolve_alias_to_resource_id_map(
+    def _resolve_alias_to_instrument_info_map(
         cls,
         *,
         resolver: InstrumentResolverProtocol,
         aliases: list[str],
-    ) -> dict[str, ResourceIdProtocol]:
-        """Resolve alias-to-resource-id mapping using InstrumentResolver."""
-        alias_to_resource_id: dict[str, ResourceIdProtocol] = {}
-        aliases_without_resource_id: list[str] = []
-        for alias in aliases:
-            instrument_info = cls._find_instrument_info_by_alias(
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """Resolve instrument infos by runtime alias using InstrumentResolver."""
+        return {
+            alias: cls._find_instrument_info_by_alias(
                 resolver=resolver,
                 alias=alias,
             )
+            for alias in aliases
+        }
+
+    @staticmethod
+    def _resolve_alias_to_resource_id_map(
+        *,
+        resolver: InstrumentResolverProtocol,
+        alias_to_instrument_info: dict[str, InstrumentInfoProtocol],
+        aliases: list[str],
+    ) -> dict[str, ResourceIdProtocol]:
+        """Resolve alias-to-resource-id mapping from resolved instrument infos."""
+        alias_to_resource_id: dict[str, ResourceIdProtocol] = {}
+        aliases_without_resource_id: list[str] = []
+        for alias in aliases:
+            instrument_info = alias_to_instrument_info[alias]
             resource_id = getattr(instrument_info, "id", None)
             if isinstance(resource_id, str) and len(resource_id) > 0:
                 alias_to_resource_id[alias] = resource_id
@@ -684,14 +693,9 @@ class Quel3ExecutionManager:
         cls,
         *,
         payload: Quel3ExecutionPayload,
-        resolver: InstrumentResolverProtocol,
     ) -> Quel3ExecutionPayload:
         """Resolve timeline bindings to concrete instrument aliases."""
-        bindings = (
-            payload.instrument_bindings
-            if len(payload.instrument_bindings) > 0
-            else {key: f"alias:{key}" for key in payload.fixed_timelines}
-        )
+        bindings = payload.instrument_bindings
 
         alias_to_events: dict[str, list[tuple[int, Quel3WaveformEvent]]] = defaultdict(
             list
@@ -706,18 +710,14 @@ class Quel3ExecutionManager:
 
         for target, timeline in payload.fixed_timelines.items():
             binding = bindings.get(target)
-            if binding is None:
+            if binding is None and len(bindings) > 0:
                 raise ValueError(
                     f"Instrument binding is not configured for target `{target}`."
                 )
-            capture_port_binding = payload.capture_port_bindings.get(target)
-            alias = cls._resolve_alias_from_binding(
-                target=target,
-                resolver=resolver,
-                binding=binding,
-                capture_port_binding=capture_port_binding,
-                has_events=len(timeline.events) > 0,
-                has_captures=len(timeline.capture_windows) > 0,
+            alias = (
+                target
+                if binding is None
+                else cls._resolve_alias_from_binding(binding=binding)
             )
             alias_to_length_ns[alias] = max(
                 alias_to_length_ns.get(alias, 0.0),
@@ -810,32 +810,19 @@ class Quel3ExecutionManager:
     def _resolve_alias_from_binding(
         cls,
         *,
-        target: str,
-        resolver: InstrumentResolverProtocol,
         binding: str,
-        capture_port_binding: str | None,
-        has_events: bool,
-        has_captures: bool,
     ) -> str:
         """Resolve one target binding to one instrument alias with fail-fast rules."""
-        del target, capture_port_binding, has_events, has_captures
         if binding.startswith("alias:"):
             alias = binding.removeprefix("alias:").strip()
             if len(alias) == 0:
                 raise ValueError("Empty alias binding is not allowed.")
-            try:
-                instrument_info = cls._find_instrument_info_by_alias(
-                    resolver=resolver,
-                    alias=alias,
-                )
-            except ValueError as exc:
+            _local_alias, unit_label = cls._split_unit_qualified_alias(alias)
+            if unit_label is None:
                 raise ValueError(
-                    f"Instrument alias `{alias}` could not be resolved."
-                ) from exc
-            return cls._runtime_alias_from_instrument_info(
-                instrument_info=instrument_info,
-                fallback_alias=alias,
-            )
+                    f"QuEL-3 alias binding must include a unit label: `{binding}`."
+                )
+            return alias
         raise ValueError(f"Unsupported instrument binding: `{binding}`.")
 
     @classmethod
@@ -848,13 +835,10 @@ class Quel3ExecutionManager:
         """Find one instrument info, passing unit when the alias is unit-qualified."""
         local_alias, alias_unit_label = cls._split_unit_qualified_alias(alias)
         if alias_unit_label is not None:
-            try:
-                return resolver.find_inst_info_by_alias(
-                    local_alias,
-                    unit=alias_unit_label,
-                )
-            except TypeError:
-                return resolver.find_inst_info_by_alias(alias)
+            return resolver.find_inst_info_by_alias(
+                local_alias,
+                unit=alias_unit_label,
+            )
         return resolver.find_inst_info_by_alias(alias)
 
     @staticmethod
@@ -865,19 +849,6 @@ class Quel3ExecutionManager:
         if separator and len(unit_label) > 0 and len(local_alias) > 0:
             return local_alias, unit_label
         return stripped_alias, None
-
-    @staticmethod
-    def _runtime_alias_from_instrument_info(
-        *,
-        instrument_info: InstrumentInfoProtocol,
-        fallback_alias: str,
-    ) -> str:
-        """Return the runtime alias stored on one runtime instrument info."""
-        definition = getattr(instrument_info, "definition", None)
-        alias = getattr(definition, "alias", None)
-        if isinstance(alias, str) and len(alias.strip()) > 0:
-            return alias.strip()
-        return fallback_alias
 
     @staticmethod
     def _initialize_shot_samples(

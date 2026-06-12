@@ -389,7 +389,7 @@ def test_constructor_accepts_injected_managers() -> None:
         quelware_port=61000,
         client_mode="server",
         quelware_pat_path="/run/secrets/quelware-pat",
-        target_alias_map={"Q00": "Q00"},
+        target_alias_map={("BOX1", "Q00"): "Q00"},
         last_deployed_instrument_infos={"Q00": (object(),)},
         deploy_instruments=lambda *, requests: {"Q00": tuple(requests)},
     )
@@ -582,29 +582,20 @@ def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:
             "RQ01": payload.fixed_timelines["alias-rq00"],
         },
         instrument_bindings={
-            "RQ00": "alias:alias-shared",
-            "RQ01": "alias:alias-shared",
+            "RQ00": "alias:unit-a:alias-shared",
+            "RQ01": "alias:unit-a:alias-shared",
         },
-    )
-    resolver = _FakeInstrumentResolver(
-        alias_to_info={
-            "alias-shared": _FakeInstrumentInfo(
-                port_id="unit-a:trx_p00",
-                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
-            )
-        }
     )
 
     resolved = Quel3ExecutionManager._resolve_payload(
         payload=payload,
-        resolver=cast(Any, resolver),
     )
 
-    assert set(resolved.fixed_timelines.keys()) == {"alias-shared"}
-    timeline = resolved.fixed_timelines["alias-shared"]
+    assert set(resolved.fixed_timelines.keys()) == {"unit-a:alias-shared"}
+    timeline = resolved.fixed_timelines["unit-a:alias-shared"]
     assert [window.name for window in timeline.capture_windows] == [
-        "alias-shared:0",
-        "alias-shared:1",
+        "unit-a:alias-shared:0",
+        "unit-a:alias-shared:1",
     ]
     assert timeline.frequency_hz == pytest.approx(6.2e9)
 
@@ -620,23 +611,14 @@ def test_resolve_payload_rejects_conflicting_frequencies_for_shared_alias() -> N
             "RQ01": replace(base_timeline, frequency_hz=6.1e9),
         },
         instrument_bindings={
-            "RQ00": "alias:alias-shared",
-            "RQ01": "alias:alias-shared",
+            "RQ00": "alias:unit-a:alias-shared",
+            "RQ01": "alias:unit-a:alias-shared",
         },
-    )
-    resolver = _FakeInstrumentResolver(
-        alias_to_info={
-            "alias-shared": _FakeInstrumentInfo(
-                port_id="unit-a:trx_p00",
-                definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
-            )
-        }
     )
 
     with pytest.raises(ValueError, match="Conflicting frequency"):
         Quel3ExecutionManager._resolve_payload(
             payload=payload,
-            resolver=cast(Any, resolver),
         )
 
 
@@ -687,38 +669,24 @@ def test_resolve_payload_rejects_port_binding() -> None:
         instrument_bindings={"RQ00": "port:unit-a-0"},
         capture_port_bindings={"RQ00": "unit-a-0"},
     )
-    resolver = _FakeInstrumentResolver(alias_to_info={})
 
     with pytest.raises(ValueError, match="Unsupported instrument binding"):
         Quel3ExecutionManager._resolve_payload(
             payload=payload,
-            resolver=cast(Any, resolver),
         )
 
 
-def test_resolve_payload_accepts_alias_binding() -> None:
-    """Given alias binding, resolving payload keeps the resolved alias."""
+def test_resolve_payload_rejects_unqualified_alias_binding() -> None:
+    """Given unqualified alias binding, resolving payload should fail fast."""
     payload = _make_payload()
     payload = replace(
         payload,
         fixed_timelines={"Q00": payload.fixed_timelines["alias-rq00"]},
         instrument_bindings={"Q00": "alias:inst-q00"},
     )
-    resolver = _FakeInstrumentResolver(
-        alias_to_info={
-            "inst-q00": _FakeInstrumentInfo(
-                port_id="quel3-02-a01:tx_p04",
-                definition=_FakeInstrumentDefinition(role="TRANSMITTER"),
-            )
-        }
-    )
 
-    resolved = Quel3ExecutionManager._resolve_payload(
-        payload=payload,
-        resolver=cast(Any, resolver),
-    )
-
-    assert set(resolved.fixed_timelines.keys()) == {"inst-q00"}
+    with pytest.raises(ValueError, match="unit label"):
+        Quel3ExecutionManager._resolve_payload(payload=payload)
 
 
 def test_execute_resolves_unit_prefixed_alias_binding(
@@ -772,7 +740,7 @@ def test_execute_resolves_unit_prefixed_alias_binding(
                 id="inst-q00",
                 port_id="quel3-02-a01:tx_p04",
                 definition=_Definition(
-                    alias="quel3-02-a01:Q00",
+                    alias="Q00",
                     role="TRANSMITTER",
                 ),
             )
@@ -796,11 +764,7 @@ def test_execute_resolves_unit_prefixed_alias_binding(
         manager.execute_async(request=BackendExecutionRequest(payload=payload))
     )
 
-    assert resolver.find_calls == [
-        ("Q00", "quel3-02-a01"),
-        ("Q00", "quel3-02-a01"),
-        ("Q00", "quel3-02-a01"),
-    ]
+    assert resolver.find_calls == [("Q00", "quel3-02-a01")]
     assert driver.apply_calls == [
         [
             ("capture_mode", _FakeCaptureMode.AVERAGED_VALUE),

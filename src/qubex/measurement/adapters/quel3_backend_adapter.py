@@ -36,6 +36,8 @@ from qubex.system.target_type import TargetType
 
 from ._capture_shape import normalize_shot_averaged_capture_array
 
+InstrumentAliasMap = Mapping[tuple[str, str], str]
+
 
 def _as_read_only_array(data: object) -> np.ndarray:
     """Return read-only NumPy array view for capture payloads."""
@@ -53,7 +55,7 @@ class Quel3MeasurementBackendAdapter:
         backend_controller: Quel3BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile | None = None,
-        instrument_alias_map: Mapping[str, str] | None = None,
+        instrument_alias_map: InstrumentAliasMap | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
@@ -67,15 +69,15 @@ class Quel3MeasurementBackendAdapter:
         self._constraint_profile = constraint_profile
 
     @property
-    def instrument_alias_map(self) -> Mapping[str, str]:
+    def instrument_alias_map(self) -> InstrumentAliasMap:
         """Return configured target-to-instrument alias mapping."""
         return self._instrument_alias_map
 
-    def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
+    def set_instrument_alias_map(self, alias_map: InstrumentAliasMap) -> None:
         """Replace full target-to-alias mapping in adapter layer."""
         self._instrument_alias_map = dict(alias_map)
 
-    def update_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
+    def update_instrument_alias_map(self, alias_map: InstrumentAliasMap) -> None:
         """Update target-to-alias mapping entries in adapter layer."""
         self._instrument_alias_map.update(alias_map)
 
@@ -117,7 +119,9 @@ class Quel3MeasurementBackendAdapter:
         alias_map = self._instrument_alias_map
 
         for target in pulse_schedule.labels:
-            configured_alias = str(alias_map.get(target, "")).strip()
+            target_info = self._experiment_system.get_target(target)
+            box_id = str(target_info.channel.port.box_id).strip()
+            configured_alias = str(alias_map.get((box_id, target), "")).strip()
             if len(configured_alias) == 0:
                 raise ValueError(
                     "Missing QuEL-3 instrument alias mapping for "
@@ -126,7 +130,7 @@ class Quel3MeasurementBackendAdapter:
             instrument_bindings[target] = f"alias:{configured_alias}"
 
             sequence = pulse_schedule.get_sequence(target, copy=False)
-            target_type = self._experiment_system.get_target(target).type
+            target_type = target_info.type
             events, waveform_index = self._create_waveform_events(
                 target_is_read=(target_type is TargetType.READ),
                 sequence=sequence,
