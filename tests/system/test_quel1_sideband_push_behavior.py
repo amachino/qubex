@@ -178,23 +178,22 @@ def test_sync_capture_port_passes_sideband_none_to_backend() -> None:
     assert read_in_call["sideband"] is None
 
 
-def test_sync_box_configures_capture_ports_before_generator_ports() -> None:
-    """Given QuEL-1 box sync, capture ports are configured before generator ports."""
+def test_sync_box_preserves_control_lo_for_shared_monitor_lo() -> None:
+    """Given shared monitor/control LO, when syncing, then control LO remains final."""
 
     class _BackendController:
         def __init__(self) -> None:
-            self.config_port_calls: list[dict[str, Any]] = []
-            self.config_channel_calls: list[dict[str, Any]] = []
-            self.config_runit_calls: list[dict[str, Any]] = []
+            self.shared_lo_freq_hz: int | None = None
 
         def config_port(self, **kwargs: Any) -> None:
-            self.config_port_calls.append(dict(kwargs))
+            if kwargs["port"] in {2, 4}:
+                self.shared_lo_freq_hz = kwargs["lo_freq_hz"]
 
-        def config_channel(self, **kwargs: Any) -> None:
-            self.config_channel_calls.append(dict(kwargs))
+        def config_channel(self, **_: Any) -> None:
+            return None
 
-        def config_runit(self, **kwargs: Any) -> None:
-            self.config_runit_calls.append(dict(kwargs))
+        def config_runit(self, **_: Any) -> None:
+            return None
 
     backend_controller = _BackendController()
     synchronizer = Quel1SystemSynchronizer(
@@ -224,13 +223,11 @@ def test_sync_box_configures_capture_ports_before_generator_ports() -> None:
     monitor_port.cnco_freq = 1_500_000_000
     monitor_port.rfswitch = "open"
     monitor_port.channels[0].fnco_freq = 0
+    assert monitor_port.lo_freq != ctrl_port.lo_freq
 
     synchronizer.sync_box_to_hardware(cast(Any, box))
 
-    config_port_order = [call["port"] for call in backend_controller.config_port_calls]
-    assert config_port_order.index(monitor_port.number) < config_port_order.index(
-        ctrl_port.number
-    )
+    assert backend_controller.shared_lo_freq_hz == ctrl_port.lo_freq
 
 
 def test_sync_model_skips_clockmaster_for_single_box_without_address() -> None:
