@@ -1415,7 +1415,7 @@ def test_execute_batch_recreates_session_after_transient_request_failure(
     assert len(results) == 2
     assert len(clients) == 2
     assert [client.exit_calls for client in clients] == [1, 1]
-    assert [session.exit_calls for session in sessions] == [1, 1]
+    assert [session.exit_calls for session in sessions] == [1, 2]
     assert sessions[0].trigger_calls == [["alias-rq00"]]
     assert sessions[1].trigger_calls == [["alias-rq00"], ["alias-rq00"]]
 
@@ -1643,10 +1643,10 @@ def test_execute_parallelizes_driver_phases(
     )
 
 
-def test_execute_batch_async_reuses_one_session(
+def test_execute_batch_async_reopens_session_between_payloads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given multiple requests, execute_batch_async should reuse one session and resolver refresh."""
+    """Given multiple requests, execute_batch_async should reopen sessions and reuse resolver refresh."""
     payload_a = _make_payload()
     payload_b = _make_payload()
     manager = Quel3ExecutionManager(
@@ -1694,7 +1694,7 @@ def test_execute_batch_async_reuses_one_session(
     )
 
     assert resolver.refresh_calls == 1
-    assert create_session_calls == [("alias-rq00",)]
+    assert create_session_calls == [("alias-rq00",), ("alias-rq00",)]
     assert len(session.trigger_calls) == 2
     assert len(driver.apply_calls) == 2
     assert len(results) == 2
