@@ -39,6 +39,7 @@ from qubex.backend.quel3.models import InstrumentDeployRequest, RoleName
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
+TargetAliasKey = tuple[str, str]
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class _PortDeployResult:
     """Deployment result for one port batch."""
 
     deployed: dict[str, tuple[InstrumentInfoProtocol, ...]]
-    target_alias_map: dict[str, str]
+    target_alias_map: dict[TargetAliasKey, str]
 
 
 def _run_async(
@@ -131,7 +132,7 @@ class Quel3ConfigurationManager:
         self._last_deployed_instrument_infos: dict[
             str, tuple[InstrumentInfoProtocol, ...]
         ] = {}
-        self._target_alias_map: dict[str, str] = {}
+        self._target_alias_map: dict[TargetAliasKey, str] = {}
 
     @property
     def quelware_endpoint(self) -> str:
@@ -161,8 +162,8 @@ class Quel3ConfigurationManager:
         return dict(self._last_deployed_instrument_infos)
 
     @property
-    def target_alias_map(self) -> dict[str, str]:
-        """Return last deployed target-to-runtime-alias mapping."""
+    def target_alias_map(self) -> dict[TargetAliasKey, str]:
+        """Return last deployed box-and-target to runtime-alias mapping."""
         return dict(self._target_alias_map)
 
     def deploy_instruments(
@@ -204,9 +205,9 @@ class Quel3ConfigurationManager:
     ) -> None:
         """Restore instrument alias caches from normalized backend settings."""
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
+        target_alias_map: dict[TargetAliasKey, str] = {}
 
-        for box_config in backend_settings.values():
+        for box_id, box_config in backend_settings.items():
             instruments = box_config.get("instruments")
             if not isinstance(instruments, dict):
                 continue
@@ -225,6 +226,10 @@ class Quel3ConfigurationManager:
                     role=role,
                     definition_config=instrument_config.get("definition"),
                 )
+                local_alias, runtime_alias = self._split_alias_for_port(
+                    alias=definition.alias,
+                    port_id=port_id,
+                )
                 deployed[alias] = (
                     _CachedInstrumentInfo(
                         id=resource_id,
@@ -232,7 +237,7 @@ class Quel3ConfigurationManager:
                         definition=definition,
                     ),
                 )
-                target_alias_map[alias] = definition.alias
+                target_alias_map[(box_id, local_alias)] = runtime_alias
 
         self._last_deployed_instrument_infos = deployed
         self._target_alias_map = target_alias_map
@@ -253,7 +258,7 @@ class Quel3ConfigurationManager:
         instrument_entities = self._load_instrument_entities()
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
+        target_alias_map: dict[TargetAliasKey, str] = {}
         requests_by_port: dict[str, list[InstrumentDeployRequest]] = defaultdict(list)
         for request in requests:
             requests_by_port[request.port_id].append(request)
@@ -403,7 +408,7 @@ class Quel3ConfigurationManager:
             instrument_infos_by_alias[local_alias].append(instrument_info)
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
+        target_alias_map: dict[TargetAliasKey, str] = {}
         for request in port_requests:
             matched_instrument_infos = tuple(
                 instrument_infos_by_alias.get(request.alias, ())
@@ -418,7 +423,7 @@ class Quel3ConfigurationManager:
                 fallback_alias=request.alias,
             )
             for target_label in request.target_labels:
-                target_alias_map[target_label] = runtime_alias
+                target_alias_map[(request.box_id, target_label)] = runtime_alias
         return _PortDeployResult(
             deployed=deployed,
             target_alias_map=target_alias_map,
@@ -440,20 +445,18 @@ class Quel3ConfigurationManager:
             )
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[str, str] = {}
         for instrument_info in instrument_infos:
             alias = instrument_info.definition.alias
             if len(alias.strip()) == 0:
                 continue
-            local_alias, runtime_alias = self._split_alias_for_port(
+            local_alias, _runtime_alias = self._split_alias_for_port(
                 alias=alias,
                 port_id=instrument_info.port_id,
             )
             deployed[local_alias] = (instrument_info,)
-            target_alias_map[local_alias] = runtime_alias
 
         self._last_deployed_instrument_infos = deployed
-        self._target_alias_map = target_alias_map
+        self._target_alias_map = {}
         return dict(deployed)
 
     async def _fetch_backend_settings_from_hardware(
@@ -583,13 +586,24 @@ class Quel3ConfigurationManager:
     @classmethod
     def _split_alias_for_port(cls, *, alias: str, port_id: str) -> tuple[str, str]:
         """Return local and runtime aliases for one instrument on a port."""
-        runtime_alias = alias.strip()
+        runtime_alias = cls._runtime_alias_for_port(alias=alias, port_id=port_id)
         unit_label = cls._extract_unit_label(str(port_id))
         local_alias = cls._strip_unit_label_prefix(
             alias=runtime_alias,
             unit_label=unit_label,
         )
         return local_alias, runtime_alias
+
+    @classmethod
+    def _runtime_alias_for_port(cls, *, alias: str, port_id: str) -> str:
+        """Return unit-qualified runtime alias for one port-local alias."""
+        stripped_alias = alias.strip()
+        if len(stripped_alias) == 0 or ":" not in str(port_id):
+            return stripped_alias
+        unit_label = cls._extract_unit_label(str(port_id))
+        if stripped_alias.startswith(f"{unit_label}:") or ":" in stripped_alias:
+            return stripped_alias
+        return f"{unit_label}:{stripped_alias}"
 
     @staticmethod
     def _strip_unit_label_prefix(*, alias: str, unit_label: str) -> str:
@@ -607,9 +621,12 @@ class Quel3ConfigurationManager:
     ) -> str:
         """Return the runtime alias stored on one quelware instrument info."""
         alias = instrument_info.definition.alias.strip()
-        if len(alias) > 0:
-            return alias
-        return fallback_alias
+        if len(alias) == 0:
+            alias = fallback_alias
+        return Quel3ConfigurationManager._runtime_alias_for_port(
+            alias=alias,
+            port_id=str(instrument_info.port_id),
+        )
 
     @staticmethod
     def _normalize_role_name(role: object) -> str:

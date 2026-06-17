@@ -308,8 +308,8 @@ class Quel3BackendController(BackendController):
         return self._execution_manager
 
     @property
-    def target_alias_map(self) -> dict[str, str]:
-        """Return deployed target-to-runtime-alias mapping from backend runtime state."""
+    def target_alias_map(self) -> dict[tuple[str, str], str]:
+        """Return deployed box-and-target to runtime-alias mapping."""
         return self._configuration_manager.target_alias_map
 
     @property

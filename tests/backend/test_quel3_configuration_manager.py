@@ -162,6 +162,7 @@ def test_deploy_instruments_calls_session_api(
         frequency_range_max_hz=4.3e9,
         alias="Q00",
         target_labels=("Q00",),
+        box_id="BOX1",
     )
 
     deployed = manager.deploy_instruments(requests=(request,))
@@ -176,7 +177,7 @@ def test_deploy_instruments_calls_session_api(
     assert definition.profile.frequency_range_min == pytest.approx(4.1e9)
     assert definition.profile.frequency_range_max == pytest.approx(4.3e9)
     assert definition.alias == "Q00"
-    assert manager.target_alias_map == {"Q00": definition.alias}
+    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00"}
     assert definition.alias in deployed
 
 
@@ -319,6 +320,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
         frequency_range_max_hz=4.3e9,
         alias="Q00",
         target_labels=("Q00",),
+        box_id="BOX1",
     )
 
     deployed = manager.deploy_instruments(requests=(request,))
@@ -452,6 +454,7 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
         frequency_range_max_hz=4.3e9,
         alias="Q00",
         target_labels=("Q00",),
+        box_id="BOX1",
     )
 
     deployed = manager.deploy_instruments(requests=(request,))
@@ -567,6 +570,7 @@ def test_deploy_instruments_wraps_final_request_failure(
         frequency_range_max_hz=4.3e9,
         alias="Q00",
         target_labels=("Q00",),
+        box_id="BOX1",
     )
 
     with pytest.raises(
@@ -712,6 +716,7 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
         frequency_range_max_hz=4.3e9,
         alias="Q00",
         target_labels=("Q00",),
+        box_id="BOX1",
     )
 
     deployed = manager.deploy_instruments(requests=(request,))
@@ -829,6 +834,7 @@ def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
         frequency_range_max_hz=4.3e9,
         alias="Q00",
         target_labels=("Q00",),
+        box_id="BOX1",
     )
 
     deployed = manager.deploy_instruments(requests=(request,))
@@ -836,7 +842,7 @@ def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
     assert [definition.alias for definition in deploy_definitions] == ["Q00"]
     assert set(deployed) == {"Q00"}
     assert deployed["Q00"][0].definition.alias == "quel3-02-a01:Q00"
-    assert manager.target_alias_map == {"Q00": "quel3-02-a01:Q00"}
+    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00"}
 
 
 def test_deploy_instruments_clears_cache_for_empty_requests() -> None:
@@ -852,6 +858,7 @@ def test_deploy_instruments_clears_cache_for_empty_requests() -> None:
         frequency_range_max_hz=4.3e9,
         alias="Q00",
         target_labels=("Q00",),
+        box_id="BOX1",
     )
     manager._last_deployed_instrument_infos = {  # noqa: SLF001
         request.alias: (
@@ -862,7 +869,7 @@ def test_deploy_instruments_clears_cache_for_empty_requests() -> None:
             ),
         )
     }
-    manager._target_alias_map = {"Q00": request.alias}  # noqa: SLF001
+    manager._target_alias_map = {("BOX1", "Q00"): request.alias}  # noqa: SLF001
 
     deployed = manager.deploy_instruments(requests=())
 
@@ -972,6 +979,7 @@ def test_deploy_instruments_groups_requests_by_port(
             frequency_range_max_hz=4.3e9,
             alias="Q00",
             target_labels=("Q00",),
+            box_id="BOX1",
         ),
         InstrumentDeployRequest(
             port_id="quel3-02-a01:tx_p04",
@@ -980,6 +988,7 @@ def test_deploy_instruments_groups_requests_by_port(
             frequency_range_max_hz=4.4e9,
             alias="Q00-CR",
             target_labels=("Q00-CR",),
+            box_id="BOX1",
         ),
     )
 
@@ -994,8 +1003,8 @@ def test_deploy_instruments_groups_requests_by_port(
         "Q00-CR",
     ]
     assert manager.target_alias_map == {
-        "Q00": "Q00",
-        "Q00-CR": "Q00-CR",
+        ("BOX1", "Q00"): "quel3-02-a01:Q00",
+        ("BOX1", "Q00-CR"): "quel3-02-a01:Q00-CR",
     }
     assert set(deployed) == {"Q00", "Q00-CR"}
     assert deployed["Q00"][0].id == "id:quel3-02-a01:tx_p04:0"
@@ -1103,6 +1112,7 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
             frequency_range_max_hz=4.3e9,
             alias="Q00",
             target_labels=("Q00",),
+            box_id="BOX1",
         ),
         InstrumentDeployRequest(
             port_id="quel3-02-a01:tx_p06",
@@ -1111,6 +1121,7 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
             frequency_range_max_hz=4.4e9,
             alias="Q01",
             target_labels=("Q01",),
+            box_id="BOX1",
         ),
     )
 
@@ -1232,6 +1243,7 @@ def test_deploy_instruments_parallelizes_ports_by_default(
                 frequency_range_max_hz=4.3e9,
                 alias="Q00",
                 target_labels=("Q00",),
+                box_id="BOX1",
             ),
             InstrumentDeployRequest(
                 port_id="quel3-02-a01:tx_p06",
@@ -1240,6 +1252,7 @@ def test_deploy_instruments_parallelizes_ports_by_default(
                 frequency_range_max_hz=4.4e9,
                 alias="Q01",
                 target_labels=("Q01",),
+                box_id="BOX1",
             ),
         )
     )
@@ -1356,6 +1369,7 @@ def test_deploy_instruments_parallel_false_serializes_ports(
                 frequency_range_max_hz=4.3e9,
                 alias="Q00",
                 target_labels=("Q00",),
+                box_id="BOX1",
             ),
             InstrumentDeployRequest(
                 port_id="quel3-02-a01:tx_p06",
@@ -1364,6 +1378,7 @@ def test_deploy_instruments_parallel_false_serializes_ports(
                 frequency_range_max_hz=4.4e9,
                 alias="Q01",
                 target_labels=("Q01",),
+                box_id="BOX1",
             ),
         ),
         parallel=False,
@@ -1500,7 +1515,7 @@ def test_refresh_instrument_cache_loads_existing_instruments(
     cached = manager.refresh_instrument_cache()
 
     assert set(cached.keys()) == {"Q00", "RQ00"}
-    assert manager.target_alias_map == {"Q00": "Q00", "RQ00": "RQ00"}
+    assert manager.target_alias_map == {}
     assert set(manager.last_deployed_instrument_infos.keys()) == {"Q00", "RQ00"}
 
 
@@ -1558,7 +1573,7 @@ def test_refresh_instrument_cache_maps_unit_prefixed_aliases(
     cached = manager.refresh_instrument_cache()
 
     assert set(cached) == {"Q00"}
-    assert manager.target_alias_map == {"Q00": "quel3-02-a01:Q00"}
+    assert manager.target_alias_map == {}
     assert manager.last_deployed_instrument_infos["Q00"][0].definition.alias == (
         "quel3-02-a01:Q00"
     )
@@ -1865,7 +1880,10 @@ def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -
         }
     )
 
-    assert manager.target_alias_map == {"Q00": "Q00", "RQ00": "RQ00"}
+    assert manager.target_alias_map == {
+        ("BOX1", "Q00"): "quel3-02-a01:Q00",
+        ("BOX2", "RQ00"): "quel3-02-a02:RQ00",
+    }
     assert manager.last_deployed_instrument_infos["Q00"][0].id == "inst-q00"
     assert (
         manager.last_deployed_instrument_infos["Q00"][0].port_id
@@ -1991,6 +2009,7 @@ def test_deploy_instruments_replaces_cached_alias(
                 frequency_range_max_hz=4.3e9,
                 alias="Q00",
                 target_labels=("Q00",),
+                box_id="BOX1",
             ),
         )
     )
@@ -1998,7 +2017,7 @@ def test_deploy_instruments_replaces_cached_alias(
     assert len(deploy_calls) == 1
     assert deploy_calls[0][2] is False
     assert deployed == {"Q00": (returned_info,)}
-    assert manager.target_alias_map == {"Q00": "Q00"}
+    assert manager.target_alias_map == {("BOX1", "Q00"): "quel3-02-a01:Q00"}
 
 
 def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
@@ -2118,6 +2137,7 @@ def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
                 frequency_range_max_hz=4.3e9,
                 alias="Q00",
                 target_labels=("Q00",),
+                box_id="BOX1",
             ),
             InstrumentDeployRequest(
                 port_id="quel3-02-a01:tx_p04",
@@ -2126,6 +2146,7 @@ def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
                 frequency_range_max_hz=4.4e9,
                 alias="Q00-CR",
                 target_labels=("Q00-CR",),
+                box_id="BOX1",
             ),
         )
     )

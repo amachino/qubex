@@ -71,6 +71,7 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
 
     read_request = request_by_target["RQ00"]
     assert read_request.port_id == "quel3-02-a01:trx_p00p01"
+    assert read_request.box_id == "BOX1"
     assert read_request.role == "TRANSCEIVER"
     assert read_request.alias == "RQ00"
     assert read_request.frequency_range_min_hz == pytest.approx(5.9e9)
@@ -79,6 +80,7 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
 
     ctrl_request = request_by_target["Q00"]
     assert ctrl_request.port_id == "quel3-02-a01:tx_p02"
+    assert ctrl_request.box_id == "BOX1"
     assert ctrl_request.role == "TRANSMITTER"
     assert ctrl_request.alias == "Q00"
     assert ctrl_request.frequency_range_min_hz == pytest.approx(4.10e9)
@@ -87,6 +89,7 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
 
     cr_request = request_by_target["Q00-CR"]
     assert cr_request.port_id == "quel3-02-a01:tx_p02"
+    assert cr_request.box_id == "BOX1"
     assert cr_request.role == "TRANSMITTER"
     assert cr_request.alias == "Q00-CR"
     assert cr_request.frequency_range_min_hz == pytest.approx(4.25e9)
@@ -215,6 +218,7 @@ def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> Non
             frequency_range_max_hz=4.3e9,
             alias="Q00",
             target_labels=("Q00",),
+            box_id="BOX1",
         ),
     )
 
@@ -272,6 +276,7 @@ def test_quel3_synchronizer_defaults_parallel_deploy_to_true() -> None:
             frequency_range_max_hz=4.3e9,
             alias="Q00",
             target_labels=("Q00",),
+            box_id="BOX1",
         ),
     )
 

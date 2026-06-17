@@ -18,3 +18,4 @@ class InstrumentDeployRequest:
     frequency_range_max_hz: float
     alias: str
     target_labels: tuple[str, ...]
+    box_id: str
