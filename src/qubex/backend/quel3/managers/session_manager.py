@@ -6,17 +6,14 @@ from collections.abc import Collection
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 
-from qubex.backend.quel3.infra.quelware_imports import (
-    Quel3ClientMode,
-    load_quelware_client_factory,
-    validate_quelware_client_runtime,
-)
+from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces import (
     QuelwareClientFactory,
     QuelwareClientProtocol,
     ResourceIdProtocol,
     SessionProtocol,
 )
+from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_workarounds import (
     QuelwareSessionError,
     enter_quelware_session_with_resource_retry,
@@ -30,18 +27,9 @@ class Quel3SessionManager:
     def __init__(
         self,
         *,
-        quelware_endpoint: str,
-        quelware_port: int,
-        client_mode: str = "server",
-        quelware_pat_path: str | None = None,
+        runtime_config: Quel3RuntimeConfig | None = None,
     ) -> None:
-        normalized_client_mode = validate_quelware_client_runtime(
-            client_mode=client_mode,
-        )
-        self._quelware_endpoint = quelware_endpoint
-        self._quelware_port = quelware_port
-        self._client_mode: Quel3ClientMode = normalized_client_mode
-        self._quelware_pat_path = quelware_pat_path
+        self._runtime_config = runtime_config or Quel3RuntimeConfig()
         self._client_cm: AbstractAsyncContextManager[QuelwareClientProtocol] | None = (
             None
         )
@@ -52,24 +40,29 @@ class Quel3SessionManager:
         self._resource_ids: tuple[ResourceIdProtocol, ...] | None = None
 
     @property
+    def runtime_config(self) -> Quel3RuntimeConfig:
+        """Return the shared quelware runtime config."""
+        return self._runtime_config
+
+    @property
     def quelware_endpoint(self) -> str:
         """Return quelware endpoint."""
-        return self._quelware_endpoint
+        return self._runtime_config.endpoint
 
     @property
     def quelware_port(self) -> int:
         """Return quelware port."""
-        return self._quelware_port
+        return self._runtime_config.port
 
     @property
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
-        return self._client_mode
+        return self._runtime_config.client_mode_value
 
     @property
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
-        return self._quelware_pat_path
+        return self._runtime_config.pat_path
 
     @property
     def is_open(self) -> bool:
@@ -120,8 +113,8 @@ class Quel3SessionManager:
                 else client_factory
             )
             self._client_cm = runtime_client_factory(
-                self._quelware_endpoint,
-                self._quelware_port,
+                self._runtime_config.endpoint,
+                self._runtime_config.port,
             )
             try:
                 self._client = await self._client_cm.__aenter__()
@@ -215,7 +208,4 @@ class Quel3SessionManager:
 
     def load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        return load_quelware_client_factory(
-            client_mode=self._client_mode,
-            pat_path=self._quelware_pat_path,
-        )
+        return self._runtime_config.load_client_factory()

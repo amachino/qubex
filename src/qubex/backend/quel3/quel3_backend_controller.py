@@ -8,29 +8,24 @@ built on quelware-client managers.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TypeVar, cast
 
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel3.infra import (
-    Quel3ClientMode,
-    validate_quelware_client_runtime,
-)
+from qubex.backend.quel3.infra import Quel3ClientMode
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
 from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
+    Quel3RuntimeConfig,
     Quel3SessionManager,
 )
 from .models import InstrumentDeployRequest
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
-
-T = TypeVar("T")
 
 
 class Quel3BackendController(BackendController):
@@ -76,176 +71,50 @@ class Quel3BackendController(BackendController):
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
         """
-        endpoint = self._resolve_runtime_value(
-            name="quelware_endpoint",
-            explicit_value=quelware_endpoint,
-            candidates=[
-                manager.quelware_endpoint
-                for manager in (
-                    connection_manager,
-                    session_manager,
-                    configuration_manager,
-                    execution_manager,
-                )
-                if manager is not None
-            ],
-            default="localhost",
-        )
-        port = self._resolve_runtime_value(
-            name="quelware_port",
-            explicit_value=quelware_port,
-            candidates=[
-                manager.quelware_port
-                for manager in (
-                    connection_manager,
-                    session_manager,
-                    configuration_manager,
-                    execution_manager,
-                )
-                if manager is not None
-            ],
-            default=50051,
-        )
-        explicit_client_mode = None
-        if client_mode is not None:
-            explicit_client_mode = validate_quelware_client_runtime(
-                client_mode=client_mode,
-            )
-        resolved_client_mode = cast(
-            Quel3ClientMode,
-            self._resolve_runtime_value(
-                name="client_mode",
-                explicit_value=explicit_client_mode,
-                candidates=[
-                    manager.client_mode
-                    for manager in (
-                        connection_manager,
-                        session_manager,
-                        configuration_manager,
-                        execution_manager,
-                    )
-                    if manager is not None
-                ],
-                default="server",
-            ),
-        )
-        resolved_client_mode = validate_quelware_client_runtime(
-            client_mode=resolved_client_mode,
-        )
-        resolved_quelware_pat_path = self._resolve_optional_runtime_value(
-            name="quelware_pat_path",
-            explicit_value=quelware_pat_path,
-            candidates=[
-                getattr(manager, "quelware_pat_path", None)
-                for manager in (
-                    connection_manager,
-                    session_manager,
-                    configuration_manager,
-                    execution_manager,
-                )
-                if manager is not None
-            ],
-            default=None,
+        runtime_config = Quel3RuntimeConfig(
+            endpoint=quelware_endpoint or "localhost",
+            port=50051 if quelware_port is None else quelware_port,
+            client_mode=client_mode or "server",
+            pat_path=quelware_pat_path,
         )
         self._sampling_period_ns = (
             execution_manager.sampling_period_ns
             if execution_manager is not None
             else self.SAMPLING_PERIOD_NS
         )
-        self._quelware_endpoint = endpoint
-        self._quelware_port = port
-        self._client_mode: Quel3ClientMode = resolved_client_mode
-        self._quelware_pat_path = resolved_quelware_pat_path
+        self._runtime_config = runtime_config
 
         self._connection_manager = (
             connection_manager
             if connection_manager is not None
             else Quel3ConnectionManager(
-                quelware_endpoint=endpoint,
-                quelware_port=port,
-                client_mode=resolved_client_mode,
-                quelware_pat_path=resolved_quelware_pat_path,
+                runtime_config=runtime_config,
             )
         )
         self._session_manager = (
             session_manager
             if session_manager is not None
             else Quel3SessionManager(
-                quelware_endpoint=endpoint,
-                quelware_port=port,
-                client_mode=resolved_client_mode,
-                quelware_pat_path=resolved_quelware_pat_path,
+                runtime_config=runtime_config,
             )
         )
         self._configuration_manager = (
             configuration_manager
             if configuration_manager is not None
             else Quel3ConfigurationManager(
-                quelware_endpoint=endpoint,
-                quelware_port=port,
-                client_mode=resolved_client_mode,
-                quelware_pat_path=resolved_quelware_pat_path,
+                runtime_config=runtime_config,
             )
         )
         self._execution_manager = (
             execution_manager
             if execution_manager is not None
             else Quel3ExecutionManager(
-                quelware_endpoint=endpoint,
-                quelware_port=port,
+                runtime_config=runtime_config,
                 sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
-                client_mode=resolved_client_mode,
-                quelware_pat_path=resolved_quelware_pat_path,
                 session_manager=self._session_manager,
             )
         )
-
-    @staticmethod
-    def _resolve_runtime_value(
-        *,
-        name: str,
-        explicit_value: T | None,
-        candidates: Sequence[T],
-        default: T,
-    ) -> T:
-        """Resolve one runtime value from explicit input and injected managers."""
-        unique_candidates: list[T] = []
-        for candidate in candidates:
-            if candidate not in unique_candidates:
-                unique_candidates.append(candidate)
-        if explicit_value is not None:
-            if any(candidate != explicit_value for candidate in unique_candidates):
-                raise ValueError(f"Inconsistent `{name}` across injected managers.")
-            return explicit_value
-        if len(unique_candidates) > 1:
-            raise ValueError(f"Inconsistent `{name}` across injected managers.")
-        if len(unique_candidates) == 1:
-            return unique_candidates[0]
-        return default
-
-    @staticmethod
-    def _resolve_optional_runtime_value(
-        *,
-        name: str,
-        explicit_value: T | None,
-        candidates: Sequence[T | None],
-        default: T | None,
-    ) -> T | None:
-        """Resolve one optional runtime value from explicit input and injected managers."""
-        unique_candidates: list[T | None] = []
-        for candidate in candidates:
-            if candidate not in unique_candidates:
-                unique_candidates.append(candidate)
-        if explicit_value is not None:
-            if any(candidate != explicit_value for candidate in unique_candidates):
-                raise ValueError(f"Inconsistent `{name}` across injected managers.")
-            return explicit_value
-        if len(unique_candidates) > 1:
-            raise ValueError(f"Inconsistent `{name}` across injected managers.")
-        if len(unique_candidates) == 1:
-            return unique_candidates[0]
-        return default
 
     @property
     def hash(self) -> int:
@@ -270,22 +139,27 @@ class Quel3BackendController(BackendController):
     @property
     def quelware_endpoint(self) -> str:
         """Return configured quelware endpoint."""
-        return self._quelware_endpoint
+        return self._runtime_config.endpoint
 
     @property
     def quelware_port(self) -> int:
         """Return configured quelware port."""
-        return self._quelware_port
+        return self._runtime_config.port
 
     @property
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
-        return self._client_mode
+        return self._runtime_config.client_mode_value
 
     @property
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
-        return self._quelware_pat_path
+        return self._runtime_config.pat_path
+
+    @property
+    def runtime_config(self) -> Quel3RuntimeConfig:
+        """Return configured quelware runtime settings."""
+        return self._runtime_config
 
     @property
     def configuration_manager(self) -> Quel3ConfigurationManager:

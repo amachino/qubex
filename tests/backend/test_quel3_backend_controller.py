@@ -24,6 +24,7 @@ from qubex.backend.quel3 import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
+    Quel3RuntimeConfig,
     Quel3Waveform,
     Quel3WaveformEvent,
 )
@@ -361,6 +362,10 @@ def test_constructor_accepts_quelware_pat_path_runtime_option() -> None:
     assert controller.session_manager.quelware_pat_path == pat_path
     assert controller.configuration_manager.quelware_pat_path == pat_path
     assert controller.execution_manager.quelware_pat_path == pat_path
+    assert controller.connection_manager.runtime_config is controller.runtime_config
+    assert controller.session_manager.runtime_config is controller.runtime_config
+    assert controller.configuration_manager.runtime_config is controller.runtime_config
+    assert controller.execution_manager.runtime_config is controller.runtime_config
 
 
 def test_constructor_accepts_injected_managers() -> None:
@@ -414,11 +419,11 @@ def test_constructor_accepts_injected_managers() -> None:
     assert controller.session_manager is session_manager
     assert controller.configuration_manager is configuration_manager
     assert controller.execution_manager is execution_manager
-    assert controller.quelware_endpoint == "injected-host"
-    assert controller.quelware_port == 61000
+    assert controller.quelware_endpoint == "localhost"
+    assert controller.quelware_port == 50051
     assert controller.sampling_period_ns == pytest.approx(0.8)
     assert controller.client_mode == "server"
-    assert controller.quelware_pat_path == "/run/secrets/quelware-pat"
+    assert controller.quelware_pat_path is None
 
 
 def test_constructor_accepts_injected_session_manager() -> None:
@@ -514,8 +519,8 @@ def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() ->
     assert captured == {"requests": requests, "parallel": False}
 
 
-def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> None:
-    """Given mismatched injected manager runtime values, constructor should fail fast."""
+def test_constructor_does_not_infer_runtime_config_from_injected_managers() -> None:
+    """Given injected managers, controller runtime config should stay explicit."""
     connection_manager = SimpleNamespace(
         hash=11,
         is_connected=False,
@@ -536,40 +541,19 @@ def test_constructor_rejects_mismatched_injected_manager_runtime_values() -> Non
         deploy_instruments=lambda *, requests: {},
     )
 
-    with pytest.raises(ValueError, match="quelware_endpoint"):
-        Quel3BackendController(
-            connection_manager=cast(Any, connection_manager),
-            configuration_manager=cast(Any, configuration_manager),
-        )
-
-
-def test_constructor_rejects_mismatched_injected_client_runtime_values() -> None:
-    """Given mismatched client runtime values, controller construction should fail fast."""
-    connection_manager = SimpleNamespace(
-        hash=11,
-        is_connected=False,
-        quelware_endpoint="host-a",
-        quelware_port=50051,
-        client_mode="server",
-        quelware_pat_path=None,
-        connect=lambda box_names=None, parallel=None: None,
-        disconnect=lambda: None,
-    )
-    configuration_manager = SimpleNamespace(
-        quelware_endpoint="host-a",
-        quelware_port=50051,
-        client_mode="standalone",
-        quelware_pat_path=None,
-        target_alias_map={},
-        last_deployed_instrument_infos={},
-        deploy_instruments=lambda *, requests: {},
+    controller = Quel3BackendController(
+        quelware_endpoint="explicit-host",
+        quelware_port=61000,
+        quelware_pat_path="/run/secrets/explicit-pat",
+        connection_manager=cast(Any, connection_manager),
+        configuration_manager=cast(Any, configuration_manager),
     )
 
-    with pytest.raises(ValueError, match="client_mode"):
-        Quel3BackendController(
-            connection_manager=cast(Any, connection_manager),
-            configuration_manager=cast(Any, configuration_manager),
-        )
+    assert controller.connection_manager is connection_manager
+    assert controller.configuration_manager is configuration_manager
+    assert controller.quelware_endpoint == "explicit-host"
+    assert controller.quelware_port == 61000
+    assert controller.quelware_pat_path == "/run/secrets/explicit-pat"
 
 
 def test_resolve_payload_merges_targets_mapped_to_one_alias() -> None:
@@ -700,8 +684,7 @@ def test_execute_resolves_unit_prefixed_alias_binding(
         instrument_bindings={"Q00": "alias:quel3-02-a01:Q00"},
     )
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1107,8 +1090,7 @@ def test_execute_recreates_session_after_transient_request_failure(
     )
     payload = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1188,8 +1170,7 @@ def test_execute_ignores_session_close_failure_after_success(
     )
     payload = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1238,8 +1219,7 @@ def test_execute_preserves_request_failure_when_session_close_also_fails(
     """Given request and close both fail, execute should preserve the request cause."""
     payload = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1297,8 +1277,7 @@ def test_execute_uses_configured_session_request_retry_limit(
     """Given configured retry limit, execute should stop after that many attempts."""
     payload = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1366,8 +1345,7 @@ def test_execute_batch_recreates_session_after_transient_request_failure(
     """Given transient quelware request failure, batch execute should retry the batch."""
     payload = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1426,8 +1404,7 @@ def test_execute_batches_capture_mode_with_timeline_directive(
     """Given fixed-timeline execution, execute batches directives per instrument."""
     payload = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1474,8 +1451,7 @@ def test_execute_batches_frequency_capture_mode_with_timeline_directive(
     """Given payload frequency, execute should apply frequency before capture mode and timeline."""
     payload = _make_payload(frequency_hz=6.25e9)
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1518,8 +1494,7 @@ def test_execute_rejects_runtime_without_required_capture_mode(
     """Given missing runtime capture mode, execute raises RuntimeError."""
     payload = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1569,8 +1544,7 @@ def test_execute_parallelizes_driver_phases(
         },
     )
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
@@ -1650,8 +1624,7 @@ def test_execute_batch_async_reopens_session_between_payloads(
     payload_a = _make_payload()
     payload_b = _make_payload()
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=1,
     )
@@ -1713,8 +1686,7 @@ def test_execute_serializes_driver_phases_when_parallel_disabled(
         },
     )
     manager = Quel3ExecutionManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
+        runtime_config=Quel3RuntimeConfig(),
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )

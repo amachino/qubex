@@ -10,11 +10,7 @@ from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TypeVar
 
-from qubex.backend.quel3.infra.quelware_imports import (
-    Quel3ClientMode,
-    load_quelware_client_factory,
-    validate_quelware_client_runtime,
-)
+from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces.client import (
     FixedTimelineProfileFactory,
     InstrumentDefinitionFactory,
@@ -28,6 +24,7 @@ from qubex.backend.quel3.interfaces.client import (
     ResourceInfoProtocol,
     SessionProtocol,
 )
+from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
     QuelwareSessionError,
@@ -117,42 +114,38 @@ class Quel3ConfigurationManager:
     def __init__(
         self,
         *,
-        quelware_endpoint: str,
-        quelware_port: int,
-        client_mode: str = "server",
-        quelware_pat_path: str | None = None,
+        runtime_config: Quel3RuntimeConfig | None = None,
     ) -> None:
-        normalized_client_mode = validate_quelware_client_runtime(
-            client_mode=client_mode,
-        )
-        self._quelware_endpoint = quelware_endpoint
-        self._quelware_port = quelware_port
-        self._client_mode: Quel3ClientMode = normalized_client_mode
-        self._quelware_pat_path = quelware_pat_path
+        self._runtime_config = runtime_config or Quel3RuntimeConfig()
         self._last_deployed_instrument_infos: dict[
             str, tuple[InstrumentInfoProtocol, ...]
         ] = {}
         self._target_alias_map: dict[TargetAliasKey, str] = {}
 
     @property
+    def runtime_config(self) -> Quel3RuntimeConfig:
+        """Return the shared quelware runtime config."""
+        return self._runtime_config
+
+    @property
     def quelware_endpoint(self) -> str:
         """Return quelware endpoint used for deployment."""
-        return self._quelware_endpoint
+        return self._runtime_config.endpoint
 
     @property
     def quelware_port(self) -> int:
         """Return quelware port used for deployment."""
-        return self._quelware_port
+        return self._runtime_config.port
 
     @property
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
-        return self._client_mode
+        return self._runtime_config.client_mode_value
 
     @property
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
-        return self._quelware_pat_path
+        return self._runtime_config.pat_path
 
     @property
     def last_deployed_instrument_infos(
@@ -315,8 +308,8 @@ class Quel3ConfigurationManager:
     ) -> list[_PortDeployResult]:
         """Deploy port batches in one quelware client/session context."""
         async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
+            self._runtime_config.endpoint,
+            self._runtime_config.port,
         ) as client:
             session_resource_ids = [port_id for port_id, _ in port_request_batches]
             session_cm, session = await enter_quelware_session_with_resource_retry(
@@ -435,8 +428,8 @@ class Quel3ConfigurationManager:
         """Load existing fixed-timeline instruments into local alias caches."""
         client_factory = self._load_quelware_client_factory()
         async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
+            self._runtime_config.endpoint,
+            self._runtime_config.port,
         ) as client:
             instrument_infos = await self._list_instrument_infos(
                 client=client,
@@ -477,8 +470,8 @@ class Quel3ConfigurationManager:
 
         client_factory = self._load_quelware_client_factory()
         async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
+            self._runtime_config.endpoint,
+            self._runtime_config.port,
         ) as client:
             instrument_infos = await self._list_instrument_infos(
                 client=client,
@@ -510,10 +503,7 @@ class Quel3ConfigurationManager:
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        return load_quelware_client_factory(
-            client_mode=self._client_mode,
-            pat_path=self._quelware_pat_path,
-        )
+        return self._runtime_config.load_client_factory()
 
     @staticmethod
     def _is_instrument_resource(resource_info: ResourceInfoProtocol) -> bool:

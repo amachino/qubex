@@ -11,7 +11,9 @@ import pytest
 
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
+    Quel3RuntimeConfig,
     configuration_manager as configuration_manager_module,
+    runtime_config as runtime_config_module,
     session_workarounds as session_workarounds_module,
 )
 from qubex.backend.quel3.managers.session_workarounds import QuelwareSessionError
@@ -63,10 +65,7 @@ def test_deploy_instruments_calls_session_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given deploy requests, backend configuration manager should call session deploy."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -190,10 +189,7 @@ def test_deploy_instruments_recreates_session_after_transient_request_failure(
         logging.WARNING,
         logger="qubex.backend.quel3.managers.configuration_manager",
     )
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -350,10 +346,7 @@ def test_deploy_instruments_ignores_session_close_failure_after_success(
         logging.WARNING,
         logger="qubex.backend.quel3.managers.configuration_manager",
     )
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -472,10 +465,7 @@ def test_deploy_instruments_wraps_final_request_failure(
 ) -> None:
     """Given retry limit is reached, deploy should raise a token-annotated error."""
     failed_session_id = "failed-deploy-session"
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -591,10 +581,7 @@ def test_deploy_instruments_retries_resource_allocation_on_session_create(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given transient resource allocation failure, deploy should retry session creation."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     async def _skip_sleep(delay: float) -> None:
         del delay
@@ -734,10 +721,7 @@ def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given quelware prefixes aliases by unit, deploy should keep target bindings usable."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -847,10 +831,7 @@ def test_deploy_instruments_accepts_unit_prefixed_returned_alias(
 
 def test_deploy_instruments_clears_cache_for_empty_requests() -> None:
     """Given empty requests, backend configuration manager should clear deployment cache."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
     request = InstrumentDeployRequest(
         port_id="quel3-02-a01:tx_p02",
         role="TRANSMITTER",
@@ -882,10 +863,7 @@ def test_deploy_instruments_groups_requests_by_port(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given same-port requests, backend configuration manager should batch one deploy call."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -1015,10 +993,7 @@ def test_deploy_instruments_uses_one_session_for_all_ports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given multiple ports, backend configuration manager should reuse one session."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -1138,10 +1113,7 @@ def test_deploy_instruments_parallelizes_ports_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given multiple ports, deploy_instruments should run port batches concurrently."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -1264,10 +1236,7 @@ def test_deploy_instruments_parallel_false_serializes_ports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given parallel false, deploy_instruments should deploy port batches serially."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -1394,7 +1363,7 @@ def test_load_client_factory_uses_configured_client_runtime(
     captured: dict[str, object] = {}
     fake_client_factory = object()
     monkeypatch.setattr(
-        configuration_manager_module,
+        runtime_config_module,
         "load_quelware_client_factory",
         lambda *, client_mode, pat_path=None: (
             captured.update(
@@ -1407,9 +1376,7 @@ def test_load_client_factory_uses_configured_client_runtime(
         ),
     )
     manager = Quel3ConfigurationManager(
-        quelware_endpoint="worker-host",
-        quelware_port=61000,
-        client_mode="server",
+        runtime_config=Quel3RuntimeConfig(endpoint="worker-host", port=61000),
     )
 
     client_factory = manager._load_quelware_client_factory()  # noqa: SLF001
@@ -1439,14 +1406,16 @@ def test_load_client_factory_uses_configured_pat_path(
         return fake_client_factory
 
     monkeypatch.setattr(
-        configuration_manager_module,
+        runtime_config_module,
         "load_quelware_client_factory",
         _load_quelware_client_factory,
     )
     manager = Quel3ConfigurationManager(
-        quelware_endpoint="worker-host",
-        quelware_port=61000,
-        quelware_pat_path=pat_path,
+        runtime_config=Quel3RuntimeConfig(
+            endpoint="worker-host",
+            port=61000,
+            pat_path=pat_path,
+        ),
     )
 
     client_factory = manager._load_quelware_client_factory()  # noqa: SLF001
@@ -1462,10 +1431,7 @@ def test_refresh_instrument_cache_loads_existing_instruments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given existing quelware instruments, refreshing cache should expose alias mappings."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Category:
         name = "INSTRUMENT"
@@ -1523,10 +1489,7 @@ def test_refresh_instrument_cache_maps_unit_prefixed_aliases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given cached quelware aliases with unit prefixes, refresh should map local targets to runtime aliases."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Category:
         name = "INSTRUMENT"
@@ -1583,10 +1546,7 @@ def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given quelware instruments, hardware fetch should normalize them per box."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _InstrumentCategory:
         name = "INSTRUMENT"
@@ -1763,10 +1723,7 @@ def test_fetch_backend_settings_skips_unselected_unit_instrument_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given selected unit labels, hardware fetch should not inspect instruments on other units."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _InstrumentCategory:
         name = "INSTRUMENT"
@@ -1834,10 +1791,7 @@ def test_fetch_backend_settings_skips_unselected_unit_instrument_details(
 
 def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -> None:
     """Given hardware snapshot, cache sync should restore alias mappings."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     manager.sync_backend_settings_to_cache(
         backend_settings={
@@ -1908,10 +1862,7 @@ def test_deploy_instruments_replaces_cached_alias(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given cached alias, deploy_instruments should replace it through quelware."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
@@ -2024,10 +1975,7 @@ def test_deploy_instruments_replaces_cached_port_in_one_batched_deploy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given cached port instruments, deploy should replace the port in one call."""
-    manager = Quel3ConfigurationManager(
-        quelware_endpoint="localhost",
-        quelware_port=50051,
-    )
+    manager = Quel3ConfigurationManager()
 
     class _Profile:
         def __init__(self, *, frequency_range_min: float, frequency_range_max: float):
