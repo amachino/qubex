@@ -276,7 +276,8 @@ Calendar note:
 - 2026-02-25: Adopted `InstrumentResolver` as the integration baseline (replacing legacy `InstrumentMapper`) based on current `quelware-client` examples.
 - 2026-02-25: Fixed alias mapping policy to runtime auto-resolution from wiring/port; unresolved/ambiguous resolution must fail fast.
 - 2026-02-25: Fixed capture-mode contract direction for QuEL-3 path: `avg`=`AVERAGED_VALUE`, `single` follows quelware values-per-iteration semantics (legacy `VALUES_PER_LOOP` compatibility), waveform inspection uses `AVERAGED_WAVEFORM`.
-- 2026-02-25: Runtime connection defaults are provisionally aligned to `quelware-client` defaults (`endpoint=localhost`, `port=50051`, `trigger_wait=1000000`, `ttl_ms=4000`, `tentative_ttl_ms=1000`).
+- 2026-02-25: Runtime connection defaults were provisionally aligned to then-current `quelware-client` defaults (`endpoint=localhost`, `port=50051`); trigger/session timing constants were superseded by the 2026-06-16 `quelware-client` 0.4.1 integration.
+- 2026-06-16: Updated QuEL-3 runtime timing constants for `quelware-client` 0.4.1: trigger `wait_ms=None`, `ttl_ms=30000`, and `tentative_ttl_ms=5000`, and switched result collection to `InstrumentDriver.wait_for_result`.
 - 2026-02-25: Superseded prior provisional notes that required explicit `instrument_alias_map` or deferred DF-03/DF-04; resolver-based auto-resolution and DF-03/DF-04 are now fixed beta contract decisions.
 - 2026-02-25: Added QuEL-3 `tx/rx/trx` handling decision and `system` package boundary note (`quel1`/`quel3` common-vs-split).
 - 2026-02-25: Added demo-readiness gap note for QuEL-3 `CharacterizationService` frequency identification path (`LO/CNCO`-retune assumptions) and linked required contract work.

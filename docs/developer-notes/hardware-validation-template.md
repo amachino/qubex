@@ -15,7 +15,7 @@ Use this template for repeatable QuEL-1 / QuEL-3 hardware checks before beta and
 - Device IDs / aliases:
 - Sampling period (`dt`):
 - Runtime endpoint/port:
-- Trigger wait:
+- Trigger wait (`wait_ms`; `None` uses the client default):
 - Session TTL (`ttl_ms` / `tentative_ttl_ms`):
 - Measurement constraint mode (`strict` / `relaxed`):
 - Notes:

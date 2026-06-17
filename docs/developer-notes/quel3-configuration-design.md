@@ -16,13 +16,13 @@ Related policy:
   - `backend_kind="quel1" | "quel3"`
 - QuEL-3 measurement execution path exists in:
   - `src/qubex/backend/quel3/quel3_backend_controller.py`
-- Current runtime defaults are controller built-ins:
+- Current runtime defaults are controller and runtime built-ins:
   - endpoint: `localhost`
   - port: `50051`
-  - trigger wait: `1000000`
-- Session defaults (provisional, aligned with `quelware-client`):
-  - `ttl_ms=4000`
-  - `tentative_ttl_ms=1000`
+  - trigger `wait_ms=None` (use `quelware-client` default handling)
+- Session TTLs are explicit Qubex runtime values:
+  - `ttl_ms=30000`
+  - `tentative_ttl_ms=5000`
 - Target-to-instrument resolution is performed by runtime-side logic.
 - QuEL-3 system synchronizer is currently a no-op:
   - no backend-settings snapshot pull path is implemented yet
@@ -71,7 +71,7 @@ Status legend:
   - runtime:
     - deployment selection and backend-specific runtime settings
       (`system.yaml`: `system_id -> chip_id, backend, backend runtime`)
-    - endpoint, port, wait, ttl_ms, tentative_ttl_ms
+    - endpoint, port, trigger `wait_ms`, ttl_ms, tentative_ttl_ms
 
 ### D2.1 System/chip cardinality
 
@@ -108,11 +108,11 @@ Status legend:
 
 - Status: `IN_PROGRESS`
 - Current policy:
-  - Use `quelware-client` defaults as provisional runtime values for beta:
+  - Use `quelware-client` 0.4.1-compatible runtime values for beta:
     - endpoint=`localhost`
     - port=`50051`
-    - trigger wait=`1000000`
-    - `ttl_ms=4000`, `tentative_ttl_ms=1000`
+    - trigger `wait_ms=None`
+    - `ttl_ms=30000`, `tentative_ttl_ms=5000`
 - Target policy:
   - Move to config-file-first (`system.yaml`) with optional overrides in a later update.
 
