@@ -70,8 +70,8 @@ class InstrumentDriverProtocol(Protocol):
         """Initialize instrument state before apply/trigger flow."""
         ...
 
-    async def fetch_result(self) -> ResultContainerProtocol:
-        """Fetch one fixed-timeline execution result."""
+    async def wait_for_result(self) -> ResultContainerProtocol:
+        """Wait for one fixed-timeline execution result."""
         ...
 
 

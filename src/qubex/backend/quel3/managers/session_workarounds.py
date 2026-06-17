@@ -13,6 +13,8 @@ from qubex.backend.quel3.interfaces.client import (
     SessionProtocol,
 )
 
+QUELWARE_SESSION_CREATE_TTL_MS = 30_000
+QUELWARE_SESSION_CREATE_TENTATIVE_TTL_MS = 5_000
 QUELWARE_SESSION_CREATE_MAX_ATTEMPTS = 4
 QUELWARE_SESSION_CREATE_INITIAL_RETRY_DELAY_SECONDS = 0.5
 QUELWARE_SESSION_CREATE_MAX_RETRY_DELAY_SECONDS = 4.0
@@ -113,7 +115,11 @@ async def enter_quelware_session_with_resource_retry(
     for attempt in range(max_attempts):
         session_cm: AbstractAsyncContextManager[SessionProtocol] | None = None
         try:
-            session_cm = client.create_session(normalized_resource_ids)
+            session_cm = client.create_session(
+                normalized_resource_ids,
+                ttl_ms=QUELWARE_SESSION_CREATE_TTL_MS,
+                tentative_ttl_ms=QUELWARE_SESSION_CREATE_TENTATIVE_TTL_MS,
+            )
             session = await session_cm.__aenter__()
         except Exception as exc:
             session_token = quelware_session_token(session_cm)

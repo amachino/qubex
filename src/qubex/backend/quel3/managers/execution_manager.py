@@ -51,6 +51,7 @@ from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_br
 T = TypeVar("T")
 
 QUEL3_SESSION_REQUEST_MAX_ATTEMPTS = 4
+QUEL3_SESSION_TRIGGER_WAIT_MS: int | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -527,11 +528,14 @@ class Quel3ExecutionManager:
             alias: {window.name: [] for window in timeline.capture_windows}
             for alias, timeline in payload.fixed_timelines.items()
         }
-        await session_state.session.trigger(instrument_ids=instrument_resource_ids)
+        await session_state.session.trigger(
+            instrument_ids=instrument_resource_ids,
+            wait_ms=QUEL3_SESSION_TRIGGER_WAIT_MS,
+        )
         if parallel:
             results = await asyncio.gather(
                 *(
-                    session_state.alias_to_driver[alias].fetch_result()
+                    session_state.alias_to_driver[alias].wait_for_result()
                     for alias in aliases
                 )
             )
@@ -541,7 +545,7 @@ class Quel3ExecutionManager:
             for alias in aliases:
                 alias_results[alias] = await session_state.alias_to_driver[
                     alias
-                ].fetch_result()
+                ].wait_for_result()
 
         for alias, timeline in payload.fixed_timelines.items():
             result = alias_results[alias]

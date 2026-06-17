@@ -3474,7 +3474,7 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qctrl-visualizer", specifier = ">=8.0" },
-    { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.2.0" },
+    { name = "quelware-client", marker = "extra == 'quel3'", specifier = ">=0.4.1" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxdriver-quel1", marker = "extra == 'backend'", editable = "packages/qxdriver-quel1" },
     { name = "qxdriver-quel1", marker = "extra == 'quel1'", editable = "packages/qxdriver-quel1" },
@@ -3541,7 +3541,7 @@ wheels = [
 
 [[package]]
 name = "quelware-client"
-version = "0.2.0"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "betterproto2" },
@@ -3550,14 +3550,14 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9b/bb/0232743965856f544f14421b2984cf32f87c5216e5941637622529032a64/quelware_client-0.2.0.tar.gz", hash = "sha256:bea752ed2d188bb6fc4373c034f35b3f582cddcd0829a1d5ce10e2e477bdc4de", size = 105908, upload-time = "2026-05-28T04:50:11.598Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/98/d8aff99430928ed5c171b9c2d13b2630b28107538805e999a6c78549bc97/quelware_client-0.4.1.tar.gz", hash = "sha256:a884c111b4beedd596b31252a530e4556213354fa6039c23f17b647e93d392f7", size = 108713, upload-time = "2026-06-17T07:29:24.21Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/32/0356be3bf95db56ce72a3cad1cb55f8c588b48dc20741327d77dd85523e7/quelware_client-0.2.0-py3-none-any.whl", hash = "sha256:c94fbd2b3b5fe5d09770e68427ba94d2770bfa2afa3bb5ba9bdbeaae9b15a592", size = 38521, upload-time = "2026-05-28T04:50:10.171Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/31/e727f43f9aa9b3535d2c6c4ffad156f4bb574f54adf17be67a962c3bf028/quelware_client-0.4.1-py3-none-any.whl", hash = "sha256:77a9d8296b6be269886680a0b70305d48fd6276c3263404db958dcb9128043e6", size = 42962, upload-time = "2026-06-17T07:29:22.486Z" },
 ]
 
 [[package]]
 name = "quelware-core"
-version = "0.1.4"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "betterproto2" },
@@ -3567,9 +3567,9 @@ dependencies = [
     { name = "numpy" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4d/bc/7da83b41ccab7c109ba34b5ef309816bf5a9e387f1251503ecc6ae2f839b/quelware_core-0.1.4.tar.gz", hash = "sha256:4ecdbc5839b940610ba02a1937327107615a300a929c6a695cd0ae5fc82c2d74", size = 54579, upload-time = "2026-05-28T04:49:47.266Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/b4/b80d158605e1d8814ede439742e51ac42ed8c5ec8b353ecb2da13e31568d/quelware_core-0.4.0.tar.gz", hash = "sha256:36b39ba8262b9c188ba8ef30c8d8f9ea1385ff4a09fa8e1d532760dbcbbce2b0", size = 55080, upload-time = "2026-06-16T04:23:09.763Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/0e/0abac65a3fff8afe81c4f635d17985ef5d13f3d8155c0a42ffb177ecbead/quelware_core-0.1.4-py3-none-any.whl", hash = "sha256:f9189b33d6f6941b9d4ff0407e416628e35df44c974320d37075523b9485d2d5", size = 41188, upload-time = "2026-05-28T04:49:45.771Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/b1/8f508dbe6a300709367935900780c0599ce0ab0c77527c254ae4b66be452/quelware_core-0.4.0-py3-none-any.whl", hash = "sha256:07497eafd4e1b1972484dc9e714c3f86eb2d4ca1828a10d23d980f11d8589404", size = 42762, upload-time = "2026-06-16T04:23:08.203Z" },
 ]
 
 [[package]]
