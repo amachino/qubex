@@ -42,6 +42,8 @@ class MeasurementConfigFactory:
         time_integration: bool | None = None,
         state_classification: bool | None = None,
         return_items: Sequence[ReturnItem] | None = None,
+        schedule_packing_enabled: bool = False,
+        max_repeated_timeline_duration_ns: float | None = None,
     ) -> MeasurementConfig:
         """Create `MeasurementConfig` from optional runtime overrides."""
         resolved_return_items: tuple[ReturnItem, ...]
@@ -75,4 +77,6 @@ class MeasurementConfigFactory:
                 DEFAULT_STATE_CLASSIFICATION,
             ),
             return_items=resolved_return_items,
+            schedule_packing_enabled=schedule_packing_enabled,
+            max_repeated_timeline_duration_ns=max_repeated_timeline_duration_ns,
         )

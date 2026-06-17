@@ -427,6 +427,19 @@ class ConfigLoader:
         return dict(value)
 
     @property
+    def measurement_config(self) -> dict[str, Any]:
+        """Return measurement configuration for the loaded system."""
+        self._ensure_loaded()
+        value = self._system_dict.get("measurement")
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError(
+                f"`measurement` section in `{self._system_file}` must be a mapping."
+            )
+        return dict(value)
+
+    @property
     def measurement_defaults(self) -> MeasurementDefaults:
         """Return parsed partial measurement defaults for the loaded system."""
         self._ensure_loaded()

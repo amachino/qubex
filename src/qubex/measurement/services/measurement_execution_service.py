@@ -1328,7 +1328,49 @@ class MeasurementExecutionService:
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
+            schedule_packing_enabled=self._resolve_schedule_packing_enabled(),
+            max_repeated_timeline_duration_ns=(
+                self._resolve_max_repeated_timeline_duration_ns()
+            ),
         )
+
+    def _resolve_schedule_packing_enabled(self) -> bool:
+        """Return whether measurement schedules should be packed into timelines."""
+        config = self._resolve_schedule_packing_config()
+        value = config.get("enabled", False)
+        if isinstance(value, bool):
+            return value
+        raise TypeError("`measurement.schedule_packing.enabled` must be a boolean.")
+
+    def _resolve_max_repeated_timeline_duration_ns(self) -> float | None:
+        """Return repeated packed-timeline duration limit in ns."""
+        config = self._resolve_schedule_packing_config()
+        value = config.get("max_repeated_timeline_duration_ns")
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(
+                "`measurement.schedule_packing.max_repeated_timeline_duration_ns` "
+                "must be a number."
+            )
+        if value <= 0:
+            raise ValueError(
+                "`measurement.schedule_packing.max_repeated_timeline_duration_ns` "
+                "must be positive."
+            )
+        return float(value)
+
+    def _resolve_schedule_packing_config(self) -> dict[str, Any]:
+        """Return schedule packing config from generic measurement config."""
+        measurement_config = getattr(self.config_loader, "measurement_config", {})
+        if not isinstance(measurement_config, Mapping):
+            raise TypeError("`measurement` section must be a mapping.")
+        value = measurement_config.get("schedule_packing", {})
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return dict(value)
+        raise TypeError("`measurement.schedule_packing` must be a mapping.")
 
     def build_measurement_schedule(
         self,
