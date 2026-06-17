@@ -828,9 +828,18 @@ def test_execute_rejects_invalid_payload_before_opening_session(
             )
 
     class _OrderProbeClient(_FakeClient):
-        def create_session(self, resource_ids: list[str]) -> _FakeSession:
+        def create_session(
+            self,
+            resource_ids: list[str],
+            ttl_ms: int = 4_000,
+            tentative_ttl_ms: int = 1_000,
+        ) -> _FakeSession:
             create_session_calls.append(tuple(resource_ids))
-            return super().create_session(resource_ids)
+            return super().create_session(
+                resource_ids,
+                ttl_ms=ttl_ms,
+                tentative_ttl_ms=tentative_ttl_ms,
+            )
 
     def _create_driver(
         session: object,
@@ -892,7 +901,7 @@ class _FakeInstrumentDriver:
     async def initialize(self) -> None:
         self.initialized = True
 
-    async def fetch_result(self) -> object:
+    async def wait_for_result(self) -> object:
         return _FakeResultContainer()
 
 
@@ -992,7 +1001,7 @@ class _ParallelInstrumentDriver:
     async def initialize(self) -> None:
         await self._initialize_barrier.wait()
 
-    async def fetch_result(self) -> object:
+    async def wait_for_result(self) -> object:
         await self._fetch_barrier.wait()
         return _ParallelResultContainer(self._alias, self._value)
 
@@ -1037,7 +1046,7 @@ class _SerialProbeInstrumentDriver:
     async def initialize(self) -> None:
         await self._initialize_probe.step()
 
-    async def fetch_result(self) -> object:
+    async def wait_for_result(self) -> object:
         await self._fetch_probe.step()
         return _ParallelResultContainer(self._alias, self._value)
 
@@ -1058,8 +1067,14 @@ class _FakeSession:
     ) -> None:
         del exc_type, exc, tb
 
-    async def trigger(self, instrument_ids: list[str]) -> None:
+    async def trigger(
+        self,
+        instrument_ids: list[str],
+        wait_ms: int | None = None,
+    ) -> int:
+        del wait_ms
         self.trigger_calls.append(list(instrument_ids))
+        return 0
 
 
 class _FakeClient:
@@ -1079,8 +1094,13 @@ class _FakeClient:
         del exc_type, exc, tb
         self.exit_calls += 1
 
-    def create_session(self, resource_ids: list[str]) -> _FakeSession:
-        del resource_ids
+    def create_session(
+        self,
+        resource_ids: list[str],
+        ttl_ms: int = 4_000,
+        tentative_ttl_ms: int = 1_000,
+    ) -> _FakeSession:
+        del resource_ids, ttl_ms, tentative_ttl_ms
         return self._session
 
 
@@ -1145,13 +1165,18 @@ class _FlakyTriggerSession(_FakeSession):
         del exc_type, exc, tb
         self.exit_calls += 1
 
-    async def trigger(self, instrument_ids: list[str]) -> None:
-        await super().trigger(instrument_ids)
+    async def trigger(
+        self,
+        instrument_ids: list[str],
+        wait_ms: int | None = None,
+    ) -> int:
+        trigger_id = await super().trigger(instrument_ids, wait_ms=wait_ms)
         if self._fail_once:
             self._fail_once = False
             if self._failed_session_id is not None:
                 self.token = self._failed_session_id
             raise RuntimeError("quelware request failed")
+        return trigger_id
 
 
 class _CloseFailingSession(_FakeSession):
@@ -1175,10 +1200,15 @@ class _CloseFailingSession(_FakeSession):
         self.exit_calls += 1
         raise RuntimeError("quelware close failed")
 
-    async def trigger(self, instrument_ids: list[str]) -> None:
-        await super().trigger(instrument_ids)
+    async def trigger(
+        self,
+        instrument_ids: list[str],
+        wait_ms: int | None = None,
+    ) -> int:
+        trigger_id = await super().trigger(instrument_ids, wait_ms=wait_ms)
         if self._fail_trigger:
             raise RuntimeError("quelware request failed")
+        return trigger_id
 
 
 def test_execute_recreates_session_after_transient_request_failure(
@@ -1743,9 +1773,18 @@ def test_execute_batch_async_reopens_session_per_payload(
     create_session_calls: list[tuple[str, ...]] = []
 
     class _CountingClient(_FakeClient):
-        def create_session(self, resource_ids: list[str]) -> _FakeSession:
+        def create_session(
+            self,
+            resource_ids: list[str],
+            ttl_ms: int = 4_000,
+            tentative_ttl_ms: int = 1_000,
+        ) -> _FakeSession:
             create_session_calls.append(tuple(resource_ids))
-            return super().create_session(resource_ids)
+            return super().create_session(
+                resource_ids,
+                ttl_ms=ttl_ms,
+                tentative_ttl_ms=tentative_ttl_ms,
+            )
 
     client = _CountingClient(session)
 

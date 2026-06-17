@@ -72,7 +72,7 @@ class _FakeClient:
         self.failing_contexts: list[_FailingSessionContext] = []
         self.create_session_calls: list[tuple[str, ...]] = []
 
-    def create_session(self, resource_ids: tuple[str, ...]) -> object:
+    def create_session(self, resource_ids: tuple[str, ...], **_: object) -> object:
         self.create_session_calls.append(tuple(resource_ids))
         if len(self.create_session_calls) <= self._failures_before_success:
             context = _FailingSessionContext(
@@ -190,7 +190,7 @@ def test_open_retries_when_failed_session_token_is_unavailable(
             self.failing_context = _FailingUnopenedSession()
             self.create_session_calls: list[tuple[str, ...]] = []
 
-        def create_session(self, resource_ids: tuple[str, ...]) -> object:
+        def create_session(self, resource_ids: tuple[str, ...], **_: object) -> object:
             self.create_session_calls.append(tuple(resource_ids))
             if len(self.create_session_calls) == 1:
                 return self.failing_context

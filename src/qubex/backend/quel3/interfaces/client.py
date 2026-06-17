@@ -206,8 +206,8 @@ class SessionProtocol(Protocol):
     async def trigger(
         self,
         instrument_ids: Iterable[ResourceIdProtocol],
-        wait: int = 1_000_000,
-    ) -> None:
+        wait_ms: int | None = None,
+    ) -> int:
         """Trigger one fixed-timeline session run."""
         ...
 
@@ -236,6 +236,8 @@ class QuelwareClientProtocol(Protocol):
     def create_session(
         self,
         resource_ids: Iterable[ResourceIdProtocol],
+        ttl_ms: int = 4_000,
+        tentative_ttl_ms: int = 1_000,
     ) -> AbstractAsyncContextManager[SessionProtocol]:
         """Create one execution session for selected resources."""
         ...
