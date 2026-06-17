@@ -139,7 +139,8 @@ Status legend:
 - Decision:
   - Physical identifiers (`qubit_id`, `resonator_id`, `mux_id`) are integer and zero-based.
   - Human-facing labels (`Qxxx`, `RQxxx`, `Mxx`) belong to the experiment layer.
-  - For v1.5.0 scope, a separate labels YAML is not required.
+  - Do not introduce a separate labels YAML for v1.5.0; resolve labels from
+    chip/graph or registry metadata instead.
   - Runtime target resolution should prefer registry metadata, not label string parsing.
 
 ### D9. QuEL-3 readout `tx/rx/trx` handling in ExperimentSystem

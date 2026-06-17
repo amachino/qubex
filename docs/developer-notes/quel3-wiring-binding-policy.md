@@ -24,8 +24,8 @@ Define the configuration split for QuEL-3 so that:
   - `mux_id`: `0..`
 - Human-facing labels (for example `Q001`, `RQ01`) belong to the experiment layer
   and should not be embedded in physical wiring keys.
-- For v1.5.0 scope, a dedicated labels YAML is not required; labels can be
-  derived from chip/graph metadata at runtime.
+- Do not introduce a dedicated labels YAML for v1.5.0; derive labels from
+  chip/graph or registry metadata at runtime.
 
 ### Target-to-instrument mapping policy
 
