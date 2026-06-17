@@ -2246,6 +2246,7 @@ class Experiment:
         readout_post_margin: float | None = None,
         plot: bool | None = None,
         enable_tqdm: bool | None = None,
+        sweep_execution: Literal["sequential", "batch"] | None = None,
         title: str | None = None,
         xlabel: str | None = None,
         ylabel: str | None = None,
@@ -2286,6 +2287,11 @@ class Experiment:
             Whether to plot the measured signals. Defaults to True.
         enable_tqdm : bool, optional
             Whether to show a progress bar. Defaults to False.
+        sweep_execution : Literal["sequential", "batch"], optional
+            Sweep execution mode. `"sequential"` measures one sweep point at a
+            time, and `"batch"` runs sweep points through batch-capable
+            measurement APIs. Defaults to `system.yaml`
+            `experiment.sweep_execution`, or `"sequential"`.
         title : str, optional
             Title of the plot. Defaults to "Sweep result".
         xlabel : str, optional
@@ -2327,6 +2333,7 @@ class Experiment:
             readout_post_margin=readout_post_margin,
             plot=plot,
             enable_tqdm=enable_tqdm,
+            sweep_execution=sweep_execution,
             title=title,
             xlabel=xlabel,
             ylabel=ylabel,
