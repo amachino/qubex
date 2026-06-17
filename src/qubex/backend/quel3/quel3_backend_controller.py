@@ -17,7 +17,6 @@ from qubex.backend.backend_controller import (
 )
 from qubex.backend.quel3.infra import (
     Quel3ClientMode,
-    normalize_quel3_client_mode,
     validate_quelware_client_runtime,
 )
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
@@ -52,8 +51,7 @@ class Quel3BackendController(BackendController):
         *,
         quelware_endpoint: str | None = None,
         quelware_port: int | None = None,
-        client_mode: Quel3ClientMode | None = None,
-        standalone_unit_label: str | None = None,
+        client_mode: str | None = None,
         quelware_pat_path: str | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         session_manager: Quel3SessionManager | None = None,
@@ -110,9 +108,9 @@ class Quel3BackendController(BackendController):
         )
         explicit_client_mode = None
         if client_mode is not None:
-            explicit_client_mode = normalize_quel3_client_mode(client_mode)
-            if explicit_client_mode is None:
-                raise ValueError(f"Unsupported QuEL-3 client mode: {client_mode!r}")
+            explicit_client_mode = validate_quelware_client_runtime(
+                client_mode=client_mode,
+            )
         resolved_client_mode = cast(
             Quel3ClientMode,
             self._resolve_runtime_value(
@@ -131,24 +129,8 @@ class Quel3BackendController(BackendController):
                 default="server",
             ),
         )
-        resolved_standalone_unit_label = self._resolve_optional_runtime_value(
-            name="standalone_unit_label",
-            explicit_value=standalone_unit_label,
-            candidates=[
-                manager.standalone_unit_label
-                for manager in (
-                    connection_manager,
-                    session_manager,
-                    configuration_manager,
-                    execution_manager,
-                )
-                if manager is not None
-            ],
-            default=None,
-        )
         resolved_client_mode = validate_quelware_client_runtime(
             client_mode=resolved_client_mode,
-            standalone_unit_label=resolved_standalone_unit_label,
         )
         resolved_quelware_pat_path = self._resolve_optional_runtime_value(
             name="quelware_pat_path",
@@ -173,7 +155,6 @@ class Quel3BackendController(BackendController):
         self._quelware_endpoint = endpoint
         self._quelware_port = port
         self._client_mode: Quel3ClientMode = resolved_client_mode
-        self._standalone_unit_label = resolved_standalone_unit_label
         self._quelware_pat_path = resolved_quelware_pat_path
 
         self._connection_manager = (
@@ -183,7 +164,6 @@ class Quel3BackendController(BackendController):
                 quelware_endpoint=endpoint,
                 quelware_port=port,
                 client_mode=resolved_client_mode,
-                standalone_unit_label=resolved_standalone_unit_label,
                 quelware_pat_path=resolved_quelware_pat_path,
             )
         )
@@ -194,7 +174,6 @@ class Quel3BackendController(BackendController):
                 quelware_endpoint=endpoint,
                 quelware_port=port,
                 client_mode=resolved_client_mode,
-                standalone_unit_label=resolved_standalone_unit_label,
                 quelware_pat_path=resolved_quelware_pat_path,
             )
         )
@@ -205,7 +184,6 @@ class Quel3BackendController(BackendController):
                 quelware_endpoint=endpoint,
                 quelware_port=port,
                 client_mode=resolved_client_mode,
-                standalone_unit_label=resolved_standalone_unit_label,
                 quelware_pat_path=resolved_quelware_pat_path,
             )
         )
@@ -218,7 +196,6 @@ class Quel3BackendController(BackendController):
                 sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 client_mode=resolved_client_mode,
-                standalone_unit_label=resolved_standalone_unit_label,
                 quelware_pat_path=resolved_quelware_pat_path,
                 session_manager=self._session_manager,
             )
@@ -304,11 +281,6 @@ class Quel3BackendController(BackendController):
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
         return self._client_mode
-
-    @property
-    def standalone_unit_label(self) -> str | None:
-        """Return configured standalone unit label."""
-        return self._standalone_unit_label
 
     @property
     def quelware_pat_path(self) -> str | None:

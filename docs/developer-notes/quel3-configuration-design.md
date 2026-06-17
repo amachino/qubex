@@ -30,9 +30,7 @@ Related policy:
   - QuEL-3 `push()` path plans deploy requests from `TargetRegistry` in the
     system layer, then executes deployment through a backend-owned
     configuration manager
-- QuEL-3 backend runtime now supports two client modes:
-  - `server`
-  - `standalone` with required `standalone_unit_label`
+- QuEL-3 backend runtime supports only the `server` client mode.
 - Current runtime still uses process-global `SystemManager` singleton state:
   - one active experiment/measurement session per process is assumed
   - `Experiment(..., backend_controller=...)` is treated as session-start
@@ -141,7 +139,8 @@ Status legend:
 - Decision:
   - Physical identifiers (`qubit_id`, `resonator_id`, `mux_id`) are integer and zero-based.
   - Human-facing labels (`Qxxx`, `RQxxx`, `Mxx`) belong to the experiment layer.
-  - For v1.5.0 scope, a standalone labels YAML is not required.
+  - Do not introduce a separate labels YAML for v1.5.0; resolve labels from
+    chip/graph or registry metadata instead.
   - Runtime target resolution should prefer registry metadata, not label string parsing.
 
 ### D9. QuEL-3 readout `tx/rx/trx` handling in ExperimentSystem
@@ -255,8 +254,7 @@ Status legend:
         `append=True`
   - Session/runtime assumption for current scope:
     - `SystemManager` remains singleton-managed
-    - QuEL-3 standalone/server runtime selection is assumed stable for the
-      active session
+    - QuEL-3 server runtime settings are assumed stable for the active session
     - interleaving multiple active `Experiment` / `Measurement` objects with
       different backend runtime settings in one process is not supported
   - Future direction:

@@ -1375,17 +1375,16 @@ def test_deploy_instruments_parallel_false_serializes_ports(
 def test_load_client_factory_uses_configured_client_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given standalone runtime options, client factory loading should use that runtime."""
+    """Given server runtime options, client factory loading should use that runtime."""
     captured: dict[str, object] = {}
     fake_client_factory = object()
     monkeypatch.setattr(
         configuration_manager_module,
         "load_quelware_client_factory",
-        lambda *, client_mode, standalone_unit_label, pat_path=None: (
+        lambda *, client_mode, pat_path=None: (
             captured.update(
                 {
                     "client_mode": client_mode,
-                    "standalone_unit_label": standalone_unit_label,
                     "pat_path": pat_path,
                 }
             )
@@ -1395,16 +1394,14 @@ def test_load_client_factory_uses_configured_client_runtime(
     manager = Quel3ConfigurationManager(
         quelware_endpoint="worker-host",
         quelware_port=61000,
-        client_mode="standalone",
-        standalone_unit_label="quel3-02-a01",
+        client_mode="server",
     )
 
     client_factory = manager._load_quelware_client_factory()  # noqa: SLF001
 
     assert client_factory is fake_client_factory
     assert captured == {
-        "client_mode": "standalone",
-        "standalone_unit_label": "quel3-02-a01",
+        "client_mode": "server",
         "pat_path": None,
     }
 
@@ -1420,11 +1417,9 @@ def test_load_client_factory_uses_configured_pat_path(
     def _load_quelware_client_factory(
         *,
         client_mode: str,
-        standalone_unit_label: str | None,
         pat_path: str,
     ) -> object:
         captured["client_mode"] = client_mode
-        captured["standalone_unit_label"] = standalone_unit_label
         captured["pat_path"] = pat_path
         return fake_client_factory
 
@@ -1444,7 +1439,6 @@ def test_load_client_factory_uses_configured_pat_path(
     assert client_factory is fake_client_factory
     assert captured == {
         "client_mode": "server",
-        "standalone_unit_label": None,
         "pat_path": pat_path,
     }
 
