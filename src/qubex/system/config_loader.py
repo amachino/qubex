@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import warnings
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -37,6 +38,8 @@ from qubex.system.wiring import split_box_port_specifier
 from qubex.typing import ConfigurationMode
 
 logger = logging.getLogger(__name__)
+
+SYSTEM_APP_CONFIG_KEYS = frozenset(("experiment", "measurement"))
 
 if TYPE_CHECKING:
     from qubex.system.control_parameter_defaults import ControlParameterDefaults
@@ -404,6 +407,15 @@ class ConfigLoader:
     def backend_runtime_config(self) -> dict[str, Any]:
         """Return backend-specific runtime configuration for the loaded system."""
         self._ensure_loaded()
+        backend_config = self._resolve_backend_config_section()
+        return {
+            key: deepcopy(value)
+            for key, value in backend_config.items()
+            if key not in SYSTEM_APP_CONFIG_KEYS
+        }
+
+    def _resolve_backend_config_section(self) -> dict[str, Any]:
+        """Return selected backend config section as a mapping."""
         value = self._system_dict.get(self._backend_kind)
         if value is None:
             return {}
@@ -417,27 +429,50 @@ class ConfigLoader:
     def experiment_config(self) -> dict[str, Any]:
         """Return experiment configuration for the loaded system."""
         self._ensure_loaded()
-        value = self._system_dict.get("experiment")
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise TypeError(
-                f"`experiment` section in `{self._system_file}` must be a mapping."
-            )
-        return dict(value)
+        return self._resolve_app_config_section("experiment")
 
     @property
     def measurement_config(self) -> dict[str, Any]:
         """Return measurement configuration for the loaded system."""
         self._ensure_loaded()
-        value = self._system_dict.get("measurement")
+        return self._resolve_app_config_section("measurement")
+
+    def _resolve_app_config_section(self, section: str) -> dict[str, Any]:
+        """Return top-level app config overlaid with backend-scoped config."""
+        value = self._system_dict.get(section)
         if value is None:
-            return {}
+            top_level_config: dict[str, Any] = {}
+        elif isinstance(value, dict):
+            top_level_config = deepcopy(value)
+        else:
+            raise TypeError(
+                f"`{section}` section in `{self._system_file}` must be a mapping."
+            )
+
+        backend_config = self._resolve_backend_config_section()
+        value = backend_config.get(section)
+        if value is None:
+            return top_level_config
         if not isinstance(value, dict):
             raise TypeError(
-                f"`measurement` section in `{self._system_file}` must be a mapping."
+                f"`{self._backend_kind}.{section}` section in `{self._system_file}` must be a mapping."
             )
-        return dict(value)
+        return self._merge_mapping_config(top_level_config, value)
+
+    @staticmethod
+    def _merge_mapping_config(
+        base: dict[str, Any],
+        override: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return `base` recursively overlaid with `override`."""
+        merged = deepcopy(base)
+        for key, value in override.items():
+            current = merged.get(key)
+            if isinstance(current, dict) and isinstance(value, dict):
+                merged[key] = ConfigLoader._merge_mapping_config(current, value)
+            else:
+                merged[key] = deepcopy(value)
+        return merged
 
     @property
     def measurement_defaults(self) -> MeasurementDefaults:
