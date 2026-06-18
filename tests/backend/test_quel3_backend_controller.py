@@ -1471,10 +1471,10 @@ def test_execute_uses_configured_session_request_retry_limit(
     ]
 
 
-def test_execute_batch_recreates_session_after_transient_request_failure(
+def test_execute_batch_retries_only_failed_payload_after_transient_request_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given transient quelware request failure, batch execute should retry the batch."""
+    """Given one batch payload fails transiently, retry should resume from that payload."""
     payload = _make_payload()
     manager = Quel3ExecutionManager(
         runtime_config=Quel3RuntimeConfig(),
@@ -1490,14 +1490,34 @@ def test_execute_batch_recreates_session_after_transient_request_failure(
         }
     )
     sessions = [
-        _FlakyTriggerSession(fail_once=True),
-        _FlakyTriggerSession(fail_once=False),
+        _FlakyTriggerSession(fail_once=False, session_id="first-payload-session"),
+        _FlakyTriggerSession(
+            fail_once=True, session_id="failed-second-payload-session"
+        ),
+        _FlakyTriggerSession(
+            fail_once=False, session_id="retry-second-payload-session"
+        ),
     ]
-    clients: list[_FakeClient] = []
+    create_session_index = 0
+
+    class _SequencedSessionClient(_FakeClient):
+        def create_session(
+            self,
+            resource_ids: list[str],
+            ttl_ms: int = 4_000,
+            tentative_ttl_ms: int = 1_000,
+        ) -> _FakeSession:
+            nonlocal create_session_index
+            del resource_ids, ttl_ms, tentative_ttl_ms
+            session = sessions[create_session_index]
+            create_session_index += 1
+            return session
+
+    clients: list[_SequencedSessionClient] = []
 
     def _create_client(endpoint: str, port: int) -> _FakeClient:
         del endpoint, port
-        client = _FakeClient(sessions[len(clients)])
+        client = _SequencedSessionClient(_FakeSession())
         clients.append(client)
         return client
 
@@ -1525,9 +1545,10 @@ def test_execute_batch_recreates_session_after_transient_request_failure(
     assert len(results) == 2
     assert len(clients) == 2
     assert [client.exit_calls for client in clients] == [1, 1]
-    assert [session.exit_calls for session in sessions] == [1, 2]
+    assert [session.exit_calls for session in sessions] == [1, 1, 1]
     assert sessions[0].trigger_calls == [["alias-rq00"]]
-    assert sessions[1].trigger_calls == [["alias-rq00"], ["alias-rq00"]]
+    assert sessions[1].trigger_calls == [["alias-rq00"]]
+    assert sessions[2].trigger_calls == [["alias-rq00"]]
 
 
 def test_execute_batches_capture_mode_with_timeline_directive(

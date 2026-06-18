@@ -224,12 +224,10 @@ class Quel3ExecutionManager:
             for payload in payloads
         ]
 
-        return await self._run_with_session_request_retry(
-            lambda: self._execute_batch_once(
-                payload_plans=payload_plans,
-                quelware_api=quelware_api,
-                parallel=parallel,
-            )
+        return await self._execute_batch_once(
+            payload_plans=payload_plans,
+            quelware_api=quelware_api,
+            parallel=parallel,
         )
 
     async def execute(
@@ -264,52 +262,12 @@ class Quel3ExecutionManager:
             ) from exc
         payload_plan = self._prepare_payload_execution_plan(payload=payload)
 
-        results = await self._run_with_session_request_retry(
-            lambda: self._execute_batch_once(
-                payload_plans=[payload_plan],
-                quelware_api=quelware_api,
-                parallel=parallel,
-            )
+        results = await self._execute_batch_once(
+            payload_plans=[payload_plan],
+            quelware_api=quelware_api,
+            parallel=parallel,
         )
         return results[0]
-
-    async def _run_with_session_request_retry(
-        self,
-        operation: Callable[[], Awaitable[T]],
-    ) -> T:
-        """Run one session request, recreating the session after failures."""
-        max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
-        for attempt in range(max_attempts):
-            attempt_number = attempt + 1
-            try:
-                result = await operation()
-            except Exception as exc:
-                session_token = (
-                    exc.session_token
-                    if isinstance(exc, QuelwareSessionError)
-                    else self._active_session_token()
-                )
-                await self._close_session_manager_after_attempt()
-                if attempt_number >= max_attempts:
-                    if isinstance(exc, QuelwareSessionError):
-                        raise
-                    raise QuelwareSessionError(
-                        "QuEL-3 quelware session request failed after retries",
-                        session_token=session_token,
-                        cause=exc,
-                    ) from exc
-                logger.warning(
-                    "QuEL-3 quelware session request failed; session_token=%s; "
-                    "attempt=%d/%d; retrying with a fresh session; cause=%s",
-                    session_token,
-                    attempt_number,
-                    max_attempts,
-                    quelware_exception_summary(exc),
-                )
-            else:
-                await self._close_session_manager_after_attempt()
-                return result
-        raise RuntimeError("unreachable QuEL-3 session request retry state")
 
     async def _close_session_manager_after_attempt(self) -> None:
         """Close session state without masking request success or failure."""
@@ -336,38 +294,98 @@ class Quel3ExecutionManager:
     ) -> list[Quel3BackendExecutionResult]:
         """Execute one payload batch with per-payload quelware sessions."""
         # Batch flow:
-        # 1. Open one quelware client and refresh the instrument resolver once.
+        # 1. Lazily open one quelware client and refresh the instrument resolver.
         # 2. Resolve instrument info for each precomputed payload plan.
         # 3. Reopen a per-payload session for the resolved instrument resource IDs.
         # 4. Execute the resolved payload and collect results.
-        await self._session_manager.open(client_factory=quelware_api.client_factory)
+        # 5. Retry only the failed payload after transient session request failures.
         resolver = quelware_api.instrument_resolver_factory()
-        await resolver.refresh(self._session_manager.client)
 
-        results = []
-        for payload_plan in payload_plans:
-            alias_to_instrument_info = {
-                alias: self._find_instrument_info_by_alias(
+        try:
+            return [
+                await self._execute_payload_plan_with_session_request_retry(
+                    payload_plan=payload_plan,
                     resolver=resolver,
-                    alias=alias,
+                    quelware_api=quelware_api,
+                    parallel=parallel,
                 )
-                for alias in payload_plan.aliases
-            }
-            session_state = await self._open_payload_execution_session(
-                alias_to_instrument_info=alias_to_instrument_info,
-                aliases=payload_plan.aliases,
-                aliases_with_captures=payload_plan.aliases_with_captures,
-                quelware_api=quelware_api,
-            )
-            results.append(
-                await self._execute_resolved_payload(
+                for payload_plan in payload_plans
+            ]
+        finally:
+            await self._close_session_manager_after_attempt()
+
+    async def _execute_payload_plan_with_session_request_retry(
+        self,
+        *,
+        payload_plan: _PayloadExecutionPlan,
+        resolver: InstrumentResolverProtocol,
+        quelware_api: _QuelwareExecutionApi,
+        parallel: bool,
+    ) -> Quel3BackendExecutionResult:
+        """Execute one payload plan, recreating the session after failures."""
+        max_attempts = max(1, int(QUEL3_SESSION_REQUEST_MAX_ATTEMPTS))
+        for attempt in range(max_attempts):
+            attempt_number = attempt + 1
+            try:
+                await self._ensure_batch_client_ready(
+                    resolver=resolver,
+                    quelware_api=quelware_api,
+                )
+                alias_to_instrument_info = {
+                    alias: self._find_instrument_info_by_alias(
+                        resolver=resolver,
+                        alias=alias,
+                    )
+                    for alias in payload_plan.aliases
+                }
+                session_state = await self._open_payload_execution_session(
+                    alias_to_instrument_info=alias_to_instrument_info,
+                    aliases=payload_plan.aliases,
+                    aliases_with_captures=payload_plan.aliases_with_captures,
+                    quelware_api=quelware_api,
+                )
+                return await self._execute_resolved_payload(
                     payload=payload_plan.resolved_payload,
                     session_state=session_state,
                     quelware_api=quelware_api,
                     parallel=parallel,
                 )
-            )
-        return results
+            except Exception as exc:
+                session_token = (
+                    exc.session_token
+                    if isinstance(exc, QuelwareSessionError)
+                    else self._active_session_token()
+                )
+                await self._close_session_manager_after_attempt()
+                if attempt_number >= max_attempts:
+                    if isinstance(exc, QuelwareSessionError):
+                        raise
+                    raise QuelwareSessionError(
+                        "QuEL-3 quelware session request failed after retries",
+                        session_token=session_token,
+                        cause=exc,
+                    ) from exc
+                logger.warning(
+                    "QuEL-3 quelware session request failed; session_token=%s; "
+                    "attempt=%d/%d; retrying with a fresh session; cause=%s",
+                    session_token,
+                    attempt_number,
+                    max_attempts,
+                    quelware_exception_summary(exc),
+                )
+        raise RuntimeError("unreachable QuEL-3 session request retry state")
+
+    async def _ensure_batch_client_ready(
+        self,
+        *,
+        resolver: InstrumentResolverProtocol,
+        quelware_api: _QuelwareExecutionApi,
+    ) -> None:
+        """Open the batch client and refresh resolver state when needed."""
+        if self._session_manager.is_open:
+            return
+        await self._session_manager.open(client_factory=quelware_api.client_factory)
+        await resolver.refresh(self._session_manager.client)
 
     async def _open_payload_execution_session(
         self,
