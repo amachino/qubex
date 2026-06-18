@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, 
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, TypeVar, cast
+from typing import Any, Literal, TypeAlias, TypeVar, cast
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -36,6 +36,8 @@ from qubex.measurement.measurement_schedule_builder import (
     MeasurementScheduleBuilder,
 )
 from qubex.measurement.measurement_schedule_runner import MeasurementScheduleRunner
+from qubex.measurement.models.capture_data import CaptureData
+from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
@@ -71,6 +73,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 OptionT = TypeVar("OptionT")
 RFSwitchState = Literal["pass", "block", "open", "loop"]
+MeasurementResultSplitPlan: TypeAlias = list[dict[str, int]]
 
 
 def _run_async(
@@ -662,7 +665,7 @@ class MeasurementExecutionService:
             measurement_schedules = [
                 schedule(sweep_value) for sweep_value in normalized_values
             ]
-            results = await self.measurement_schedule_runner.execute_many_async(
+            results = await self._execute_measurement_schedules(
                 schedules=measurement_schedules,
                 config=resolved_config,
             )
@@ -754,7 +757,7 @@ class MeasurementExecutionService:
                 for ndindex in np.ndindex(shape)
             ]
             measurement_schedules = [schedule(point) for point in points]
-            results = await self.measurement_schedule_runner.execute_many_async(
+            results = await self._execute_measurement_schedules(
                 schedules=measurement_schedules,
                 config=resolved_config,
             )
@@ -779,6 +782,338 @@ class MeasurementExecutionService:
             config=resolved_config,
             results=results,
         )
+
+    async def _execute_measurement_schedules(
+        self,
+        *,
+        schedules: list[MeasurementSchedule],
+        config: MeasurementConfig,
+    ) -> list[MeasurementResult]:
+        """Execute multiple schedules either as one packed timeline or batch requests."""
+        runner = self.measurement_schedule_runner
+        if self._should_pack_measurement_schedules(
+            runner=runner,
+            schedules=schedules,
+            config=config,
+        ):
+            return await self._execute_measurement_schedules_as_packed_timeline(
+                runner=runner,
+                schedules=schedules,
+                config=config,
+            )
+        return await runner.execute_many_async(
+            schedules=schedules,
+            config=config,
+        )
+
+    async def _execute_measurement_schedules_as_packed_timeline(
+        self,
+        *,
+        runner: MeasurementScheduleRunner,
+        schedules: list[MeasurementSchedule],
+        config: MeasurementConfig,
+    ) -> list[MeasurementResult]:
+        """Execute packed timeline chunks and split merged results per schedule."""
+        results: list[MeasurementResult] = []
+        for chunk in self._split_measurement_schedules_into_packed_timeline_chunks(
+            schedules=schedules,
+            config=config,
+        ):
+            results.extend(
+                await self._execute_measurement_schedule_chunk_as_packed_timeline(
+                    runner=runner,
+                    schedules=chunk,
+                    config=config,
+                )
+            )
+        return results
+
+    async def _execute_measurement_schedule_chunk_as_packed_timeline(
+        self,
+        *,
+        runner: MeasurementScheduleRunner,
+        schedules: list[MeasurementSchedule],
+        config: MeasurementConfig,
+    ) -> list[MeasurementResult]:
+        """Execute one packed timeline chunk and split merged results per schedule."""
+        split_plan = self._build_measurement_result_split_plan(schedules=schedules)
+        merged_schedule = self._merge_measurement_schedules(
+            schedules=schedules,
+            shot_interval=config.shot_interval,
+        )
+        merged_measurement_result = await runner.execute_async(
+            schedule=merged_schedule,
+            config=config,
+        )
+        return self._split_merged_measurement_result(
+            merged_result=merged_measurement_result,
+            split_plan=split_plan,
+        )
+
+    def _split_measurement_schedules_into_packed_timeline_chunks(
+        self,
+        *,
+        schedules: list[MeasurementSchedule],
+        config: MeasurementConfig,
+    ) -> list[list[MeasurementSchedule]]:
+        """
+        Split packed timeline chunks by the repeated-duration soft limit.
+
+        A single over-limit schedule remains in its own chunk.
+        """
+        limit = config.max_repeated_timeline_duration_ns
+        if limit is None:
+            return [schedules]
+
+        chunks: list[list[MeasurementSchedule]] = []
+        current_chunks: list[MeasurementSchedule] = []
+        for schedule in schedules:
+            if self._packed_timeline_repeated_duration_within_limit(
+                limit, config.n_shots, config.shot_interval, [*current_chunks, schedule]
+            ):
+                current_chunks.append(schedule)
+            else:
+                if len(current_chunks) == 0:
+                    chunks.append([schedule])
+                else:
+                    chunks.append(current_chunks)
+                    current_chunks = [schedule]
+
+        if len(current_chunks) > 0:
+            chunks.append(current_chunks)
+
+        return chunks
+
+    @staticmethod
+    def _packed_timeline_repeated_duration_within_limit(
+        limit: float,
+        n_shots: int,
+        shot_interval: float,
+        schedules: Sequence[MeasurementSchedule],
+    ) -> bool:
+        total_duration = 0.0
+        for schedule in schedules:
+            total_duration += schedule.pulse_schedule.duration
+
+        repeated_total_duration = (
+            total_duration + (len(schedules) - 1) * shot_interval
+        ) * n_shots
+        return repeated_total_duration <= limit
+
+    def _should_pack_measurement_schedules(
+        self,
+        *,
+        runner: MeasurementScheduleRunner,
+        schedules: Sequence[MeasurementSchedule],
+        config: MeasurementConfig,
+    ) -> bool:
+        """Return whether all schedules should be packed into one timeline."""
+        del runner
+        if len(schedules) <= 1:
+            return False
+        if not config.should_use_schedule_packing:
+            return False
+        return self._can_merge_measurement_schedules(schedules=schedules)
+
+    def _can_merge_measurement_schedules(
+        self,
+        *,
+        schedules: Sequence[MeasurementSchedule],
+    ) -> bool:
+        """Return whether schedules can be concatenated without changing channel metadata."""
+        if len(schedules) <= 1:
+            return False
+        first_schedule = schedules[0].pulse_schedule
+        if not isinstance(first_schedule, PulseSchedule):
+            return False
+        labels = first_schedule.labels
+        sampling_periods = self._schedule_sampling_periods(first_schedule)
+        if sampling_periods is None:
+            return False
+        frequencies = self._schedule_frequencies(first_schedule)
+        if frequencies is None:
+            return False
+
+        for schedule in schedules[1:]:
+            pulse_schedule = schedule.pulse_schedule
+            if not isinstance(pulse_schedule, PulseSchedule):
+                return False
+            if pulse_schedule.labels != labels:
+                return False
+            if self._schedule_sampling_periods(pulse_schedule) != sampling_periods:
+                return False
+            next_frequencies = self._schedule_frequencies(pulse_schedule)
+            if next_frequencies is None:
+                return False
+            for label, frequency in frequencies.items():
+                if not self._same_optional_frequency(
+                    frequency,
+                    next_frequencies[label],
+                ):
+                    return False
+        return True
+
+    @staticmethod
+    def _schedule_sampling_periods(
+        pulse_schedule: PulseSchedule,
+    ) -> dict[str, float] | None:
+        """Return sampling periods keyed by label when all channel metadata is valid."""
+        sampling_periods: dict[str, float] = {}
+        for label in pulse_schedule.labels:
+            try:
+                sequence = pulse_schedule.get_sequence(label, copy=False)
+            except KeyError:
+                return None
+            sampling_period = getattr(sequence, "sampling_period", None)
+            if not isinstance(sampling_period, (int, float)):
+                return None
+            sampling_periods[label] = float(sampling_period)
+        return sampling_periods
+
+    @staticmethod
+    def _schedule_frequencies(
+        pulse_schedule: PulseSchedule,
+    ) -> dict[str, float | None] | None:
+        """Return frequencies keyed by label when frequency metadata is valid."""
+        raw_frequencies = pulse_schedule.get_frequencies()
+        if not isinstance(raw_frequencies, Mapping):
+            return None
+        frequencies: dict[str, float | None] = {}
+        labels = set(pulse_schedule.labels)
+        for label, frequency in raw_frequencies.items():
+            if label not in labels:
+                return None
+            if frequency is None:
+                frequencies[label] = None
+                continue
+            if not isinstance(frequency, (int, float)):
+                return None
+            frequencies[label] = float(frequency)
+        return frequencies
+
+    @staticmethod
+    def _same_optional_frequency(
+        left: float | None,
+        right: float | None,
+    ) -> bool:
+        """Return whether two optional schedule frequencies are equivalent."""
+        if left is None or right is None:
+            return left is right
+        return bool(np.isclose(left, right))
+
+    def _build_measurement_result_split_plan(
+        self,
+        *,
+        schedules: list[MeasurementSchedule],
+    ) -> MeasurementResultSplitPlan:
+        """Build per-schedule visible capture counts keyed by canonical output target."""
+        split_plan: MeasurementResultSplitPlan = []
+        for schedule in schedules:
+            capture_counts: dict[str, int] = {}
+            for capture in schedule.capture_schedule.captures:
+                if capture.is_workaround:
+                    continue
+                for channel in capture.channels:
+                    output_target = self._resolve_capture_output_target(channel)
+                    capture_counts[output_target] = (
+                        capture_counts.get(output_target, 0) + 1
+                    )
+            split_plan.append(capture_counts)
+        return split_plan
+
+    def _resolve_capture_output_target(self, capture_channel: str) -> str:
+        """Resolve the canonical measurement-result key for one capture channel."""
+        target_registry = self._context.experiment_system.target_registry
+        return str(target_registry.measurement_output_label(capture_channel))
+
+    def _merge_measurement_schedules(
+        self,
+        *,
+        schedules: list[MeasurementSchedule],
+        shot_interval: float,
+    ) -> MeasurementSchedule:
+        """Build one measurement schedule by concatenating schedules separated by shot interval."""
+        if len(schedules) == 0:
+            raise ValueError("At least one schedule is required.")
+
+        merged_pulse_schedule = schedules[0].pulse_schedule.copy()
+        merged_captures = [
+            capture.model_copy(update={"channels": capture.channels.copy()})
+            for capture in schedules[0].capture_schedule.captures
+        ]
+
+        for schedule in schedules[1:]:
+            # TODO: Base packed shifts on the full capture timeline, not only pulse duration.
+            shift_duration = merged_pulse_schedule.duration + shot_interval
+            merged_pulse_schedule.barrier()
+            merged_pulse_schedule.pad(shift_duration)
+            merged_pulse_schedule.call(schedule.pulse_schedule, copy=True)
+            merged_captures.extend(
+                capture.model_copy(
+                    update={
+                        "start_time": capture.start_time + shift_duration,
+                        "channels": capture.channels.copy(),
+                    }
+                )
+                for capture in schedule.capture_schedule.captures
+            )
+
+        return MeasurementSchedule(
+            pulse_schedule=merged_pulse_schedule,
+            capture_schedule=CaptureSchedule(captures=merged_captures),
+        )
+
+    def _split_merged_measurement_result(
+        self,
+        *,
+        merged_result: MeasurementResult,
+        split_plan: MeasurementResultSplitPlan,
+    ) -> list[MeasurementResult]:
+        """Split one merged measurement result by canonical capture ordering."""
+        remaining_data: dict[str, list[CaptureData]] = {
+            target: [*captures] for target, captures in merged_result.data.items()
+        }
+        split_results: list[MeasurementResult] = []
+
+        for capture_counts in split_plan:
+            chunk_data: dict[str, list[CaptureData]] = {}
+            for target, capture_count in capture_counts.items():
+                captures = remaining_data.setdefault(target, [])
+                if capture_count > len(captures):
+                    raise ValueError(
+                        f"Not enough captures for target `{target}` to split "
+                        "packed timeline: "
+                        f"expected {capture_count}, got {len(captures)}."
+                    )
+                chunk_data[target] = captures[:capture_count]
+                remaining_data[target] = captures[capture_count:]
+
+            classifier_refs = None
+            if merged_result.classifier_refs is not None:
+                classifier_refs = {
+                    target: classifier_ref
+                    for target, classifier_ref in merged_result.classifier_refs.items()
+                    if target in chunk_data
+                }
+                if len(classifier_refs) == 0:
+                    classifier_refs = None
+
+            split_results.append(
+                MeasurementResult(
+                    data=chunk_data,
+                    measurement_config=merged_result.measurement_config,
+                    device_config=merged_result.device_config,
+                    classifier_refs=classifier_refs,
+                )
+            )
+
+        for captures in remaining_data.values():
+            if len(captures) > 0:
+                raise ValueError(
+                    "Packed measurement result contains unmatched captures after split."
+                )
+
+        return split_results
 
     def _can_use_batch_execution(self) -> bool:
         """Return whether backend batch execution can be used safely."""
@@ -1328,7 +1663,49 @@ class MeasurementExecutionService:
             shot_averaging=shot_averaging,
             time_integration=time_integration,
             state_classification=state_classification,
+            schedule_packing_enabled=self._resolve_schedule_packing_enabled(),
+            max_repeated_timeline_duration_ns=(
+                self._resolve_max_repeated_timeline_duration_ns()
+            ),
         )
+
+    def _resolve_schedule_packing_enabled(self) -> bool:
+        """Return whether measurement schedules should be packed into timelines."""
+        config = self._resolve_schedule_packing_config()
+        value = config.get("enabled", False)
+        if isinstance(value, bool):
+            return value
+        raise TypeError("`measurement.schedule_packing.enabled` must be a boolean.")
+
+    def _resolve_max_repeated_timeline_duration_ns(self) -> float | None:
+        """Return repeated packed-timeline duration limit in ns."""
+        config = self._resolve_schedule_packing_config()
+        value = config.get("max_repeated_timeline_duration_ns")
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(
+                "`measurement.schedule_packing.max_repeated_timeline_duration_ns` "
+                "must be a number."
+            )
+        if value <= 0:
+            raise ValueError(
+                "`measurement.schedule_packing.max_repeated_timeline_duration_ns` "
+                "must be positive."
+            )
+        return float(value)
+
+    def _resolve_schedule_packing_config(self) -> dict[str, Any]:
+        """Return schedule packing config from generic measurement config."""
+        measurement_config = getattr(self.config_loader, "measurement_config", {})
+        if not isinstance(measurement_config, Mapping):
+            raise TypeError("`measurement` section must be a mapping.")
+        value = measurement_config.get("schedule_packing", {})
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return dict(value)
+        raise TypeError("`measurement.schedule_packing` must be a mapping.")
 
     def build_measurement_schedule(
         self,
