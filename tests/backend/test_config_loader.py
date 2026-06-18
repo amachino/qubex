@@ -1289,6 +1289,49 @@ def test_backend_runtime_config_returns_selected_backend_section(
     assert loader.backend_runtime_config == runtime_config
 
 
+def test_backend_runtime_config_excludes_scoped_app_configs(
+    tmp_path: Path,
+) -> None:
+    """Given backend app configs, when loading, then runtime config omits them."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    runtime_config = {
+        "endpoint": "192.0.2.10",
+        "port": 50052,
+        "experiment": {"sweep_execution": "batch"},
+        "measurement": {"schedule_packing": {"enabled": True}},
+    }
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            BACKEND_KIND_QUEL3: runtime_config,
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.backend_runtime_config == {
+        "endpoint": "192.0.2.10",
+        "port": 50052,
+    }
+
+
 def test_experiment_config_returns_top_level_experiment_section(
     tmp_path: Path,
 ) -> None:
@@ -1317,6 +1360,52 @@ def test_experiment_config_returns_top_level_experiment_section(
     assert loaded_config != loader.experiment_config
     assert loader.experiment_config == experiment_config
     assert loader.backend_runtime_config == {}
+
+
+def test_experiment_config_merges_selected_backend_section(
+    tmp_path: Path,
+) -> None:
+    """Given backend experiment settings, ConfigLoader should merge them last."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            "experiment": {
+                "sweep_execution": "sequential",
+                "analysis": {"enabled": True, "mode": "quick"},
+            },
+            BACKEND_KIND_QUEL3: {
+                "experiment": {
+                    "sweep_execution": "batch",
+                    "analysis": {"mode": "full"},
+                }
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.experiment_config == {
+        "sweep_execution": "batch",
+        "analysis": {"enabled": True, "mode": "full"},
+    }
 
 
 def test_measurement_config_rejects_non_mapping_config(
@@ -1351,6 +1440,41 @@ def test_measurement_config_rejects_non_mapping_config(
     )
 
     with pytest.raises(TypeError):
+        _ = loader.measurement_config
+
+
+def test_measurement_config_rejects_non_mapping_backend_config(
+    tmp_path: Path,
+) -> None:
+    """Given non-mapping backend measurement config, ConfigLoader should reject it."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            BACKEND_KIND_QUEL3: {"measurement": True},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    with pytest.raises(TypeError, match="quel3\\.measurement"):
         _ = loader.measurement_config
 
 
@@ -1395,6 +1519,59 @@ def test_measurement_config_returns_top_level_measurement_section(
 
     assert loaded_config != loader.measurement_config
     assert loader.measurement_config == measurement_config
+
+
+def test_measurement_config_merges_selected_backend_section(
+    tmp_path: Path,
+) -> None:
+    """Given backend measurement settings, ConfigLoader should merge them last."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(
+        config_dir / "box.yaml",
+        {
+            "BOX1": {
+                "name": "Box One",
+                "type": "quel3",
+            }
+        },
+    )
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "schema_version": 1,
+            "chip_id": chip_id,
+            "backend": BACKEND_KIND_QUEL3,
+            "measurement": {
+                "schedule_packing": {
+                    "enabled": True,
+                    "max_repeated_timeline_duration_ns": 20_000_000_000,
+                },
+                "export": {"enabled": True},
+            },
+            BACKEND_KIND_QUEL3: {
+                "measurement": {
+                    "schedule_packing": {
+                        "enabled": False,
+                    }
+                }
+            },
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.measurement_config == {
+        "schedule_packing": {
+            "enabled": False,
+            "max_repeated_timeline_duration_ns": 20_000_000_000,
+        },
+        "export": {"enabled": True},
+    }
 
 
 def test_load_configures_quel3_readout_without_lo(tmp_path: Path) -> None:
