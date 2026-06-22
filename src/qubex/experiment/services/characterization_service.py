@@ -2046,7 +2046,6 @@ class CharacterizationService:
                         f = self.ctx.qubits[target].frequency
                         t2 = fit_result["tau"]
                         ramsey_freq = fit_result["f"]
-                        ramsey_freq_err = fit_result["f_err"]
                         phi = fit_result["phi"]
                         if second_rotation_axis == "Y":
                             if phi > 0:
@@ -2063,8 +2062,6 @@ class CharacterizationService:
                             ramsey_freq=ramsey_freq,
                             bare_freq=bare_freq,
                             r2=r2,
-                            ramsey_freq_err=ramsey_freq_err,
-                            bare_freq_err=ramsey_freq_err,
                         )
                         data[target] = ramsey_data
 
