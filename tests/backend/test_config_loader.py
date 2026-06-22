@@ -1666,7 +1666,7 @@ def test_r8_awg2222_with_ge_ef_fh_shares_second_channel_for_ef_and_fh(
 def test_quel3_target_registry_is_independent_of_configuration_mode(
     tmp_path: Path,
 ) -> None:
-    """Given QuEL-3 backend, when rebuilding registry with different modes, then logical targets stay unchanged."""
+    """Given QuEL-3 backend, when rebuilding registry with different modes, then logical FH targets stay unchanged."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     _write_yaml(
@@ -1698,12 +1698,13 @@ def test_quel3_target_registry_is_independent_of_configuration_mode(
     )
 
     assert ge_cr_cr_labels == ge_ef_cr_labels
+    assert "Q1-fh" in ge_cr_cr_labels
 
 
 def test_quel3_control_targets_share_one_logical_channel_per_port(
     tmp_path: Path,
 ) -> None:
-    """Given QuEL-3 backend, when building targets, then one port reuses one logical channel for GE and CR."""
+    """Given QuEL-3 backend, when building targets, then one port reuses one logical channel for GE, EF, FH, and CR."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     _write_yaml(
@@ -1730,14 +1731,19 @@ def test_quel3_control_targets_share_one_logical_channel_per_port(
     experiment_system = loader.get_experiment_system()
 
     ge_target = experiment_system.get_target("Q1")
+    ef_target = experiment_system.get_target("Q1-ef")
+    fh_target = experiment_system.get_target("Q1-fh")
     default_cr_target = experiment_system.get_target("Q1-CR")
     pair_cr_label = next(
         label
         for label in experiment_system.gen_targets
-        if label.startswith("Q1-") and label not in {"Q1-CR", "Q1-ef"}
+        if label.startswith("Q1-") and label not in {"Q1-CR", "Q1-ef", "Q1-fh"}
     )
     pair_cr_target = experiment_system.get_target(pair_cr_label)
 
+    assert experiment_system.resolve_fh_label("Q1") == "Q1-fh"
+    assert ge_target.channel.id == ef_target.channel.id
+    assert ge_target.channel.id == fh_target.channel.id
     assert ge_target.channel.id == default_cr_target.channel.id
     assert ge_target.channel.id == pair_cr_target.channel.id
 

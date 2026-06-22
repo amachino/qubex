@@ -857,6 +857,10 @@ class ExperimentSystem:
         if ef_target.label not in self.targets_to_exclude:
             gen_targets[ef_target.label] = ef_target
 
+        fh_target = Target.new_fh_target(qubit=qubit, channel=channel)
+        if fh_target.label not in self.targets_to_exclude:
+            gen_targets[fh_target.label] = fh_target
+
         spectators = self.get_spectator_qubits(qubit.label)
         default_cr_frequency = (
             spectators[0].frequency if spectators else qubit.frequency
