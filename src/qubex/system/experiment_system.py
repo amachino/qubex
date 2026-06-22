@@ -177,7 +177,9 @@ class ExperimentSystem:
     @property
     def ctrl_targets(self) -> list[Target]:
         """Return the control targets."""
-        return self.ge_targets + self.ef_targets + self.fh_targets + self.two_qubit_targets
+        return (
+            self.ge_targets + self.ef_targets + self.fh_targets + self.two_qubit_targets
+        )
 
     @property
     def read_out_targets(self) -> list[Target]:
