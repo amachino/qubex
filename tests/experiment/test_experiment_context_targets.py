@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Literal
 
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.system import Qubit, Target
+from qubex.system import Qubit, Target, TargetType
 from qubex.system.control_system import GenChannel, GenPort, PortType
 
 
@@ -22,6 +22,12 @@ class _ExperimentSystemStub:
 
     def resolve_cr_pair(self, label: str) -> tuple[str, str]:
         return self._cr_pairs[label]
+
+    def resolve_2q_qubits(self, label: str) -> tuple[str, str]:
+        pair = self._cr_pairs[label]
+        if pair[1] == "CR":
+            raise ValueError(label)
+        return pair
 
 
 def _make_gen_channel(*, sideband: Literal["U", "L"] = "U") -> GenChannel:
@@ -111,6 +117,35 @@ def test_targets_keep_cr_pair_with_active_spectator(monkeypatch) -> None:
     )
 
     assert set(context.targets) == {"Q00-Q01"}
+
+
+def test_targets_exclude_bswap_pair_with_inactive_spectator(monkeypatch) -> None:
+    """Given inactive spectator, when listing targets, then bSWAP pair target is excluded."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+
+    channel = _make_gen_channel()
+    control_qubit = _make_qubit("Q00", 5.0)
+    bswap_target = Target.new_target(
+        label="Q00-Q01-bSWAP",
+        frequency=5.2,
+        object=control_qubit,
+        channel=channel,
+        type=TargetType.CTRL_2Q,
+        metadata={"gate": "BSWAP", "active_qubit": "Q00", "passive_qubit": "Q01"},
+    )
+    experiment_system = _ExperimentSystemStub(
+        targets=[bswap_target],
+        cr_pairs={bswap_target.label: ("Q00", "Q01")},
+    )
+
+    monkeypatch.setattr(
+        ExperimentContext,
+        "experiment_system",
+        property(lambda self: experiment_system),
+    )
+
+    assert set(context.targets) == set()
 
 
 def test_get_edge_labels_filters_to_same_mux_by_default(monkeypatch) -> None:
