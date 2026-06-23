@@ -507,15 +507,23 @@ class ExperimentContext:
 
     def _is_visible_target_for_active_qubits(self, target: Target) -> bool:
         """Return whether one target should be exposed for the active qubits."""
-        if not target.is_cr:
+        if not target.is_2q:
             return True
         try:
-            _control_qubit, target_qubit = self.experiment_system.resolve_cr_pair(
+            control_qubit, target_qubit = self.experiment_system.resolve_2q_qubits(
                 target.label
             )
         except ValueError:
-            return True
-        return target_qubit == "CR" or target_qubit in self.qubit_labels
+            if not target.is_cr:
+                return True
+            try:
+                _control_qubit, target_qubit = self.experiment_system.resolve_cr_pair(
+                    target.label
+                )
+            except ValueError:
+                return True
+            return target_qubit == "CR" or target_qubit in self.qubit_labels
+        return control_qubit in self.qubit_labels and target_qubit in self.qubit_labels
 
     @property
     def available_targets(self) -> dict[str, Target]:
@@ -777,7 +785,7 @@ class ExperimentContext:
                         cr_pairs.append(pair)
             except Exception as exc:
                 logger.debug(
-                    "Failed to parse CR target label %s: %s",
+                    "Failed to resolve CR target metadata %s: %s",
                     label,
                     exc,
                     exc_info=True,
@@ -829,6 +837,10 @@ class ExperimentContext:
     def cr_pair(self, cr_label: str) -> tuple[str, str]:
         """Return the control/target qubit pair for a CR label."""
         return self.experiment_system.resolve_cr_pair(cr_label)
+
+    def resolve_2q_qubits(self, target_label: str) -> tuple[str, str]:
+        """Return the control/target qubit pair for a two-qubit target label."""
+        return self.experiment_system.resolve_2q_qubits(target_label)
 
     def resolve_qubit_label(self, label: str) -> str:
         """Resolve qubit label through the experiment system."""
@@ -1013,6 +1025,18 @@ class ExperimentContext:
                 f"`{label}`. Pass `qubit_label` explicitly."
             ) from None
 
+    def _resolve_explicit_qubit_label(self, label: str) -> str:
+        """Resolve an explicitly provided qubit-like label."""
+        target_registry = self.experiment_system.target_registry
+        try:
+            return target_registry.resolve_qubit_label(label)
+        except ValueError:
+            pass
+        try:
+            return self.experiment_system.get_qubit(label).label
+        except Exception:
+            raise ValueError(f"Unknown qubit label `{label}`.") from None
+
     def _resolve_custom_target_object(
         self,
         *,
@@ -1024,6 +1048,7 @@ class ExperimentContext:
         if target_type in (
             TargetType.CTRL_GE,
             TargetType.CTRL_EF,
+            TargetType.CTRL_2Q,
             TargetType.CTRL_CR,
             TargetType.UNKNOWN,
         ):
@@ -1043,6 +1068,8 @@ class ExperimentContext:
         port_number: int,
         channel_number: int,
         qubit_label: str | None = None,
+        target_qubit_label: str | None = None,
+        metadata: dict[str, Any] | None = None,
         target_type: TargetType | None = None,
         update_backend_settings: bool | None = None,
         **deprecated_options: Any,
@@ -1069,6 +1096,39 @@ class ExperimentContext:
             label=label,
             qubit_label=qubit_label,
         )
+        target_metadata: dict[str, Any] = dict(metadata or {})
+        if target_type == TargetType.CTRL_CR:
+            target_metadata["control_qubit"] = resolved_qubit_label
+            target_metadata["target_qubit"] = "CR"
+            if target_qubit_label is not None:
+                resolved_target_qubit_label = self._resolve_explicit_qubit_label(
+                    target_qubit_label
+                )
+                if resolved_target_qubit_label == resolved_qubit_label:
+                    raise ValueError("Custom 2Q target qubits must be distinct.")
+                target_metadata["target_qubit"] = resolved_target_qubit_label
+        elif target_type == TargetType.CTRL_2Q:
+            if target_qubit_label is None:
+                raise ValueError(
+                    "target_qubit_label must be provided for custom 2Q targets."
+                )
+            resolved_target_qubit_label = self._resolve_explicit_qubit_label(
+                target_qubit_label
+            )
+            if resolved_target_qubit_label == resolved_qubit_label:
+                raise ValueError("Custom 2Q target qubits must be distinct.")
+            if target_metadata.get("gate") == "BSWAP":
+                target_metadata["active_qubit"] = resolved_qubit_label
+                target_metadata["passive_qubit"] = resolved_target_qubit_label
+            else:
+                target_metadata["qubits"] = (
+                    resolved_qubit_label,
+                    resolved_target_qubit_label,
+                )
+        elif target_qubit_label is not None:
+            raise ValueError(
+                "target_qubit_label is only valid for custom CR/2Q targets."
+            )
         port = self.control_system.get_port(box_id, port_number)
         if not isinstance(port, GenPort):
             raise TypeError(
@@ -1089,6 +1149,7 @@ class ExperimentContext:
             object=target_object,
             channel=channel,
             type=target_type,
+            metadata=target_metadata,
         )
         define_target = getattr(self.backend_controller, "define_target", None)
         if not callable(define_target):

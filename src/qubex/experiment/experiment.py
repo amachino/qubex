@@ -704,6 +704,10 @@ class Experiment:
         """Return the control/target qubit pair for a CR label."""
         return self.ctx.cr_pair(cr_label)
 
+    def resolve_2q_qubits(self, target_label: str) -> tuple[str, str]:
+        """Return the qubits for a two-qubit target label."""
+        return self.ctx.resolve_2q_qubits(target_label)
+
     def get_rabi_param(
         self,
         target: str,
@@ -836,6 +840,8 @@ class Experiment:
         port_number: int,
         channel_number: int,
         qubit_label: str | None = None,
+        target_qubit_label: str | None = None,
+        metadata: dict[str, Any] | None = None,
         target_type: TargetType | None = None,
         update_backend_settings: bool | None = None,
         **deprecated_options: Any,
@@ -857,6 +863,8 @@ class Experiment:
             port_number=port_number,
             channel_number=channel_number,
             qubit_label=qubit_label,
+            target_qubit_label=target_qubit_label,
+            metadata=metadata,
             target_type=target_type,
             update_backend_settings=update_backend_settings,
         )

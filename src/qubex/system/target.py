@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection
-from typing import Literal
+from typing import Any, Literal
+
+from pydantic import Field
 
 from qubex.core import MutableModel
 
@@ -49,6 +51,7 @@ class Target(MutableModel):
     object: PhysicalObject
     channel: GenChannel
     type: TargetType
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def __repr__(self) -> str:
         """Return the debug representation of the target."""
@@ -119,6 +122,19 @@ class Target(MutableModel):
         return self.type == TargetType.CTRL_CR
 
     @property
+    def is_bswap(self) -> bool:
+        """Report whether this is a bSWAP control target."""
+        return self.type == TargetType.CTRL_2Q and self.metadata.get("gate") == "BSWAP"
+
+    @property
+    def is_2q(self) -> bool:
+        """Report whether this target drives a two-qubit interaction."""
+        return self.type in (
+            TargetType.CTRL_2Q,
+            TargetType.CTRL_CR,
+        )
+
+    @property
     def is_read(self) -> bool:
         """Report whether this is a readout target."""
         return self.type == TargetType.READ
@@ -151,6 +167,7 @@ class Target(MutableModel):
         object: PhysicalObject,
         channel: GenChannel,
         type: TargetType = TargetType.UNKNOWN,
+        metadata: dict[str, Any] | None = None,
     ) -> Target:
         """Create a generic target from metadata."""
         return cls(
@@ -159,6 +176,7 @@ class Target(MutableModel):
             object=object,
             channel=channel,
             type=type,
+            metadata=dict(metadata or {}),
         )
 
     @classmethod
@@ -209,6 +227,10 @@ class Target(MutableModel):
                 object=control_qubit,
                 channel=channel,
                 type=TargetType.CTRL_CR,
+                metadata={
+                    "control_qubit": control_qubit.label,
+                    "target_qubit": target_qubit.label,
+                },
             )
         else:
             return cls(
@@ -217,6 +239,10 @@ class Target(MutableModel):
                 object=control_qubit,
                 channel=channel,
                 type=TargetType.CTRL_CR,
+                metadata={
+                    "control_qubit": control_qubit.label,
+                    "target_qubit": "CR",
+                },
             )
 
     @classmethod
@@ -298,15 +324,3 @@ class Target(MutableModel):
         """Return the readout target label for a qubit label."""
         qubit = cls.qubit_label(label)
         return f"R{qubit}"
-
-    @staticmethod
-    def cr_qubit_pair(
-        label: str,
-    ) -> tuple[str, str]:
-        """Parse a CR target label into a qubit pair."""
-        if match := re.match(r"^(Q\d+)-(Q\d+)$", label):
-            control_qubit = match.group(1)
-            target_qubit = match.group(2)
-        else:
-            raise ValueError(f"Invalid target label `{label}`.")
-        return control_qubit, target_qubit

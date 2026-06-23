@@ -60,6 +60,23 @@ def test_target_label_helpers():
         Target.qubit_label("BAD")
 
 
+def test_cr_target_stores_qubit_roles_in_metadata() -> None:
+    """CR targets should carry qubit roles as metadata."""
+    control = _make_qubit("Q00")
+    target_qubit = _make_qubit("Q01")
+    channel = _make_gen_channel(sideband="U")
+
+    cr_pair = Target.new_cr_target(
+        control_qubit=control,
+        target_qubit=target_qubit,
+        channel=channel,
+    )
+    cr_default = Target.new_cr_target(control_qubit=control, channel=channel)
+
+    assert cr_pair.metadata == {"control_qubit": "Q00", "target_qubit": "Q01"}
+    assert cr_default.metadata == {"control_qubit": "Q00", "target_qubit": "CR"}
+
+
 def test_target_frequency_and_availability():
     """Target should compute AWG frequency and availability."""
     qubit = _make_qubit("Q00")

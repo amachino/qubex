@@ -165,9 +165,14 @@ class ExperimentSystem:
         return [target for target in self.gen_targets.values() if target.is_cr]
 
     @property
+    def two_qubit_targets(self) -> list[Target]:
+        """Return the two-qubit control targets."""
+        return [target for target in self.gen_targets.values() if target.is_2q]
+
+    @property
     def ctrl_targets(self) -> list[Target]:
         """Return the control targets."""
-        return self.ge_targets + self.ef_targets + self.cr_targets
+        return self.ge_targets + self.ef_targets + self.two_qubit_targets
 
     @property
     def read_out_targets(self) -> list[Target]:
@@ -292,7 +297,11 @@ class ExperimentSystem:
 
     def resolve_cr_pair(self, label: str) -> tuple[str, str]:
         """Resolve CR pair via target registry."""
-        return self.target_registry.resolve_cr_pair(label, allow_legacy=True)
+        return self.target_registry.resolve_cr_pair(label)
+
+    def resolve_2q_qubits(self, label: str) -> tuple[str, str]:
+        """Resolve a two-qubit pair via target registry."""
+        return self.target_registry.resolve_2q_qubits(label)
 
     def ordered_qubit_labels(self, labels: Sequence[str]) -> list[str]:
         """Return qubit labels in first appearance order."""
@@ -876,6 +885,10 @@ class ExperimentSystem:
             object=control_qubit,
             channel=channel,
             type=TargetType.CTRL_CR,
+            metadata={
+                "control_qubit": control_qubit.label,
+                "target_qubit": "CR",
+            },
         )
 
     @staticmethod
@@ -892,6 +905,10 @@ class ExperimentSystem:
             object=control_qubit,
             channel=channel,
             type=TargetType.CTRL_CR,
+            metadata={
+                "control_qubit": control_qubit.label,
+                "target_qubit": "CR",
+            },
         )
 
     @staticmethod
