@@ -10,6 +10,7 @@ import numpy as np
 from qubex.clifford.clifford import Clifford
 from qubex.experiment.models.result import Result
 from qubex.experiment.services.benchmarking_service import BenchmarkingService
+from qubex.system import TargetType
 
 
 def _patch_fit_helpers(monkeypatch: Any) -> None:
@@ -59,6 +60,22 @@ def _rb_payload_with_range(targets: list[str], n_cliffords: np.ndarray) -> Resul
     )
 
 
+def _target(
+    *,
+    is_2q: bool,
+    is_bswap: bool = False,
+    target_type: TargetType | None = None,
+) -> SimpleNamespace:
+    """Build a target stub with the target-type flags used by benchmarking."""
+    if target_type is None:
+        target_type = TargetType.CTRL_CR if is_2q else TargetType.CTRL_GE
+    return SimpleNamespace(
+        is_2q=is_2q,
+        is_bswap=is_bswap,
+        type=target_type,
+    )
+
+
 def test_irb_experiment_resets_awg_once_for_1q(monkeypatch: Any) -> None:
     """Given 1Q IRB, when executed, then AWG reset runs once and inner RB calls skip reset."""
     _patch_fit_helpers(monkeypatch)
@@ -70,16 +87,16 @@ def test_irb_experiment_resets_awg_once_for_1q(monkeypatch: Any) -> None:
     service = cast(Any, object.__new__(BenchmarkingService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
         experiment_system=SimpleNamespace(
-            get_target=lambda _label: SimpleNamespace(is_cr=False)
+            get_target=lambda _label: _target(is_2q=False)
         ),
         resolve_qubit_label=lambda label: "Q17" if label == "custom-target" else label,
         reset_awg_and_capunits=lambda *, qubits: reset_calls.append(set(qubits)),
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
-    service.__dict__["_clifford_generator"] = SimpleNamespace(
-        cliffords={"X90": Clifford.X90()}
-    )
+    service.__dict__["_clifford_generator_dict"] = {
+        "default": SimpleNamespace(cliffords={"X90": Clifford.X90()})
+    }
 
     def _rb_experiment_1q(
         self: BenchmarkingService,
@@ -116,16 +133,16 @@ def test_irb_experiment_resets_awg_once_for_2q(monkeypatch: Any) -> None:
     service = cast(Any, object.__new__(BenchmarkingService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
         experiment_system=SimpleNamespace(
-            get_target=lambda _label: SimpleNamespace(is_cr=True)
+            get_target=lambda _label: _target(is_2q=True)
         ),
-        cr_pair=lambda _label: ("Q17", "Q18"),
+        resolve_2q_qubits=lambda _label: ("Q17", "Q18"),
         reset_awg_and_capunits=lambda *, qubits: reset_calls.append(set(qubits)),
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
-    service.__dict__["_clifford_generator"] = SimpleNamespace(
-        cliffords={"II": Clifford.II()}
-    )
+    service.__dict__["_clifford_generator_dict"] = {
+        "default": SimpleNamespace(cliffords={"II": Clifford.II()})
+    }
 
     def _rb_experiment_2q(
         self: BenchmarkingService,
@@ -163,16 +180,16 @@ def test_irb_experiment_reuses_auto_reference_sweep_for_1q(
     service = cast(Any, object.__new__(BenchmarkingService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
         experiment_system=SimpleNamespace(
-            get_target=lambda _label: SimpleNamespace(is_cr=False)
+            get_target=lambda _label: _target(is_2q=False)
         ),
         resolve_qubit_label=lambda label: label,
         reset_awg_and_capunits=lambda *, qubits: None,
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
-    service.__dict__["_clifford_generator"] = SimpleNamespace(
-        cliffords={"X90": Clifford.X90()}
-    )
+    service.__dict__["_clifford_generator_dict"] = {
+        "default": SimpleNamespace(cliffords={"X90": Clifford.X90()})
+    }
 
     def _rb_experiment_1q(
         self: BenchmarkingService,
@@ -214,16 +231,16 @@ def test_irb_experiment_reuses_auto_reference_sweep_for_2q(
     service = cast(Any, object.__new__(BenchmarkingService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
         experiment_system=SimpleNamespace(
-            get_target=lambda _label: SimpleNamespace(is_cr=True)
+            get_target=lambda _label: _target(is_2q=True)
         ),
-        cr_pair=lambda _label: ("Q17", "Q18"),
+        resolve_2q_qubits=lambda _label: ("Q17", "Q18"),
         reset_awg_and_capunits=lambda *, qubits: None,
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
-    service.__dict__["_clifford_generator"] = SimpleNamespace(
-        cliffords={"II": Clifford.II()}
-    )
+    service.__dict__["_clifford_generator_dict"] = {
+        "default": SimpleNamespace(cliffords={"II": Clifford.II()})
+    }
 
     def _rb_experiment_2q(
         self: BenchmarkingService,
@@ -265,16 +282,16 @@ def test_irb_experiment_includes_reference_and_interleaved_trial_data(
     service = cast(Any, object.__new__(BenchmarkingService))
     service.__dict__["_experiment_context"] = SimpleNamespace(
         experiment_system=SimpleNamespace(
-            get_target=lambda _label: SimpleNamespace(is_cr=False)
+            get_target=lambda _label: _target(is_2q=False)
         ),
         resolve_qubit_label=lambda label: label,
         reset_awg_and_capunits=lambda *, qubits: None,
     )
     service.__dict__["_measurement_service"] = SimpleNamespace()
     service.__dict__["_pulse_service"] = SimpleNamespace()
-    service.__dict__["_clifford_generator"] = SimpleNamespace(
-        cliffords={"X90": Clifford.X90()}
-    )
+    service.__dict__["_clifford_generator_dict"] = {
+        "default": SimpleNamespace(cliffords={"X90": Clifford.X90()})
+    }
 
     def _rb_experiment_1q(
         self: BenchmarkingService,

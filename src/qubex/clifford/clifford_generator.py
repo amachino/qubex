@@ -46,13 +46,14 @@ class CliffordGenerator:
         "BSWAP": Clifford.BSWAP(),
     }
 
-    def __init__(self):
+    def __init__(self, auto_load: bool = True):
         self._cliffords_1q = dict[Clifford, CliffordSequence]()
         self._cliffords_1q1q = dict[Clifford, CliffordSequence]()
         self._cliffords_2q = dict[Clifford, CliffordSequence]()
-        self.load("1Q")
-        self.load("1Q1Q")
-        self.load("2Q")
+        if auto_load:
+            self.load("1Q")
+            self.load("1Q1Q")
+            self.load("2Q")
 
     def get_cliffords(
         self,

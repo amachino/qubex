@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from qubex.experiment.experiment_constants import (
+    BSWAP_PARAMS,
     CALIBRATION_DIR,
     CR_PARAMS,
     DRAG_HPI_PARAMS,
@@ -84,6 +85,19 @@ class CrossResonanceParam(Parameter):
     cancel_beta: float
     rotary_amplitude: float
     zx_rotation_rate: float
+
+
+class BSwapParam(Parameter):
+    """bSWAP calibration parameters for a target."""
+
+    target: str
+    # Logical-Z convention, matching Wei et al. 2024:
+    # post_z_offsets[q] is phi_q, and post_z_update_rates[q] is the
+    # coefficient of t_end (omega_s for Stark bSWAP). These are not
+    # coordinate-frame angles; a variable named "frame" would have the
+    # opposite sign.
+    post_z_offsets: dict[str, float]
+    post_z_update_rates: dict[str, float]
 
 
 class CalibrationNote(ExperimentNote):
@@ -176,6 +190,15 @@ class CalibrationNote(ExperimentNote):
     @cr_params.setter
     def cr_params(self, value: dict[str, CrossResonanceParam]):
         self.put(CR_PARAMS, value)
+
+    @property
+    def bswap_params(self) -> dict[str, BSwapParam]:
+        """Return stored bSWAP parameters."""
+        return self.get(BSWAP_PARAMS)
+
+    @bswap_params.setter
+    def bswap_params(self, value: dict[str, BSwapParam]):
+        self.put(BSWAP_PARAMS, value)
 
     def get_rabi_param(
         self,
@@ -337,6 +360,29 @@ class CalibrationNote(ExperimentNote):
     ) -> None:
         """Remove a cross-resonance parameter entry."""
         self.remove_property(CR_PARAMS, target)
+
+    def get_bswap_param(
+        self,
+        target: str,
+        valid_days: int | None = None,
+    ) -> BSwapParam | None:
+        """Return a bSWAP parameter entry if valid."""
+        return self.get_property(BSWAP_PARAMS, target, valid_days)
+
+    def update_bswap_param(
+        self,
+        target: str,
+        value: BSwapParam,
+    ) -> None:
+        """Update a bSWAP parameter entry."""
+        self.put_property(BSWAP_PARAMS, target, value)
+
+    def remove_bswap_param(
+        self,
+        target: str,
+    ) -> None:
+        """Remove a bSWAP parameter entry."""
+        self.remove_property(BSWAP_PARAMS, target)
 
     def get_property(
         self,

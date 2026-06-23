@@ -96,6 +96,7 @@ from .services import (
 )
 
 T = TypeVar("T", bound=ExperimentTaskResult)
+Native2QGate = Literal["ZX90", "BSWAP"]
 
 
 class Experiment:
@@ -5123,6 +5124,8 @@ class Experiment:
         zx90: PulseSchedule | None = None,
         interleaved_waveform: Waveform | PulseSchedule | None = None,
         interleaved_clifford: Clifford | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: PulseSchedule | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
         """Build a randomized benchmarking sequence."""
@@ -5133,6 +5136,8 @@ class Experiment:
             zx90=zx90,
             interleaved_waveform=interleaved_waveform,
             interleaved_clifford=interleaved_clifford,
+            native_2q_gate=native_2q_gate,
+            native_2q_waveform=native_2q_waveform,
             seed=seed,
         )
 
@@ -5146,6 +5151,8 @@ class Experiment:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         n_shots: int | None = None,
@@ -5163,6 +5170,8 @@ class Experiment:
             max_n_cliffords=max_n_cliffords,
             x90=x90,
             zx90=zx90,
+            native_2q_gate=native_2q_gate,
+            native_2q_waveform=native_2q_waveform,
             in_parallel=in_parallel,
             xaxis_type=xaxis_type,
             shots=n_shots,
@@ -5186,6 +5195,8 @@ class Experiment:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
@@ -5204,6 +5215,8 @@ class Experiment:
             max_n_cliffords=max_n_cliffords,
             x90=x90,
             zx90=zx90,
+            native_2q_gate=native_2q_gate,
+            native_2q_waveform=native_2q_waveform,
             in_parallel=in_parallel,
             shots=n_shots,
             interval=shot_interval,
