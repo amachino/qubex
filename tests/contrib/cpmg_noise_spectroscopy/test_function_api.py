@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 import numpy as np
+import plotly.graph_objects as go
 import pytest
 
 from qubex.contrib import (
@@ -60,5 +62,7 @@ def test_plot_cpmg_results_accepts_in_memory_payload() -> None:
         save_image=False,
     )
 
-    assert len(fig.data) == 1
-    assert list(fig.data[0].x) == [0.0, 10.0]
+    assert isinstance(fig, go.Figure)
+    figure_data = cast(list[dict[str, Any]], fig.to_dict()["data"])
+    assert len(figure_data) == 1
+    np.testing.assert_allclose(figure_data[0]["x"], [0.0, 10.0])
