@@ -126,6 +126,7 @@ legacy entry より優先されます。
 | Qubit GE 周波数 | `control_frequency.yaml` | `qubit_frequency.yaml` | GE target と、target qubit がある CR target |
 | Qubit bare 周波数 | `qubit_frequency.yaml` | なし | `Qubit.bare_frequency` と GE fallback |
 | Qubit EF 周波数 | `control_frequency_ef.yaml` | 有効な GE 周波数 + anharmonicity | EF target |
+| Qubit FH 周波数 | `control_frequency_fh.yaml` | `2 * EF 周波数 - GE 周波数` | FH target |
 | Resonator readout 周波数 | `readout_frequency.yaml` | `resonator_frequency.yaml` | readout generator target と capture target |
 | Resonator ground-state 周波数 | `resonator_frequency.yaml` | なし | `Resonator.frequency_g` と readout fallback |
 
@@ -146,6 +147,7 @@ legacy entry より優先されます。
 | `qubit_anharmonicity.yaml` | qubit | 周波数、通常 `GHz` | qubit anharmonicity。無い場合、model は有効な GE 周波数から fallback 値を導出します。 | `props.yaml:<chip_id>.anharmonicity` |
 | `control_frequency.yaml` | qubit | 周波数、通常 `GHz` | 優先される GE control 周波数。GE target と target qubit がある CR target に使われます。 | `props.yaml:<chip_id>.control_frequency` |
 | `control_frequency_ef.yaml` | qubit | 周波数、通常 `GHz` | 優先される EF control 周波数。無い場合、GE 周波数 + anharmonicity を使います。 | `props.yaml:<chip_id>.control_frequency_ef` |
+| `control_frequency_fh.yaml` | qubit | 周波数、通常 `GHz` | 優先される FH control 周波数。無い場合、`2 * EF 周波数 - GE 周波数` として推定します。 | `props.yaml:<chip_id>.control_frequency_fh` |
 | `resonator_frequency.yaml` | qubit または qubit-keyed resonator | 周波数、通常 `GHz` | resonator ground-state 周波数と readout fallback。キーは qubit label または index です。 | `props.yaml:<chip_id>.resonator_frequency` |
 | `readout_frequency.yaml` | qubit または qubit-keyed resonator | 周波数、通常 `GHz` | 優先される readout drive / capture 周波数。キーは qubit label または index です。 | `props.yaml:<chip_id>.readout_frequency` |
 
@@ -164,7 +166,7 @@ data:
 
 | ファイル | scope | unit | 効果 | legacy source |
 | --- | --- | --- | --- | --- |
-| `frequency_margin.yaml` | target type | 周波数、通常 `GHz` | target deployment 時の周波数 margin を target type ごとに上書きします。key は `READ`, `CTRL_GE`, `CTRL_EF`, `CTRL_CR`, `PUMP` です。 | `params.yaml:<chip_id>.frequency_margin` |
+| `frequency_margin.yaml` | target type | 周波数、通常 `GHz` | target deployment 時の周波数 margin を target type ごとに上書きします。key は `READ`, `CTRL_GE`, `CTRL_EF`, `CTRL_FH`, `CTRL_CR`, `PUMP` です。 | `params.yaml:<chip_id>.frequency_margin` |
 | `control_amplitude.yaml` | qubit | 無次元 | 既定の control pulse amplitude。 | `params.yaml:<chip_id>.control_amplitude` |
 | `readout_amplitude.yaml` | qubit | 無次元 | 既定の readout pulse amplitude。 | `params.yaml:<chip_id>.readout_amplitude` |
 | `control_vatt.yaml` | qubit | 整数または `null` | 対応 backend の control-line VATT 設定。 | `params.yaml:<chip_id>.control_vatt` |

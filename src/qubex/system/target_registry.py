@@ -67,6 +67,7 @@ class TargetRegistry:
         self._read_label_by_qubit: dict[str, str] = {}
         self._ge_label_by_qubit: dict[str, str] = {}
         self._ef_label_by_qubit: dict[str, str] = {}
+        self._fh_label_by_qubit: dict[str, str] = {}
         self._cr_default_label_by_control: dict[str, str] = {}
         self._cr_pair_label_by_pair: dict[tuple[str, str], str] = {}
         self._cr_pair_by_label: dict[str, tuple[str, str]] = {}
@@ -83,6 +84,8 @@ class TargetRegistry:
                 self._ge_label_by_qubit.setdefault(qubit_label, label)
             if target.is_ef and qubit_label:
                 self._ef_label_by_qubit.setdefault(qubit_label, label)
+            if target.is_fh and qubit_label:
+                self._fh_label_by_qubit.setdefault(qubit_label, label)
 
         for label, target in self._cap_target_dict.items():
             qubit_label = getattr(target.object, "qubit", None)
@@ -221,6 +224,21 @@ class TargetRegistry:
             if allow_legacy:
                 return Target.ef_label(label)
             raise ValueError(f"EF target is not registered for qubit `{qubit_label}`.")
+        return resolved
+
+    def resolve_fh_label(
+        self,
+        label: str,
+        *,
+        allow_legacy: bool = False,
+    ) -> str:
+        """Resolve an FH target label; optionally allow legacy parsing."""
+        qubit_label = self.resolve_qubit_label(label, allow_legacy=allow_legacy)
+        resolved = self._fh_label_by_qubit.get(qubit_label)
+        if resolved is None:
+            if allow_legacy:
+                return Target.fh_label(label)
+            raise ValueError(f"FH target is not registered for qubit `{qubit_label}`.")
         return resolved
 
     def resolve_read_label(

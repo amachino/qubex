@@ -129,6 +129,7 @@ uses the following runtime priority when building targets.
 | Qubit GE frequency | `control_frequency.yaml` | `qubit_frequency.yaml` | GE targets and CR targets with a target qubit |
 | Qubit bare frequency | `qubit_frequency.yaml` | none | `Qubit.bare_frequency` and GE fallback |
 | Qubit EF frequency | `control_frequency_ef.yaml` | effective GE frequency + anharmonicity | EF targets |
+| Qubit FH frequency | `control_frequency_fh.yaml` | `2 * EF frequency - GE frequency` | FH targets |
 | Resonator readout frequency | `readout_frequency.yaml` | `resonator_frequency.yaml` | readout generator and capture targets |
 | Resonator ground-state frequency | `resonator_frequency.yaml` | none | `Resonator.frequency_g` and readout fallback |
 
@@ -150,6 +151,7 @@ These are the parameter files recognized by `ConfigLoader`.
 | `qubit_anharmonicity.yaml` | qubit | frequency, usually `GHz` | Qubit anharmonicity. If absent, the model derives a fallback from the effective GE frequency. | `props.yaml:<chip_id>.anharmonicity` |
 | `control_frequency.yaml` | qubit | frequency, usually `GHz` | Preferred GE control frequency. This is the frequency used by GE targets and CR targets with a target qubit. | `props.yaml:<chip_id>.control_frequency` |
 | `control_frequency_ef.yaml` | qubit | frequency, usually `GHz` | Preferred EF control frequency. If absent, the model uses GE frequency plus anharmonicity. | `props.yaml:<chip_id>.control_frequency_ef` |
+| `control_frequency_fh.yaml` | qubit | frequency, usually `GHz` | Preferred FH control frequency. If absent, the model estimates it as `2 * EF frequency - GE frequency`. | `props.yaml:<chip_id>.control_frequency_fh` |
 | `resonator_frequency.yaml` | qubit or resonator-by-qubit | frequency, usually `GHz` | Resonator ground-state frequency and readout fallback. Keys are qubit labels or indices. | `props.yaml:<chip_id>.resonator_frequency` |
 | `readout_frequency.yaml` | qubit or resonator-by-qubit | frequency, usually `GHz` | Preferred readout drive and capture frequency. Keys are qubit labels or indices. | `props.yaml:<chip_id>.readout_frequency` |
 
@@ -168,7 +170,7 @@ data:
 
 | File | Scope | Unit | Effect | Legacy source |
 | --- | --- | --- | --- | --- |
-| `frequency_margin.yaml` | target type | frequency, usually `GHz` | Overrides target-deployment frequency margins by target type. Supported keys are `READ`, `CTRL_GE`, `CTRL_EF`, `CTRL_CR`, and `PUMP`. | `params.yaml:<chip_id>.frequency_margin` |
+| `frequency_margin.yaml` | target type | frequency, usually `GHz` | Overrides target-deployment frequency margins by target type. Supported keys are `READ`, `CTRL_GE`, `CTRL_EF`, `CTRL_FH`, `CTRL_CR`, and `PUMP`. | `params.yaml:<chip_id>.frequency_margin` |
 | `control_amplitude.yaml` | qubit | dimensionless | Default control pulse amplitude. | `params.yaml:<chip_id>.control_amplitude` |
 | `readout_amplitude.yaml` | qubit | dimensionless | Default readout pulse amplitude. | `params.yaml:<chip_id>.readout_amplitude` |
 | `control_vatt.yaml` | qubit | integer or `null` | Control-line VATT setting for backends that support it. | `params.yaml:<chip_id>.control_vatt` |
