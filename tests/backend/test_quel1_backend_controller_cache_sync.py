@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any, cast
@@ -94,3 +95,30 @@ def test_cache_update_keeps_input_immutable() -> None:
 
     assert controller.boxpool._box_config_cache == original
     assert system.config_cache == original
+
+
+def test_json_safe_box_config_converts_cached_mapping_keys() -> None:
+    """Given tuple-keyed cached config, when JSON-safe config is requested, then keys are stringified."""
+    controller = _make_controller()
+    system = SimpleNamespace(config_cache={}, config_fetched_at=None)
+    controller._connection_manager.set_quel1system(cast(Any, system))
+
+    controller.boxpool._box_config_cache = {
+        "A": {
+            "ports": {
+                (1, 1): {"channels": {0: {"fnco_freq": 100}}},
+            },
+            "metadata": [{"loopbacks": {(2, 1): "enabled"}}],
+        }
+    }
+
+    config = controller.json_safe_box_config()
+
+    assert config == {
+        "A": {
+            "ports": {"(1, 1)": {"channels": {"0": {"fnco_freq": 100}}}},
+            "metadata": [{"loopbacks": {"(2, 1)": "enabled"}}],
+        }
+    }
+    assert json.dumps(config)
+    assert (1, 1) in controller.boxpool._box_config_cache["A"]["ports"]
