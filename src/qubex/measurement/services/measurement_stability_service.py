@@ -154,9 +154,9 @@ def _add_signal_stability_trace(
         name=label,
         line={"color": _LIVE_AMPLITUDE_COLOR},
         hovertemplate=(
-            "elapsed=%{x:.3f}s<br>"
-            "relative=%{y:.8f}<br>"
-            "move=%{customdata:+.4f}%<extra>%{fullData.name}</extra>"
+            "elapsed=%{x:.2f} s<br>"
+            "relative=%{y:.4f}<br>"
+            "move=%{customdata:+.2f}%<extra>%{fullData.name}</extra>"
         ),
         row=1,
         col=1,
@@ -168,7 +168,7 @@ def _add_signal_stability_trace(
         name=f"{label} phase",
         line={"color": _LIVE_PHASE_COLOR},
         hovertemplate=(
-            "elapsed=%{x:.3f}s<br>phase=%{y:+.6f}rad<extra>%{fullData.name}</extra>"
+            "elapsed=%{x:.2f} s<br>phase=%{y:+.4f} rad<extra>%{fullData.name}</extra>"
         ),
         row=2,
         col=1,
@@ -274,7 +274,7 @@ def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
         mode="lines",
         name=_waveform_trace_label(waveform),
         hovertemplate=(
-            "time=%{x:.3f}ns<br>|IQ|=%{y:.6g}<extra>%{fullData.name}</extra>"
+            "time=%{x:.1f} ns<br>|IQ|=%{y:.4g}<extra>%{fullData.name}</extra>"
         ),
     )
 
