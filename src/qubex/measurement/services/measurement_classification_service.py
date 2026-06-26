@@ -6,10 +6,19 @@ from collections.abc import Collection
 from functools import reduce
 
 import numpy as np
-import numpy.typing as npt
+from numpy.typing import NDArray
 
 from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.typing import TargetMap
+
+
+def _normalize_confusion_matrix_rows(matrix: NDArray) -> NDArray[np.float64]:
+    """Normalize a confusion matrix as P(measured state | prepared state)."""
+    confusion_matrix = np.asarray(matrix, dtype=float)
+    row_totals = confusion_matrix.sum(axis=1, keepdims=True)
+    if np.any(row_totals == 0):
+        raise ValueError("Confusion matrix contains a prepared state with no shots.")
+    return confusion_matrix / row_totals
 
 
 class MeasurementClassificationService:
@@ -34,7 +43,7 @@ class MeasurementClassificationService:
     def get_confusion_matrix(
         self,
         targets: Collection[str],
-    ) -> npt.NDArray:
+    ) -> NDArray[np.float64]:
         """
         Return the combined confusion matrix for targets.
 
@@ -52,14 +61,13 @@ class MeasurementClassificationService:
         confusion_matrices = []
         for target in target_list:
             cm = self.classifiers[target].confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
+            confusion_matrices.append(_normalize_confusion_matrix_rows(cm))
         return reduce(np.kron, confusion_matrices)
 
     def get_inverse_confusion_matrix(
         self,
         targets: Collection[str],
-    ) -> npt.NDArray:
+    ) -> NDArray[np.float64]:
         """
         Return the inverse combined confusion matrix.
 

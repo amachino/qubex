@@ -29,8 +29,8 @@ def test_update_classifiers_merges_mapping() -> None:
 
 def test_get_confusion_matrix_returns_kron_product() -> None:
     """Given per-target matrices, when querying confusion matrix, then normalized Kronecker product is returned."""
-    cm_q00 = np.array([[8.0, 2.0], [1.0, 9.0]])
-    cm_q01 = np.array([[6.0, 4.0], [3.0, 7.0]])
+    cm_q00 = np.array([[8.0, 2.0], [1.0, 4.0]])
+    cm_q01 = np.array([[6.0, 4.0], [3.0, 3.0]])
     service = MeasurementClassificationService(
         classifiers={
             "Q00": cast(Any, _classifier_with_matrix(cm_q00)),
@@ -40,18 +40,21 @@ def test_get_confusion_matrix_returns_kron_product() -> None:
 
     result = service.get_confusion_matrix(["Q00", "Q01"])
 
-    expected = np.kron(cm_q00 / cm_q00[0].sum(), cm_q01 / cm_q01[0].sum())
+    expected = np.kron(
+        cm_q00 / cm_q00.sum(axis=1, keepdims=True),
+        cm_q01 / cm_q01.sum(axis=1, keepdims=True),
+    )
     assert np.allclose(result, expected)
 
 
 def test_get_inverse_confusion_matrix_returns_inverse() -> None:
     """Given target list, when querying inverse confusion matrix, then matrix inverse is returned."""
-    cm_q00 = np.array([[9.0, 1.0], [1.0, 9.0]])
+    cm_q00 = np.array([[9.0, 1.0], [1.0, 4.0]])
     service = MeasurementClassificationService(
         classifiers={"Q00": cast(Any, _classifier_with_matrix(cm_q00))},
     )
 
     result = service.get_inverse_confusion_matrix(["Q00"])
 
-    expected = np.linalg.inv(cm_q00 / cm_q00[0].sum())
+    expected = np.linalg.inv(cm_q00 / cm_q00.sum(axis=1, keepdims=True))
     assert np.allclose(result, expected)
