@@ -20,6 +20,7 @@ DRAG_HPI_PARAMS = "drag_hpi_params"
 DRAG_PI_PARAMS = "drag_pi_params"
 STATE_PARAMS = "state_params"
 CR_PARAMS = "cr_params"
+BSWAP_PARAMS = "bswap_params"
 
 HPI_DURATION = 32
 HPI_RAMPTIME = 12

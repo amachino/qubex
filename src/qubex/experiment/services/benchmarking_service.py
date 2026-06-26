@@ -24,12 +24,15 @@ from qubex.experiment.experiment_constants import (
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.result import Result
+from qubex.system import TargetType
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+
+Native2QGate = Literal["ZX90", "BSWAP"]
 
 
 def _n_cliffords_ranges_by_target(
@@ -77,7 +80,7 @@ class BenchmarkingService:
         self._experiment_context: ExperimentContext = experiment_context
         self._measurement_service = measurement_service
         self._pulse_service = pulse_service
-        self._clifford_generator: CliffordGenerator | None = None
+        self._clifford_generator_dict: dict[str, CliffordGenerator] = {}
 
     @property
     def ctx(self) -> ExperimentContext:
@@ -97,14 +100,79 @@ class BenchmarkingService:
     @property
     def clifford_generator(self) -> CliffordGenerator:
         """Return the Clifford generator instance."""
-        if self._clifford_generator is None:
-            self._clifford_generator = CliffordGenerator()
-        return self._clifford_generator
+        return self._get_clifford_generator()
 
     @property
     def clifford(self) -> dict[str, Clifford]:
         """Return the Clifford dictionary."""
         return self.clifford_generator.cliffords
+
+    def _get_clifford_generator(
+        self,
+        file_name: str | None = None,
+    ) -> CliffordGenerator:
+        """Return a Clifford generator cached by its 2Q table."""
+        key = file_name or "default"
+        if key not in self._clifford_generator_dict:
+            if file_name is None:
+                generator = CliffordGenerator()
+            else:
+                generator = CliffordGenerator(auto_load=False)
+                generator.load("2Q", file_name=file_name)
+            self._clifford_generator_dict[key] = generator
+        return self._clifford_generator_dict[key]
+
+    @staticmethod
+    def _float_mapping(
+        value: object,
+        *,
+        field_name: str,
+        target: str,
+    ) -> dict[str, float]:
+        """Return a string-keyed float mapping from calibration-note data."""
+        if value is None:
+            return {}
+        if not isinstance(value, Mapping):
+            raise TypeError(f"{field_name} for `{target}` must be a mapping.")
+
+        result: dict[str, float] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError(f"{field_name} for `{target}` must use string keys.")
+            try:
+                result[key] = float(item)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"{field_name}[{key!r}] for `{target}` must be a number."
+                ) from None
+        return result
+
+    def _get_bswap_post_z(
+        self,
+        target: str,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """Return logical post-Z bSWAP calibration data for a target."""
+        # Wei et al. 2024 writes the calibrated Stark bSWAP as
+        # U_g ; Z_0(omega_s * t_end + phi_1) ; Z_1(omega_s * t_end + phi_2).
+        # Store phi_q in post_z_offsets and omega_s-like coefficients in
+        # post_z_update_rates, using logical Z angles.
+        param = self.ctx.calib_note.get_bswap_param(target)
+        if param is None:
+            raise ValueError(
+                f"bSWAP calibration parameters are missing for `{target}`."
+            )
+        return (
+            self._float_mapping(
+                param.get("post_z_offsets"),
+                field_name="post_z_offsets",
+                target=target,
+            ),
+            self._float_mapping(
+                param.get("post_z_update_rates"),
+                field_name="post_z_update_rates",
+                target=target,
+            ),
+        )
 
     def rb_sequence(
         self,
@@ -115,11 +183,13 @@ class BenchmarkingService:
         zx90: PulseSchedule | None = None,
         interleaved_waveform: Waveform | PulseSchedule | None = None,
         interleaved_clifford: Clifford | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: PulseSchedule | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
         """Build a randomized benchmarking sequence."""
         target_object = self.ctx.experiment_system.get_target(target)
-        if target_object.is_cr:
+        if target_object.is_2q:
             if isinstance(x90, Waveform):
                 raise ValueError("x90 must be a dict for 2Q gates.")
             if isinstance(interleaved_waveform, Waveform):
@@ -133,10 +203,14 @@ class BenchmarkingService:
                 zx90=zx90,
                 interleaved_waveform=interleaved_waveform,
                 interleaved_clifford=interleaved_clifford,
+                native_2q_gate=native_2q_gate,
+                native_2q_waveform=native_2q_waveform,
                 seed=seed,
             )
             return sched
         else:
+            if native_2q_gate is not None or native_2q_waveform is not None:
+                raise ValueError("Native 2Q options are only valid for 2Q RB.")
             if isinstance(x90, Mapping):
                 x90 = x90.get(target)
             if isinstance(interleaved_waveform, PulseSchedule):
@@ -218,27 +292,94 @@ class BenchmarkingService:
         zx90: PulseSchedule | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: PulseSchedule | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: PulseSchedule | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
         """Build a two-qubit RB pulse schedule."""
         target_object = self.ctx.experiment_system.get_target(target)
-        if not target_object.is_cr:
+        if not target_object.is_2q:
             raise ValueError(f"`{target}` is not a 2Q target.")
 
-        control_qubit, target_qubit = self.ctx.cr_pair(target)
-        cr_label = target
+        control_qubit, target_qubit = self.ctx.resolve_2q_qubits(target)
 
         xi90 = x90.get(control_qubit) if x90 is not None else None
         ix90 = x90.get(target_qubit) if x90 is not None else None
         xi90 = xi90 or self.pulse.x90(control_qubit)
         ix90 = ix90 or self.pulse.x90(target_qubit)
-        z90 = VirtualZ(np.pi / 2)
 
-        if zx90 is None:
-            zx90 = self.pulse.zx90(control_qubit, target_qubit)
+        if native_2q_gate is None:
+            if target_object.is_bswap:
+                native_2q_gate = "BSWAP"
+            elif target_object.type == TargetType.CTRL_2Q:
+                raise ValueError(
+                    "native_2q_gate must be provided for generic 2Q targets."
+                )
+            else:
+                native_2q_gate = "ZX90"
+        elif native_2q_gate not in ("ZX90", "BSWAP"):
+            raise ValueError(f"Unsupported native 2Q gate: {native_2q_gate}")
+
+        if native_2q_gate == "ZX90":
+            cr_label = target
+            if native_2q_waveform is not None:
+                zx90 = native_2q_waveform
+            elif zx90 is None:
+                zx90 = self.pulse.zx90(control_qubit, target_qubit)
+            return self._rb_sequence_2q_zx90(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                cr_label=cr_label,
+                n=n,
+                xi90=xi90,
+                ix90=ix90,
+                zx90=zx90,
+                interleaved_clifford=interleaved_clifford,
+                interleaved_waveform=interleaved_waveform,
+                seed=seed,
+            )
+
+        if native_2q_gate == "BSWAP":
+            if native_2q_waveform is None:
+                raise ValueError("native_2q_waveform must be provided for BSWAP.")
+            post_z_offsets, post_z_update_rates = self._get_bswap_post_z(target)
+            return self._rb_sequence_2q_bswap(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                bswap_label=target,
+                n=n,
+                xi90=xi90,
+                ix90=ix90,
+                bswap=native_2q_waveform,
+                post_z_offsets=post_z_offsets,
+                post_z_update_rates=post_z_update_rates,
+                interleaved_clifford=interleaved_clifford,
+                interleaved_waveform=interleaved_waveform,
+                seed=seed,
+            )
+
+        raise ValueError("Only ZX90 and BSWAP native 2Q RB are supported.")
+
+    def _rb_sequence_2q_zx90(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        cr_label: str,
+        n: int,
+        xi90: Waveform,
+        ix90: Waveform,
+        zx90: PulseSchedule,
+        interleaved_clifford: Clifford | None,
+        interleaved_waveform: PulseSchedule | None,
+        seed: int | None,
+    ) -> PulseSchedule:
+        """Build a ZX90-native two-qubit RB pulse schedule."""
+        z90 = VirtualZ(np.pi / 2)
+        clifford_generator = self._get_clifford_generator()
 
         if interleaved_clifford is None:
-            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+            cliffords, inverse = clifford_generator.create_rb_sequences(
                 n=n,
                 type="2Q",
                 seed=seed,
@@ -246,10 +387,10 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "ZX90":
-                    interleaved_waveform = self.pulse.zx90(control_qubit, target_qubit)
+                    interleaved_waveform = zx90
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
-            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+            cliffords, inverse = clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford,
                 type="2Q",
@@ -257,6 +398,11 @@ class BenchmarkingService:
             )
 
         with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+
+            def add_2q_gate(waveform: PulseSchedule):
+                ps.barrier()
+                ps.call(waveform)
+                ps.barrier()
 
             def add_gate(gate: str):
                 if gate == "XI90":
@@ -269,9 +415,7 @@ class BenchmarkingService:
                     ps.add(target_qubit, z90)
                     ps.add(cr_label, z90)
                 elif gate == "ZX90":
-                    ps.barrier()
-                    ps.call(zx90)
-                    ps.barrier()
+                    add_2q_gate(zx90)
                 else:
                     raise ValueError("Invalid gate.")
 
@@ -279,12 +423,122 @@ class BenchmarkingService:
                 for gate in clifford:
                     add_gate(gate)
                 if interleaved_waveform is not None:
-                    ps.barrier()
-                    ps.call(interleaved_waveform)
-                    ps.barrier()
+                    add_2q_gate(interleaved_waveform)
 
             for gate in inverse:
                 add_gate(gate)
+        return ps
+
+    def _rb_sequence_2q_bswap(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        bswap_label: str,
+        n: int,
+        xi90: Waveform,
+        ix90: Waveform,
+        bswap: PulseSchedule,
+        post_z_offsets: Mapping[str, float],
+        post_z_update_rates: Mapping[str, float],
+        interleaved_clifford: Clifford | None,
+        interleaved_waveform: PulseSchedule | None,
+        seed: int | None,
+    ) -> PulseSchedule:
+        """Build a bSWAP-native two-qubit RB pulse schedule."""
+        clifford_generator = self._get_clifford_generator("clifford_list_2q_bswap")
+        post_z_offsets = dict(post_z_offsets)
+        post_z_update_rates = dict(post_z_update_rates)
+
+        if interleaved_clifford is None:
+            cliffords, inverse = clifford_generator.create_rb_sequences(
+                n=n,
+                type="2Q",
+                seed=seed,
+            )
+        else:
+            if interleaved_clifford.name != "BSWAP":
+                raise ValueError("BSWAP native RB can only interleave BSWAP.")
+            if interleaved_waveform is None:
+                interleaved_waveform = bswap
+            cliffords, inverse = clifford_generator.create_irb_sequences(
+                n=n,
+                interleave=interleaved_clifford,
+                type="2Q",
+                seed=seed,
+            )
+
+        with PulseSchedule([control_qubit, bswap_label, target_qubit]) as ps:
+            pending_z_angles = {
+                control_qubit: 0.0,
+                target_qubit: 0.0,
+            }
+
+            def is_zero_angle(theta: float) -> bool:
+                return bool(np.isclose(np.angle(np.exp(1j * theta)), 0.0))
+
+            def add_pending_z_shifted_pulse(qubit: str, pulse: Waveform):
+                z_angle = float(pending_z_angles[qubit])
+                if is_zero_angle(z_angle):
+                    ps.add(qubit, pulse)
+                    return
+                # Move the pending logical Z to the right of this physical 1Q
+                # pulse by rotating the pulse axis: Z(f) X90 = X90.shifted(f) Z(f).
+                ps.add(qubit, pulse.shifted(z_angle))
+
+            def add_pending_z(qubit: str):
+                z_angle = float(pending_z_angles[qubit])
+                if not is_zero_angle(z_angle):
+                    ps.add(qubit, VirtualZ(z_angle))
+
+            def post_z_update(qubit: str, t_end: float) -> float:
+                return (
+                    post_z_offsets.get(qubit, 0.0)
+                    + post_z_update_rates.get(qubit, 0.0) * t_end
+                )
+
+            def add_bswap_gate(waveform: PulseSchedule):
+                ps.barrier()
+                ps.call(waveform)
+                ps.barrier()
+                t_end = ps.duration
+                control_z_angle = pending_z_angles[control_qubit]
+                target_z_angle = pending_z_angles[target_qubit]
+                # Logical-Z bSWAP crossing rule:
+                # Z_c(a) Z_t(b) bSWAP -> bSWAP Z_c(-b) Z_t(-a), followed by
+                # the calibrated post-Z terms from Wei et al. 2024.
+                pending_z_angles[control_qubit] = -target_z_angle + post_z_update(
+                    control_qubit, t_end
+                )
+                pending_z_angles[target_qubit] = -control_z_angle + post_z_update(
+                    target_qubit, t_end
+                )
+
+            def add_gate(gate: str):
+                if gate == "XI90":
+                    add_pending_z_shifted_pulse(control_qubit, xi90)
+                elif gate == "IX90":
+                    add_pending_z_shifted_pulse(target_qubit, ix90)
+                elif gate == "ZI90":
+                    pending_z_angles[control_qubit] += np.pi / 2
+                elif gate == "IZ90":
+                    pending_z_angles[target_qubit] += np.pi / 2
+                elif gate == "BSWAP":
+                    add_bswap_gate(bswap)
+                else:
+                    raise ValueError("Invalid gate.")
+
+            for clifford in cliffords:
+                for gate in clifford:
+                    add_gate(gate)
+                if interleaved_waveform is not None:
+                    add_bswap_gate(interleaved_waveform)
+
+            for gate in inverse:
+                add_gate(gate)
+
+            add_pending_z(control_qubit)
+            add_pending_z(target_qubit)
         return ps
 
     def rb_experiment_1q(
@@ -354,7 +608,7 @@ class BenchmarkingService:
 
         for target in targets:
             target_object = self.ctx.experiment_system.get_target(target)
-            if target_object.is_cr:
+            if target_object.is_2q:
                 raise ValueError(f"`{target}` is not a 1Q target.")
 
         if in_parallel:
@@ -496,6 +750,8 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: TargetMap[PulseSchedule] | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
@@ -528,11 +784,18 @@ class BenchmarkingService:
         else:
             targets = list(targets)
 
+        def has_2q_waveform(target: str) -> bool:
+            return (
+                target in self.ctx.calib_note.cr_params
+                or (zx90 is not None and target in zx90)
+                or (native_2q_waveform is not None and target in native_2q_waveform)
+            )
+
         targets = [
             target
             for target in targets
-            if self.ctx.experiment_system.get_target(target).is_cr
-            and target in self.ctx.calib_note.cr_params
+            if self.ctx.experiment_system.get_target(target).is_2q
+            and has_2q_waveform(target)
         ]
 
         if n_cliffords_range is not None:
@@ -578,7 +841,7 @@ class BenchmarkingService:
 
         for target in targets:
             target_object = self.ctx.experiment_system.get_target(target)
-            if not target_object.is_cr:
+            if not target_object.is_2q:
                 raise ValueError(f"`{target}` is not a 2Q target.")
 
         def rb_sequence(
@@ -594,6 +857,10 @@ class BenchmarkingService:
                         n=n_clifford,
                         x90=x90,
                         zx90=zx90.get(target) if zx90 else None,
+                        native_2q_gate=native_2q_gate,
+                        native_2q_waveform=native_2q_waveform.get(target)
+                        if native_2q_waveform
+                        else None,
                         interleaved_waveform=interleaved_waveform.get(target)
                         if interleaved_waveform
                         else None,
@@ -650,7 +917,7 @@ class BenchmarkingService:
                     )
 
                     for target in target_group:
-                        control_qubit, target_qubit = self.ctx.cr_pair(target)
+                        control_qubit, target_qubit = self.ctx.resolve_2q_qubits(target)
                         if mitigate_readout:
                             prob = result.get_mitigated_probabilities(
                                 [control_qubit, target_qubit]
@@ -737,6 +1004,8 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -770,14 +1039,14 @@ class BenchmarkingService:
         reset_qubits: set[str] = set()
         for target in targets:
             target_object = self.ctx.experiment_system.get_target(target)
-            if target_object.is_cr:
-                control_qubit, target_qubit = self.ctx.cr_pair(target)
+            if target_object.is_2q:
+                control_qubit, target_qubit = self.ctx.resolve_2q_qubits(target)
                 reset_qubits.update([control_qubit, target_qubit])
             else:
                 reset_qubits.add(self.ctx.resolve_qubit_label(target))
         self.ctx.reset_awg_and_capunits(qubits=reset_qubits)
 
-        is_2q = self.ctx.experiment_system.get_target(targets[0]).is_cr
+        is_2q = self.ctx.experiment_system.get_target(targets[0]).is_2q
 
         if is_2q:
             dimension = 4
@@ -789,6 +1058,8 @@ class BenchmarkingService:
                 max_n_cliffords=max_n_cliffords,
                 x90=x90,
                 zx90=zx90,
+                native_2q_gate=native_2q_gate,
+                native_2q_waveform=native_2q_waveform,
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
@@ -814,6 +1085,8 @@ class BenchmarkingService:
                         max_n_cliffords=max_n_cliffords,
                         x90=x90,
                         zx90=zx90,
+                        native_2q_gate=native_2q_gate,
+                        native_2q_waveform=native_2q_waveform,
                         interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
                         in_parallel=False,
@@ -835,6 +1108,8 @@ class BenchmarkingService:
                     max_n_cliffords=max_n_cliffords,
                     x90=x90,
                     zx90=zx90,
+                    native_2q_gate=native_2q_gate,
+                    native_2q_waveform=native_2q_waveform,
                     interleaved_waveform=interleaved_waveform,  # type: ignore
                     interleaved_clifford=interleaved_clifford,
                     in_parallel=in_parallel,
@@ -1033,6 +1308,8 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         shots: int | None = None,
@@ -1048,7 +1325,7 @@ class BenchmarkingService:
             targets = list(targets)
 
         target_object = self.ctx.experiment_system.get_target(targets[0])
-        is_2q = target_object.is_cr
+        is_2q = target_object.is_2q
 
         if is_2q:
             return self.rb_experiment_2q(
@@ -1059,6 +1336,8 @@ class BenchmarkingService:
                 max_n_cliffords=max_n_cliffords,
                 x90=x90,
                 zx90=zx90,
+                native_2q_gate=native_2q_gate,
+                native_2q_waveform=native_2q_waveform,
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
@@ -1098,6 +1377,8 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
+        native_2q_gate: Native2QGate | None = None,
+        native_2q_waveform: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -1125,6 +1406,8 @@ class BenchmarkingService:
                 max_n_cliffords=max_n_cliffords,
                 x90=x90,
                 zx90=zx90,
+                native_2q_gate=native_2q_gate,
+                native_2q_waveform=native_2q_waveform,
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
@@ -1145,6 +1428,8 @@ class BenchmarkingService:
                     max_n_cliffords=max_n_cliffords,
                     x90=x90,
                     zx90=zx90,
+                    native_2q_gate=native_2q_gate,
+                    native_2q_waveform=native_2q_waveform,
                     in_parallel=in_parallel,
                     shots=shots,
                     interval=interval,
