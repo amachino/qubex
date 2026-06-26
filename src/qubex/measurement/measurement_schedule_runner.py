@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast
 
+from typing_extensions import deprecated
+
 from qubex.backend import (
     BackendController,
     BackendExecutionRequest,
@@ -187,7 +189,7 @@ class MeasurementScheduleRunner:
             config=config,
         )
 
-    async def execute_many_async(
+    async def execute_batch_async(
         self,
         *,
         schedules: list[MeasurementSchedule] | tuple[MeasurementSchedule, ...],
@@ -222,6 +224,23 @@ class MeasurementScheduleRunner:
             )
             for schedule in schedules
         ]
+
+    @deprecated(
+        "`MeasurementScheduleRunner.execute_many_async` is deprecated; "
+        "use `execute_batch_async` instead. Deprecated in v1.5.0; "
+        "will be removed no earlier than v1.6.0."
+    )
+    async def execute_many_async(
+        self,
+        *,
+        schedules: list[MeasurementSchedule] | tuple[MeasurementSchedule, ...],
+        config: MeasurementConfig,
+    ) -> list[MeasurementResult]:
+        """Delegate to `execute_batch_async` as a deprecated alias."""
+        return await self.execute_batch_async(
+            schedules=schedules,
+            config=config,
+        )
 
     def _prepare_execution(
         self,

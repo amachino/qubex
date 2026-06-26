@@ -402,8 +402,8 @@ def test_execute_async_returns_backend_measurement_result_directly() -> None:
     assert result is expected
 
 
-def test_execute_many_async_uses_backend_batch_api_when_available() -> None:
-    """Given backend batch support, execute_many_async should use it once for all schedules."""
+def test_execute_batch_async_uses_backend_batch_api_when_available() -> None:
+    """Given backend batch support, execute_batch_async should use it once for all schedules."""
     called: dict[str, object] = {}
     request_a = BackendExecutionRequest(payload=object())
     request_b = BackendExecutionRequest(payload=object())
@@ -455,7 +455,7 @@ def test_execute_many_async_uses_backend_batch_api_when_available() -> None:
     schedules = [_make_schedule(), _make_schedule()]
 
     results = asyncio.run(
-        runner.execute_many_async(
+        runner.execute_batch_async(
             schedules=schedules,
             config=_make_config(),
         )
@@ -463,6 +463,55 @@ def test_execute_many_async_uses_backend_batch_api_when_available() -> None:
 
     assert called["requests"] == [request_a, request_b]
     assert results == [expected, expected]
+
+
+def test_execute_many_async_delegates_to_batch_alias() -> None:
+    """Deprecated execute_many_async alias should delegate to execute_batch_async."""
+    called: dict[str, object] = {}
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            _ = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            _ = schedule
+            _ = config
+            return BackendExecutionRequest(payload=object())
+
+    class _BackendController:
+        sampling_period_ns: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
+
+        async def execute_async(
+            self, *, request: BackendExecutionRequest
+        ) -> MeasurementResult:
+            _ = self, request
+            called["execute_async"] = True
+            return MeasurementResultConverter.from_multiple(
+                _make_multiple_result(),
+                measurement_config=_make_config(),
+            )
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+
+    with pytest.warns(DeprecationWarning, match="execute_batch_async"):
+        results = asyncio.run(
+            runner.execute_many_async(
+                schedules=[_make_schedule()],
+                config=_make_config(),
+            )
+        )
+
+    assert called["execute_async"] is True
+    assert len(results) == 1
 
 
 def test_execute_async_prefers_adapter_measurement_result_builder_when_available() -> (

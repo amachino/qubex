@@ -662,7 +662,7 @@ class MeasurementExecutionService:
             measurement_schedules = [
                 schedule(sweep_value) for sweep_value in normalized_values
             ]
-            results = await self.measurement_schedule_runner.execute_many_async(
+            results = await self.measurement_schedule_runner.execute_batch_async(
                 schedules=measurement_schedules,
                 config=resolved_config,
             )
@@ -754,7 +754,7 @@ class MeasurementExecutionService:
                 for ndindex in np.ndindex(shape)
             ]
             measurement_schedules = [schedule(point) for point in points]
-            results = await self.measurement_schedule_runner.execute_many_async(
+            results = await self.measurement_schedule_runner.execute_batch_async(
                 schedules=measurement_schedules,
                 config=resolved_config,
             )
