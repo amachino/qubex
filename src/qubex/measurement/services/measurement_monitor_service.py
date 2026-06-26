@@ -26,14 +26,14 @@ from qubex.measurement.services.measurement_session_service import (
     MeasurementSessionService,
 )
 from qubex.system import ExperimentSystem, PortType, Target
+from qubex.system.quel1.quel1_port_configurator import MixingUtil
+from qubex.system.quel1.quel1_system_constants import NCO_STEP_HZ
 from qubex.typing import IQArray, TargetMap
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 RFSwitchState = Literal["pass", "block", "open", "loop"]
-_LOOPBACK_DEMODULATION_FILTER_TAPS = 129
-_LOOPBACK_DEMODULATION_FILTER_CUTOFF_GHZ = 0.025
 _QUEL1SE_R8_BOX_TYPE = "quel1se-riken8"
 _QUEL1SE_R8_MONITOR_LO_HZ = 6_000_000_000
 _QUEL1SE_R8_ADC_CNCO_MIN_HZ = -3_000_000_000
@@ -657,19 +657,32 @@ class MeasurementMonitorService:
             return round(observed_freq_hz - lo_freq_hz)
         return round(lo_freq_hz - observed_freq_hz)
 
-    @classmethod
-    def _calculate_loopback_quel1se_r8_monitor_cnco_hz(
-        cls,
+    @staticmethod
+    def _calculate_loopback_monitor_nco_hz(
         *,
         observed_freq_hz: int,
+        lo_freq_hz: int,
         sideband: Literal["U", "L"],
-    ) -> int:
-        """Return the monitor CNCO for fixed 6 GHz quel1se-riken8 monitor LO."""
-        return cls._calculate_loopback_monitor_cnco_hz(
-            observed_freq_hz=observed_freq_hz,
-            lo_freq_hz=_QUEL1SE_R8_MONITOR_LO_HZ,
-            sideband=sideband,
+    ) -> tuple[int, int]:
+        """Return monitor CNCO/FNCO settings on the standard QuEL-1 NCO grid."""
+        cnco_freq_hz = (
+            round(
+                MeasurementMonitorService._calculate_loopback_monitor_cnco_hz(
+                    observed_freq_hz=observed_freq_hz,
+                    lo_freq_hz=lo_freq_hz,
+                    sideband=sideband,
+                )
+                / NCO_STEP_HZ
+            )
+            * NCO_STEP_HZ
         )
+        fnco_freq_hz, _ = MixingUtil.calc_fnco(
+            f=observed_freq_hz,
+            ssb=sideband,
+            lo=lo_freq_hz,
+            cnco=cnco_freq_hz,
+        )
+        return cnco_freq_hz, fnco_freq_hz
 
     def _resolve_loopback_monitor_lo_setting(
         self,
@@ -786,16 +799,42 @@ class MeasurementMonitorService:
         *,
         capture_target: str,
         monitor_source_label: str,
+        monitor_source_setting: _LoopbackMonitorSourceSetting | None = None,
         pulse_schedule: PulseSchedule,
     ) -> float | None:
         """Resolve software demodulation from observed RF and receiver center."""
-        observed_frequency = self._resolve_loopback_target_frequency_ghz(
-            target_or_port_id=monitor_source_label,
-            pulse_schedule=pulse_schedule,
+        observed_frequency_hz = (
+            None
+            if monitor_source_setting is None
+            else self._resolve_loopback_observed_frequency_hz(
+                source_setting=monitor_source_setting,
+                pulse_schedule=pulse_schedule,
+            )
         )
         receiver_frequency = self._resolve_loopback_monitor_receiver_frequency_ghz(
             capture_target=capture_target,
             monitor_source_label=monitor_source_label,
+        )
+        if (
+            observed_frequency_hz is not None
+            and receiver_frequency is not None
+            and monitor_source_setting is not None
+        ):
+            observed_frequency = observed_frequency_hz * 1e-9
+            capture_port = self._resolve_loopback_capture_port(
+                target_or_port_id=capture_target,
+            )
+            sideband = self._resolve_loopback_monitor_receiver_sideband(
+                monitor_port=capture_port,
+                source_setting=monitor_source_setting,
+            )
+            if sideband == "L":
+                return receiver_frequency - observed_frequency
+            return observed_frequency - receiver_frequency
+
+        observed_frequency = self._resolve_loopback_target_frequency_ghz(
+            target_or_port_id=monitor_source_label,
+            pulse_schedule=pulse_schedule,
         )
         if observed_frequency is not None and receiver_frequency is not None:
             return observed_frequency - receiver_frequency
@@ -803,6 +842,26 @@ class MeasurementMonitorService:
             target_or_port_id=monitor_source_label,
             pulse_schedule=pulse_schedule,
         )
+
+    def _resolve_loopback_monitor_receiver_sideband(
+        self,
+        *,
+        monitor_port: Any | None,
+        source_setting: _LoopbackMonitorSourceSetting,
+    ) -> Literal["U", "L"] | None:
+        """Resolve the monitor receiver sideband used for software residuals."""
+        if monitor_port is not None and self._is_loopback_quel1se_r8_box(
+            box_id=str(monitor_port.box_id),
+        ):
+            return self._resolve_loopback_quel1se_r8_monitor_sideband(source_setting)
+        if (
+            monitor_port is not None
+            and self._uses_loopback_output_owned_monitor_lo_strategy(
+                box_id=str(monitor_port.box_id),
+            )
+        ):
+            return self._resolve_loopback_source_sideband(source_setting) or "L"
+        return self._resolve_loopback_source_sideband(source_setting)
 
     def _configure_loopback_quel1se_r8_monitor_for_source(
         self,
@@ -841,8 +900,9 @@ class MeasurementMonitorService:
             return False
 
         sideband = self._resolve_loopback_quel1se_r8_monitor_sideband(source_setting)
-        cnco_freq_hz = self._calculate_loopback_quel1se_r8_monitor_cnco_hz(
+        cnco_freq_hz, fnco_freq_hz = self._calculate_loopback_monitor_nco_hz(
             observed_freq_hz=observed_freq_hz,
+            lo_freq_hz=lo_freq_hz,
             sideband=sideband,
         )
         if not (
@@ -870,7 +930,6 @@ class MeasurementMonitorService:
         )
 
         monitor_channels = getattr(monitor_port, "channels", ())
-        fnco_freq_hz = 0
         if callable(config_runit):
             runit = 0
             if isinstance(monitor_channels, Sequence) and monitor_channels:
@@ -945,7 +1004,7 @@ class MeasurementMonitorService:
             return False
 
         sideband = self._resolve_loopback_source_sideband(source_setting) or "L"
-        cnco_freq_hz = self._calculate_loopback_monitor_cnco_hz(
+        cnco_freq_hz, fnco_freq_hz = self._calculate_loopback_monitor_nco_hz(
             observed_freq_hz=observed_freq_hz,
             lo_freq_hz=lo_freq_hz,
             sideband=sideband,
@@ -963,7 +1022,6 @@ class MeasurementMonitorService:
         )
 
         monitor_channels = getattr(monitor_port, "channels", ())
-        fnco_freq_hz = 0
         if callable(config_runit):
             runit = 0
             if isinstance(monitor_channels, Sequence) and monitor_channels:
@@ -1491,6 +1549,7 @@ class MeasurementMonitorService:
         capture_target: str,
         pulse_schedule: PulseSchedule,
         monitor_source_label: str | None = None,
+        monitor_source_setting: _LoopbackMonitorSourceSetting | None = None,
     ) -> float | None:
         """Resolve the single software-demodulation frequency for a capture."""
         capture_port = self._resolve_loopback_capture_port(
@@ -1505,6 +1564,7 @@ class MeasurementMonitorService:
                 self._resolve_loopback_monitor_demodulation_frequency_ghz(
                     capture_target=capture_target,
                     monitor_source_label=monitor_source_label,
+                    monitor_source_setting=monitor_source_setting,
                     pulse_schedule=pulse_schedule,
                 )
             )
@@ -1567,71 +1627,6 @@ class MeasurementMonitorService:
         oscillator = np.exp(-1j * 2 * np.pi * frequency_ghz * sample_times)
         return data * oscillator
 
-    @staticmethod
-    def _resolve_loopback_filter_tap_count(sample_count: int) -> int:
-        """Return an odd FIR tap count suitable for one waveform length."""
-        if sample_count < _LOOPBACK_DEMODULATION_FILTER_TAPS:
-            return 0
-        return _LOOPBACK_DEMODULATION_FILTER_TAPS
-
-    @classmethod
-    def _design_loopback_lowpass_fir(
-        cls,
-        *,
-        frequency_ghz: float | None,
-        sampling_period: float,
-        sample_count: int,
-    ) -> np.ndarray | None:
-        """Design a low-pass FIR for software-demodulated loopback data."""
-        if frequency_ghz is None or np.isclose(frequency_ghz, 0.0):
-            return None
-        nyquist_ghz = 0.5 / sampling_period
-        cutoff_ghz = min(
-            _LOOPBACK_DEMODULATION_FILTER_CUTOFF_GHZ,
-            abs(frequency_ghz) * 0.45,
-            nyquist_ghz * 0.8,
-        )
-        if cutoff_ghz <= 0.0 or cutoff_ghz >= nyquist_ghz:
-            return None
-
-        tap_count = cls._resolve_loopback_filter_tap_count(sample_count)
-        if tap_count == 0:
-            return None
-
-        normalized_cutoff = cutoff_ghz / nyquist_ghz
-        center = (tap_count - 1) / 2
-        offsets = np.arange(tap_count, dtype=np.float64) - center
-        taps = normalized_cutoff * np.sinc(normalized_cutoff * offsets)
-        taps *= np.hamming(tap_count)
-        tap_sum = np.sum(taps)
-        if np.isclose(tap_sum, 0.0):
-            return None
-        return taps / tap_sum
-
-    @classmethod
-    def _filter_loopback_demodulated_capture(
-        cls,
-        *,
-        data: np.ndarray,
-        frequency_ghz: float | None,
-        sampling_period: float,
-    ) -> np.ndarray:
-        """Apply a zero-phase low-pass FIR to demodulated loopback data."""
-        if data.ndim == 0:
-            return data
-        taps = cls._design_loopback_lowpass_fir(
-            frequency_ghz=frequency_ghz,
-            sampling_period=sampling_period,
-            sample_count=data.shape[-1],
-        )
-        if taps is None:
-            return data
-        return np.apply_along_axis(
-            lambda values: np.convolve(values, taps, mode="same"),
-            axis=-1,
-            arr=data,
-        )
-
     def _postprocess_loopback_result(
         self,
         *,
@@ -1666,6 +1661,11 @@ class MeasurementMonitorService:
                 result_target=result_target,
                 capture_targets=capture_targets,
             )
+            monitor_source_setting = (
+                None
+                if monitor_source_settings is None
+                else monitor_source_settings.get(capture_target)
+            )
             output_target = self._resolve_loopback_output_label(
                 result_target=result_target,
                 capture_target=capture_target,
@@ -1677,10 +1677,10 @@ class MeasurementMonitorService:
                     pulse_schedule=measurement_schedule.pulse_schedule,
                     monitor_source_label=(
                         None
-                        if monitor_source_settings is None
-                        or capture_target not in monitor_source_settings
-                        else monitor_source_settings[capture_target].label
+                        if monitor_source_setting is None
+                        else monitor_source_setting.label
                     ),
+                    monitor_source_setting=monitor_source_setting,
                 )
                 if demodulation
                 else None
@@ -1690,11 +1690,6 @@ class MeasurementMonitorService:
                 data = np.asarray(capture.data, dtype=np.complex128)
                 if demodulation:
                     data = self._demodulate_loopback_capture(
-                        data=data,
-                        frequency_ghz=frequency,
-                        sampling_period=capture.sampling_period,
-                    )
-                    data = self._filter_loopback_demodulated_capture(
                         data=data,
                         frequency_ghz=frequency,
                         sampling_period=capture.sampling_period,
@@ -1902,8 +1897,8 @@ class MeasurementMonitorService:
         demodulation : bool, optional
             Whether to demodulate captured waveforms. READ_IN captures use
             backend DSP demodulation. MNTR_IN captures are split by active
-            source channel when needed, then low-pass filtered after Qubex-side
-            software demodulation.
+            source channel when needed, then software-demodulated in Qubex
+            while preserving the captured pulse envelope.
         include_read_in : bool, optional
             Whether to add matching READ_IN captures for active readout output
             targets when `capture_targets` is omitted.

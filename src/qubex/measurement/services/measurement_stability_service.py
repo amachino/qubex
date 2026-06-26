@@ -112,10 +112,9 @@ def _signal_stability_series(
     for snapshot in snapshots:
         elapsed_s = 0.0 if snapshot.elapsed_s is None else float(snapshot.elapsed_s)
         for statistic in snapshot.signals.values():
-            label = (
-                f"{statistic.reference_target} -> {statistic.monitor_target}"
-                f" [{statistic.capture_index}]"
-            )
+            label = statistic.reference_target
+            if statistic.capture_index != 0:
+                label = f"{label} [{statistic.capture_index}]"
             raw_series.setdefault(label, []).append(
                 (
                     elapsed_s,
@@ -158,12 +157,12 @@ def _add_signal_stability_trace(
         y=y,
         customdata=percent,
         mode="lines+markers",
-        name=label,
+        name=f"{label} amp",
         line={"color": _LIVE_AMPLITUDE_COLOR},
         hovertemplate=(
-            "elapsed=%{x:.2f} s<br>"
-            "relative=%{y:.4f}<br>"
-            "move=%{customdata:+.2f}%<extra>%{fullData.name}</extra>"
+            "t=%{x:.1f} s<br>"
+            "rel=%{y:.5f}<br>"
+            "move=%{customdata:+.3f}%<extra>%{fullData.name}</extra>"
         ),
         row=1,
         col=1,
@@ -175,7 +174,7 @@ def _add_signal_stability_trace(
         name=f"{label} phase",
         line={"color": _LIVE_PHASE_COLOR},
         hovertemplate=(
-            "elapsed=%{x:.2f} s<br>phase=%{y:+.4f} rad<extra>%{fullData.name}</extra>"
+            "t=%{x:.1f} s<br>phase=%{y:+.3f} rad<extra>%{fullData.name}</extra>"
         ),
         row=2,
         col=1,
@@ -242,7 +241,9 @@ def _update_signal_stability_widget(
     """Update the live stability widget in place."""
     series = _signal_stability_series(snapshots)
     trace_names = [
-        trace_name for label in series for trace_name in (label, f"{label} phase")
+        trace_name
+        for label in series
+        for trace_name in (f"{label} amp", f"{label} phase")
     ]
     with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
         if [trace.name for trace in widget.data] != trace_names:
@@ -267,13 +268,6 @@ def _update_signal_stability_widget(
             phase_trace.y = phase
 
 
-def _waveform_trace_label(waveform: _MonitorWaveform, component: str) -> str:
-    return (
-        f"{waveform.reference_target} -> {waveform.monitor_target}"
-        f" [{waveform.capture_index}] {component}"
-    )
-
-
 def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
     traces = (
         ("|IQ|", waveform.amplitude, _LIVE_AMPLITUDE_COLOR),
@@ -284,11 +278,12 @@ def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
         fig.add_scatter(
             x=waveform.time_ns,
             y=y,
+            customdata=np.asarray(y, dtype=np.float64) * 1e9,
             mode="lines",
-            name=_waveform_trace_label(waveform, component),
+            name=component,
             line={"color": color},
             hovertemplate=(
-                f"time=%{{x:.1f}} ns<br>{component}=%{{y:.4g}}"
+                f"t=%{{x:.1f}} ns<br>{component}=%{{customdata:.2f}} n"
                 "<extra>%{fullData.name}</extra>"
             ),
         )
@@ -296,7 +291,7 @@ def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
 
 def _apply_monitor_waveform_layout(fig: Any) -> None:
     fig.update_layout(
-        title="Latest raw monitor waveform",
+        title="Latest monitor waveform",
         template="qubex",
         width=_LIVE_WAVEFORM_PLOT_WIDTH,
         height=_LIVE_WAVEFORM_PLOT_HEIGHT,
@@ -307,7 +302,7 @@ def _apply_monitor_waveform_layout(fig: Any) -> None:
 
 
 def _make_monitor_waveform_figure(waveforms: Collection[_MonitorWaveform]) -> Any:
-    """Return a raw monitor waveform figure."""
+    """Return a monitor waveform figure."""
     import qubex.visualization as viz
 
     fig = viz.make_figure()
@@ -318,7 +313,7 @@ def _make_monitor_waveform_figure(waveforms: Collection[_MonitorWaveform]) -> An
 
 
 def _make_monitor_waveform_widget(waveforms: Collection[_MonitorWaveform]) -> Any:
-    """Return a live-updated raw waveform widget."""
+    """Return a live-updated monitor waveform widget."""
     import plotly.graph_objects as go
 
     return go.FigureWidget(_make_monitor_waveform_figure(waveforms))
@@ -328,12 +323,10 @@ def _update_monitor_waveform_widget(
     widget: Any,
     waveforms: Collection[_MonitorWaveform],
 ) -> None:
-    """Replace the raw waveform widget with the latest monitor capture."""
+    """Replace the waveform widget with the latest monitor capture."""
     waveforms = list(waveforms)
     expected_trace_names = [
-        _waveform_trace_label(waveform, component)
-        for waveform in waveforms
-        for component in ("|IQ|", "I", "Q")
+        component for _ in waveforms for component in ("|IQ|", "I", "Q")
     ]
     with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
         if [trace.name for trace in widget.data] != expected_trace_names:
@@ -346,6 +339,7 @@ def _update_monitor_waveform_widget(
                 trace = widget.data[3 * index + offset]
                 trace.x = waveform.time_ns
                 trace.y = y
+                trace.customdata = np.asarray(y, dtype=np.float64) * 1e9
 
 
 def _display_live_widgets(*widgets: Any) -> bool:
@@ -1265,8 +1259,8 @@ class MeasurementStabilityService:
             When true in a notebook, display two live ``FigureWidget`` objects.
             The first shows relative amplitude normalized to the baseline and
             phase shifted so the first sample is zero. The second shows the
-            latest raw monitor ``|IQ|`` waveform. Both widgets are updated in
-            place for each sample.
+            latest monitor waveform. Both widgets are updated in place for
+            each sample.
 
         Returns
         -------
@@ -1598,10 +1592,9 @@ class MeasurementStabilityService:
                 if array.ndim >= 2:
                     samples = array.reshape(-1, array.shape[-1])
                     iq = np.mean(samples, axis=0)
-                    amplitude = np.mean(np.abs(samples), axis=0)
                 else:
                     iq = array.reshape(-1)
-                    amplitude = np.abs(iq)
+                amplitude = np.abs(iq)
                 time_ns = (
                     np.arange(amplitude.size, dtype=np.float64) + trim_samples
                 ) * float(capture.sampling_period)
@@ -1639,6 +1632,15 @@ class MeasurementStabilityService:
             Number of edge samples to remove from each capture before computing
             statistics.
 
+        Notes
+        -----
+        Complex data is interpreted as demodulated IQ. Amplitude and phase are
+        both derived from the same complex mean phasor: amplitude is
+        `abs(mean(IQ))`, and phase is `angle(mean(IQ))`. For 2-D data, the
+        first axis is treated as shots and uncertainty is estimated from the
+        per-shot complex mean projected onto the measured phase axis. For 1-D
+        data, each sample contributes to the uncertainty estimate.
+
         Returns
         -------
         list[MonitorStatistic]
@@ -1657,22 +1659,29 @@ class MeasurementStabilityService:
                     raise ValueError(f"Monitor capture for {target} is empty.")
                 if complex_array.ndim >= 2:
                     shot_arrays = complex_array.reshape(complex_array.shape[0], -1)
-                    shot_amplitudes = np.mean(
-                        np.abs(shot_arrays),
-                        axis=1,
-                    )
+                    shot_vectors = np.mean(shot_arrays, axis=1)
                     shot_phases = np.array(
-                        [_phase_statistics(shot)[0] for shot in shot_arrays],
+                        [
+                            np.angle(vector)
+                            if np.abs(vector) > np.finfo(float).eps
+                            else np.nan
+                            for vector in shot_vectors
+                        ],
                         dtype=np.float64,
                     )
                 else:
-                    shot_amplitudes = np.abs(flat)
-                    amplitudes = np.abs(flat)
-                    shot_phases = np.angle(flat[amplitudes > 0.0])
-                amplitude_mean = float(np.mean(shot_amplitudes))
+                    shot_vectors = flat
+                    amplitudes = np.abs(shot_vectors)
+                    shot_phases = np.angle(shot_vectors[amplitudes > 0.0])
+                phase_mean, phase_std, phase_resultant_length = _phase_statistics(flat)
+                mean_vector = np.mean(flat)
+                amplitude_mean = float(np.abs(mean_vector))
+                if np.isfinite(phase_mean):
+                    shot_amplitudes = np.real(shot_vectors * np.exp(-1j * phase_mean))
+                else:
+                    shot_amplitudes = np.abs(shot_vectors)
                 amplitude_std = float(np.std(shot_amplitudes))
                 amplitude_sem = float(amplitude_std / np.sqrt(shot_amplitudes.size))
-                phase_mean, phase_std, phase_resultant_length = _phase_statistics(flat)
                 finite_shot_phases = shot_phases[np.isfinite(shot_phases)]
                 if np.isfinite(phase_mean) and finite_shot_phases.size > 0:
                     phase_offsets = np.angle(

@@ -693,15 +693,17 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
     assert len(displayed) == 1
     stability_widget, waveform_widget = displayed[0].children
     assert len(stability_widget.data) == 2
+    assert stability_widget.data[0].name == "Q00 amp"
+    assert stability_widget.data[1].name == "Q00 phase"
     assert list(stability_widget.data[0].x) == pytest.approx([0.0, 0.5, 1.0])
     assert list(stability_widget.data[0].y) == pytest.approx([1.0, 1.5, 2.0])
     assert list(stability_widget.data[0].customdata) == pytest.approx(
         [0.0, 50.0, 100.0]
     )
     assert stability_widget.data[0].hovertemplate == (
-        "elapsed=%{x:.2f} s<br>"
-        "relative=%{y:.4f}<br>"
-        "move=%{customdata:+.2f}%<extra>%{fullData.name}</extra>"
+        "t=%{x:.1f} s<br>"
+        "rel=%{y:.5f}<br>"
+        "move=%{customdata:+.3f}%<extra>%{fullData.name}</extra>"
     )
     assert list(stability_widget.data[1].x) == pytest.approx([0.0, 0.5, 1.0])
     assert list(stability_widget.data[1].y) == pytest.approx(
@@ -709,7 +711,7 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
     )
     assert stability_widget.data[1].line.color == "#00B945"
     assert stability_widget.data[1].hovertemplate == (
-        "elapsed=%{x:.2f} s<br>phase=%{y:+.4f} rad<extra>%{fullData.name}</extra>"
+        "t=%{x:.1f} s<br>phase=%{y:+.3f} rad<extra>%{fullData.name}</extra>"
     )
     assert stability_widget.layout.width == 800
     assert stability_widget.layout.font.family == "Times New Roman, Times, serif"
@@ -724,10 +726,11 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
     )
     assert stability_widget.layout.xaxis2.title.text == "elapsed time (s)"
     assert len(waveform_widget.data) == 3
+    assert [trace.name for trace in waveform_widget.data] == ["|IQ|", "I", "Q"]
     assert list(waveform_widget.data[0].x) == pytest.approx([0.0, 2.0])
     assert list(waveform_widget.data[0].y) == pytest.approx([4.0, 4.0])
     assert waveform_widget.data[0].hovertemplate == (
-        "time=%{x:.1f} ns<br>|IQ|=%{y:.4g}<extra>%{fullData.name}</extra>"
+        "t=%{x:.1f} ns<br>|IQ|=%{customdata:.2f} n<extra>%{fullData.name}</extra>"
     )
     assert list(waveform_widget.data[1].y) == pytest.approx(
         [np.real(4.0 * np.exp(3.1j))] * 2
@@ -930,7 +933,7 @@ def test_measurement_stability_deadband_skips_small_gain_updates() -> None:
 
 
 def test_measurement_stability_computes_shot_amplitude_uncertainty() -> None:
-    """Given shot waveforms, when statistics are computed, then SEM uses shot amplitudes."""
+    """Given shot waveforms, when statistics are computed, then SEM uses shot phasors."""
     service = MeasurementStabilityService(context=_make_context())
     data = np.array(
         [
@@ -954,6 +957,18 @@ def test_measurement_stability_computes_shot_amplitude_uncertainty() -> None:
     assert statistic.amplitude_relative_sem == pytest.approx(0.25)
     assert statistic.n_shots == 4
     assert statistic.n_samples == 8
+
+
+def test_measurement_stability_amplitude_uses_complex_mean() -> None:
+    """Given canceling IQ samples, amplitude follows the complex mean."""
+    service = MeasurementStabilityService(context=_make_context())
+    data = np.array([1.0 + 0.0j, -1.0 + 0.0j, 0.2 + 0.0j])
+    result = _make_monitor_result_data("B0.MNTR0.IN", data)
+
+    statistic = service.compute_monitor_statistics(result)[0]
+
+    assert statistic.amplitude_mean == pytest.approx(abs(np.mean(data)))
+    assert statistic.amplitude_mean == pytest.approx(0.2 / 3.0)
 
 
 def test_measurement_stability_computes_shot_phase_uncertainty() -> None:
@@ -986,6 +1001,54 @@ def test_measurement_stability_phase_uses_complex_mean() -> None:
 
     assert statistic.phase_mean_rad == pytest.approx(np.angle(np.mean(data)))
     assert statistic.phase_mean_rad == pytest.approx(0.0049999583339583225)
+
+
+def test_check_signal_stability_waveform_display_averages_shots(
+    monkeypatch,
+) -> None:
+    """Given shot waveforms, live display uses the coherent shot average."""
+    service = MeasurementStabilityService(context=_make_context())
+    displayed: list[object] = []
+
+    def display(widget: object) -> None:
+        displayed.append(widget)
+
+    monkeypatch.setattr("IPython.display.display", display)
+    data = np.array(
+        [
+            [10.0 + 0.0j, 10.0 + 0.0j],
+            [12.0 + 2.0j, 12.0 + 2.0j],
+        ]
+    )
+    result = _make_monitor_result_data(
+        "B0.MNTR0.IN",
+        data,
+        shot_averaging=False,
+    )
+
+    def capture(
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+        block_outputs: bool = True,
+        shot_averaging: bool = True,
+        capture_targets: list[str] | None = None,
+    ) -> MeasurementResult:
+        _ = (schedule, n_shots, block_outputs, shot_averaging, capture_targets)
+        return result
+
+    _ = service.check_signal_stability(
+        capture=capture,
+        targets=["Q00"],
+        duration=0.0,
+        update_corrections=False,
+        plot=True,
+    )
+    _stability_widget, waveform_widget = displayed[0].children
+
+    assert list(waveform_widget.data[0].y) == pytest.approx([np.hypot(11.0, 1.0)] * 2)
+    assert list(waveform_widget.data[1].y) == pytest.approx([11.0, 11.0])
+    assert list(waveform_widget.data[2].y) == pytest.approx([1.0, 1.0])
 
 
 def test_measurement_stability_auto_gain_deadband_uses_shot_uncertainty() -> None:
