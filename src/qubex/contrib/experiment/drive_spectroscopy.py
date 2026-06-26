@@ -6,7 +6,7 @@ from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -518,7 +518,7 @@ def _modified_shared_port_backend_settings(
             "Active backend does not support shared backend-settings updates."
         )
 
-    box_cache = get_box_config_cache_snapshot()
+    box_cache = cast(dict[str, dict[str, Any]], get_box_config_cache_snapshot())
     original_box_cache = deepcopy(box_cache)
     original_port = {
         "lo_freq": first_port.lo_freq,
