@@ -280,16 +280,16 @@ class Measurement:
         self,
         *,
         targets: Collection[str] | str | None = None,
-        include_control: bool = True,
-        include_readout: bool = True,
-        n_shots: int | None = DEFAULT_STABILITY_CORRECTION_N_SHOTS,
-        probe_amplitude: float = 0.1,
-        probe_duration: float = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION,
-        block_outputs: bool = True,
-        reference_scope: OutputSignalReferenceScope = "box",
-        trim_samples: int = 0,
-        estimate_gain_noise: bool = True,
-        estimate_phase_noise: bool = True,
+        include_control: bool | None = None,
+        include_readout: bool | None = None,
+        n_shots: int | None = None,
+        probe_amplitude: float | None = None,
+        probe_duration: float | None = None,
+        block_outputs: bool | None = None,
+        reference_scope: OutputSignalReferenceScope | None = None,
+        trim_samples: int | None = None,
+        estimate_gain_noise: bool | None = None,
+        estimate_phase_noise: bool | None = None,
     ) -> MeasurementStabilitySnapshot:
         """
         Capture session-local output-signal baselines.
@@ -301,6 +301,26 @@ class Measurement:
         `trim_samples` removes the same number of samples from both ends of the
         captured monitor window before computing the baseline amplitude.
         """
+        if include_control is None:
+            include_control = True
+        if include_readout is None:
+            include_readout = True
+        if n_shots is None:
+            n_shots = DEFAULT_STABILITY_CORRECTION_N_SHOTS
+        if probe_amplitude is None:
+            probe_amplitude = 0.1
+        if probe_duration is None:
+            probe_duration = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION
+        if block_outputs is None:
+            block_outputs = True
+        if reference_scope is None:
+            reference_scope = "box"
+        if trim_samples is None:
+            trim_samples = 0
+        if estimate_gain_noise is None:
+            estimate_gain_noise = True
+        if estimate_phase_noise is None:
+            estimate_phase_noise = True
         return self.stability_service.establish_output_signal_baseline(
             capture=self.execution_service.capture_loopback,
             targets=targets,
@@ -320,25 +340,25 @@ class Measurement:
         self,
         *,
         targets: Collection[str] | str | None = None,
-        include_control: bool = True,
-        include_readout: bool = True,
-        n_shots: int | None = DEFAULT_STABILITY_CORRECTION_N_SHOTS,
-        probe_amplitude: float = 0.1,
-        probe_duration: float = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION,
-        block_outputs: bool = True,
-        max_gain_relative_step: float = DEFAULT_OUTPUT_GAIN_CORRECTION_MAX_RELATIVE_STEP,
-        gain_smoothing: float = DEFAULT_OUTPUT_GAIN_CORRECTION_SMOOTHING,
-        gain_correction_deadband: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND,
-        auto_gain_correction_deadband: bool = True,
-        gain_correction_deadband_sigma: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND_SIGMA,
-        max_phase_step: float = DEFAULT_OUTPUT_PHASE_CORRECTION_MAX_STEP,
-        phase_smoothing: float = DEFAULT_OUTPUT_PHASE_CORRECTION_SMOOTHING,
-        phase_correction_deadband: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND,
-        auto_phase_correction_deadband: bool = True,
-        phase_correction_deadband_sigma: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA,
-        phase_min_resultant_length: float = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH,
+        include_control: bool | None = None,
+        include_readout: bool | None = None,
+        n_shots: int | None = None,
+        probe_amplitude: float | None = None,
+        probe_duration: float | None = None,
+        block_outputs: bool | None = None,
+        max_gain_relative_step: float | None = None,
+        gain_smoothing: float | None = None,
+        gain_correction_deadband: float | None = None,
+        auto_gain_correction_deadband: bool | None = None,
+        gain_correction_deadband_sigma: float | None = None,
+        max_phase_step: float | None = None,
+        phase_smoothing: float | None = None,
+        phase_correction_deadband: float | None = None,
+        auto_phase_correction_deadband: bool | None = None,
+        phase_correction_deadband_sigma: float | None = None,
+        phase_min_resultant_length: float | None = None,
         reference_scope: OutputSignalReferenceScope | None = None,
-        trim_samples: int = 0,
+        trim_samples: int | None = None,
     ) -> MeasurementStabilitySnapshot:
         """
         Update session-local output gain and phase corrections.
@@ -349,6 +369,46 @@ class Measurement:
         same `trim_samples` as the baseline so correction updates compare the
         same capture window.
         """
+        if include_control is None:
+            include_control = True
+        if include_readout is None:
+            include_readout = True
+        if n_shots is None:
+            n_shots = DEFAULT_STABILITY_CORRECTION_N_SHOTS
+        if probe_amplitude is None:
+            probe_amplitude = 0.1
+        if probe_duration is None:
+            probe_duration = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION
+        if block_outputs is None:
+            block_outputs = True
+        if max_gain_relative_step is None:
+            max_gain_relative_step = DEFAULT_OUTPUT_GAIN_CORRECTION_MAX_RELATIVE_STEP
+        if gain_smoothing is None:
+            gain_smoothing = DEFAULT_OUTPUT_GAIN_CORRECTION_SMOOTHING
+        if gain_correction_deadband is None:
+            gain_correction_deadband = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND
+        if auto_gain_correction_deadband is None:
+            auto_gain_correction_deadband = True
+        if gain_correction_deadband_sigma is None:
+            gain_correction_deadband_sigma = (
+                DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND_SIGMA
+            )
+        if max_phase_step is None:
+            max_phase_step = DEFAULT_OUTPUT_PHASE_CORRECTION_MAX_STEP
+        if phase_smoothing is None:
+            phase_smoothing = DEFAULT_OUTPUT_PHASE_CORRECTION_SMOOTHING
+        if phase_correction_deadband is None:
+            phase_correction_deadband = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND
+        if auto_phase_correction_deadband is None:
+            auto_phase_correction_deadband = True
+        if phase_correction_deadband_sigma is None:
+            phase_correction_deadband_sigma = (
+                DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA
+            )
+        if phase_min_resultant_length is None:
+            phase_min_resultant_length = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH
+        if trim_samples is None:
+            trim_samples = 0
         return self.stability_service.update_output_signal_corrections(
             capture=self.execution_service.capture_loopback,
             targets=targets,
@@ -377,30 +437,76 @@ class Measurement:
         self,
         *,
         duration: float,
-        sample_interval: float | None = 10.0,
+        sample_interval: float | None = None,
         targets: Collection[str] | str | None = None,
-        include_control: bool = True,
-        include_readout: bool = True,
-        n_shots: int | None = DEFAULT_STABILITY_CORRECTION_N_SHOTS,
-        probe_amplitude: float = 0.1,
-        probe_duration: float = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION,
-        block_outputs: bool = True,
-        reference_scope: OutputSignalReferenceScope = "box",
-        trim_samples: int = 0,
-        max_gain_relative_step: float = DEFAULT_OUTPUT_GAIN_CORRECTION_MAX_RELATIVE_STEP,
-        gain_smoothing: float = DEFAULT_OUTPUT_GAIN_CORRECTION_SMOOTHING,
-        gain_correction_deadband: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND,
-        auto_gain_correction_deadband: bool = True,
-        gain_correction_deadband_sigma: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND_SIGMA,
-        max_phase_step: float = DEFAULT_OUTPUT_PHASE_CORRECTION_MAX_STEP,
-        phase_smoothing: float = DEFAULT_OUTPUT_PHASE_CORRECTION_SMOOTHING,
-        phase_correction_deadband: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND,
-        auto_phase_correction_deadband: bool = True,
-        phase_correction_deadband_sigma: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA,
-        phase_min_resultant_length: float = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH,
-        update_corrections: bool = True,
+        include_control: bool | None = None,
+        include_readout: bool | None = None,
+        n_shots: int | None = None,
+        probe_amplitude: float | None = None,
+        probe_duration: float | None = None,
+        block_outputs: bool | None = None,
+        reference_scope: OutputSignalReferenceScope | None = None,
+        trim_samples: int | None = None,
+        max_gain_relative_step: float | None = None,
+        gain_smoothing: float | None = None,
+        gain_correction_deadband: float | None = None,
+        auto_gain_correction_deadband: bool | None = None,
+        gain_correction_deadband_sigma: float | None = None,
+        max_phase_step: float | None = None,
+        phase_smoothing: float | None = None,
+        phase_correction_deadband: float | None = None,
+        auto_phase_correction_deadband: bool | None = None,
+        phase_correction_deadband_sigma: float | None = None,
+        phase_min_resultant_length: float | None = None,
+        update_corrections: bool | None = None,
     ) -> list[MeasurementStabilitySnapshot]:
         """Check selected output signals and return stability snapshot history."""
+        if sample_interval is None:
+            sample_interval = 10.0
+        if include_control is None:
+            include_control = True
+        if include_readout is None:
+            include_readout = True
+        if n_shots is None:
+            n_shots = DEFAULT_STABILITY_CORRECTION_N_SHOTS
+        if probe_amplitude is None:
+            probe_amplitude = 0.1
+        if probe_duration is None:
+            probe_duration = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION
+        if block_outputs is None:
+            block_outputs = True
+        if reference_scope is None:
+            reference_scope = "box"
+        if trim_samples is None:
+            trim_samples = 0
+        if max_gain_relative_step is None:
+            max_gain_relative_step = DEFAULT_OUTPUT_GAIN_CORRECTION_MAX_RELATIVE_STEP
+        if gain_smoothing is None:
+            gain_smoothing = DEFAULT_OUTPUT_GAIN_CORRECTION_SMOOTHING
+        if gain_correction_deadband is None:
+            gain_correction_deadband = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND
+        if auto_gain_correction_deadband is None:
+            auto_gain_correction_deadband = True
+        if gain_correction_deadband_sigma is None:
+            gain_correction_deadband_sigma = (
+                DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND_SIGMA
+            )
+        if max_phase_step is None:
+            max_phase_step = DEFAULT_OUTPUT_PHASE_CORRECTION_MAX_STEP
+        if phase_smoothing is None:
+            phase_smoothing = DEFAULT_OUTPUT_PHASE_CORRECTION_SMOOTHING
+        if phase_correction_deadband is None:
+            phase_correction_deadband = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND
+        if auto_phase_correction_deadband is None:
+            auto_phase_correction_deadband = True
+        if phase_correction_deadband_sigma is None:
+            phase_correction_deadband_sigma = (
+                DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA
+            )
+        if phase_min_resultant_length is None:
+            phase_min_resultant_length = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH
+        if update_corrections is None:
+            update_corrections = True
         return self.stability_service.check_signal_stability(
             capture=self.execution_service.capture_loopback,
             duration=duration,
