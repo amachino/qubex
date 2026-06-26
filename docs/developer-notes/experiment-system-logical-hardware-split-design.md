@@ -127,7 +127,7 @@ Notes:
 
 Derive role from `Target.type`:
 
-- `CTRL_GE`, `CTRL_EF`, `CTRL_CR`, `PUMP` -> `InstrumentRole.TRANSMITTER`
+- `CTRL_GE`, `CTRL_EF`, `CTRL_FH`, `CTRL_CR`, `PUMP` -> `InstrumentRole.TRANSMITTER`
 - `READ` -> `InstrumentRole.TRANSCEIVER` (v1.5.0 policy)
 
 ### Port mapping

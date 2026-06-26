@@ -336,6 +336,7 @@ def test_register_custom_target_rejects_unexpected_deprecated_options() -> None:
 @pytest.mark.parametrize(
     ("target_type", "expected_attr"),
     [
+        (TargetType.CTRL_FH, "_qubit"),
         (TargetType.CTRL_2Q, "_qubit"),
         (TargetType.READ, "_resonator"),
         (TargetType.PUMP, "_mux"),
