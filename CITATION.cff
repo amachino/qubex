@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use Qubex, please cite it using the metadata from this file."
 title: "Qubex"
-version: "1.5.0rc1"
+version: "1.5.0rc2"
 type: software
 license: "Apache-2.0"
 abstract: "Qubex is a Python framework for pulse-level control, readout, calibration, and analysis in qubit experiments."
