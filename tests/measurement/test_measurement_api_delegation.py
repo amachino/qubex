@@ -39,8 +39,10 @@ from qubex.measurement.services.measurement_execution_service import (
 )
 from qubex.measurement.services.measurement_monitor_service import (
     MeasurementMonitorService,
+    _LoopbackMonitorSourceSetting,
 )
 from qubex.system import PortType
+from qubex.system.quel1.quel1_system_constants import NCO_STEP_HZ
 from qubex.typing import MeasurementMode, TargetMap
 
 
@@ -1106,7 +1108,7 @@ def test_capture_loopback_preserves_type_a_monitor_lo_shared_with_pump() -> None
     )
 
     execution_service = measurement.execution_service
-    expected_cnco_hz = 1_842_187_500
+    expected_cnco_hz = 79 * NCO_STEP_HZ
 
     def _build(
         self: MeasurementExecutionService,
@@ -1328,7 +1330,7 @@ def test_capture_loopback_preserves_type_b_monitor_lo_shared_with_ctrl() -> None
     )
 
     execution_service = measurement.execution_service
-    expected_cnco_hz = 1_842_187_500
+    expected_cnco_hz = 79 * NCO_STEP_HZ
 
     def _build(
         self: MeasurementExecutionService,
@@ -1567,6 +1569,7 @@ def test_capture_loopback_configures_quel1se_r8_monitor_for_lo_less_source() -> 
         _ = (self, schedule, config, quel1_options)
         assert monitor_in_port.lo_freq == 6_000_000_000
         assert monitor_in_port.cnco_freq == 1_640_625_000
+        assert monitor_in_port.cnco_freq % NCO_STEP_HZ == 0
         assert monitor_channel.fnco_freq == 0
         return _make_measurement_result(
             data={"B0.MNTR1.IN": [np.array([1.0 + 0.0j])]},
@@ -1785,7 +1788,7 @@ def test_capture_loopback_configures_quel1se_r8_monitor_for_readout_source() -> 
     ) -> MeasurementResult:
         _ = (self, schedule, config, quel1_options)
         assert monitor_in_port.lo_freq == 6_000_000_000
-        assert monitor_in_port.cnco_freq == 196_875_000
+        assert monitor_in_port.cnco_freq == 8 * NCO_STEP_HZ
         assert monitor_channel.fnco_freq == 0
         return _make_measurement_result(
             data={"B0.MNTR0.IN": [np.array([1.0 + 0.0j])]},
@@ -1814,7 +1817,7 @@ def test_capture_loopback_configures_quel1se_r8_monitor_for_readout_source() -> 
             "box_name": "B0",
             "port": 4,
             "lo_freq_hz": 6_000_000_000,
-            "cnco_freq_hz": 196_875_000,
+            "cnco_freq_hz": 8 * NCO_STEP_HZ,
             "cnco_locked_with": None,
         }
     ]
@@ -2130,29 +2133,203 @@ def test_capture_loopback_orders_merged_results_by_schedule_labels() -> None:
     ]
 
 
-def test_loopback_demodulation_filter_rejects_rotated_dc_background() -> None:
-    """Given source demodulation, when DC background rotates, then FIR rejects it."""
+def test_loopback_demodulation_preserves_awg_envelope() -> None:
+    """Given a modulated pulse, software demodulation preserves its envelope."""
     sampling_period = 2.0
     frequency_ghz = 0.05
     sample_count = 512
     sample_times = np.arange(sample_count) * sampling_period
-    source = np.exp(1j * 2 * np.pi * frequency_ghz * sample_times)
-    background = 0.5 + 0.0j
+    envelope = np.zeros(sample_count, dtype=np.float64)
+    envelope[128:384] = 1.0
+    source = envelope * np.exp(1j * 2 * np.pi * frequency_ghz * sample_times)
+
     demodulated = MeasurementMonitorService._demodulate_loopback_capture(  # noqa: SLF001
-        data=source + background,
-        frequency_ghz=frequency_ghz,
-        sampling_period=sampling_period,
-    )
-    filtered = MeasurementMonitorService._filter_loopback_demodulated_capture(  # noqa: SLF001
-        data=demodulated,
+        data=source,
         frequency_ghz=frequency_ghz,
         sampling_period=sampling_period,
     )
 
-    center = filtered[160:-160]
+    np.testing.assert_allclose(np.abs(demodulated), envelope, atol=1e-12)
+    assert np.count_nonzero(np.abs(demodulated) > 0.5) == 256
 
-    assert np.mean(center) == pytest.approx(1.0 + 0.0j, abs=0.05)
-    assert np.std(center - np.mean(center)) < 0.05
+
+def test_monitor_demodulation_uses_residual_from_snapped_receiver_nco() -> None:
+    """Given snapped monitor NCO, software demodulation uses the remaining offset."""
+    source_channel = SimpleNamespace(number=0, fnco_freq=100_000_000)
+    source_port = SimpleNamespace(
+        id="B0.READ0.OUT",
+        box_id="B0",
+        number=1,
+        type=PortType.READ_OUT,
+        sideband="L",
+        lo_freq=8_500_000_000,
+        cnco_freq=2_203_125_000,
+        channels=(source_channel,),
+    )
+    source_channel.port = source_port
+    monitor_channel = SimpleNamespace(number=0, fnco_freq=0)
+    monitor_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+        lo_freq=6_000_000_000,
+        cnco_freq=8 * NCO_STEP_HZ,
+        channels=(monitor_channel,),
+    )
+    monitor_channel.port = monitor_port
+    box = SimpleNamespace(
+        id="B0",
+        type=SimpleNamespace(value="quel1se-riken8"),
+        ports=[source_port, monitor_port],
+    )
+
+    class _ControlSystemStub:
+        boxes: ClassVar[list[Any]] = [box]
+
+        @staticmethod
+        def get_port_by_id(port_id: str) -> Any:
+            if port_id != "B0.MNTR0.IN":
+                raise KeyError(port_id)
+            return monitor_port
+
+        @staticmethod
+        def get_box(box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+    class _BackendControllerStub:
+        @staticmethod
+        def dump_port(*, box_name: str, port_number: int) -> dict[str, Any]:
+            _ = (box_name, port_number)
+            return {}
+
+    service = MeasurementMonitorService(
+        context=SimpleNamespace(
+            experiment_system=SimpleNamespace(
+                control_system=_ControlSystemStub(),
+                targets=[SimpleNamespace(label="RQ00", channel=source_channel)],
+            ),
+        ),
+        session_service=SimpleNamespace(backend_controller=_BackendControllerStub()),
+        execution_service=SimpleNamespace(),
+    )
+    source_setting = _LoopbackMonitorSourceSetting(
+        label="RQ00",
+        port=source_port,
+        channel_number=0,
+        lo_freq_hz=source_port.lo_freq,
+        cnco_freq_hz=source_port.cnco_freq,
+        fnco_freq_hz=source_channel.fnco_freq,
+    )
+
+    frequency = service._resolve_loopback_monitor_demodulation_frequency_ghz(  # noqa: SLF001
+        capture_target="B0.MNTR0.IN",
+        monitor_source_label="RQ00",
+        monitor_source_setting=source_setting,
+        pulse_schedule=PulseSchedule(["RQ00"]),
+    )
+
+    assert frequency == pytest.approx(0.009375)
+
+
+def test_monitor_demodulation_uses_lsb_residual_for_direct_rf_source() -> None:
+    """Given LSB monitor receiver, software residual uses the capture-side sign."""
+    source_channel = SimpleNamespace(number=0, fnco_freq=-656_250_000)
+    source_port = SimpleNamespace(
+        id="B0.CTRL0",
+        box_id="B0",
+        number=1,
+        type=PortType.CTRL,
+        sideband=None,
+        lo_freq=None,
+        cnco_freq=4_921_875_000,
+        channels=(source_channel,),
+    )
+    source_channel.port = source_port
+    monitor_channel = SimpleNamespace(number=0, fnco_freq=0)
+    target_frequency_hz = 4_364_006_032
+    monitor_port = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+        lo_freq=6_000_000_000,
+        cnco_freq=1_640_625_000,
+        channels=(monitor_channel,),
+    )
+    monitor_channel.port = monitor_port
+    box = SimpleNamespace(
+        id="B0",
+        type=SimpleNamespace(value="quel1se-riken8"),
+        ports=[source_port, monitor_port],
+    )
+
+    class _ControlSystemStub:
+        boxes: ClassVar[list[Any]] = [box]
+
+        @staticmethod
+        def get_port_by_id(port_id: str) -> Any:
+            if port_id != "B0.MNTR0.IN":
+                raise KeyError(port_id)
+            return monitor_port
+
+        @staticmethod
+        def get_box(box_id: str) -> Any:
+            if box_id != "B0":
+                raise KeyError(box_id)
+            return box
+
+    class _BackendControllerStub:
+        @staticmethod
+        def dump_port(*, box_name: str, port_number: int) -> dict[str, Any]:
+            _ = (box_name, port_number)
+            return {}
+
+    target = SimpleNamespace(
+        label="Q00",
+        frequency=target_frequency_hz * 1e-9,
+        channel=source_channel,
+    )
+    service = MeasurementMonitorService(
+        context=SimpleNamespace(
+            experiment_system=SimpleNamespace(
+                control_system=_ControlSystemStub(),
+                targets=[target],
+                get_target=lambda label: (
+                    target
+                    if label == target.label
+                    else (_ for _ in ()).throw(KeyError(label))
+                ),
+            ),
+        ),
+        session_service=SimpleNamespace(backend_controller=_BackendControllerStub()),
+        execution_service=SimpleNamespace(),
+    )
+    source_setting = _LoopbackMonitorSourceSetting(
+        label="Q00",
+        port=source_port,
+        channel_number=0,
+        lo_freq_hz=source_port.lo_freq,
+        cnco_freq_hz=source_port.cnco_freq,
+        fnco_freq_hz=source_channel.fnco_freq,
+    )
+    schedule = PulseSchedule(["Q00"])
+
+    observed_hz = service._resolve_loopback_observed_frequency_hz(  # noqa: SLF001
+        source_setting=source_setting,
+        pulse_schedule=schedule,
+    )
+    frequency = service._resolve_loopback_monitor_demodulation_frequency_ghz(  # noqa: SLF001
+        capture_target="B0.MNTR0.IN",
+        monitor_source_label="Q00",
+        monitor_source_setting=source_setting,
+        pulse_schedule=schedule,
+    )
+
+    assert observed_hz == target_frequency_hz
+    assert frequency == pytest.approx(-0.004631032)
 
 
 def test_stability_service_computes_trimmed_monitor_statistics() -> None:
