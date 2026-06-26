@@ -661,7 +661,7 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
     monkeypatch.setattr("IPython.display.display", display)
 
     amplitudes = [2.0, 3.0, 4.0]
-    phases = [0.2, 0.4, 0.1]
+    phases = [3.0, -3.0, 3.1]
 
     def capture(
         schedule: PulseSchedule,
@@ -690,8 +690,8 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
 
     assert len(snapshots) == 3
     assert calls == amplitudes
-    assert len(displayed) == 2
-    stability_widget, waveform_widget = displayed
+    assert len(displayed) == 1
+    stability_widget, waveform_widget = displayed[0].children
     assert len(stability_widget.data) == 2
     assert list(stability_widget.data[0].x) == pytest.approx([0.0, 0.5, 1.0])
     assert list(stability_widget.data[0].y) == pytest.approx([1.0, 1.5, 2.0])
@@ -704,7 +704,9 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
         "move=%{customdata:+.2f}%<extra>%{fullData.name}</extra>"
     )
     assert list(stability_widget.data[1].x) == pytest.approx([0.0, 0.5, 1.0])
-    assert list(stability_widget.data[1].y) == pytest.approx([0.0, 0.2, -0.1])
+    assert list(stability_widget.data[1].y) == pytest.approx(
+        [0.0, 0.28318530717958645, 0.1]
+    )
     assert stability_widget.data[1].line.color == "#00B945"
     assert stability_widget.data[1].hovertemplate == (
         "elapsed=%{x:.2f} s<br>phase=%{y:+.4f} rad<extra>%{fullData.name}</extra>"
@@ -715,6 +717,11 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
         "relative amplitude (initial=1)"
     )
     assert stability_widget.layout.yaxis2.title.text == ("phase shift (rad, initial=0)")
+    amplitude_domain = stability_widget.layout.yaxis.domain
+    phase_domain = stability_widget.layout.yaxis2.domain
+    assert amplitude_domain[1] - amplitude_domain[0] == pytest.approx(
+        phase_domain[1] - phase_domain[0]
+    )
     assert stability_widget.layout.xaxis2.title.text == "elapsed time (s)"
     assert list(waveform_widget.data[0].x) == pytest.approx([0.0, 2.0])
     assert list(waveform_widget.data[0].y) == pytest.approx([4.0, 4.0])
