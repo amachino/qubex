@@ -10,7 +10,7 @@ authors:
     given-names: "Akinori"
 repository-code: "https://github.com/amachino/qubex"
 url: "https://amachino.github.io/qubex/"
-date-released: "2026-06-10"
+date-released: "2026-06-26"
 keywords:
   - "quantum computing"
   - "qubit experiments"
