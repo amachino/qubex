@@ -246,9 +246,10 @@ Several QuEL-1 and QuBE profiles map input or monitor lines to the same LO IC as
 output lines. For these boxes, changing monitor or read-in LO can change the
 corresponding output LO.
 
-For example, quelware maps `qube-riken-b` group 0 line 1 and group 0 line `m`
-to the same LMX2594 index, with different output pins. Programming the monitor
-LO therefore programs the same PLL used by the CTRL output line.
+For example, quelware maps group 0 line 1 and group 0 line `m` to the same
+LMX2594 index, with different output pins. In `qube-riken-a`, line 1 is PUMP.
+In `qube-riken-b`, line 1 is CTRL. Programming the monitor LO therefore
+programs the same PLL used by an output line.
 
 Implications:
 
