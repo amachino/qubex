@@ -101,6 +101,10 @@ class Qubit(MutableModel):
         default=None,
         alias="_control_frequency_ef",
     )
+    control_frequency_fh_value: float | None = Field(
+        default=None,
+        alias="_control_frequency_fh",
+    )
 
     @property
     def _bare_frequency(self) -> float | None:
@@ -141,6 +145,16 @@ class Qubit(MutableModel):
     def _control_frequency_ef(self, value: float | None) -> None:
         """Set EF control frequency via legacy attribute name."""
         self.control_frequency_ef_value = value
+
+    @property
+    def _control_frequency_fh(self) -> float | None:
+        """Backward-compatible alias for FH frequency storage."""
+        return self.control_frequency_fh_value
+
+    @_control_frequency_fh.setter
+    def _control_frequency_fh(self, value: float | None) -> None:
+        """Set FH control frequency via legacy attribute name."""
+        self.control_frequency_fh_value = value
 
     def __repr__(self) -> str:
         """Return the debug representation of the qubit."""
@@ -189,6 +203,14 @@ class Qubit(MutableModel):
             return self.control_frequency_ef_value
         else:
             return self.frequency + self.anharmonicity
+
+    @property
+    def control_frequency_fh(self) -> float:
+        """Return the configured FH control frequency in GHz."""
+        if self.control_frequency_fh_value is not None:
+            return self.control_frequency_fh_value
+        else:
+            return 2 * self.control_frequency_ef - self.frequency
 
     @property
     def alpha(self) -> float:

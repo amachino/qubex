@@ -126,19 +126,25 @@ class Quel1SkewManager:
             }
             updated_ports[box_name] = sorted(measured_ports)
             unmeasured_ports[box_name] = sorted(existing_ports - measured_ports)
-            adjusted_waits = {}
+            # Work with effective per-port waits so unmeasured ports keep their
+            # original timing even when we normalize common box wait.
+            effective_waits = {}
+            for port in existing_ports:
+                current_port_wait = port_wait[port]
+                self._validate_wait_value(current_port_wait, box_name=box_name)
+                effective_waits[port] = box_wait + current_port_wait
             for port, idx in estimated_ports:
                 current_port_wait = port_wait.get(port, 0)
                 self._validate_wait_value(current_port_wait, box_name=box_name)
-                adjusted_waits[port] = max(
+                effective_waits[port] = max(
                     self._WAIT_MIN,
                     box_wait + current_port_wait + (wait - idx),
                 )
 
-            common_wait = min(adjusted_waits.values())
+            common_wait = min(effective_waits.values())
             setting["wait"] = common_wait
-            for port, adjusted_wait in adjusted_waits.items():
-                port_wait[port] = adjusted_wait - common_wait
+            for port, effective_wait in effective_waits.items():
+                port_wait[port] = effective_wait - common_wait
 
         self._validate_wait_values(payload)
         with path.open("w", encoding="utf-8") as file:

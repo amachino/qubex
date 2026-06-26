@@ -3,6 +3,7 @@
 - Write docstrings following the guideline in docs/developer-guide/docstring-guidelines.md. Do not use reST syntax.
 - Follow the test guideline in docs/developer-guide/test-guidelines.md: write tests first and use 1-line spec docstrings.
 - Decide whether to add backward-compatibility handling based on whether the affected code has already been released.
+- Use semantic branch prefixes; see [Development flow](docs/developer-guide/development-flow.md#branching).
 
 ## Mandatory skill usage
 

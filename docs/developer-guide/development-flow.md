@@ -6,11 +6,14 @@ This page defines the standard contribution flow for Qubex.
 
 - Create a topic branch from the latest default branch.
 - Keep branch scope focused on one feature/fix.
-- Prefer descriptive names such as:
-  - `feature/<short-name>`
-  - `fix/<short-name>`
-  - `docs/<short-name>`
-  - `refactor/<short-name>`
+- Use a semantic prefix so the branch purpose is clear before opening the diff:
+  - `feature/<short-name>` for feature or API additions.
+  - `fix/<short-name>` for bug fixes.
+  - `docs/<short-name>` for documentation-only changes.
+  - `refactor/<short-name>` for internal restructuring without intentional behavior changes.
+  - `test/<short-name>` for test-only changes.
+  - `chore/<short-name>` for maintenance, tooling, or repository housekeeping.
+- Use lowercase kebab-case for `<short-name>`.
 
 ## Recommended steps
 

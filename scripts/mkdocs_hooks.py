@@ -55,7 +55,13 @@ def _on_files_restore_notebooks(files: Files, config: MkDocsConfig) -> Files:
     ]
     for file in files_to_wrap:
         files.remove(file)
-        files.append(NotebookFile(file, **config))
+        notebook_file = NotebookFile(file, **config)
+        current_language = getattr(config.plugins.get("i18n"), "current_language", None)
+        output_file = getattr(file, "alternates", {}).get(current_language, file)
+        notebook_file.dest_path = output_file.dest_path
+        notebook_file.abs_dest_path = output_file.abs_dest_path
+        notebook_file.url = output_file.url
+        files.append(notebook_file)
     return files
 
 

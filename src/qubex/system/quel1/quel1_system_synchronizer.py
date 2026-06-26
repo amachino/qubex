@@ -122,10 +122,11 @@ class Quel1SystemSynchronizer:
     def sync_box_to_hardware(self, box: Box) -> None:
         """Apply one experiment-system box configuration to hardware."""
         for port in box.ports:
+            if self._is_capture_port(port):
+                self._sync_capture_port(box=box, port=port)
+        for port in box.ports:
             if self._is_generator_port(port):
                 self._sync_generator_port(box=box, port=port)
-            elif self._is_capture_port(port):
-                self._sync_capture_port(box=box, port=port)
 
     def sync_experiment_system_to_hardware(
         self,

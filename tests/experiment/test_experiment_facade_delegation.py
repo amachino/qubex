@@ -793,6 +793,7 @@ def test_configure_delegates_to_session_service() -> None:
                 "box_ids": "Q2A",
                 "exclude": "Q00",
                 "mode": "ge-cr-cr",
+                "confirm": True,
             },
         )
     ]
@@ -998,6 +999,8 @@ def test_register_custom_target_delegates_to_context() -> None:
                 "port_number": 2,
                 "channel_number": 0,
                 "qubit_label": "Q00",
+                "target_qubit_label": None,
+                "metadata": None,
                 "target_type": None,
                 "update_backend_settings": True,
             },
@@ -1032,6 +1035,8 @@ def test_register_custom_target_delegates_legacy_update_lsi_to_context() -> None
                 "port_number": 2,
                 "channel_number": 0,
                 "qubit_label": "Q00",
+                "target_qubit_label": None,
+                "metadata": None,
                 "target_type": None,
                 "update_backend_settings": True,
             },
