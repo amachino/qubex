@@ -8,7 +8,7 @@ from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from inspect import Parameter, signature
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 from qxpulse import FlatTop, PulseSchedule
@@ -41,8 +41,24 @@ from qubex.measurement.services.measurement_monitor_service import (
     MeasurementMonitorService,
 )
 from qubex.system import PortType, Target
+from qubex.visualization.style import FONT_FAMILY
 
 logger = logging.getLogger(__name__)
+
+_LIVE_STABILITY_PLOT_WIDTH = 800
+_LIVE_STABILITY_PLOT_HEIGHT = 520
+_LIVE_WAVEFORM_PLOT_WIDTH = 800
+_LIVE_WAVEFORM_PLOT_HEIGHT = 320
+_LIVE_AMPLITUDE_COLOR = "#0C5DA5"
+_LIVE_PHASE_COLOR = "#00B945"
+
+
+class _MonitorWaveform(NamedTuple):
+    reference_target: str
+    monitor_target: str
+    capture_index: int
+    time_ns: np.ndarray
+    amplitude: np.ndarray
 
 
 def _capture_array(capture: Any) -> np.ndarray:
@@ -81,6 +97,247 @@ def _phase_statistics(samples: np.ndarray) -> tuple[float, float, float]:
     mean_phase = float(np.angle(mean_vector))
     offsets = np.angle(unit_samples * np.exp(-1j * mean_phase))
     return mean_phase, float(np.std(offsets)), resultant_length
+
+
+def _signal_stability_series(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> dict[str, tuple[list[float], list[float], list[float], list[float]]]:
+    """Return elapsed, relative amplitude, percent move, and relative phase."""
+    raw_series: dict[str, list[tuple[float, float, float]]] = {}
+    for snapshot in snapshots:
+        elapsed_s = 0.0 if snapshot.elapsed_s is None else float(snapshot.elapsed_s)
+        for statistic in snapshot.signals.values():
+            label = (
+                f"{statistic.reference_target} -> {statistic.monitor_target}"
+                f" [{statistic.capture_index}]"
+            )
+            raw_series.setdefault(label, []).append(
+                (
+                    elapsed_s,
+                    float(statistic.amplitude_mean),
+                    float(statistic.phase_mean_rad),
+                )
+            )
+
+    series: dict[str, tuple[list[float], list[float], list[float], list[float]]] = {}
+    for label, points in raw_series.items():
+        baseline = points[0][1]
+        if not np.isfinite(baseline) or baseline == 0.0:
+            continue
+        x = [point[0] for point in points]
+        y = [point[1] / baseline for point in points]
+        percent = [100.0 * (value - 1.0) for value in y]
+        phases = np.asarray([point[2] for point in points], dtype=np.float64)
+        relative_phase = np.full(phases.shape, np.nan, dtype=np.float64)
+        finite_phase = np.isfinite(phases)
+        if np.any(finite_phase):
+            unwrapped_phase = np.unwrap(phases[finite_phase])
+            relative_phase[finite_phase] = unwrapped_phase - unwrapped_phase[0]
+        series[label] = (x, y, percent, relative_phase.tolist())
+    return series
+
+
+def _add_signal_stability_trace(
+    fig: Any,
+    *,
+    label: str,
+    x: list[float],
+    y: list[float],
+    percent: list[float],
+    phase: list[float],
+) -> None:
+    fig.add_scatter(
+        x=x,
+        y=y,
+        customdata=percent,
+        mode="lines+markers",
+        name=label,
+        line={"color": _LIVE_AMPLITUDE_COLOR},
+        hovertemplate=(
+            "elapsed=%{x:.3f}s<br>"
+            "relative=%{y:.8f}<br>"
+            "move=%{customdata:+.4f}%<extra>%{fullData.name}</extra>"
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_scatter(
+        x=x,
+        y=phase,
+        mode="lines+markers",
+        name=f"{label} phase",
+        line={"color": _LIVE_PHASE_COLOR},
+        hovertemplate=(
+            "elapsed=%{x:.3f}s<br>phase=%{y:+.6f}rad<extra>%{fullData.name}</extra>"
+        ),
+        row=2,
+        col=1,
+    )
+
+
+def _apply_signal_stability_layout(fig: Any) -> None:
+    fig.add_hline(y=1.0, line_dash="dash", line_color="gray", row=1, col=1)
+    fig.add_hline(y=0.0, line_dash="dash", line_color="gray", row=2, col=1)
+    fig.update_layout(
+        title="Output signal stability",
+        template="qubex",
+        width=_LIVE_STABILITY_PLOT_WIDTH,
+        height=_LIVE_STABILITY_PLOT_HEIGHT,
+        font={"family": FONT_FAMILY},
+        hovermode="x unified",
+    )
+    fig.update_yaxes(title_text="relative amplitude (initial=1)", row=1, col=1)
+    fig.update_yaxes(title_text="phase shift (rad, initial=0)", row=2, col=1)
+    fig.update_xaxes(title_text="elapsed time (s)", row=2, col=1)
+
+
+def _make_signal_stability_figure(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> Any:
+    """Return a relative monitor amplitude and phase figure."""
+    from plotly.subplots import make_subplots
+
+    import qubex.visualization  # noqa: F401
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        row_heights=[0.58, 0.42],
+    )
+    for label, (x, y, percent, phase) in _signal_stability_series(snapshots).items():
+        _add_signal_stability_trace(
+            fig,
+            x=x,
+            y=y,
+            percent=percent,
+            phase=phase,
+            label=label,
+        )
+    _apply_signal_stability_layout(fig)
+    return fig
+
+
+def _make_signal_stability_widget(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> Any:
+    """Return a live-updated relative monitor amplitude and phase widget."""
+    import plotly.graph_objects as go
+
+    return go.FigureWidget(_make_signal_stability_figure(snapshots))
+
+
+def _update_signal_stability_widget(
+    widget: Any,
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> None:
+    """Update the live stability widget in place."""
+    series = _signal_stability_series(snapshots)
+    trace_names = [
+        trace_name for label in series for trace_name in (label, f"{label} phase")
+    ]
+    with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
+        if [trace.name for trace in widget.data] != trace_names:
+            widget.data = ()
+            for label, (x, y, percent, phase) in series.items():
+                _add_signal_stability_trace(
+                    widget,
+                    x=x,
+                    y=y,
+                    percent=percent,
+                    phase=phase,
+                    label=label,
+                )
+            return
+        for index, (x, y, percent, phase) in enumerate(series.values()):
+            amplitude_trace = widget.data[2 * index]
+            phase_trace = widget.data[2 * index + 1]
+            amplitude_trace.x = x
+            amplitude_trace.y = y
+            amplitude_trace.customdata = percent
+            phase_trace.x = x
+            phase_trace.y = phase
+
+
+def _waveform_trace_label(waveform: _MonitorWaveform) -> str:
+    return (
+        f"{waveform.reference_target} -> {waveform.monitor_target}"
+        f" [{waveform.capture_index}]"
+    )
+
+
+def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
+    fig.add_scatter(
+        x=waveform.time_ns,
+        y=waveform.amplitude,
+        mode="lines",
+        name=_waveform_trace_label(waveform),
+        hovertemplate=(
+            "time=%{x:.3f}ns<br>|IQ|=%{y:.6g}<extra>%{fullData.name}</extra>"
+        ),
+    )
+
+
+def _apply_monitor_waveform_layout(fig: Any) -> None:
+    fig.update_layout(
+        title="Latest raw monitor waveform",
+        template="qubex",
+        width=_LIVE_WAVEFORM_PLOT_WIDTH,
+        height=_LIVE_WAVEFORM_PLOT_HEIGHT,
+        font={"family": FONT_FAMILY},
+        xaxis_title="time (ns)",
+        yaxis_title="|IQ|",
+    )
+
+
+def _make_monitor_waveform_widget(waveforms: Collection[_MonitorWaveform]) -> Any:
+    """Return a live-updated raw waveform widget."""
+    import plotly.graph_objects as go
+
+    import qubex.visualization as viz
+
+    widget = go.FigureWidget(viz.make_figure())
+    _apply_monitor_waveform_layout(widget)
+    _update_monitor_waveform_widget(widget, waveforms)
+    return widget
+
+
+def _update_monitor_waveform_widget(
+    widget: Any,
+    waveforms: Collection[_MonitorWaveform],
+) -> None:
+    """Replace the raw waveform widget with the latest monitor capture."""
+    waveforms = list(waveforms)
+    with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
+        if [trace.name for trace in widget.data] != [
+            _waveform_trace_label(waveform) for waveform in waveforms
+        ]:
+            widget.data = ()
+            for waveform in waveforms:
+                _add_monitor_waveform_trace(widget, waveform)
+            return
+        for trace, waveform in zip(widget.data, waveforms, strict=False):
+            trace.x = waveform.time_ns
+            trace.y = waveform.amplitude
+
+
+def _display_widget(widget: Any) -> bool:
+    """Display a widget in a notebook output cell if IPython is available."""
+    try:
+        from IPython.display import display
+    except ImportError:
+        return False
+    display(widget)
+    return True
+
+
+def _show_signal_stability_figure(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> None:
+    """Show the stability plot when live notebook display is unavailable."""
+    fig = _make_signal_stability_figure(snapshots)
+    fig.show()
 
 
 def _limited_output_gain(
@@ -750,6 +1007,7 @@ class MeasurementStabilityService:
         apply_corrections: bool = False,
         shot_averaging: bool = True,
         configure_monitor_nco: bool | None = None,
+        _waveforms_out: list[_MonitorWaveform] | None = None,
     ) -> list[MonitorStatistic]:
         """
         Probe selected outputs and return monitor amplitude/phase statistics.
@@ -787,6 +1045,8 @@ class MeasurementStabilityService:
             Whether monitor captures are averaged across shots.
         configure_monitor_nco : bool | None, optional
             Forwarded to monitor capture to control receiver NCO configuration.
+        _waveforms_out : list[_MonitorWaveform] | None, optional
+            Internal sink used by live plotting to receive the latest waveform.
 
         Returns
         -------
@@ -841,6 +1101,15 @@ class MeasurementStabilityService:
                     monitor_target=monitor_target,
                     trim_samples=trim_samples,
                 )
+                if _waveforms_out is not None:
+                    _waveforms_out.extend(
+                        self._extract_probe_monitor_waveforms(
+                            result,
+                            reference_target=reference_target.label,
+                            monitor_target=monitor_target,
+                            trim_samples=trim_samples,
+                        )
+                    )
                 if len(capture_statistics) == 0:
                     raise ValueError(f"No monitor capture found for {monitor_target}.")
                 statistics.extend(
@@ -891,6 +1160,7 @@ class MeasurementStabilityService:
         phase_correction_deadband_sigma: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA,
         phase_min_resultant_length: float = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH,
         update_corrections: bool = True,
+        plot: bool = False,
     ) -> list[MeasurementStabilitySnapshot]:
         """
         Repeatedly sample monitor statistics and optionally update corrections.
@@ -951,6 +1221,12 @@ class MeasurementStabilityService:
         update_corrections : bool, optional
             Whether to update session-local gain/phase corrections after each
             sample. If false, samples are passive measurements.
+        plot : bool, optional
+            When true in a notebook, display two live ``FigureWidget`` objects.
+            The first shows relative amplitude normalized to the baseline and
+            phase shifted so the first sample is zero. The second shows the
+            latest raw monitor ``|IQ|`` waveform. Both widgets are updated in
+            place for each sample.
 
         Returns
         -------
@@ -990,6 +1266,7 @@ class MeasurementStabilityService:
             include_control=include_control,
             include_readout=include_readout,
         )
+        baseline_waveforms: list[_MonitorWaveform] | None = [] if plot else None
         baseline_statistics = self.measure_monitor_statistics(
             capture=capture,
             targets=targets,
@@ -1006,6 +1283,7 @@ class MeasurementStabilityService:
                 auto_gain_correction_deadband or auto_phase_correction_deadband
             ),
             configure_monitor_nco=True,
+            _waveforms_out=baseline_waveforms,
         )
         self._set_output_signal_baseline_from_statistics(
             statistics=baseline_statistics,
@@ -1021,8 +1299,18 @@ class MeasurementStabilityService:
             )
         ]
         sample_index = 1
+        stability_widget = None
+        waveform_widget = None
+        widgets_displayed = False
+        if plot:
+            stability_widget = _make_signal_stability_widget(snapshots)
+            waveform_widget = _make_monitor_waveform_widget(baseline_waveforms or [])
+            widgets_displayed = _display_widget(stability_widget)
+            widgets_displayed = _display_widget(waveform_widget) and widgets_displayed
 
         if duration == 0.0:
+            if plot and not widgets_displayed:
+                _show_signal_stability_figure(snapshots)
             return snapshots
 
         while True:
@@ -1039,6 +1327,7 @@ class MeasurementStabilityService:
             sample_start = time.perf_counter()
             timestamp = datetime.now(timezone.utc).isoformat()
             applied_corrections = dict(self._output_corrections)
+            waveforms: list[_MonitorWaveform] | None = [] if plot else None
             statistics = self.measure_monitor_statistics(
                 capture=capture,
                 targets=targets,
@@ -1055,6 +1344,7 @@ class MeasurementStabilityService:
                     auto_gain_correction_deadband or auto_phase_correction_deadband
                 ),
                 configure_monitor_nco=False,
+                _waveforms_out=waveforms,
             )
             elapsed_s = sample_start - start_time
             snapshots.append(
@@ -1066,6 +1356,11 @@ class MeasurementStabilityService:
                     timestamp=timestamp,
                 )
             )
+            if plot:
+                if stability_widget is not None:
+                    _update_signal_stability_widget(stability_widget, snapshots)
+                if waveform_widget is not None:
+                    _update_monitor_waveform_widget(waveform_widget, waveforms or [])
             if update_corrections:
                 self._update_output_signal_corrections_from_statistics(
                     statistics=statistics,
@@ -1088,6 +1383,8 @@ class MeasurementStabilityService:
                 )
             sample_index += 1
 
+        if plot and not widgets_displayed:
+            _show_signal_stability_figure(snapshots)
         return snapshots
 
     @staticmethod
@@ -1232,6 +1529,47 @@ class MeasurementStabilityService:
             targets=target_candidates,
             trim_samples=trim_samples,
         )
+
+    def _extract_probe_monitor_waveforms(
+        self,
+        result: MeasurementResult | MultipleMeasureResult,
+        *,
+        reference_target: str,
+        monitor_target: str,
+        trim_samples: int,
+    ) -> list[_MonitorWaveform]:
+        """Extract one ``|IQ|`` time trace per monitor capture for live display."""
+        target_candidates = list(dict.fromkeys((monitor_target, reference_target)))
+        waveforms: list[_MonitorWaveform] = []
+        for target in target_candidates:
+            captures = result.data.get(target)
+            if captures is None:
+                continue
+            for capture_index, capture in enumerate(captures):
+                array = np.asarray(
+                    _trim_capture(_capture_array(capture), trim_samples),
+                    dtype=np.complex128,
+                )
+                if array.size == 0:
+                    continue
+                if array.ndim >= 2:
+                    samples = array.reshape(-1, array.shape[-1])
+                    amplitude = np.mean(np.abs(samples), axis=0)
+                else:
+                    amplitude = np.abs(array.reshape(-1))
+                time_ns = (
+                    np.arange(amplitude.size, dtype=np.float64) + trim_samples
+                ) * float(capture.sampling_period)
+                waveforms.append(
+                    _MonitorWaveform(
+                        reference_target=reference_target,
+                        monitor_target=target,
+                        capture_index=capture_index,
+                        time_ns=time_ns,
+                        amplitude=np.asarray(amplitude, dtype=np.float64),
+                    )
+                )
+        return waveforms
 
     def compute_monitor_statistics(
         self,

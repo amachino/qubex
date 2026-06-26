@@ -631,6 +631,90 @@ def test_check_signal_stability_configures_monitor_nco_once(monkeypatch) -> None
     assert configure_monitor_nco_values == [True, False, False]
 
 
+def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
+    monkeypatch,
+) -> None:
+    """Given plot requested, when stability is checked, then amplitude and phase are shown."""
+    service = MeasurementStabilityService(context=_make_context())
+    clock = {"now": 0.0}
+
+    def perf_counter() -> float:
+        return clock["now"]
+
+    def sleep(seconds: float) -> None:
+        clock["now"] += seconds
+
+    monkeypatch.setattr(
+        "qubex.measurement.services.measurement_stability_service.time.perf_counter",
+        perf_counter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.services.measurement_stability_service.time.sleep",
+        sleep,
+    )
+
+    displayed: list[object] = []
+
+    def display(widget: object) -> None:
+        displayed.append(widget)
+
+    monkeypatch.setattr("IPython.display.display", display)
+
+    amplitudes = [2.0, 3.0, 4.0]
+    phases = [0.2, 0.4, 0.1]
+
+    def capture(
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+        block_outputs: bool = True,
+        shot_averaging: bool = True,
+        capture_targets: list[str] | None = None,
+    ) -> MeasurementResult:
+        _ = (schedule, n_shots, block_outputs, shot_averaging, capture_targets)
+        index = len(calls)
+        amplitude = amplitudes[index]
+        phase = phases[index]
+        calls.append(amplitude)
+        return _make_monitor_result("B0.MNTR0.IN", amplitude, phase)
+
+    calls: list[float] = []
+    snapshots = service.check_signal_stability(
+        capture=capture,
+        targets=["Q00"],
+        duration=1.0,
+        sample_interval=0.5,
+        update_corrections=False,
+        plot=True,
+    )
+
+    assert len(snapshots) == 3
+    assert calls == amplitudes
+    assert len(displayed) == 2
+    stability_widget, waveform_widget = displayed
+    assert len(stability_widget.data) == 2
+    assert list(stability_widget.data[0].x) == pytest.approx([0.0, 0.5, 1.0])
+    assert list(stability_widget.data[0].y) == pytest.approx([1.0, 1.5, 2.0])
+    assert list(stability_widget.data[0].customdata) == pytest.approx(
+        [0.0, 50.0, 100.0]
+    )
+    assert list(stability_widget.data[1].x) == pytest.approx([0.0, 0.5, 1.0])
+    assert list(stability_widget.data[1].y) == pytest.approx([0.0, 0.2, -0.1])
+    assert stability_widget.data[1].line.color == "#00B945"
+    assert stability_widget.layout.width == 800
+    assert stability_widget.layout.font.family == "Times New Roman, Times, serif"
+    assert stability_widget.layout.yaxis.title.text == (
+        "relative amplitude (initial=1)"
+    )
+    assert stability_widget.layout.yaxis2.title.text == ("phase shift (rad, initial=0)")
+    assert stability_widget.layout.xaxis2.title.text == "elapsed time (s)"
+    assert list(waveform_widget.data[0].x) == pytest.approx([0.0, 2.0])
+    assert list(waveform_widget.data[0].y) == pytest.approx([4.0, 4.0])
+    assert waveform_widget.layout.width == 800
+    assert waveform_widget.layout.font.family == "Times New Roman, Times, serif"
+    assert waveform_widget.layout.yaxis.title.text == "|IQ|"
+
+
 def test_check_signal_stability_updates_phase_from_corrected_residual(
     monkeypatch,
 ) -> None:
