@@ -12,6 +12,15 @@ from qubex.measurement.classifiers.state_classifier import StateClassifier
 from qubex.typing import TargetMap
 
 
+def _normalize_confusion_matrix_rows(matrix: npt.NDArray) -> npt.NDArray:
+    """Normalize a confusion matrix as P(measured state | prepared state)."""
+    confusion_matrix = np.asarray(matrix, dtype=float)
+    row_totals = confusion_matrix.sum(axis=1, keepdims=True)
+    if np.any(row_totals == 0):
+        raise ValueError("Confusion matrix contains a prepared state with no shots.")
+    return confusion_matrix / row_totals
+
+
 class MeasurementClassificationService:
     """Manage classifiers and confusion-matrix helpers for measurement APIs."""
 
@@ -52,8 +61,7 @@ class MeasurementClassificationService:
         confusion_matrices = []
         for target in target_list:
             cm = self.classifiers[target].confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
+            confusion_matrices.append(_normalize_confusion_matrix_rows(cm))
         return reduce(np.kron, confusion_matrices)
 
     def get_inverse_confusion_matrix(

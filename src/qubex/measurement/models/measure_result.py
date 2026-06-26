@@ -32,6 +32,15 @@ from .measurement_record import MeasurementRecord
 logger = logging.getLogger(__name__)
 
 
+def _normalize_confusion_matrix_rows(matrix: NDArray) -> NDArray[np.float64]:
+    """Normalize a confusion matrix as P(measured state | prepared state)."""
+    confusion_matrix = np.asarray(matrix, dtype=float)
+    row_totals = confusion_matrix.sum(axis=1, keepdims=True)
+    if np.any(row_totals == 0):
+        raise ValueError("Confusion matrix contains a prepared state with no shots.")
+    return confusion_matrix / row_totals
+
+
 def _format_raw_preview(raw: NDArray) -> str:
     """Return compact repr text for a raw array."""
     array = np.asarray(raw)
@@ -179,9 +188,9 @@ class MeasureData:
         """Return the normalized confusion matrix."""
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
-                cm = self.classifier.confusion_matrix
-                n_shots = cm[0].sum()
-                return cm / n_shots
+                return _normalize_confusion_matrix_rows(
+                    self.classifier.confusion_matrix
+                )
             else:
                 raise ValueError("Classifier is not set")
         else:
@@ -619,15 +628,12 @@ class MeasureResult:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         counts = self.get_counts(targets, threshold=threshold)
-        probs = self.get_probabilities(targets, threshold=threshold)
+        total = sum(counts.values())
+        if total == 0:
+            return {}
         return {
-            key: np.sqrt(prob * (1 - prob) / total)
-            for key, prob, total in zip(
-                counts.keys(),
-                probs.values(),
-                counts.values(),
-                strict=True,
-            )
+            key: np.sqrt((count / total) * (1 - count / total) / total)
+            for key, count in counts.items()
         }
 
     def get_classifier(self, target: str) -> StateClassifier:
@@ -1221,15 +1227,12 @@ class MultipleMeasureResult:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         counts = self.get_counts(targets, threshold=threshold)
-        probs = self.get_probabilities(targets, threshold=threshold)
+        total = sum(counts.values())
+        if total == 0:
+            return {}
         return {
-            key: np.sqrt(prob * (1 - prob) / total)
-            for key, prob, total in zip(
-                counts.keys(),
-                probs.values(),
-                counts.values(),
-                strict=True,
-            )
+            key: np.sqrt((count / total) * (1 - count / total) / total)
+            for key, count in counts.items()
         }
 
     def get_classifier(self, target: str) -> StateClassifier:
