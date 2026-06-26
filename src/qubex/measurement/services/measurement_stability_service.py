@@ -8,7 +8,7 @@ from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from inspect import Parameter, signature
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import numpy as np
 from qxpulse import FlatTop, PulseSchedule
@@ -36,6 +36,9 @@ from qubex.measurement.models.measurement_stability import (
     OutputSignalCorrection,
     OutputSignalKind,
     OutputSignalReferenceScope,
+)
+from qubex.measurement.services.measurement_monitor_service import (
+    MeasurementMonitorService,
 )
 from qubex.system import PortType, Target
 
@@ -156,7 +159,7 @@ def _effective_gain_correction_deadband(
 
 
 def _call_loopback_capture(
-    capture: LoopbackCapture,
+    capture: Callable[..., MeasurementResult],
     schedule: PulseSchedule,
     *,
     n_shots: int | None,
@@ -214,31 +217,28 @@ def _effective_phase_correction_deadband(
     return max(base_deadband, sigma * uncertainty)
 
 
-class LoopbackCapture(Protocol):
-    """Callable protocol for monitor-path loopback capture."""
-
-    def __call__(
-        self,
-        schedule: PulseSchedule,
-        *,
-        n_shots: int | None = None,
-        block_outputs: bool = True,
-        shot_averaging: bool = True,
-        capture_targets: list[str] | None = None,
-    ) -> MeasurementResult:
-        """Capture a schedule through the monitor path."""
-        ...
-
-
 class MeasurementStabilityService:
-    """Manage session-local measurement stability baselines and corrections."""
+    """
+    Manage session-local measurement stability baselines and corrections.
+
+    Parameters
+    ----------
+    context : MeasurementContext
+        Shared measurement context used to resolve targets and apply
+        session-local output corrections.
+    monitor_service : MeasurementMonitorService | None, optional
+        Monitor service used when public methods are called without an
+        explicit ``capture`` callable.
+    """
 
     def __init__(
         self,
         *,
         context: MeasurementContext,
+        monitor_service: MeasurementMonitorService | None = None,
     ) -> None:
         self._context = context
+        self._monitor_service = monitor_service
         self._output_corrections: dict[str, OutputSignalCorrection] = {}
         self._corrections_suspended = 0
 
@@ -256,6 +256,19 @@ class MeasurementStabilityService:
     def corrections_enabled(self) -> bool:
         """Return whether corrections should be applied to outgoing schedules."""
         return self._corrections_suspended == 0
+
+    def _resolve_loopback_capture(
+        self,
+        capture: Callable[..., MeasurementResult] | None,
+    ) -> Callable[..., MeasurementResult]:
+        """Return the explicit capture callable or the injected monitor service."""
+        if capture is not None:
+            return capture
+        if self._monitor_service is None:
+            raise ValueError(
+                "capture must be provided when no monitor_service is configured."
+            )
+        return self._monitor_service.capture_loopback
 
     @contextmanager
     def suspend_corrections(self) -> Iterator[None]:
@@ -291,7 +304,7 @@ class MeasurementStabilityService:
     def establish_output_signal_baseline(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         targets: Collection[str] | str | None = None,
         include_control: bool = True,
         include_readout: bool = True,
@@ -307,10 +320,50 @@ class MeasurementStabilityService:
         """
         Capture baseline monitor signals and reset session-local corrections.
 
-        When `reference_scope="box"`, one representative target is measured per
-        physical box and that reference is stored for all selected targets on
-        the same box.
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Capture callable used for monitor-path loopback acquisition. When
+            omitted, the injected monitor service is used.
+        targets : Collection[str] | str | None, optional
+            Output target labels to probe. When omitted, targets are selected
+            from the enabled control/readout groups.
+        include_control : bool, optional
+            Whether control-output targets are eligible when ``targets`` is
+            omitted.
+        include_readout : bool, optional
+            Whether readout-output targets are eligible when ``targets`` is
+            omitted.
+        n_shots : int | None, optional
+            Number of shots used for each monitor capture.
+        probe_amplitude : float, optional
+            Amplitude of the flat-top probe waveform.
+        probe_duration : float, optional
+            Duration of the probe plateau in ns.
+        block_outputs : bool, optional
+            Whether active output ports are RF-blocked during monitor capture.
+        reference_scope : {"box", "target"}, optional
+            Scope used to share one baseline across selected targets.
+        trim_samples : int, optional
+            Number of samples trimmed from both waveform edges before
+            statistics are computed.
+        estimate_gain_noise : bool, optional
+            Whether to retain shot-level gain noise in the baseline capture.
+        estimate_phase_noise : bool, optional
+            Whether to retain shot-level phase noise in the baseline capture.
+
+        Returns
+        -------
+        MeasurementStabilitySnapshot
+            Snapshot containing the newly captured baseline statistics.
+
+        Notes
+        -----
+        When ``reference_scope="box"``, one representative target is measured
+        per physical box and stored as the reference for all selected targets
+        on that box.
         """
+        capture = self._resolve_loopback_capture(capture)
         if trim_samples < 0:
             raise ValueError("trim_samples must be non-negative.")
         resolved_reference_scope = self._validate_reference_scope(reference_scope)
@@ -344,7 +397,7 @@ class MeasurementStabilityService:
     def update_output_signal_corrections(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         targets: Collection[str] | str | None = None,
         include_control: bool = True,
         include_readout: bool = True,
@@ -369,10 +422,67 @@ class MeasurementStabilityService:
         """
         Update session-local output gain and phase corrections.
 
-        If no baseline exists, capture one and return its snapshot without
-        applying an additional correction update. When `reference_scope` is
-        omitted after baseline exists, reuse the stored baseline scope.
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Capture callable used for monitor-path loopback acquisition. When
+            omitted, the injected monitor service is used.
+        targets : Collection[str] | str | None, optional
+            Output target labels to probe.
+        include_control : bool, optional
+            Whether control-output targets are eligible when ``targets`` is
+            omitted.
+        include_readout : bool, optional
+            Whether readout-output targets are eligible when ``targets`` is
+            omitted.
+        n_shots : int | None, optional
+            Number of shots used for each monitor capture.
+        probe_amplitude : float, optional
+            Amplitude of the flat-top probe waveform.
+        probe_duration : float, optional
+            Duration of the probe plateau in ns.
+        block_outputs : bool, optional
+            Whether active output ports are RF-blocked during monitor capture.
+        max_gain_relative_step : float, optional
+            Maximum gain-correction change applied in one update.
+        gain_smoothing : float, optional
+            First-order smoothing factor for gain corrections.
+        gain_correction_deadband : float, optional
+            Minimum relative gain residual required before changing gain.
+        auto_gain_correction_deadband : bool, optional
+            Whether gain deadband expands with measured SEM.
+        gain_correction_deadband_sigma : float, optional
+            SEM multiplier used for automatic gain deadband expansion.
+        max_phase_step : float, optional
+            Maximum phase-correction change in radians applied in one update.
+        phase_smoothing : float, optional
+            First-order smoothing factor for phase corrections.
+        phase_correction_deadband : float, optional
+            Minimum phase residual in radians required before changing phase.
+        auto_phase_correction_deadband : bool, optional
+            Whether phase deadband expands with measured SEM.
+        phase_correction_deadband_sigma : float, optional
+            SEM multiplier used for automatic phase deadband expansion.
+        phase_min_resultant_length : float, optional
+            Minimum circular mean quality required for phase updates.
+        reference_scope : OutputSignalReferenceScope | None, optional
+            Baseline sharing scope. When omitted after baseline exists, the
+            stored baseline scope is reused.
+        trim_samples : int, optional
+            Number of samples trimmed from both waveform edges before
+            statistics are computed.
+
+        Returns
+        -------
+        MeasurementStabilitySnapshot
+            Snapshot after baseline capture or correction update.
+
+        Notes
+        -----
+        If no baseline exists, this method captures one and returns its
+        snapshot without applying an additional correction update.
         """
+        capture = self._resolve_loopback_capture(capture)
         if max_gain_relative_step < 0:
             raise ValueError("max_gain_relative_step must be non-negative.")
         if not 0.0 <= gain_smoothing <= 1.0:
@@ -627,7 +737,7 @@ class MeasurementStabilityService:
     def measure_monitor_statistics(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         targets: Collection[str] | str | None = None,
         include_control: bool = True,
         include_readout: bool = True,
@@ -644,9 +754,51 @@ class MeasurementStabilityService:
         """
         Probe selected outputs and return monitor amplitude/phase statistics.
 
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Capture callable used for monitor-path loopback acquisition. When
+            omitted, the injected monitor service is used.
+        targets : Collection[str] | str | None, optional
+            Output target labels to probe.
+        include_control : bool, optional
+            Whether control-output targets are eligible when ``targets`` is
+            omitted.
+        include_readout : bool, optional
+            Whether readout-output targets are eligible when ``targets`` is
+            omitted.
+        n_shots : int | None, optional
+            Number of shots used for each monitor capture.
+        probe_amplitude : float, optional
+            Amplitude of the flat-top probe waveform.
+        probe_duration : float, optional
+            Duration of the probe plateau in ns.
+        block_outputs : bool, optional
+            Whether active output ports are RF-blocked during monitor capture.
+        reference_scope : {"box", "target"}, optional
+            Scope used to choose representative probe targets.
+        trim_samples : int, optional
+            Number of samples trimmed from both waveform edges before
+            statistics are computed.
+        apply_corrections : bool, optional
+            Whether session-local output corrections are applied to the probe
+            schedule.
+        shot_averaging : bool, optional
+            Whether monitor captures are averaged across shots.
+        configure_monitor_nco : bool | None, optional
+            Forwarded to monitor capture to control receiver NCO configuration.
+
+        Returns
+        -------
+        list[MonitorStatistic]
+            Amplitude and phase statistics for each monitor capture.
+
+        Notes
+        -----
         The default box-level scope measures one representative target per
         physical box, matching the baseline workflow.
         """
+        capture = self._resolve_loopback_capture(capture)
         resolved_reference_scope = self._validate_reference_scope(reference_scope)
         selected_targets = self._resolve_output_targets(
             targets=targets,
@@ -715,7 +867,7 @@ class MeasurementStabilityService:
     def check_signal_stability(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         duration: float,
         sample_interval: float | None = 10.0,
         targets: Collection[str] | str | None = None,
@@ -740,7 +892,72 @@ class MeasurementStabilityService:
         phase_min_resultant_length: float = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH,
         update_corrections: bool = True,
     ) -> list[MeasurementStabilitySnapshot]:
-        """Check signal stability by measuring once per sample and updating corrections."""
+        """
+        Repeatedly sample monitor statistics and optionally update corrections.
+
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Capture callable used for monitor-path loopback acquisition. When
+            omitted, the injected monitor service is used.
+        duration : float
+            Total monitoring duration in seconds.
+        sample_interval : float | None, optional
+            Delay between completed samples in seconds. If ``None``, the next
+            sample starts immediately.
+        targets : Collection[str] | str | None, optional
+            Output target labels to probe.
+        include_control : bool, optional
+            Whether control-output targets are eligible when ``targets`` is
+            omitted.
+        include_readout : bool, optional
+            Whether readout-output targets are eligible when ``targets`` is
+            omitted.
+        n_shots : int | None, optional
+            Number of shots used for each monitor capture.
+        probe_amplitude : float, optional
+            Amplitude of the flat-top probe waveform.
+        probe_duration : float, optional
+            Duration of the probe plateau in ns.
+        block_outputs : bool, optional
+            Whether active output ports are RF-blocked during monitor capture.
+        reference_scope : {"box", "target"}, optional
+            Scope used to choose representative probe targets.
+        trim_samples : int, optional
+            Number of samples trimmed from both waveform edges before
+            statistics are computed.
+        max_gain_relative_step : float, optional
+            Maximum gain-correction change applied in one update.
+        gain_smoothing : float, optional
+            First-order smoothing factor for gain corrections.
+        gain_correction_deadband : float, optional
+            Minimum relative gain residual required before changing gain.
+        auto_gain_correction_deadband : bool, optional
+            Whether gain deadband expands with measured SEM.
+        gain_correction_deadband_sigma : float, optional
+            SEM multiplier used for automatic gain deadband expansion.
+        max_phase_step : float, optional
+            Maximum phase-correction change in radians applied in one update.
+        phase_smoothing : float, optional
+            First-order smoothing factor for phase corrections.
+        phase_correction_deadband : float, optional
+            Minimum phase residual in radians required before changing phase.
+        auto_phase_correction_deadband : bool, optional
+            Whether phase deadband expands with measured SEM.
+        phase_correction_deadband_sigma : float, optional
+            SEM multiplier used for automatic phase deadband expansion.
+        phase_min_resultant_length : float, optional
+            Minimum circular mean quality required for phase updates.
+        update_corrections : bool, optional
+            Whether to update session-local gain/phase corrections after each
+            sample. If false, samples are passive measurements.
+
+        Returns
+        -------
+        list[MeasurementStabilitySnapshot]
+            Baseline plus sampled stability snapshots.
+        """
+        capture = self._resolve_loopback_capture(capture)
         if duration < 0.0:
             raise ValueError("duration must be non-negative.")
         if sample_interval is not None and sample_interval <= 0.0:
@@ -1342,7 +1559,7 @@ class MeasurementStabilityService:
     def _measure_monitor_statistic(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult],
         target: Target,
         n_shots: int | None,
         probe_amplitude: float,

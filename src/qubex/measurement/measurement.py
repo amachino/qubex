@@ -75,6 +75,7 @@ from .services import (
     MeasurementAmplificationService,
     MeasurementClassificationService,
     MeasurementExecutionService,
+    MeasurementMonitorService,
     MeasurementSessionService,
     MeasurementStabilityService,
 )
@@ -182,7 +183,6 @@ class Measurement:
         self._amplification_service = MeasurementAmplificationService(
             context=self._context
         )
-        self._stability_service = MeasurementStabilityService(context=self._context)
         self._session_service = MeasurementSessionService(
             system_manager=self._system_manager,
             context=self._context,
@@ -190,10 +190,18 @@ class Measurement:
         self._execution_service = MeasurementExecutionService(
             context=self._context,
             session_service=self._session_service,
-            stability_service=self._stability_service,
             classifiers=self._classification_service.classifiers,
             execution_mode=self._execution_mode,
             clock_health_checks=self._clock_health_checks,
+        )
+        self._monitor_service = MeasurementMonitorService(
+            context=self._context,
+            session_service=self._session_service,
+            execution_service=self._execution_service,
+        )
+        self._stability_service = MeasurementStabilityService(
+            context=self._context,
+            monitor_service=self._monitor_service,
         )
         if load_configs is None:
             load_configs = self.DEFAULT_LOAD_CONFIGS
@@ -302,7 +310,6 @@ class Measurement:
         captured monitor window before computing the baseline amplitude.
         """
         return self.stability_service.establish_output_signal_baseline(
-            capture=self.execution_service.capture_loopback,
             targets=targets,
             include_control=include_control,
             include_readout=include_readout,
@@ -350,7 +357,6 @@ class Measurement:
         same capture window.
         """
         return self.stability_service.update_output_signal_corrections(
-            capture=self.execution_service.capture_loopback,
             targets=targets,
             include_control=include_control,
             include_readout=include_readout,
@@ -402,7 +408,6 @@ class Measurement:
     ) -> list[MeasurementStabilitySnapshot]:
         """Check selected output signals and return stability snapshot history."""
         return self.stability_service.check_signal_stability(
-            capture=self.execution_service.capture_loopback,
             duration=duration,
             sample_interval=sample_interval,
             targets=targets,
@@ -499,6 +504,11 @@ class Measurement:
     def execution_service(self) -> MeasurementExecutionService:
         """Return the measurement execution service."""
         return self._execution_service
+
+    @property
+    def monitor_service(self) -> MeasurementMonitorService:
+        """Return the measurement monitor service."""
+        return self._monitor_service
 
     @property
     def classification_service(self) -> MeasurementClassificationService:
@@ -1215,6 +1225,7 @@ class Measurement:
         shot_averaging: bool = True,
         demodulation: bool = True,
         include_read_in: bool = False,
+        capture_targets: list[str] | None = None,
         configure_monitor_nco: bool = True,
     ) -> MeasurementResult:
         """
@@ -1240,6 +1251,9 @@ class Measurement:
         include_read_in : bool, optional
             Whether to add matching READ_IN captures for active readout output
             targets.
+        capture_targets : list[str] | None, optional
+            Explicit monitor/read-in capture targets. When omitted, loopback
+            targets are resolved from the active output schedule.
         configure_monitor_nco : bool, optional
             Whether to configure monitor input frequency settings before
             capture. Disable only when repeated loopback captures must preserve
@@ -1250,13 +1264,14 @@ class Measurement:
         MeasurementResult
             Measurement result for loopback capture windows.
         """
-        return self.execution_service.capture_loopback(
+        return self.monitor_service.capture_loopback(
             schedule=schedule,
             n_shots=n_shots,
             block_outputs=block_outputs,
             shot_averaging=shot_averaging,
             demodulation=demodulation,
             include_read_in=include_read_in,
+            capture_targets=capture_targets,
             configure_monitor_nco=configure_monitor_nco,
         )
 

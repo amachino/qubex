@@ -37,6 +37,9 @@ from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.services.measurement_execution_service import (
     MeasurementExecutionService,
 )
+from qubex.measurement.services.measurement_monitor_service import (
+    MeasurementMonitorService,
+)
 from qubex.system import PortType
 from qubex.typing import MeasurementMode, TargetMap
 
@@ -124,6 +127,8 @@ def _bind_runtime(
     measurement.__dict__["_session_service"] = session_service
     measurement.execution_service.__dict__["_context"] = context
     measurement.execution_service.__dict__["_session_service"] = session_service
+    measurement.monitor_service.__dict__["_context"] = context
+    measurement.monitor_service.__dict__["_session_service"] = session_service
 
 
 def test_execute_delegates_to_schedule_executor_with_built_schedule(
@@ -367,8 +372,8 @@ def test_execute_forwards_frequency_overrides_to_schedule_builder(
     assert called["build_kwargs"]["frequencies"] == {"Q00": 5.12}
 
 
-def test_capture_loopback_delegates_to_execution_service() -> None:
-    """Given loopback capture inputs, when capture_loopback is called, then it delegates to execution service."""
+def test_capture_loopback_delegates_to_monitor_service() -> None:
+    """Given loopback inputs, when capture_loopback is called, then it delegates to monitor service."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -384,15 +389,15 @@ def test_capture_loopback_delegates_to_execution_service() -> None:
     called: dict[str, object] = {}
 
     def fake_capture_loopback(
-        self: MeasurementExecutionService,
+        self: MeasurementMonitorService,
         **kwargs: object,
     ) -> MeasurementResult:
         called["kwargs"] = kwargs
         return loopback_result
 
-    measurement.execution_service.capture_loopback = MethodType(
+    measurement.monitor_service.capture_loopback = MethodType(
         fake_capture_loopback,
-        measurement.execution_service,
+        measurement.monitor_service,
     )
 
     result = measurement.capture_loopback(
@@ -464,7 +469,7 @@ def test_measurement_stability_methods_delegate_to_stability_service() -> None:
     assert baseline is baseline_result
     assert update is update_result
     assert called[0][0] == "establish"
-    assert callable(called[0][1]["capture"])
+    assert "capture" not in called[0][1]
     assert called[0][1]["targets"] == ["Q00"]
     assert called[0][1]["n_shots"] == 128
     assert called[0][1]["trim_samples"] == 4
@@ -472,7 +477,7 @@ def test_measurement_stability_methods_delegate_to_stability_service() -> None:
     assert called[0][1]["estimate_gain_noise"] is False
     assert called[0][1]["estimate_phase_noise"] is False
     assert called[1][0] == "update"
-    assert callable(called[1][1]["capture"])
+    assert "capture" not in called[1][1]
     assert called[1][1]["targets"] == ["RQ00"]
     assert called[1][1]["max_gain_relative_step"] == 0.002
     assert called[1][1]["gain_correction_deadband"] == 0.003
@@ -528,7 +533,7 @@ def test_measurement_check_signal_stability_returns_snapshots() -> None:
     )
 
     assert result is snapshots
-    assert callable(called["capture"])
+    assert "capture" not in called
     assert called["targets"] == ["Q00"]
     assert called["duration"] == 12.0
     assert called["sample_interval"] == 2.0
@@ -1223,7 +1228,7 @@ def test_capture_loopback_orders_merged_results_by_schedule_labels() -> None:
         sampling_period=2.0,
     )
 
-    ordered = MeasurementExecutionService._order_loopback_result_by_targets(  # noqa: SLF001
+    ordered = MeasurementMonitorService._order_loopback_result_by_targets(  # noqa: SLF001
         result,
         target_order=["Q08", "Q09", "Q10", "Q11", "RQ08"],
     )
@@ -1246,12 +1251,12 @@ def test_loopback_demodulation_filter_rejects_rotated_dc_background() -> None:
     sample_times = np.arange(sample_count) * sampling_period
     source = np.exp(1j * 2 * np.pi * frequency_ghz * sample_times)
     background = 0.5 + 0.0j
-    demodulated = MeasurementExecutionService._demodulate_loopback_capture(  # noqa: SLF001
+    demodulated = MeasurementMonitorService._demodulate_loopback_capture(  # noqa: SLF001
         data=source + background,
         frequency_ghz=frequency_ghz,
         sampling_period=sampling_period,
     )
-    filtered = MeasurementExecutionService._filter_loopback_demodulated_capture(  # noqa: SLF001
+    filtered = MeasurementMonitorService._filter_loopback_demodulated_capture(  # noqa: SLF001
         data=demodulated,
         frequency_ghz=frequency_ghz,
         sampling_period=sampling_period,
@@ -1409,7 +1414,7 @@ def test_loopback_capture_target_resolution_defaults_to_monitor_for_readout_outp
         experiment_system=experiment_system,
     )
 
-    service = measurement.execution_service
+    service = measurement.monitor_service
     default_targets = service._resolve_loopback_capture_targets(  # noqa: SLF001
         schedule=PulseSchedule(["RQ00"]),
         include_read_in=False,
