@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use Qubex, please cite it using the metadata from this file."
+title: "Qubex"
+version: "1.5.0rc2"
+type: software
+license: "Apache-2.0"
+abstract: "Qubex is a Python framework for pulse-level control, readout, calibration, and analysis in qubit experiments."
+authors:
+  - family-names: "Machino"
+    given-names: "Akinori"
+repository-code: "https://github.com/amachino/qubex"
+url: "https://amachino.github.io/qubex/"
+date-released: "2026-06-26"
+keywords:
+  - "quantum computing"
+  - "qubit experiments"
+  - "pulse-level control"
+  - "calibration"
