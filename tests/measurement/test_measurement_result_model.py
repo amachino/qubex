@@ -20,6 +20,7 @@ from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementResult,
     ReturnItem,
+    SweepMeasurementResult,
 )
 from qubex.measurement.models.measure_result import (
     MeasureData,
@@ -102,6 +103,78 @@ def _make_capture(
         sampling_period=sampling_period,
         classifier_ref=classifier_ref,
     )
+
+
+def _make_classified_config(*, shots: int = 4) -> MeasurementConfig:
+    return MeasurementConfig(
+        n_shots=shots,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        return_items=(ReturnItem.IQ_SERIES, ReturnItem.STATE_SERIES),
+    )
+
+
+def _make_classified_capture(
+    *,
+    target: str,
+    states: np.ndarray,
+    measurement_config: MeasurementConfig,
+    classifier_ref: ClassifierRef | None = None,
+) -> CaptureData:
+    return CaptureData(
+        target=target,
+        config=measurement_config,
+        payload=CapturePayload(
+            iq_series=np.zeros(len(states), dtype=np.complex128),
+            state_series=states,
+        ),
+        sampling_period=0.4,
+        classifier_ref=classifier_ref,
+    )
+
+
+def _make_classified_result(
+    *,
+    q00_states: np.ndarray | None = None,
+    q01_states: np.ndarray | None = None,
+    classifier_refs: dict[str, ClassifierRef] | None = None,
+) -> MeasurementResult:
+    q00 = np.array([0, 0, 1, 1], dtype=np.int64) if q00_states is None else q00_states
+    q01 = np.array([0, 1, 0, 1], dtype=np.int64) if q01_states is None else q01_states
+    config = _make_classified_config(shots=len(q00))
+    return MeasurementResult(
+        data={
+            "Q00": [
+                _make_classified_capture(
+                    target="Q00",
+                    states=q00,
+                    measurement_config=config,
+                    classifier_ref=(classifier_refs or {}).get("Q00"),
+                )
+            ],
+            "Q01": [
+                _make_classified_capture(
+                    target="Q01",
+                    states=q01,
+                    measurement_config=config,
+                    classifier_ref=(classifier_refs or {}).get("Q01"),
+                )
+            ],
+        },
+        measurement_config=config,
+        classifier_refs=classifier_refs,
+    )
+
+
+class _FakeClassifier:
+    def __init__(self, confusion_matrix: np.ndarray) -> None:
+        self.confusion_matrix = confusion_matrix
+
+    @property
+    def n_states(self) -> int:
+        return int(self.confusion_matrix.shape[0])
 
 
 def test_to_multiple_measure_result_returns_wrapped_result() -> None:
@@ -197,6 +270,168 @@ def test_measurement_result_repr_includes_targets_counts_and_config() -> None:
     assert "shot_averaging=False" in text
     assert "time_integration=False" in text
     assert "state_classification=True" in text
+
+
+def test_measurement_result_probabilities_return_joint_bitstrings() -> None:
+    """Canonical result should aggregate classified state_series as bitstrings."""
+    result = _make_classified_result()
+
+    single_target = result.get_probabilities("Q00")
+    joint = result.get_probabilities(["Q00", "Q01"])
+
+    assert single_target == {"0": 0.5, "1": 0.5}
+    assert joint == {"00": 0.25, "01": 0.25, "10": 0.25, "11": 0.25}
+
+
+def test_measurement_result_probabilities_select_per_target_capture_indices() -> None:
+    """Target selection should allow capture-index selection per target."""
+    config = _make_classified_config()
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_classified_capture(
+                    target="Q00",
+                    states=np.array([0, 0, 1, 1], dtype=np.int64),
+                    measurement_config=config,
+                ),
+                _make_classified_capture(
+                    target="Q00",
+                    states=np.array([1, 1, 1, 1], dtype=np.int64),
+                    measurement_config=config,
+                ),
+            ],
+            "Q01": [
+                _make_classified_capture(
+                    target="Q01",
+                    states=np.array([0, 0, 0, 0], dtype=np.int64),
+                    measurement_config=config,
+                ),
+                _make_classified_capture(
+                    target="Q01",
+                    states=np.array([0, 1, 0, 1], dtype=np.int64),
+                    measurement_config=config,
+                ),
+            ],
+        },
+        measurement_config=config,
+    )
+
+    common_capture = result.get_probabilities([("Q00", 0), ("Q01", 0)])
+    mixed_capture = result.get_probabilities([("Q00", 0), ("Q01", 1)])
+
+    assert common_capture == {"00": 0.5, "10": 0.5}
+    assert mixed_capture == {
+        "00": 0.25,
+        "01": 0.25,
+        "10": 0.25,
+        "11": 0.25,
+    }
+
+
+def test_measurement_result_counts_and_standard_deviations_use_total_shots() -> None:
+    """Standard deviations should use the selected shot count, not per-state counts."""
+    result = _make_classified_result()
+
+    counts = result.get_counts(["Q00", "Q01"])
+    standard_deviations = result.get_standard_deviations(["Q00", "Q01"])
+
+    assert counts == {"00": 1, "01": 1, "10": 1, "11": 1}
+    assert standard_deviations["00"] == pytest.approx(np.sqrt(0.25 * 0.75 / 4))
+
+
+def test_measurement_result_probabilities_require_state_series() -> None:
+    """Probability accessors should fail clearly when classified labels are absent."""
+    config = _make_config(mode="single", shots=2, time_integration=True)
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([1.0 + 0.0j, 2.0 + 0.0j]),
+                    measurement_config=config,
+                    sampling_period=0.4,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+
+    with pytest.raises(ValueError, match="does not contain state_series"):
+        result.get_probabilities("Q00")
+
+
+def test_measurement_result_mitigated_probabilities_use_classifier_refs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mitigated probabilities should use classifier_refs and preserve basis order."""
+    refs = {
+        "Q00": ClassifierRef(path="unused-q00.pkl"),
+        "Q01": ClassifierRef(path="unused-q01.pkl"),
+    }
+    result = _make_classified_result(classifier_refs=refs)
+
+    def _load(ref: ClassifierRef) -> _FakeClassifier:
+        _ = ref
+        return _FakeClassifier(np.eye(2, dtype=float))
+
+    monkeypatch.setattr(ClassifierRef, "load", _load)
+
+    assert result.get_basis_labels(["Q00", "Q01"]) == ["00", "01", "10", "11"]
+    assert result.get_mitigated_probabilities(["Q00", "Q01"]) == {
+        "00": 0.25,
+        "01": 0.25,
+        "10": 0.25,
+        "11": 0.25,
+    }
+
+
+def test_sweep_measurement_result_probability_series_map_selects_states() -> None:
+    """Sweep result should expose pointwise joint-probability series for plotting."""
+    first = _make_classified_result()
+    second = _make_classified_result(
+        q00_states=np.array([1, 1, 1, 0], dtype=np.int64),
+        q01_states=np.array([1, 1, 0, 0], dtype=np.int64),
+    )
+    sweep = SweepMeasurementResult(
+        sweep_values=[0.1, 0.2],
+        config=first.measurement_config,
+        results=[first, second],
+    )
+
+    all_probabilities = sweep.get_probabilities(["Q00", "Q01"])
+    probabilities = sweep.get_probability_series_map(
+        ["Q00", "Q01"],
+        states=["01", "11"],
+    )
+    standard_deviations = sweep.get_standard_deviation_series_map(
+        ["Q00", "Q01"],
+        states=["01", "11"],
+    )
+
+    assert all_probabilities[0]["11"] == 0.25
+    assert list(probabilities) == ["01", "11"]
+    np.testing.assert_allclose(probabilities["01"], np.array([0.25, 0.0]))
+    np.testing.assert_allclose(probabilities["11"], np.array([0.25, 0.5]))
+    np.testing.assert_allclose(
+        standard_deviations["11"],
+        np.array([np.sqrt(0.25 * 0.75 / 4), np.sqrt(0.5 * 0.5 / 4)]),
+    )
+
+
+def test_sweep_measurement_result_probability_series_map_validates_states() -> None:
+    """Series-map accessors should require a collection of state labels."""
+    result = _make_classified_result()
+    sweep = SweepMeasurementResult(
+        sweep_values=[0.1],
+        config=result.measurement_config,
+        results=[result],
+    )
+
+    with pytest.raises(TypeError, match="not a string"):
+        sweep.get_probability_series_map(["Q00", "Q01"], states="11")
+
+    with pytest.raises(ValueError, match="No states"):
+        sweep.get_probability_series_map(["Q00", "Q01"], states=[])
 
 
 def test_to_measure_result_propagates_sampling_period() -> None:

@@ -2727,6 +2727,7 @@ class Experiment:
             **deprecated_options,
         )
 
+    @deprecated('Use `measure(..., mode="single")` instead.')
     def measure_population(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
@@ -2771,6 +2772,7 @@ class Experiment:
             **deprecated_options,
         )
 
+    @deprecated("Use `run_sweep_measurement(...)` instead.")
     def measure_population_dynamics(
         self,
         *,
