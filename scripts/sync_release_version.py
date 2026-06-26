@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "VERSION"
 ROOT_PYPROJECT = ROOT / "pyproject.toml"
+CITATION_FILE = ROOT / "CITATION.cff"
 UV_EXECUTABLE = shutil.which("uv")
 
 WORKSPACE_PACKAGES: tuple[str, ...] = (
@@ -113,10 +114,26 @@ def sync_dependency_pins(version: str) -> None:
             path.write_text(updated_text)
 
 
+def sync_citation_version(version: str) -> None:
+    """Rewrite the software version in CITATION.cff."""
+    text = CITATION_FILE.read_text()
+    updated_text, count = re.subn(
+        r'(?m)^(version:\s*")[^"]+(")$',
+        rf"\g<1>{version}\2",
+        text,
+        count=1,
+    )
+    if count == 0:
+        raise ValueError(f"version field not found in {CITATION_FILE}.")
+    if updated_text != text:
+        CITATION_FILE.write_text(updated_text)
+
+
 def sync_release_version(version: str) -> None:
     """Synchronize all workspace package versions and exact pins."""
     set_workspace_versions(version)
     sync_dependency_pins(version)
+    sync_citation_version(version)
     _run(["lock"])
 
 
