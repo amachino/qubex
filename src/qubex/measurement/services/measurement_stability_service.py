@@ -8,7 +8,7 @@ from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from inspect import Parameter, signature
-from typing import Any, Protocol, cast
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 from qxpulse import FlatTop, PulseSchedule
@@ -37,9 +37,20 @@ from qubex.measurement.models.measurement_stability import (
     OutputSignalKind,
     OutputSignalReferenceScope,
 )
+from qubex.measurement.services.measurement_monitor_service import (
+    MeasurementMonitorService,
+)
 from qubex.system import PortType, Target
 
 logger = logging.getLogger(__name__)
+
+
+class _MonitorWaveform(NamedTuple):
+    reference_target: str
+    monitor_target: str
+    capture_index: int
+    time_ns: np.ndarray
+    amplitude: np.ndarray
 
 
 def _capture_array(capture: Any) -> np.ndarray:
@@ -78,6 +89,202 @@ def _phase_statistics(samples: np.ndarray) -> tuple[float, float, float]:
     mean_phase = float(np.angle(mean_vector))
     offsets = np.angle(unit_samples * np.exp(-1j * mean_phase))
     return mean_phase, float(np.std(offsets)), resultant_length
+
+
+def _signal_stability_series(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> dict[str, tuple[list[float], list[float], list[float]]]:
+    """Return x, relative amplitude, and percent-move series by signal label."""
+    raw_series: dict[str, list[tuple[float, float]]] = {}
+    for snapshot in snapshots:
+        elapsed_s = 0.0 if snapshot.elapsed_s is None else float(snapshot.elapsed_s)
+        for statistic in snapshot.signals.values():
+            label = (
+                f"{statistic.reference_target} -> {statistic.monitor_target}"
+                f" [{statistic.capture_index}]"
+            )
+            raw_series.setdefault(label, []).append(
+                (elapsed_s, float(statistic.amplitude_mean))
+            )
+
+    series: dict[str, tuple[list[float], list[float], list[float]]] = {}
+    for label, points in raw_series.items():
+        baseline = points[0][1]
+        if not np.isfinite(baseline) or baseline == 0.0:
+            continue
+        x = [point[0] for point in points]
+        y = [point[1] / baseline for point in points]
+        percent = [100.0 * (value - 1.0) for value in y]
+        series[label] = (x, y, percent)
+    return series
+
+
+def _add_signal_stability_trace(
+    fig: Any,
+    *,
+    label: str,
+    x: list[float],
+    y: list[float],
+    percent: list[float],
+) -> None:
+    fig.add_scatter(
+        x=x,
+        y=y,
+        customdata=percent,
+        mode="lines+markers",
+        name=label,
+        hovertemplate=(
+            "elapsed=%{x:.3f}s<br>"
+            "relative=%{y:.8f}<br>"
+            "move=%{customdata:+.4f}%<extra>%{fullData.name}</extra>"
+        ),
+    )
+
+
+def _apply_signal_stability_layout(fig: Any) -> None:
+    fig.add_hline(y=1.0, line_dash="dash", line_color="gray")
+    fig.update_layout(
+        title="Output signal stability",
+        xaxis_title="elapsed time (s)",
+        yaxis_title="relative amplitude (initial=1)",
+    )
+
+
+def _make_signal_stability_figure(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> Any:
+    """Return a relative monitor amplitude figure."""
+    import qubex.visualization as viz
+
+    fig = viz.make_figure()
+    for label, (x, y, percent) in _signal_stability_series(snapshots).items():
+        _add_signal_stability_trace(
+            fig,
+            x=x,
+            y=y,
+            percent=percent,
+            label=label,
+        )
+    _apply_signal_stability_layout(fig)
+    return fig
+
+
+def _make_signal_stability_widget(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> Any:
+    """Return a live-updated relative monitor amplitude widget."""
+    import plotly.graph_objects as go
+
+    import qubex.visualization as viz
+
+    widget = go.FigureWidget(viz.make_figure())
+    _apply_signal_stability_layout(widget)
+    _update_signal_stability_widget(widget, snapshots)
+    return widget
+
+
+def _update_signal_stability_widget(
+    widget: Any,
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> None:
+    """Update the live stability widget in place."""
+    series = _signal_stability_series(snapshots)
+    with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
+        if [trace.name for trace in widget.data] != list(series):
+            widget.data = ()
+            for label, (x, y, percent) in series.items():
+                _add_signal_stability_trace(
+                    widget,
+                    x=x,
+                    y=y,
+                    percent=percent,
+                    label=label,
+                )
+            return
+        for trace, (x, y, percent) in zip(
+            widget.data,
+            series.values(),
+            strict=False,
+        ):
+            trace.x = x
+            trace.y = y
+            trace.customdata = percent
+
+
+def _waveform_trace_label(waveform: _MonitorWaveform) -> str:
+    return (
+        f"{waveform.reference_target} -> {waveform.monitor_target}"
+        f" [{waveform.capture_index}]"
+    )
+
+
+def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
+    fig.add_scatter(
+        x=waveform.time_ns,
+        y=waveform.amplitude,
+        mode="lines",
+        name=_waveform_trace_label(waveform),
+        hovertemplate=(
+            "time=%{x:.3f}ns<br>|IQ|=%{y:.6g}<extra>%{fullData.name}</extra>"
+        ),
+    )
+
+
+def _apply_monitor_waveform_layout(fig: Any) -> None:
+    fig.update_layout(
+        title="Latest raw monitor waveform",
+        xaxis_title="time (ns)",
+        yaxis_title="|IQ|",
+    )
+
+
+def _make_monitor_waveform_widget(waveforms: Collection[_MonitorWaveform]) -> Any:
+    """Return a live-updated raw waveform widget."""
+    import plotly.graph_objects as go
+
+    import qubex.visualization as viz
+
+    widget = go.FigureWidget(viz.make_figure())
+    _apply_monitor_waveform_layout(widget)
+    _update_monitor_waveform_widget(widget, waveforms)
+    return widget
+
+
+def _update_monitor_waveform_widget(
+    widget: Any,
+    waveforms: Collection[_MonitorWaveform],
+) -> None:
+    """Replace the raw waveform widget with the latest monitor capture."""
+    waveforms = list(waveforms)
+    with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
+        if [trace.name for trace in widget.data] != [
+            _waveform_trace_label(waveform) for waveform in waveforms
+        ]:
+            widget.data = ()
+            for waveform in waveforms:
+                _add_monitor_waveform_trace(widget, waveform)
+            return
+        for trace, waveform in zip(widget.data, waveforms, strict=False):
+            trace.x = waveform.time_ns
+            trace.y = waveform.amplitude
+
+
+def _display_widget(widget: Any) -> bool:
+    """Display a widget in a notebook output cell if IPython is available."""
+    try:
+        from IPython.display import display
+    except ImportError:
+        return False
+    display(widget)
+    return True
+
+
+def _show_signal_stability_figure(
+    snapshots: Collection[MeasurementStabilitySnapshot],
+) -> None:
+    """Show the stability plot when live notebook display is unavailable."""
+    fig = _make_signal_stability_figure(snapshots)
+    fig.show()
 
 
 def _limited_output_gain(
@@ -156,22 +363,55 @@ def _effective_gain_correction_deadband(
 
 
 def _call_loopback_capture(
-    capture: LoopbackCapture,
+    capture: Callable[..., MeasurementResult],
     schedule: PulseSchedule,
     *,
     n_shots: int | None,
     block_outputs: bool,
     shot_averaging: bool,
     capture_targets: list[str],
+    demodulation: bool | None = None,
     configure_monitor_nco: bool | None = None,
 ) -> MeasurementResult:
-    """Call loopback capture, passing monitor-NCO control when supported."""
+    """
+    Call a loopback capture implementation with optional stability controls.
+
+    Older tests and adapters may not accept newer keyword arguments. This
+    helper forwards ``demodulation`` and ``configure_monitor_nco`` only when the
+    callable advertises support for those keywords.
+
+    Parameters
+    ----------
+    capture : Callable[..., MeasurementResult]
+        Loopback capture callable.
+    schedule : PulseSchedule
+        Probe schedule to execute.
+    n_shots : int | None
+        Number of shots to acquire.
+    block_outputs : bool
+        Whether to block normal output RF paths during loopback capture.
+    shot_averaging : bool
+        Whether to average shots in the capture backend.
+    capture_targets : list[str]
+        Monitor targets to capture.
+    demodulation : bool | None, optional
+        Whether to request monitor demodulation when supported.
+    configure_monitor_nco : bool | None, optional
+        Whether to request monitor NCO setup when supported.
+
+    Returns
+    -------
+    MeasurementResult
+        Captured loopback measurement result.
+    """
     kwargs: dict[str, Any] = {
         "n_shots": n_shots,
         "block_outputs": block_outputs,
         "shot_averaging": shot_averaging,
         "capture_targets": capture_targets,
     }
+    if demodulation is not None and _accepts_keyword(capture, "demodulation"):
+        kwargs["demodulation"] = demodulation
     if configure_monitor_nco is not None and _accepts_keyword(
         capture,
         "configure_monitor_nco",
@@ -214,31 +454,28 @@ def _effective_phase_correction_deadband(
     return max(base_deadband, sigma * uncertainty)
 
 
-class LoopbackCapture(Protocol):
-    """Callable protocol for monitor-path loopback capture."""
-
-    def __call__(
-        self,
-        schedule: PulseSchedule,
-        *,
-        n_shots: int | None,
-        block_outputs: bool,
-        shot_averaging: bool,
-        capture_targets: list[str],
-    ) -> MeasurementResult:
-        """Capture a schedule through the monitor path."""
-        ...
-
-
 class MeasurementStabilityService:
-    """Manage session-local measurement stability baselines and corrections."""
+    """
+    Manage session-local measurement stability baselines and corrections.
+
+    Parameters
+    ----------
+    context : MeasurementContext
+        Shared measurement context used to resolve output targets and apply
+        session-local corrections.
+    monitor_service : MeasurementMonitorService | None, optional
+        Monitor service used when public methods are called without an
+        explicit `capture` callable.
+    """
 
     def __init__(
         self,
         *,
         context: MeasurementContext,
+        monitor_service: MeasurementMonitorService | None = None,
     ) -> None:
         self._context = context
+        self._monitor_service = monitor_service
         self._output_corrections: dict[str, OutputSignalCorrection] = {}
         self._corrections_suspended = 0
 
@@ -256,6 +493,19 @@ class MeasurementStabilityService:
     def corrections_enabled(self) -> bool:
         """Return whether corrections should be applied to outgoing schedules."""
         return self._corrections_suspended == 0
+
+    def _resolve_loopback_capture(
+        self,
+        capture: Callable[..., MeasurementResult] | None,
+    ) -> Callable[..., MeasurementResult]:
+        """Return the explicit capture callable or the injected monitor service."""
+        if capture is not None:
+            return capture
+        if self._monitor_service is None:
+            raise ValueError(
+                "capture must be provided when no monitor_service is configured."
+            )
+        return self._monitor_service.capture_loopback
 
     @contextmanager
     def suspend_corrections(self) -> Iterator[None]:
@@ -291,7 +541,7 @@ class MeasurementStabilityService:
     def establish_output_signal_baseline(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         targets: Collection[str] | str | None = None,
         include_control: bool | None = None,
         include_readout: bool | None = None,
@@ -307,10 +557,57 @@ class MeasurementStabilityService:
         """
         Capture baseline monitor signals and reset session-local corrections.
 
-        When `reference_scope="box"`, one representative target is measured per
-        physical box and that reference is stored for all selected targets on
-        the same box.
+        The baseline is the reference amplitude and phase used by later gain
+        and phase correction updates. Monitor captures are demodulated by the
+        loopback capture implementation. The monitor NCO is configured before
+        the baseline capture so repeated stability checks can keep the same
+        monitor phase origin afterward.
+
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Loopback capture callable. When omitted, the injected
+            `MeasurementMonitorService` is used.
+        targets : Collection[str] | str | None, optional
+            Target label or labels to include. If omitted, selected control and
+            readout outputs are controlled by `include_control` and
+            `include_readout`.
+        include_control : bool | None, optional
+            Whether to include control output targets when `targets` is
+            omitted.
+        include_readout : bool | None, optional
+            Whether to include readout output targets when `targets` is
+            omitted.
+        n_shots : int | None, optional
+            Number of loopback shots per probe capture.
+        probe_amplitude : float | None, optional
+            Flat-top probe pulse amplitude.
+        probe_duration : float | None, optional
+            Flat-top probe pulse duration in ns.
+        block_outputs : bool | None, optional
+            When true, active output RF switches are temporarily set to
+            `block` while monitor inputs are put in loopback mode. This keeps
+            the probe isolated to the loopback path instead of also driving the
+            normal output line or device. Set false only when the probe should
+            remain on the normal output path.
+        reference_scope : OutputSignalReferenceScope | None, optional
+            `"target"` stores one reference per target. `"box"` measures one
+            representative target per physical box and stores that reference
+            for all selected targets on the same box.
+        trim_samples : int | None, optional
+            Number of samples to remove from both edges before statistics.
+        estimate_gain_noise : bool | None, optional
+            Whether to keep per-shot waveforms for estimating amplitude SEM.
+        estimate_phase_noise : bool | None, optional
+            Whether to keep per-shot waveforms for estimating phase SEM.
+
+        Returns
+        -------
+        MeasurementStabilitySnapshot
+            Snapshot containing the reset correction table and baseline monitor
+            statistics.
         """
+        capture = self._resolve_loopback_capture(capture)
         if include_control is None:
             include_control = True
         if include_readout is None:
@@ -364,7 +661,7 @@ class MeasurementStabilityService:
     def update_output_signal_corrections(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         targets: Collection[str] | str | None = None,
         include_control: bool | None = None,
         include_readout: bool | None = None,
@@ -389,10 +686,79 @@ class MeasurementStabilityService:
         """
         Update session-local output gain and phase corrections.
 
-        If no baseline exists, capture one and return its snapshot without
-        applying an additional correction update. When `reference_scope` is
-        omitted after baseline exists, reuse the stored baseline scope.
+        A monitor probe is captured, compared with the stored baseline, and the
+        session-local correction table is updated. Gain updates are based on
+        the ratio between baseline amplitude and measured amplitude. Phase
+        updates use the circular residual from the baseline phase. Both gain
+        and phase updates can be limited, smoothed, and ignored inside a
+        deadband.
+
+        If no baseline exists, this method captures one via
+        `establish_output_signal_baseline()` and returns that snapshot without
+        applying an additional update. When `reference_scope` is omitted after
+        a baseline exists, the scope stored in the baseline records is reused.
+
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Loopback capture callable. When omitted, the injected
+            `MeasurementMonitorService` is used.
+        targets : Collection[str] | str | None, optional
+            Target label or labels to probe. If omitted, `include_control` and
+            `include_readout` select targets.
+        include_control : bool | None, optional
+            Whether to include control output targets when `targets` is
+            omitted.
+        include_readout : bool | None, optional
+            Whether to include readout output targets when `targets` is
+            omitted.
+        n_shots : int | None, optional
+            Number of loopback shots per probe capture.
+        probe_amplitude : float | None, optional
+            Flat-top probe pulse amplitude.
+        probe_duration : float | None, optional
+            Flat-top probe pulse duration in ns.
+        block_outputs : bool | None, optional
+            When true, temporarily blocks normal output RF paths during the
+            loopback capture. This is the safe default for stability probes
+            because it prevents the probe pulse from reaching the device while
+            the monitor input is measuring the loopback path.
+        max_gain_relative_step : float | None, optional
+            Maximum relative gain correction change applied in one update.
+        gain_smoothing : float | None, optional
+            First-order smoothing factor in `[0, 1]`; `1` applies the limited
+            update immediately, `0` keeps the previous correction.
+        gain_correction_deadband : float | None, optional
+            Minimum relative gain residual required before changing gain.
+        auto_gain_correction_deadband : bool | None, optional
+            Whether to expand the gain deadband using measurement SEM.
+        gain_correction_deadband_sigma : float | None, optional
+            Multiplier for SEM-based gain deadband expansion.
+        max_phase_step : float | None, optional
+            Maximum phase correction change in radians applied in one update.
+        phase_smoothing : float | None, optional
+            First-order phase smoothing factor in `[0, 1]`.
+        phase_correction_deadband : float | None, optional
+            Minimum phase residual in radians required before changing phase.
+        auto_phase_correction_deadband : bool | None, optional
+            Whether to expand the phase deadband using measurement SEM.
+        phase_correction_deadband_sigma : float | None, optional
+            Multiplier for SEM-based phase deadband expansion.
+        phase_min_resultant_length : float | None, optional
+            Minimum circular mean resultant length required before accepting a
+            phase measurement.
+        reference_scope : OutputSignalReferenceScope | None, optional
+            `"target"` or `"box"` comparison scope. If omitted, reuse the
+            baseline scope.
+        trim_samples : int | None, optional
+            Number of edge samples to discard before statistics.
+
+        Returns
+        -------
+        MeasurementStabilitySnapshot
+            Snapshot after correction updates are applied.
         """
+        capture = self._resolve_loopback_capture(capture)
         if include_control is None:
             include_control = True
         if include_readout is None:
@@ -669,7 +1035,7 @@ class MeasurementStabilityService:
     def measure_monitor_statistics(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         targets: Collection[str] | str | None = None,
         include_control: bool | None = None,
         include_readout: bool | None = None,
@@ -681,14 +1047,76 @@ class MeasurementStabilityService:
         trim_samples: int | None = None,
         apply_corrections: bool | None = None,
         shot_averaging: bool | None = None,
+        demodulation: bool | None = None,
         configure_monitor_nco: bool | None = None,
+        _waveforms_out: list[_MonitorWaveform] | None = None,
     ) -> list[MonitorStatistic]:
         """
         Probe selected outputs and return monitor amplitude/phase statistics.
 
-        The default box-level scope measures one representative target per
-        physical box, matching the baseline workflow.
+        This is the low-level statistics primitive used by the baseline,
+        correction-update, and stability-monitor methods. It builds a flat-top
+        probe pulse for each selected reference target, captures the
+        corresponding monitor input, demodulates the monitor waveform by
+        default, and computes `MonitorStatistic` records from `|IQ|` and
+        circular phase.
+
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Loopback capture callable. When omitted, the injected
+            `MeasurementMonitorService` is used.
+        targets : Collection[str] | str | None, optional
+            Target label or labels to probe. If omitted, `include_control` and
+            `include_readout` select targets.
+        include_control : bool | None, optional
+            Whether to include control output targets when `targets` is
+            omitted.
+        include_readout : bool | None, optional
+            Whether to include readout output targets when `targets` is
+            omitted.
+        n_shots : int | None, optional
+            Number of loopback shots per probe capture.
+        probe_amplitude : float | None, optional
+            Flat-top probe pulse amplitude.
+        probe_duration : float | None, optional
+            Flat-top probe pulse duration in ns.
+        block_outputs : bool | None, optional
+            When true, isolate the probe to the loopback path by temporarily
+            blocking normal output RF switches while monitor inputs are in
+            loopback mode.
+        reference_scope : OutputSignalReferenceScope | None, optional
+            `"target"` probes every selected target separately. `"box"` probes
+            one representative target per physical box and reports the covered
+            targets in each statistic.
+        trim_samples : int | None, optional
+            Number of samples removed from each edge before statistics.
+        apply_corrections : bool | None, optional
+            Whether currently stored output corrections are applied to the
+            probe pulse. Baseline captures normally disable this; stability
+            samples normally enable it.
+        shot_averaging : bool | None, optional
+            Whether loopback capture averages shots after demodulation. Keeping
+            this false preserves per-shot waveforms and gives SEM over shots.
+        demodulation : bool | None, optional
+            Whether loopback capture demodulates monitor data. Defaults to true
+            so returned statistics and live waveforms are computed on
+            demodulated `|IQ|`.
+        configure_monitor_nco : bool | None, optional
+            Whether to configure monitor input NCO settings before capture.
+            Baseline captures enable this. Repeated stability samples disable
+            it to preserve the monitor phase origin.
+        _waveforms_out : list[_MonitorWaveform] | None, optional
+            Internal sink used by live plotting to receive the latest waveform.
+
+        Returns
+        -------
+        list[MonitorStatistic]
+            One statistic per monitor capture. For 2-D data the amplitude is
+            the mean of per-shot `mean(|IQ|)` values; for 1-D averaged data it
+            is the mean over samples.
         """
+        capture = self._resolve_loopback_capture(capture)
         if include_control is None:
             include_control = True
         if include_readout is None:
@@ -709,6 +1137,8 @@ class MeasurementStabilityService:
             apply_corrections = False
         if shot_averaging is None:
             shot_averaging = True
+        if demodulation is None:
+            demodulation = True
         resolved_reference_scope = self._validate_reference_scope(reference_scope)
         selected_targets = self._resolve_output_targets(
             targets=targets,
@@ -743,6 +1173,7 @@ class MeasurementStabilityService:
                     block_outputs=block_outputs,
                     shot_averaging=shot_averaging,
                     capture_targets=[monitor_target],
+                    demodulation=demodulation,
                     configure_monitor_nco=configure_monitor_nco,
                 )
                 capture_statistics = self._compute_probe_monitor_statistics(
@@ -751,6 +1182,15 @@ class MeasurementStabilityService:
                     monitor_target=monitor_target,
                     trim_samples=trim_samples,
                 )
+                if _waveforms_out is not None:
+                    _waveforms_out.extend(
+                        self._extract_probe_monitor_waveforms(
+                            result,
+                            reference_target=reference_target.label,
+                            monitor_target=monitor_target,
+                            trim_samples=trim_samples,
+                        )
+                    )
                 if len(capture_statistics) == 0:
                     raise ValueError(f"No monitor capture found for {monitor_target}.")
                 statistics.extend(
@@ -777,7 +1217,7 @@ class MeasurementStabilityService:
     def check_signal_stability(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult] | None = None,
         duration: float,
         sample_interval: float | None = None,
         targets: Collection[str] | str | None = None,
@@ -801,10 +1241,91 @@ class MeasurementStabilityService:
         phase_correction_deadband_sigma: float | None = None,
         phase_min_resultant_length: float | None = None,
         update_corrections: bool | None = None,
+        plot: bool | None = None,
     ) -> list[MeasurementStabilitySnapshot]:
-        """Check signal stability by measuring once per sample and updating corrections."""
-        if sample_interval is None:
-            sample_interval = 10.0
+        """
+        Monitor output stability over time and optionally update corrections.
+
+        The first capture establishes a baseline at `sample_index=0`. Later
+        captures are appended until `duration` expires. Each snapshot stores
+        elapsed time, monitor statistics, and the corrections that were active
+        for that sample. Monitor captures are demodulated, and the monitor NCO
+        is configured only for the baseline capture so repeated samples keep a
+        stable phase origin.
+
+        Parameters
+        ----------
+        capture : Callable[..., MeasurementResult] | None, optional
+            Loopback capture callable. When omitted, the injected
+            `MeasurementMonitorService` is used.
+        duration : float
+            Total monitor duration in seconds. A value of `0` returns only the
+            baseline snapshot.
+        sample_interval : float | None, optional
+            Seconds between samples after the baseline. If `None`, samples are
+            taken continuously as fast as each loopback capture completes.
+        targets : Collection[str] | str | None, optional
+            Target label or labels to monitor. If omitted, `include_control`
+            and `include_readout` select targets.
+        include_control : bool | None, optional
+            Whether to include control output targets when `targets` is
+            omitted.
+        include_readout : bool | None, optional
+            Whether to include readout output targets when `targets` is
+            omitted.
+        n_shots : int | None, optional
+            Number of loopback shots per probe capture.
+        probe_amplitude : float | None, optional
+            Flat-top probe pulse amplitude.
+        probe_duration : float | None, optional
+            Flat-top probe pulse duration in ns.
+        block_outputs : bool | None, optional
+            When true, temporarily blocks normal output RF paths during each
+            loopback capture. This prevents the stability probe from also
+            driving the device while the monitor input is measuring loopback.
+        reference_scope : OutputSignalReferenceScope | None, optional
+            `"target"` monitors each target independently. `"box"` uses one
+            representative target per box.
+        trim_samples : int | None, optional
+            Number of edge samples discarded before statistics and waveform
+            display.
+        max_gain_relative_step : float | None, optional
+            Maximum relative gain correction change applied in one update.
+        gain_smoothing : float | None, optional
+            First-order gain smoothing factor in `[0, 1]`.
+        gain_correction_deadband : float | None, optional
+            Minimum relative gain residual required before changing gain.
+        auto_gain_correction_deadband : bool | None, optional
+            Whether to expand the gain deadband using measurement SEM.
+        gain_correction_deadband_sigma : float | None, optional
+            Multiplier for SEM-based gain deadband expansion.
+        max_phase_step : float | None, optional
+            Maximum phase correction change in radians applied in one update.
+        phase_smoothing : float | None, optional
+            First-order phase smoothing factor in `[0, 1]`.
+        phase_correction_deadband : float | None, optional
+            Minimum phase residual in radians required before changing phase.
+        auto_phase_correction_deadband : bool | None, optional
+            Whether to expand the phase deadband using measurement SEM.
+        phase_correction_deadband_sigma : float | None, optional
+            Multiplier for SEM-based phase deadband expansion.
+        phase_min_resultant_length : float | None, optional
+            Minimum circular mean quality required for phase updates.
+        update_corrections : bool | None, optional
+            Whether to update session-local corrections after each sample. Set
+            false for passive monitoring.
+        plot : bool | None, optional
+            When true in a notebook, display two live `FigureWidget`s: relative
+            amplitude normalized to the baseline, and the latest demodulated
+            raw monitor `|IQ|` waveform. Both widgets are updated in place for
+            each sample.
+
+        Returns
+        -------
+        list[MeasurementStabilitySnapshot]
+            Baseline plus sampled stability history.
+        """
+        capture = self._resolve_loopback_capture(capture)
         if include_control is None:
             include_control = True
         if include_readout is None:
@@ -849,6 +1370,8 @@ class MeasurementStabilityService:
             phase_min_resultant_length = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH
         if update_corrections is None:
             update_corrections = True
+        if plot is None:
+            plot = False
         if duration < 0.0:
             raise ValueError("duration must be non-negative.")
         if sample_interval is not None and sample_interval <= 0.0:
@@ -883,6 +1406,7 @@ class MeasurementStabilityService:
             include_control=include_control,
             include_readout=include_readout,
         )
+        baseline_waveforms: list[_MonitorWaveform] | None = [] if plot else None
         baseline_statistics = self.measure_monitor_statistics(
             capture=capture,
             targets=targets,
@@ -899,6 +1423,7 @@ class MeasurementStabilityService:
                 auto_gain_correction_deadband or auto_phase_correction_deadband
             ),
             configure_monitor_nco=True,
+            _waveforms_out=baseline_waveforms,
         )
         self._set_output_signal_baseline_from_statistics(
             statistics=baseline_statistics,
@@ -914,8 +1439,18 @@ class MeasurementStabilityService:
             )
         ]
         sample_index = 1
+        stability_widget = None
+        waveform_widget = None
+        widgets_displayed = False
+        if plot:
+            stability_widget = _make_signal_stability_widget(snapshots)
+            waveform_widget = _make_monitor_waveform_widget(baseline_waveforms or [])
+            widgets_displayed = _display_widget(stability_widget)
+            widgets_displayed = _display_widget(waveform_widget) and widgets_displayed
 
         if duration == 0.0:
+            if plot and not widgets_displayed:
+                _show_signal_stability_figure(snapshots)
             return snapshots
 
         while True:
@@ -932,6 +1467,7 @@ class MeasurementStabilityService:
             sample_start = time.perf_counter()
             timestamp = datetime.now(timezone.utc).isoformat()
             applied_corrections = dict(self._output_corrections)
+            waveforms: list[_MonitorWaveform] | None = [] if plot else None
             statistics = self.measure_monitor_statistics(
                 capture=capture,
                 targets=targets,
@@ -948,6 +1484,7 @@ class MeasurementStabilityService:
                     auto_gain_correction_deadband or auto_phase_correction_deadband
                 ),
                 configure_monitor_nco=False,
+                _waveforms_out=waveforms,
             )
             elapsed_s = sample_start - start_time
             snapshots.append(
@@ -959,6 +1496,11 @@ class MeasurementStabilityService:
                     timestamp=timestamp,
                 )
             )
+            if plot:
+                if stability_widget is not None:
+                    _update_signal_stability_widget(stability_widget, snapshots)
+                if waveform_widget is not None:
+                    _update_monitor_waveform_widget(waveform_widget, waveforms or [])
             if update_corrections:
                 self._update_output_signal_corrections_from_statistics(
                     statistics=statistics,
@@ -981,6 +1523,8 @@ class MeasurementStabilityService:
                 )
             sample_index += 1
 
+        if plot and not widgets_displayed:
+            _show_signal_stability_figure(snapshots)
         return snapshots
 
     @staticmethod
@@ -1126,6 +1670,47 @@ class MeasurementStabilityService:
             trim_samples=trim_samples,
         )
 
+    def _extract_probe_monitor_waveforms(
+        self,
+        result: MeasurementResult | MultipleMeasureResult,
+        *,
+        reference_target: str,
+        monitor_target: str,
+        trim_samples: int,
+    ) -> list[_MonitorWaveform]:
+        """Extract one |IQ| time trace per monitor capture for live display."""
+        target_candidates = list(dict.fromkeys((monitor_target, reference_target)))
+        waveforms: list[_MonitorWaveform] = []
+        for target in target_candidates:
+            captures = result.data.get(target)
+            if captures is None:
+                continue
+            for capture_index, capture in enumerate(captures):
+                array = np.asarray(
+                    _trim_capture(_capture_array(capture), trim_samples),
+                    dtype=np.complex128,
+                )
+                if array.size == 0:
+                    continue
+                if array.ndim >= 2:
+                    samples = array.reshape(-1, array.shape[-1])
+                    amplitude = np.mean(np.abs(samples), axis=0)
+                else:
+                    amplitude = np.abs(array.reshape(-1))
+                time_ns = (
+                    np.arange(amplitude.size, dtype=np.float64) + trim_samples
+                ) * float(capture.sampling_period)
+                waveforms.append(
+                    _MonitorWaveform(
+                        reference_target=reference_target,
+                        monitor_target=target,
+                        capture_index=capture_index,
+                        time_ns=time_ns,
+                        amplitude=np.asarray(amplitude, dtype=np.float64),
+                    )
+                )
+        return waveforms
+
     def compute_monitor_statistics(
         self,
         result: MeasurementResult | MultipleMeasureResult,
@@ -1138,14 +1723,22 @@ class MeasurementStabilityService:
 
         Parameters
         ----------
-        result
+        result : MeasurementResult | MultipleMeasureResult
             Measurement result returned by monitor capture.
-        targets
+        targets : Collection[str] | None, optional
             Monitor target names to include. If omitted, all result targets are
             included.
-        trim_samples
+        trim_samples : int | None, optional
             Number of edge samples to remove from each capture before computing
             statistics.
+
+        Notes
+        -----
+        Complex data is interpreted as demodulated IQ. For 2-D data, the first
+        axis is treated as shots and each shot contributes one
+        `mean(abs(waveform))` value to the amplitude statistics. For 1-D data,
+        each sample contributes one amplitude value. Phase statistics use a
+        circular mean over all nonzero complex samples.
 
         Returns
         -------
@@ -1454,7 +2047,7 @@ class MeasurementStabilityService:
     def _measure_monitor_statistic(
         self,
         *,
-        capture: LoopbackCapture,
+        capture: Callable[..., MeasurementResult],
         target: Target,
         n_shots: int | None,
         probe_amplitude: float,
@@ -1477,6 +2070,7 @@ class MeasurementStabilityService:
             block_outputs=block_outputs,
             shot_averaging=shot_averaging,
             capture_targets=[monitor_target],
+            demodulation=True,
             configure_monitor_nco=configure_monitor_nco,
         )
         stats = self._compute_probe_monitor_statistics(
@@ -1505,13 +2099,59 @@ class MeasurementStabilityService:
 
     def _resolve_monitor_target(self, target: Target) -> str:
         port = target.channel.port
+        monitor_candidates: list[Any] = []
         for box in self.context.experiment_system.control_system.boxes:
             if box.id != port.box_id:
                 continue
-            for candidate in box.ports:
-                if candidate.type == PortType.MNTR_IN:
-                    return str(candidate.id)
-        raise ValueError(f"No monitor input port found for box {port.box_id}.")
+            monitor_candidates.extend(
+                candidate
+                for candidate in box.ports
+                if candidate.type == PortType.MNTR_IN
+            )
+        if len(monitor_candidates) == 0:
+            raise ValueError(f"No monitor input port found for box {port.box_id}.")
+
+        source_port_number = getattr(port, "number", None)
+        backend_controller = getattr(self.context, "backend_controller", None)
+        get_loopbacks_of_port = getattr(
+            backend_controller,
+            "get_loopbacks_of_port",
+            None,
+        )
+        if source_port_number is not None and callable(get_loopbacks_of_port):
+            matched_candidates: list[Any] = []
+            for candidate in monitor_candidates:
+                candidate_number = getattr(candidate, "number", None)
+                if candidate_number is None:
+                    continue
+                try:
+                    loopbacks = set(
+                        get_loopbacks_of_port(
+                            box_name=candidate.box_id,
+                            port_number=candidate_number,
+                        )
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to resolve loopback sources for monitor port %s.",
+                        getattr(candidate, "id", candidate),
+                    )
+                    continue
+                if source_port_number in loopbacks:
+                    matched_candidates.append(candidate)
+            if len(matched_candidates) == 1:
+                return str(matched_candidates[0].id)
+            if len(matched_candidates) > 1:
+                logger.warning(
+                    "Multiple monitor inputs can observe %s on %s: %s. Using %s.",
+                    getattr(port, "id", port),
+                    port.box_id,
+                    [candidate.id for candidate in matched_candidates],
+                    matched_candidates[0].id,
+                )
+                return str(matched_candidates[0].id)
+
+        return str(monitor_candidates[0].id)
 
     @staticmethod
     def _resolve_output_kind(target: Target) -> OutputSignalKind:

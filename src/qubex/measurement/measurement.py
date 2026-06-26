@@ -75,6 +75,7 @@ from .services import (
     MeasurementAmplificationService,
     MeasurementClassificationService,
     MeasurementExecutionService,
+    MeasurementMonitorService,
     MeasurementSessionService,
     MeasurementStabilityService,
 )
@@ -182,7 +183,6 @@ class Measurement:
         self._amplification_service = MeasurementAmplificationService(
             context=self._context
         )
-        self._stability_service = MeasurementStabilityService(context=self._context)
         self._session_service = MeasurementSessionService(
             system_manager=self._system_manager,
             context=self._context,
@@ -190,10 +190,18 @@ class Measurement:
         self._execution_service = MeasurementExecutionService(
             context=self._context,
             session_service=self._session_service,
-            stability_service=self._stability_service,
             classifiers=self._classification_service.classifiers,
             execution_mode=self._execution_mode,
             clock_health_checks=self._clock_health_checks,
+        )
+        self._monitor_service = MeasurementMonitorService(
+            context=self._context,
+            session_service=self._session_service,
+            execution_service=self._execution_service,
+        )
+        self._stability_service = MeasurementStabilityService(
+            context=self._context,
+            monitor_service=self._monitor_service,
         )
         if load_configs is None:
             load_configs = self.DEFAULT_LOAD_CONFIGS
@@ -322,7 +330,6 @@ class Measurement:
         if estimate_phase_noise is None:
             estimate_phase_noise = True
         return self.stability_service.establish_output_signal_baseline(
-            capture=self.execution_service.capture_loopback,
             targets=targets,
             include_control=include_control,
             include_readout=include_readout,
@@ -410,7 +417,6 @@ class Measurement:
         if trim_samples is None:
             trim_samples = 0
         return self.stability_service.update_output_signal_corrections(
-            capture=self.execution_service.capture_loopback,
             targets=targets,
             include_control=include_control,
             include_readout=include_readout,
@@ -459,10 +465,82 @@ class Measurement:
         phase_correction_deadband_sigma: float | None = None,
         phase_min_resultant_length: float | None = None,
         update_corrections: bool | None = None,
+        plot: bool | None = None,
     ) -> list[MeasurementStabilitySnapshot]:
-        """Check selected output signals and return stability snapshot history."""
-        if sample_interval is None:
-            sample_interval = 10.0
+        """
+        Check selected output signal stability and return snapshot history.
+
+        This facade calls `MeasurementStabilityService.check_signal_stability`
+        using `capture_loopback` as the capture backend. The first sample is a
+        baseline; later samples are acquired until `duration` expires.
+
+        Parameters
+        ----------
+        duration : float
+            Total monitor duration in seconds. A value of `0` returns only the
+            baseline snapshot.
+        sample_interval : float | None, optional
+            Seconds between samples after the baseline. If `None`, samples are
+            taken continuously with no sleep between loopback captures.
+        targets : Collection[str] | str | None, optional
+            Target label or labels to monitor. If omitted, `include_control`
+            and `include_readout` select targets.
+        include_control : bool | None, optional
+            Whether to include control output targets when `targets` is
+            omitted.
+        include_readout : bool | None, optional
+            Whether to include readout output targets when `targets` is
+            omitted.
+        n_shots : int | None, optional
+            Number of loopback shots per probe capture.
+        probe_amplitude : float | None, optional
+            Flat-top probe pulse amplitude.
+        probe_duration : float | None, optional
+            Flat-top probe pulse duration in ns.
+        block_outputs : bool | None, optional
+            When true, temporarily blocks normal output RF paths during each
+            loopback capture so the probe is measured through the monitor path
+            without also driving the device.
+        reference_scope : OutputSignalReferenceScope | None, optional
+            `"target"` monitors each target independently. `"box"` uses one
+            representative target per box.
+        trim_samples : int | None, optional
+            Number of edge samples discarded before statistics and waveform
+            display.
+        max_gain_relative_step : float | None, optional
+            Maximum relative gain correction change applied in one update.
+        gain_smoothing : float | None, optional
+            First-order gain smoothing factor in `[0, 1]`.
+        gain_correction_deadband : float | None, optional
+            Minimum relative gain residual required before changing gain.
+        auto_gain_correction_deadband : bool | None, optional
+            Whether to expand the gain deadband using measurement SEM.
+        gain_correction_deadband_sigma : float | None, optional
+            Multiplier for SEM-based gain deadband expansion.
+        max_phase_step : float | None, optional
+            Maximum phase correction change in radians applied in one update.
+        phase_smoothing : float | None, optional
+            First-order phase smoothing factor in `[0, 1]`.
+        phase_correction_deadband : float | None, optional
+            Minimum phase residual in radians required before changing phase.
+        auto_phase_correction_deadband : bool | None, optional
+            Whether to expand the phase deadband using measurement SEM.
+        phase_correction_deadband_sigma : float | None, optional
+            Multiplier for SEM-based phase deadband expansion.
+        phase_min_resultant_length : float | None, optional
+            Minimum circular mean quality required for phase updates.
+        update_corrections : bool | None, optional
+            Whether to update session-local corrections after each sample. Set
+            false for passive monitoring.
+        plot : bool | None, optional
+            When true in a notebook, display live FigureWidgets for relative
+            amplitude and latest demodulated monitor `|IQ|` waveform.
+
+        Returns
+        -------
+        list[MeasurementStabilitySnapshot]
+            Baseline plus sampled stability history.
+        """
         if include_control is None:
             include_control = True
         if include_readout is None:
@@ -507,8 +585,9 @@ class Measurement:
             phase_min_resultant_length = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH
         if update_corrections is None:
             update_corrections = True
+        if plot is None:
+            plot = False
         return self.stability_service.check_signal_stability(
-            capture=self.execution_service.capture_loopback,
             duration=duration,
             sample_interval=sample_interval,
             targets=targets,
@@ -532,6 +611,7 @@ class Measurement:
             phase_correction_deadband_sigma=phase_correction_deadband_sigma,
             phase_min_resultant_length=phase_min_resultant_length,
             update_corrections=update_corrections,
+            plot=plot,
         )
 
     def reload(
@@ -605,6 +685,11 @@ class Measurement:
     def execution_service(self) -> MeasurementExecutionService:
         """Return the measurement execution service."""
         return self._execution_service
+
+    @property
+    def monitor_service(self) -> MeasurementMonitorService:
+        """Return the measurement monitor service."""
+        return self._monitor_service
 
     @property
     def classification_service(self) -> MeasurementClassificationService:
@@ -1321,6 +1406,7 @@ class Measurement:
         shot_averaging: bool = True,
         demodulation: bool = True,
         include_read_in: bool = False,
+        capture_targets: list[str] | None = None,
         configure_monitor_nco: bool = True,
     ) -> MeasurementResult:
         """
@@ -1346,6 +1432,9 @@ class Measurement:
         include_read_in : bool, optional
             Whether to add matching READ_IN captures for active readout output
             targets.
+        capture_targets : list[str] | None, optional
+            Explicit monitor/read-in capture targets. When omitted, loopback
+            targets are resolved from the active output schedule.
         configure_monitor_nco : bool, optional
             Whether to configure monitor input frequency settings before
             capture. Disable only when repeated loopback captures must preserve
@@ -1356,13 +1445,14 @@ class Measurement:
         MeasurementResult
             Measurement result for loopback capture windows.
         """
-        return self.execution_service.capture_loopback(
+        return self.monitor_service.capture_loopback(
             schedule=schedule,
             n_shots=n_shots,
             block_outputs=block_outputs,
             shot_averaging=shot_averaging,
             demodulation=demodulation,
             include_read_in=include_read_in,
+            capture_targets=capture_targets,
             configure_monitor_nco=configure_monitor_nco,
         )
 

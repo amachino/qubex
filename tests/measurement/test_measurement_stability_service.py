@@ -450,6 +450,82 @@ def test_measurement_stability_captures_monitor_target_only() -> None:
     assert captured_targets == [["B0.MNTR0.IN"]]
 
 
+def test_measurement_stability_selects_loopback_monitor_for_target_port() -> None:
+    """Given two monitor inputs, when probing, then use the connected monitor."""
+    source_port = SimpleNamespace(
+        id="B0.CTRL1",
+        box_id="B0",
+        number=7,
+        type=PortType.CTRL,
+    )
+    target = SimpleNamespace(
+        label="Q00",
+        qubit="Q00",
+        is_cr=False,
+        channel=SimpleNamespace(port=source_port),
+        is_related_to_qubits=lambda qubits: "Q00" in qubits,
+    )
+    monitor0 = SimpleNamespace(
+        id="B0.MNTR0.IN",
+        box_id="B0",
+        number=4,
+        type=PortType.MNTR_IN,
+    )
+    monitor1 = SimpleNamespace(
+        id="B0.MNTR1.IN",
+        box_id="B0",
+        number=10,
+        type=PortType.MNTR_IN,
+    )
+    box = SimpleNamespace(id="B0", ports=[source_port, monitor0, monitor1])
+
+    class BackendController:
+        @staticmethod
+        def get_loopbacks_of_port(
+            *,
+            box_name: str,
+            port_number: int,
+        ) -> set[int]:
+            assert box_name == "B0"
+            if port_number == 4:
+                return {1, 2, 3}
+            if port_number == 10:
+                return {6, 7, 8, 9}
+            return set()
+
+    context = SimpleNamespace(
+        backend_controller=BackendController(),
+        experiment_system=SimpleNamespace(
+            targets=[target],
+            control_system=SimpleNamespace(boxes=[box]),
+        ),
+        qubit_labels=["Q00"],
+    )
+    service = MeasurementStabilityService(context=context)
+    captured_targets: list[list[str] | None] = []
+
+    def capture(
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+        block_outputs: bool = True,
+        shot_averaging: bool = True,
+        capture_targets: list[str] | None = None,
+        configure_monitor_nco: bool | None = None,
+    ) -> MeasurementResult:
+        _ = (schedule, n_shots, block_outputs, shot_averaging, configure_monitor_nco)
+        captured_targets.append(capture_targets)
+        return _make_monitor_result("B0.MNTR1.IN", 1.0)
+
+    statistics = service.measure_monitor_statistics(
+        capture=capture,
+        targets=["Q00"],
+    )
+
+    assert captured_targets == [["B0.MNTR1.IN"]]
+    assert statistics[0].monitor_target == "B0.MNTR1.IN"
+
+
 def test_measurement_stability_accepts_source_labeled_monitor_result() -> None:
     """Given source-labeled loopback result, baseline should still use monitor probe."""
     service = MeasurementStabilityService(context=_make_context())
@@ -629,6 +705,128 @@ def test_check_signal_stability_configures_monitor_nco_once(monkeypatch) -> None
     )
 
     assert configure_monitor_nco_values == [True, False, False]
+
+
+def test_check_signal_stability_none_sample_interval_runs_continuously(
+    monkeypatch,
+) -> None:
+    """Given no sample interval, when stability is checked, then samples are continuous."""
+    service = MeasurementStabilityService(context=_make_context())
+    clock = {"now": 0.0}
+    sleep_calls: list[float] = []
+
+    def perf_counter() -> float:
+        return clock["now"]
+
+    def sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        clock["now"] += seconds
+
+    monkeypatch.setattr(
+        "qubex.measurement.services.measurement_stability_service.time.perf_counter",
+        perf_counter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.services.measurement_stability_service.time.sleep",
+        sleep,
+    )
+
+    def capture(
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+        block_outputs: bool = True,
+        shot_averaging: bool = True,
+        capture_targets: list[str] | None = None,
+    ) -> MeasurementResult:
+        _ = (schedule, n_shots, block_outputs, shot_averaging, capture_targets)
+        clock["now"] += 0.1
+        return _make_monitor_result("B0.MNTR0.IN", 1.0)
+
+    snapshots = service.check_signal_stability(
+        capture=capture,
+        targets=["Q00"],
+        duration=0.25,
+        sample_interval=None,
+        update_corrections=False,
+    )
+
+    assert len(snapshots) == 3
+    assert sleep_calls == []
+    assert [snapshot.elapsed_s for snapshot in snapshots] == pytest.approx(
+        [0.0, 0.1, 0.2]
+    )
+
+
+def test_check_signal_stability_plot_option_plots_relative_amplitude(
+    monkeypatch,
+) -> None:
+    """Given plot requested, when stability is checked, then relative amplitude is shown."""
+    service = MeasurementStabilityService(context=_make_context())
+    clock = {"now": 0.0}
+
+    def perf_counter() -> float:
+        return clock["now"]
+
+    def sleep(seconds: float) -> None:
+        clock["now"] += seconds
+
+    monkeypatch.setattr(
+        "qubex.measurement.services.measurement_stability_service.time.perf_counter",
+        perf_counter,
+    )
+    monkeypatch.setattr(
+        "qubex.measurement.services.measurement_stability_service.time.sleep",
+        sleep,
+    )
+
+    displayed: list[object] = []
+
+    def display(widget: object) -> None:
+        displayed.append(widget)
+
+    monkeypatch.setattr("IPython.display.display", display)
+
+    amplitudes = [2.0, 3.0, 4.0]
+
+    def capture(
+        schedule: PulseSchedule,
+        *,
+        n_shots: int | None = None,
+        block_outputs: bool = True,
+        shot_averaging: bool = True,
+        capture_targets: list[str] | None = None,
+    ) -> MeasurementResult:
+        _ = (schedule, n_shots, block_outputs, shot_averaging, capture_targets)
+        amplitude = amplitudes[len(calls)]
+        calls.append(amplitude)
+        return _make_monitor_result("B0.MNTR0.IN", amplitude)
+
+    calls: list[float] = []
+    snapshots = service.check_signal_stability(
+        capture=capture,
+        targets=["Q00"],
+        duration=1.0,
+        sample_interval=0.5,
+        update_corrections=False,
+        plot=True,
+    )
+
+    assert len(snapshots) == 3
+    assert calls == amplitudes
+    assert len(displayed) == 2
+    stability_widget, waveform_widget = displayed
+    assert list(stability_widget.data[0].x) == pytest.approx([0.0, 0.5, 1.0])
+    assert list(stability_widget.data[0].y) == pytest.approx([1.0, 1.5, 2.0])
+    assert list(stability_widget.data[0].customdata) == pytest.approx(
+        [0.0, 50.0, 100.0]
+    )
+    assert stability_widget.layout.yaxis.title.text == (
+        "relative amplitude (initial=1)"
+    )
+    assert list(waveform_widget.data[0].x) == pytest.approx([0.0, 2.0])
+    assert list(waveform_widget.data[0].y) == pytest.approx([4.0, 4.0])
+    assert waveform_widget.layout.yaxis.title.text == "|IQ|"
 
 
 def test_check_signal_stability_updates_phase_from_corrected_residual(

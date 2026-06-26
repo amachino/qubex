@@ -47,6 +47,7 @@ from .services import (
     MeasurementAmplificationService,
     MeasurementClassificationService,
     MeasurementExecutionService,
+    MeasurementMonitorService,
     MeasurementSessionService,
     MeasurementStabilityService,
 )
@@ -71,6 +72,7 @@ __all__ = [
     "MeasurementConstraintProfile",
     "MeasurementContext",
     "MeasurementExecutionService",
+    "MeasurementMonitorService",
     "MeasurementPulseFactory",
     "MeasurementResult",
     "MeasurementResultConverter",
