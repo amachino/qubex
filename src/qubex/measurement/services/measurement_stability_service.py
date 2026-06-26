@@ -58,6 +58,8 @@ class _MonitorWaveform(NamedTuple):
     monitor_target: str
     capture_index: int
     time_ns: np.ndarray
+    i: np.ndarray
+    q: np.ndarray
     amplitude: np.ndarray
 
 
@@ -82,21 +84,24 @@ def _trim_capture(array: np.ndarray, trim_samples: int) -> np.ndarray:
 
 
 def _phase_statistics(samples: np.ndarray) -> tuple[float, float, float]:
-    """Return circular phase statistics and mean resultant length."""
+    """Return amplitude-weighted phase statistics from the complex mean."""
+    samples = np.asarray(samples, dtype=np.complex128)
     amplitudes = np.abs(samples)
     valid = amplitudes > 0.0
     if not np.any(valid):
         return np.nan, np.nan, 0.0
 
-    unit_samples = samples[valid] / amplitudes[valid]
-    mean_vector = np.mean(unit_samples)
-    resultant_length = float(np.abs(mean_vector))
-    if resultant_length <= np.finfo(float).eps:
+    valid_samples = samples[valid]
+    valid_amplitudes = amplitudes[valid]
+    mean_vector = np.mean(valid_samples)
+    resultant_length = float(np.abs(np.sum(valid_samples)) / np.sum(valid_amplitudes))
+    if np.abs(mean_vector) <= np.finfo(float).eps:
         return np.nan, np.nan, resultant_length
 
     mean_phase = float(np.angle(mean_vector))
-    offsets = np.angle(unit_samples * np.exp(-1j * mean_phase))
-    return mean_phase, float(np.std(offsets)), resultant_length
+    offsets = np.angle(valid_samples * np.exp(-1j * mean_phase))
+    phase_std = float(np.sqrt(np.average(offsets**2, weights=valid_amplitudes)))
+    return mean_phase, phase_std, resultant_length
 
 
 def _signal_stability_series(
@@ -262,23 +267,31 @@ def _update_signal_stability_widget(
             phase_trace.y = phase
 
 
-def _waveform_trace_label(waveform: _MonitorWaveform) -> str:
+def _waveform_trace_label(waveform: _MonitorWaveform, component: str) -> str:
     return (
         f"{waveform.reference_target} -> {waveform.monitor_target}"
-        f" [{waveform.capture_index}]"
+        f" [{waveform.capture_index}] {component}"
     )
 
 
 def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
-    fig.add_scatter(
-        x=waveform.time_ns,
-        y=waveform.amplitude,
-        mode="lines",
-        name=_waveform_trace_label(waveform),
-        hovertemplate=(
-            "time=%{x:.1f} ns<br>|IQ|=%{y:.4g}<extra>%{fullData.name}</extra>"
-        ),
+    traces = (
+        ("|IQ|", waveform.amplitude, _LIVE_AMPLITUDE_COLOR),
+        ("I", waveform.i, _LIVE_PHASE_COLOR),
+        ("Q", waveform.q, "#FF9500"),
     )
+    for component, y, color in traces:
+        fig.add_scatter(
+            x=waveform.time_ns,
+            y=y,
+            mode="lines",
+            name=_waveform_trace_label(waveform, component),
+            line={"color": color},
+            hovertemplate=(
+                f"time=%{{x:.1f}} ns<br>{component}=%{{y:.4g}}"
+                "<extra>%{fullData.name}</extra>"
+            ),
+        )
 
 
 def _apply_monitor_waveform_layout(fig: Any) -> None:
@@ -289,7 +302,7 @@ def _apply_monitor_waveform_layout(fig: Any) -> None:
         height=_LIVE_WAVEFORM_PLOT_HEIGHT,
         font={"family": FONT_FAMILY},
         xaxis_title="time (ns)",
-        yaxis_title="|IQ|",
+        yaxis_title="monitor waveform",
     )
 
 
@@ -317,17 +330,22 @@ def _update_monitor_waveform_widget(
 ) -> None:
     """Replace the raw waveform widget with the latest monitor capture."""
     waveforms = list(waveforms)
+    expected_trace_names = [
+        _waveform_trace_label(waveform, component)
+        for waveform in waveforms
+        for component in ("|IQ|", "I", "Q")
+    ]
     with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
-        if [trace.name for trace in widget.data] != [
-            _waveform_trace_label(waveform) for waveform in waveforms
-        ]:
+        if [trace.name for trace in widget.data] != expected_trace_names:
             widget.data = ()
             for waveform in waveforms:
                 _add_monitor_waveform_trace(widget, waveform)
             return
-        for trace, waveform in zip(widget.data, waveforms, strict=False):
-            trace.x = waveform.time_ns
-            trace.y = waveform.amplitude
+        for index, waveform in enumerate(waveforms):
+            for offset, y in enumerate((waveform.amplitude, waveform.i, waveform.q)):
+                trace = widget.data[3 * index + offset]
+                trace.x = waveform.time_ns
+                trace.y = y
 
 
 def _display_live_widgets(*widgets: Any) -> bool:
@@ -1757,7 +1775,7 @@ class MeasurementStabilityService:
         monitor_target: str,
         trim_samples: int,
     ) -> list[_MonitorWaveform]:
-        """Extract one |IQ| time trace per monitor capture for live display."""
+        """Extract I/Q and ``|IQ|`` time traces per monitor capture for live display."""
         target_candidates = list(dict.fromkeys((monitor_target, reference_target)))
         waveforms: list[_MonitorWaveform] = []
         for target in target_candidates:
@@ -1773,9 +1791,11 @@ class MeasurementStabilityService:
                     continue
                 if array.ndim >= 2:
                     samples = array.reshape(-1, array.shape[-1])
+                    iq = np.mean(samples, axis=0)
                     amplitude = np.mean(np.abs(samples), axis=0)
                 else:
-                    amplitude = np.abs(array.reshape(-1))
+                    iq = array.reshape(-1)
+                    amplitude = np.abs(iq)
                 time_ns = (
                     np.arange(amplitude.size, dtype=np.float64) + trim_samples
                 ) * float(capture.sampling_period)
@@ -1785,6 +1805,8 @@ class MeasurementStabilityService:
                         monitor_target=target,
                         capture_index=capture_index,
                         time_ns=time_ns,
+                        i=np.asarray(np.real(iq), dtype=np.float64),
+                        q=np.asarray(np.imag(iq), dtype=np.float64),
                         amplitude=np.asarray(amplitude, dtype=np.float64),
                     )
                 )
@@ -1816,8 +1838,9 @@ class MeasurementStabilityService:
         Complex data is interpreted as demodulated IQ. For 2-D data, the first
         axis is treated as shots and each shot contributes one
         `mean(abs(waveform))` value to the amplitude statistics. For 1-D data,
-        each sample contributes one amplitude value. Phase statistics use a
-        circular mean over all nonzero complex samples.
+        each sample contributes one amplitude value. Phase statistics use the
+        angle of the complex mean, so low-amplitude samples contribute less than
+        plateau samples.
 
         Returns
         -------
