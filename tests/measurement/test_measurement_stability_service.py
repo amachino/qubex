@@ -698,9 +698,17 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
     assert list(stability_widget.data[0].customdata) == pytest.approx(
         [0.0, 50.0, 100.0]
     )
+    assert stability_widget.data[0].hovertemplate == (
+        "elapsed=%{x:.2f} s<br>"
+        "relative=%{y:.4f}<br>"
+        "move=%{customdata:+.2f}%<extra>%{fullData.name}</extra>"
+    )
     assert list(stability_widget.data[1].x) == pytest.approx([0.0, 0.5, 1.0])
     assert list(stability_widget.data[1].y) == pytest.approx([0.0, 0.2, -0.1])
     assert stability_widget.data[1].line.color == "#00B945"
+    assert stability_widget.data[1].hovertemplate == (
+        "elapsed=%{x:.2f} s<br>phase=%{y:+.4f} rad<extra>%{fullData.name}</extra>"
+    )
     assert stability_widget.layout.width == 800
     assert stability_widget.layout.font.family == "Times New Roman, Times, serif"
     assert stability_widget.layout.yaxis.title.text == (
@@ -710,6 +718,9 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
     assert stability_widget.layout.xaxis2.title.text == "elapsed time (s)"
     assert list(waveform_widget.data[0].x) == pytest.approx([0.0, 2.0])
     assert list(waveform_widget.data[0].y) == pytest.approx([4.0, 4.0])
+    assert waveform_widget.data[0].hovertemplate == (
+        "time=%{x:.1f} ns<br>|IQ|=%{y:.4g}<extra>%{fullData.name}</extra>"
+    )
     assert waveform_widget.layout.width == 800
     assert waveform_widget.layout.font.family == "Times New Roman, Times, serif"
     assert waveform_widget.layout.yaxis.title.text == "|IQ|"
