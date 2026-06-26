@@ -19,6 +19,7 @@ from .crosstalk_cross_resonance import (
     cr_crosstalk_hamiltonian_tomography,
     measure_cr_crosstalk,
 )
+from .drive_spectroscopy import drive_spectroscopy
 from .ef_measurement_with_one_channel import (
     calibrate_cr_pi_pulse,
     obtain_anharmonicity_with_cr,
@@ -119,6 +120,7 @@ __all__ = [
     "create_measurement_rounds",
     "create_mqc_sequence",
     "decompose_cr_crosstalk",
+    "drive_spectroscopy",
     "ef_ramsey_experiment",
     "estimate_ef_frequency_from_chevron",
     "estimate_ef_frequency_from_chevron_adaptive",
