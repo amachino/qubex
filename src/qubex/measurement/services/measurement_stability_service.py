@@ -131,8 +131,10 @@ def _signal_stability_series(
         relative_phase = np.full(phases.shape, np.nan, dtype=np.float64)
         finite_phase = np.isfinite(phases)
         if np.any(finite_phase):
-            unwrapped_phase = np.unwrap(phases[finite_phase])
-            relative_phase[finite_phase] = unwrapped_phase - unwrapped_phase[0]
+            baseline_phase = phases[finite_phase][0]
+            relative_phase[finite_phase] = np.angle(
+                np.exp(1j * (phases[finite_phase] - baseline_phase))
+            )
         series[label] = (x, y, percent, relative_phase.tolist())
     return series
 
@@ -204,7 +206,7 @@ def _make_signal_stability_figure(
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.08,
-        row_heights=[0.58, 0.42],
+        row_heights=[0.5, 0.5],
     )
     for label, (x, y, percent, phase) in _signal_stability_series(snapshots).items():
         _add_signal_stability_trace(
@@ -291,16 +293,22 @@ def _apply_monitor_waveform_layout(fig: Any) -> None:
     )
 
 
+def _make_monitor_waveform_figure(waveforms: Collection[_MonitorWaveform]) -> Any:
+    """Return a raw monitor waveform figure."""
+    import qubex.visualization as viz
+
+    fig = viz.make_figure()
+    for waveform in waveforms:
+        _add_monitor_waveform_trace(fig, waveform)
+    _apply_monitor_waveform_layout(fig)
+    return fig
+
+
 def _make_monitor_waveform_widget(waveforms: Collection[_MonitorWaveform]) -> Any:
     """Return a live-updated raw waveform widget."""
     import plotly.graph_objects as go
 
-    import qubex.visualization as viz
-
-    widget = go.FigureWidget(viz.make_figure())
-    _apply_monitor_waveform_layout(widget)
-    _update_monitor_waveform_widget(widget, waveforms)
-    return widget
+    return go.FigureWidget(_make_monitor_waveform_figure(waveforms))
 
 
 def _update_monitor_waveform_widget(
@@ -322,13 +330,21 @@ def _update_monitor_waveform_widget(
             trace.y = waveform.amplitude
 
 
-def _display_widget(widget: Any) -> bool:
-    """Display a widget in a notebook output cell if IPython is available."""
+def _display_live_widgets(*widgets: Any) -> bool:
+    """Display live widgets in one notebook output cell if IPython is available."""
     try:
         from IPython.display import display
     except ImportError:
         return False
-    display(widget)
+
+    try:
+        from ipywidgets import VBox
+    except ImportError:
+        for widget in widgets:
+            display(widget)
+        return True
+
+    display(VBox(tuple(widgets)))
     return True
 
 
@@ -337,6 +353,12 @@ def _show_signal_stability_figure(
 ) -> None:
     """Show the stability plot when live notebook display is unavailable."""
     fig = _make_signal_stability_figure(snapshots)
+    fig.show()
+
+
+def _show_monitor_waveform_figure(waveforms: Collection[_MonitorWaveform]) -> None:
+    """Show the latest monitor waveform when live notebook display is unavailable."""
+    fig = _make_monitor_waveform_figure(waveforms)
     fig.show()
 
 
@@ -1495,16 +1517,17 @@ class MeasurementStabilityService:
         sample_index = 1
         stability_widget = None
         waveform_widget = None
+        latest_waveforms = baseline_waveforms or []
         widgets_displayed = False
         if plot:
             stability_widget = _make_signal_stability_widget(snapshots)
-            waveform_widget = _make_monitor_waveform_widget(baseline_waveforms or [])
-            widgets_displayed = _display_widget(stability_widget)
-            widgets_displayed = _display_widget(waveform_widget) and widgets_displayed
+            waveform_widget = _make_monitor_waveform_widget(latest_waveforms)
+            widgets_displayed = _display_live_widgets(stability_widget, waveform_widget)
 
         if duration == 0.0:
             if plot and not widgets_displayed:
                 _show_signal_stability_figure(snapshots)
+                _show_monitor_waveform_figure(latest_waveforms)
             return snapshots
 
         while True:
@@ -1554,7 +1577,8 @@ class MeasurementStabilityService:
                 if stability_widget is not None:
                     _update_signal_stability_widget(stability_widget, snapshots)
                 if waveform_widget is not None:
-                    _update_monitor_waveform_widget(waveform_widget, waveforms or [])
+                    latest_waveforms = waveforms or []
+                    _update_monitor_waveform_widget(waveform_widget, latest_waveforms)
             if update_corrections:
                 self._update_output_signal_corrections_from_statistics(
                     statistics=statistics,
@@ -1579,6 +1603,7 @@ class MeasurementStabilityService:
 
         if plot and not widgets_displayed:
             _show_signal_stability_figure(snapshots)
+            _show_monitor_waveform_figure(latest_waveforms)
         return snapshots
 
     @staticmethod
