@@ -246,16 +246,25 @@ Several QuEL-1 and QuBE profiles map input or monitor lines to the same LO IC as
 output lines. For these boxes, changing monitor or read-in LO can change the
 corresponding output LO.
 
+For example, quelware maps `qube-riken-b` group 0 line 1 and group 0 line `m`
+to the same LMX2594 index, with different output pins. Programming the monitor
+LO therefore programs the same PLL used by the CTRL output line.
+
 Implications:
 
 - Treat a shared output/input LO as output-owned.
 - Never change that LO in default monitor capture.
-- Use current LO plus receiver CNCO/FNCO and software demodulation.
+- Use current LO plus receiver CNCO/FNCO and residual software demodulation.
+- Program monitor FNCO to `0 Hz` by default and put the observed RF offset into
+  monitor CNCO when it fits the receiver.
 - If the requested monitor frequency cannot be observed legally without moving
   the shared LO, return a clear planning error.
 
-This is the case that motivates making the monitor frequency resolver
-box-type-specific.
+The current implementation applies this preserve-LO strategy to QuEL-1-family
+box types whose monitor input can share an output-owned LO. It does not use
+`cnco_locked_with` because locking can still couple monitor receiver setup to an
+output port; it computes the monitor CNCO from the observed RF, current monitor
+LO, and source sideband instead.
 
 ## Receiver Frequency Planning
 

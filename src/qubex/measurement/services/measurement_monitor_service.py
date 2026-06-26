@@ -38,6 +38,16 @@ _QUEL1SE_R8_BOX_TYPE = "quel1se-riken8"
 _QUEL1SE_R8_MONITOR_LO_HZ = 6_000_000_000
 _QUEL1SE_R8_ADC_CNCO_MIN_HZ = -3_000_000_000
 _QUEL1SE_R8_ADC_CNCO_MAX_HZ = 3_000_000_000
+_OUTPUT_OWNED_MONITOR_LO_BOX_TYPES = frozenset(
+    {
+        "quel1se-fujitsu11-a",
+        "quel1se-fujitsu11-b",
+        "quel1-a",
+        "quel1-b",
+        "qube-riken-a",
+        "qube-riken-b",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -392,6 +402,13 @@ class MeasurementMonitorService:
         """Return whether one box should use the quel1se-riken8 strategy."""
         return self._resolve_loopback_box_type(box_id=box_id) == _QUEL1SE_R8_BOX_TYPE
 
+    def _uses_loopback_output_owned_monitor_lo_strategy(self, *, box_id: str) -> bool:
+        """Return whether monitor LO must be preserved for one box."""
+        return (
+            self._resolve_loopback_box_type(box_id=box_id)
+            in _OUTPUT_OWNED_MONITOR_LO_BOX_TYPES
+        )
+
     def _dump_loopback_port_config(self, *, port: Any) -> Mapping[str, Any]:
         """Return a backend port dump when the active backend supports it."""
         dump_port = getattr(self.backend_controller, "dump_port", None)
@@ -619,15 +636,40 @@ class MeasurementMonitorService:
         return "L"
 
     @staticmethod
+    def _resolve_loopback_source_sideband(
+        source_setting: _LoopbackMonitorSourceSetting,
+    ) -> Literal["U", "L"] | None:
+        """Resolve the source output sideband when it is known."""
+        sideband = getattr(source_setting.port, "sideband", None)
+        if sideband in ("U", "L"):
+            return sideband
+        return None
+
+    @staticmethod
+    def _calculate_loopback_monitor_cnco_hz(
+        *,
+        observed_freq_hz: int,
+        lo_freq_hz: int,
+        sideband: Literal["U", "L"],
+    ) -> int:
+        """Return monitor CNCO for a receiver LO and sideband."""
+        if sideband == "U":
+            return round(observed_freq_hz - lo_freq_hz)
+        return round(lo_freq_hz - observed_freq_hz)
+
+    @classmethod
     def _calculate_loopback_quel1se_r8_monitor_cnco_hz(
+        cls,
         *,
         observed_freq_hz: int,
         sideband: Literal["U", "L"],
     ) -> int:
         """Return the monitor CNCO for fixed 6 GHz quel1se-riken8 monitor LO."""
-        if sideband == "U":
-            return round(observed_freq_hz - _QUEL1SE_R8_MONITOR_LO_HZ)
-        return round(_QUEL1SE_R8_MONITOR_LO_HZ - observed_freq_hz)
+        return cls._calculate_loopback_monitor_cnco_hz(
+            observed_freq_hz=observed_freq_hz,
+            lo_freq_hz=_QUEL1SE_R8_MONITOR_LO_HZ,
+            sideband=sideband,
+        )
 
     def _resolve_loopback_monitor_lo_setting(
         self,
@@ -721,14 +763,21 @@ class MeasurementMonitorService:
         nco_freq_hz = cnco_freq_hz + (fnco_freq_hz or 0)
         if lo_freq_hz is None:
             return nco_freq_hz * 1e-9
-        if (
-            self._is_loopback_quel1se_r8_box(box_id=str(monitor_port.box_id))
-            and monitor_source_label is not None
-        ):
+        if monitor_source_label is not None:
             target = self.targets.get(monitor_source_label)
             if target is not None:
                 source_port = getattr(getattr(target, "channel", None), "port", None)
-                if getattr(source_port, "type", None) == PortType.READ_OUT:
+                if (
+                    self._is_loopback_quel1se_r8_box(box_id=str(monitor_port.box_id))
+                    and getattr(source_port, "type", None) == PortType.READ_OUT
+                ):
+                    return (lo_freq_hz + nco_freq_hz) * 1e-9
+                if (
+                    self._uses_loopback_output_owned_monitor_lo_strategy(
+                        box_id=str(monitor_port.box_id)
+                    )
+                    and getattr(source_port, "sideband", None) == "U"
+                ):
                     return (lo_freq_hz + nco_freq_hz) * 1e-9
         return (lo_freq_hz - nco_freq_hz) * 1e-9
 
@@ -857,6 +906,94 @@ class MeasurementMonitorService:
         )
         return True
 
+    def _configure_loopback_output_owned_monitor_lo_for_source(
+        self,
+        *,
+        pulse_schedule: PulseSchedule,
+        capture_target: str,
+        monitor_port: Any,
+        source_setting: _LoopbackMonitorSourceSetting,
+    ) -> bool:
+        """Configure monitor CNCO/FNCO without changing an output-owned monitor LO."""
+        if not self._uses_loopback_output_owned_monitor_lo_strategy(
+            box_id=str(monitor_port.box_id)
+        ):
+            return False
+
+        observed_freq_hz = self._resolve_loopback_observed_frequency_hz(
+            source_setting=source_setting,
+            pulse_schedule=pulse_schedule,
+        )
+        if observed_freq_hz is None:
+            logger.warning(
+                "Cannot configure monitor NCO for %s because source %s frequency is unavailable.",
+                capture_target,
+                source_setting.label,
+            )
+            return False
+
+        monitor_dump = self._dump_loopback_port_config(port=monitor_port)
+        lo_freq_hz, _ = self._resolve_loopback_monitor_lo_setting(
+            monitor_port=monitor_port,
+            monitor_dump=monitor_dump,
+        )
+        if lo_freq_hz is None:
+            logger.warning(
+                "Cannot configure monitor NCO for %s because monitor LO is unavailable.",
+                capture_target,
+            )
+            return False
+
+        sideband = self._resolve_loopback_source_sideband(source_setting) or "L"
+        cnco_freq_hz = self._calculate_loopback_monitor_cnco_hz(
+            observed_freq_hz=observed_freq_hz,
+            lo_freq_hz=lo_freq_hz,
+            sideband=sideband,
+        )
+
+        config_port = getattr(self.backend_controller, "config_port", None)
+        config_runit = getattr(self.backend_controller, "config_runit", None)
+        if not callable(config_port):
+            return False
+
+        config_port(
+            box_name=monitor_port.box_id,
+            port=monitor_port.number,
+            cnco_freq_hz=cnco_freq_hz,
+        )
+
+        monitor_channels = getattr(monitor_port, "channels", ())
+        fnco_freq_hz = 0
+        if callable(config_runit):
+            runit = 0
+            if isinstance(monitor_channels, Sequence) and monitor_channels:
+                runit = self._resolve_loopback_channel_number(monitor_channels[0])
+            config_runit(
+                box_name=monitor_port.box_id,
+                port=monitor_port.number,
+                runit=runit,
+                fnco_freq_hz=fnco_freq_hz,
+            )
+
+        model_updates: dict[str, Any] = {"cnco_freq": cnco_freq_hz}
+        if isinstance(monitor_channels, Sequence) and monitor_channels:
+            model_updates["fnco_freqs"] = [fnco_freq_hz for _ in monitor_channels]
+        self.experiment_system.control_system.set_port_params(
+            box_id=monitor_port.box_id,
+            port_number=monitor_port.number,
+            **model_updates,
+        )
+        logger.info(
+            "Configure monitor receiver for %s from %s without changing output-owned LO=%s Hz: sideband=%s, set CNCO=%s Hz, set FNCO=%s Hz.",
+            capture_target,
+            source_setting.label,
+            lo_freq_hz,
+            sideband,
+            cnco_freq_hz,
+            fnco_freq_hz,
+        )
+        return True
+
     def _configure_loopback_monitor_frequency_settings(
         self,
         *,
@@ -898,6 +1035,22 @@ class MeasurementMonitorService:
                 ):
                     logger.warning(
                         "Cannot configure quel1se-riken8 monitor receiver for %s from %s.",
+                        capture_target,
+                        source_setting.label,
+                    )
+                continue
+
+            if self._uses_loopback_output_owned_monitor_lo_strategy(
+                box_id=str(monitor_port.box_id)
+            ):
+                if not self._configure_loopback_output_owned_monitor_lo_for_source(
+                    pulse_schedule=pulse_schedule,
+                    capture_target=capture_target,
+                    monitor_port=monitor_port,
+                    source_setting=source_setting,
+                ):
+                    logger.warning(
+                        "Cannot configure output-owned monitor receiver for %s from %s.",
                         capture_target,
                         source_setting.label,
                     )
