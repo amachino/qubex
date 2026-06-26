@@ -41,8 +41,16 @@ from qubex.measurement.services.measurement_monitor_service import (
     MeasurementMonitorService,
 )
 from qubex.system import PortType, Target
+from qubex.visualization.style import FONT_FAMILY
 
 logger = logging.getLogger(__name__)
+
+_LIVE_STABILITY_PLOT_WIDTH = 800
+_LIVE_STABILITY_PLOT_HEIGHT = 520
+_LIVE_WAVEFORM_PLOT_WIDTH = 800
+_LIVE_WAVEFORM_PLOT_HEIGHT = 320
+_LIVE_AMPLITUDE_COLOR = "#0C5DA5"
+_LIVE_PHASE_COLOR = "#00B945"
 
 
 class _MonitorWaveform(NamedTuple):
@@ -93,9 +101,9 @@ def _phase_statistics(samples: np.ndarray) -> tuple[float, float, float]:
 
 def _signal_stability_series(
     snapshots: Collection[MeasurementStabilitySnapshot],
-) -> dict[str, tuple[list[float], list[float], list[float]]]:
-    """Return x, relative amplitude, and percent-move series by signal label."""
-    raw_series: dict[str, list[tuple[float, float]]] = {}
+) -> dict[str, tuple[list[float], list[float], list[float], list[float]]]:
+    """Return elapsed, relative amplitude, percent move, and relative phase."""
+    raw_series: dict[str, list[tuple[float, float, float]]] = {}
     for snapshot in snapshots:
         elapsed_s = 0.0 if snapshot.elapsed_s is None else float(snapshot.elapsed_s)
         for statistic in snapshot.signals.values():
@@ -104,10 +112,14 @@ def _signal_stability_series(
                 f" [{statistic.capture_index}]"
             )
             raw_series.setdefault(label, []).append(
-                (elapsed_s, float(statistic.amplitude_mean))
+                (
+                    elapsed_s,
+                    float(statistic.amplitude_mean),
+                    float(statistic.phase_mean_rad),
+                )
             )
 
-    series: dict[str, tuple[list[float], list[float], list[float]]] = {}
+    series: dict[str, tuple[list[float], list[float], list[float], list[float]]] = {}
     for label, points in raw_series.items():
         baseline = points[0][1]
         if not np.isfinite(baseline) or baseline == 0.0:
@@ -115,7 +127,13 @@ def _signal_stability_series(
         x = [point[0] for point in points]
         y = [point[1] / baseline for point in points]
         percent = [100.0 * (value - 1.0) for value in y]
-        series[label] = (x, y, percent)
+        phases = np.asarray([point[2] for point in points], dtype=np.float64)
+        relative_phase = np.full(phases.shape, np.nan, dtype=np.float64)
+        finite_phase = np.isfinite(phases)
+        if np.any(finite_phase):
+            unwrapped_phase = np.unwrap(phases[finite_phase])
+            relative_phase[finite_phase] = unwrapped_phase - unwrapped_phase[0]
+        series[label] = (x, y, percent, relative_phase.tolist())
     return series
 
 
@@ -126,6 +144,7 @@ def _add_signal_stability_trace(
     x: list[float],
     y: list[float],
     percent: list[float],
+    phase: list[float],
 ) -> None:
     fig.add_scatter(
         x=x,
@@ -133,36 +152,67 @@ def _add_signal_stability_trace(
         customdata=percent,
         mode="lines+markers",
         name=label,
+        line={"color": _LIVE_AMPLITUDE_COLOR},
         hovertemplate=(
             "elapsed=%{x:.3f}s<br>"
             "relative=%{y:.8f}<br>"
             "move=%{customdata:+.4f}%<extra>%{fullData.name}</extra>"
         ),
+        row=1,
+        col=1,
+    )
+    fig.add_scatter(
+        x=x,
+        y=phase,
+        mode="lines+markers",
+        name=f"{label} phase",
+        line={"color": _LIVE_PHASE_COLOR},
+        hovertemplate=(
+            "elapsed=%{x:.3f}s<br>phase=%{y:+.6f}rad<extra>%{fullData.name}</extra>"
+        ),
+        row=2,
+        col=1,
     )
 
 
 def _apply_signal_stability_layout(fig: Any) -> None:
-    fig.add_hline(y=1.0, line_dash="dash", line_color="gray")
+    fig.add_hline(y=1.0, line_dash="dash", line_color="gray", row=1, col=1)
+    fig.add_hline(y=0.0, line_dash="dash", line_color="gray", row=2, col=1)
     fig.update_layout(
         title="Output signal stability",
-        xaxis_title="elapsed time (s)",
-        yaxis_title="relative amplitude (initial=1)",
+        template="qubex",
+        width=_LIVE_STABILITY_PLOT_WIDTH,
+        height=_LIVE_STABILITY_PLOT_HEIGHT,
+        font={"family": FONT_FAMILY},
+        hovermode="x unified",
     )
+    fig.update_yaxes(title_text="relative amplitude (initial=1)", row=1, col=1)
+    fig.update_yaxes(title_text="phase shift (rad, initial=0)", row=2, col=1)
+    fig.update_xaxes(title_text="elapsed time (s)", row=2, col=1)
 
 
 def _make_signal_stability_figure(
     snapshots: Collection[MeasurementStabilitySnapshot],
 ) -> Any:
-    """Return a relative monitor amplitude figure."""
-    import qubex.visualization as viz
+    """Return a relative monitor amplitude and phase figure."""
+    from plotly.subplots import make_subplots
 
-    fig = viz.make_figure()
-    for label, (x, y, percent) in _signal_stability_series(snapshots).items():
+    import qubex.visualization  # noqa: F401
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.08,
+        row_heights=[0.58, 0.42],
+    )
+    for label, (x, y, percent, phase) in _signal_stability_series(snapshots).items():
         _add_signal_stability_trace(
             fig,
             x=x,
             y=y,
             percent=percent,
+            phase=phase,
             label=label,
         )
     _apply_signal_stability_layout(fig)
@@ -172,15 +222,10 @@ def _make_signal_stability_figure(
 def _make_signal_stability_widget(
     snapshots: Collection[MeasurementStabilitySnapshot],
 ) -> Any:
-    """Return a live-updated relative monitor amplitude widget."""
+    """Return a live-updated relative monitor amplitude and phase widget."""
     import plotly.graph_objects as go
 
-    import qubex.visualization as viz
-
-    widget = go.FigureWidget(viz.make_figure())
-    _apply_signal_stability_layout(widget)
-    _update_signal_stability_widget(widget, snapshots)
-    return widget
+    return go.FigureWidget(_make_signal_stability_figure(snapshots))
 
 
 def _update_signal_stability_widget(
@@ -189,26 +234,30 @@ def _update_signal_stability_widget(
 ) -> None:
     """Update the live stability widget in place."""
     series = _signal_stability_series(snapshots)
+    trace_names = [
+        trace_name for label in series for trace_name in (label, f"{label} phase")
+    ]
     with widget.batch_update() if hasattr(widget, "batch_update") else nullcontext():
-        if [trace.name for trace in widget.data] != list(series):
+        if [trace.name for trace in widget.data] != trace_names:
             widget.data = ()
-            for label, (x, y, percent) in series.items():
+            for label, (x, y, percent, phase) in series.items():
                 _add_signal_stability_trace(
                     widget,
                     x=x,
                     y=y,
                     percent=percent,
+                    phase=phase,
                     label=label,
                 )
             return
-        for trace, (x, y, percent) in zip(
-            widget.data,
-            series.values(),
-            strict=False,
-        ):
-            trace.x = x
-            trace.y = y
-            trace.customdata = percent
+        for index, (x, y, percent, phase) in enumerate(series.values()):
+            amplitude_trace = widget.data[2 * index]
+            phase_trace = widget.data[2 * index + 1]
+            amplitude_trace.x = x
+            amplitude_trace.y = y
+            amplitude_trace.customdata = percent
+            phase_trace.x = x
+            phase_trace.y = phase
 
 
 def _waveform_trace_label(waveform: _MonitorWaveform) -> str:
@@ -233,6 +282,10 @@ def _add_monitor_waveform_trace(fig: Any, waveform: _MonitorWaveform) -> None:
 def _apply_monitor_waveform_layout(fig: Any) -> None:
     fig.update_layout(
         title="Latest raw monitor waveform",
+        template="qubex",
+        width=_LIVE_WAVEFORM_PLOT_WIDTH,
+        height=_LIVE_WAVEFORM_PLOT_HEIGHT,
+        font={"family": FONT_FAMILY},
         xaxis_title="time (ns)",
         yaxis_title="|IQ|",
     )
@@ -1315,10 +1368,11 @@ class MeasurementStabilityService:
             Whether to update session-local corrections after each sample. Set
             false for passive monitoring.
         plot : bool | None, optional
-            When true in a notebook, display two live `FigureWidget`s: relative
-            amplitude normalized to the baseline, and the latest demodulated
-            raw monitor `|IQ|` waveform. Both widgets are updated in place for
-            each sample.
+            When true in a notebook, display two live `FigureWidget`s. The
+            first shows relative amplitude normalized to the baseline and
+            phase shifted so the first sample is zero. The second shows the
+            latest demodulated raw monitor `|IQ|` waveform. Both widgets are
+            updated in place for each sample.
 
         Returns
         -------
