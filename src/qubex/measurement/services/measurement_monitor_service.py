@@ -34,6 +34,10 @@ T = TypeVar("T")
 RFSwitchState = Literal["pass", "block", "open", "loop"]
 _LOOPBACK_DEMODULATION_FILTER_TAPS = 129
 _LOOPBACK_DEMODULATION_FILTER_CUTOFF_GHZ = 0.025
+_SE_RIKEN_BOX_TYPE = "quel1se-riken8"
+_SE_RIKEN_MONITOR_LO_HZ = 6_000_000_000
+_SE_RIKEN_ADC_CNCO_MIN_HZ = -3_000_000_000
+_SE_RIKEN_ADC_CNCO_MAX_HZ = 3_000_000_000
 
 
 @dataclass(frozen=True)
@@ -348,6 +352,46 @@ class MeasurementMonitorService:
             return 0
         return number
 
+    @staticmethod
+    def _normalize_loopback_box_type(box_type: object) -> str | None:
+        """Return a normalized box type string."""
+        if box_type is None:
+            return None
+        value = getattr(box_type, "value", box_type)
+        if not isinstance(value, str):
+            return None
+        return value.lower()
+
+    def _resolve_loopback_box_type(self, *, box_id: str) -> str | None:
+        """Resolve the connected box type when available."""
+        control_system = self.experiment_system.control_system
+        get_box = getattr(control_system, "get_box", None)
+        if callable(get_box):
+            with suppress(KeyError, ValueError, AttributeError):
+                box = get_box(box_id)
+                for attr in ("type", "box_type", "boxtype"):
+                    box_type = self._normalize_loopback_box_type(
+                        getattr(box, attr, None)
+                    )
+                    if box_type is not None:
+                        return box_type
+
+        backend_get_box = getattr(self.backend_controller, "get_box", None)
+        if callable(backend_get_box):
+            with suppress(Exception):
+                backend_box = backend_get_box(box_id)
+                for attr in ("type", "box_type", "boxtype"):
+                    box_type = self._normalize_loopback_box_type(
+                        getattr(backend_box, attr, None)
+                    )
+                    if box_type is not None:
+                        return box_type
+        return None
+
+    def _is_loopback_se_riken_box(self, *, box_id: str) -> bool:
+        """Return whether one box should use the QuEL-1 SE RIKEN8 strategy."""
+        return self._resolve_loopback_box_type(box_id=box_id) == _SE_RIKEN_BOX_TYPE
+
     def _dump_loopback_port_config(self, *, port: Any) -> Mapping[str, Any]:
         """Return a backend port dump when the active backend supports it."""
         dump_port = getattr(self.backend_controller, "dump_port", None)
@@ -382,31 +426,6 @@ class MeasurementMonitorService:
         if not isinstance(channel_config, Mapping):
             return None
         return cls._coerce_loopback_frequency_hz(channel_config.get("fnco_freq"))
-
-    def _resolve_loopback_channel_fnco_frequency_hz(
-        self,
-        *,
-        port: Any,
-        channel_number: int,
-        dump: Mapping[str, Any],
-        dump_section: str,
-    ) -> int | None:
-        """Resolve channel FNCO frequency from model metadata or a backend dump."""
-        channels = getattr(port, "channels", ())
-        channel = None
-        if isinstance(channels, Sequence) and channel_number < len(channels):
-            channel = channels[channel_number]
-        model_frequency = (
-            None if channel is None else getattr(channel, "fnco_freq", None)
-        )
-        return self._first_loopback_frequency_hz(
-            model_frequency,
-            self._resolve_loopback_dump_fnco_frequency_hz(
-                dump=dump,
-                section_name=dump_section,
-                channel_number=channel_number,
-            ),
-        )
 
     def _resolve_loopback_monitor_source_ports(
         self,
@@ -476,21 +495,20 @@ class MeasurementMonitorService:
             channel_number = self._resolve_loopback_channel_number(channel)
             source_dump = self._dump_loopback_port_config(port=source_port)
             lo_freq_hz = self._first_loopback_frequency_hz(
-                getattr(source_port, "lo_freq", None),
                 source_dump.get("lo_freq"),
+                getattr(source_port, "lo_freq", None),
             )
             cnco_freq_hz = self._first_loopback_frequency_hz(
-                getattr(source_port, "cnco_freq", None),
                 source_dump.get("cnco_freq"),
+                getattr(source_port, "cnco_freq", None),
             )
             fnco_freq_hz = self._first_loopback_frequency_hz(
-                getattr(channel, "fnco_freq", None),
-                self._resolve_loopback_channel_fnco_frequency_hz(
-                    port=source_port,
-                    channel_number=channel_number,
+                self._resolve_loopback_dump_fnco_frequency_hz(
                     dump=source_dump,
-                    dump_section="channels",
+                    section_name="channels",
+                    channel_number=channel_number,
                 ),
+                getattr(channel, "fnco_freq", None),
             )
             source_settings.append(
                 _LoopbackMonitorSourceSetting(
@@ -533,6 +551,310 @@ class MeasurementMonitorService:
             )
         return None
 
+    def _resolve_loopback_source_output_frequency_hz(
+        self,
+        source_setting: _LoopbackMonitorSourceSetting,
+    ) -> int | None:
+        """Resolve the RF frequency generated by one loopback source."""
+        cnco_freq_hz = source_setting.cnco_freq_hz
+        if cnco_freq_hz is None:
+            return None
+        fnco_freq_hz = source_setting.fnco_freq_hz or 0
+        nco_freq_hz = cnco_freq_hz + fnco_freq_hz
+        lo_freq_hz = source_setting.lo_freq_hz
+        if lo_freq_hz is None:
+            return nco_freq_hz
+
+        sideband = getattr(source_setting.port, "sideband", None)
+        if sideband == "U":
+            return lo_freq_hz + nco_freq_hz
+        if sideband == "L":
+            return lo_freq_hz - nco_freq_hz
+        return nco_freq_hz
+
+    def _resolve_loopback_target_frequency_ghz(
+        self,
+        *,
+        target_or_port_id: str,
+        pulse_schedule: PulseSchedule,
+    ) -> float | None:
+        """Resolve the absolute RF frequency requested for one source target."""
+        schedule_frequency = self._resolve_loopback_schedule_frequency(
+            pulse_schedule=pulse_schedule,
+            target=target_or_port_id,
+        )
+        if schedule_frequency is not None:
+            return schedule_frequency
+        try:
+            target = self.experiment_system.get_target(target_or_port_id)
+        except (AttributeError, KeyError, ValueError):
+            return None
+        frequency = getattr(target, "frequency", None)
+        if isinstance(frequency, (int, float)):
+            return float(frequency)
+        return None
+
+    def _resolve_loopback_observed_frequency_hz(
+        self,
+        *,
+        source_setting: _LoopbackMonitorSourceSetting,
+        pulse_schedule: PulseSchedule,
+    ) -> int | None:
+        """Resolve the RF frequency the monitor receiver should observe."""
+        target_frequency = self._resolve_loopback_target_frequency_ghz(
+            target_or_port_id=source_setting.label,
+            pulse_schedule=pulse_schedule,
+        )
+        if target_frequency is not None:
+            return round(target_frequency * 1e9)
+        return self._resolve_loopback_source_output_frequency_hz(source_setting)
+
+    @staticmethod
+    def _resolve_loopback_se_riken_monitor_sideband(
+        source_setting: _LoopbackMonitorSourceSetting,
+    ) -> Literal["U", "L"]:
+        """Resolve the SE RIKEN monitor receiving sideband for one source."""
+        if getattr(source_setting.port, "type", None) == PortType.READ_OUT:
+            return "U"
+        return "L"
+
+    @staticmethod
+    def _calculate_loopback_se_riken_monitor_cnco_hz(
+        *,
+        observed_freq_hz: int,
+        sideband: Literal["U", "L"],
+    ) -> int:
+        """Return the monitor CNCO for fixed 6 GHz SE RIKEN monitor LO."""
+        if sideband == "U":
+            return round(observed_freq_hz - _SE_RIKEN_MONITOR_LO_HZ)
+        return round(_SE_RIKEN_MONITOR_LO_HZ - observed_freq_hz)
+
+    def _resolve_loopback_monitor_lo_setting(
+        self,
+        *,
+        monitor_port: Any,
+        monitor_dump: Mapping[str, Any],
+    ) -> tuple[int | None, bool]:
+        """Resolve monitor LO and whether the strategy should set it."""
+        if self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id)):
+            return _SE_RIKEN_MONITOR_LO_HZ, True
+
+        dump_lo_freq_hz = self._coerce_loopback_frequency_hz(
+            monitor_dump.get("lo_freq")
+        )
+        if dump_lo_freq_hz is not None:
+            return dump_lo_freq_hz, False
+
+        model_lo_freq_hz = self._coerce_loopback_frequency_hz(
+            getattr(monitor_port, "lo_freq", None)
+        )
+        return model_lo_freq_hz, False
+
+    def _set_loopback_shared_monitor_lo_model(
+        self,
+        *,
+        monitor_port: Any,
+        lo_freq_hz: int,
+    ) -> None:
+        """Update model LO for monitor inputs that share the SE RIKEN monitor LO."""
+        control_system = self.experiment_system.control_system
+        updated = False
+        get_box = getattr(control_system, "get_box", None)
+        if callable(get_box) and self._is_loopback_se_riken_box(
+            box_id=str(monitor_port.box_id)
+        ):
+            with suppress(KeyError, ValueError, AttributeError):
+                box = get_box(monitor_port.box_id)
+                for candidate in getattr(box, "ports", ()):
+                    if getattr(candidate, "type", None) != PortType.MNTR_IN:
+                        continue
+                    control_system.set_port_params(
+                        box_id=candidate.box_id,
+                        port_number=candidate.number,
+                        lo_freq=lo_freq_hz,
+                    )
+                    updated = True
+        if not updated:
+            control_system.set_port_params(
+                box_id=monitor_port.box_id,
+                port_number=monitor_port.number,
+                lo_freq=lo_freq_hz,
+            )
+
+    def _resolve_loopback_monitor_receiver_frequency_ghz(
+        self,
+        *,
+        capture_target: str,
+        monitor_source_label: str | None = None,
+    ) -> float | None:
+        """Resolve the current monitor receiver center frequency in GHz."""
+        monitor_port = self._resolve_loopback_capture_port(
+            target_or_port_id=capture_target,
+        )
+        if monitor_port is None or monitor_port.type != PortType.MNTR_IN:
+            return None
+        monitor_dump = self._dump_loopback_port_config(port=monitor_port)
+        lo_freq_hz, _ = self._resolve_loopback_monitor_lo_setting(
+            monitor_port=monitor_port,
+            monitor_dump=monitor_dump,
+        )
+        cnco_freq_hz = self._first_loopback_frequency_hz(
+            getattr(monitor_port, "cnco_freq", None),
+            monitor_dump.get("cnco_freq"),
+        )
+        if cnco_freq_hz is None:
+            return None
+        channels = getattr(monitor_port, "channels", ())
+        channel_number = 0
+        channel = None
+        if isinstance(channels, Sequence) and channels:
+            channel = channels[0]
+            channel_number = self._resolve_loopback_channel_number(channel)
+        fnco_freq_hz = self._first_loopback_frequency_hz(
+            None if channel is None else getattr(channel, "fnco_freq", None),
+            self._resolve_loopback_dump_fnco_frequency_hz(
+                dump=monitor_dump,
+                section_name="runits",
+                channel_number=channel_number,
+            ),
+        )
+        nco_freq_hz = cnco_freq_hz + (fnco_freq_hz or 0)
+        if lo_freq_hz is None:
+            return nco_freq_hz * 1e-9
+        if (
+            self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id))
+            and monitor_source_label is not None
+        ):
+            target = self.targets.get(monitor_source_label)
+            if target is not None:
+                source_port = getattr(getattr(target, "channel", None), "port", None)
+                if getattr(source_port, "type", None) == PortType.READ_OUT:
+                    return (lo_freq_hz + nco_freq_hz) * 1e-9
+        return (lo_freq_hz - nco_freq_hz) * 1e-9
+
+    def _resolve_loopback_monitor_demodulation_frequency_ghz(
+        self,
+        *,
+        capture_target: str,
+        monitor_source_label: str,
+        pulse_schedule: PulseSchedule,
+    ) -> float | None:
+        """Resolve software demodulation from observed RF and receiver center."""
+        observed_frequency = self._resolve_loopback_target_frequency_ghz(
+            target_or_port_id=monitor_source_label,
+            pulse_schedule=pulse_schedule,
+        )
+        receiver_frequency = self._resolve_loopback_monitor_receiver_frequency_ghz(
+            capture_target=capture_target,
+            monitor_source_label=monitor_source_label,
+        )
+        if observed_frequency is not None and receiver_frequency is not None:
+            return observed_frequency - receiver_frequency
+        return self._resolve_loopback_modulation_frequency_ghz(
+            target_or_port_id=monitor_source_label,
+            pulse_schedule=pulse_schedule,
+        )
+
+    def _configure_loopback_se_riken_monitor_for_source(
+        self,
+        *,
+        pulse_schedule: PulseSchedule,
+        capture_target: str,
+        monitor_port: Any,
+        source_setting: _LoopbackMonitorSourceSetting,
+    ) -> bool:
+        """Configure SE RIKEN monitor LO/CNCO/FNCO with a fixed 6 GHz monitor LO."""
+        if not self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id)):
+            return False
+
+        observed_freq_hz = self._resolve_loopback_observed_frequency_hz(
+            source_setting=source_setting,
+            pulse_schedule=pulse_schedule,
+        )
+        if observed_freq_hz is None:
+            logger.warning(
+                "Cannot configure monitor NCO for %s because source %s frequency is unavailable.",
+                capture_target,
+                source_setting.label,
+            )
+            return False
+
+        monitor_dump = self._dump_loopback_port_config(port=monitor_port)
+        lo_freq_hz, _ = self._resolve_loopback_monitor_lo_setting(
+            monitor_port=monitor_port,
+            monitor_dump=monitor_dump,
+        )
+        if lo_freq_hz is None:
+            logger.warning(
+                "Cannot configure monitor NCO for %s because monitor LO is unavailable.",
+                capture_target,
+            )
+            return False
+
+        sideband = self._resolve_loopback_se_riken_monitor_sideband(source_setting)
+        cnco_freq_hz = self._calculate_loopback_se_riken_monitor_cnco_hz(
+            observed_freq_hz=observed_freq_hz,
+            sideband=sideband,
+        )
+        if not (_SE_RIKEN_ADC_CNCO_MIN_HZ <= cnco_freq_hz < _SE_RIKEN_ADC_CNCO_MAX_HZ):
+            logger.warning(
+                "Cannot configure monitor NCO for %s because computed CNCO %s Hz is outside the SE RIKEN ADC-CNCO range [%s, %s) Hz.",
+                capture_target,
+                cnco_freq_hz,
+                _SE_RIKEN_ADC_CNCO_MIN_HZ,
+                _SE_RIKEN_ADC_CNCO_MAX_HZ,
+            )
+            return False
+
+        config_port = getattr(self.backend_controller, "config_port", None)
+        config_runit = getattr(self.backend_controller, "config_runit", None)
+        if not callable(config_port):
+            return False
+
+        config_port(
+            box_name=monitor_port.box_id,
+            port=monitor_port.number,
+            lo_freq_hz=lo_freq_hz,
+            cnco_freq_hz=cnco_freq_hz,
+        )
+
+        monitor_channels = getattr(monitor_port, "channels", ())
+        fnco_freq_hz = 0
+        if callable(config_runit):
+            runit = 0
+            if isinstance(monitor_channels, Sequence) and monitor_channels:
+                runit = self._resolve_loopback_channel_number(monitor_channels[0])
+            config_runit(
+                box_name=monitor_port.box_id,
+                port=monitor_port.number,
+                runit=runit,
+                fnco_freq_hz=fnco_freq_hz,
+            )
+
+        if lo_freq_hz is not None:
+            self._set_loopback_shared_monitor_lo_model(
+                monitor_port=monitor_port,
+                lo_freq_hz=lo_freq_hz,
+            )
+        model_updates: dict[str, Any] = {"cnco_freq": cnco_freq_hz}
+        if isinstance(monitor_channels, Sequence) and monitor_channels:
+            model_updates["fnco_freqs"] = [fnco_freq_hz for _ in monitor_channels]
+        self.experiment_system.control_system.set_port_params(
+            box_id=monitor_port.box_id,
+            port_number=monitor_port.number,
+            **model_updates,
+        )
+        logger.info(
+            "Configure SE RIKEN monitor receiver for %s from %s: set LO=%s Hz, sideband=%s, set CNCO=%s Hz, set FNCO=%s Hz.",
+            capture_target,
+            source_setting.label,
+            lo_freq_hz,
+            sideband,
+            cnco_freq_hz,
+            fnco_freq_hz,
+        )
+        return True
+
     def _configure_loopback_monitor_frequency_settings(
         self,
         *,
@@ -565,6 +887,20 @@ class MeasurementMonitorService:
             if source_setting is None:
                 continue
 
+            if self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id)):
+                if not self._configure_loopback_se_riken_monitor_for_source(
+                    pulse_schedule=pulse_schedule,
+                    capture_target=capture_target,
+                    monitor_port=monitor_port,
+                    source_setting=source_setting,
+                ):
+                    logger.warning(
+                        "Cannot configure SE RIKEN monitor receiver for %s from %s.",
+                        capture_target,
+                        source_setting.label,
+                    )
+                continue
+
             source_port = source_setting.port
             lo_freq_hz = source_setting.lo_freq_hz
             cnco_freq_hz = source_setting.cnco_freq_hz
@@ -572,8 +908,8 @@ class MeasurementMonitorService:
             if lo_freq_hz is None and cnco_freq_hz is None and fnco_freq_hz is None:
                 continue
             if lo_freq_hz is None:
-                logger.info(
-                    "Skip monitor NCO hardware sync for %s because source %s has no LO frequency.",
+                logger.warning(
+                    "Cannot configure monitor NCO for %s because source %s has no LO frequency and no box-specific strategy is available.",
                     capture_target,
                     source_setting.label,
                 )
@@ -1010,9 +1346,12 @@ class MeasurementMonitorService:
             and capture_port is not None
             and capture_port.type == PortType.MNTR_IN
         ):
-            source_frequency = self._resolve_loopback_modulation_frequency_ghz(
-                target_or_port_id=monitor_source_label,
-                pulse_schedule=pulse_schedule,
+            source_frequency = (
+                self._resolve_loopback_monitor_demodulation_frequency_ghz(
+                    capture_target=capture_target,
+                    monitor_source_label=monitor_source_label,
+                    pulse_schedule=pulse_schedule,
+                )
             )
             if source_frequency is not None:
                 return source_frequency

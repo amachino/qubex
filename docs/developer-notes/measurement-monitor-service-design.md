@@ -217,11 +217,17 @@ Implications:
 
 - Changing monitor LO does not directly change readout LO.
 - Changing monitor LO affects both monitor inputs.
-- It is safe from a control-output perspective to change monitor LO, but the
-  default should still preserve the current monitor LO to avoid perturbing
-  simultaneous monitor users.
+- Qubex fixes the SE RIKEN monitor LO to `6 GHz` for monitor loopback capture.
+  This keeps monitor planning deterministic while still avoiding any direct
+  control/readout output LO change.
 - Do not use `cnco_locked_with` from an LO-less CTRL port. The CTRL DAC-CNCO is
   not a legal monitor ADC-CNCO setting.
+- Receive CTRL-loopback signals on the monitor LSB path, i.e.
+  `RF = 6 GHz - ADC-CNCO`.
+- Receive READ/FOGI-loopback signals on the monitor USB path, i.e.
+  `RF = 6 GHz + ADC-CNCO`.
+- Program monitor FNCO to `0 Hz` and leave any remaining mismatch to Qubex-side
+  software demodulation.
 
 For `S135R` the connected AD9082 state has:
 
