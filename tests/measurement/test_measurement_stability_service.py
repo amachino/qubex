@@ -723,14 +723,21 @@ def test_check_signal_stability_plot_option_plots_relative_amplitude_and_phase(
         phase_domain[1] - phase_domain[0]
     )
     assert stability_widget.layout.xaxis2.title.text == "elapsed time (s)"
+    assert len(waveform_widget.data) == 3
     assert list(waveform_widget.data[0].x) == pytest.approx([0.0, 2.0])
     assert list(waveform_widget.data[0].y) == pytest.approx([4.0, 4.0])
     assert waveform_widget.data[0].hovertemplate == (
         "time=%{x:.1f} ns<br>|IQ|=%{y:.4g}<extra>%{fullData.name}</extra>"
     )
+    assert list(waveform_widget.data[1].y) == pytest.approx(
+        [np.real(4.0 * np.exp(3.1j))] * 2
+    )
+    assert list(waveform_widget.data[2].y) == pytest.approx(
+        [np.imag(4.0 * np.exp(3.1j))] * 2
+    )
     assert waveform_widget.layout.width == 800
     assert waveform_widget.layout.font.family == "Times New Roman, Times, serif"
-    assert waveform_widget.layout.yaxis.title.text == "|IQ|"
+    assert waveform_widget.layout.yaxis.title.text == "monitor waveform"
 
 
 def test_check_signal_stability_updates_phase_from_corrected_residual(
@@ -967,6 +974,18 @@ def test_measurement_stability_computes_shot_phase_uncertainty() -> None:
     assert statistic.phase_sem_rad == pytest.approx(0.05)
     assert statistic.phase_resultant_length > 0.99
     assert statistic.n_shots == 4
+
+
+def test_measurement_stability_phase_uses_complex_mean() -> None:
+    """Given low-amplitude off-axis samples, phase follows the complex mean."""
+    service = MeasurementStabilityService(context=_make_context())
+    data = np.array([1.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.01j])
+    result = _make_monitor_result_data("B0.MNTR0.IN", data)
+
+    statistic = service.compute_monitor_statistics(result)[0]
+
+    assert statistic.phase_mean_rad == pytest.approx(np.angle(np.mean(data)))
+    assert statistic.phase_mean_rad == pytest.approx(0.0049999583339583225)
 
 
 def test_measurement_stability_auto_gain_deadband_uses_shot_uncertainty() -> None:
