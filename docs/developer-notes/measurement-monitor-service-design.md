@@ -19,7 +19,7 @@ The frequency setting rules are also box-type dependent:
 
 - Some boxes have monitor receiver LO independent from control outputs.
 - Some boxes share an LO between an output line and an input or monitor line.
-- Some control outputs, such as QuEL-1 SE RIKEN8 low-frequency control ports,
+- Some control outputs, such as quel1se-riken8 low-frequency control ports,
   have no analog LO and generate directly with DAC CNCO/FNCO.
 - Monitor capture units may not provide backend DSP demodulation, so Qubex must
   software-demodulate after capture.
@@ -204,7 +204,7 @@ and only inside the setting range.
 
 ## Box-Type Notes
 
-### QuEL-1 SE RIKEN8
+### quel1se-riken8
 
 Observed on `S135R` after `connect()`:
 
@@ -217,7 +217,7 @@ Implications:
 
 - Changing monitor LO does not directly change readout LO.
 - Changing monitor LO affects both monitor inputs.
-- Qubex fixes the SE RIKEN monitor LO to `6 GHz` for monitor loopback capture.
+- Qubex fixes the quel1se-riken8 monitor LO to `6 GHz` for monitor loopback capture.
   This keeps monitor planning deterministic while still avoiding any direct
   control/readout output LO change.
 - Do not use `cnco_locked_with` from an LO-less CTRL port. The CTRL DAC-CNCO is
@@ -372,7 +372,7 @@ Unit tests:
 
 Hardware validation:
 
-- On SE RIKEN8, dump monitor/readout/CTRL ports before and after monitor capture
+- On quel1se-riken8, dump monitor/readout/CTRL ports before and after monitor capture
   and confirm no CTRL/readout settings changed.
 - On a Type B box, confirm monitor capture does not change CTRL LO when the LO
   is shared.

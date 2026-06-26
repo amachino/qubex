@@ -34,10 +34,10 @@ T = TypeVar("T")
 RFSwitchState = Literal["pass", "block", "open", "loop"]
 _LOOPBACK_DEMODULATION_FILTER_TAPS = 129
 _LOOPBACK_DEMODULATION_FILTER_CUTOFF_GHZ = 0.025
-_SE_RIKEN_BOX_TYPE = "quel1se-riken8"
-_SE_RIKEN_MONITOR_LO_HZ = 6_000_000_000
-_SE_RIKEN_ADC_CNCO_MIN_HZ = -3_000_000_000
-_SE_RIKEN_ADC_CNCO_MAX_HZ = 3_000_000_000
+_QUEL1SE_R8_BOX_TYPE = "quel1se-riken8"
+_QUEL1SE_R8_MONITOR_LO_HZ = 6_000_000_000
+_QUEL1SE_R8_ADC_CNCO_MIN_HZ = -3_000_000_000
+_QUEL1SE_R8_ADC_CNCO_MAX_HZ = 3_000_000_000
 
 
 @dataclass(frozen=True)
@@ -388,9 +388,9 @@ class MeasurementMonitorService:
                         return box_type
         return None
 
-    def _is_loopback_se_riken_box(self, *, box_id: str) -> bool:
-        """Return whether one box should use the QuEL-1 SE RIKEN8 strategy."""
-        return self._resolve_loopback_box_type(box_id=box_id) == _SE_RIKEN_BOX_TYPE
+    def _is_loopback_quel1se_r8_box(self, *, box_id: str) -> bool:
+        """Return whether one box should use the quel1se-riken8 strategy."""
+        return self._resolve_loopback_box_type(box_id=box_id) == _QUEL1SE_R8_BOX_TYPE
 
     def _dump_loopback_port_config(self, *, port: Any) -> Mapping[str, Any]:
         """Return a backend port dump when the active backend supports it."""
@@ -610,24 +610,24 @@ class MeasurementMonitorService:
         return self._resolve_loopback_source_output_frequency_hz(source_setting)
 
     @staticmethod
-    def _resolve_loopback_se_riken_monitor_sideband(
+    def _resolve_loopback_quel1se_r8_monitor_sideband(
         source_setting: _LoopbackMonitorSourceSetting,
     ) -> Literal["U", "L"]:
-        """Resolve the SE RIKEN monitor receiving sideband for one source."""
+        """Resolve the quel1se-riken8 monitor receiving sideband for one source."""
         if getattr(source_setting.port, "type", None) == PortType.READ_OUT:
             return "U"
         return "L"
 
     @staticmethod
-    def _calculate_loopback_se_riken_monitor_cnco_hz(
+    def _calculate_loopback_quel1se_r8_monitor_cnco_hz(
         *,
         observed_freq_hz: int,
         sideband: Literal["U", "L"],
     ) -> int:
-        """Return the monitor CNCO for fixed 6 GHz SE RIKEN monitor LO."""
+        """Return the monitor CNCO for fixed 6 GHz quel1se-riken8 monitor LO."""
         if sideband == "U":
-            return round(observed_freq_hz - _SE_RIKEN_MONITOR_LO_HZ)
-        return round(_SE_RIKEN_MONITOR_LO_HZ - observed_freq_hz)
+            return round(observed_freq_hz - _QUEL1SE_R8_MONITOR_LO_HZ)
+        return round(_QUEL1SE_R8_MONITOR_LO_HZ - observed_freq_hz)
 
     def _resolve_loopback_monitor_lo_setting(
         self,
@@ -636,8 +636,8 @@ class MeasurementMonitorService:
         monitor_dump: Mapping[str, Any],
     ) -> tuple[int | None, bool]:
         """Resolve monitor LO and whether the strategy should set it."""
-        if self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id)):
-            return _SE_RIKEN_MONITOR_LO_HZ, True
+        if self._is_loopback_quel1se_r8_box(box_id=str(monitor_port.box_id)):
+            return _QUEL1SE_R8_MONITOR_LO_HZ, True
 
         dump_lo_freq_hz = self._coerce_loopback_frequency_hz(
             monitor_dump.get("lo_freq")
@@ -656,11 +656,11 @@ class MeasurementMonitorService:
         monitor_port: Any,
         lo_freq_hz: int,
     ) -> None:
-        """Update model LO for monitor inputs that share the SE RIKEN monitor LO."""
+        """Update model LO for monitor inputs that share the quel1se-riken8 monitor LO."""
         control_system = self.experiment_system.control_system
         updated = False
         get_box = getattr(control_system, "get_box", None)
-        if callable(get_box) and self._is_loopback_se_riken_box(
+        if callable(get_box) and self._is_loopback_quel1se_r8_box(
             box_id=str(monitor_port.box_id)
         ):
             with suppress(KeyError, ValueError, AttributeError):
@@ -722,7 +722,7 @@ class MeasurementMonitorService:
         if lo_freq_hz is None:
             return nco_freq_hz * 1e-9
         if (
-            self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id))
+            self._is_loopback_quel1se_r8_box(box_id=str(monitor_port.box_id))
             and monitor_source_label is not None
         ):
             target = self.targets.get(monitor_source_label)
@@ -755,7 +755,7 @@ class MeasurementMonitorService:
             pulse_schedule=pulse_schedule,
         )
 
-    def _configure_loopback_se_riken_monitor_for_source(
+    def _configure_loopback_quel1se_r8_monitor_for_source(
         self,
         *,
         pulse_schedule: PulseSchedule,
@@ -763,8 +763,8 @@ class MeasurementMonitorService:
         monitor_port: Any,
         source_setting: _LoopbackMonitorSourceSetting,
     ) -> bool:
-        """Configure SE RIKEN monitor LO/CNCO/FNCO with a fixed 6 GHz monitor LO."""
-        if not self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id)):
+        """Configure quel1se-riken8 monitor LO/CNCO/FNCO with a fixed 6 GHz monitor LO."""
+        if not self._is_loopback_quel1se_r8_box(box_id=str(monitor_port.box_id)):
             return False
 
         observed_freq_hz = self._resolve_loopback_observed_frequency_hz(
@@ -791,18 +791,20 @@ class MeasurementMonitorService:
             )
             return False
 
-        sideband = self._resolve_loopback_se_riken_monitor_sideband(source_setting)
-        cnco_freq_hz = self._calculate_loopback_se_riken_monitor_cnco_hz(
+        sideband = self._resolve_loopback_quel1se_r8_monitor_sideband(source_setting)
+        cnco_freq_hz = self._calculate_loopback_quel1se_r8_monitor_cnco_hz(
             observed_freq_hz=observed_freq_hz,
             sideband=sideband,
         )
-        if not (_SE_RIKEN_ADC_CNCO_MIN_HZ <= cnco_freq_hz < _SE_RIKEN_ADC_CNCO_MAX_HZ):
+        if not (
+            _QUEL1SE_R8_ADC_CNCO_MIN_HZ <= cnco_freq_hz < _QUEL1SE_R8_ADC_CNCO_MAX_HZ
+        ):
             logger.warning(
-                "Cannot configure monitor NCO for %s because computed CNCO %s Hz is outside the SE RIKEN ADC-CNCO range [%s, %s) Hz.",
+                "Cannot configure monitor NCO for %s because computed CNCO %s Hz is outside the quel1se-riken8 ADC-CNCO range [%s, %s) Hz.",
                 capture_target,
                 cnco_freq_hz,
-                _SE_RIKEN_ADC_CNCO_MIN_HZ,
-                _SE_RIKEN_ADC_CNCO_MAX_HZ,
+                _QUEL1SE_R8_ADC_CNCO_MIN_HZ,
+                _QUEL1SE_R8_ADC_CNCO_MAX_HZ,
             )
             return False
 
@@ -845,7 +847,7 @@ class MeasurementMonitorService:
             **model_updates,
         )
         logger.info(
-            "Configure SE RIKEN monitor receiver for %s from %s: set LO=%s Hz, sideband=%s, set CNCO=%s Hz, set FNCO=%s Hz.",
+            "Configure quel1se-riken8 monitor receiver for %s from %s: set LO=%s Hz, sideband=%s, set CNCO=%s Hz, set FNCO=%s Hz.",
             capture_target,
             source_setting.label,
             lo_freq_hz,
@@ -887,15 +889,15 @@ class MeasurementMonitorService:
             if source_setting is None:
                 continue
 
-            if self._is_loopback_se_riken_box(box_id=str(monitor_port.box_id)):
-                if not self._configure_loopback_se_riken_monitor_for_source(
+            if self._is_loopback_quel1se_r8_box(box_id=str(monitor_port.box_id)):
+                if not self._configure_loopback_quel1se_r8_monitor_for_source(
                     pulse_schedule=pulse_schedule,
                     capture_target=capture_target,
                     monitor_port=monitor_port,
                     source_setting=source_setting,
                 ):
                     logger.warning(
-                        "Cannot configure SE RIKEN monitor receiver for %s from %s.",
+                        "Cannot configure quel1se-riken8 monitor receiver for %s from %s.",
                         capture_target,
                         source_setting.label,
                     )

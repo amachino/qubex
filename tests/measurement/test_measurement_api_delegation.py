@@ -943,8 +943,8 @@ def test_capture_loopback_syncs_monitor_nco_to_active_source() -> None:
     assert backend_controller.runit_config_calls == []
 
 
-def test_capture_loopback_configures_se_riken_monitor_for_lo_less_source() -> None:
-    """Given an SE RIKEN LO-less source, when capturing monitor loopback, then use fixed monitor LO."""
+def test_capture_loopback_configures_quel1se_r8_monitor_for_lo_less_source() -> None:
+    """Given a `quel1se-riken8` LO-less source, when capturing monitor loopback, then use fixed monitor LO."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1161,8 +1161,8 @@ def test_capture_loopback_configures_se_riken_monitor_for_lo_less_source() -> No
     ]
 
 
-def test_capture_loopback_configures_se_riken_monitor_for_readout_source() -> None:
-    """Given an SE RIKEN readout source, when capturing monitor loopback, then use USB with fixed monitor LO."""
+def test_capture_loopback_configures_quel1se_r8_monitor_for_readout_source() -> None:
+    """Given a `quel1se-riken8` readout source, when capturing monitor loopback, then use USB with fixed monitor LO."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
