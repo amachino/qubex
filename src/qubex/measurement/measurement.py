@@ -18,6 +18,19 @@ from qubex.backend import (
 )
 from qubex.backend.quel1 import ExecutionMode
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
+from qubex.measurement.measurement_defaults import (
+    DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND,
+    DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND_SIGMA,
+    DEFAULT_OUTPUT_GAIN_CORRECTION_MAX_RELATIVE_STEP,
+    DEFAULT_OUTPUT_GAIN_CORRECTION_SMOOTHING,
+    DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND,
+    DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA,
+    DEFAULT_OUTPUT_PHASE_CORRECTION_MAX_STEP,
+    DEFAULT_OUTPUT_PHASE_CORRECTION_SMOOTHING,
+    DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH,
+    DEFAULT_STABILITY_CORRECTION_N_SHOTS,
+    DEFAULT_STABILITY_CORRECTION_PROBE_DURATION,
+)
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
     MeasurementResult,
@@ -46,6 +59,10 @@ from .models.measure_result import (
     MultipleMeasureResult,
 )
 from .models.measurement_schedule import MeasurementSchedule
+from .models.measurement_stability import (
+    MeasurementStabilitySnapshot,
+    OutputSignalReferenceScope,
+)
 from .models.sweep_measurement_result import (
     NDSweepMeasurementResult,
     SweepAxes,
@@ -59,6 +76,7 @@ from .services import (
     MeasurementClassificationService,
     MeasurementExecutionService,
     MeasurementSessionService,
+    MeasurementStabilityService,
 )
 
 logger = logging.getLogger(__name__)
@@ -164,6 +182,7 @@ class Measurement:
         self._amplification_service = MeasurementAmplificationService(
             context=self._context
         )
+        self._stability_service = MeasurementStabilityService(context=self._context)
         self._session_service = MeasurementSessionService(
             system_manager=self._system_manager,
             context=self._context,
@@ -171,6 +190,7 @@ class Measurement:
         self._execution_service = MeasurementExecutionService(
             context=self._context,
             session_service=self._session_service,
+            stability_service=self._stability_service,
             classifiers=self._classification_service.classifiers,
             execution_mode=self._execution_mode,
             clock_health_checks=self._clock_health_checks,
@@ -256,6 +276,158 @@ class Measurement:
         """
         self.session_service.connect(sync_clocks=sync_clocks, parallel=parallel)
 
+    def establish_stability_baseline(
+        self,
+        *,
+        targets: Collection[str] | str | None = None,
+        include_control: bool = True,
+        include_readout: bool = True,
+        n_shots: int | None = DEFAULT_STABILITY_CORRECTION_N_SHOTS,
+        probe_amplitude: float = 0.1,
+        probe_duration: float = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION,
+        block_outputs: bool = True,
+        reference_scope: OutputSignalReferenceScope = "box",
+        trim_samples: int = 0,
+        estimate_gain_noise: bool = True,
+        estimate_phase_noise: bool = True,
+    ) -> MeasurementStabilitySnapshot:
+        """
+        Capture session-local output-signal baselines.
+
+        When `targets` is omitted, only active session targets are considered.
+        The default `reference_scope="box"` measures one representative target
+        per physical box and applies that reference to selected control/readout
+        targets on the same box. Use `"target"` only for per-target probes.
+        `trim_samples` removes the same number of samples from both ends of the
+        captured monitor window before computing the baseline amplitude.
+        """
+        return self.stability_service.establish_output_signal_baseline(
+            capture=self.execution_service.capture_loopback,
+            targets=targets,
+            include_control=include_control,
+            include_readout=include_readout,
+            n_shots=n_shots,
+            probe_amplitude=probe_amplitude,
+            probe_duration=probe_duration,
+            block_outputs=block_outputs,
+            reference_scope=reference_scope,
+            trim_samples=trim_samples,
+            estimate_gain_noise=estimate_gain_noise,
+            estimate_phase_noise=estimate_phase_noise,
+        )
+
+    def update_stability_corrections(
+        self,
+        *,
+        targets: Collection[str] | str | None = None,
+        include_control: bool = True,
+        include_readout: bool = True,
+        n_shots: int | None = DEFAULT_STABILITY_CORRECTION_N_SHOTS,
+        probe_amplitude: float = 0.1,
+        probe_duration: float = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION,
+        block_outputs: bool = True,
+        max_gain_relative_step: float = DEFAULT_OUTPUT_GAIN_CORRECTION_MAX_RELATIVE_STEP,
+        gain_smoothing: float = DEFAULT_OUTPUT_GAIN_CORRECTION_SMOOTHING,
+        gain_correction_deadband: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND,
+        auto_gain_correction_deadband: bool = True,
+        gain_correction_deadband_sigma: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND_SIGMA,
+        max_phase_step: float = DEFAULT_OUTPUT_PHASE_CORRECTION_MAX_STEP,
+        phase_smoothing: float = DEFAULT_OUTPUT_PHASE_CORRECTION_SMOOTHING,
+        phase_correction_deadband: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND,
+        auto_phase_correction_deadband: bool = True,
+        phase_correction_deadband_sigma: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA,
+        phase_min_resultant_length: float = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH,
+        reference_scope: OutputSignalReferenceScope | None = None,
+        trim_samples: int = 0,
+    ) -> MeasurementStabilitySnapshot:
+        """
+        Update session-local output gain and phase corrections.
+
+        If no baseline exists, capture one and return without applying an
+        additional correction update. When `reference_scope` is omitted after a
+        baseline exists, the update follows the stored baseline scope. Use the
+        same `trim_samples` as the baseline so correction updates compare the
+        same capture window.
+        """
+        return self.stability_service.update_output_signal_corrections(
+            capture=self.execution_service.capture_loopback,
+            targets=targets,
+            include_control=include_control,
+            include_readout=include_readout,
+            n_shots=n_shots,
+            probe_amplitude=probe_amplitude,
+            probe_duration=probe_duration,
+            block_outputs=block_outputs,
+            max_gain_relative_step=max_gain_relative_step,
+            gain_smoothing=gain_smoothing,
+            gain_correction_deadband=gain_correction_deadband,
+            auto_gain_correction_deadband=auto_gain_correction_deadband,
+            gain_correction_deadband_sigma=gain_correction_deadband_sigma,
+            max_phase_step=max_phase_step,
+            phase_smoothing=phase_smoothing,
+            phase_correction_deadband=phase_correction_deadband,
+            auto_phase_correction_deadband=auto_phase_correction_deadband,
+            phase_correction_deadband_sigma=phase_correction_deadband_sigma,
+            phase_min_resultant_length=phase_min_resultant_length,
+            reference_scope=reference_scope,
+            trim_samples=trim_samples,
+        )
+
+    def check_signal_stability(
+        self,
+        *,
+        duration: float,
+        sample_interval: float | None = 10.0,
+        targets: Collection[str] | str | None = None,
+        include_control: bool = True,
+        include_readout: bool = True,
+        n_shots: int | None = DEFAULT_STABILITY_CORRECTION_N_SHOTS,
+        probe_amplitude: float = 0.1,
+        probe_duration: float = DEFAULT_STABILITY_CORRECTION_PROBE_DURATION,
+        block_outputs: bool = True,
+        reference_scope: OutputSignalReferenceScope = "box",
+        trim_samples: int = 0,
+        max_gain_relative_step: float = DEFAULT_OUTPUT_GAIN_CORRECTION_MAX_RELATIVE_STEP,
+        gain_smoothing: float = DEFAULT_OUTPUT_GAIN_CORRECTION_SMOOTHING,
+        gain_correction_deadband: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND,
+        auto_gain_correction_deadband: bool = True,
+        gain_correction_deadband_sigma: float = DEFAULT_OUTPUT_GAIN_CORRECTION_DEADBAND_SIGMA,
+        max_phase_step: float = DEFAULT_OUTPUT_PHASE_CORRECTION_MAX_STEP,
+        phase_smoothing: float = DEFAULT_OUTPUT_PHASE_CORRECTION_SMOOTHING,
+        phase_correction_deadband: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND,
+        auto_phase_correction_deadband: bool = True,
+        phase_correction_deadband_sigma: float = DEFAULT_OUTPUT_PHASE_CORRECTION_DEADBAND_SIGMA,
+        phase_min_resultant_length: float = DEFAULT_OUTPUT_PHASE_MIN_RESULTANT_LENGTH,
+        update_corrections: bool = True,
+    ) -> list[MeasurementStabilitySnapshot]:
+        """Check selected output signals and return stability snapshot history."""
+        return self.stability_service.check_signal_stability(
+            capture=self.execution_service.capture_loopback,
+            duration=duration,
+            sample_interval=sample_interval,
+            targets=targets,
+            include_control=include_control,
+            include_readout=include_readout,
+            n_shots=n_shots,
+            probe_amplitude=probe_amplitude,
+            probe_duration=probe_duration,
+            block_outputs=block_outputs,
+            reference_scope=reference_scope,
+            trim_samples=trim_samples,
+            max_gain_relative_step=max_gain_relative_step,
+            gain_smoothing=gain_smoothing,
+            gain_correction_deadband=gain_correction_deadband,
+            auto_gain_correction_deadband=auto_gain_correction_deadband,
+            gain_correction_deadband_sigma=gain_correction_deadband_sigma,
+            max_phase_step=max_phase_step,
+            phase_smoothing=phase_smoothing,
+            phase_correction_deadband=phase_correction_deadband,
+            auto_phase_correction_deadband=auto_phase_correction_deadband,
+            phase_correction_deadband_sigma=phase_correction_deadband_sigma,
+            phase_min_resultant_length=phase_min_resultant_length,
+            update_corrections=update_corrections,
+        )
+
     def reload(
         self,
         *,
@@ -337,6 +509,11 @@ class Measurement:
     def amplification_service(self) -> MeasurementAmplificationService:
         """Return the readout amplification service."""
         return self._amplification_service
+
+    @property
+    def stability_service(self) -> MeasurementStabilityService:
+        """Return the measurement stability service."""
+        return self._stability_service
 
     @property
     def pulse_factory(self) -> MeasurementPulseFactory:
@@ -1034,16 +1211,39 @@ class Measurement:
         schedule: PulseSchedule | TargetMap[IQArray],
         *,
         n_shots: int | None = None,
+        block_outputs: bool = True,
+        shot_averaging: bool = True,
+        demodulation: bool = True,
+        include_read_in: bool = False,
+        configure_monitor_nco: bool = True,
     ) -> MeasurementResult:
         """
-        Capture full-span loopback data from read-in and monitor channels.
+        Capture full-span loopback data from loopback-capable input channels.
 
         Parameters
         ----------
         schedule : PulseSchedule | TargetMap[IQArray]
-            Pulse schedule or waveform mapping to execute.
+            Pulse schedule or waveform mapping to execute. Control-output
+            and readout-output schedules capture matching monitor inputs by
+            default. Readout-output schedules also capture matching read-in
+            inputs when `include_read_in` is enabled.
         n_shots : int | None, optional
             Number of shots.
+        block_outputs : bool, optional
+            Whether to block active output ports while loopback capture runs.
+        shot_averaging : bool, optional
+            Whether to average captured shots in Qubex after demodulation.
+        demodulation : bool, optional
+            Whether to demodulate captured waveforms. READ_IN captures use
+            backend DSP demodulation. MNTR_IN captures use Qubex-side
+            source-matched postprocessing.
+        include_read_in : bool, optional
+            Whether to add matching READ_IN captures for active readout output
+            targets.
+        configure_monitor_nco : bool, optional
+            Whether to configure monitor input frequency settings before
+            capture. Disable only when repeated loopback captures must preserve
+            an already-primed monitor NCO phase origin.
 
         Returns
         -------
@@ -1053,6 +1253,11 @@ class Measurement:
         return self.execution_service.capture_loopback(
             schedule=schedule,
             n_shots=n_shots,
+            block_outputs=block_outputs,
+            shot_averaging=shot_averaging,
+            demodulation=demodulation,
+            include_read_in=include_read_in,
+            configure_monitor_nco=configure_monitor_nco,
         )
 
     def create_measurement_config(
