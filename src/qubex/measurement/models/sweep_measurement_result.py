@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, TypeAlias
+from collections.abc import Collection, Mapping
+from typing import TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -12,19 +12,52 @@ from pydantic import Field
 from qubex.core import DataModel, Value
 
 from .measurement_config import MeasurementConfig
-from .measurement_result import MeasurementResult
+from .measurement_result import MeasurementResult, TargetSelection
 
 SweepKey: TypeAlias = str
 SweepValue: TypeAlias = Value | int | float | str
 SweepPoint: TypeAlias = Mapping[SweepKey, SweepValue]
 SweepAxes: TypeAlias = tuple[SweepKey, ...]
+CaptureDataArray: TypeAlias = NDArray[np.generic]
+StateSeriesMap: TypeAlias = dict[str, NDArray[np.float64]]
+
+
+def _resolve_series_states(
+    values: list[dict[str, float]],
+    states: Collection[str] | None,
+) -> list[str]:
+    """Return state labels for series extraction."""
+    if states is None:
+        return sorted({state for point_values in values for state in point_values})
+    if isinstance(states, str):
+        raise TypeError("`states` must be a collection of state labels, not a string.")
+    state_list = list(states)
+    if len(state_list) == 0:
+        raise ValueError("No states were selected.")
+    return state_list
+
+
+def _build_series_map(
+    values: list[dict[str, float]],
+    *,
+    states: Collection[str] | None,
+) -> StateSeriesMap:
+    """Return selected state-value series from pointwise dictionaries."""
+    state_list = _resolve_series_states(values, states)
+    return {
+        state: np.asarray(
+            [point_values.get(state, 0.0) for point_values in values],
+            dtype=np.float64,
+        )
+        for state in state_list
+    }
 
 
 def _build_sweep_data(
     *,
     results: list[MeasurementResult],
     sweep_shape: tuple[int, ...],
-) -> dict[str, list[NDArray[Any]]]:
+) -> dict[str, list[CaptureDataArray]]:
     """Aggregate capture arrays as `target -> [capture_index arrays]` with sweep axes."""
     expected_points = int(np.prod(sweep_shape, dtype=int))
     if len(results) != expected_points:
@@ -36,7 +69,7 @@ def _build_sweep_data(
         return {}
 
     expected_capture_counts: dict[str, int] = {}
-    per_target_capture_series: dict[str, list[list[NDArray[Any]]]] = {}
+    per_target_capture_series: dict[str, list[list[CaptureDataArray]]] = {}
 
     for point_index, result in enumerate(results):
         result_targets = set(result.data)
@@ -63,7 +96,7 @@ def _build_sweep_data(
                     np.asarray(capture.data)
                 )
 
-    sweep_data: dict[str, list[NDArray[Any]]] = {}
+    sweep_data: dict[str, list[CaptureDataArray]] = {}
     for target, capture_series_list in per_target_capture_series.items():
         sweep_data[target] = []
         for capture_series in capture_series_list:
@@ -81,12 +114,63 @@ class SweepMeasurementResult(DataModel):
     results: list[MeasurementResult] = Field(default_factory=list)
 
     @property
-    def data(self) -> dict[str, list[NDArray[Any]]]:
+    def data(self) -> dict[str, list[CaptureDataArray]]:
         """Return `target -> [capture arrays]` with shape `(n_points, *capture_shape)`."""
         return _build_sweep_data(
             results=self.results,
             sweep_shape=(len(self.sweep_values),),
         )
+
+    def get_probabilities(
+        self,
+        targets: TargetSelection = None,
+    ) -> list[dict[str, float]]:
+        """Return pointwise classified bitstring probabilities."""
+        return [result.get_probabilities(targets) for result in self.results]
+
+    def get_probability_series_map(
+        self,
+        targets: TargetSelection = None,
+        *,
+        states: Collection[str] | None = None,
+    ) -> StateSeriesMap:
+        """Return classified bitstring probability series for selected states."""
+        probabilities = self.get_probabilities(targets)
+        return _build_series_map(probabilities, states=states)
+
+    def get_standard_deviations(
+        self,
+        targets: TargetSelection = None,
+    ) -> list[dict[str, float]]:
+        """Return pointwise binomial standard deviations."""
+        return [result.get_standard_deviations(targets) for result in self.results]
+
+    def get_standard_deviation_series_map(
+        self,
+        targets: TargetSelection = None,
+        *,
+        states: Collection[str] | None = None,
+    ) -> StateSeriesMap:
+        """Return classified bitstring standard-deviation series for selected states."""
+        standard_deviations = self.get_standard_deviations(targets)
+        return _build_series_map(standard_deviations, states=states)
+
+    def get_mitigated_probabilities(
+        self,
+        targets: TargetSelection = None,
+    ) -> list[dict[str, float]]:
+        """Return pointwise readout-error-mitigated bitstring probabilities."""
+        return [result.get_mitigated_probabilities(targets) for result in self.results]
+
+    def get_mitigated_probability_series_map(
+        self,
+        targets: TargetSelection = None,
+        *,
+        states: Collection[str] | None = None,
+    ) -> StateSeriesMap:
+        """Return mitigated bitstring probability series for selected states."""
+        probabilities = self.get_mitigated_probabilities(targets)
+        return _build_series_map(probabilities, states=states)
 
 
 class NDSweepMeasurementResult(DataModel):
@@ -99,7 +183,7 @@ class NDSweepMeasurementResult(DataModel):
     results: list[MeasurementResult] = Field(default_factory=list)
 
     @property
-    def data(self) -> dict[str, list[NDArray[Any]]]:
+    def data(self) -> dict[str, list[CaptureDataArray]]:
         """Return `target -> [capture arrays]` with shape `(*shape, *capture_shape)`."""
         return _build_sweep_data(
             results=self.results,
