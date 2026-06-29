@@ -338,30 +338,31 @@ class MeasurementService:
         if final_measurement is None:
             final_measurement = True
 
-        measurement_schedule = self._resolve_measurement_schedule(
-            schedule=schedule,
-            frequencies=normalized_frequencies,
-            readout_amplitudes=readout_amplitudes,
-            readout_duration=normalized_readout_duration,
-            readout_pre_margin=normalized_readout_pre_margin,
-            readout_post_margin=normalized_readout_post_margin,
-            readout_ramp_time=normalized_readout_ramp_time,
-            readout_ramp_type=readout_ramp_type,
-            readout_drag_coeff=readout_drag_coeff,
-            readout_amplification=readout_amplification,
-            final_measurement=final_measurement,
-        )
-        config = self.ctx.measurement.create_measurement_config(
-            n_shots=n_shots,
-            shot_interval=normalized_shot_interval,
-            shot_averaging=shot_averaging,
-            time_integration=time_integration,
-            state_classification=state_classification,
-        )
-        return await self.ctx.measurement.run_measurement(
-            schedule=measurement_schedule,
-            config=config,
-        )
+        with self.ctx.modified_frequencies(normalized_frequencies):
+            measurement_schedule = self._resolve_measurement_schedule(
+                schedule=schedule,
+                frequencies=normalized_frequencies,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=normalized_readout_duration,
+                readout_pre_margin=normalized_readout_pre_margin,
+                readout_post_margin=normalized_readout_post_margin,
+                readout_ramp_time=normalized_readout_ramp_time,
+                readout_ramp_type=readout_ramp_type,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_amplification=readout_amplification,
+                final_measurement=final_measurement,
+            )
+            config = self.ctx.measurement.create_measurement_config(
+                n_shots=n_shots,
+                shot_interval=normalized_shot_interval,
+                shot_averaging=shot_averaging,
+                time_integration=time_integration,
+                state_classification=state_classification,
+            )
+            return await self.ctx.measurement.run_measurement(
+                schedule=measurement_schedule,
+                config=config,
+            )
 
     async def run_sweep_measurement(
         self,
@@ -454,12 +455,13 @@ class MeasurementService:
             )
 
         try:
-            result = await self.ctx.measurement.run_sweep_measurement(
-                wrapped_schedule,
-                sweep_values=sweep_values,
-                config=config,
-                on_point=on_point,
-            )
+            with self.ctx.modified_frequencies(normalized_frequencies):
+                result = await self.ctx.measurement.run_sweep_measurement(
+                    wrapped_schedule,
+                    sweep_values=sweep_values,
+                    config=config,
+                    on_point=on_point,
+                )
         finally:
             progress.close()
 
@@ -538,12 +540,13 @@ class MeasurementService:
             return measurement_schedule
 
         try:
-            return await self.ctx.measurement.run_ndsweep_measurement(
-                wrapped_schedule,
-                sweep_points=sweep_points,
-                sweep_axes=sweep_axes,
-                config=config,
-            )
+            with self.ctx.modified_frequencies(normalized_frequencies):
+                return await self.ctx.measurement.run_ndsweep_measurement(
+                    wrapped_schedule,
+                    sweep_points=sweep_points,
+                    sweep_axes=sweep_axes,
+                    config=config,
+                )
         finally:
             progress.close()
 
