@@ -248,7 +248,7 @@ def _encode_value(
         return {_VARIABLE_REF_KEY: ref}
     if isinstance(value, BaseModel):
         return _encode_value(
-            value.model_dump(mode="python"),
+            _base_model_field_data(value),
             arrays,
             path=path,
         )
@@ -262,6 +262,14 @@ def _encode_value(
             for idx, v in enumerate(value)
         ]
     return serialize_value(value)
+
+
+def _base_model_field_data(value: BaseModel) -> dict[str, Any]:
+    """Return raw Pydantic model field values for recursive NetCDF encoding."""
+    return {
+        field_name: getattr(value, field_name)
+        for field_name in value.__class__.model_fields
+    }
 
 
 def _decode_value(value: Any, ds: Dataset) -> Any:
