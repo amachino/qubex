@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -25,6 +26,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
         "run_measurement": [],
         "run_sweep_measurement": [],
         "run_ndsweep_measurement": [],
+        "modified_frequencies": [],
     }
 
     def _build_measurement_schedule(**kwargs: Any) -> object:
@@ -78,6 +80,14 @@ def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
         )
         return "ndsweep_result"
 
+    @contextmanager
+    def _modified_frequencies(frequencies: object) -> Any:
+        calls["modified_frequencies"].append(("enter", frequencies))
+        try:
+            yield
+        finally:
+            calls["modified_frequencies"].append(("exit", frequencies))
+
     measurement = SimpleNamespace(
         build_measurement_schedule=_build_measurement_schedule,
         create_measurement_config=_create_measurement_config,
@@ -89,6 +99,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, Any]]:
     service = cast(Any, object.__new__(MeasurementService))
     service.__dict__["_ctx"] = SimpleNamespace(
         measurement=measurement,
+        modified_frequencies=_modified_frequencies,
     )
     service.__dict__["_pulse_service"] = SimpleNamespace(
         readout_duration=512.0,
@@ -167,6 +178,10 @@ def test_run_measurement_builds_schedule_and_delegates() -> None:
     assert built_kwargs["pulse_schedule"] is pulse_schedule
     assert built_kwargs["frequencies"] == {"Q00": 5.1}
     assert built_kwargs["final_measurement"] is False
+    assert calls["modified_frequencies"] == [
+        ("enter", {"Q00": 5.1}),
+        ("exit", {"Q00": 5.1}),
+    ]
     called = calls["run_measurement"][0]
     assert cast(SimpleNamespace, called["schedule"]).tag == "built"
     assert cast(SimpleNamespace, called["config"]).tag == "config"
@@ -192,6 +207,7 @@ def test_run_measurement_normalizes_tunits_inputs_before_delegation() -> None:
     assert result == "measurement_result"
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
     assert calls["build_schedule"][0]["frequencies"] == {"Q00": pytest.approx(5.1)}
+    assert calls["modified_frequencies"][0][1] == {"Q00": pytest.approx(5.1)}
     assert calls["build_schedule"][0]["readout_duration"] == pytest.approx(4000.0)
     assert calls["build_schedule"][0]["readout_pre_margin"] == pytest.approx(80.0)
     assert calls["build_schedule"][0]["readout_post_margin"] == pytest.approx(120.0)
@@ -216,6 +232,7 @@ def test_run_measurement_uses_measurement_schedule_without_rebuild() -> None:
     assert calls["build_schedule"] == []
     assert calls["run_measurement"][0]["schedule"] is schedule
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+    assert calls["modified_frequencies"][0][1] == {"Q00": pytest.approx(5.1)}
 
 
 def test_run_sweep_measurement_builds_wrapped_schedule_and_delegates() -> None:
@@ -283,6 +300,7 @@ def test_run_sweep_measurement_normalizes_tunits_inputs_before_delegation() -> N
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
     build_kwargs = calls["build_schedule"][0]
     assert build_kwargs["frequencies"] == {"Q00": pytest.approx(5.1)}
+    assert calls["modified_frequencies"][0][1] == {"Q00": pytest.approx(5.1)}
     assert build_kwargs["readout_duration"] == pytest.approx(4000.0)
     assert build_kwargs["readout_pre_margin"] == pytest.approx(80.0)
     assert build_kwargs["readout_post_margin"] == pytest.approx(120.0)
@@ -314,6 +332,7 @@ def test_run_sweep_measurement_uses_measurement_schedule_without_rebuild() -> No
     assert calls["run_sweep_measurement"][0]["built"] is schedule
     assert callable(calls["run_sweep_measurement"][0]["on_point"])
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+    assert calls["modified_frequencies"][0][1] == {"Q00": pytest.approx(5.1)}
 
 
 def test_run_sweep_measurement_plots_iq_and_updates_tqdm(
@@ -466,6 +485,7 @@ def test_run_ndsweep_measurement_normalizes_tunits_inputs_before_delegation() ->
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
     build_kwargs = calls["build_schedule"][0]
     assert build_kwargs["frequencies"] == {"Q00": pytest.approx(5.1)}
+    assert calls["modified_frequencies"][0][1] == {"Q00": pytest.approx(5.1)}
     assert build_kwargs["readout_duration"] == pytest.approx(4000.0)
     assert build_kwargs["readout_pre_margin"] == pytest.approx(80.0)
     assert build_kwargs["readout_post_margin"] == pytest.approx(120.0)
@@ -495,3 +515,4 @@ def test_run_ndsweep_measurement_uses_measurement_schedule_without_rebuild() -> 
     assert calls["build_schedule"] == []
     assert calls["run_ndsweep_measurement"][0]["built"] is schedule
     assert calls["create_config"][0]["shot_interval"] == pytest.approx(2000.0)
+    assert calls["modified_frequencies"][0][1] == {"Q00": pytest.approx(5.1)}
