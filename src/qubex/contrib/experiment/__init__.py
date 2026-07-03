@@ -92,7 +92,7 @@ from .simultaneous_qubit_spectroscopy import simultaneous_qubit_spectroscopy
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
 from .superconducting_gap import get_resistance_charge, get_superconducting_gap
 from .thermal_excitation_characterization import (
-    thermal_excitation_via_rabi,
+    measure_thermal_excitation,
 )
 
 __all__ = [
@@ -144,6 +144,7 @@ __all__ = [
     "measure_cr_crosstalk",
     "measure_ghz_state",
     "measure_graph_state",
+    "measure_thermal_excitation",
     "measurement_induced_decay_experiment",
     "measurement_induced_dephasing",
     "measurement_induced_dephasing_experiment",
@@ -168,6 +169,5 @@ __all__ = [
     "stark_ramsey_experiment",
     "stark_t1_experiment",
     "sweep_readout_snr",
-    "thermal_excitation_via_rabi",
     "visualize_graph",
 ]
