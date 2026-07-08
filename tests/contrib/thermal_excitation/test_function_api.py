@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from qubex.contrib import thermal_excitation_via_rabi
+from qubex.contrib import measure_thermal_excitation
 
 
 def test_all_thermal_excitation_functions_are_exported_from_contrib() -> None:
     """Given contrib package, when imported, then thermal excitation helpers are available."""
-    assert callable(thermal_excitation_via_rabi)
+    assert callable(measure_thermal_excitation)
