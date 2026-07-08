@@ -233,6 +233,10 @@ class QuelwareClientProtocol(Protocol):
         """Get port info for one resource ID."""
         ...
 
+    async def dump_port_state(self, resource_id: ResourceIdProtocol) -> str:
+        """Dump diagnostic state for one port resource ID."""
+        ...
+
     def create_session(
         self,
         resource_ids: Iterable[ResourceIdProtocol],

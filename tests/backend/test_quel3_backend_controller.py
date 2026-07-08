@@ -8,11 +8,13 @@ import asyncio
 import logging
 from dataclasses import dataclass, replace
 from enum import Enum
+from io import StringIO
 from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
 import pytest
+from rich.console import Console
 
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.backend_controller import BackendController
@@ -24,6 +26,7 @@ from qubex.backend.quel3 import (
     Quel3CaptureWindow,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
+    Quel3HardwareState,
     Quel3RuntimeConfig,
     Quel3Waveform,
     Quel3WaveformEvent,
@@ -108,6 +111,16 @@ class _CountingInstrumentResolver(_FakeInstrumentResolver):
         self.refresh_calls += 1
 
 
+class _FakeHardwareStateReader:
+    def __init__(self, state: Quel3HardwareState) -> None:
+        self.state = state
+        self.last_collect_kwargs: dict[str, object] = {}
+
+    def collect_state(self, **kwargs: object) -> Quel3HardwareState:
+        self.last_collect_kwargs = dict(kwargs)
+        return self.state
+
+
 def _make_payload(
     *,
     mode: str = "avg",
@@ -173,6 +186,60 @@ def test_quel3_constructor_rejects_alias_map_argument() -> None:
     """Given legacy alias-map kwarg, constructor raises TypeError."""
     with pytest.raises(TypeError, match="alias_map"):
         cast(Any, Quel3BackendController)(alias_map={"RQ00": "inst-00"})
+
+
+def test_get_hardware_state_delegates_to_hardware_state_reader() -> None:
+    """Given hardware state reader, controller should delegate state collection."""
+    state = Quel3HardwareState(
+        generated_at="2026-07-07T00:00:00+00:00",
+        endpoint="localhost",
+        port=50051,
+        selected_unit_labels=("unit-a",),
+        units=(),
+        ports=(),
+        instruments=(),
+        diagnostics=(),
+        issues=(),
+    )
+    hardware_state_reader = _FakeHardwareStateReader(state)
+    controller = Quel3BackendController(
+        hardware_state_reader=cast(Any, hardware_state_reader)
+    )
+
+    result = controller.get_hardware_state(
+        unit_labels=("unit-a",),
+        include_diagnostics=True,
+        parallel=False,
+    )
+
+    assert result is state
+    assert hardware_state_reader.last_collect_kwargs["unit_labels"] == ("unit-a",)
+    assert hardware_state_reader.last_collect_kwargs["include_diagnostics"] is True
+    assert hardware_state_reader.last_collect_kwargs["parallel"] is False
+
+
+def test_print_hardware_state_renders_with_rich_console() -> None:
+    """Given hardware state, controller should print a Rich hardware-state view."""
+    state = Quel3HardwareState(
+        generated_at="2026-07-07T00:00:00+00:00",
+        endpoint="localhost",
+        port=50051,
+        selected_unit_labels=(),
+        units=(),
+        ports=(),
+        instruments=(),
+        diagnostics=(),
+        issues=(),
+    )
+    controller = Quel3BackendController(
+        hardware_state_reader=cast(Any, _FakeHardwareStateReader(state))
+    )
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, width=120)
+
+    controller.print_hardware_state(view="summary", console=console)
+
+    assert "QuEL-3 hardware state" in output.getvalue()
 
 
 def test_execute_rejects_non_quel3_payload() -> None:
