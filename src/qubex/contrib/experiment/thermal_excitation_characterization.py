@@ -34,6 +34,7 @@ def measure_thermal_excitation(
     plot : bool, optional
         Whether to plot figures.
     """
+    qubit = exp.ctx.resolve_qubit_label(target)
     ge_label = exp.ctx.resolve_ge_label(target)
     ef_label = exp.ctx.resolve_ef_label(target)
 
@@ -83,10 +84,10 @@ def measure_thermal_excitation(
         plot=plot,
     )
 
-    iq_sig_0 = result_sig_0.data[target].kerneled
-    iq_sig_1 = result_sig_1.data[target].kerneled
-    iq_ref_0 = result_ref_0.data[target].kerneled
-    iq_ref_1 = result_ref_1.data[target].kerneled
+    iq_sig_0 = result_sig_0.data[qubit].kerneled
+    iq_sig_1 = result_sig_1.data[qubit].kerneled
+    iq_ref_0 = result_ref_0.data[qubit].kerneled
+    iq_ref_1 = result_ref_1.data[qubit].kerneled
 
     A_sig = np.abs(iq_sig_1 - iq_sig_0)
     A_ref = np.abs(iq_ref_1 - iq_ref_0)
@@ -95,7 +96,7 @@ def measure_thermal_excitation(
         raise ValueError("Cannot estimate thermal excitation with zero signal.")
     p_ex = A_sig / total_amplitude
     print("")
-    print(f"{target}")
+    print(f"{qubit}")
     print(f"A_sig : {A_sig}")
     print(f"A_ref : {A_ref}")
     print(f"p_ex  : {p_ex}")
