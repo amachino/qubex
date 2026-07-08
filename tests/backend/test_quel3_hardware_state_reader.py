@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -241,6 +241,48 @@ class _BoxLocalAliasClient(_FakeClient):
         )
 
 
+class _MultiInstrumentClient(_FakeClient):
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:rx_p02", _Category("PORT")),
+            _ResourceInfo("unit-b:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:inst-q00", _Category("INSTRUMENT")),
+            _ResourceInfo("unit-a:inst-q01", _Category("INSTRUMENT")),
+            _ResourceInfo("unit-b:inst-q00", _Category("INSTRUMENT")),
+        ]
+
+    async def get_port_info(self, resource_id: str) -> _PortInfo:
+        return _PortInfo(
+            id=resource_id,
+            role=_Role("TX") if "tx_" in resource_id else _Role("RX"),
+            depends_on=[],
+        )
+
+    async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
+        self.instrument_info_calls.append(resource_id)
+        definitions = {
+            "unit-a:inst-q00": ("unit-a:tx_p01", "unit-a:Q00"),
+            "unit-a:inst-q01": ("unit-a:rx_p02", "Q01"),
+            "unit-b:inst-q00": ("unit-b:tx_p01", "Q00"),
+        }
+        port_id, alias = definitions[resource_id]
+        return _InstrumentInfo(
+            id=resource_id,
+            port_id=port_id,
+            definition=_Definition(
+                alias=alias,
+                role=_Role("TRANSMITTER"),
+                mode=_Mode("FIXED_TIMELINE"),
+                profile=_Profile(
+                    frequency_range_min=4.1e9,
+                    frequency_range_max=4.3e9,
+                ),
+            ),
+            config=_Config(),
+        )
+
+
 class _FakeHardwareStateReader(Quel3HardwareStateReader):
     def __init__(self, client: _FakeClient) -> None:
         super().__init__()
@@ -312,6 +354,95 @@ def test_collect_state_diagnosis_is_opt_in() -> None:
 
     assert state_with_diagnostics.diagnostics[0].text == "state: unit-a:tx_p01"
     assert client.port_state_calls == ["unit-a:tx_p01"]
+
+
+def test_collect_state_filters_local_port_after_unit_scoping() -> None:
+    """Given selected unit and local port ID, state should keep that unit port."""
+    client = _BoxLocalAliasClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(
+        unit_labels=("unit-a",),
+        port_ids=("tx_p01",),
+        parallel=False,
+    )
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
+
+
+def test_collect_state_matches_local_port_across_selected_units() -> None:
+    """Given local port ID without unit selection, state should keep all matches."""
+    client = _BoxLocalAliasClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(port_ids=("tx_p01",), parallel=False)
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01", "unit-b:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == [
+        "unit-a:inst-q00",
+        "unit-b:inst-q00",
+    ]
+
+
+def test_collect_state_filters_alias_related_ports_and_diagnostics() -> None:
+    """Given local alias filter, state should keep matched instruments and ports."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(
+        unit_labels=("unit-a",),
+        instrument_aliases=("Q00",),
+        include_diagnostics=True,
+        parallel=False,
+    )
+
+    assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
+    assert [diagnostic.port_id for diagnostic in state.diagnostics] == ["unit-a:tx_p01"]
+    assert client.port_state_calls == ["unit-a:tx_p01"]
+
+
+def test_collect_state_matches_unit_qualified_alias() -> None:
+    """Given unit-qualified alias, state should keep only that unit match."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(
+        instrument_aliases=("unit-b:Q00",),
+        parallel=False,
+    )
+
+    assert [port.id for port in state.ports] == ["unit-b:tx_p01"]
+    assert [instrument.id for instrument in state.instruments] == ["unit-b:inst-q00"]
+
+
+def test_collect_state_intersects_port_and_alias_filters() -> None:
+    """Given port and alias filters, state should keep only their intersection."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(
+        port_ids=("unit-a:rx_p02",),
+        instrument_aliases=("Q00",),
+        include_diagnostics=True,
+        parallel=False,
+    )
+
+    assert state.ports == ()
+    assert state.instruments == ()
+    assert state.diagnostics == ()
+    assert client.port_state_calls == []
+
+
+def test_collect_state_rejects_old_filter_kwargs() -> None:
+    """Given removed hardware-state filter kwargs, reader raises TypeError."""
+    reader = _make_reader(_FakeClient())
+
+    with pytest.raises(TypeError, match="instrument_port_ids"):
+        cast(Any, reader).collect_state(instrument_port_ids=("unit-a:tx_p01",))
+    with pytest.raises(TypeError, match="diagnostic_port_ids"):
+        cast(Any, reader).collect_state(diagnostic_port_ids=("unit-a:tx_p01",))
 
 
 def test_backend_settings_projection_uses_hardware_state_instruments() -> None:

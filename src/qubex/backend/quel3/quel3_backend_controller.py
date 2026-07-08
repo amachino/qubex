@@ -245,17 +245,36 @@ class Quel3BackendController(BackendController):
         self,
         *,
         unit_labels: Sequence[str] = (),
-        instrument_port_ids: Sequence[str] = (),
-        diagnostic_port_ids: Sequence[str] = (),
+        port_ids: Sequence[str] = (),
+        instrument_aliases: Sequence[str] = (),
         include_diagnostics: bool = False,
         parallel: bool = True,
         timeout_seconds: float | None = None,
     ) -> Quel3HardwareState:
-        """Collect one structured QuEL-3 hardware-state snapshot."""
+        """
+        Collect one structured QuEL-3 hardware-state snapshot.
+
+        Parameters
+        ----------
+        unit_labels : Sequence[str], optional
+            Unit labels to inspect. Empty means all discovered units.
+        port_ids : Sequence[str], optional
+            Full port IDs or local port IDs used to filter ports and
+            instruments.
+        instrument_aliases : Sequence[str], optional
+            Unit-qualified aliases or local aliases used to filter instruments
+            and their related ports.
+        include_diagnostics : bool, optional
+            Whether to collect diagnostic dumps for the final visible ports.
+        parallel : bool, optional
+            Whether resource reads should run concurrently.
+        timeout_seconds : float | None, optional
+            Timeout for the synchronous hardware-state collection call.
+        """
         return self._hardware_state_reader.collect_state(
             unit_labels=tuple(unit_labels),
-            instrument_port_ids=tuple(instrument_port_ids),
-            diagnostic_port_ids=tuple(diagnostic_port_ids),
+            port_ids=tuple(port_ids),
+            instrument_aliases=tuple(instrument_aliases),
             include_diagnostics=include_diagnostics,
             parallel=parallel,
             timeout_seconds=timeout_seconds,
@@ -266,25 +285,46 @@ class Quel3BackendController(BackendController):
         *,
         view: Quel3HardwareStateView = "summary",
         unit_labels: Sequence[str] = (),
-        instrument_port_ids: Sequence[str] = (),
-        diagnostic_port_ids: Sequence[str] = (),
+        port_ids: Sequence[str] = (),
+        instrument_aliases: Sequence[str] = (),
         include_diagnostics: bool | None = None,
         parallel: bool = True,
         timeout_seconds: float | None = None,
-        console: Console | None = None,
     ) -> None:
-        """Print one QuEL-3 hardware-state view with Rich."""
+        """
+        Print one QuEL-3 hardware-state view with Rich.
+
+        Parameters
+        ----------
+        view : Quel3HardwareStateView, optional
+            Rendered view name.
+        unit_labels : Sequence[str], optional
+            Unit labels to inspect. Empty means all discovered units.
+        port_ids : Sequence[str], optional
+            Full port IDs or local port IDs used to filter ports and
+            instruments.
+        instrument_aliases : Sequence[str], optional
+            Unit-qualified aliases or local aliases used to filter instruments
+            and their related ports.
+        include_diagnostics : bool | None, optional
+            Whether to collect diagnostic dumps. `None` includes diagnostics
+            for the `diagnostics` and `all` views.
+        parallel : bool, optional
+            Whether resource reads should run concurrently.
+        timeout_seconds : float | None, optional
+            Timeout for the synchronous hardware-state collection call.
+        """
         if include_diagnostics is None:
             include_diagnostics = view in ("diagnostics", "all")
         state = self.get_hardware_state(
             unit_labels=unit_labels,
-            instrument_port_ids=instrument_port_ids,
-            diagnostic_port_ids=diagnostic_port_ids,
+            port_ids=port_ids,
+            instrument_aliases=instrument_aliases,
             include_diagnostics=include_diagnostics,
             parallel=parallel,
             timeout_seconds=timeout_seconds,
         )
-        output_console = console or Console(highlight=False)
+        output_console = Console(highlight=False)
         output_console.print(format_quel3_hardware_state(state, view=view))
 
     @property

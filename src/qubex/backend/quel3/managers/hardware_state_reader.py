@@ -84,21 +84,45 @@ class Quel3HardwareStateReader:
         self,
         *,
         unit_labels: Sequence[str] = (),
-        instrument_port_ids: Sequence[str] = (),
-        diagnostic_port_ids: Sequence[str] = (),
+        port_ids: Sequence[str] = (),
+        instrument_aliases: Sequence[str] = (),
         include_diagnostics: bool = False,
         parallel: bool = True,
         timeout_seconds: float | None = None,
     ) -> Quel3HardwareState:
-        """Collect one structured QuEL-3 hardware-state snapshot."""
+        """
+        Collect one structured QuEL-3 hardware-state snapshot.
+
+        Filters are applied in order: `unit_labels`, then `port_ids`, then
+        `instrument_aliases`. Local port IDs and aliases match every currently
+        selected unit. Unit-qualified aliases narrow instruments, their related
+        ports, and diagnostics to the qualified unit.
+
+        Parameters
+        ----------
+        unit_labels : Sequence[str], optional
+            Unit labels to inspect. Empty means all discovered units.
+        port_ids : Sequence[str], optional
+            Full port IDs such as `unit-a:tx_p01` or local IDs such as
+            `tx_p01`.
+        instrument_aliases : Sequence[str], optional
+            Unit-qualified aliases such as `unit-a:Q00` or local aliases such
+            as `Q00`.
+        include_diagnostics : bool, optional
+            Whether to collect diagnostic dumps for the final visible ports.
+        parallel : bool, optional
+            Whether resource reads should run concurrently.
+        timeout_seconds : float | None, optional
+            Timeout for the synchronous collection call.
+        """
         timeout = (
             DEFAULT_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
         )
         return _run_async(
             lambda: self._collect_state(
                 unit_labels=tuple(unit_labels),
-                instrument_port_ids=tuple(instrument_port_ids),
-                diagnostic_port_ids=tuple(diagnostic_port_ids),
+                port_ids=tuple(port_ids),
+                instrument_aliases=tuple(instrument_aliases),
                 include_diagnostics=include_diagnostics,
                 parallel=parallel,
             ),
@@ -128,8 +152,8 @@ class Quel3HardwareStateReader:
         self,
         *,
         unit_labels: tuple[str, ...],
-        instrument_port_ids: tuple[str, ...],
-        diagnostic_port_ids: tuple[str, ...],
+        port_ids: tuple[str, ...],
+        instrument_aliases: tuple[str, ...],
         include_diagnostics: bool,
         parallel: bool,
     ) -> Quel3HardwareState:
@@ -167,13 +191,17 @@ class Quel3HardwareStateReader:
                 client=client,
                 resource_infos=resource_infos,
                 selected_unit_labels=selected_unit_labels,
-                instrument_port_ids=instrument_port_ids,
                 parallel=parallel,
+            )
+            ports, instruments = self._filter_visible_state(
+                ports=ports,
+                instruments=instruments,
+                port_ids=port_ids,
+                instrument_aliases=instrument_aliases,
             )
             diagnostics, diagnostic_issues = await self._collect_diagnostics(
                 client=client,
                 ports=ports,
-                diagnostic_port_ids=diagnostic_port_ids,
                 include_diagnostics=include_diagnostics,
                 parallel=parallel,
             )
@@ -270,7 +298,6 @@ class Quel3HardwareStateReader:
         client: QuelwareClientProtocol,
         resource_infos: Sequence[object],
         selected_unit_labels: tuple[str, ...],
-        instrument_port_ids: tuple[str, ...],
         parallel: bool,
     ) -> tuple[tuple[Quel3InstrumentState, ...], tuple[Quel3HardwareStateIssue, ...]]:
         """Collect instrument states and preserve per-resource failures as issues."""
@@ -291,7 +318,6 @@ class Quel3HardwareStateReader:
             fetch=_fetch,
             parallel=parallel,
         )
-        selected_port_ids = set(instrument_port_ids)
         instruments: list[Quel3InstrumentState] = []
         issues: list[Quel3HardwareStateIssue] = []
         for resource_id, result in zip(instrument_resource_ids, results, strict=True):
@@ -309,8 +335,6 @@ class Quel3HardwareStateReader:
                 selected_unit_labels=selected_unit_labels,
             ):
                 continue
-            if selected_port_ids and result.port_id not in selected_port_ids:
-                continue
             instruments.append(result)
         return tuple(instruments), tuple(issues)
 
@@ -319,14 +343,13 @@ class Quel3HardwareStateReader:
         *,
         client: QuelwareClientProtocol,
         ports: Sequence[Quel3PortState],
-        diagnostic_port_ids: tuple[str, ...],
         include_diagnostics: bool,
         parallel: bool,
     ) -> tuple[tuple[Quel3PortDiagnostic, ...], tuple[Quel3HardwareStateIssue, ...]]:
         """Collect optional port diagnostic dumps."""
         if not include_diagnostics:
             return (), ()
-        port_ids = diagnostic_port_ids or tuple(port.id for port in ports)
+        port_ids = tuple(port.id for port in ports)
 
         async def _fetch(port_id: str) -> Quel3PortDiagnostic:
             dump_port_state = client.dump_port_state
@@ -356,6 +379,123 @@ class Quel3HardwareStateReader:
                 continue
             diagnostics.append(result)
         return tuple(diagnostics), tuple(issues)
+
+    @classmethod
+    def _filter_visible_state(
+        cls,
+        *,
+        ports: Sequence[Quel3PortState],
+        instruments: Sequence[Quel3InstrumentState],
+        port_ids: tuple[str, ...],
+        instrument_aliases: tuple[str, ...],
+    ) -> tuple[tuple[Quel3PortState, ...], tuple[Quel3InstrumentState, ...]]:
+        """Filter ports and instruments after selected-unit collection."""
+        visible_ports = tuple(
+            port
+            for port in ports
+            if cls._matches_port_filters(port_id=port.id, port_ids=port_ids)
+        )
+        visible_instruments = tuple(
+            instrument
+            for instrument in instruments
+            if cls._matches_port_filters(
+                port_id=instrument.port_id,
+                port_ids=port_ids,
+            )
+        )
+        visible_instruments = tuple(
+            instrument
+            for instrument in visible_instruments
+            if cls._matches_alias_filters(
+                instrument=instrument,
+                instrument_aliases=instrument_aliases,
+            )
+        )
+        if instrument_aliases:
+            visible_instrument_port_ids = {
+                instrument.port_id for instrument in visible_instruments
+            }
+            visible_ports = tuple(
+                port for port in visible_ports if port.id in visible_instrument_port_ids
+            )
+        return visible_ports, visible_instruments
+
+    @classmethod
+    def _matches_port_filters(
+        cls,
+        *,
+        port_id: str,
+        port_ids: tuple[str, ...],
+    ) -> bool:
+        """Return whether one port ID matches local or full selected IDs."""
+        if not port_ids:
+            return True
+        return any(
+            cls._matches_port_id(port_id=port_id, selected_port_id=selected_port_id)
+            for selected_port_id in port_ids
+        )
+
+    @classmethod
+    def _matches_port_id(
+        cls,
+        *,
+        port_id: str,
+        selected_port_id: str,
+    ) -> bool:
+        """Return whether one port ID matches a local or full ID filter."""
+        if ":" in selected_port_id:
+            return port_id == selected_port_id
+        return cls._local_resource_id(port_id) == selected_port_id
+
+    @classmethod
+    def _matches_alias_filters(
+        cls,
+        *,
+        instrument: Quel3InstrumentState,
+        instrument_aliases: tuple[str, ...],
+    ) -> bool:
+        """Return whether one instrument matches selected aliases."""
+        if not instrument_aliases:
+            return True
+        return any(
+            cls._matches_instrument_alias(
+                instrument=instrument,
+                selected_alias=selected_alias,
+            )
+            for selected_alias in instrument_aliases
+        )
+
+    @classmethod
+    def _matches_instrument_alias(
+        cls,
+        *,
+        instrument: Quel3InstrumentState,
+        selected_alias: str,
+    ) -> bool:
+        """Return whether one instrument matches a local or unit-qualified alias."""
+        if ":" in selected_alias:
+            unit_label, local_alias = selected_alias.split(":", maxsplit=1)
+            return (
+                instrument.unit_label == unit_label
+                and local_alias in cls._local_instrument_aliases(instrument)
+            )
+        return selected_alias in cls._local_instrument_aliases(instrument)
+
+    @classmethod
+    def _local_instrument_aliases(
+        cls,
+        instrument: Quel3InstrumentState,
+    ) -> tuple[str, ...]:
+        """Return local aliases that can match one instrument."""
+        aliases: list[str] = []
+        if instrument.normalized_alias is not None:
+            aliases.append(instrument.normalized_alias)
+        if instrument.alias is not None:
+            aliases.append(instrument.alias)
+            prefix = f"{instrument.unit_label}:"
+            if instrument.alias.startswith(prefix):
+                aliases.append(instrument.alias.removeprefix(prefix))
+        return tuple(dict.fromkeys(aliases))
 
     @staticmethod
     async def _collect_resource_results(
@@ -695,6 +835,13 @@ class Quel3HardwareStateReader:
     def _unit_label(resource_id: str) -> str:
         """Return the unit-label prefix from one resource ID."""
         return resource_id.split(":", maxsplit=1)[0]
+
+    @staticmethod
+    def _local_resource_id(resource_id: str) -> str:
+        """Return the local suffix from a unit-qualified resource ID."""
+        if ":" not in resource_id:
+            return resource_id
+        return resource_id.split(":", maxsplit=1)[1]
 
     @staticmethod
     def _category_name(category: object) -> str:
