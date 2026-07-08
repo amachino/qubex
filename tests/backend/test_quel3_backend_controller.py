@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from rich.console import Console
 
+import qubex.backend.quel3.quel3_backend_controller as quel3_backend_controller_module
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.backend_controller import BackendController
 from qubex.backend.quel1 import Quel1BackendController
@@ -208,17 +209,52 @@ def test_get_hardware_state_delegates_to_hardware_state_reader() -> None:
 
     result = controller.get_hardware_state(
         unit_labels=("unit-a",),
+        port_ids=("tx_p01",),
+        instrument_aliases=("Q00",),
         include_diagnostics=True,
         parallel=False,
+        timeout_seconds=1.5,
     )
 
     assert result is state
     assert hardware_state_reader.last_collect_kwargs["unit_labels"] == ("unit-a",)
+    assert hardware_state_reader.last_collect_kwargs["port_ids"] == ("tx_p01",)
+    assert hardware_state_reader.last_collect_kwargs["instrument_aliases"] == ("Q00",)
     assert hardware_state_reader.last_collect_kwargs["include_diagnostics"] is True
     assert hardware_state_reader.last_collect_kwargs["parallel"] is False
+    assert hardware_state_reader.last_collect_kwargs["timeout_seconds"] == 1.5
 
 
-def test_print_hardware_state_renders_with_rich_console() -> None:
+def test_get_hardware_state_rejects_old_filter_kwargs() -> None:
+    """Given removed hardware-state filter kwargs, controller raises TypeError."""
+    controller = Quel3BackendController(
+        hardware_state_reader=cast(
+            Any,
+            _FakeHardwareStateReader(
+                Quel3HardwareState(
+                    generated_at="2026-07-07T00:00:00+00:00",
+                    endpoint="localhost",
+                    port=50051,
+                    selected_unit_labels=(),
+                    units=(),
+                    ports=(),
+                    instruments=(),
+                    diagnostics=(),
+                    issues=(),
+                )
+            ),
+        )
+    )
+
+    with pytest.raises(TypeError, match="instrument_port_ids"):
+        cast(Any, controller).get_hardware_state(instrument_port_ids=("unit-a:tx_p01",))
+    with pytest.raises(TypeError, match="diagnostic_port_ids"):
+        cast(Any, controller).get_hardware_state(diagnostic_port_ids=("unit-a:tx_p01",))
+
+
+def test_print_hardware_state_renders_with_rich_console(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Given hardware state, controller should print a Rich hardware-state view."""
     state = Quel3HardwareState(
         generated_at="2026-07-07T00:00:00+00:00",
@@ -235,11 +271,47 @@ def test_print_hardware_state_renders_with_rich_console() -> None:
         hardware_state_reader=cast(Any, _FakeHardwareStateReader(state))
     )
     output = StringIO()
-    console = Console(file=output, force_terminal=False, width=120)
 
-    controller.print_hardware_state(view="summary", console=console)
+    def _console_factory(*, highlight: bool) -> Console:
+        assert highlight is False
+        return Console(file=output, force_terminal=False, width=120)
+
+    monkeypatch.setattr(
+        quel3_backend_controller_module,
+        "Console",
+        _console_factory,
+    )
+
+    controller.print_hardware_state(view="summary")
 
     assert "QuEL-3 hardware state" in output.getvalue()
+
+
+def test_print_hardware_state_rejects_console_kwarg() -> None:
+    """Given removed console kwarg, controller raises TypeError."""
+    controller = Quel3BackendController(
+        hardware_state_reader=cast(
+            Any,
+            _FakeHardwareStateReader(
+                Quel3HardwareState(
+                    generated_at="2026-07-07T00:00:00+00:00",
+                    endpoint="localhost",
+                    port=50051,
+                    selected_unit_labels=(),
+                    units=(),
+                    ports=(),
+                    instruments=(),
+                    diagnostics=(),
+                    issues=(),
+                )
+            ),
+        )
+    )
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, width=120)
+
+    with pytest.raises(TypeError, match="console"):
+        cast(Any, controller).print_hardware_state(console=console)
 
 
 def test_execute_rejects_non_quel3_payload() -> None:
