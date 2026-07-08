@@ -9,11 +9,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from rich.console import Console
+
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
+from qubex.backend.quel3.formatting import format_quel3_hardware_state
 from qubex.backend.quel3.infra import Quel3ClientMode
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
@@ -21,10 +24,11 @@ from .managers import (
     Quel3ConfigurationManager,
     Quel3ConnectionManager,
     Quel3ExecutionManager,
+    Quel3HardwareStateReader,
     Quel3RuntimeConfig,
     Quel3SessionManager,
 )
-from .models import InstrumentDeployRequest
+from .models import InstrumentDeployRequest, Quel3HardwareState, Quel3HardwareStateView
 from .quel3_backend_constants import CAPTURE_DECIMATION_FACTOR, SAMPLING_PERIOD_NS
 
 
@@ -52,6 +56,7 @@ class Quel3BackendController(BackendController):
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
         execution_manager: Quel3ExecutionManager | None = None,
+        hardware_state_reader: Quel3HardwareStateReader | None = None,
     ) -> None:
         """
         Initialize a QuEL-3 backend controller.
@@ -70,6 +75,8 @@ class Quel3BackendController(BackendController):
             Injected configuration manager for testing or customization.
         execution_manager : Quel3ExecutionManager | None, optional
             Injected execution manager for testing or customization.
+        hardware_state_reader : Quel3HardwareStateReader | None, optional
+            Injected hardware-state reader for testing or customization.
         """
         runtime_config = Quel3RuntimeConfig(
             endpoint=quelware_endpoint or "localhost",
@@ -113,6 +120,13 @@ class Quel3BackendController(BackendController):
                 sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 session_manager=self._session_manager,
+            )
+        )
+        self._hardware_state_reader = (
+            hardware_state_reader
+            if hardware_state_reader is not None
+            else Quel3HardwareStateReader(
+                runtime_config=runtime_config,
             )
         )
 
@@ -182,6 +196,11 @@ class Quel3BackendController(BackendController):
         return self._execution_manager
 
     @property
+    def hardware_state_reader(self) -> Quel3HardwareStateReader:
+        """Return backend-side QuEL-3 hardware-state reader."""
+        return self._hardware_state_reader
+
+    @property
     def target_alias_map(self) -> dict[tuple[str, str], str]:
         """Return deployed box-and-target to runtime-alias mapping."""
         return self._configuration_manager.target_alias_map
@@ -221,6 +240,52 @@ class Quel3BackendController(BackendController):
             requests=requests,
             parallel=parallel,
         )
+
+    def get_hardware_state(
+        self,
+        *,
+        unit_labels: Sequence[str] = (),
+        instrument_port_ids: Sequence[str] = (),
+        diagnostic_port_ids: Sequence[str] = (),
+        include_diagnostics: bool = False,
+        parallel: bool = True,
+        timeout_seconds: float | None = None,
+    ) -> Quel3HardwareState:
+        """Collect one structured QuEL-3 hardware-state snapshot."""
+        return self._hardware_state_reader.collect_state(
+            unit_labels=tuple(unit_labels),
+            instrument_port_ids=tuple(instrument_port_ids),
+            diagnostic_port_ids=tuple(diagnostic_port_ids),
+            include_diagnostics=include_diagnostics,
+            parallel=parallel,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def print_hardware_state(
+        self,
+        *,
+        view: Quel3HardwareStateView = "summary",
+        unit_labels: Sequence[str] = (),
+        instrument_port_ids: Sequence[str] = (),
+        diagnostic_port_ids: Sequence[str] = (),
+        include_diagnostics: bool | None = None,
+        parallel: bool = True,
+        timeout_seconds: float | None = None,
+        console: Console | None = None,
+    ) -> None:
+        """Print one QuEL-3 hardware-state view with Rich."""
+        if include_diagnostics is None:
+            include_diagnostics = view in ("diagnostics", "all")
+        state = self.get_hardware_state(
+            unit_labels=unit_labels,
+            instrument_port_ids=instrument_port_ids,
+            diagnostic_port_ids=diagnostic_port_ids,
+            include_diagnostics=include_diagnostics,
+            parallel=parallel,
+            timeout_seconds=timeout_seconds,
+        )
+        output_console = console or Console(highlight=False)
+        output_console.print(format_quel3_hardware_state(state, view=view))
 
     @property
     def sampling_period_ns(self) -> float:
