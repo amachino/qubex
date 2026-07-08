@@ -360,3 +360,67 @@ def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
     )
 
     assert planner_calls == [pushed_experiment_system]
+
+
+def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> None:
+    """Given selected boxes, synchronizer should fetch backend settings from hardware state."""
+    calls: list[dict[str, object]] = []
+
+    class _FakeHardwareStateReader:
+        def fetch_backend_settings_from_hardware(
+            self,
+            *,
+            unit_labels_by_box_id: dict[str, str],
+            parallel: bool | None = None,
+        ) -> dict[str, dict]:
+            calls.append(
+                {
+                    "unit_labels_by_box_id": unit_labels_by_box_id,
+                    "parallel": parallel,
+                }
+            )
+            return {
+                "BOX1": {
+                    "instruments": {
+                        "Q00": {
+                            "resource_id": "unit-a:inst-q00",
+                            "port_id": "unit-a:tx_p01",
+                            "role": "TRANSMITTER",
+                        }
+                    }
+                }
+            }
+
+    class _FakeBackendController:
+        hardware_state_reader = _FakeHardwareStateReader()
+
+    experiment_system = SimpleNamespace(
+        get_box=lambda box_id: SimpleNamespace(id=box_id, name="unit-a"),
+    )
+    synchronizer = Quel3SystemSynchronizer(
+        backend_controller=cast(Any, _FakeBackendController()),
+    )
+
+    fetched = synchronizer.fetch_backend_settings_from_hardware(
+        experiment_system=cast(Any, experiment_system),
+        box_ids=("BOX1",),
+        parallel=False,
+    )
+
+    assert fetched == {
+        "BOX1": {
+            "instruments": {
+                "Q00": {
+                    "resource_id": "unit-a:inst-q00",
+                    "port_id": "unit-a:tx_p01",
+                    "role": "TRANSMITTER",
+                }
+            }
+        }
+    }
+    assert calls == [
+        {
+            "unit_labels_by_box_id": {"BOX1": "unit-a"},
+            "parallel": False,
+        }
+    ]

@@ -90,7 +90,7 @@ class Quel3SystemSynchronizer:
         unit_labels_by_box_id = {
             box_id: experiment_system.get_box(box_id).name for box_id in box_ids
         }
-        return self._backend_controller.configuration_manager.fetch_backend_settings_from_hardware(
+        return self._backend_controller.hardware_state_reader.fetch_backend_settings_from_hardware(
             unit_labels_by_box_id=unit_labels_by_box_id,
             parallel=parallel,
         )

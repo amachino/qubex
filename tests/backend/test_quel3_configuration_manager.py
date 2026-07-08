@@ -1542,251 +1542,47 @@ def test_refresh_instrument_cache_maps_unit_prefixed_aliases(
     )
 
 
-def test_fetch_backend_settings_from_hardware_groups_instruments_by_box(
+def test_fetch_backend_settings_from_hardware_delegates_to_state_reader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given quelware instruments, hardware fetch should normalize them per box."""
-    manager = Quel3ConfigurationManager()
+    """Given legacy hardware fetch API, manager should delegate to state reader."""
+    runtime_config = Quel3RuntimeConfig(endpoint="quelware.local", port=50052)
+    manager = Quel3ConfigurationManager(runtime_config=runtime_config)
+    calls: list[dict[str, object]] = []
 
-    class _InstrumentCategory:
-        name = "INSTRUMENT"
+    class _FakeHardwareStateReader:
+        def __init__(self, *, runtime_config: Quel3RuntimeConfig) -> None:
+            calls.append({"runtime_config": runtime_config})
 
-    class _PortCategory:
-        name = "PORT"
-
-    class _ResourceInfo:
-        def __init__(self, resource_id: str, category: object) -> None:
-            self.id = resource_id
-            self.category = category
-
-    class _Role:
-        def __init__(self, name: str) -> None:
-            self.name = name
-
-    class _Mode:
-        def __init__(self, name: str) -> None:
-            self.name = name
-
-    class _Profile:
-        def __init__(
+        def fetch_backend_settings_from_hardware(
             self,
             *,
-            frequency_range_min: float,
-            frequency_range_max: float,
-        ) -> None:
-            self.frequency_range_min = frequency_range_min
-            self.frequency_range_max = frequency_range_max
-
-    class _Definition:
-        def __init__(
-            self,
-            alias: str,
-            role: object,
-            *,
-            mode: object,
-            profile: object,
-        ) -> None:
-            self.alias = alias
-            self.role = role
-            self.mode = mode
-            self.profile = profile
-
-    class _InstrumentInfo:
-        def __init__(
-            self,
-            resource_id: str,
-            alias: str,
-            port_id: str,
-            role: str,
-            *,
-            frequency_range_min: float,
-            frequency_range_max: float,
-        ) -> None:
-            self.id = resource_id
-            self.port_id = port_id
-            self.definition = _Definition(
-                alias,
-                _Role(role),
-                mode=_Mode("FIXED_TIMELINE"),
-                profile=_Profile(
-                    frequency_range_min=frequency_range_min,
-                    frequency_range_max=frequency_range_max,
-                ),
-            )
-
-    class _FakeClient:
-        async def __aenter__(self) -> _FakeClient:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-
-        async def list_resource_infos(self) -> list[object]:
-            return [
-                _ResourceInfo("inst-q00", _InstrumentCategory()),
-                _ResourceInfo("inst-rq00", _InstrumentCategory()),
-                _ResourceInfo("inst-other", _InstrumentCategory()),
-                _ResourceInfo("port-q00", _PortCategory()),
-            ]
-
-        async def get_instrument_info(self, resource_id: str) -> object:
-            infos = {
-                "inst-q00": _InstrumentInfo(
-                    "inst-q00",
-                    "Q00",
-                    "quel3-02-a01:tx_p04",
-                    "TRANSMITTER",
-                    frequency_range_min=4.1e9,
-                    frequency_range_max=4.3e9,
-                ),
-                "inst-rq00": _InstrumentInfo(
-                    "inst-rq00",
-                    "RQ00",
-                    "quel3-02-a02:trx_p00p04",
-                    "TRANSCEIVER",
-                    frequency_range_min=5.9e9,
-                    frequency_range_max=6.1e9,
-                ),
-                "inst-other": _InstrumentInfo(
-                    "inst-other",
-                    "Q99",
-                    "quel3-02-a99:tx_p01",
-                    "TRANSMITTER",
-                    frequency_range_min=4.0e9,
-                    frequency_range_max=4.5e9,
-                ),
-            }
-            return infos[resource_id]
+            unit_labels_by_box_id: dict[str, str],
+            parallel: bool | None = None,
+        ) -> dict[str, dict]:
+            calls[-1]["unit_labels_by_box_id"] = unit_labels_by_box_id
+            calls[-1]["parallel"] = parallel
+            return {"BOX1": {"instruments": {}}}
 
     monkeypatch.setattr(
-        manager,
-        "_load_quelware_client_factory",
-        lambda: lambda endpoint, port: _FakeClient(),
+        configuration_manager_module,
+        "Quel3HardwareStateReader",
+        _FakeHardwareStateReader,
     )
 
     fetched = manager.fetch_backend_settings_from_hardware(
-        unit_labels_by_box_id={
-            "BOX1": "quel3-02-a01",
-            "BOX2": "quel3-02-a02",
-            "BOX3": "quel3-02-a03",
-        },
+        unit_labels_by_box_id={"BOX1": "unit-a"},
         parallel=False,
     )
 
-    assert fetched == {
-        "BOX1": {
-            "instruments": {
-                "Q00": {
-                    "resource_id": "inst-q00",
-                    "port_id": "quel3-02-a01:tx_p04",
-                    "role": "TRANSMITTER",
-                    "definition": {
-                        "alias": "Q00",
-                        "role": "TRANSMITTER",
-                        "mode": "FIXED_TIMELINE",
-                        "profile": {
-                            "frequency_range_min": 4.1e9,
-                            "frequency_range_max": 4.3e9,
-                        },
-                    },
-                }
-            }
-        },
-        "BOX2": {
-            "instruments": {
-                "RQ00": {
-                    "resource_id": "inst-rq00",
-                    "port_id": "quel3-02-a02:trx_p00p04",
-                    "role": "TRANSCEIVER",
-                    "definition": {
-                        "alias": "RQ00",
-                        "role": "TRANSCEIVER",
-                        "mode": "FIXED_TIMELINE",
-                        "profile": {
-                            "frequency_range_min": 5.9e9,
-                            "frequency_range_max": 6.1e9,
-                        },
-                    },
-                }
-            }
-        },
-        "BOX3": {"instruments": {}},
-    }
-
-
-def test_fetch_backend_settings_skips_unselected_unit_instrument_details(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Given selected unit labels, hardware fetch should not inspect instruments on other units."""
-    manager = Quel3ConfigurationManager()
-
-    class _InstrumentCategory:
-        name = "INSTRUMENT"
-
-    class _ResourceInfo:
-        def __init__(self, resource_id: str) -> None:
-            self.id = resource_id
-            self.category = _InstrumentCategory()
-
-    class _Role:
-        name = "TRANSMITTER"
-
-    class _Definition:
-        alias = "Q00"
-        role = _Role()
-        mode = None
-        profile = None
-
-    class _InstrumentInfo:
-        id = "quel3-02-a01:inst-q00"
-        port_id = "quel3-02-a01:tx_p04"
-        definition = _Definition()
-
-    get_calls: list[str] = []
-
-    class _FakeClient:
-        async def __aenter__(self) -> _FakeClient:
-            return self
-
-        async def __aexit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: object | None,
-        ) -> None:
-            _ = (exc_type, exc, tb)
-
-        async def list_resource_infos(self) -> list[object]:
-            return [
-                _ResourceInfo("quel3-02-a01:inst-q00"),
-                _ResourceInfo("quel3-02-a22:inst-q22"),
-            ]
-
-        async def get_instrument_info(self, resource_id: str) -> object:
-            get_calls.append(resource_id)
-            if resource_id != "quel3-02-a01:inst-q00":
-                raise AssertionError(f"Unexpected instrument fetch: {resource_id}")
-            return _InstrumentInfo()
-
-    monkeypatch.setattr(
-        manager,
-        "_load_quelware_client_factory",
-        lambda: lambda endpoint, port: _FakeClient(),
-    )
-
-    fetched = manager.fetch_backend_settings_from_hardware(
-        unit_labels_by_box_id={"BOX1": "quel3-02-a01"},
-    )
-
-    assert get_calls == ["quel3-02-a01:inst-q00"]
-    assert fetched["BOX1"]["instruments"]["Q00"]["resource_id"] == (
-        "quel3-02-a01:inst-q00"
-    )
+    assert fetched == {"BOX1": {"instruments": {}}}
+    assert calls == [
+        {
+            "runtime_config": runtime_config,
+            "unit_labels_by_box_id": {"BOX1": "unit-a"},
+            "parallel": False,
+        }
+    ]
 
 
 def test_sync_backend_settings_to_cache_restores_alias_mapping_from_snapshot() -> None:

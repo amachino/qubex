@@ -24,6 +24,9 @@ from qubex.backend.quel3.interfaces.client import (
     ResourceInfoProtocol,
     SessionProtocol,
 )
+from qubex.backend.quel3.managers.hardware_state_reader import (
+    Quel3HardwareStateReader,
+)
 from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.managers.session_workarounds import (
     QUELWARE_SESSION_REQUEST_MAX_ATTEMPTS,
@@ -183,12 +186,12 @@ class Quel3ConfigurationManager:
         unit_labels_by_box_id: Mapping[str, str],
         parallel: bool | None = None,
     ) -> dict[str, dict]:
-        """Fetch normalized QuEL-3 instrument snapshots keyed by box ID."""
-        return _run_async(
-            lambda: self._fetch_backend_settings_from_hardware(
-                unit_labels_by_box_id=dict(unit_labels_by_box_id),
-                parallel=True if parallel is None else parallel,
-            )
+        """Fetch backend settings from hardware through the state reader."""
+        return Quel3HardwareStateReader(
+            runtime_config=self._runtime_config,
+        ).fetch_backend_settings_from_hardware(
+            unit_labels_by_box_id=unit_labels_by_box_id,
+            parallel=parallel,
         )
 
     def sync_backend_settings_to_cache(
@@ -452,55 +455,6 @@ class Quel3ConfigurationManager:
         self._target_alias_map = {}
         return dict(deployed)
 
-    async def _fetch_backend_settings_from_hardware(
-        self,
-        *,
-        unit_labels_by_box_id: dict[str, str],
-        parallel: bool,
-    ) -> dict[str, dict]:
-        """Fetch normalized instrument snapshots for selected QuEL-3 boxes."""
-        box_id_by_unit_label = {
-            unit_label: box_id for box_id, unit_label in unit_labels_by_box_id.items()
-        }
-        fetched: dict[str, dict] = {
-            box_id: {"instruments": {}} for box_id in unit_labels_by_box_id
-        }
-        if len(unit_labels_by_box_id) == 0:
-            return fetched
-
-        client_factory = self._load_quelware_client_factory()
-        async with client_factory(
-            self._runtime_config.endpoint,
-            self._runtime_config.port,
-        ) as client:
-            instrument_infos = await self._list_instrument_infos(
-                client=client,
-                parallel=parallel,
-                unit_labels=set(unit_labels_by_box_id.values()),
-            )
-
-        for instrument_info in instrument_infos:
-            unit_label = self._extract_unit_label(str(instrument_info.port_id))
-            box_id = box_id_by_unit_label.get(unit_label)
-            if box_id is None:
-                continue
-            alias, _runtime_alias = self._split_alias_for_port(
-                alias=instrument_info.definition.alias,
-                port_id=instrument_info.port_id,
-            )
-            if len(alias) == 0:
-                continue
-            definition = self._serialize_instrument_definition(
-                instrument_info.definition,
-            )
-            fetched[box_id]["instruments"][alias] = {
-                "resource_id": str(instrument_info.id),
-                "port_id": str(instrument_info.port_id),
-                "role": self._normalize_role_name(instrument_info.definition.role),
-                "definition": definition,
-            }
-        return fetched
-
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
         return self._runtime_config.load_client_factory()
@@ -630,33 +584,6 @@ class Quel3ConfigurationManager:
     def _normalize_enum_name(cls, value: object) -> str:
         """Normalize one enum-like runtime value to a comparable string."""
         return cls._normalize_role_name(value)
-
-    @classmethod
-    def _serialize_instrument_definition(cls, definition: object) -> dict[str, object]:
-        """Serialize stable instrument-definition fields into plain data."""
-        serialized = {
-            "alias": getattr(definition, "alias", ""),
-            "role": cls._normalize_enum_name(getattr(definition, "role", None)),
-        }
-        mode = getattr(definition, "mode", None)
-        if mode is not None:
-            serialized["mode"] = cls._normalize_enum_name(mode)
-        profile = cls._serialize_profile(getattr(definition, "profile", None))
-        if profile:
-            serialized["profile"] = profile
-        return serialized
-
-    @staticmethod
-    def _serialize_profile(profile: object) -> dict[str, object]:
-        """Serialize stable fixed-timeline profile fields into plain data."""
-        if profile is None:
-            return {}
-        serialized: dict[str, object] = {}
-        for attr in ("frequency_range_min", "frequency_range_max"):
-            value = getattr(profile, attr, None)
-            if isinstance(value, int | float):
-                serialized[attr] = float(value)
-        return serialized
 
     @classmethod
     def _build_cached_definition(
