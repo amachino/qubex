@@ -1,21 +1,26 @@
+"""State tomography analysis helpers."""
+
 from __future__ import annotations
 
+import logging
 import warnings
 from functools import reduce
 from itertools import product
+from typing import Any
 
-import cvxpy as cp
 import numpy as np
 import plotly.graph_objs as go
 from numpy.typing import NDArray
-from plotly.subplots import make_subplots
 
-from .visualization import save_figure_image
+import qubex.visualization as viz
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_expected_values(
     probabilities: dict[str, NDArray],
 ) -> dict[str, float]:
+    """Calculate expected Pauli values from measurement probabilities."""
     n_qubits = len(next(iter(probabilities.keys())))
     dim = 2**n_qubits
 
@@ -50,6 +55,7 @@ def create_density_matrix(
     probabilities: dict[str, NDArray],
     mle_fit: bool = True,
 ) -> NDArray:
+    """Create a density matrix from measurement probabilities."""
     n_qubits = len(next(iter(probabilities.keys())))
     dim = 2**n_qubits
     expected_values = calculate_expected_values(probabilities)
@@ -75,6 +81,9 @@ def create_density_matrix(
 def mle_fit_density_matrix(
     expected_values: dict[str, float],
 ) -> NDArray:
+    """Estimate a physical density matrix via MLE fitting."""
+    import cvxpy as cp  # lazy import
+
     paulis = {
         "I": np.array([[1, 0], [0, 1]], dtype=complex),
         "X": np.array([[0, 1], [1, 0]], dtype=complex),
@@ -82,7 +91,7 @@ def mle_fit_density_matrix(
         "Z": np.array([[1, 0], [0, -1]], dtype=complex),
     }
 
-    label = list(expected_values.keys())[0]
+    label = next(iter(expected_values.keys()))
     n = len(label)
     dim = 2**n
 
@@ -126,11 +135,13 @@ def plot_ghz_state_tomography(
     plot: bool = True,
     save_image: bool = False,
     file_name: str | None = None,
-):
+) -> dict[str, Any]:
+    """Plot and optionally save a GHZ state tomography heatmap."""
     n_qubits = len(qubits)
     dim = 2**n_qubits
 
-    fig = make_subplots(
+    fig = viz.make_figure()
+    fig.set_subplots(
         rows=1,
         cols=2,
         subplot_titles=("Re", "Im"),
@@ -200,11 +211,11 @@ def plot_ghz_state_tomography(
     if plot:
         fig.show()
         if fidelity is not None:
-            print(f"State fidelity: {fidelity * 100:.3f}%")
+            logger.info(f"State fidelity: {fidelity * 100:.3f}%")
     if save_image:
         if file_name is None:
             file_name = f"ghz_state_tomography_{'-'.join(qubits)}"
-        save_figure_image(fig, file_name, width=width, height=height)
+        viz.save_figure(fig, file_name, width=width, height=height)
 
     return {
         "density_matrix": rho,

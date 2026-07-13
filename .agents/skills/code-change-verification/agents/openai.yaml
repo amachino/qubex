@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Change Verification"
+  short_description: "Run qubex checks for code changes"
+  default_prompt: "Use $code-change-verification to run the required qubex verification stack for this change."

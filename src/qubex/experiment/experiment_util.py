@@ -1,20 +1,26 @@
+"""Experiment utility helpers."""
+
 from __future__ import annotations
 
 import io
 import sys
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
-from typing import Collection
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ..backend import SAMPLING_PERIOD, SystemManager
+from qubex.backend.quel1 import SAMPLING_PERIOD_NS as DEFAULT_BACKEND_SAMPLING_PERIOD_NS
+from qubex.system import SystemManager
 
 
 class ExperimentUtil:
+    """Utility functions for experiment workflows."""
+
     @staticmethod
     @contextmanager
-    def no_output():
+    def no_output() -> Iterator[None]:
+        """Suppress stdout and stderr within the context."""
         original_stdout = sys.stdout
         original_stderr = sys.stderr
         try:
@@ -26,9 +32,38 @@ class ExperimentUtil:
             sys.stderr = original_stderr
 
     @staticmethod
+    def resolve_sampling_period(
+        sampling_period: float | None = None,
+    ) -> float:
+        """
+        Resolve sampling period from explicit value or backend controller.
+
+        Parameters
+        ----------
+        sampling_period : float | None, optional
+            Explicit sampling period in ns.
+
+        Returns
+        -------
+        float
+            Resolved sampling period in ns.
+        """
+        if isinstance(sampling_period, (int, float)):
+            return float(sampling_period)
+        backend_controller = getattr(SystemManager.shared(), "backend_controller", None)
+        backend_sampling_period_ns = getattr(
+            backend_controller,
+            "sampling_period_ns",
+            None,
+        )
+        if isinstance(backend_sampling_period_ns, (int, float)):
+            return float(backend_sampling_period_ns)
+        return float(DEFAULT_BACKEND_SAMPLING_PERIOD_NS)
+
+    @staticmethod
     def discretize_time_range(
         time_range: ArrayLike,
-        sampling_period: float = SAMPLING_PERIOD,
+        sampling_period: float | None = None,
     ) -> NDArray[np.float64]:
         """
         Discretizes the time range.
@@ -38,32 +73,36 @@ class ExperimentUtil:
         time_range : ArrayLike
             Time range to discretize in ns.
         sampling_period : float, optional
-            Sampling period in ns. Defaults to SAMPLING_PERIOD.
+            Sampling period in ns. Defaults to backend-defined sampling period.
 
         Returns
         -------
         NDArray[np.float64]
             Discretized time range.
         """
+        resolved_sampling_period = ExperimentUtil.resolve_sampling_period(
+            sampling_period
+        )
         discretized_range = np.array(time_range)
         discretized_range = (
-            np.round(discretized_range / sampling_period) * sampling_period
+            np.round(discretized_range / resolved_sampling_period)
+            * resolved_sampling_period
         )
         return discretized_range
 
     @staticmethod
     def split_frequency_range(
         frequency_range: ArrayLike,
-        subrange_width: float = 0.3,
+        subrange_width: float | None = None,
     ) -> list[NDArray[np.float64]]:
         """
-        Splits the frequency range into sub-ranges.
+        Split the frequency range into sub-ranges.
 
         Parameters
         ----------
         frequency_range : ArrayLike
             Frequency range to split in GHz.
-        ubrange_width : float, optional
+        subrange_width : float, optional
             Width of the sub-ranges. Defaults to 0.3 GHz.
 
         Returns
@@ -71,6 +110,8 @@ class ExperimentUtil:
         list[NDArray[np.float64]]
             Sub-ranges.
         """
+        if subrange_width is None:
+            subrange_width = 0.3
         frequency_range = np.array(frequency_range)
         range_count = (frequency_range[-1] - frequency_range[0]) // subrange_width + 1
         sub_ranges = np.array_split(frequency_range, range_count)
@@ -81,7 +122,7 @@ class ExperimentUtil:
         qubits: Collection[str],
     ) -> list[list[str]]:
         """
-        Creates subgroups of qubits.
+        Create subgroups of qubits.
 
         Parameters
         ----------

@@ -1,13 +1,18 @@
+"""Benchmark helpers for profiling operations."""
+
 from __future__ import annotations
 
 import io
 import sys
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
 import plotly.io as pio
 from numpy.typing import NDArray
+
+import qubex.visualization as viz
 
 
 def benchmark(
@@ -25,7 +30,6 @@ def benchmark(
 
     Parameters
     ----------
-
     func : Callable[[Any], Any]
         Function to benchmark.
     params : Sequence | NDArray
@@ -74,8 +78,9 @@ def benchmark(
     times = np.asarray(times)
     times_stdev = np.asarray(times_stdev)
 
-    fig = go.Figure(
-        data=go.Scatter(
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
             x=params,
             y=times,
             error_y=dict(
@@ -84,7 +89,7 @@ def benchmark(
                 visible=True,
             ),
             mode="lines+markers",
-        ),
+        )
     )
     fig.update_layout(
         title=title,

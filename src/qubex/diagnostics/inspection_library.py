@@ -1,12 +1,17 @@
+"""Concrete inspection implementations for chip diagnostics."""
+
 from __future__ import annotations
 
 import numpy as np
 
-from ..backend.lattice_graph import LatticeGraph
+from qubex.system.lattice_graph import LatticeGraph
+
 from .inspection import Inspection
 
 
 class Type0A(Inspection):
+    """Detect bad qubit parameters (frequency, T1, T2)."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -19,7 +24,8 @@ class Type0A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type0A constraints and record invalid nodes."""
         min_frequency = self.params.min_frequency
         max_frequency = self.params.max_frequency
         min_t1 = self.params.min_t1
@@ -60,6 +66,8 @@ class Type0A(Inspection):
 
 
 class Type0B(Inspection):
+    """Detect excessive detuning between neighboring qubits."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -72,7 +80,8 @@ class Type0B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type0B constraints and record invalid edges."""
         max_detuning = self.params.max_detuning
 
         for i, j in self.graph.qubit_edges:
@@ -89,6 +98,8 @@ class Type0B(Inspection):
 
 
 class Type1A(Inspection):
+    """Detect overly small GE detuning for CR control."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -101,7 +112,8 @@ class Type1A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type1A constraints and record invalid edges."""
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
@@ -141,6 +153,8 @@ class Type1A(Inspection):
 
 
 class Type1B(Inspection):
+    """Detect overly small EF detuning for CR control."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -153,7 +167,8 @@ class Type1B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type1B constraints and record invalid edges."""
         adiabatic_limit = self.params.adiabatic_limit
 
         for c in self.graph.qubit_nodes:
@@ -177,6 +192,8 @@ class Type1B(Inspection):
 
 
 class Type1C(Inspection):
+    """Detect CR control frequency conflicts with EF levels."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -189,7 +206,8 @@ class Type1C(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type1C constraints and record invalid edges."""
         cr_control_limit = self.params.cr_control_limit
 
         for c, t in self.graph.qubit_edges:
@@ -206,6 +224,8 @@ class Type1C(Inspection):
 
 
 class Type2A(Inspection):
+    """Detect low detuning between control and target GE levels."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -218,7 +238,8 @@ class Type2A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type2A constraints and record invalid edges."""
         adiabatic_limit = self.params.adiabatic_limit
 
         for c, t in self.graph.qubit_edges:
@@ -238,6 +259,8 @@ class Type2A(Inspection):
 
 
 class Type2B(Inspection):
+    """Detect low detuning between target EF and control GE levels."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -250,7 +273,8 @@ class Type2B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type2B constraints and record invalid edges."""
         adiabatic_limit = self.params.adiabatic_limit
 
         for c, t in self.graph.qubit_edges:
@@ -271,6 +295,8 @@ class Type2B(Inspection):
 
 
 class Type3A(Inspection):
+    """Detect low detuning between control EF and target GE levels."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -283,7 +309,8 @@ class Type3A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type3A constraints and record invalid edges."""
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
@@ -319,6 +346,8 @@ class Type3A(Inspection):
 
 
 class Type3B(Inspection):
+    """Detect CR control conflicts with control EF levels."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -331,7 +360,8 @@ class Type3B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type3B constraints and record invalid edges."""
         cr_control_limit = self.params.cr_control_limit
 
         for c, t in self.graph.qubit_edges:
@@ -351,6 +381,8 @@ class Type3B(Inspection):
 
 
 class Type7(Inspection):
+    """Detect low detuning between control EF and target EF levels."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -363,7 +395,8 @@ class Type7(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type7 constraints and record invalid edges."""
         adiabatic_limit = self.params.adiabatic_limit
 
         for c, t in self.graph.qubit_edges:
@@ -396,6 +429,8 @@ class Type7(Inspection):
 
 
 class Type8(Inspection):
+    """Detect large ZZ interaction between neighboring qubits."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -408,7 +443,8 @@ class Type8(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type8 constraints and record invalid edges."""
         for c, t in self.graph.qubit_edges:
             label_ct = self.get_label((c, t))
             D_stark_c = self.get_stark_shift((c, t))
@@ -438,6 +474,8 @@ class Type8(Inspection):
 
 
 class Type9(Inspection):
+    """Detect Stark-shifted GE/EF overlaps."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -450,7 +488,8 @@ class Type9(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
+        """Evaluate Type9 constraints and record invalid edges."""
         for c, t in self.graph.qubit_edges:
             label_ct = self.get_label((c, t))
             D_stark_c = self.get_stark_shift((c, t))

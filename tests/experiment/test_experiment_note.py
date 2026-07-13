@@ -1,8 +1,11 @@
+"""Tests for ExperimentNote behavior and persistence."""
+
 import json
+
 import numpy as np
 import pytest
 
-from qubex.experiment.experiment_note import ExperimentNote
+from qubex.experiment.models.experiment_note import ExperimentNote
 
 
 def test_init(tmp_path):
@@ -16,10 +19,14 @@ def test_put_invalid_values(tmp_path):
     """ExperimentNote should raise a ValueError if the value is not JSON serializable."""
     note = ExperimentNote(file_path=tmp_path / "note.json")
     # complex
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Value for key 'foo' is not JSON serializable\."
+    ):
         note.put("foo", 1 + 1j)
     # ndarray
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Value for key 'foo' is not JSON serializable\."
+    ):
         note.put("foo", np.array([1, 2, 3]))
 
 
@@ -145,6 +152,7 @@ def test_save_sanitizes_nonfinite_values(tmp_path):
 
 
 def test_str_and_repr_are_sanitized(tmp_path):
+    """ExperimentNote string representations should sanitize non-finite values."""
     p = tmp_path / "note2.json"
     en = ExperimentNote(file_path=p)
     en.clear()

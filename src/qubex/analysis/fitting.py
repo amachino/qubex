@@ -1,17 +1,24 @@
+"""
+Curve fitting utilities and result containers.
+
+Notes
+-----
+This module is kept as the legacy compatibility baseline.
+Develop new fitting APIs in `qxfitting`.
+"""
+
 from __future__ import annotations
 
 import logging
-from collections import UserDict
 from datetime import datetime
-from enum import Enum
 from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
-from plotly.subplots import make_subplots
-from scipy.optimize import curve_fit, least_squares, minimize
-from sklearn.decomposition import PCA
+
+from qubex import visualization as viz
+from qubex.analysis.fit_result import FitResult, FitStatus
 
 COLORS = [
     "#0C5DA5",
@@ -26,28 +33,28 @@ COLORS = [
 logger = logging.getLogger(__name__)
 
 
-class FitStatus(Enum):
-    SUCCESS = "success"
-    WARNING = "warning"
-    ERROR = "error"
+def _curve_fit(*args, **kwargs):
+    from scipy.optimize import curve_fit as scipy_curve_fit  # lazy import
+
+    return scipy_curve_fit(*args, **kwargs)
 
 
-class FitResult(UserDict):
-    status: FitStatus = FitStatus.SUCCESS
+def _least_squares(*args, **kwargs):
+    from scipy.optimize import least_squares as scipy_least_squares  # lazy import
 
-    def __init__(
-        self,
-        status: FitStatus,
-        message: str | None = None,
-        data: dict[str, Any] | None = None,
-    ) -> None:
-        super().__init__(data)
-        self.status = status
-        self.message = message
-        self.data["status"] = self.status.value
+    return scipy_least_squares(*args, **kwargs)
 
-    def __repr__(self) -> str:
-        return f"<FitResult status={self.status.value} message={self.message} data={{...}}>"
+
+def _minimize(*args, **kwargs):
+    from scipy.optimize import minimize as scipy_minimize  # lazy import
+
+    return scipy_minimize(*args, **kwargs)
+
+
+def _PCA(*args, **kwargs):
+    from sklearn.decomposition import PCA as sklearn_pca  # lazy import
+
+    return sklearn_pca(*args, **kwargs)
 
 
 def _plotly_config(filename: str) -> dict:
@@ -122,7 +129,7 @@ def func_delayed_cos(
     A: float,
     omega: float,
     C: float,
-):
+) -> NDArray:
     """
     Calculate a delayed cosine function with given parameters.
 
@@ -193,6 +200,43 @@ def func_lorentzian(
         Vertical offset of the Lorentzian function.
     """
     return A / (1 + ((f - f0) / gamma) ** 2) + C
+
+
+def func_double_lorentzian(
+    f: NDArray,
+    A1: float,
+    f01: float,
+    gamma1: float,
+    A2: float,
+    f02: float,
+    gamma2: float,
+    C: float,
+) -> NDArray:
+    """
+    Calculate a sum of two Lorentzian peaks.
+
+    Parameters
+    ----------
+    f : NDArray[np.float64]
+        Frequency points for the function evaluation.
+    A1 : float
+        Amplitude of the first Lorentzian peak.
+    f01 : float
+        Center frequency of the first Lorentzian peak.
+    gamma1 : float
+        Width of the first Lorentzian peak.
+    A2 : float
+        Amplitude of the second Lorentzian peak.
+    f02 : float
+        Center frequency of the second Lorentzian peak.
+    gamma2 : float
+        Width of the second Lorentzian peak.
+    C : float
+        Vertical offset.
+    """
+    return (
+        A1 / (1 + ((f - f01) / gamma1) ** 2) + A2 / (1 + ((f - f02) / gamma2) ** 2) + C
+    )
 
 
 def func_sqrt_lorentzian(
@@ -343,21 +387,21 @@ def fit_linear(
     x = x[mask]
     y = y[mask]
 
-    def func_linear(x, a):
+    def func_linear(x: NDArray, a: float) -> NDArray:
         return a * x
 
-    def func_linear_with_intercept(x, a, b):
+    def func_linear_with_intercept(x: NDArray, a: float, b: float) -> NDArray:
         return a * x + b
 
     if not intercept:
-        popt, pcov = curve_fit(func_linear, x, y)
+        popt, pcov = _curve_fit(func_linear, x, y)
         a = popt[0]
         a_err = np.sqrt(np.diag(pcov))[0]
         r2 = 1 - np.sum((y - func_linear(x, *popt)) ** 2) / np.sum(
             (y - np.mean(y)) ** 2
         )
     else:
-        popt, pcov = curve_fit(func_linear_with_intercept, x, y)
+        popt, pcov = _curve_fit(func_linear_with_intercept, x, y)
         a, b = popt
         a_err, b_err = np.sqrt(np.diag(pcov))
         r2 = 1 - np.sum((y - func_linear_with_intercept(x, *popt)) ** 2) / np.sum(
@@ -370,7 +414,7 @@ def fit_linear(
     else:
         y_fine = func_linear_with_intercept(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -402,16 +446,16 @@ def fit_linear(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
+            logger.info(f"Target: {target}")
         if not intercept:
-            print("Fit: a * x")
-            print(f"  a = {a:.3g} ± {a_err:.1g}")
+            logger.info("Fit: a * x")
+            logger.info(f"  a = {a:.3g} ± {a_err:.1g}")
         else:
-            print("Fit: a * x + b")
-            print(f"  a = {a:.3g} ± {a_err:.1g}")
-            print(f"  b = {b:.3g} ± {b_err:.1g}")
-        print(f"  R² = {r2:.3f}")
-        print("")
+            logger.info("Fit: a * x + b")
+            logger.info(f"  a = {a:.3g} ± {a_err:.1g}")
+            logger.info(f"  b = {b:.3g} ± {b_err:.1g}")
+        logger.info(f"  R² = {r2:.3f}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -424,8 +468,10 @@ def fit_linear(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -491,10 +537,10 @@ def fit_polynomial(
         # select root nearest to the center of the range
         root = roots_in_range[np.argmin(np.abs(roots_in_range - np.mean(x)))]
     except ValueError:
-        print(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
+        logger.warning(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
         root = np.nan
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -539,8 +585,10 @@ def fit_polynomial(
             "fun": fun,
             "root": root,
             "roots": roots_in_range,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -632,16 +680,16 @@ def fit_cosine(
                 (0, 0, -np.pi, -bound_max, 0),
                 (bound_max, np.inf, np.pi, bound_max, np.inf),
             )
-            popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
                 (0, 0, -np.pi, -bound_max),
                 (bound_max, np.inf, np.pi, bound_max),
             )
-            popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -670,7 +718,7 @@ def fit_cosine(
         func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
     )
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -707,16 +755,16 @@ def fit_cosine(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f = {f:.6g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
+            logger.info(f"Target: {target}")
+        logger.info("Fit: A * cos(2πft + φ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f = {f:.6g} ± {f_err:.1g}")
+        logger.info(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
         if is_damped:
-            print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+            logger.info(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -735,8 +783,10 @@ def fit_cosine(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -745,8 +795,8 @@ def fit_delayed_cosine(
     y: ArrayLike,
     *,
     threshold: float = 0.5,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Delayed cosine fit",
@@ -807,12 +857,12 @@ def fit_delayed_cosine(
     omega_est = 2 * np.pi * f[i]
     offset_est = (np.max(y) + np.min(y)) / 2
 
-    dy = np.abs((y - y[0]))
+    dy = np.abs(y - y[0])
     dy = dy / np.max(dy)
     idx = np.argmax(dy > threshold)
     t0_est = x[idx]
 
-    logger.error(
+    logger.debug(
         f"Initial guess: A = {amplitude_est:.3g}, ω = {omega_est:.3g}, t0 = {t0_est:.3g}, C = {offset_est:.3g}"
     )
 
@@ -826,9 +876,9 @@ def fit_delayed_cosine(
         )
 
     try:
-        popt, pcov = curve_fit(func_delayed_cos, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_delayed_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -846,7 +896,7 @@ def fit_delayed_cosine(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_delayed_cos(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -892,14 +942,14 @@ def fit_delayed_cosine(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f = {f:.6g} ± {f_err:.1g}")
-        print(f"  t0 = {t0:.6g} ± {t0_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+            logger.info(f"Target: {target}")
+        logger.info("Fit: A * cos(2πft + φ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f = {f:.6g} ± {f_err:.1g}")
+        logger.info(f"  t0 = {t0:.6g} ± {t0_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -916,8 +966,10 @@ def fit_delayed_cosine(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -925,8 +977,8 @@ def fit_exp_decay(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Decay time",
@@ -990,9 +1042,9 @@ def fit_exp_decay(
         )
 
     try:
-        popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1006,7 +1058,7 @@ def fit_exp_decay(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine * 1e-3,
@@ -1045,13 +1097,13 @@ def fit_exp_decay(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit: A * exp(-t/τ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  τ = {tau * 1e-3:.6g} ± {tau_err * 1e-3:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+            logger.info(f"Target: {target}")
+        logger.info("Fit: A * exp(-t/τ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  τ = {tau * 1e-3:.6g} ± {tau_err * 1e-3:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1066,8 +1118,10 @@ def fit_exp_decay(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1075,8 +1129,8 @@ def fit_lorentzian(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Lorentzian fit",
@@ -1140,9 +1194,9 @@ def fit_lorentzian(
         )
 
     try:
-        popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1158,7 +1212,7 @@ def fit_lorentzian(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_lorentzian(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -1205,12 +1259,12 @@ def fit_lorentzian(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit : A / [1 + {(f - f0) / γ}^2] + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
-        print(f"  γ = {gamma:.6g} ± {gamma_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
+            logger.info(f"Target: {target}")
+        logger.info("Fit : A / [1 + {(f - f0) / γ}^2] + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        logger.info(f"  γ = {gamma:.6g} ± {gamma_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1227,8 +1281,209 @@ def fit_lorentzian(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
+    )
+
+
+def fit_double_lorentzian(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    p0: Any | None = None,
+    bounds: Any | None = None,
+    sigma: ArrayLike | None = None,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Double Lorentzian fit",
+    xlabel: str = "Frequency (GHz)",
+    ylabel: str = "Signal (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> FitResult:
+    """
+    Fit data to a sum of two Lorentzian peaks.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Frequency range for the Lorentzian data.
+    y : ArrayLike
+        Amplitude data for the Lorentzian data.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Lower and upper bounds for the fitting parameters.
+    sigma : ArrayLike, optional
+        Standard deviation estimates used to weight the fit.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    target : str, optional
+        Identifier of the target.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    FitResult
+        Result with fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+    if sigma is not None:
+        sigma = np.array(sigma, dtype=np.float64)[mask]
+
+    if p0 is None:
+        y_base = float(np.percentile(y, 20))
+        peak_indices = np.argsort(y)[-2:]
+        f01_guess = float(x[peak_indices[0]])
+        f02_guess = float(x[peak_indices[1]])
+        A1_guess = max(float(y[peak_indices[0]] - y_base), 0)
+        A2_guess = max(float(y[peak_indices[1]] - y_base), 0)
+        gamma_guess = max(float(np.max(x) - np.min(x)) / 12, np.finfo(float).eps)
+        p0 = (
+            A1_guess,
+            f01_guess,
+            gamma_guess,
+            A2_guess,
+            f02_guess,
+            gamma_guess,
+            y_base,
+        )
+
+    if bounds is None:
+        bounds = (
+            (0, np.min(x), 0, 0, np.min(x), 0, -np.inf),
+            (np.inf, np.max(x), np.inf, np.inf, np.max(x), np.inf, np.inf),
+        )
+
+    try:
+        popt, pcov = _curve_fit(
+            func_double_lorentzian,
+            x,
+            y,
+            p0=p0,
+            bounds=bounds,
+            sigma=sigma,
+        )
+    except RuntimeError:
+        logger.warning(f"Failed to fit the data for {target}.")
+        return FitResult(
+            status=FitStatus.ERROR,
+            message="Failed to fit the data.",
+        )
+
+    A1, f01, gamma1, A2, f02, gamma2, C = popt
+    A1_err, f01_err, gamma1_err, A2_err, f02_err, gamma2_err, C_err = np.sqrt(
+        np.diag(pcov)
+    )
+
+    residual = y - func_double_lorentzian(x, *popt)
+    total = np.sum((y - np.mean(y)) ** 2)
+    r2 = 1 - np.sum(residual**2) / total if total > 0 else np.nan
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_double_lorentzian(x_fine, *popt)
+    max_index = int(np.argmax(y_fine))
+    f0 = float(x_fine[max_index])
+    y0 = float(y_fine[max_index])
+
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        x=f0,
+        y=y0,
+        text=f"ext: {f0:.6f}",
+        showarrow=True,
+        arrowhead=1,
+        bgcolor="rgba(255, 255, 255, 0.8)",
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = (
+            f"fit_double_lorentzian_{target}" if target else "fit_double_lorentzian"
+        )
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            logger.info(f"Target: {target}")
+        logger.info("Fit : two Lorentzian peaks plus offset")
+        logger.info(f"  f0 = {f0:.6f}")
+        logger.info(f"  f01 = {f01:.6f} ± {f01_err:.1g}")
+        logger.info(f"  f02 = {f02:.6f} ± {f02_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+
+    return FitResult(
+        status=FitStatus.SUCCESS,
+        message="Fitting successful.",
+        data={
+            "A1": A1,
+            "f01": f01,
+            "gamma1": gamma1,
+            "A2": A2,
+            "f02": f02,
+            "gamma2": gamma2,
+            "C": C,
+            "f0": f0,
+            "A1_err": A1_err,
+            "f01_err": f01_err,
+            "gamma1_err": gamma1_err,
+            "A2_err": A2_err,
+            "f02_err": f02_err,
+            "gamma2_err": gamma2_err,
+            "C_err": C_err,
+            "r2": r2,
+            "popt": popt,
+            "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
+            "fig": fig,
+        },
+        figure=fig,
     )
 
 
@@ -1236,8 +1491,8 @@ def fit_sqrt_lorentzian(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Square root Lorentzian fit",
@@ -1303,7 +1558,7 @@ def fit_sqrt_lorentzian(
         )
 
     try:
-        popt, pcov = curve_fit(
+        popt, pcov = _curve_fit(
             func_sqrt_lorentzian,
             x,
             y,
@@ -1311,7 +1566,7 @@ def fit_sqrt_lorentzian(
             bounds=bounds,
         )
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1327,7 +1582,7 @@ def fit_sqrt_lorentzian(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_sqrt_lorentzian(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -1374,12 +1629,12 @@ def fit_sqrt_lorentzian(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
-        print(f"  Ω = {Omega:.6g} ± {Omega_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
+            logger.info(f"Target: {target}")
+        logger.info("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        logger.info(f"  Ω = {Omega:.6g} ± {Omega_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1396,8 +1651,10 @@ def fit_sqrt_lorentzian(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1410,6 +1667,7 @@ def fit_rabi(
     reference_point: complex | None = None,
     plot: bool = True,
     is_damped: bool = False,
+    warn_low_r2: bool = True,
     ylabel: str | None = None,
     yaxis_range: tuple[float, float] | None = None,
 ) -> FitResult:
@@ -1432,6 +1690,8 @@ def fit_rabi(
         Whether to plot the data and the fit.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
+    warn_low_r2 : bool, optional
+        Whether to emit a warning log when the fit quality is low.
     ylabel : str | None, optional
         Label for the y-axis.
     yaxis_range : tuple[float, float] | None, optional
@@ -1450,7 +1710,7 @@ def fit_rabi(
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
     data_vec = np.column_stack([data.real, data.imag])
-    pca = PCA(n_components=2).fit(data_vec)
+    pca = _PCA(n_components=2).fit(data_vec)
 
     if reference_point is not None:
         # If a reference point is provided, use it to determine the initial point
@@ -1499,16 +1759,16 @@ def fit_rabi(
                 (0, 0, -np.inf, -np.inf, 0),
                 (np.inf, np.inf, np.pi, np.inf, np.inf),
             )
-            popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
                 (0, 0, -np.inf, -np.inf),
                 (np.inf, np.inf, np.pi, np.inf),
             )
-            popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1544,7 +1804,7 @@ def fit_rabi(
         func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
     )
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -1581,8 +1841,10 @@ def fit_rabi(
     if plot:
         fig.show(config=_plotly_config(f"rabi_{target}"))
 
-        print(f"Target: {target}")
-        print(f"Rabi frequency: {frequency * 1e3:.6g} ± {frequency_err * 1e3:.1g} MHz")
+        logger.info(f"Target: {target}")
+        logger.info(
+            f"Rabi frequency: {frequency * 1e3:.6g} ± {frequency_err * 1e3:.1g} MHz"
+        )
 
     data_payload = {
         "amplitude": amplitude,
@@ -1606,21 +1868,25 @@ def fit_rabi(
         "reference_phase": reference_phase,
         "popt": popt,
         "pcov": pcov,
+        # TODO: Remove this legacy payload key after callers migrate to .figure.
         "fig": fig,
     }
 
     if r2 < 0.9:
-        print("Warning: R² < 0.9")
+        if warn_low_r2:
+            logger.warning("R² < 0.9")
         return FitResult(
             status=FitStatus.WARNING,
             message="R² < 0.9",
             data=data_payload,
+            figure=fig,
         )
     else:
         return FitResult(
             status=FitStatus.SUCCESS,
             message="Fitting successful",
             data=data_payload,
+            figure=fig,
         )
 
 
@@ -1630,6 +1896,7 @@ def fit_detuned_rabi(
     control_frequencies: NDArray,
     rabi_frequencies: NDArray,
     plot: bool = True,
+    warn_low_r2: bool = True,
 ) -> FitResult:
     """
     Fit detuned Rabi oscillation data to a cosine function and plot the results.
@@ -1644,6 +1911,8 @@ def fit_detuned_rabi(
         Rabi frequencies corresponding to the control frequencies in GHz.
     plot : bool, optional
         Whether to plot the data and the fit.
+    warn_low_r2 : bool, optional
+        Whether to emit a warning log when the fit quality is low.
 
     Returns
     -------
@@ -1656,14 +1925,33 @@ def fit_detuned_rabi(
     mask = ~np.isnan(rabi_frequencies)
     control_frequencies = control_frequencies[mask]
     rabi_frequencies = rabi_frequencies[mask]
+    if len(control_frequencies) < 3:
+        logger.warning(f"Not enough finite data to fit the data for {target}.")
+        return FitResult(
+            status=FitStatus.ERROR,
+            message="Not enough finite data to fit the data.",
+        )
 
-    def func(f_control, f_resonance, f_rabi):
+    def func(f_control: NDArray, f_resonance: float, f_rabi: float) -> NDArray:
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
 
+    initial_f_resonance = control_frequencies[np.argmin(rabi_frequencies)]
+    initial_f_rabi = max(float(np.min(rabi_frequencies)), np.finfo(np.float64).eps)
+
     try:
-        popt, pcov = curve_fit(func, control_frequencies, rabi_frequencies)
-    except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        popt, pcov = _curve_fit(
+            func,
+            control_frequencies,
+            rabi_frequencies,
+            p0=(initial_f_resonance, initial_f_rabi),
+            bounds=(
+                (float(np.min(control_frequencies)), 0.0),
+                (float(np.max(control_frequencies)), np.inf),
+            ),
+            maxfev=10000,
+        )
+    except (RuntimeError, ValueError):
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1682,7 +1970,7 @@ def fit_detuned_rabi(
         (rabi_frequencies - func(control_frequencies, *popt)) ** 2
     ) / np.sum((rabi_frequencies - np.mean(rabi_frequencies)) ** 2)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -1724,12 +2012,20 @@ def fit_detuned_rabi(
     if plot:
         fig.show(config=_plotly_config(f"detuned_rabi_{target}"))
 
-        print("Resonance frequency")
-        print(f"  {target}: {f_resonance:.6f}")
+        logger.info("Resonance frequency")
+        logger.info(f"  {target}: {f_resonance:.6f}")
+
+    status = FitStatus.SUCCESS
+    message = "Fitting successful."
+    if not np.isfinite(r2) or r2 < 0.5:
+        status = FitStatus.WARNING
+        message = "R² < 0.5"
+        if warn_low_r2:
+            logger.warning("R² < 0.5")
 
     return FitResult(
-        status=FitStatus.SUCCESS,
-        message="Fitting successful.",
+        status=status,
+        message=message,
         data={
             "f_resonance": f_resonance,
             "f_resonance_err": f_resonance_err,
@@ -1738,8 +2034,10 @@ def fit_detuned_rabi(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1753,8 +2051,8 @@ def fit_ramsey(
     phase_est: float | None = None,
     offset_est: float | None = None,
     tau_est: float | None = None,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Ramsey fringe",
     xlabel: str = "Time (μs)",
@@ -1829,9 +2127,9 @@ def fit_ramsey(
         )
 
     try:
-        popt, pcov = curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1849,7 +2147,7 @@ def fit_ramsey(
     x_fine = np.linspace(np.min(times), np.max(times), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine * 1e-3,
@@ -1886,15 +2184,15 @@ def fit_ramsey(
     if plot:
         fig.show(config=_plotly_config(f"ramsey_{target}"))
 
-        print(f"Target: {target}")
-        print("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f = {f:.6g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
-        print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+        logger.info(f"Target: {target}")
+        logger.info("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f = {f:.6g} ± {f_err:.1g}")
+        logger.info(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        logger.info(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1915,8 +2213,10 @@ def fit_ramsey(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -1927,8 +2227,8 @@ def fit_rb(
     y: NDArray[np.float64],
     error_y: NDArray[np.float64] | None = None,
     dimension: int = 2,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Randomized benchmarking",
     xlabel: str = "Number of Cliffords",
@@ -1986,9 +2286,9 @@ def fit_rb(
         return A * p**n + C
 
     try:
-        popt, pcov = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -2007,7 +2307,7 @@ def fit_rb(
 
     r2 = 1 - np.sum((y - func_rb(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -2044,16 +2344,16 @@ def fit_rb(
     if plot:
         fig.show(config=_plotly_config(f"rb_{target}"))
 
-        print(f"Target: {target}")
-        print("Fit: A * p^n + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  p = {p:.6g} ± {p_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print(f"Depolarizing rate: {depolarizing_rate:.6g}")
-        print(f"Average gate error: {avg_gate_error:.6g}")
-        print(f"Average gate fidelity: {avg_gate_fidelity:.6g}")
-        print("")
+        logger.info(f"Target: {target}")
+        logger.info("Fit: A * p^n + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  p = {p:.6g} ± {p_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info(f"Depolarizing rate: {depolarizing_rate:.6g}")
+        logger.info(f"Average gate error: {avg_gate_error:.6g}")
+        logger.info(f"Average gate fidelity: {avg_gate_fidelity:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -2072,8 +2372,10 @@ def fit_rb(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -2154,7 +2456,7 @@ def plot_irb(
     y_rb_fine = func_rb(x_fine, A_rb, p_rb, C_rb)
     y_irb_fine = func_rb(x_fine, A_irb, p_irb, C_irb)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -2218,7 +2520,7 @@ def fit_ampl_calib_data(
     target: str,
     amplitude_range: NDArray,
     data: NDArray,
-    p0=None,
+    p0: Any | None = None,
     maximize: bool = True,
     plot: bool = True,
     title: str = "Amplitude calibration",
@@ -2256,7 +2558,14 @@ def fit_ampl_calib_data(
     if maximize:
         data = -data
 
-    def cos_func(t, ampl, omega, phi, a, b):
+    def cos_func(
+        t: NDArray,
+        ampl: float,
+        omega: float,
+        phi: float,
+        a: float,
+        b: float,
+    ) -> NDArray:
         return ampl * np.cos(omega * t + phi) + a * t + b
 
     x = amplitude_range
@@ -2277,9 +2586,9 @@ def fit_ampl_calib_data(
         p0 = (amplitude_est, omega_est, phase_est, a_est, b_est)
 
     try:
-        popt, pcov = curve_fit(cos_func, x, y, p0=p0)
+        popt, pcov = _curve_fit(cos_func, x, y, p0=p0)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -2289,7 +2598,7 @@ def fit_ampl_calib_data(
             },
         )
 
-    result = minimize(
+    result = _minimize(
         cos_func,
         x0=np.mean(x),
         args=tuple(popt),
@@ -2303,7 +2612,7 @@ def fit_ampl_calib_data(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = cos_func(x_fine, *popt)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -2354,8 +2663,10 @@ def fit_ampl_calib_data(
             "r2": r2,
             "popt": popt,
             "pcov": pcov,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -2364,8 +2675,8 @@ def fit_reflection_coefficient(
     target: str,
     freq_range: NDArray,
     data: NDArray,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Reflection coefficient",
 ) -> FitResult:
@@ -2411,13 +2722,13 @@ def fit_reflection_coefficient(
             (np.max(freq_range), 1.0, 1.0, np.inf, np.pi, np.inf),
         )
 
-    def residuals(params, f, y):
+    def residuals(params: NDArray, f: NDArray, y: NDArray) -> NDArray:
         f_r, kappa_ex, kappa_in, A, phi, tau = params
         y_model = func_resonator_reflection(f, f_r, kappa_ex, kappa_in, A, phi, tau)
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
     try:
-        result = least_squares(
+        result = _least_squares(
             residuals,
             p0,
             bounds=bounds,
@@ -2437,7 +2748,8 @@ def fit_reflection_coefficient(
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonator_reflection(x_fine, *fitted_params)
 
-    fig = make_subplots(
+    fig = viz.make_figure()
+    fig.set_subplots(
         rows=2,
         cols=2,
         column_widths=[0.5, 0.5],
@@ -2596,8 +2908,10 @@ def fit_reflection_coefficient(
             "phi": phi,
             "tau": tau,
             "r2": r2,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
@@ -2606,8 +2920,8 @@ def fit_reflection_coefficient_double(
     target: str,
     freq_range: NDArray,
     data: NDArray,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Reflection coefficient",
 ) -> FitResult:
@@ -2666,12 +2980,12 @@ def fit_reflection_coefficient_double(
             ),
         )
 
-    def residuals(params, f, y):
+    def residuals(params: NDArray, f: NDArray, y: NDArray) -> NDArray:
         y_model = func_double_resonator_reflection(f, *params)
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
     try:
-        result = least_squares(
+        result = _least_squares(
             residuals,
             p0,
             bounds=bounds,
@@ -2691,7 +3005,8 @@ def fit_reflection_coefficient_double(
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_double_resonator_reflection(x_fine, *fitted_params)
 
-    fig = make_subplots(
+    fig = viz.make_figure()
+    fig.set_subplots(
         rows=2,
         cols=2,
         column_widths=[0.5, 0.5],
@@ -2829,14 +3144,14 @@ def fit_reflection_coefficient_double(
     if plot:
         fig.show()
 
-    print(f"{target}\n--------------------")
-    print(f"Resonance frequency #0:\n  {f_r0:.6g} GHz")
-    print(f"Resonance frequency #1:\n  {f_r1:.6g} GHz")
-    print(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6g} MHz")
-    print(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6g} MHz")
-    print(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6g} MHz")
-    print(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6g} MHz")
-    print("--------------------\n")
+    logger.info(f"{target}\n--------------------")
+    logger.info(f"Resonance frequency #0:\n  {f_r0:.6g} GHz")
+    logger.info(f"Resonance frequency #1:\n  {f_r1:.6g} GHz")
+    logger.info(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6g} MHz")
+    logger.info(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6g} MHz")
+    logger.info(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6g} MHz")
+    logger.info(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6g} MHz")
+    logger.info("--------------------\n")
 
     return FitResult(
         status=(FitStatus.SUCCESS if result.success else FitStatus.WARNING),
@@ -2856,16 +3171,18 @@ def fit_reflection_coefficient_double(
             "phi": phi,
             "tau": tau,
             "r2": r2,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
         },
+        figure=fig,
     )
 
 
 def fit_rotation(
     times: NDArray[np.float64],
     data: NDArray[np.float64],
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     plot3d: bool = False,
     title: str = "State evolution",
@@ -2951,7 +3268,7 @@ def fit_rotation(
         decay_factor = np.exp(-alpha * times)
         return decay_factor[:, np.newaxis] * r_t
 
-    def residuals(params, times, data):
+    def residuals(params: NDArray, times: NDArray, data: NDArray) -> NDArray:
         return (rotate(times, *params) - data).flatten()
 
     if p0 is None:
@@ -3005,10 +3322,10 @@ def fit_rotation(
             ),
         )
 
-    logger.info("Fitting rotation data.")
-    logger.info(f"Initial guess: {p0}")
+    logger.debug("Fitting rotation data.")
+    logger.debug(f"Initial guess: {p0}")
 
-    result = least_squares(
+    result = _least_squares(
         residuals,
         p0,
         bounds=bounds,
@@ -3036,7 +3353,7 @@ def fit_rotation(
     times_fine = np.linspace(np.min(times), np.max(times), 1000)
     fit = rotate(times_fine, *fitted_params)
 
-    fig = go.Figure()
+    fig = viz.make_figure()
     fig.add_trace(
         go.Scatter(
             x=times,
@@ -3106,7 +3423,7 @@ def fit_rotation(
         yaxis=dict(range=[-1.1, 1.1]),
     )
 
-    fig3d = go.Figure()
+    fig3d = viz.make_figure()
     # data
     fig3d.add_trace(
         go.Scatter3d(
@@ -3179,7 +3496,11 @@ def fit_rotation(
             "tau": tau,
             "r0": r0,
             "r2": r2,
+            # TODO: Remove this legacy payload key after callers migrate to .figure.
             "fig": fig,
+            # TODO: Remove this legacy payload key after callers migrate to .figures.
             "fig3d": fig3d,
         },
+        figure=fig,
+        figures={"fig3d": fig3d},
     )

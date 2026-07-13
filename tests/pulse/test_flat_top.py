@@ -1,7 +1,10 @@
+"""Tests for the FlatTop pulse."""
+
 import pytest
+from qxpulse import FlatTop, Pulse
+from qxpulse.waveform import Waveform
 
 import qubex as qx
-from qubex.pulse import FlatTop, Pulse
 
 dt = qx.pulse.get_sampling_period()
 
@@ -45,5 +48,64 @@ def test_zero_duration():
 
 def test_invalid_duration():
     """FlatTop should raise a ValueError if duration is not greater than `2 * tau`."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"duration must be greater than `2 \* tau`\."):
         FlatTop(duration=5 * dt, amplitude=1, tau=3 * dt)
+
+
+def test_shape_kwargs_do_not_leak_pulse_init_parameters(monkeypatch):
+    """FlatTop should not forward pulse-init kwargs into the shape sampler."""
+    captured: dict[str, object] = {}
+    original_func = FlatTop.func
+
+    def recording_func(*args, **kwargs):
+        captured.update(kwargs)
+        return original_func(*args, **kwargs)
+
+    monkeypatch.setattr(FlatTop, "func", staticmethod(recording_func))
+
+    pulse = FlatTop(
+        duration=5 * dt,
+        amplitude=1,
+        tau=2 * dt,
+        sampling_period=dt,
+        lazy=False,
+        window="hann",
+    )
+
+    assert pulse.length == 5
+    assert captured["window"] == "hann"
+    assert "sampling_period" not in captured
+    assert "lazy" not in captured
+
+
+def test_squad_ramp_snaps_half_duration_to_float_sampling_grid(monkeypatch):
+    """Given a float dt grid, then Squad ramps keep near-grid half durations stable."""
+    monkeypatch.setattr(Waveform, "SAMPLING_PERIOD", 0.4)
+
+    values = FlatTop.func(
+        [1.0],
+        duration=4.0,
+        amplitude=1.0,
+        tau=1.2,
+        delta=0.4,
+        type="Squad",
+    )
+
+    assert 0.0 < values[0].real < 1.0
+
+
+def test_cd_correction_without_beta_returns_complex_values():
+    """Given CD correction without beta, when sampling FlatTop, then values are complex."""
+    pulse = FlatTop(
+        duration=8 * dt,
+        amplitude=1.0,
+        tau=2 * dt,
+        delta=0.2,
+        correction_type="CD",
+        correction_factor=1.0,
+    )
+
+    values = pulse.values
+
+    assert len(values) == pulse.length
+    assert any(value.imag != 0.0 for value in values)

@@ -1,0 +1,102 @@
+"""Raised-cosine pulse shape helpers."""
+
+from __future__ import annotations
+
+from typing import Final
+
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+from typing_extensions import override
+
+from qxpulse.pulse import Pulse
+
+
+class RaisedCosine(Pulse):
+    """
+    A class to represent a raised cosine pulse.
+
+    Parameters
+    ----------
+    duration : float
+        Duration of the pulse in ns.
+    amplitude : float
+        Amplitude of the pulse.
+    beta : float, optional
+        DRAG correction coefficient. Default is None.
+
+    Examples
+    --------
+    >>> pulse = RaisedCosine(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ... )
+    """
+
+    def __init__(
+        self,
+        *,
+        duration: float,
+        amplitude: float,
+        beta: float | None = None,
+        **kwargs,
+    ):
+        super().__init__(
+            duration=duration,
+            **kwargs,
+        )
+
+        self.amplitude: Final = amplitude
+        self.beta: Final = beta
+        self._finalize_initialization()
+
+    @override
+    def _sample_values(self) -> NDArray[np.complex128]:
+        """Return sampled values for the raised-cosine pulse."""
+        if self.length == 0:
+            return np.array([], dtype=np.complex128)
+        duration = self.duration
+        return RaisedCosine.func(
+            t=self._sampling_points(duration),
+            duration=duration,
+            amplitude=self.amplitude,
+            beta=self.beta,
+        )
+
+    @staticmethod
+    def func(
+        t: ArrayLike,
+        *,
+        duration: float,
+        amplitude: float,
+        beta: float | None = None,
+    ) -> NDArray:
+        """
+        Compute a raised cosine pulse function.
+
+        Parameters
+        ----------
+        t : ArrayLike
+            Time points at which to evaluate the pulse.
+        duration : float
+            Duration of the pulse in ns.
+        amplitude : float
+            Amplitude of the pulse.
+        beta : float, optional
+            DRAG correction coefficient. Default is None.
+        """
+        t = np.asarray(t)
+
+        if duration == 0:
+            return np.zeros_like(t, dtype=np.complex128)
+
+        Omega = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
+        if beta is None:
+            values = Omega
+        else:
+            dOmega = np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration)
+            values = Omega + beta * 1j * dOmega
+        return np.where(
+            (t >= 0) & (t <= duration),
+            values,
+            0,
+        ).astype(np.complex128)

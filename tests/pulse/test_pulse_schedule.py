@@ -1,8 +1,13 @@
+"""Tests for PulseSchedule behavior."""
+
+# ruff: noqa: SLF001
+from typing import Any, cast
+
 import numpy as np
 import pytest
 
 import qubex as qx
-from qubex.pulse import Pulse, PulseSchedule
+from qubex.pulse import Arbitrary, Blank, PulseSchedule
 
 dt = qx.pulse.get_sampling_period()
 
@@ -29,8 +34,8 @@ def test_init():
 def test_add():
     """PulseSchedule should add a pulse to the sequence."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 0, 1j]))
-        ps.add("Q01", Pulse([1j, 0, 1]))
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
+        ps.add("Q01", Arbitrary([1j, 0, 1]))
     assert ps.labels == ["Q00", "Q01"]
     assert ps.values["Q00"] == pytest.approx([1, 0, 1j])
     assert ps.values["Q01"] == pytest.approx([1j, 0, 1])
@@ -41,22 +46,22 @@ def test_add():
 def test_label_order():
     """PulseSchedule should maintain the order of labels."""
     with PulseSchedule(["Q01", "Q00"]) as ps:
-        ps.add("Q01", Pulse([1]))
-        ps.add("Q00", Pulse([1]))
+        ps.add("Q01", Arbitrary([1]))
+        ps.add("Q00", Arbitrary([1]))
     assert ps.labels == ["Q01", "Q00"]
 
     with PulseSchedule() as ps:
-        ps.add("Q01", Pulse([1]))
-        ps.add("Q00", Pulse([1]))
+        ps.add("Q01", Arbitrary([1]))
+        ps.add("Q00", Arbitrary([1]))
     assert ps.labels == ["Q01", "Q00"]
 
 
 def test_barrier():
     """PulseSchedule should add a barrier to the sequence."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 0, 1j]))
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
         ps.barrier()
-        ps.add("Q01", Pulse([1j, 0, 1]))
+        ps.add("Q01", Arbitrary([1j, 0, 1]))
     assert ps.values["Q00"] == pytest.approx([1, 0, 1j, 0, 0, 0])
     assert ps.values["Q01"] == pytest.approx([0, 0, 0, 1j, 0, 1])
 
@@ -64,10 +69,10 @@ def test_barrier():
 def test_specific_barrier():
     """PulseSchedule should add a barrier to specific qubits."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1]))
+        ps.add("Q00", Arbitrary([1]))
         ps.barrier(["Q00", "Q01"])
-        ps.add("Q01", Pulse([1, 1, 1]))
-        ps.add("Q02", Pulse([1, 1, 1]))
+        ps.add("Q01", Arbitrary([1, 1, 1]))
+        ps.add("Q02", Arbitrary([1, 1, 1]))
 
     assert ps.values["Q00"] == pytest.approx([1, 0, 0, 0])
     assert ps.values["Q01"] == pytest.approx([0, 1, 1, 1])
@@ -77,11 +82,11 @@ def test_specific_barrier():
 def test_call():
     """PulseSchedule should call another PulseSchedule."""
     with PulseSchedule() as ps1:
-        ps1.add("Q00", Pulse([1, 1]))
+        ps1.add("Q00", Arbitrary([1, 1]))
 
     with PulseSchedule() as ps2:
         ps2.call(ps1)
-        ps2.add("Q01", Pulse([1, 1]))
+        ps2.add("Q01", Arbitrary([1, 1]))
 
     assert ps2.values["Q00"] == pytest.approx([1, 1])
     assert ps2.values["Q01"] == pytest.approx([1, 1])
@@ -90,7 +95,7 @@ def test_call():
 def test_copy():
     """PulseSchedule should be copied."""
     with PulseSchedule() as ps1:
-        ps1.add("Q00", Pulse([1, 1]))
+        ps1.add("Q00", Arbitrary([1, 1]))
 
     ps2 = ps1.copy()
     assert isinstance(ps2, PulseSchedule)
@@ -98,11 +103,29 @@ def test_copy():
     assert ps2.values["Q00"] == pytest.approx([1, 1])
 
 
+def test_padded_can_skip_deepcopy_without_mutating_original_schedule() -> None:
+    """Given shallow padding, when mutating the padded sequence, then the original schedule stays unchanged."""
+    with PulseSchedule() as schedule:
+        schedule.add("Q00", Arbitrary([1, 2]))
+
+    padded = schedule.padded(4 * dt, deepcopy=False)
+
+    original_sequence = schedule.get_sequence("Q00", copy=False)
+    padded_sequence = padded.get_sequence("Q00", copy=False)
+    padded_sequence.pad(6 * dt)
+
+    assert padded_sequence is not original_sequence
+    assert original_sequence.values == pytest.approx([1, 2])
+    assert padded.get_sampled_sequence("Q00", copy=False) == pytest.approx(
+        [1, 2, 0, 0, 0, 0]
+    )
+
+
 def test_scaled():
     """PulseSchedule should be scaled by a given parameter."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 2, 3]))
-        ps.add("Q01", Pulse([1j, 2j, 3j]))
+        ps.add("Q00", Arbitrary([1, 2, 3]))
+        ps.add("Q01", Arbitrary([1j, 2j, 3j]))
 
     scaled = ps.scaled(0.5)
     assert scaled != ps
@@ -113,8 +136,8 @@ def test_scaled():
 def test_detuned():
     """PulseSchedule should be detuned by a given parameter."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 2, 3]))
-        ps.add("Q01", Pulse([1j, 2j, 3j]))
+        ps.add("Q00", Arbitrary([1, 2, 3]))
+        ps.add("Q01", Arbitrary([1j, 2j, 3j]))
 
     detuned = ps.detuned(0.001)
     assert detuned != ps
@@ -137,8 +160,8 @@ def test_detuned():
 def test_shifted():
     """PulseSchedule should be shifted by a given parameter."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 2, 3]))
-        ps.add("Q01", Pulse([1j, 2j, 3j]))
+        ps.add("Q00", Arbitrary([1, 2, 3]))
+        ps.add("Q01", Arbitrary([1j, 2j, 3j]))
 
     shifted = ps.shifted(np.pi / 2)
     assert shifted != ps
@@ -149,8 +172,8 @@ def test_shifted():
 def test_repeated():
     """PulseSchedule should be repeated a given number of times."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 2, 3]))
-        ps.add("Q01", Pulse([1j, 2j, 3j]))
+        ps.add("Q00", Arbitrary([1, 2, 3]))
+        ps.add("Q01", Arbitrary([1j, 2j, 3j]))
 
     repeated = ps.repeated(2)
     assert repeated != ps
@@ -165,8 +188,8 @@ def test_repeated():
 def test_inverted():
     """PulseSchedule should be inverted."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 2, 3]))
-        ps.add("Q01", Pulse([1j, 2j, 3j]))
+        ps.add("Q00", Arbitrary([1, 2, 3]))
+        ps.add("Q01", Arbitrary([1j, 2j, 3j]))
 
     inverted = ps.inverted()
     assert inverted != ps
@@ -177,8 +200,8 @@ def test_inverted():
 def test_get_sequences():
     """PulseSchedule should return the sequences."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 0, 1j]))
-        ps.add("Q01", Pulse([1j, 0, 1]))
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
+        ps.add("Q01", Arbitrary([1j, 0, 1]))
     seq = ps.get_sequences()
     assert seq["Q00"] != ps._channels["Q00"].sequence
     assert seq["Q01"] != ps._channels["Q01"].sequence
@@ -189,30 +212,82 @@ def test_get_sequences():
 def test_get_sampled_sequences():
     """PulseSchedule should return the sampled sequences."""
     with PulseSchedule() as ps:
-        ps.add("Q00", Pulse([1, 0, 1j]))
-        ps.add("Q01", Pulse([1j, 0, 1]))
-    seq_start = ps.get_sampled_sequences(duration=5 * dt, align="start")
-    assert seq_start["Q00"] == pytest.approx([1, 0, 1j, 0, 0])
-    assert seq_start["Q01"] == pytest.approx([1j, 0, 1, 0, 0])
-    seq_end = ps.get_sampled_sequences(duration=10, align="end")
-    assert seq_end["Q00"] == pytest.approx([0, 0, 1, 0, 1j])
-    assert seq_end["Q01"] == pytest.approx([0, 0, 1j, 0, 1])
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
+        ps.add("Q01", Arbitrary([1j, 0, 1]))
+    sampled = ps.get_sampled_sequences()
+    assert sampled["Q00"] == pytest.approx([1, 0, 1j])
+    assert sampled["Q01"] == pytest.approx([1j, 0, 1])
+
+
+def test_sequence_accessors_warn_on_deprecated_duration_and_align_options():
+    """Sequence accessors should emit deprecation warnings for duration and align options."""
+    with PulseSchedule() as ps:
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
+        ps.add("Q01", Arbitrary([1j, 0, 1]))
+
+    sequence = cast(Any, ps).get_sequence
+    sequences = cast(Any, ps).get_sequences
+    sampled_sequence = cast(Any, ps).get_sampled_sequence
+    sampled_sequences = cast(Any, ps).get_sampled_sequences
+
+    with pytest.warns(DeprecationWarning, match="duration"):
+        padded = sequence("Q00", duration=5 * dt, align="end")
+    assert padded.values == pytest.approx([0, 0, 1, 0, 1j])
+
+    with pytest.warns(DeprecationWarning, match="duration"):
+        padded_all = sequences(duration=5 * dt, align="end")
+    assert padded_all["Q01"].values == pytest.approx([0, 0, 1j, 0, 1])
+
+    with pytest.warns(DeprecationWarning, match="duration"):
+        sampled_padded = sampled_sequence("Q00", duration=5 * dt, align="end")
+    assert sampled_padded == pytest.approx([0, 0, 1, 0, 1j])
+
+    with pytest.warns(DeprecationWarning, match="duration"):
+        sampled_padded_all = sampled_sequences(duration=5 * dt, align="end")
+    assert sampled_padded_all["Q01"] == pytest.approx([0, 0, 1j, 0, 1])
+
+
+def test_sampled_sequence_accessors_support_copy_options():
+    """Sampled sequence accessors should honor copy options."""
+    with PulseSchedule() as ps:
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
+        ps.add("Q01", Arbitrary([1j, 0, 1]))
+
+    sampled_default = ps.get_sampled_sequence("Q00")
+    sampled_copied = ps.get_sampled_sequence("Q00", copy=True)
+    assert sampled_default == pytest.approx([1, 0, 1j])
+    assert sampled_copied == pytest.approx([1, 0, 1j])
+
+    sampled_default_all = ps.get_sampled_sequences()
+    sampled_copied_all = ps.get_sampled_sequences(copy=True)
+    assert sampled_default_all["Q01"] == pytest.approx([1j, 0, 1])
+    assert sampled_copied_all["Q01"] == pytest.approx([1j, 0, 1])
+
+
+def test_sequence_accessors_warn_on_deprecated_align_option():
+    """Sequence accessors should emit a deprecation warning for align option."""
+    with PulseSchedule() as ps:
+        ps.add("Q00", Arbitrary([1, 0, 1j]))
+
+    with pytest.warns(DeprecationWarning, match="align"):
+        sequence = ps.get_sequence("Q00", align="end")
+    assert sequence.values == pytest.approx([1, 0, 1j])
 
 
 def test_get_pulse_ranges():
     """PulseSchedule should return the pulse ranges."""
     with PulseSchedule() as ps:
-        ps.add("Q01", Pulse([1, 1, 1]))
+        ps.add("Q01", Arbitrary([1, 1, 1]))
         ps.barrier()
-        ps.add("Q02", Pulse([1, 1, 1]))
+        ps.add("Q02", Arbitrary([1, 1, 1]))
         ps.barrier()
-        ps.add("RQ01", Pulse([1, 1, 1]))
-        ps.add("RQ02", Pulse([1, 1, 1]))
+        ps.add("RQ01", Arbitrary([1, 1, 1]))
+        ps.add("RQ02", Arbitrary([1, 1, 1]))
         ps.barrier()
-        ps.add("Q01", Pulse([1, 1, 1]))
+        ps.add("Q01", Arbitrary([1, 1, 1]))
         ps.barrier()
-        ps.add("RQ01", Pulse([1, 1, 1]))
-        ps.add("RQ02", Pulse([1, 1, 1]))
+        ps.add("RQ01", Arbitrary([1, 1, 1]))
+        ps.add("RQ02", Arbitrary([1, 1, 1]))
 
     ranges_all = ps.get_pulse_ranges()
     assert ranges_all["Q01"] == pytest.approx([range(0, 3), range(9, 12)])
@@ -225,9 +300,19 @@ def test_get_pulse_ranges():
     assert ranges_read["RQ02"] == pytest.approx([range(6, 9), range(12, 15)])
 
 
+def test_get_pulse_and_blank_ranges_respect_empty_labels() -> None:
+    """Given empty labels, when getting ranges, then both methods return empty mappings."""
+    with PulseSchedule() as ps:
+        ps.add("Q01", Arbitrary([1, 1, 1]))
+        ps.add("Q01", Blank(2))
+
+    assert ps.get_pulse_ranges([]) == {}
+    assert ps.get_blank_ranges([]) == {}
+
+
 def test_usecase():
     """PulseSchedule should be working in a typical usecase."""
-    x90 = qx.Pulse([1, 1]).scaled(0.5)
+    x90 = Arbitrary([1, 1]).scaled(0.5)
     x180 = x90.scaled(2)
     y90 = x90.shifted(np.pi / 2)
     z90 = qx.VirtualZ(np.pi / 2)
@@ -278,3 +363,21 @@ def test_usecase():
         ]
     )
     assert phase2 == pytest.approx(0)
+
+
+def test_length_is_stable_against_global_sampling_period_changes():
+    """PulseSchedule length should be stable after global sampling period changes."""
+    from qubex.pulse import get_sampling_period, set_sampling_period
+
+    original_dt = get_sampling_period()
+    try:
+        set_sampling_period(2.0)
+        with PulseSchedule() as ps:
+            ps.add("Q00", Arbitrary([1, 2, 3]))
+
+        assert ps.length == 3
+
+        set_sampling_period(1.0)
+        assert ps.length == 3
+    finally:
+        set_sampling_period(original_dt)

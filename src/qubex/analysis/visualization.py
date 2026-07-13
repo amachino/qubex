@@ -1,26 +1,61 @@
+"""Compatibility shim for legacy `qubex.analysis.visualization` imports."""
+
 from __future__ import annotations
 
-import datetime
-import os
+from collections.abc import Collection, Mapping
 from pathlib import Path
-from typing import Collection, Literal, Mapping
+from typing import Any, Literal
 
-import numpy as np
 import plotly.graph_objs as go
-import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import deprecated
 
-from ..style import COLORS, get_colors, get_config
-from ..typing import IQArray
+from qubex.typing import IQArray
+from qubex.visualization import (
+    COLORS,
+    DEFAULT_HEIGHT,
+    DEFAULT_TEMPLATE,
+    DEFAULT_WIDTH,
+    FIGURE_SIZE_IQ,
+    FIGURE_SIZE_STANDARD,
+    FIGURE_SIZE_TALL,
+    IQ_AXIS_MARGIN_LEFT,
+    IQ_AXIS_MARGIN_RIGHT,
+    FigureSize,
+    get_colors,
+    get_config,
+    make_bloch_vectors_figure,
+    make_cdf_figure,
+    make_fft_figure,
+    make_figure,
+    make_iq_scatter_figure,
+    make_plot_figure,
+    make_waveform_figure,
+    plot as _plot,
+    plot_bloch_vectors as _plot_bloch_vectors,
+    plot_cdf as _plot_cdf,
+    plot_fft as _plot_fft,
+    plot_waveform as _plot_waveform,
+    save_figure,
+    scatter_iq_data as _scatter_iq_data,
+    show_figure,
+)
 
+# TODO: Remove this compatibility shim after downstream imports migrate to `qubex.visualization`.
 DEFAULT_IMAGES_DIR = "./images"
-DEFAULT_TEMPLATE = "qubex"
 
 
-def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):
+@deprecated(
+    "Use `qubex.visualization.display_bloch_sphere`-equivalent call sites instead."
+)
+def display_bloch_sphere(bloch_vectors: NDArray) -> None:
+    """Display Bloch-sphere visualization for the provided Bloch vectors."""
+    import qctrlvisualizer as qcv
+
     qcv.display_bloch_sphere_from_bloch_vectors(bloch_vectors)
 
 
+@deprecated("Use `qubex.visualization.save_figure` instead.")
 def save_figure_image(
     fig: go.Figure,
     name: str = "image",
@@ -30,39 +65,20 @@ def save_figure_image(
     width: int | None = None,
     height: int | None = None,
     scale: int = 3,
-):
-    if not os.path.exists(images_dir):
-        os.makedirs(images_dir)
-
-    if width is None:
-        width = 600
-    if height is None:
-        height = 300
-
-    counter = 1
-    current_date = datetime.datetime.now().strftime("%Y%m%d")
-    file_path = os.path.join(
-        images_dir,
-        f"{current_date}_{name}_{counter}.{format}",
-    )
-
-    while os.path.exists(file_path):
-        counter += 1
-        file_path = os.path.join(
-            images_dir,
-            f"{current_date}_{name}_{counter}.{format}",
-        )
-
-    fig.write_image(
-        file_path,
+) -> None:
+    """Save a figure using the legacy helper name."""
+    save_figure(
+        fig,
+        name=name,
+        images_dir=images_dir,
         format=format,
         width=width,
         height=height,
         scale=scale,
     )
-    print(f"Image saved to {file_path}")
 
 
+@deprecated("Use `qubex.visualization.plot` or `make_plot_figure` instead.")
 def plot(
     *,
     y: ArrayLike,
@@ -73,173 +89,106 @@ def plot(
     ylabel: str | None = None,
     xlim: tuple[float, float] | list[float] | None = None,
     ylim: tuple[float, float] | list[float] | None = None,
-    width: int = 600,
-    height: int = 300,
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-    **kwargs,
-):
-    fig = go.Figure()
-    y = np.asarray(y)
-
-    if y.ndim == 1:
-        if x is None:
-            x = np.arange(len(y))
-        fig.add_trace(go.Scatter(x=x, y=np.real(y), mode=mode, name="Real", **kwargs))
-        if np.iscomplexobj(y):
-            fig.add_trace(
-                go.Scatter(x=x, y=np.imag(y), mode=mode, name="Imag", **kwargs)
-            )
-    elif y.ndim == 2:
-        if x is None:
-            x = np.arange(y.shape[0])
-        for i in range(y.shape[1]):
-            fig.add_trace(
-                go.Scatter(
-                    x=x, y=np.real(y[:, i]), mode=mode, name=f"Real {i}", **kwargs
-                )
-            )
-            if np.iscomplexobj(y):
-                fig.add_trace(
-                    go.Scatter(
-                        x=x,
-                        y=np.imag(y[:, i]),
-                        mode=mode,
-                        name=f"Imag {i}",
-                        **kwargs,
-                    )
-                )
-    else:
-        raise ValueError("y must be 1D or 2D")
-
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-        xaxis_range=xlim,
-        yaxis_range=ylim,
-        width=width,
-        height=height,
-        template=template,
-    )
-
-    if save_image:
-        save_figure_image(
-            fig,
-            name="plot",
+    **kwargs: Any,
+) -> go.Figure | None:
+    """Preserve the legacy plot API with optional figure return."""
+    if return_figure:
+        figure = make_plot_figure(
+            y=y,
+            x=x,
+            mode=mode,
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            xlim=xlim,
+            ylim=ylim,
             width=width,
             height=height,
+            template=template,
+            **kwargs,
         )
-
-    if return_figure:
-        return fig
-    else:
-        fig.show(
-            config=get_config(
-                filename="plot",
+        if save_image:
+            save_figure(
+                figure,
+                name="plot",
                 width=width,
                 height=height,
             )
-        )
+        return figure
+
+    _plot(
+        y=y,
+        x=x,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        xlim=xlim,
+        ylim=ylim,
+        width=width,
+        height=height,
+        template=template,
+        save_image=save_image,
+        **kwargs,
+    )
+    return None
 
 
+@deprecated("Use `qubex.visualization.plot_cdf` or `make_cdf_figure` instead.")
 def plot_cdf(
-    data: ArrayLike | Mapping,
+    data: ArrayLike | Mapping[Any, ArrayLike],
     *,
     xlim: tuple[float, float] | None = None,
     title: str = "Cumulative distribution",
     xlabel: str = "Value",
     ylabel: str = "Cumulative probability",
-    width: int = 600,
-    height: int = 400,
+    width: int = FIGURE_SIZE_TALL.width,
+    height: int = FIGURE_SIZE_TALL.height,
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
-    dataset = {}
-    data_min = float("inf")
-    data_max = float("-inf")
-
-    if not isinstance(data, Mapping):
-        values = np.asarray(data).astype(float)
-        values = values[~np.isnan(values)]
-        values.sort()
-        dataset["data"] = values
-        data_min = np.min(values)
-        data_max = np.max(values)
-    else:
-        for key, values in data.items():
-            values = np.asarray(values).astype(float)
-            values = values[~np.isnan(values)]
-            values.sort()
-            dataset[key] = values
-            data_min = min(data_min, np.min(values))
-            data_max = max(data_max, np.max(values))
-
-    fig = go.Figure()
-
-    for key, values in dataset.items():
-        N = len(values)
-        mean_val = np.mean(values)
-
-        if xlim is None:
-            dx = (data_max - data_min) / 100
-            xlim = (data_min - dx, data_max + dx)
-
-        x = [xlim[0]] + values.tolist() + [xlim[1]]
-        y = [0] + [(i + 1) / N for i in range(N)] + [1]
-
-        fig.add_scatter(
-            x=x,
-            y=y,
-            name=key,
-            mode="lines",
-            line=dict(
-                color=COLORS[0],
-                width=3,
-            ),
-            line_shape="hv",
-        )
-
-        fig.add_vline(
-            x=mean_val,
-            line_width=2,
-            line_dash="dash",
-            line_color="lightgrey",
-            layer="below",
-        )
-
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-        yaxis=dict(range=[0, 1]),
-        width=width,
-        height=height,
-        template=template,
-    )
-
-    if save_image:
-        save_figure_image(
-            fig,
-            name="plot_cdf",
+) -> go.Figure | None:
+    """Preserve the legacy CDF API with optional figure return."""
+    if return_figure:
+        figure = make_cdf_figure(
+            data,
+            xlim=xlim,
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
             width=width,
             height=height,
+            template=template,
         )
-
-    if return_figure:
-        return fig
-    else:
-        fig.show(
-            config=get_config(
-                filename="plot_cdf",
+        if save_image:
+            save_figure(
+                figure,
+                name="plot_cdf",
                 width=width,
                 height=height,
             )
-        )
+        return figure
+
+    _plot_cdf(
+        data,
+        xlim=xlim,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        width=width,
+        height=height,
+        template=template,
+        save_image=save_image,
+    )
+    return None
 
 
+@deprecated("Use `qubex.visualization.plot_fft` or `make_fft_figure` instead.")
 def plot_fft(
     x: NDArray,
     y: NDArray,
@@ -250,51 +199,59 @@ def plot_fft(
     ylabel: str = "Amplitude",
     xlim: tuple[float, float] | list[float] | None = None,
     ylim: tuple[float, float] | list[float] | None = None,
-    width: int = 600,
-    height: int = 300,
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-    **kwargs,
-):
-    N = len(x)
-    dt = x[1] - x[0]
-    f = np.fft.fftfreq(N, dt)[: N // 2]
-    F = np.fft.fft(y)[: N // 2]
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=f, y=np.abs(F) / N, mode=mode, **kwargs))
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-        xaxis_range=xlim,
-        yaxis_range=ylim,
-        width=width,
-        height=height,
-        template=template,
-    )
-
-    if save_image:
-        save_figure_image(
-            fig,
-            name="plot_fft",
+    **kwargs: Any,
+) -> go.Figure | None:
+    """Preserve the legacy FFT API with optional figure return."""
+    if return_figure:
+        figure = make_fft_figure(
+            x,
+            y,
+            mode=mode,
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            xlim=xlim,
+            ylim=ylim,
             width=width,
             height=height,
+            template=template,
+            **kwargs,
         )
-
-    if return_figure:
-        return fig
-    else:
-        fig.show(
-            config=get_config(
-                filename="plot_fft",
+        if save_image:
+            save_figure(
+                figure,
+                name="plot_fft",
                 width=width,
                 height=height,
             )
-        )
+        return figure
+
+    _plot_fft(
+        x,
+        y,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        xlim=xlim,
+        ylim=ylim,
+        width=width,
+        height=height,
+        template=template,
+        save_image=save_image,
+        **kwargs,
+    )
+    return None
 
 
+@deprecated(
+    "Use `qubex.visualization.plot_bloch_vectors` or `make_bloch_vectors_figure` instead."
+)
 def plot_bloch_vectors(
     times: NDArray,
     bloch_vectors: NDArray,
@@ -303,70 +260,52 @@ def plot_bloch_vectors(
     title: str = "State evolution",
     xlabel: str = "Time (ns)",
     ylabel: str = "Expectation value",
-    width: int = 600,
-    height: int = 300,
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=times,
-            y=bloch_vectors[:, 0],
+) -> go.Figure | None:
+    """Preserve the legacy Bloch-vector API with optional figure return."""
+    if return_figure:
+        figure = make_bloch_vectors_figure(
+            times,
+            bloch_vectors,
             mode=mode,
-            name="〈X〉",
-            line=dict(color=COLORS[0]),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=times,
-            y=bloch_vectors[:, 1],
-            mode=mode,
-            name="〈Y〉",
-            line=dict(color=COLORS[1]),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=times,
-            y=bloch_vectors[:, 2],
-            mode=mode,
-            name="〈Z〉",
-            line=dict(color=COLORS[2]),
-        )
-    )
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-        yaxis=dict(range=[-1.1, 1.1]),
-        width=width,
-        height=height,
-        template=template,
-    )
-
-    if save_image:
-        save_figure_image(
-            fig,
-            name="plot_bloch_vectors",
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
             width=width,
             height=height,
+            template=template,
         )
-
-    if return_figure:
-        return fig
-    else:
-        fig.show(
-            config=get_config(
-                filename="plot_bloch_vectors",
+        if save_image:
+            save_figure(
+                figure,
+                name="plot_bloch_vectors",
                 width=width,
                 height=height,
             )
-        )
+        return figure
+
+    _plot_bloch_vectors(
+        times,
+        bloch_vectors,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        width=width,
+        height=height,
+        template=template,
+        save_image=save_image,
+    )
+    return None
 
 
+@deprecated(
+    "Use `qubex.visualization.plot_waveform` or `make_waveform_figure` instead."
+)
 def plot_waveform(
     data: NDArray,
     *,
@@ -375,58 +314,52 @@ def plot_waveform(
     title: str = "Waveform",
     xlabel: str = "Time (ns)",
     ylabel: str = "Signal (arb. units)",
-    width: int = 600,
-    height: int = 300,
+    width: int = FIGURE_SIZE_STANDARD.width,
+    height: int = FIGURE_SIZE_STANDARD.height,
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=np.arange(len(data)) * sampling_period,
-            y=np.real(data),
+) -> go.Figure | None:
+    """Preserve the legacy waveform API with optional figure return."""
+    if return_figure:
+        figure = make_waveform_figure(
+            data,
+            sampling_period=sampling_period,
             mode=mode,
-            name="I",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=np.arange(len(data)) * sampling_period,
-            y=np.imag(data),
-            mode=mode,
-            name="Q",
-        )
-    )
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-        width=width,
-        height=height,
-        template=template,
-    )
-
-    if save_image:
-        save_figure_image(
-            fig,
-            name="plot_waveform",
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
             width=width,
             height=height,
+            template=template,
         )
-
-    if return_figure:
-        return fig
-    else:
-        fig.show(
-            config=get_config(
-                filename="plot_waveform",
+        if save_image:
+            save_figure(
+                figure,
+                name="plot_waveform",
                 width=width,
                 height=height,
             )
-        )
+        return figure
+
+    _plot_waveform(
+        data,
+        sampling_period=sampling_period,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        width=width,
+        height=height,
+        template=template,
+        save_image=save_image,
+    )
+    return None
 
 
+@deprecated(
+    "Use `qubex.visualization.scatter_iq_data` or `make_iq_scatter_figure` instead."
+)
 def scatter_iq_data(
     data: IQArray | Mapping[str, IQArray],
     *,
@@ -434,80 +367,79 @@ def scatter_iq_data(
     title: str = "I/Q plane",
     xlabel: str = "In-phase (arb. units)",
     ylabel: str = "Quadrature (arb. units)",
-    width: int = 500,
-    height: int = 400,
+    width: int = FIGURE_SIZE_IQ.width,
+    height: int = FIGURE_SIZE_IQ.height,
     text: Collection[str] | None = None,
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
-    if not isinstance(data, Mapping):
-        data = {"data": data}
-
-    fig = go.Figure()
-    colors = get_colors(alpha=0.8)
-    max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])
-    axis_range = [-max_val * 1.1, max_val * 1.1]
-    dtick = max_val / 2
-    for idx, (qubit, iq) in enumerate(data.items()):
-        color = colors[idx % len(colors)]
-        scatter = go.Scatter(
-            x=np.real(iq),
-            y=np.imag(iq),
+) -> go.Figure | None:
+    """Preserve the legacy IQ-scatter API with optional figure return."""
+    if return_figure:
+        figure = make_iq_scatter_figure(
+            data,
             mode=mode,
-            name=qubit,
-            text=text if text is not None else qubit,
-            marker=dict(
-                size=4,
-                color=f"rgba{color}",
-            ),
-        )
-        fig.add_trace(scatter)
-    fig.update_layout(
-        title=title,
-        xaxis_title=xlabel,
-        yaxis_title=ylabel,
-        width=width,
-        height=height,
-        template=template,
-        margin=dict(l=120, r=120),
-        xaxis=dict(
-            range=axis_range,
-            dtick=dtick,
-            tickformat=".2g",
-            showticklabels=True,
-            zeroline=True,
-            zerolinecolor="black",
-            showgrid=True,
-        ),
-        yaxis=dict(
-            range=axis_range,
-            scaleanchor="x",
-            scaleratio=1,
-            dtick=dtick,
-            tickformat=".2g",
-            showticklabels=True,
-            zeroline=True,
-            zerolinecolor="black",
-            showgrid=True,
-        ),
-    )
-
-    if save_image:
-        save_figure_image(
-            fig,
-            name="plot_state_distribution",
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
             width=width,
             height=height,
+            text=text,
+            template=template,
         )
-
-    if return_figure:
-        return fig
-    else:
-        fig.show(
-            config=get_config(
-                filename="plot_state_distribution",
+        if save_image:
+            save_figure(
+                figure,
+                name="plot_state_distribution",
                 width=width,
                 height=height,
             )
-        )
+        return figure
+
+    _scatter_iq_data(
+        data,
+        mode=mode,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        width=width,
+        height=height,
+        text=text,
+        template=template,
+        save_image=save_image,
+    )
+    return None
+
+
+__all__ = [
+    "COLORS",
+    "DEFAULT_HEIGHT",
+    "DEFAULT_IMAGES_DIR",
+    "DEFAULT_TEMPLATE",
+    "DEFAULT_WIDTH",
+    "FIGURE_SIZE_IQ",
+    "FIGURE_SIZE_STANDARD",
+    "FIGURE_SIZE_TALL",
+    "IQ_AXIS_MARGIN_LEFT",
+    "IQ_AXIS_MARGIN_RIGHT",
+    "FigureSize",
+    "display_bloch_sphere",
+    "get_colors",
+    "get_config",
+    "make_bloch_vectors_figure",
+    "make_cdf_figure",
+    "make_fft_figure",
+    "make_figure",
+    "make_iq_scatter_figure",
+    "make_plot_figure",
+    "make_waveform_figure",
+    "plot",
+    "plot_bloch_vectors",
+    "plot_cdf",
+    "plot_fft",
+    "plot_waveform",
+    "save_figure",
+    "save_figure_image",
+    "scatter_iq_data",
+    "show_figure",
+]

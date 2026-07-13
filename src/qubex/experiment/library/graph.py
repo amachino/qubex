@@ -1,7 +1,11 @@
+"""Graph helper functions for experiment workflows."""
+
 from __future__ import annotations
 
+import itertools
 import time
 from collections import deque
+from typing import Any
 
 import networkx as nx
 from networkx.algorithms.coloring import greedy_color
@@ -159,9 +163,10 @@ def strong_edge_coloring(
     return colored_edges
 
 
-def tree_center(G):
+def tree_center(G: nx.Graph) -> list[Any]:
+    """Return the center node(s) of a tree."""
     u = max(
-        nx.single_source_shortest_path_length(G, list(G.nodes)[0]).items(),
+        nx.single_source_shortest_path_length(G, next(iter(G.nodes))).items(),
         key=lambda x: x[1],
     )[0]
     lengths = nx.single_source_shortest_path_length(G, u)
@@ -179,6 +184,7 @@ def get_max_undirected_weight(
     edge: tuple[str, str],
     property: str = "fidelity",
 ) -> float:
+    """Return the maximum edge weight between two nodes."""
     u, v = edge
     if G.is_multigraph():
         vals = []
@@ -204,25 +210,25 @@ def find_longest_1d_chain(
     eps: float = 1e-12,
 ) -> tuple[list, list, float]:
     """
-    Find the longest simple path in a 1D chain graph, maximizing fidelity
+    Find the longest simple path in a 1D chain graph, maximizing fidelity.
 
-    The search considers connectivity as undirected even when ``G`` is directed,
+    The search considers connectivity as undirected even when `G` is directed,
     and uses an aggregated per-step weight across directions and parallel edges
-    (maximum for ``'fidelity'``, minimum for ``'duration'``).
+    (maximum for `'fidelity'`, minimum for `'duration'`).
 
     Parameters
     ----------
     G : networkx.Graph
-        Input graph. Can be ``nx.Graph``, ``nx.DiGraph``, ``nx.MultiGraph``, or
-        ``nx.MultiDiGraph``.
+        Input graph. Can be `nx.Graph`, `nx.DiGraph`, `nx.MultiGraph`, or
+        `nx.MultiDiGraph`.
     weight_attr : str, default 'fidelity'
         Edge attribute used for tie-breaking among same-length paths. Supported:
-        - ``'fidelity'``: aggregate per-step as the maximum across directions/parallel edges;
-          tie-break cost is the sum of ``-log(fidelity)`` (infidelity in log-sum form).
-        - ``'duration'``: aggregate per-step as the minimum across directions/parallel edges;
-          tie-break cost is the sum of ``duration``.
+        - `'fidelity'`: aggregate per-step as the maximum across directions/parallel edges;
+          tie-break cost is the sum of `-log(fidelity)` (infidelity in log-sum form).
+        - `'duration'`: aggregate per-step as the minimum across directions/parallel edges;
+          tie-break cost is the sum of `duration`.
     time_limit : float or None, default 5.0
-        Time budget (seconds) for the search. ``None`` disables time-based cutoff.
+        Time budget (seconds) for the search. `None` disables time-based cutoff.
     eps : float, default 1e-12
         Lower bound to clip fidelity when using log-based scoring.
 
@@ -231,10 +237,10 @@ def find_longest_1d_chain(
     path_nodes : list
         Node sequence of the best path found.
     path_edges : list of tuple
-        Oriented edges in path order ``(u, v)`` corresponding to ``path_nodes``.
+        Oriented edges in path order `(u, v)` corresponding to `path_nodes`.
     score : float
-        Tie-break cost (lower is better): for fidelity it's ``sum(-log f)``; for duration it's
-        ``sum(duration)``.
+        Tie-break cost (lower is better): for fidelity it's `sum(-log f)`; for duration it's
+        `sum(duration)`.
 
     Notes
     -----
@@ -245,11 +251,12 @@ def find_longest_1d_chain(
     - For fidelity, the computation uses log-sum cost to avoid
       underflow.
     """
-
     # Basic validation and setup
-    assert weight_attr in {"fidelity", "duration"}, (
-        "weight_attr must be 'fidelity' or 'duration'"
-    )
+    if weight_attr not in {
+        "fidelity",
+        "duration",
+    }:
+        raise ValueError("weight_attr must be 'fidelity' or 'duration'")
     # Treat connectivity as undirected even if G is DiGraph/MultiDiGraph.
     is_digraph = isinstance(G, (nx.DiGraph, nx.MultiDiGraph))
 
@@ -261,9 +268,10 @@ def find_longest_1d_chain(
 
     # Use weight_attr directly as the UG edge attribute key for the aggregated value
 
-    def aggregate_value(u, v) -> float | None:
+    def aggregate_value(u: Any, v: Any) -> float | None:
         """
         Aggregate weight across directions/parallel edges for the pair (u, v).
+
         - fidelity: maximum value (missing attributes treated as 0.0 if edge exists)
         - duration: minimum value (edges without the attribute are ignored)
         Returns None if no edge exists in either direction or no usable value found (duration).
@@ -375,7 +383,12 @@ def find_longest_1d_chain(
 
     # Reachability-based pruning: can we tie or exceed current best length from u?
 
-    def can_tie_or_exceed(u, visited: set, cur_len: int, best_len: int) -> bool:
+    def can_tie_or_exceed(
+        u: Any,
+        visited: set[Any],
+        cur_len: int,
+        best_len: int,
+    ) -> bool:
         # To tie the incumbent, we need (best_len - cur_len) more edges from u,
         # which requires at least that many new nodes; counting u, that's +1.
         need_nodes = (best_len - cur_len) + 1
@@ -430,7 +443,7 @@ def find_longest_1d_chain(
             u = v
         return path, cost
 
-    def node_weight(u):
+    def node_weight(u: Any) -> float:
         # Weighted degree used to rank promising starting nodes.
         vals = [UG[u][v].get(weight_attr) for v in neighbors_sorted[u]]
         vals = [x for x in vals if x is not None]
@@ -455,7 +468,7 @@ def find_longest_1d_chain(
         if score_better(l, s_cost, best_len, best_score):
             best_len, best_score, best_path = l, s_cost, p
 
-    def dfs(u, visited: set, cur_cost: float, path: list):
+    def dfs(u: Any, visited: set[Any], cur_cost: float, path: list[Any]) -> None:
         nonlocal best_len, best_score, best_path
         # Honor optional time budget.
         if time_limit is not None and (time.perf_counter() - start_time) > time_limit:
@@ -487,13 +500,13 @@ def find_longest_1d_chain(
         return [], [], 0.0
 
     # Oriented edge sequence along the undirected path (for convenience).
-    edges_in_path_order = list(zip(best_path[:-1], best_path[1:]))
+    edges_in_path_order = list(itertools.pairwise(best_path))
     return best_path, edges_in_path_order, best_score
 
 
 __all__ = [
-    "strong_edge_coloring",
     "find_longest_1d_chain",
     "get_max_undirected_weight",
+    "strong_edge_coloring",
     "tree_center",
 ]

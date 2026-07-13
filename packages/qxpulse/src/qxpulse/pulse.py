@@ -1,0 +1,301 @@
+"""Pulse base class and helpers."""
+
+# ruff: noqa: SLF001
+from __future__ import annotations
+
+import copy
+import hashlib
+import warnings
+from copy import deepcopy
+from typing import Literal, cast
+
+import numpy as np
+import numpy.typing as npt
+from typing_extensions import Self
+
+from .waveform import Waveform
+
+
+class Pulse(Waveform):
+    """
+    Pulse base class backed by sampled complex values.
+
+    `Pulse` stores complex I/Q samples and applies waveform modifiers
+    (`scale`, `detuning`, and `phase`) when `values` is accessed.
+    Direct instantiation is deprecated; use `Arbitrary` for explicit
+    arbitrary I/Q waveforms.
+
+    Parameters
+    ----------
+    values : ArrayLike | None, optional
+        Complex I/Q samples. If `None`, samples are materialized lazily from
+        `_sample_values()`.
+    duration : float | None, optional
+        Pulse duration in ns. Required to lazily sample non-empty pulses.
+    scale : float, optional
+        Multiplicative amplitude scale. Defaults to `1.0`.
+    detuning : float, optional
+        Deprecated. Frequency detuning in GHz. Defaults to `0.0`.
+    phase : float, optional
+        Phase offset in radians. Defaults to `0.0`.
+    sampling_period : float, optional
+        Sampling period in ns. Defaults to `Waveform.SAMPLING_PERIOD`.
+    lazy : bool, optional
+        If `True`, defer sampling until `values` is accessed. Subclasses can
+        call `_finalize_initialization()` to materialize during initialization
+        when this flag is `False`. Defaults to `True`.
+    """
+
+    def __init__(
+        self,
+        values: npt.ArrayLike | None = None,
+        *,
+        duration: float | None = None,
+        scale: float | None = None,
+        detuning: float | None = None,
+        phase: float | None = None,
+        sampling_period: float | None = None,
+        lazy: bool = True,
+        **kwargs,
+    ):
+        if self.__class__ is Pulse:
+            warnings.warn(
+                "Direct `Pulse` instantiation is deprecated and will be removed in a future release. "
+                "Use `Arbitrary` for explicit I/Q waveforms.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        elif self.__class__._sample_values is Pulse._sample_values:
+            warnings.warn(
+                f"`{self.__class__.__name__}` does not override `_sample_values`. "
+                "Overriding `_sample_values` will be required when `Pulse` becomes abstract.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        super().__init__(
+            scale=scale,
+            detuning=detuning,
+            phase=phase,
+            sampling_period=sampling_period,
+            **kwargs,
+        )
+        self._initialize_sampling(
+            lazy=lazy,
+            values=values,
+            duration=duration,
+        )
+
+    @staticmethod
+    def _validate_init_arguments(
+        *,
+        values: npt.ArrayLike | None,
+        duration: float | None,
+    ) -> None:
+        """Validate constructor arguments for sampled initialization."""
+        if values is not None and duration is not None:
+            raise ValueError("Specify either values or duration, not both.")
+
+    def _initialize_sampling(
+        self,
+        *,
+        lazy: bool,
+        values: npt.ArrayLike | None,
+        duration: float | None,
+    ) -> None:
+        """Initialize sampling-related state and optional sampled values cache."""
+        self._validate_init_arguments(values=values, duration=duration)
+        self._length = 0
+        self._values: npt.NDArray[np.complex128] | None = None
+        self._lazy = lazy
+        if duration is not None:
+            self._length = self._number_of_samples(duration)
+        if values is not None:
+            # Detach from caller-owned buffers to prevent accidental aliasing side effects.
+            sampled_values = np.array(values, dtype=np.complex128, copy=True)
+            self._values = sampled_values
+            self._length = len(sampled_values)
+
+    def _set_sampled_values(self, values: npt.ArrayLike | None) -> None:
+        """Set sampled values cache and synchronize pulse length."""
+        if values is None:
+            self._values = None
+            return
+        array = np.asarray(values, dtype=np.complex128)
+        self._values = array
+        self._length = len(array)
+
+    def _sample_values(self) -> npt.ArrayLike:
+        """
+        Return sampled complex values for this pulse.
+
+        Notes
+        -----
+        This default implementation is kept for compatibility during the
+        `Pulse` to ABC migration. Subclasses should override this method.
+        """
+        # TODO: Make this method abstract when `Pulse` is converted to an ABC.
+        return np.zeros(self._length, dtype=np.complex128)
+
+    def _materialize_values(self) -> npt.NDArray[np.complex128]:
+        """Return sampled values, materializing and caching as needed."""
+        values = self._values
+        if values is None:
+            sampled = np.asarray(self._sample_values(), dtype=np.complex128)
+            if len(sampled) != self._length:
+                raise ValueError(
+                    f"Pulse sampler returned {len(sampled)} samples, expected {self._length}."
+                )
+            self._set_sampled_values(sampled)
+            values = sampled
+        return values
+
+    def _finalize_initialization(self) -> None:
+        """Materialize sampled values at init when lazy mode is disabled."""
+        if self._values is None and not self._lazy:
+            self._materialize_values()
+
+    def __repr__(self) -> str:
+        """Return a concise string representation."""
+        return f"{self.name}({self.length})"
+
+    @property
+    def length(self) -> int:
+        """Return the length of the pulse in samples."""
+        return self._length
+
+    @property
+    def values(self) -> npt.NDArray[np.complex128]:
+        """Return the I/Q values of the pulse."""
+        values = self._materialize_values()
+        return (
+            values
+            * self._scale
+            * np.exp(-1j * (2 * np.pi * self._detuning * self.times - self._phase))
+        )
+
+    @property
+    def shape_values(self) -> npt.NDArray[np.complex128]:
+        """Return pulse values with `scale=1` and `phase=0`."""
+        values = self._materialize_values()
+        return values * np.exp(-1j * (2 * np.pi * self._detuning * self.times))
+
+    @property
+    def shape_hash(self) -> str:
+        """Return deterministic hash for `shape_values` and sampling period."""
+        values = np.asarray(self.shape_values, dtype=np.complex128)
+        real = np.asarray(values.real, dtype=np.float64)
+        imag = np.asarray(values.imag, dtype=np.float64)
+        hasher = hashlib.blake2b(digest_size=16)
+        hasher.update(np.asarray(values.size, dtype=np.int64).tobytes())
+        hasher.update(
+            np.asarray(float(self.sampling_period), dtype=np.float64).tobytes()
+        )
+        hasher.update(real.tobytes())
+        hasher.update(imag.tobytes())
+        return hasher.hexdigest()
+
+    def __copy__(self) -> Self:
+        """Return a shallow copy with sampled values materialized."""
+        self._materialize_values()
+        cls = self.__class__
+        pulse = cls.__new__(cls)
+        cast(dict, pulse.__dict__).update(cast(dict, self.__dict__))
+        return pulse
+
+    def __deepcopy__(self, memo: dict[int, object]) -> Self:
+        """Return a deep copy with sampled values materialized."""
+        self._materialize_values()
+        cls = self.__class__
+        pulse = cls.__new__(cls)
+        memo[id(self)] = pulse
+        for key, value in self.__dict__.items():
+            cast(dict, pulse.__dict__)[key] = deepcopy(value, memo)
+        return pulse
+
+    def copy(self, reset_cached_duration: bool = False) -> Self:
+        """Return a copy of the pulse."""
+        pulse = deepcopy(self)
+        if reset_cached_duration:
+            pulse.reset_cached_duration()
+        return pulse
+
+    def padded(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+    ) -> Self:
+        """
+        Return a copy of the pulse with zero padding.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        """
+        N = self._number_of_samples(total_duration)
+        values = self._materialize_values()
+        if pad_side == "right":
+            values = np.pad(values, (0, N - self.length), mode="constant")
+        elif pad_side == "left":
+            values = np.pad(values, (N - self.length, 0), mode="constant")
+        else:
+            raise ValueError("pad_side must be either 'right' or 'left'.")
+        new_pulse = self.copy(reset_cached_duration=True)
+        new_pulse._set_sampled_values(values)
+        return new_pulse
+
+    def scaled(self, scale: float) -> Self:
+        """Return a copy of the pulse scaled by the given factor."""
+        if scale == 1:
+            return self
+        # Shallow copy is intentional: only scalar modifier fields are updated.
+        new_pulse = copy.copy(self)
+        new_pulse._scale *= scale
+        return new_pulse
+
+    def detuned(self, detuning: float) -> Self:
+        """Return a copy of the pulse detuned by the given frequency (deprecated)."""
+        if detuning == 0:
+            return self
+        # Shallow copy is intentional: only scalar modifier fields are updated.
+        new_pulse = copy.copy(self)
+        new_pulse._detuning += detuning
+        return new_pulse
+
+    def shifted(self, phase: float) -> Self:
+        """Return a copy of the pulse shifted by the given phase."""
+        if phase == 0:
+            return self
+        # Shallow copy is intentional: only scalar modifier fields are updated.
+        new_pulse = copy.copy(self)
+        new_pulse._phase += phase
+        return new_pulse
+
+    def repeated(self, n: int) -> Self:
+        """Return a copy of the pulse repeated n times."""
+        if n == 1:
+            return self
+        new_pulse = self.copy(reset_cached_duration=True)
+        new_pulse._set_sampled_values(np.tile(self._materialize_values(), n))
+        return new_pulse
+
+    def inverted(self) -> Self:
+        """Return a copy of the pulse with the time inverted."""
+        new_pulse = self.copy()
+        new_pulse._set_sampled_values(np.flip(-1 * self._materialize_values()))
+        return new_pulse
+
+
+class Arbitrary(Pulse):
+    """
+    Pulse alias class for explicit arbitrary I/Q waveforms.
+
+    `Arbitrary` is behaviorally equivalent to `Pulse` and should be preferred
+    over direct `Pulse` instantiation.
+    """
+
+    def _sample_values(self) -> npt.ArrayLike:
+        """Return sampled complex values for explicit arbitrary waveforms."""
+        return np.zeros(self._length, dtype=np.complex128)

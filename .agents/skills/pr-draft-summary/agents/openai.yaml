@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Draft Summary"
+  short_description: "Draft branch, PR title, and description"
+  default_prompt: "Use $pr-draft-summary to prepare a branch name, PR title, and draft description for this work."

@@ -1,0 +1,4966 @@
+"""Characterization service for measurement experiments."""
+
+from __future__ import annotations
+
+import logging
+from collections import defaultdict
+from collections.abc import Callable, Collection
+from copy import deepcopy
+from dataclasses import dataclass
+from typing import Any, Literal
+
+import numpy as np
+import plotly.graph_objects as go
+from numpy.typing import ArrayLike, NDArray
+from qxpulse import (
+    CPMG,
+    Blank,
+    FlatTop,
+    Gaussian,
+    PulseSchedule,
+    RampType,
+    Rect,
+    Waveform,
+)
+from rich.prompt import Confirm
+from tqdm import tqdm
+from typing_extensions import deprecated
+
+import qubex.visualization as viz
+from qubex.analysis import FitResult, FitStatus, fitting
+from qubex.experiment.experiment_constants import (
+    CALIBRATION_SHOTS,
+    DEFAULT_INTERVAL,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
+    DEFAULT_SHOTS,
+)
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.experiment.experiment_util import ExperimentUtil
+from qubex.experiment.models.experiment_result import (
+    AmplRabiData,
+    ExperimentResult,
+    FreqRabiData,
+    RabiData,
+    RamseyData,
+    T1Data,
+    T2Data,
+)
+from qubex.experiment.models.rabi_param import RabiParam
+from qubex.experiment.models.result import Result
+from qubex.system import MixingUtil
+from qubex.system.quel1.quel1_system_constants import CNCO_CENTER_CTRL_HZ
+from qubex.typing import TargetMap
+from qubex.visualization import COLORS
+
+from .calibration_service import CalibrationService
+from .measurement_service import MeasurementService
+from .pulse_service import PulseService
+
+logger = logging.getLogger(__name__)
+_CHEVRON_RABI_AMPLITUDE_EPS = 1e-12
+# Candidate gates for removing unreliable per-detuning Rabi estimates.
+_DETUNED_RABI_PRUNING_R2_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.3)
+_DETUNED_RABI_MIN_R2_IMPROVEMENT = 0.01
+_READOUT_FREQUENCY_MIN_FIT_R2 = 0.9
+_ReadoutFrequencyFitFunc = Literal["lorentzian", "double_lorentzian"]
+
+
+@dataclass(frozen=True)
+class _DetunedRabiFitCandidate:
+    """Candidate detuned-Rabi fit after applying one Rabi-fit quality gate."""
+
+    rates: NDArray
+    threshold: float
+    r2: float
+    retained_count: int
+
+
+def _filter_low_quality_rabi_rates(
+    rabi_rates: NDArray,
+    rabi_fit_r2: NDArray,
+    *,
+    min_r2: float,
+) -> NDArray:
+    """
+    Mask unreliable Rabi-rate estimates before detuned Rabi fitting.
+
+    Parameters
+    ----------
+    rabi_rates : NDArray
+        Estimated Rabi rates in GHz.
+    rabi_fit_r2 : NDArray
+        R² values from the per-frequency Rabi fits.
+    min_r2 : float
+        Minimum R² required to keep one rate estimate.
+
+    Returns
+    -------
+    NDArray
+        Copy of `rabi_rates` with low-quality entries replaced by NaN. The
+        original rates are returned when fewer than three entries pass the
+        quality threshold.
+    """
+    rates = np.asarray(rabi_rates, dtype=np.float64)
+    quality = np.asarray(rabi_fit_r2, dtype=np.float64)
+    reliable = np.isfinite(rates) & np.isfinite(quality) & (quality >= min_r2)
+    if np.count_nonzero(reliable) < 3:
+        return rates.copy()
+    return np.where(reliable, rates, np.nan)
+
+
+def _select_detuned_rabi_fit(
+    *,
+    target: str,
+    control_frequencies: NDArray,
+    rabi_rates: NDArray,
+    rabi_fit_r2: NDArray,
+    plot: bool,
+) -> tuple[FitResult, NDArray, float | None]:
+    """
+    Fit detuned Rabi after choosing the best Rabi-fit quality gate.
+
+    The selection keeps the unfiltered fit unless pruning gives a meaningful
+    detuned-Rabi R² improvement, and favors retaining more points when R²
+    values are close.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    control_frequencies : NDArray
+        Control frequencies in GHz.
+    rabi_rates : NDArray
+        Estimated Rabi rates in GHz.
+    rabi_fit_r2 : NDArray
+        R² values from per-frequency Rabi fits.
+    plot : bool
+        Whether to plot the selected detuned Rabi fit.
+
+    Returns
+    -------
+    tuple[FitResult, NDArray, float | None]
+        Selected fit result, selected Rabi-rate array, and the selected R²
+        threshold. The threshold is `None` when the unfiltered rates are kept.
+    """
+    baseline_rates = np.asarray(rabi_rates, dtype=np.float64)
+    baseline_fit = fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=baseline_rates,
+        plot=False,
+        warn_low_r2=False,
+    )
+    baseline_r2 = baseline_fit.get("r2", np.nan)
+    seen_masks = {tuple(np.isnan(baseline_rates))}
+    candidates: list[_DetunedRabiFitCandidate] = []
+
+    for threshold in _DETUNED_RABI_PRUNING_R2_THRESHOLDS:
+        candidate_rates = _filter_low_quality_rabi_rates(
+            baseline_rates,
+            rabi_fit_r2,
+            min_r2=threshold,
+        )
+        mask_key = tuple(np.isnan(candidate_rates))
+        if mask_key in seen_masks:
+            continue
+        seen_masks.add(mask_key)
+
+        candidate_fit = fitting.fit_detuned_rabi(
+            target=target,
+            control_frequencies=control_frequencies,
+            rabi_frequencies=candidate_rates,
+            plot=False,
+            warn_low_r2=False,
+        )
+        candidate_r2 = candidate_fit.get("r2", np.nan)
+        if np.isfinite(candidate_r2):
+            candidates.append(
+                _DetunedRabiFitCandidate(
+                    rates=candidate_rates,
+                    threshold=threshold,
+                    r2=float(candidate_r2),
+                    retained_count=int(np.count_nonzero(np.isfinite(candidate_rates))),
+                )
+            )
+
+    selected_rates = baseline_rates
+    selected_threshold: float | None = None
+    if candidates:
+        best_pruned_r2 = max(candidate.r2 for candidate in candidates)
+        # Keep the unfiltered fit unless pruning improves the best pruned R² enough.
+        pruning_improves_fit = not np.isfinite(baseline_r2) or (
+            best_pruned_r2 >= baseline_r2 + _DETUNED_RABI_MIN_R2_IMPROVEMENT
+        )
+        if pruning_improves_fit:
+            # Among near-best pruned fits, prefer the one that retains more data.
+            close_to_best = [
+                candidate
+                for candidate in candidates
+                if candidate.r2 >= best_pruned_r2 - _DETUNED_RABI_MIN_R2_IMPROVEMENT
+            ]
+            selected_candidate = max(
+                close_to_best,
+                key=lambda candidate: (candidate.retained_count, candidate.r2),
+            )
+            selected_rates = selected_candidate.rates
+            selected_threshold = selected_candidate.threshold
+
+    selected_fit = fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=selected_rates,
+        plot=plot,
+        warn_low_r2=True,
+    )
+    return selected_fit, selected_rates, selected_threshold
+
+
+def _fit_chevron_detuned_rabi(
+    *,
+    target: str,
+    control_frequencies: NDArray,
+    rabi_rates: NDArray,
+    rabi_fit_r2: NDArray,
+    plot: bool,
+    pruned_fit: bool,
+) -> FitResult:
+    """
+    Fit chevron detuned Rabi with the configured pruning policy.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    control_frequencies : NDArray
+        Control frequencies in GHz.
+    rabi_rates : NDArray
+        Estimated Rabi rates in GHz.
+    rabi_fit_r2 : NDArray
+        R² values from per-frequency Rabi fits.
+    plot : bool
+        Whether to plot the detuned Rabi fit.
+    pruned_fit : bool
+        Whether to prune low-quality Rabi-rate estimates before fitting.
+
+    Returns
+    -------
+    FitResult
+        Result for the selected detuned Rabi fit.
+    """
+    if pruned_fit:
+        fit_result, _selected_rates, selected_threshold = _select_detuned_rabi_fit(
+            target=target,
+            control_frequencies=control_frequencies,
+            rabi_rates=rabi_rates,
+            rabi_fit_r2=rabi_fit_r2,
+            plot=plot,
+        )
+        if selected_threshold is not None:
+            logger.info(
+                "Selected chevron Rabi-fit R² threshold %.1f for %s.",
+                selected_threshold,
+                target,
+            )
+        return fit_result
+
+    return fitting.fit_detuned_rabi(
+        target=target,
+        control_frequencies=control_frequencies,
+        rabi_frequencies=rabi_rates,
+        plot=plot,
+    )
+
+
+def _is_reliable_detuned_rabi_fit(fit_result: Any) -> bool:
+    """Return whether a detuned Rabi fit is good enough for chevron calibration."""
+    if getattr(fit_result, "status", FitStatus.SUCCESS) is FitStatus.ERROR:
+        return False
+    r2 = fit_result.get("r2", np.nan)
+    return bool(np.isfinite(r2) and r2 >= 0.5)
+
+
+def _is_low_quality_readout_frequency_fit(fit_result: Any) -> bool:
+    """Return whether a readout-frequency fit should fall back to measured peak."""
+    status = getattr(fit_result, "status", FitStatus.SUCCESS)
+    if status is not FitStatus.SUCCESS and status != FitStatus.SUCCESS.value:
+        return True
+
+    r2 = fit_result.get("r2", None)
+    if r2 is None:
+        return False
+
+    try:
+        r2_value = float(r2)
+    except (TypeError, ValueError):
+        return True
+    return not np.isfinite(r2_value) or r2_value < _READOUT_FREQUENCY_MIN_FIT_R2
+
+
+def _estimate_readout_lorentzian_width(
+    frequencies: NDArray,
+    values: NDArray,
+    *,
+    baseline: float,
+    amplitude: float,
+) -> float:
+    """Estimate a Lorentzian half width from the measured half maximum."""
+    frequency_span = float(np.max(frequencies) - np.min(frequencies))
+    min_width = float(np.finfo(np.float64).eps)
+    fallback_width = float(max(frequency_span / 8, min_width))
+    if amplitude <= 0 or not np.isfinite(amplitude):
+        return fallback_width
+
+    half_max = baseline + amplitude / 2
+    half_max_mask = values >= half_max
+    if np.count_nonzero(half_max_mask) < 2:
+        return fallback_width
+
+    full_width = float(np.ptp(frequencies[half_max_mask]))
+    return float(max(full_width / 2, min_width))
+
+
+def _find_readout_double_peak_indices(values: NDArray) -> tuple[int, int]:
+    """Find two separated peak indices for a double-Lorentzian initial guess."""
+    if values.size < 2:
+        return 0, 0
+
+    peak_index = int(np.argmax(values))
+    min_separation = max(1, values.size // 10)
+    local_peak_indices = [
+        index
+        for index in range(values.size)
+        if (
+            (index == 0 or values[index] >= values[index - 1])
+            and (index == values.size - 1 or values[index] >= values[index + 1])
+        )
+    ]
+    candidate_indices = sorted(
+        (
+            index
+            for index in local_peak_indices
+            if abs(index - peak_index) >= min_separation
+        ),
+        key=lambda index: values[index],
+        reverse=True,
+    )
+    if not candidate_indices:
+        candidate_indices = sorted(
+            (
+                index
+                for index in range(values.size)
+                if abs(index - peak_index) >= min_separation
+            ),
+            key=lambda index: values[index],
+            reverse=True,
+        )
+    if not candidate_indices:
+        return peak_index, peak_index
+    return peak_index, int(candidate_indices[0])
+
+
+def _make_readout_double_lorentzian_initial_guess(
+    frequencies: NDArray,
+    values: NDArray,
+) -> tuple[float, float, float, float, float, float, float]:
+    """Build an initial guess for a double-Lorentzian readout fit."""
+    baseline = float(np.percentile(values, 20))
+    first_index, second_index = _find_readout_double_peak_indices(values)
+    frequency_span = float(np.max(frequencies) - np.min(frequencies))
+    fallback_width = float(max(frequency_span / 12, float(np.finfo(np.float64).eps)))
+    first_amplitude = float(
+        max(float(values[first_index] - baseline), float(np.finfo(np.float64).eps))
+    )
+    second_amplitude = float(
+        max(float(values[second_index] - baseline), float(np.finfo(np.float64).eps))
+    )
+    first_width = _estimate_readout_lorentzian_width(
+        frequencies,
+        values,
+        baseline=baseline,
+        amplitude=first_amplitude,
+    )
+    second_width = _estimate_readout_lorentzian_width(
+        frequencies,
+        values,
+        baseline=baseline,
+        amplitude=second_amplitude,
+    )
+    return (
+        first_amplitude,
+        float(frequencies[first_index]),
+        min(first_width, fallback_width),
+        second_amplitude,
+        float(frequencies[second_index]),
+        min(second_width, fallback_width),
+        baseline,
+    )
+
+
+def _make_readout_lorentzian_initial_guess(
+    frequencies: NDArray,
+    values: NDArray,
+    *,
+    peak_frequency: float,
+) -> tuple[float, float, float, float]:
+    """Build an initial guess for a single-Lorentzian readout fit."""
+    baseline = float(np.median(values))
+    frequency_span = float(np.max(frequencies) - np.min(frequencies))
+    min_width = float(np.finfo(np.float64).eps)
+    width = float(max(frequency_span / 4, min_width))
+    amplitude = float(max(float(np.max(values) - baseline), min_width))
+    return amplitude, peak_frequency, width, baseline
+
+
+def _fit_readout_frequency_response(
+    *,
+    target: str,
+    frequencies: NDArray,
+    values: NDArray,
+    peak_frequency: float,
+    fit_func: _ReadoutFrequencyFitFunc,
+    plot: bool,
+) -> FitResult:
+    """Fit readout-frequency response data with the selected model."""
+    frequency_min = float(np.min(frequencies))
+    frequency_max = float(np.max(frequencies))
+    f0_lower = float(np.nextafter(frequency_min, -np.inf))
+    f0_upper = float(np.nextafter(frequency_max, np.inf))
+
+    if fit_func == "double_lorentzian":
+        return fitting.fit_double_lorentzian(
+            target=target,
+            x=frequencies,
+            y=values,
+            p0=_make_readout_double_lorentzian_initial_guess(frequencies, values),
+            bounds=(
+                (0, f0_lower, 0, 0, f0_lower, 0, -np.inf),
+                (
+                    np.inf,
+                    f0_upper,
+                    np.inf,
+                    np.inf,
+                    f0_upper,
+                    np.inf,
+                    np.inf,
+                ),
+            ),
+            plot=plot,
+            title="Readout frequency calibration",
+            xlabel="Readout frequency (GHz)",
+        )
+
+    return fitting.fit_lorentzian(
+        target=target,
+        x=frequencies,
+        y=values,
+        p0=_make_readout_lorentzian_initial_guess(
+            frequencies,
+            values,
+            peak_frequency=peak_frequency,
+        ),
+        bounds=(
+            (0, f0_lower, 0, -np.inf),
+            (np.inf, f0_upper, np.inf, np.inf),
+        ),
+        plot=plot,
+        title="Readout frequency calibration",
+        xlabel="Readout frequency (GHz)",
+    )
+
+
+def _make_readout_frequency_fallback_figure(
+    *,
+    target: str,
+    frequencies: NDArray,
+    values: NDArray,
+    peak_frequency: float | None,
+    peak_value: float | None,
+) -> go.Figure:
+    """Build a readout-frequency figure when Lorentzian fitting fails."""
+    finite_mask = np.isfinite(frequencies) & np.isfinite(values)
+    fig = viz.make_figure()
+    fig.add_trace(
+        go.Scatter(
+            x=frequencies[finite_mask],
+            y=values[finite_mask],
+            mode="lines+markers",
+            name="Data",
+        )
+    )
+    if peak_frequency is not None and peak_value is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=[peak_frequency],
+                y=[peak_value],
+                mode="markers",
+                marker=dict(color=COLORS[3], size=10, symbol="x"),
+                name="Maximum response",
+            )
+        )
+        fig.add_annotation(
+            x=peak_frequency,
+            y=peak_value,
+            text=f"max: {peak_frequency:.6f}",
+            showarrow=True,
+            arrowhead=1,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+    fig.update_layout(
+        title=dict(
+            text=f"Readout frequency calibration : {target}",
+            subtitle=dict(
+                text="fit failed; using maximum response",
+                font=dict(size=11, family="monospace"),
+            ),
+        ),
+        xaxis_title="Readout frequency (GHz)",
+        yaxis_title="Rabi amplitude (arb. units)",
+        width=600,
+        height=300,
+        margin=dict(t=80),
+    )
+    return fig
+
+
+def _build_ramsey_sequence(
+    pulse_service: PulseService,
+    qubit_labels: Collection[str],
+    spectator_state: str,
+    second_rotation_axis: Literal["X", "Y"],
+    target_list: list[str],
+    target_qubits: list[str],
+    spectator_qubits: list[str],
+) -> Callable[[int], PulseSchedule]:
+    """Build one Ramsey sequence callable for the current target selection."""
+
+    def ramsey_sequence(T: int) -> PulseSchedule:
+        with PulseSchedule(target_list) as ps:
+            if spectator_state != "0":
+                for spectator in spectator_qubits:
+                    if spectator in qubit_labels:
+                        pulse = pulse_service.get_pulse_for_state(
+                            target=spectator,
+                            state=spectator_state,
+                        )
+                        ps.add(spectator, pulse)
+                ps.barrier()
+
+            for target in target_qubits:
+                x90 = pulse_service.get_hpi_pulse(target)
+                ps.add(target, x90)
+                ps.add(target, Blank(T))
+                if second_rotation_axis == "X":
+                    ps.add(target, x90.shifted(np.pi))
+                else:
+                    ps.add(target, x90.shifted(-np.pi / 2))
+        return ps
+
+    return ramsey_sequence
+
+
+DEFAULT_ELECTRICAL_DELAY_INTERVAL = 0.0
+DEFAULT_ELECTRICAL_DELAY_STEP_GHZ = 0.0001
+DEFAULT_ELECTRICAL_DELAY_SAMPLES = 50
+DEFAULT_ELECTRICAL_DELAY_READOUT_AMPLITUDE = 1.0
+
+DEFAULT_RESONATOR_SPECTROSCOPY_SUBRANGE_WIDTH_GHZ = 0.3
+DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_DURATION = 8192
+DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMPTIME = 128
+DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMP_TYPE: RampType = "Bump"
+DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL = 0.0
+DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_HEIGHT = 0.5
+DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE = 10
+DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_PROMINENCE = 0.05
+DEFAULT_RESONATOR_SPECTROSCOPY_MAX_PEAKS = 4
+DEFAULT_RESONATOR_SPECTROSCOPY_GAUSSIAN_SIGMA = 2.0
+DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_WINDOW_FRACTION = 0.05
+DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_MIN_WINDOW_LENGTH = 7
+DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_POLYORDER = 3
+
+DEFAULT_RESONATOR_SPECTROSCOPY_POWER_START_DB = -60
+DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STOP_DB = 5
+DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STEP_DB = 5
+
+DEFAULT_QUBIT_FREQUENCY_SCAN_SUBRANGE_WIDTH_GHZ = 0.3
+DEFAULT_QUBIT_FREQUENCY_SCAN_INTERVAL = 1024.0
+DEFAULT_QUBIT_FREQUENCY_SCAN_PEAK_DISTANCE = 10
+DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION = 1024
+DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA = 128
+DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION = 1024
+DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME = 128
+
+DEFAULT_QUBIT_SPECTROSCOPY_POWER_START_DB = -60
+DEFAULT_QUBIT_SPECTROSCOPY_POWER_STOP_DB = 0
+DEFAULT_QUBIT_SPECTROSCOPY_POWER_STEP_DB = 5
+
+
+class CharacterizationService:
+    """Service for device characterization routines."""
+
+    def __init__(
+        self,
+        *,
+        experiment_context: ExperimentContext,
+        measurement_service: MeasurementService,
+        calibration_service: CalibrationService,
+        pulse_service: PulseService,
+    ):
+        self._experiment_context: ExperimentContext = experiment_context
+        self._measurement_service = measurement_service
+        self._calibration_service = calibration_service
+        self._pulse_service = pulse_service
+
+    @property
+    def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
+        return self._experiment_context
+
+    @property
+    def pulse(self) -> PulseService:
+        """Return the pulse service."""
+        return self._pulse_service
+
+    @property
+    def measurement_service(self) -> MeasurementService:
+        """Return the measurement service."""
+        return self._measurement_service
+
+    @property
+    def calibration_service(self) -> CalibrationService:
+        """Return the calibration service."""
+        return self._calibration_service
+
+    @staticmethod
+    def _is_valid_chevron_rabi_param(param: Any) -> bool:
+        """Return whether a shared Rabi parameter is safe for chevron normalization."""
+        if param is None:
+            return False
+        amplitude = getattr(param, "amplitude", np.nan)
+        return bool(
+            np.isfinite(amplitude) and abs(amplitude) > _CHEVRON_RABI_AMPLITUDE_EPS
+        )
+
+    @staticmethod
+    def _get_chevron_plot_values(
+        data: Any,
+        *,
+        use_fallback: bool,
+    ) -> NDArray[np.float64]:
+        """Return heatmap values for chevron plotting."""
+        if not use_fallback:
+            return np.asarray(data.normalized, dtype=np.float64)
+        # When normalization is invalid, use one fixed raw quadrature.
+        # Real/imag are equivalent here because link-up resets the phase basis.
+        return np.asarray(np.real(data.data), dtype=np.float64)
+
+    def measure_readout_snr(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """Measure readout SNR for targets."""
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if initial_state is None:
+            initial_state = "0"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+
+        sequence = {
+            target: self.pulse.get_pulse_for_state(
+                target=target,
+                state=initial_state,
+            )
+            for target in targets
+        }
+
+        result = self._measurement_service.measure(
+            sequence=sequence,
+            mode="single",
+            shots=shots,
+            interval=interval,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
+        )
+
+        if plot:
+            result.plot(save_image=save_image)
+
+        signal = {}
+        noise = {}
+        snr = {}
+        for target, data in result.data.items():
+            iq = data.kerneled
+            signal[target] = np.abs(np.average(iq))
+            noise[target] = np.std(iq)
+            snr[target] = signal[target] / noise[target]
+
+        return Result(
+            data={
+                "signal": signal,
+                "noise": noise,
+                "snr": snr,
+            }
+        )
+
+    def sweep_readout_amplitude(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        amplitude_range: ArrayLike | None = None,
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
+        readout_duration: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """Sweep readout amplitude and measure SNR."""
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if initial_state is None:
+            initial_state = "0"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+
+        if amplitude_range is None:
+            amplitude_range = np.linspace(0.0, 0.25, 51)
+        else:
+            amplitude_range = np.asarray(amplitude_range)
+
+        signal_buf = defaultdict(list)
+        noise_buf = defaultdict(list)
+        snr_buf = defaultdict(list)
+
+        for amplitude in tqdm(amplitude_range):
+            readout_amplitudes: dict[str, float] = dict.fromkeys(
+                targets, float(amplitude)
+            )
+            result = self.measure_readout_snr(
+                targets=targets,
+                initial_state=initial_state,
+                readout_duration=readout_duration,
+                readout_amplitudes=readout_amplitudes,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            for target in targets:
+                signal_buf[target].append(result["signal"][target])
+                noise_buf[target].append(result["noise"][target])
+                snr_buf[target].append(result["snr"][target])
+
+        signal = {target: np.array(signal_buf[target]) for target in targets}
+        noise = {target: np.array(noise_buf[target]) for target in targets}
+        snr = {target: np.array(snr_buf[target]) for target in targets}
+        figs = {}
+
+        if plot:
+            for target in targets:
+                fig = viz.make_figure()
+                fig.set_subplots(rows=3, cols=1, shared_xaxes=True)
+                fig.add_trace(
+                    go.Scatter(
+                        x=amplitude_range,
+                        y=signal[target],
+                        mode="lines+markers",
+                        name="Signal",
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=amplitude_range,
+                        y=noise[target],
+                        mode="lines+markers",
+                        name="Noise",
+                    ),
+                    row=2,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=amplitude_range,
+                        y=snr[target],
+                        mode="lines+markers",
+                        name="SNR",
+                    ),
+                    row=3,
+                    col=1,
+                )
+                fig.update_layout(
+                    title=f"Readout SNR : {target}",
+                    xaxis3_title="Readout amplitude (arb. units)",
+                    yaxis_title="Signal",
+                    yaxis2_title="Noise",
+                    yaxis3_title="SNR",
+                    showlegend=False,
+                    width=600,
+                    height=400,
+                )
+                fig.show()
+                viz.save_figure(
+                    fig,
+                    f"readout_snr_{target}",
+                    width=600,
+                    height=400,
+                )
+                figs[target] = fig
+
+        return Result(
+            data={
+                "signal": signal,
+                "noise": noise,
+                "snr": snr,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
+                "fig": figs,
+            },
+            figures=figs,
+        )
+
+    def sweep_readout_duration(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """Sweep readout duration and measure SNR."""
+        if initial_state is None:
+            initial_state = "0"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if time_range is None:
+            time_range = np.arange(128, 2048, 128)
+
+        time_range = np.asarray(time_range)
+
+        signal_buf = defaultdict(list)
+        noise_buf = defaultdict(list)
+        snr_buf = defaultdict(list)
+
+        for T in time_range:
+            result = self.measure_readout_snr(
+                targets=targets,
+                initial_state=initial_state,
+                readout_duration=T,
+                readout_amplitudes=readout_amplitudes,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            for target in targets:
+                signal_buf[target].append(result["signal"][target])
+                noise_buf[target].append(result["noise"][target])
+                snr_buf[target].append(result["snr"][target])
+
+        signal = {target: np.array(signal_buf[target]) for target in targets}
+        noise = {target: np.array(noise_buf[target]) for target in targets}
+        snr = {target: np.array(snr_buf[target]) for target in targets}
+
+        if plot:
+            for target in targets:
+                fig = viz.make_figure()
+                fig.set_subplots(rows=3, cols=1, shared_xaxes=True)
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_range,
+                        y=signal[target],
+                        mode="lines+markers",
+                        name="Signal",
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_range,
+                        y=noise[target],
+                        mode="lines+markers",
+                        name="Noise",
+                    ),
+                    row=2,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_range,
+                        y=snr[target],
+                        mode="lines+markers",
+                        name="SNR",
+                    ),
+                    row=3,
+                    col=1,
+                )
+                fig.update_layout(
+                    title=f"Readout SNR : {target}",
+                    xaxis3_title="Readout duration (ns)",
+                    yaxis_title="Signal",
+                    yaxis2_title="Noise",
+                    yaxis3_title="SNR",
+                    showlegend=False,
+                    width=600,
+                    height=400,
+                )
+                fig.show()
+                viz.save_figure(
+                    fig,
+                    f"readout_snr_{target}",
+                    width=600,
+                    height=400,
+                )
+
+        return Result(
+            data={
+                "signal": signal,
+                "noise": noise,
+                "snr": snr,
+            }
+        )
+
+    def chevron_pattern(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
+        frequencies: dict[str, float] | None = None,
+        amplitudes: dict[str, float] | None = None,
+        rabi_params: dict[str, RabiParam] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        pruned_fit: bool | None = None,
+    ) -> Result:
+        """Measure chevron patterns for targets."""
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if time_range is None:
+            time_range = DEFAULT_RABI_TIME_RANGE
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if pruned_fit is None:
+            pruned_fit = True
+
+        if frequencies is None:
+            frequencies = {
+                target: self.ctx.targets[target].frequency for target in targets
+            }
+
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.05, 0.05, 51)
+
+        detuning_range = np.array(detuning_range, dtype=np.float64)
+        time_range = np.array(time_range, dtype=np.float64)
+
+        if amplitudes is None:
+            amplitudes = {
+                target: self.ctx.params.control_amplitude[target] for target in targets
+            }
+
+        shared_rabi_params: dict[str, RabiParam]
+        if rabi_params is None:
+            print("Obtaining Rabi parameters...")
+            shared_rabi_params = self.measurement_service.obtain_rabi_params(
+                targets=targets,
+                amplitudes=amplitudes,
+                time_range=time_range,
+                frequencies=frequencies,
+                fit_threshold=0.0,
+                shots=shots,
+                interval=interval,
+                plot=False,
+                store_params=False,
+            ).rabi_params  # type: ignore
+        else:
+            shared_rabi_params = rabi_params
+
+        rabi_rates: dict[str, NDArray] = {}
+        rabi_fit_r2: dict[str, NDArray] = {}
+        chevron_data: dict[str, NDArray] = {}
+        resonant_frequencies: dict[str, float] = {}
+        use_fallback_by_target = {
+            target: not self._is_valid_chevron_rabi_param(
+                shared_rabi_params.get(target)
+            )
+            for target in targets
+        }
+
+        print(f"Targets : {targets}")
+        subgroups = self.ctx.util.create_qubit_subgroups(targets)
+        figs = {}
+        for idx, subgroup in enumerate(subgroups):
+            if len(subgroup) == 0:
+                continue
+
+            print(f"Subgroup ({idx + 1}/{len(subgroups)}) : {subgroup}")
+
+            rabi_rates_buffer: dict[str, list[float]] = defaultdict(list)
+            rabi_fit_r2_buffer: dict[str, list[float]] = defaultdict(list)
+            chevron_data_buffer: dict[str, list[NDArray]] = defaultdict(list)
+
+            for detuning in tqdm(detuning_range):
+                with self.ctx.util.no_output():
+                    sweep_result = self.measurement_service.sweep_parameter(
+                        sequence=lambda t, subgroup=subgroup: {
+                            label: Rect(duration=t, amplitude=amplitudes[label])
+                            for label in subgroup
+                        },
+                        sweep_range=time_range,
+                        frequencies={
+                            label: frequencies[label] + detuning for label in subgroup
+                        },
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    sweep_data = sweep_result.data
+
+                    for target, data in sweep_data.items():
+                        fit_result = fitting.fit_rabi(
+                            target=data.target,
+                            times=data.sweep_range,
+                            data=data.data,
+                            plot=False,
+                            warn_low_r2=False,
+                        )
+                        rabi_rates_buffer[target].append(
+                            fit_result.get("frequency", np.nan)
+                        )
+                        rabi_fit_r2_buffer[target].append(fit_result.get("r2", np.nan))
+                        data.rabi_param = shared_rabi_params[target]
+                        chevron_data_buffer[target].append(
+                            self._get_chevron_plot_values(
+                                data,
+                                use_fallback=use_fallback_by_target[target],
+                            )
+                        )
+
+            for target in subgroup:
+                rabi_rates[target] = np.array(rabi_rates_buffer[target])
+                rabi_fit_r2[target] = np.array(rabi_fit_r2_buffer[target])
+                chevron_data[target] = np.array(chevron_data_buffer[target]).T
+                control_frequencies = detuning_range + frequencies[target]
+
+                fig = viz.make_figure()
+                fig.add_trace(
+                    go.Heatmap(
+                        x=control_frequencies,
+                        y=time_range,
+                        z=chevron_data[target],
+                        colorscale="Viridis",
+                    )
+                )
+                fig.update_layout(
+                    title=dict(
+                        text=f"Chevron pattern : {target}",
+                        subtitle=dict(
+                            text=(
+                                f"control_amplitude={amplitudes[target]:.6g}"
+                                if not use_fallback_by_target[target]
+                                else (
+                                    f"control_amplitude={amplitudes[target]:.6g}, "
+                                    "fallback=data.real"
+                                )
+                            ),
+                            font=dict(
+                                size=13,
+                                family="monospace",
+                            ),
+                        ),
+                    ),
+                    xaxis_title="Drive frequency (GHz)",
+                    yaxis_title="Time (ns)",
+                    width=600,
+                    height=400,
+                    margin=dict(t=80),
+                )
+                figs[target] = fig
+                if plot:
+                    fig.show()
+
+                fit_result = _fit_chevron_detuned_rabi(
+                    target=target,
+                    control_frequencies=control_frequencies,
+                    rabi_rates=rabi_rates[target],
+                    rabi_fit_r2=rabi_fit_r2[target],
+                    plot=plot,
+                    pruned_fit=pruned_fit,
+                )
+                if not _is_reliable_detuned_rabi_fit(fit_result):
+                    logger.warning(
+                        "Chevron resonance estimate for %s is based on an "
+                        "unreliable detuned Rabi fit.",
+                        target,
+                    )
+                resonant_frequencies[target] = fit_result.get("f_resonance", np.nan)
+
+                if save_image:
+                    viz.save_figure(
+                        fig,
+                        name=f"chevron_pattern_{target}",
+                        width=600,
+                        height=400,
+                    )
+                    fig_fit = fit_result.figure
+                    if fig_fit is not None:
+                        viz.save_figure(
+                            fig_fit,
+                            name=f"chevron_pattern_fit_{target}",
+                            width=600,
+                            height=300,
+                        )
+
+        rabi_rates = dict(sorted(rabi_rates.items()))
+        rabi_fit_r2 = dict(sorted(rabi_fit_r2.items()))
+        chevron_data = dict(sorted(chevron_data.items()))
+        resonant_frequencies = dict(sorted(resonant_frequencies.items()))
+
+        return Result(
+            data={
+                "time_range": time_range,
+                "detuning_range": detuning_range,
+                "frequencies": frequencies,
+                "chevron_data": chevron_data,
+                "rabi_rates": rabi_rates,
+                "rabi_fit_r2": rabi_fit_r2,
+                "resonant_frequencies": resonant_frequencies,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
+                "fig": figs,
+            },
+            figures=figs,
+        )
+
+    def obtain_freq_rabi_relation(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
+        rabi_level: Literal["ge", "ef"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        verbose: bool | None = None,
+    ) -> ExperimentResult[FreqRabiData]:
+        """Measure frequency-Rabi relation for targets."""
+        if rabi_level is None:
+            rabi_level = "ge"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = False
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 21)
+        else:
+            detuning_range = np.asarray(detuning_range, dtype=np.float64)
+
+        if time_range is None:
+            time_range = np.arange(0, 101, 4)
+        else:
+            time_range = np.asarray(time_range, dtype=np.float64)
+
+        amplitudes = {
+            target: self.ctx.params.get_control_amplitude(target) for target in targets
+        }
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
+        rabi_data: dict[str, list[RabiData]] = defaultdict(list)
+
+        for detuning in tqdm(detuning_range):
+            if rabi_level == "ge":
+                rabi_result = self.measurement_service.rabi_experiment(
+                    time_range=time_range,
+                    amplitudes=amplitudes,
+                    detuning=detuning,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                )
+            elif rabi_level == "ef":
+                rabi_result = self.measurement_service.ef_rabi_experiment(
+                    time_range=time_range,
+                    amplitudes=amplitudes,
+                    detuning=detuning,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                )
+            else:
+                raise ValueError("Invalid rabi_level.")
+            if verbose:
+                rabi_result.fit()
+            rabi_params = rabi_result.rabi_params
+            if rabi_params is None:
+                raise ValueError("Rabi parameters are not stored.")
+            for target, param in rabi_params.items():
+                rabi_rate = param.frequency
+                rabi_rates[target].append(rabi_rate)
+            for target, data in rabi_result.data.items():
+                rabi_data[target].append(data)
+
+        frequencies = {
+            target: detuning_range + self.ctx.targets[target].frequency
+            for target in rabi_rates
+        }
+
+        data = {
+            target: FreqRabiData(
+                target=target,
+                data=np.array(values, dtype=np.float64),
+                sweep_range=detuning_range,
+                frequency_range=frequencies[target],
+                rabi_data=rabi_data[target],
+            )
+            for target, values in rabi_rates.items()
+        }
+        result = ExperimentResult(data=data)
+        if plot:
+            result.fit()
+        return result
+
+    def obtain_ampl_rabi_relation(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        amplitude_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+    ) -> ExperimentResult[AmplRabiData]:
+        """Measure amplitude-Rabi relation for targets."""
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if time_range is None:
+            time_range = np.arange(0, 201, 4)
+
+        if amplitude_range is None:
+            amplitude_range = np.linspace(0.01, 0.1, 10)
+
+        if ramptime is None:
+            ramptime = 0
+
+        time_range = np.array(time_range, dtype=np.float64)
+        amplitude_range = np.array(amplitude_range, dtype=np.float64)
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
+        rabi_data: dict[str, list[RabiData]] = defaultdict(list)
+
+        for amplitude in tqdm(amplitude_range):
+            amplitudes: dict[str, float] = dict.fromkeys(targets, float(amplitude))
+            rabi_result = self.measurement_service.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                ramptime=ramptime,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            rabi_params = rabi_result.rabi_params
+            if rabi_params is None:
+                raise ValueError("Rabi parameters are not stored.")
+            for target, param in rabi_params.items():
+                rabi_rate = param.frequency
+                rabi_rates[target].append(rabi_rate)
+            for target, data in rabi_result.data.items():
+                rabi_data[target].append(data)
+            if plot:
+                rabi_result.fit()
+
+        data = {
+            target: AmplRabiData(
+                target=target,
+                data=np.array(rabi_rate),
+                sweep_range=amplitude_range,
+                rabi_data=rabi_data[target],
+            )
+            for target, rabi_rate in rabi_rates.items()
+        }
+        result = ExperimentResult(data=data)
+        if plot:
+            result.fit()
+        return result
+
+    def calibrate_control_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
+        frequencies: dict[str, float] | None = None,
+        amplitudes: dict[str, float] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """Calibrate control frequency for targets."""
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 21)
+
+        if time_range is None:
+            time_range = range(0, 101, 4)
+
+        result = self.chevron_pattern(
+            targets=targets,
+            detuning_range=detuning_range,
+            time_range=time_range,
+            frequencies=frequencies,
+            amplitudes=amplitudes,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+        resonant_frequencies = result["resonant_frequencies"]
+
+        print("\nResults\n-------")
+        print("ge frequency (GHz):")
+        for target, frequency in resonant_frequencies.items():
+            print(f"    {target}: {frequency:.6f}")
+        return Result(data=resonant_frequencies)
+
+    def calibrate_ef_control_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        verbose: bool | None = None,
+    ) -> Result:
+        """Calibrate EF control frequency for targets."""
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = True
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        targets = [
+            target
+            for target in targets
+            if self.ctx.resolve_ef_label(target) in self.ctx.targets
+        ]
+        if len(targets) == 0:
+            print("No ef targets found for the given targets.")
+            return Result(data={})
+
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.05, 0.05, 21)
+        else:
+            detuning_range = np.asarray(detuning_range, dtype=np.float64)
+
+        if time_range is None:
+            time_range = np.arange(0, 101, 4)
+        else:
+            time_range = np.asarray(time_range, dtype=np.float64)
+
+        result = self.obtain_freq_rabi_relation(
+            targets=targets,
+            detuning_range=detuning_range,
+            rabi_level="ef",
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=False,
+            verbose=verbose,
+        )
+        fit_data = {
+            target: data.fit()["f_resonance"] for target, data in result.data.items()
+        }
+
+        if plot:
+            print("\nResults\n-------")
+            print("ef frequency (GHz):")
+            for target, fit in fit_data.items():
+                label = self.ctx.resolve_ge_label(target)
+                print(f"    {label}: {fit:.6f}")
+            print("anharmonicity (GHz):")
+            for target, fit in fit_data.items():
+                label = self.ctx.resolve_ge_label(target)
+                ge_freq = self.ctx.targets[label].frequency
+                print(f"    {label}: {fit - ge_freq:.6f}")
+
+        return Result(data=fit_data)
+
+    def calibrate_readout_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        fit_func: Literal["lorentzian", "double_lorentzian"] | None = None,
+    ) -> Result:
+        """Calibrate readout frequency for targets."""
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        if fit_func is None:
+            fit_func = "double_lorentzian"
+        if fit_func not in {"lorentzian", "double_lorentzian"}:
+            raise ValueError(
+                "fit_func must be either 'lorentzian' or 'double_lorentzian'."
+            )
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 21)
+
+        if time_range is None:
+            time_range = range(0, 101, 4)
+
+        detuning_range = np.array(detuning_range, dtype=np.float64)
+
+        # store the original readout amplitudes
+        original_readout_amplitudes = deepcopy(self.ctx.params.readout_amplitude)
+
+        result = defaultdict(list)
+        for detuning in tqdm(detuning_range):
+            with self.ctx.util.no_output():
+                if readout_amplitudes is not None:
+                    # modify the readout amplitudes if necessary
+                    for target, amplitude in readout_amplitudes.items():
+                        label = self.ctx.resolve_qubit_label(target)
+                        self.ctx.params.readout_amplitude[label] = amplitude
+
+                rabi_result = self.measurement_service.rabi_experiment(
+                    time_range=time_range,
+                    amplitudes={
+                        target: self.ctx.params.control_amplitude[target]
+                        for target in targets
+                    },
+                    frequencies={
+                        resonator.label: resonator.frequency + detuning
+                        for resonator in self.ctx.resonators.values()
+                    },
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                )
+                for qubit, rabi_data in rabi_result.data.items():
+                    rabi_amplitude = rabi_data.rabi_param.amplitude
+                    result[qubit].append(rabi_amplitude)
+
+        # restore the original readout amplitudes
+        self.ctx.params.readout_amplitude = original_readout_amplitudes
+
+        fit_data: dict[str, float] = {}
+        figs: dict[str, go.Figure] = {}
+        for target, values in result.items():
+            freq = self.ctx.resonators[target].frequency
+            values_array = np.array(values, dtype=np.float64)
+            frequency_values = detuning_range + freq
+            peak_frequency = None
+            peak_value = None
+            fit_result = FitResult(
+                status=FitStatus.ERROR,
+                message="No finite readout-frequency calibration data.",
+            )
+            finite_mask = np.isfinite(values_array) & np.isfinite(frequency_values)
+            if np.any(finite_mask):
+                fit_frequencies = frequency_values[finite_mask]
+                fit_values = values_array[finite_mask]
+                peak_index = int(np.argmax(fit_values))
+                peak_frequency = float(fit_frequencies[peak_index])
+                peak_value = float(fit_values[peak_index])
+                try:
+                    fit_result = _fit_readout_frequency_response(
+                        target=target,
+                        frequencies=fit_frequencies,
+                        values=fit_values,
+                        peak_frequency=peak_frequency,
+                        fit_func=fit_func,
+                        plot=plot,
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        "Failed to fit readout frequency for %s; using "
+                        "maximum-response frequency. %s",
+                        target,
+                        exc,
+                    )
+            if (
+                _is_low_quality_readout_frequency_fit(fit_result)
+                or "f0" not in fit_result
+            ):
+                readout_frequency = np.nan
+                if peak_frequency is not None:
+                    readout_frequency = peak_frequency
+            elif "f0" in fit_result:
+                readout_frequency = float(fit_result["f0"])
+            else:
+                readout_frequency = np.nan
+
+            fig = fit_result.figure
+            if fig is None:
+                fig = _make_readout_frequency_fallback_figure(
+                    target=target,
+                    frequencies=frequency_values,
+                    values=values_array,
+                    peak_frequency=peak_frequency,
+                    peak_value=peak_value,
+                )
+                if plot:
+                    fig.show(
+                        config=viz.get_config(filename=f"readout_frequency_{target}")
+                    )
+            if fig is not None and save_image:
+                viz.save_figure(
+                    fig,
+                    name=f"readout_frequency_{target}",
+                    width=600,
+                    height=300,
+                )
+            fit_data[target] = float(readout_frequency)
+            if fig is not None:
+                figs[target] = fig
+
+        print("\nResults\n-------")
+        for target, freq in fit_data.items():
+            print(f"{target}: {freq:.6f}")
+
+        return Result(
+            data={
+                "data": fit_data,
+                # TODO: Remove this legacy payload key after callers migrate to .figures.
+                "fig": figs,
+            },
+            figures=figs,
+        )
+
+    def t1_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
+    ) -> ExperimentResult[T1Data]:
+        """
+        Perform a T1 decay experiment.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to measure.
+        time_range
+            Delay times for the decay measurement.
+        plot
+            Whether to plot the fitted decay.
+        """
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        if xaxis_type is None:
+            xaxis_type = "log"
+
+        self.pulse.validate_rabi_params(targets)
+
+        if time_range is None:
+            time_range = np.logspace(
+                np.log10(100),
+                np.log10(200 * 1000),
+                51,
+            )
+        sampling_period = self.ctx.measurement.sampling_period
+        time_range = self.ctx.util.discretize_time_range(
+            np.asarray(time_range),
+            sampling_period=sampling_period,
+        )
+        if time_range is None:
+            raise ValueError("time_range could not be discretized.")
+
+        data: dict[str, T1Data] = {}
+
+        subgroups = self.ctx.util.create_qubit_subgroups(targets)
+        print(f"Target qubits: {targets}")
+        print(f"Subgroups: {subgroups}")
+        for idx, subgroup in enumerate(subgroups):
+            if len(subgroup) == 0:
+                continue
+
+            def t1_sequence(
+                T: int,
+                subgroup: list[str] = subgroup,
+            ) -> PulseSchedule:
+                with PulseSchedule(subgroup) as ps:
+                    for target in subgroup:
+                        ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
+                        ps.add(target, Blank(T))
+                return ps
+
+            print(
+                f"({idx + 1}/{len(subgroups)}) Conducting T1 experiment for {subgroup}...\n"
+            )
+
+            sweep_result = self.measurement_service.sweep_parameter(
+                sequence=t1_sequence,
+                sweep_range=time_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                title="T1 decay",
+                xlabel="Time (μs)",
+                ylabel="Measured value",
+                xaxis_type=xaxis_type,
+            )
+
+            for target, sweep_data in sweep_result.data.items():
+                fit_result = fitting.fit_exp_decay(
+                    target=target,
+                    x=sweep_data.sweep_range,
+                    y=0.5 * (1 - sweep_data.normalized),
+                    plot=plot,
+                    title="T1",
+                    xlabel="Time (μs)",
+                    ylabel="Normalized signal",
+                    xaxis_type=xaxis_type,
+                    yaxis_type="linear",
+                )
+                if fit_result.status is FitStatus.SUCCESS:
+                    t1 = fit_result["tau"]
+                    t1_err = fit_result["tau_err"]
+                    r2 = fit_result["r2"]
+
+                    t1_data = T1Data.new(
+                        sweep_data,
+                        t1=t1,
+                        t1_err=t1_err,
+                        r2=r2,
+                    )
+                    data[target] = t1_data
+
+                    fig = fit_result.get_figure()
+
+                    if save_image:
+                        viz.save_figure(
+                            fig,
+                            name=f"t1_{target}",
+                        )
+
+        return ExperimentResult(data=data)
+
+    def t2_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        n_cpmg: int | None = None,
+        pi_cpmg: Waveform | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
+    ) -> ExperimentResult[T2Data]:
+        """
+        Perform a T2 echo experiment.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to measure.
+        time_range
+            Delay times for the echo measurement.
+        n_cpmg
+            Number of CPMG pulses to use.
+        """
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if n_cpmg is None:
+            n_cpmg = 1
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        if xaxis_type is None:
+            xaxis_type = "log"
+
+        self.pulse.validate_rabi_params(targets)
+
+        if time_range is None:
+            time_range = np.logspace(
+                np.log10(300),
+                np.log10(200 * 1000),
+                51,
+            )
+
+        sampling_period = self.ctx.measurement.sampling_period
+        cpmg_count = n_cpmg if n_cpmg is not None else 1
+        time_range = self.ctx.util.discretize_time_range(
+            time_range=np.asarray(time_range),
+            sampling_period=2 * sampling_period * cpmg_count,
+        )
+
+        data: dict[str, T2Data] = {}
+
+        subgroups = self.ctx.util.create_qubit_subgroups(targets)
+
+        print(f"Target qubits: {targets}")
+        print(f"Subgroups: {subgroups}")
+        for idx, subgroup in enumerate(subgroups):
+            if len(subgroup) == 0:
+                continue
+
+            def t2_sequence(
+                T: int,
+                subgroup: list[str] = subgroup,
+            ) -> PulseSchedule:
+                with PulseSchedule(subgroup) as ps:
+                    for target in subgroup:
+                        hpi = self.pulse.get_hpi_pulse(target)
+                        pi = pi_cpmg or hpi.repeated(2).shifted(np.pi / 2)
+                        ps.add(target, hpi)
+                        if n_cpmg is not None:
+                            total_blank = T - pi.duration * n_cpmg
+                            if total_blank > 0:
+                                total_blank_samples = int(
+                                    np.floor(total_blank / sampling_period + 1e-9)
+                                )
+                                tau_samples = total_blank_samples // (2 * n_cpmg)
+                                tau = tau_samples * sampling_period
+                                ps.add(
+                                    target,
+                                    CPMG(
+                                        tau=tau,
+                                        pi=pi,
+                                        n=n_cpmg,
+                                    ),
+                                )
+                            else:
+                                ps.add(target, Blank(T))
+                        else:
+                            tau = pi.duration * 5
+                            cpmg = CPMG(
+                                tau=tau,
+                                pi=pi,
+                                n=2,
+                            )
+                            n_repeats = int(T // cpmg.duration)
+                            remainder = T % cpmg.duration
+                            if n_repeats > 0:
+                                ps.add(target, cpmg.repeated(n_repeats))
+                            if remainder > 0:
+                                ps.add(target, Blank(remainder))
+                        ps.add(target, hpi.scaled(-1))
+                return ps
+
+            print(
+                f"({idx + 1}/{len(subgroups)}) Conducting T2 experiment for {subgroup}...\n"
+            )
+
+            # if plot:
+            #     t2_sequence(time_range[-1]).plot()
+
+            if time_range is None:
+                raise ValueError("time_range could not be discretized.")
+            sweep_result = self.measurement_service.sweep_parameter(
+                sequence=t2_sequence,
+                sweep_range=time_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                xaxis_type=xaxis_type,
+            )
+
+            for target, sweep_data in sweep_result.data.items():
+                fit_result = fitting.fit_exp_decay(
+                    target=target,
+                    x=sweep_data.sweep_range,
+                    y=0.5 * (1 + sweep_data.normalized),
+                    plot=plot,
+                    title="T2 echo",
+                    xlabel="Time (μs)",
+                    ylabel="Normalized signal",
+                    xaxis_type=xaxis_type,
+                    yaxis_type="linear",
+                )
+                if fit_result.status is FitStatus.SUCCESS:
+                    t2 = fit_result["tau"]
+                    t2_err = fit_result["tau_err"]
+                    r2 = fit_result["r2"]
+
+                    t2_data = T2Data.new(
+                        sweep_data,
+                        t2=t2,
+                        t2_err=t2_err,
+                        r2=r2,
+                    )
+                    data[target] = t2_data
+
+                    fig = fit_result.get_figure()
+
+                    if save_image:
+                        viz.save_figure(
+                            fig,
+                            name=f"t2_echo_{target}",
+                        )
+
+        return ExperimentResult(data=data)
+
+    def ramsey_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> ExperimentResult[RamseyData]:
+        """
+        Perform a Ramsey experiment with optional detuning.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to measure.
+        time_range
+            Delay times for the Ramsey sequence.
+        detuning
+            Frequency detuning applied during the experiment.
+        """
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if spectator_state is None:
+            spectator_state = "0"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+
+        if time_range is None:
+            time_range = np.arange(0, 10001, 100)
+        sampling_period = self.ctx.measurement.sampling_period
+        time_range = self.ctx.util.discretize_time_range(
+            np.asarray(time_range),
+            sampling_period=sampling_period,
+        )
+        if time_range is None:
+            raise ValueError("time_range could not be discretized.")
+
+        if detuning is None:
+            detuning = 0.001
+
+        self.pulse.validate_rabi_params(targets)
+
+        target_groups = self.ctx.util.create_qubit_subgroups(targets)
+        spectator_groups = reversed(target_groups)  # TODO: make it more general
+
+        data: dict[str, RamseyData] = {}
+
+        for target_qubits, spectator_qubits in zip(
+            target_groups, spectator_groups, strict=True
+        ):
+            if spectator_state != "0":
+                target_list = target_qubits + spectator_qubits
+            else:
+                target_list = target_qubits
+
+            if len(target_list) == 0:
+                continue
+
+            print(f"Target qubits: {target_qubits}")
+            print(f"Spectator qubits: {spectator_qubits}")
+
+            ramsey_sequence = _build_ramsey_sequence(
+                pulse_service=self.pulse,
+                qubit_labels=self.ctx.qubit_labels,
+                spectator_state=spectator_state,
+                second_rotation_axis=second_rotation_axis,
+                target_list=list(target_list),
+                target_qubits=list(target_qubits),
+                spectator_qubits=list(spectator_qubits),
+            )
+
+            detuned_frequencies = {
+                target: self.ctx.qubits[target].frequency + detuning
+                for target in target_qubits
+            }
+
+            sweep_result = self.measurement_service.sweep_parameter(
+                sequence=ramsey_sequence,
+                sweep_range=time_range,
+                frequencies=detuned_frequencies,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+
+            for target, sweep_data in sweep_result.data.items():
+                if target in target_qubits:
+                    fit_result = fitting.fit_ramsey(
+                        target=target,
+                        times=sweep_data.sweep_range,
+                        data=sweep_data.normalized,
+                        amplitude_est=1.0,
+                        offset_est=0.0,
+                        plot=plot,
+                    )
+                    if fit_result.status is FitStatus.SUCCESS:
+                        f = self.ctx.qubits[target].frequency
+                        t2 = fit_result["tau"]
+                        ramsey_freq = fit_result["f"]
+                        phi = fit_result["phi"]
+                        if second_rotation_axis == "Y":
+                            if phi > 0:
+                                bare_freq = f + detuning + ramsey_freq
+                            else:
+                                bare_freq = f + detuning - ramsey_freq
+                        else:
+                            # NOTE: For X rotation, we cannot guarantee the sign of frequency
+                            bare_freq = f + detuning - ramsey_freq
+                        r2 = fit_result["r2"]
+                        ramsey_data = RamseyData.new(
+                            sweep_data=sweep_data,
+                            t2=t2,
+                            ramsey_freq=ramsey_freq,
+                            bare_freq=bare_freq,
+                            r2=r2,
+                        )
+                        data[target] = ramsey_data
+
+                        print(f"Bare frequency with |{spectator_state}〉:")
+                        print(f"  {target}: {ramsey_data.bare_freq:.6f}")
+                        print("")
+
+                        fig = fit_result.get_figure()
+
+                        if save_image:
+                            viz.save_figure(
+                                fig,
+                                name=f"ramsey_{target}",
+                            )
+
+        return ExperimentResult(data=data)
+
+    def obtain_effective_control_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """
+        Estimate effective control frequency via Ramsey experiments.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to analyze.
+        detuning
+            Detuning applied in the Ramsey measurements.
+        time_range
+            Time range used in the sweeps.
+        """
+        if detuning is None:
+            detuning = 0.001
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if time_range is None:
+            time_range = np.arange(0, 10001, 100)
+
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        time_range = np.asarray(time_range)
+        self.pulse.validate_rabi_params(targets)
+
+        result_0 = self.ramsey_experiment(
+            targets=targets,
+            time_range=time_range,
+            detuning=detuning,
+            spectator_state="0",
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        result_1 = self.ramsey_experiment(
+            targets=targets,
+            time_range=time_range,
+            detuning=detuning,
+            spectator_state="1",
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        effective_freq = {
+            target: (result_0.data[target].bare_freq + result_1.data[target].bare_freq)
+            * 0.5
+            for target in targets
+        }
+
+        for target in targets:
+            print(f"Target: {target}")
+            print(f"  Original frequency: {self.ctx.targets[target].frequency:.6f}")
+            print(f"  Bare frequency with |0>: {result_0.data[target].bare_freq:.6f}")
+            print(f"  Bare frequency with |1>: {result_1.data[target].bare_freq:.6f}")
+            print(f"  Effective control frequency: {effective_freq[target]:.6f}")
+            print("")
+
+        return Result(
+            data={
+                "effective_freq": effective_freq,
+                "result_0": result_0,
+                "result_1": result_1,
+            }
+        )
+
+    def jazz_experiment(
+        self,
+        target_qubit: str,
+        spectator_qubit: str,
+        *,
+        time_range: ArrayLike | None = None,
+        x90: Waveform | TargetMap[Waveform] | None = None,
+        x180: Waveform | TargetMap[Waveform] | None = None,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        rotation_frequency: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """
+        Run a JAZZ experiment to estimate ZZ coupling.
+
+        Parameters
+        ----------
+        target_qubit
+            Target qubit label.
+        spectator_qubit
+            Spectator qubit label.
+        rotation_frequency
+            Reference rotation frequency for phase compensation.
+        """
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if rotation_frequency is None:
+            rotation_frequency = 0.0002
+        if plot is None:
+            plot = True
+        if time_range is None:
+            time_range = np.arange(0, 20001, 400)
+
+        if x90 is None:
+            x90 = {
+                target_qubit: self.pulse.get_hpi_pulse(target_qubit),
+            }
+        elif isinstance(x90, Waveform):
+            x90 = {
+                target_qubit: x90,
+            }
+
+        if x180 is None:
+            x180 = {
+                target_qubit: self.pulse.get_hpi_pulse(target_qubit).repeated(2),
+                spectator_qubit: self.pulse.get_hpi_pulse(spectator_qubit).repeated(2),
+            }
+        elif isinstance(x180, Waveform):
+            x180 = {
+                target_qubit: x180,
+                spectator_qubit: x180,
+            }
+
+        # Raise an error when rotation_frequency is negative
+        if rotation_frequency < 0:
+            raise ValueError("rotation_frequency must be non-negative.")
+
+        def jazz_sequence(tau: float) -> PulseSchedule:
+            with PulseSchedule([target_qubit, spectator_qubit]) as ps:
+                ps.add(target_qubit, x90[target_qubit])
+                ps.add(target_qubit, Blank(tau))
+                ps.barrier()
+                ps.add(target_qubit, x180[target_qubit])
+                ps.add(spectator_qubit, x180[spectator_qubit])
+                ps.add(target_qubit, Blank(tau))
+                if second_rotation_axis == "X":
+                    ps.add(
+                        target_qubit,
+                        x90[target_qubit].shifted(
+                            np.pi - rotation_frequency * 2 * tau * 2 * np.pi
+                        ),
+                    )
+                else:
+                    ps.add(
+                        target_qubit,
+                        x90[target_qubit].shifted(
+                            -np.pi / 2 - rotation_frequency * 2 * tau * 2 * np.pi
+                        ),
+                    )
+            return ps
+
+        time_range = np.asarray(time_range)
+        self.pulse.validate_rabi_params([target_qubit, spectator_qubit])
+
+        result = self.measurement_service.sweep_parameter(
+            sequence=jazz_sequence,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            title=f"JAZZ : {target_qubit}-{spectator_qubit}",
+            xlabel="Time (ns)",
+            ylabel="Measured value",
+        )
+
+        fit_result = fitting.fit_cosine(
+            time_range * 2e-3,
+            result.data[target_qubit].normalized,
+            is_damped=True,
+            amplitude_est=1.0,
+            offset_est=0.0,
+            plot=plot,
+            title=f"JAZZ experiment: {target_qubit}-{spectator_qubit}",
+            xlabel="Wait time (μs)",
+            ylabel=f"Normalized value : {target_qubit}",
+        )
+
+        if fit_result.status is not FitStatus.SUCCESS:
+            raise RuntimeError("Fitting failed in JAZZ experiment.")
+
+        xi = fit_result["f"] * 1e-3 - rotation_frequency
+        zeta = 2 * xi
+
+        print(f"ξ: {xi * 1e6:.2f} kHz")
+        print(f"ζ: {zeta * 1e6:.2f} kHz")
+
+        return Result(
+            data={
+                "xi": xi,
+                "zeta": zeta,
+                **fit_result,
+            }
+        )
+
+    def obtain_coupling_strength(
+        self,
+        target_qubit: str,
+        spectator_qubit: str,
+        *,
+        time_range: ArrayLike | None = None,
+        x90: Waveform | TargetMap[Waveform] | None = None,
+        x180: Waveform | TargetMap[Waveform] | None = None,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        rotation_frequency: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """
+        Estimate coupling strength using the JAZZ experiment.
+
+        Parameters
+        ----------
+        target_qubit
+            Target qubit label.
+        spectator_qubit
+            Spectator qubit label.
+        rotation_frequency
+            Reference rotation frequency for phase compensation.
+        """
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if rotation_frequency is None:
+            rotation_frequency = 0.0002
+        if plot is None:
+            plot = True
+        qubit_1 = target_qubit
+        qubit_2 = spectator_qubit
+
+        result = self.jazz_experiment(
+            target_qubit=qubit_1,
+            spectator_qubit=qubit_2,
+            time_range=time_range,
+            x90=x90,
+            x180=x180,
+            second_rotation_axis=second_rotation_axis,
+            shots=shots,
+            interval=interval,
+            rotation_frequency=rotation_frequency,
+            plot=plot,
+        )
+
+        xi = result["xi"]
+
+        f_1 = self.ctx.qubits[qubit_1].frequency
+        f_2 = self.ctx.qubits[qubit_2].frequency
+
+        a_1 = self.ctx.qubits[qubit_1].anharmonicity
+        a_2 = self.ctx.qubits[qubit_2].anharmonicity
+
+        Delta_12 = f_1 - f_2
+
+        g = np.sqrt(np.abs((xi * (Delta_12 + a_1) * (Delta_12 - a_2)) / (a_1 + a_2)))
+
+        print(f"frequency_1: {f_1:.5f} GHz")
+        print(f"frequency_2: {f_2:.5f} GHz")
+        print(f"Delta_12: {Delta_12 * 1e3:.2f} MHz")
+        print(f"anharmonicity_1: {a_1 * 1e3:.2f} MHz")
+        print(f"anharmonicity_2: {a_2 * 1e3:.2f} MHz")
+        print(f"g: {g * 1e3:.2f} MHz")
+
+        return Result(
+            data={
+                "g": g,
+                **result.data,
+            }
+        )
+
+    def measure_electrical_delay(
+        self,
+        target: str,
+        *,
+        f_start: float | None = None,
+        df: float | None = None,
+        n_samples: int | None = None,
+        readout_amplitude: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        confirm: bool | None = None,
+    ) -> float:
+        """
+        Measure electrical delay of the readout path.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        f_start
+            Start frequency for the sweep.
+        n_samples
+            Number of frequency samples.
+        """
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_ELECTRICAL_DELAY_INTERVAL
+        if plot is None:
+            plot = True
+        if confirm is None:
+            confirm = True
+        read_label = self.ctx.resolve_read_label(target)
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
+        ssb = self.ctx.targets[read_label].sideband
+        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
+        f_nco = self.ctx.targets[read_label].fine_frequency
+
+        if df is None:
+            df = DEFAULT_ELECTRICAL_DELAY_STEP_GHZ
+        if n_samples is None:
+            n_samples = DEFAULT_ELECTRICAL_DELAY_SAMPLES
+        if readout_amplitude is None:
+            readout_amplitude = DEFAULT_ELECTRICAL_DELAY_READOUT_AMPLITUDE
+        if f_start is None:
+            f_start = f_nco
+        frequency_range = np.arange(f_start, f_start + df * n_samples, df)
+
+        def _execute(*, reset_awg_and_capunits: bool = True):
+            if reset_awg_and_capunits:
+                self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
+            phases = []
+            for freq in frequency_range:
+                with self.ctx.modified_frequencies({read_label: freq}):
+                    result = self._measurement_service.measure(
+                        {qubit_label: np.zeros(0)},
+                        mode="avg",
+                        readout_amplitudes={qubit_label: readout_amplitude},
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                        reset_awg_and_capunits=False,
+                    )
+                    signal = result.data[target].kerneled
+                    phase = -np.angle(signal)
+                    phases.append(phase)
+            return phases
+
+        if abs(f_start - f_nco) > 0.2:
+            # if the frequency is far from the NCO frequency, we need to change the LO/NCO frequency
+            if confirm:
+                confirmed = Confirm.ask(
+                    "You are about to change the NCO frequencies. Do you want to proceed?"
+                )
+                if not confirmed:
+                    print("Operation cancelled.")
+                    return  # type: ignore
+
+            cnco_center = read_box.traits.readout_cnco_center
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_start * 1e9,
+                ssb=ssb,
+                cnco_center=cnco_center,
+            )
+            with self.ctx.system_manager.modified_backend_settings(
+                label=read_label,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                logger.debug(f"LO: {lo}, CNCO: {cnco}")
+                phases = _execute(reset_awg_and_capunits=False)
+        else:
+            # if the frequency is close to the NCO frequency, we can use the current settings
+            phases = _execute()
+
+        unwrapped = np.unwrap(phases)
+
+        x, y = frequency_range, unwrapped
+        coefficients = np.polyfit(x, y, 1)
+        y_fit = np.polyval(coefficients, x)
+        tau = coefficients[0] / (2 * np.pi)
+
+        if plot:
+            fig = viz.make_figure()
+            fig.add_scatter(name="data", mode="markers", x=x, y=y)
+            fig.add_scatter(name="fit", mode="lines", x=x, y=y_fit)
+            fig.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.95,
+                y=0.05,
+                text=f"τ = {tau:.1f} ns",
+                showarrow=False,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+            )
+            fig.update_layout(
+                title=f"Electrical delay : {mux.label}",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                showlegend=True,
+            )
+            fig.show()
+
+        return tau
+
+    def scan_resonator_frequencies(
+        self,
+        target: str | None = None,
+        *,
+        frequency_range: ArrayLike | None = None,
+        readout_amplitude: float | None = None,
+        readout_duration: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        electrical_delay: float | None = None,
+        subrange_width: float | None = None,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        filter: Literal["gaussian", "savgol"] | None = None,
+    ) -> Result:
+        """
+        Scan readout frequencies to locate resonator peaks.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Frequency sweep range in GHz.
+        electrical_delay
+            Electrical delay used for phase correction.
+        """
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        if target is None:
+            target = self.ctx.qubit_labels[0]
+
+        read_label = self.ctx.resolve_read_label(target)
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if frequency_range is None:
+            f_start, f_stop, f_step = read_box.traits.default_readout_frequency_range
+            frequency_range = np.arange(f_start, f_stop, f_step)
+        else:
+            frequency_range = np.array(frequency_range)
+
+        if readout_amplitude is None:
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
+
+        if interval is None:
+            interval = DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL
+
+        if electrical_delay is None:
+            # measure electrical delay if not provided
+            tau = self.measure_electrical_delay(
+                target,
+                f_start=frequency_range[0],
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                confirm=False,
+            )
+        else:
+            tau = electrical_delay
+
+        if subrange_width is None:
+            subrange_width = DEFAULT_RESONATOR_SPECTROSCOPY_SUBRANGE_WIDTH_GHZ
+        if readout_duration is None:
+            readout_duration = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_DURATION
+        if readout_ramptime is None:
+            readout_ramptime = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMPTIME
+        if readout_ramp_type is None:
+            readout_ramp_type = DEFAULT_RESONATOR_SPECTROSCOPY_READOUT_RAMP_TYPE
+
+        # split frequency range to avoid the frequency sweep range limit
+        frequency_range = np.array(frequency_range)
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            subrange_width=subrange_width,
+        )
+
+        bounds = [
+            subranges[0][0],
+        ] + [subrange[-1] for subrange in subranges]
+
+        signals = []
+
+        idx = 0
+        phase_offset = 0.0
+
+        ssb = read_box.traits.readout_ssb
+        cnco_center = read_box.traits.readout_cnco_center
+
+        for subrange in subranges:
+            f_center = (subrange[0] + subrange[-1]) / 2
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb=ssb,
+                cnco_center=cnco_center,
+            )
+            with self.ctx.system_manager.modified_backend_settings(
+                label=read_label,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                for sub_idx, freq in enumerate(subrange):
+                    if idx > 0 and sub_idx == 0:
+                        prev_freq = frequency_range[idx - 1]
+                        with self.ctx.modified_frequencies({read_label: prev_freq}):
+                            result = self._measurement_service.measure(
+                                {qubit_label: np.zeros(0)},
+                                mode="avg",
+                                readout_amplitudes={qubit_label: readout_amplitude},
+                                shots=shots,
+                                interval=interval,
+                                reset_awg_and_capunits=False,
+                            )
+                            raw = result.data[target].kerneled
+                            phase_adjust = 2 * np.pi * prev_freq * tau - phase_offset
+                            signal = raw * np.exp(1j * phase_adjust)
+                            phase_offset += np.angle(signal) - np.angle(signals[-1])
+
+                    with self.ctx.modified_frequencies({read_label: freq}):
+                        result = self._measurement_service.measure(
+                            {qubit_label: np.zeros(0)},
+                            mode="avg",
+                            readout_amplitudes={qubit_label: readout_amplitude},
+                            readout_duration=readout_duration,
+                            readout_ramptime=readout_ramptime,
+                            readout_drag_coeff=readout_drag_coeff,
+                            readout_ramp_type=readout_ramp_type,
+                            shots=shots,
+                            interval=interval,
+                            reset_awg_and_capunits=False,
+                        )
+                        raw = result.data[target].kerneled
+                        phase_adjust = 2 * np.pi * freq * tau - phase_offset
+                        signal = raw * np.exp(1j * phase_adjust)
+                        signals.append(signal)
+                        idx += 1
+
+        signals = np.array(signals)
+        amplitudes = np.abs(signals)
+        phases = np.angle(signals)
+        phases -= phases[0] - np.pi
+        phases %= 2 * np.pi
+        phases -= np.pi
+        phases_unwrap = np.unwrap(phases)
+        phases_diff = np.diff(phases_unwrap)
+        if filter == "gaussian":
+            from scipy.ndimage import gaussian_filter1d  # lazy import
+            from scipy.signal import find_peaks  # lazy import
+
+            phases_unwrap_for_peak = gaussian_filter1d(
+                phases_unwrap,
+                sigma=DEFAULT_RESONATOR_SPECTROSCOPY_GAUSSIAN_SIGMA,
+            )
+            phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
+            peaks, props = find_peaks(
+                np.abs(phases_diff_for_peak),
+                distance=peak_distance or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE,
+                prominence=DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_PROMINENCE,
+            )
+            num_resonators = DEFAULT_RESONATOR_SPECTROSCOPY_MAX_PEAKS
+            sorted_peaks = sorted(
+                zip(props["prominences"], peaks, strict=True),
+                reverse=True,
+            )
+            top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
+            peaks = [idx for _, idx in top_peaks]
+        elif filter == "savgol":
+            from scipy.signal import find_peaks, savgol_filter  # lazy import
+
+            # window_length: around 5% of the data length
+            window_frac = DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_WINDOW_FRACTION
+            window_length = int(len(phases) * window_frac)
+            window_length = max(
+                DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_MIN_WINDOW_LENGTH,
+                window_length // 2 * 2 + 1,
+            )
+            polyorder = DEFAULT_RESONATOR_SPECTROSCOPY_SAVGOL_POLYORDER
+            phases_unwrap_for_peak = np.asarray(
+                savgol_filter(
+                    phases_unwrap,
+                    window_length=window_length,
+                    polyorder=polyorder,
+                )
+            )
+            phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
+            peaks, props = find_peaks(
+                np.abs(phases_diff_for_peak),
+                distance=peak_distance or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE,
+                prominence=DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_PROMINENCE,
+            )
+            num_resonators = DEFAULT_RESONATOR_SPECTROSCOPY_MAX_PEAKS
+            sorted_peaks = sorted(
+                zip(props["prominences"], peaks, strict=True),
+                reverse=True,
+            )
+            top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
+            peaks = [idx for _, idx in top_peaks]
+        else:
+            from scipy.signal import find_peaks  # lazy import
+
+            peaks, _ = find_peaks(
+                np.abs(phases_diff),
+                height=peak_height or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_HEIGHT,
+                distance=peak_distance or DEFAULT_RESONATOR_SPECTROSCOPY_PEAK_DISTANCE,
+            )
+        peak_freqs = frequency_range[peaks]
+
+        fig1 = viz.make_figure()
+        fig1.set_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+        )
+        fig1.add_scatter(
+            row=1,
+            col=1,
+            x=frequency_range,
+            y=amplitudes,
+            name=target,
+            mode="markers+lines",
+        )
+        fig1.add_scatter(
+            row=2,
+            col=1,
+            x=frequency_range,
+            y=phases,
+            name=target,
+            mode="markers+lines",
+        )
+        for bound in bounds:
+            fig1.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
+        fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+        fig1.update_yaxes(title_text="Amplitude (arb. units)", row=1, col=1)
+        fig1.update_yaxes(title_text="Phase (rad)", row=2, col=1)
+        fig1.update_layout(
+            title=dict(
+                text=f"Resonator frequency scan : {mux.label}",
+                subtitle=dict(
+                    text=f"readout_amplitude={readout_amplitude:.6g}",
+                    font=dict(
+                        size=13,
+                        family="monospace",
+                    ),
+                ),
+            ),
+            height=450,
+            margin=dict(t=80),
+            showlegend=False,
+        )
+        fig2 = viz.make_figure()
+        fig2.set_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+        )
+        fig2.add_scatter(
+            row=1,
+            col=1,
+            x=frequency_range,
+            y=phases_unwrap,
+            name=target,
+            mode="markers+lines",
+        )
+        fig2.add_scatter(
+            row=2,
+            col=1,
+            x=frequency_range,
+            y=phases_diff,
+            name=target,
+            mode="markers+lines",
+        )
+        for bound in bounds:
+            fig2.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
+        for freq in peak_freqs:
+            fig2.add_vline(
+                x=freq,
+                line_width=2,
+                line_color="red",
+                opacity=0.6,
+            )
+            fig2.add_annotation(
+                x=freq,
+                y=0.03,
+                xref="x",
+                yref="paper",
+                xanchor="left",
+                xshift=3,
+                yanchor="bottom",
+                text=f"<b>{freq:.3f}</b>",
+                showarrow=False,
+                font=dict(
+                    size=9,
+                    color="red",
+                    family="sans-serif",
+                ),
+                opacity=0.6,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+            )
+        fig2.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+        fig2.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+        fig2.update_yaxes(title_text="Phase diff (rad)", row=2, col=1)
+        fig2.update_layout(
+            title=dict(
+                text=f"Resonator frequency scan : {mux.label}",
+                subtitle=dict(
+                    text=f"readout_amplitude={readout_amplitude:.6g}",
+                    font=dict(
+                        size=13,
+                        family="monospace",
+                    ),
+                ),
+            ),
+            height=450,
+            margin=dict(t=80),
+            showlegend=False,
+        )
+
+        if plot:
+            fig1.show()
+            fig2.show()
+            print("Found peaks:")
+            for peak in peak_freqs:
+                print(f"  {peak:.4f}")
+
+        if save_image:
+            viz.save_figure(
+                fig1,
+                name=f"resonator_frequency_scan_{mux.label}_phase",
+                width=600,
+                height=450,
+            )
+            viz.save_figure(
+                fig2,
+                name=f"resonator_frequency_scan_{mux.label}_phase_diff",
+                width=600,
+                height=450,
+            )
+
+        return Result(
+            data={
+                "peaks": peak_freqs,
+                "frequency_range": frequency_range,
+                "subranges": subranges,
+                "signals": signals,
+                "phases_unwrap": phases_unwrap,
+                "phases_diff": phases_diff,
+                "fig_phase": fig1,
+                "fig_phase_diff": fig2,
+            }
+        )
+
+    def resonator_spectroscopy(
+        self,
+        target: str | None = None,
+        *,
+        frequency_range: ArrayLike | None = None,
+        power_range: ArrayLike | None = None,
+        electrical_delay: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Perform resonator spectroscopy over frequency and power.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Frequency sweep range in GHz.
+        power_range
+            Readout power sweep range in dB.
+        """
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_RESONATOR_SPECTROSCOPY_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if target is None:
+            target = self.ctx.qubit_labels[0]
+
+        if power_range is None:
+            power_range = np.arange(
+                DEFAULT_RESONATOR_SPECTROSCOPY_POWER_START_DB,
+                DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STOP_DB,
+                DEFAULT_RESONATOR_SPECTROSCOPY_POWER_STEP_DB,
+            )
+
+        power_range = np.array(power_range)
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if frequency_range is None:
+            f_start, f_stop, f_step = read_box.traits.default_readout_frequency_range
+            frequency_range = np.arange(f_start, f_stop, f_step)
+        else:
+            frequency_range = np.array(frequency_range)
+
+        # measure electrical shift if not provided
+        if electrical_delay is None:
+            electrical_delay = self.measure_electrical_delay(
+                target,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+
+        result = []
+        for power in tqdm(power_range):
+            power_linear = 10 ** (power / 10)
+            amplitude = np.sqrt(power_linear)
+            phases_diff = self.scan_resonator_frequencies(
+                target,
+                frequency_range=frequency_range,
+                electrical_delay=electrical_delay,
+                readout_amplitude=amplitude,
+                shots=shots,
+                interval=interval,
+                plot=False,
+                save_image=False,
+            )["phases_diff"]
+            abs_phases_diff = np.abs(phases_diff)
+            abs_phases_diff = np.append(abs_phases_diff, abs_phases_diff[-1])
+            result.append(abs_phases_diff)
+
+        fig = viz.make_figure()
+        fig.add_trace(
+            go.Heatmap(
+                x=frequency_range,
+                y=power_range,
+                z=result,
+                colorscale="Viridis",
+                colorbar=dict(
+                    title=dict(
+                        text="Abs. phase shift (rad)",
+                        side="right",
+                    ),
+                ),
+            )
+        )
+        fig.update_layout(
+            title=f"Resonator spectroscopy : {mux.label}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Power (dB)",
+            width=600,
+            height=300,
+        )
+
+        if plot:
+            fig.show()
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"resonator_spectroscopy_{mux.label}",
+            )
+
+        return Result(
+            data={
+                "frequency_range": frequency_range,
+                "power_range": power_range,
+                "data": np.array(result),
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig,
+            },
+            figure=fig,
+        )
+
+    def measure_reflection_coefficient(
+        self,
+        target: str,
+        *,
+        center_frequency: float | None = None,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        qubit_state: str | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Measure the reflection coefficient around a center frequency.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        center_frequency
+            Center frequency for the sweep.
+        qubit_state
+            Prepared qubit state during measurement.
+        """
+        if qubit_state is None:
+            qubit_state = "0"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        read_label = self.ctx.resolve_read_label(target)
+
+        if center_frequency is None:
+            center_frequency = self.ctx.targets[read_label].frequency
+        if df is None:
+            df = 0.0005  # 500 kHz step
+        if frequency_width is None:
+            frequency_width = 0.05
+        if readout_amplitude is None:
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
+        if electrical_delay is None:
+            electrical_delay = self.measure_electrical_delay(
+                target,
+                f_start=(center_frequency - frequency_width / 2) // df * df,
+                df=0.00005,
+                n_samples=50,
+                shots=128,
+                interval=1024,
+                plot=plot,
+                confirm=False,
+            )
+
+        freq_range = np.arange(
+            center_frequency - frequency_width / 2,
+            center_frequency + frequency_width / 2,
+            df,
+        )
+
+        signals = []
+
+        initialize_pulse = self.pulse.get_pulse_for_state(
+            target=qubit_label,
+            state=qubit_state,
+        )
+
+        self.ctx.reset_awg_and_capunits(qubits=[qubit_label])
+
+        for freq in freq_range:
+            with self.ctx.modified_frequencies({read_label: freq}):
+                result = self._measurement_service.measure(
+                    {qubit_label: initialize_pulse},
+                    mode="avg",
+                    readout_amplitudes={qubit_label: readout_amplitude},
+                    shots=shots,
+                    interval=interval,
+                    reset_awg_and_capunits=False,
+                )
+                signal = result.data[target].kerneled
+                signal = signal * np.exp(1j * 2 * np.pi * freq * electrical_delay)
+                signals.append(signal)
+
+        signals = np.array(signals)
+        amplitudes = np.abs(signals)
+        # amplitudes -= (
+        #     (amplitudes[-1] - amplitudes[0])
+        #     / (freq_range[-1] - freq_range[0])
+        #     * (freq_range - freq_range[0])
+        # )
+        phases = np.angle(signals)
+        phases -= phases[0]
+        signals = amplitudes * np.exp(1j * phases)
+
+        fit_result = fitting.fit_reflection_coefficient(
+            target=target,
+            freq_range=freq_range,
+            data=signals,
+            plot=plot,
+            title=f"Reflection coefficient of {target} : |{qubit_state}〉",
+        )
+
+        if plot:
+            print(f"{target} : |{qubit_state}〉")
+            print(f"f_r : {fit_result['f_r']:.6f} GHz")
+            print(f"κ_e : {fit_result['kappa_ex'] * 1e3:.6f} MHz")
+            print(f"κ_i : {fit_result['kappa_in'] * 1e3:.6f} MHz")
+
+        fig = fit_result.get_figure()
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"reflection_coefficient_{target}",
+                width=800,
+                height=450,
+            )
+
+        return Result(
+            data={
+                "frequency_range": freq_range,
+                "reflection_coefficients": signals,
+                **fit_result,
+            }
+        )
+
+    def scan_qubit_frequencies(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike | None = None,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
+        readout_frequency: float | None = None,
+        subrange_width: float | None = None,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
+        simultaneous_drive: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Scan control frequencies to locate qubit resonances.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Control frequency sweep range in GHz.
+        control_amplitude
+            Drive amplitude during the sweep.
+        """
+        if simultaneous_drive is None:
+            simultaneous_drive = True
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        # control and readout pulses
+        qubit = self.ctx.resolve_qubit_label(target)
+        resonator = self.ctx.resolve_read_label(target)
+        ctrl_box = self.ctx.experiment_system.get_control_box_for_qubit(qubit)
+
+        if control_amplitude is None:
+            control_amplitude = self.ctx.params.control_amplitude[qubit]
+
+        if readout_amplitude is None:
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit]
+
+        # split frequency range to avoid the frequency sweep range limit
+        if frequency_range is None:
+            f_start, f_stop, f_step = ctrl_box.traits.default_control_frequency_range
+            frequency_range = np.arange(f_start, f_stop, f_step)
+        else:
+            frequency_range = np.array(frequency_range)
+
+        if subrange_width is None:
+            subrange_width = DEFAULT_QUBIT_FREQUENCY_SCAN_SUBRANGE_WIDTH_GHZ
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            subrange_width=subrange_width,
+        )
+
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_QUBIT_FREQUENCY_SCAN_INTERVAL
+
+        bounds = [
+            subranges[0][0],
+        ] + [subrange[-1] for subrange in subranges]
+
+        # readout frequency
+        readout_frequency = readout_frequency or self.ctx.targets[resonator].frequency
+
+        # result buffer
+        signals = []
+
+        ssb = ctrl_box.traits.ctrl_ssb
+        cnco_center = CNCO_CENTER_CTRL_HZ
+
+        # measure the phase and amplitude
+        idx = 0
+        for subrange in subranges:
+            f_center = (subrange[0] + subrange[-1]) / 2
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb=ssb,
+                cnco_center=cnco_center,
+            )
+            with self.ctx.system_manager.modified_backend_settings(
+                label=qubit,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                self.ctx.reset_awg_and_capunits(qubits=[qubit])
+                for control_frequency in subrange:
+                    with self.ctx.modified_frequencies(
+                        {
+                            qubit: control_frequency,
+                            resonator: readout_frequency,
+                        }
+                    ):
+                        with PulseSchedule([qubit, resonator]) as ps:
+                            ps.add(
+                                qubit,
+                                Gaussian(
+                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_DURATION,
+                                    amplitude=control_amplitude,
+                                    sigma=DEFAULT_QUBIT_FREQUENCY_SCAN_GAUSSIAN_SIGMA,
+                                ),
+                            )
+                            if not simultaneous_drive:
+                                ps.barrier()
+                            ps.add(
+                                resonator,
+                                FlatTop(
+                                    duration=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_DURATION,
+                                    amplitude=readout_amplitude,
+                                    tau=DEFAULT_QUBIT_FREQUENCY_SCAN_READOUT_RAMPTIME,
+                                ),
+                            )
+                        result = self.measurement_service.execute(
+                            schedule=ps,
+                            mode="avg",
+                            shots=shots,
+                            interval=interval,
+                            reset_awg_and_capunits=False,
+                        )
+                        signal = result.data[qubit][-1].kerneled
+                        signals.append(signal)
+                        idx += 1
+
+        signals = np.array(signals)
+        amplitudes = np.abs(signals)
+        phases = np.angle(signals)
+        phases -= np.median(phases) - np.pi
+        phases %= 2 * np.pi
+        phases -= np.pi
+        phases_std = np.std(phases)
+        # phases[phases > 3 * phases_std] -= 2 * np.pi
+
+        from scipy.signal import find_peaks  # lazy import
+
+        peaks, _ = find_peaks(
+            np.abs(phases),
+            height=peak_height or 3 * phases_std,
+            distance=peak_distance or DEFAULT_QUBIT_FREQUENCY_SCAN_PEAK_DISTANCE,
+        )
+        peak_freqs = frequency_range[peaks]
+
+        fig = viz.make_figure()
+        fig.set_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+        )
+        fig.add_scatter(
+            name=target,
+            mode="markers+lines",
+            row=1,
+            col=1,
+            x=frequency_range,
+            y=amplitudes,
+        )
+        fig.add_scatter(
+            name=target,
+            mode="markers+lines",
+            row=2,
+            col=1,
+            x=frequency_range,
+            y=phases,
+        )
+        for bound in bounds:
+            fig.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
+        for freq in peak_freqs:
+            fig.add_vline(
+                x=freq,
+                line_width=2,
+                line_color="red",
+                opacity=0.6,
+            )
+            fig.add_annotation(
+                x=freq,
+                y=0.01,
+                xref="x",
+                yref="paper",
+                xanchor="left",
+                xshift=3,
+                yanchor="bottom",
+                text=f"<b>{freq:.3f}</b>",
+                showarrow=False,
+                font=dict(
+                    size=9,
+                    color="red",
+                    family="sans-serif",
+                ),
+                opacity=0.6,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+            )
+
+        fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
+        fig.update_yaxes(title_text="Amplitude (arb. units)", row=1, col=1)
+        fig.update_yaxes(title_text="Phase (rad)", row=2, col=1)
+        fig.update_layout(
+            title=dict(
+                text=f"Control frequency scan : {qubit}",
+                subtitle=dict(
+                    text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
+            height=450,
+            margin=dict(t=80),
+            showlegend=False,
+        )
+
+        f_ge = None
+        f_gf = None
+        f_ef = None
+        anharmonicity = None
+
+        if plot:
+            fig.show()
+            n_peaks = len(peak_freqs)
+            if n_peaks > 0:
+                print("Found peaks:")
+                for peak in peak_freqs:
+                    print(f"  {peak:.4f}")
+                print("Frequency guess:")
+                f_ge = peak_freqs[-1]
+                print(f"  f_ge: {f_ge:.4f} GHz")
+            if n_peaks > 1:
+                f_gf = peak_freqs[-2]
+                print(f"  f_gf: {f_gf:.4f} GHz")
+                anharmonicity = (f_gf - f_ge) * 2
+            if n_peaks > 2:
+                f_ef = peak_freqs[-3]
+                print(f"  f_ef: {f_ef:.4f} GHz")
+                anharmonicity = f_ef - f_ge
+            if anharmonicity is not None:
+                print(f"  anharmonicity: {anharmonicity:.4f} GHz")
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"qubit_frequency_scan_{qubit}",
+                width=600,
+                height=450,
+            )
+
+        return Result(
+            data={
+                "peaks": peak_freqs,
+                "frequency_guess": {
+                    "f_ge": f_ge,
+                    "f_gf": f_gf,
+                    "f_ef": f_ef,
+                    "anharmonicity": anharmonicity,
+                },
+                "frequency_range": frequency_range,
+                "subranges": subranges,
+                "readout_amplitude": readout_amplitude,
+                "signals": signals,
+                "amplitudes": amplitudes,
+                "phases": phases,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig,
+            },
+            figure=fig,
+        )
+
+    @deprecated("Use `measure_qubit_resonance` instead.")
+    def estimate_control_amplitude(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
+        target_rabi_rate: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Estimate control amplitude from a resonance scan.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Frequency sweep range in GHz.
+        target_rabi_rate
+            Target Rabi rate used for scaling.
+        """
+        if target_rabi_rate is None:
+            target_rabi_rate = DEFAULT_RABI_FREQUENCY
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        frequency_range = np.asarray(frequency_range)
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        if control_amplitude is None:
+            control_amplitude = self.ctx.params.control_amplitude[qubit_label]
+        if readout_amplitude is None:
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
+
+        data = self.scan_qubit_frequencies(
+            target,
+            frequency_range=frequency_range,
+            control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )["phases"]
+        fit_result = fitting.fit_sqrt_lorentzian(
+            target=target,
+            x=frequency_range,
+            y=data,
+            plot=False,
+            title="Qubit resonance fit",
+        )
+
+        rabi_rate = fit_result.get("Omega")
+        if rabi_rate is None:
+            return Result(
+                data={
+                    "frequency_range": frequency_range,
+                    "phases": data,
+                    "rabi_rate": None,
+                    "estimated_amplitude": None,
+                    "fig": None,
+                },
+                figure=None,
+            )
+        estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
+
+        fig = None
+        if plot:
+            fig = fit_result.get_figure()
+            fig.update_layout(
+                title=dict(
+                    text=f"Control amplitude estimation : {target}",
+                    subtitle=dict(
+                        text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
+                        font=dict(size=13, family="monospace"),
+                    ),
+                ),
+                xaxis_title="Control frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                width=600,
+                height=300,
+                margin=dict(t=80),
+            )
+            fig.show()
+
+            print("")
+            print(f"Control amplitude estimation : {target}")
+            print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
+            print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
+
+        if save_image and fig is not None:
+            viz.save_figure(
+                fig,
+                name=f"control_amplitude_estimation_{target}",
+                width=600,
+                height=300,
+            )
+        return Result(
+            data={
+                "frequency_range": frequency_range,
+                "phases": data,
+                "rabi_rate": rabi_rate,
+                "estimated_amplitude": estimated_amplitude,
+                "fig": fig,
+                **fit_result,
+            },
+            figure=fig,
+        )
+
+    def measure_qubit_resonance(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike | None = None,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
+        target_rabi_rate: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Measure qubit resonance and estimate control amplitude.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Control frequency sweep range in GHz.
+        target_rabi_rate
+            Target Rabi rate used for scaling.
+        """
+        if target_rabi_rate is None:
+            target_rabi_rate = DEFAULT_RABI_FREQUENCY
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        qubit_frequency = self.ctx.qubits[qubit_label].frequency
+
+        if frequency_range is None:
+            frequency_range = np.arange(
+                qubit_frequency - 0.1,
+                qubit_frequency + 0.1,
+                0.001,
+            )
+        else:
+            frequency_range = np.asarray(frequency_range)
+
+        if control_amplitude is None:
+            control_amplitude = self.ctx.params.control_amplitude[qubit_label]
+        if readout_amplitude is None:
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
+
+        data = self.scan_qubit_frequencies(
+            target,
+            frequency_range=frequency_range,
+            control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+        data = np.unwrap(data["phases"])
+
+        fit_result = fitting.fit_sqrt_lorentzian(
+            target=target,
+            x=frequency_range,
+            y=data,
+            plot=False,
+            title="Qubit resonance fit",
+        )
+
+        rabi_rate = fit_result.get("Omega")
+        if rabi_rate is None:
+            return Result(
+                data={
+                    "frequency_range": frequency_range,
+                    "phases": data,
+                    "rabi_rate": None,
+                    "estimated_amplitude": None,
+                    # TODO: Remove this legacy payload key after callers migrate to .figure.
+                    "fig": None,
+                },
+                figure=None,
+            )
+        estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
+
+        if plot:
+            fig = fit_result.get_figure()
+            fig.update_layout(
+                title=dict(
+                    text=f"Control amplitude estimation : {target}",
+                    subtitle=dict(
+                        text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
+                        font=dict(size=13, family="monospace"),
+                    ),
+                ),
+                xaxis_title="Control frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                width=600,
+                height=300,
+                margin=dict(t=80),
+            )
+            fig.show()
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"measure_qubit_resonance{target}",
+                width=600,
+                height=300,
+            )
+        return Result(
+            data={
+                "frequency_range": frequency_range,
+                "phases": data,
+                "rabi_rate": rabi_rate,
+                "estimated_amplitude": estimated_amplitude,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig,
+                **fit_result,
+            },
+            figure=fig,
+        )
+
+    def qubit_spectroscopy(
+        self,
+        target: str,
+        frequency_range: ArrayLike | None = None,
+        power_range: ArrayLike | None = None,
+        readout_amplitude: float | None = None,
+        readout_frequency: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Perform qubit spectroscopy over frequency and power.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Control frequency sweep range in GHz.
+        power_range
+            Drive power sweep range in dB.
+        """
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if power_range is None:
+            power_range = np.arange(
+                DEFAULT_QUBIT_SPECTROSCOPY_POWER_START_DB,
+                DEFAULT_QUBIT_SPECTROSCOPY_POWER_STOP_DB,
+                DEFAULT_QUBIT_SPECTROSCOPY_POWER_STEP_DB,
+            )
+
+        power_range = np.array(power_range)
+        result2d = []
+        for power in tqdm(power_range):
+            power_linear = 10 ** (power / 10)
+            amplitude = np.sqrt(power_linear)
+            result1d = self.scan_qubit_frequencies(
+                target,
+                frequency_range=frequency_range,
+                control_amplitude=amplitude,
+                readout_amplitude=readout_amplitude,
+                readout_frequency=readout_frequency,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            phases = result1d["phases"]
+            result2d.append(phases)
+
+        fig = viz.make_figure()
+        fig.add_trace(
+            go.Heatmap(
+                x=result1d["frequency_range"],
+                y=power_range,
+                z=result2d,
+                colorscale="Viridis",
+                colorbar=dict(
+                    title=dict(
+                        text="Phase (rad)",
+                        side="right",
+                    )
+                ),
+            )
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"Qubit spectroscopy : {target}",
+                subtitle=dict(
+                    text=f"readout_amplitude={result1d['readout_amplitude']:.6g}",
+                    font=dict(
+                        size=13,
+                        family="monospace",
+                    ),
+                ),
+            ),
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Power (dB)",
+            width=600,
+            height=300,
+            margin=dict(t=80),
+        )
+        if plot:
+            fig.show()
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"qubit_spectroscopy_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "frequency_range": result1d["frequency_range"],
+                "power_range": power_range,
+                "data": np.array(result2d),
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig,
+            },
+            figure=fig,
+        )
+
+    def measure_dispersive_shift(
+        self,
+        target: str,
+        *,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        threshold: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Measure dispersive shift between $|0⟩$ and $|1⟩$.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_width
+            Frequency span for the reflection measurement.
+        threshold
+            Phase unwrapping threshold.
+        """
+        if threshold is None:
+            threshold = 0.5
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        result_0 = self.measure_reflection_coefficient(
+            target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            qubit_state="0",
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=False,
+        )
+        result_1 = self.measure_reflection_coefficient(
+            target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            qubit_state="1",
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=False,
+        )
+
+        frequency_range = result_0["frequency_range"]
+        signals_0 = result_0["reflection_coefficients"]
+        signals_1 = result_1["reflection_coefficients"]
+        phases_0 = np.angle(signals_0)
+        phases_0 -= phases_0[0]
+        phases_diff_0 = np.diff(phases_0)
+        phases_diff_0[phases_diff_0 > threshold] -= 2 * np.pi
+        phases_0 = np.concatenate([[0], np.cumsum(phases_diff_0)])
+        phases_1 = np.angle(signals_1)
+        phases_1 -= phases_1[0]
+        phases_diff_1 = np.diff(phases_1)
+        phases_diff_1[phases_diff_1 > threshold] -= 2 * np.pi
+        phases_1 = np.concatenate([[0], np.cumsum(phases_diff_1)])
+        f_0 = result_0["f_r"]
+        f_1 = result_1["f_r"]
+        dispersive_shift = (f_1 - f_0) / 2
+
+        fig1 = viz.make_figure()
+        fig1.add_scatter(
+            x=frequency_range,
+            y=phases_0,
+            name="0",
+            mode="lines+markers",
+        )
+        fig1.add_scatter(
+            x=frequency_range,
+            y=phases_1,
+            name="1",
+            mode="lines+markers",
+        )
+        fig1.add_vline(
+            x=f_0,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig1.add_vline(
+            x=f_1,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig1.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"χ: {dispersive_shift * 1e3:.3f} MHz",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig1.update_layout(
+            title=f"Dispersive shift : {target}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Phase (rad)",
+            width=600,
+            height=300,
+        )
+
+        distance = np.abs(signals_1 - signals_0)
+        optimal_frequency = frequency_range[np.argmax(distance)]
+        fig2 = viz.make_figure()
+        fig2.add_scatter(
+            x=frequency_range,
+            y=distance,
+            name="State distance",
+            mode="lines+markers",
+        )
+        fig2.add_vline(
+            x=optimal_frequency,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig2.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"f_opt: {optimal_frequency:.4f} GHz",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig2.update_layout(
+            title=f"State separation : {target}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="State distance",
+            width=600,
+            height=300,
+        )
+
+        if plot:
+            fig1.show()
+            fig2.show()
+            print(f"f_0  : {f_0:.4f} GHz")
+            print(f"f_1  : {f_1:.4f} GHz")
+            print(f"χ    : {dispersive_shift * 1e3:.3f} MHz")
+            print(f"f_opt: {optimal_frequency:.4f} GHz")
+
+        if save_image:
+            viz.save_figure(
+                fig1,
+                name=f"dispersive_shift_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "f_0": f_0,
+                "f_1": f_1,
+                "dispersive_shift": dispersive_shift,
+                "optimal_frequency": optimal_frequency,
+                "frequency_range": frequency_range,
+                "signals_0": signals_0,
+                "signals_1": signals_1,
+                "phases_0": phases_0,
+                "phases_1": phases_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig1,
+            },
+            figure=fig1,
+        )
+
+    def find_optimal_readout_frequency(
+        self,
+        target: str,
+        *,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Find readout frequency maximizing state separation.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        df
+            Frequency step in GHz.
+        frequency_width
+            Span around the center frequency.
+        """
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if df is None:
+            df = 0.0004
+        if frequency_width is None:
+            frequency_width = 0.02
+        result_0 = self.measure_reflection_coefficient(
+            target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            qubit_state="0",
+            shots=shots,
+            interval=interval,
+            plot=False,
+            save_image=False,
+        )
+        result_1 = self.measure_reflection_coefficient(
+            target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            qubit_state="1",
+            shots=shots,
+            interval=interval,
+            plot=False,
+            save_image=False,
+        )
+
+        frequency_range = result_0["frequency_range"]
+        signals_0 = result_0["reflection_coefficients"]
+        signals_1 = result_1["reflection_coefficients"]
+
+        distance = np.abs(signals_1 - signals_0)
+        optimal_frequency = frequency_range[np.argmax(distance)]
+        fig = viz.make_figure()
+        fig.add_scatter(
+            x=frequency_range,
+            y=distance,
+            name="State distance",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_frequency,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"f_opt: {optimal_frequency:.4f} GHz",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"State separation : {target}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="State distance",
+            width=600,
+            height=300,
+        )
+
+        if plot:
+            fig.show()
+            print(f"f_opt: {optimal_frequency:.4f} GHz")
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"optimal_readout_frequency_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "optimal_frequency": optimal_frequency,
+                "frequency_range": frequency_range,
+                "signals_0": signals_0,
+                "signals_1": signals_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig,
+            },
+            figure=fig,
+        )
+
+    def find_optimal_readout_amplitude(
+        self,
+        target: str,
+        *,
+        amplitude_range: ArrayLike | None = None,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Find readout amplitude maximizing state separation or readout fidelity.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        amplitude_range
+            Readout amplitude sweep range.
+        objective
+            Optimization objective: ``"fidelity"`` maximizes GMM-based readout
+            fidelity (default), ``"distance"`` maximizes IQ state distance.
+        fidelity_ratio
+            Fraction of peak fidelity used as the acceptance threshold (0--1).
+            Only used when ``objective="fidelity"``.
+        """
+        if objective is None:
+            objective = "fidelity"
+        if fidelity_ratio is None:
+            fidelity_ratio = 0.99
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if amplitude_range is None:
+            amplitude_range = np.arange(0.01, 0.26, 0.01)
+        else:
+            amplitude_range = np.array(amplitude_range)
+
+        if objective == "fidelity":
+            return self._find_optimal_readout_amplitude_by_fidelity(
+                target=target,
+                amplitude_range=amplitude_range,
+                fidelity_ratio=fidelity_ratio,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            return self._find_optimal_readout_amplitude_by_distance(
+                target=target,
+                amplitude_range=amplitude_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+
+    def _sweep_readout_amplitude(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        mode: Literal["avg", "single"],
+        shots: int,
+        interval: float,
+    ) -> tuple[list[NDArray], list[NDArray]]:
+        """Sweep readout amplitude and collect IQ data for states 0 and 1."""
+        buffer_0: list[NDArray] = []
+        buffer_1: list[NDArray] = []
+        for amplitude in tqdm(amplitude_range):
+            readout_amp = {target: float(amplitude)}
+            result_0 = self._measurement_service.measure_state(
+                {target: "0"},
+                mode=mode,
+                readout_amplitudes=readout_amp,
+                shots=shots,
+                interval=interval,
+            )
+            result_1 = self._measurement_service.measure_state(
+                {target: "1"},
+                mode=mode,
+                readout_amplitudes=readout_amp,
+                shots=shots,
+                interval=interval,
+            )
+            buffer_0.append(result_0.data[target].kerneled)
+            buffer_1.append(result_1.data[target].kerneled)
+        return buffer_0, buffer_1
+
+    def _find_optimal_readout_amplitude_by_distance(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing IQ state distance."""
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="avg", shots=shots, interval=interval
+        )
+        signals_0 = np.array(buffer_0)
+        signals_1 = np.array(buffer_1)
+
+        distance = np.abs(signals_1 - signals_0)
+        optimal_amplitude = amplitude_range[np.argmax(distance)]
+        fig = viz.make_figure()
+        fig.add_scatter(
+            x=amplitude_range,
+            y=distance,
+            name="State distance",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_amplitude,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"amp_opt: {optimal_amplitude:.4f}",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"State separation : {target}",
+            xaxis_title="Amplitude (arb. units)",
+            yaxis_title="State distance",
+            width=600,
+            height=300,
+        )
+
+        if plot:
+            viz.scatter_iq_data(
+                {
+                    "0": signals_0,
+                    "1": signals_1,
+                }
+            )
+            fig.show()
+            print(f"amp_opt: {optimal_amplitude:.4f}")
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"optimal_readout_amplitude_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "optimal_amplitude": optimal_amplitude,
+                "amplitude_range": amplitude_range,
+                "signals_0": signals_0,
+                "signals_1": signals_1,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig,
+            },
+            figure=fig,
+        )
+
+    def _find_optimal_readout_amplitude_by_fidelity(
+        self,
+        target: str,
+        amplitude_range: NDArray,
+        fidelity_ratio: float,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout amplitude maximizing GMM-based readout fidelity."""
+        from qubex.measurement.classifiers.state_classifier_gmm import (
+            StateClassifierGMM,
+        )
+
+        phase = self.ctx.reference_phases.get(target, 0.0)
+
+        buffer_0, buffer_1 = self._sweep_readout_amplitude(
+            target, amplitude_range, mode="single", shots=shots, interval=interval
+        )
+
+        fidelities: list[float] = []
+        for iq_0, iq_1 in zip(buffer_0, buffer_1, strict=True):
+            classifier = StateClassifierGMM.fit({0: iq_0, 1: iq_1}, phase=phase)
+            fid_per_state = []
+            for state, iq in enumerate([iq_0, iq_1]):
+                predicted = classifier.predict(iq)
+                correct = int(np.sum(predicted == state))
+                fid_per_state.append(correct / len(iq))
+            fidelities.append(float(np.mean(fid_per_state)))
+
+        fid_arr = np.array(fidelities)
+        fid_peak = float(fid_arr.max())
+        plateau_mask = fid_arr >= fid_peak * fidelity_ratio
+        best_idx = int(np.where(plateau_mask)[0][0])
+        optimal_amplitude = float(amplitude_range[best_idx])
+
+        fig = viz.make_figure(width=600, height=300)
+        fig.add_scatter(
+            x=list(amplitude_range),
+            y=list(fid_arr),
+            name="Readout fidelity",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_amplitude,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=(
+                f"amp_opt: {optimal_amplitude:.4f}<br>"
+                f"fidelity: {fid_arr[best_idx]:.4f}<br>"
+                f"peak: {fid_peak:.4f}"
+            ),
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"Readout fidelity : {target}",
+            xaxis_title="Amplitude (arb. units)",
+            yaxis_title="Readout fidelity",
+        )
+
+        figures: dict[str, Any] = {"readout_fidelity": fig}
+
+        classifier_result = self._measurement_service.build_classifier(
+            targets=target,
+            readout_amplitudes={target: optimal_amplitude},
+            n_shots=shots,
+            shot_interval=interval,
+            plot=plot,
+        )
+        if classifier_result.figures is not None:
+            figures.update(classifier_result.figures)
+
+        if plot:
+            fig.show()
+            print(
+                f"amp_opt: {optimal_amplitude:.4f}  "
+                f"readout_fidelity: {fid_arr[best_idx]:.4f}  "
+                f"peak: {fid_peak:.4f}"
+            )
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"optimal_readout_amplitude_fidelity_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "optimal_amplitude": optimal_amplitude,
+                "amplitude_range": amplitude_range,
+                "readout_fidelity": fid_arr,
+                "classifier_result": classifier_result,
+            },
+            figure=fig,
+            figures=figures,
+        )
+
+    def ckp_sequence(
+        self,
+        target: str,
+        qubit_initial_state: str | None = None,
+        qubit_drive_detuning: float | None = None,
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float | None = None,
+        resonator_drive_detuning: float | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        resonator_drive_ramptime: float | None = None,
+    ) -> PulseSchedule:
+        """
+        Build a CKP sequence for qubit-resonator interaction.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        qubit_initial_state
+            Initial qubit state for preparation.
+        qubit_drive_detuning
+            Detuning applied to the qubit drive.
+        """
+        qubit = self.ctx.qubits[target].label
+        resonator = self.ctx.resonators[target].label
+
+        if qubit_initial_state is None:
+            qubit_initial_state = "0"
+        if qubit_drive_detuning is None:
+            qubit_drive_detuning = 0.0
+        if qubit_pi_pulse is None:
+            qubit_pi_pulse = self.pulse.get_hpi_pulse(target).repeated(2)
+        if qubit_drive_scale is None:
+            qubit_drive_scale = 0.8
+        if resonator_drive_detuning is None:
+            resonator_drive_detuning = 0.0
+        if resonator_drive_amplitude is None:
+            resonator_drive_amplitude = 0.1
+        if resonator_drive_duration is None:
+            resonator_drive_duration = 1024
+        if resonator_drive_ramptime is None:
+            resonator_drive_ramptime = 32
+
+        resonetor_drive_pulse = FlatTop(
+            duration=resonator_drive_duration,
+            amplitude=resonator_drive_amplitude,
+            tau=resonator_drive_ramptime,
+        ).detuned(resonator_drive_detuning)
+        qubit_drive_pulse = (
+            qubit_pi_pulse.padded(
+                resonator_drive_duration,
+                pad_side="left",
+            )
+            .scaled(qubit_drive_scale)
+            .detuned(qubit_drive_detuning)
+        )
+        resonator_readout_pulse = self.pulse.readout(target)
+        with PulseSchedule() as seq:
+            if qubit_initial_state == "1":
+                seq.add(qubit, qubit_pi_pulse)
+            seq.barrier()
+            seq.add(qubit, qubit_drive_pulse)
+            seq.add(resonator, Blank(64))
+            seq.add(resonator, resonetor_drive_pulse)
+            seq.add(resonator, Blank(1024))
+            seq.add(resonator, resonator_readout_pulse)
+        return seq
+
+    def ckp_measurement(
+        self,
+        target: str,
+        qubit_initial_state: str,
+        qubit_detuning_range: ArrayLike | None = None,
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float | None = None,
+        resonator_detuning_range: ArrayLike | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        plot: bool | None = None,
+        verbose: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Run a CKP measurement over detuning grids.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        qubit_initial_state
+            Initial qubit state for preparation.
+        qubit_detuning_range
+            Qubit drive detuning values.
+        """
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = False
+        if save_image is None:
+            save_image = True
+        if qubit_detuning_range is None:
+            qubit_detuning_range = np.linspace(-0.03, 0.01, 30)
+        else:
+            qubit_detuning_range = np.asarray(qubit_detuning_range)
+        if resonator_detuning_range is None:
+            resonator_detuning_range = np.linspace(-0.01, 0.01, 30)
+        else:
+            resonator_detuning_range = np.asarray(resonator_detuning_range)
+
+        qubit_label = self.ctx.resolve_qubit_label(target)
+        read_label = self.ctx.resolve_read_label(target)
+        f_qubit = self.ctx.targets[qubit_label].frequency
+        f_resonator = self.ctx.targets[read_label].frequency
+        qubit_frequency_range = qubit_detuning_range + f_qubit
+        resonator_frequency_range = resonator_detuning_range + f_resonator
+
+        result2d = []
+        qubit_resonance_frequencies = []
+        self.ctx.reset_awg_and_capunits(qubits=[qubit_label])
+        for resonator_detuning in tqdm(resonator_detuning_range):
+            result1d = []
+            for qubit_detuning in qubit_detuning_range:
+                result = self.measurement_service.execute(
+                    self.ckp_sequence(
+                        target=target,
+                        qubit_initial_state=qubit_initial_state,
+                        qubit_drive_scale=qubit_drive_scale,
+                        qubit_pi_pulse=qubit_pi_pulse,
+                        qubit_drive_detuning=qubit_detuning,
+                        resonator_drive_detuning=resonator_detuning,
+                        resonator_drive_duration=resonator_drive_duration,
+                        resonator_drive_amplitude=resonator_drive_amplitude,
+                    ),
+                    reset_awg_and_capunits=False,
+                )
+                data = result.data[target][-1]
+                result1d.append(data.kerneled)
+
+            result1d = self.pulse.rabi_params[target].normalize(np.array(result1d))
+
+            f0 = fitting.fit_lorentzian(
+                x=qubit_frequency_range,
+                y=result1d,
+                plot=verbose,
+            ).get("f0", np.nan)
+            qubit_resonance_frequencies.append(f0)
+            result2d.append(result1d)
+
+        data = np.array(result2d)
+        if qubit_initial_state == "1":
+            data *= -1
+
+        fig = viz.make_figure()
+        fig.add_heatmap(
+            z=data.T,
+            x=resonator_frequency_range,
+            y=qubit_frequency_range,
+            colorscale="Viridis",
+            colorbar=dict(
+                title=dict(
+                    text="Normalized signal",
+                    side="right",
+                ),
+            ),
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"CKP measurement : {target} : |{qubit_initial_state}〉",
+                subtitle=dict(
+                    text=f"resonator_drive_amplitude={resonator_drive_amplitude:.6g}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
+            xaxis_title="Resonator drive frequency (GHz)",
+            yaxis_title="Qubit drive frequency (GHz)",
+            width=600,
+            height=400,
+        )
+        if plot:
+            fig.show()
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"ckp_measurement_{target}_{qubit_initial_state}",
+                width=600,
+                height=400,
+            )
+
+        qubit_resonance_frequencies = np.array(qubit_resonance_frequencies)
+        fit_result = fitting.fit_lorentzian(
+            x=resonator_frequency_range,
+            y=qubit_resonance_frequencies,
+            plot=plot,
+            title=f"CKP experiment fit : {target} : |{qubit_initial_state}〉",
+            xlabel="Resonator drive frequency (GHz)",
+            ylabel="Qubit drive frequency (GHz)",
+        )
+
+        return Result(
+            data={
+                "qubit_frequency_range": qubit_frequency_range,
+                "resonator_frequency_range": resonator_frequency_range,
+                "qubit_detuning_range": qubit_detuning_range,
+                "resonator_detuning_range": resonator_detuning_range,
+                "qubit_resonance_frequencies": qubit_resonance_frequencies,
+                "qubit_initial_state": qubit_initial_state,
+                "data": data,
+                "fit_result": fit_result,
+            }
+        )
+
+    def ckp_experiment(
+        self,
+        target: str,
+        qubit_detuning_range: ArrayLike | None = None,
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float | None = None,
+        resonator_detuning_range: ArrayLike | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        plot: bool | None = None,
+        verbose: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Run a CKP experiment and fit dispersive parameters.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        resonator_drive_amplitude
+            Resonator drive amplitude.
+        plot
+            Whether to plot the results.
+        """
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = False
+        if save_image is None:
+            save_image = True
+        if resonator_drive_amplitude is None:
+            resonator_drive_amplitude = self.ctx.params.get_readout_amplitude(
+                self.ctx.resolve_qubit_label(target)
+            )
+
+        if qubit_pi_pulse is None:
+            duration = 128
+            ramptime = 64
+            calib_result = self.calibration_service.calibrate_default_pulse(
+                target,
+                pulse_type="pi",
+                duration=duration,
+                ramptime=ramptime,
+                update_params=False,
+            )
+            amplitude = calib_result.data[target].calib_value
+            qubit_pi_pulse = FlatTop(
+                duration=duration,
+                amplitude=amplitude,
+                tau=ramptime,
+            )
+
+        result_0 = self.ckp_measurement(
+            target=target,
+            qubit_initial_state="0",
+            qubit_detuning_range=qubit_detuning_range,
+            qubit_pi_pulse=qubit_pi_pulse,
+            qubit_drive_scale=qubit_drive_scale,
+            resonator_detuning_range=resonator_detuning_range,
+            resonator_drive_amplitude=resonator_drive_amplitude,
+            resonator_drive_duration=resonator_drive_duration,
+            plot=plot,
+            verbose=verbose,
+            save_image=save_image,
+        )
+        result_1 = self.ckp_measurement(
+            target=target,
+            qubit_initial_state="1",
+            qubit_detuning_range=qubit_detuning_range,
+            qubit_pi_pulse=qubit_pi_pulse,
+            qubit_drive_scale=qubit_drive_scale,
+            resonator_detuning_range=resonator_detuning_range,
+            resonator_drive_amplitude=resonator_drive_amplitude,
+            resonator_drive_duration=resonator_drive_duration,
+            plot=plot,
+            verbose=verbose,
+            save_image=save_image,
+        )
+
+        x_data = result_0["resonator_frequency_range"]
+        fit_result_0 = result_0["fit_result"]
+        fit_result_1 = result_1["fit_result"]
+        y_data_0 = result_0["qubit_resonance_frequencies"]
+        y_data_1 = result_1["qubit_resonance_frequencies"]
+        x_fit = np.linspace(
+            x_data[0],
+            x_data[-1],
+            1000,
+        )
+        popt_0 = fit_result_0["popt"]
+        popt_1 = fit_result_1["popt"]
+        gamma_0 = fit_result_0["gamma"]
+        gamma_1 = fit_result_1["gamma"]
+        gamma = (gamma_0 + gamma_1) / 2
+        A_0 = fit_result_0["A"]
+        A_1 = fit_result_1["A"]
+        A = (A_0 + A_1) / 2
+        C_0 = fit_result_0["C"]
+        C_1 = fit_result_1["C"]
+        f_q = (C_0 + C_1) / 2
+        y_fit_0 = fitting.func_lorentzian(x_fit, *popt_0)
+        y_fit_1 = fitting.func_lorentzian(x_fit, *popt_1)
+        f_r_0 = fit_result_0["f0"]
+        f_r_1 = fit_result_1["f0"]
+        f_r = (f_r_0 + f_r_1) / 2
+        delta = f_r - f_q
+        chi = (f_r_1 - f_r_0) / 2
+        kappa = gamma * 2
+        power = kappa * A / (8 * chi)
+        n_mean = 4 * power / kappa
+        n_crit = np.abs(delta / (4 * chi))
+
+        fig = viz.make_figure()
+        fig.add_scatter(
+            x=x_fit,
+            y=y_fit_0,
+            name="|0⟩ fit",
+            mode="lines",
+            line=dict(color=COLORS[0]),
+        )
+        fig.add_scatter(
+            x=x_data,
+            y=y_data_0,
+            name="|0⟩ data",
+            mode="markers",
+            marker=dict(color=COLORS[0]),
+        )
+        fig.add_scatter(
+            x=x_fit,
+            y=y_fit_1,
+            name="|1⟩ fit",
+            mode="lines",
+            line=dict(color=COLORS[1]),
+        )
+        fig.add_scatter(
+            x=x_data,
+            y=y_data_1,
+            name="|1⟩ data",
+            mode="markers",
+            marker=dict(color=COLORS[1]),
+        )
+        fig.add_vline(
+            x=f_r_0,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_vline(
+            x=f_r_1,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.05,
+            text=f"χ : {chi * 1e3:.3f} MHz<br>"
+            f"κ : {kappa * 1e3:.3f} MHz<br>"
+            f"|A|² : {power * 1e3:.3f} MHz<br>",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"CKP Experiment : {target}",
+                subtitle=dict(
+                    text=f"resonator_drive_amplitude={resonator_drive_amplitude:.6g}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
+            xaxis_title="Resonator drive frequency (GHz)",
+            yaxis_title="Qubit drive frequency (GHz)",
+            width=600,
+            height=300,
+        )
+        if plot:
+            fig.show()
+            print(f"f_r_0 : {f_r_0:.6f} GHz")
+            print(f"f_r_1 : {f_r_1:.6f} GHz")
+            print(f"f_r   : {f_r:.6f} GHz")
+            print(f"f_q   : {f_q:.6f} GHz")
+            print(f"Δ     : {delta * 1e3:.3f} MHz")
+            print(f"χ     : {chi * 1e3:.3f} MHz")
+            print(f"κ     : {kappa * 1e3:.3f} MHz")
+            print(f"|A|²  : {power * 1e3:.3f} MHz")
+            print(f"n̅*    : {n_mean:.3f}")
+            print(f"n_c   : {n_crit:.3f}")
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"ckp_experiment_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "f_r_0": f_r_0,
+                "f_r_1": f_r_1,
+                "f_r": f_r,
+                "f_q": f_q,
+                "delta": delta,
+                "chi": chi,
+                "kappa": kappa,
+                "power": power,
+                "n": n_mean,
+                "n_crit": n_crit,
+                "result_0": result_0,
+                "result_1": result_1,
+            }
+        )
+
+    def characterize_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Run basic single-qubit characterization routines.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to characterize.
+        shots
+            Number of shots per experiment.
+        plot
+            Whether to plot results.
+        """
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        data = {
+            "t1_experiment": {},
+            "t2_experiment": {},
+            "ramsey_experiment": {},
+        }
+
+        def _run_step(
+            target: str,
+            name: str,
+            experiment: Callable[..., Any],
+        ) -> None:
+            try:
+                result = experiment(
+                    target,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                    save_image=save_image,
+                )
+                data[name][target] = result.data[target]
+            except Exception as e:
+                print(f"{name} failed for {target}: {e}")
+
+        for target in targets:
+            _run_step(target, "t1_experiment", self.t1_experiment)
+            _run_step(target, "t2_experiment", self.t2_experiment)
+            _run_step(target, "ramsey_experiment", self.ramsey_experiment)
+
+        if plot:
+            print()
+            print("T1 (µs):")
+            for target in targets:
+                t1_data = data["t1_experiment"].get(target)
+                t1 = getattr(t1_data, "t1", None) if t1_data is not None else None
+                if t1 is not None:
+                    print(f"  {target}: {t1 * 1e-3:.6f}")
+                else:
+                    print(f"  {target}: null")
+            print()
+            print("T2 echo (µs):")
+            for target in targets:
+                t2_data = data["t2_experiment"].get(target)
+                t2_echo = getattr(t2_data, "t2", None) if t2_data is not None else None
+                if t2_echo is not None:
+                    print(f"  {target}: {t2_echo * 1e-3:.6f}")
+                else:
+                    print(f"  {target}: null")
+            print()
+            print("T2* (µs):")
+            for target in targets:
+                t2_data = data["ramsey_experiment"].get(target)
+                t2_star = getattr(t2_data, "t2", None) if t2_data is not None else None
+                if t2_star is not None:
+                    print(f"  {target}: {t2_star * 1e-3:.6f}")
+                else:
+                    print(f"  {target}: null")
+            print()
+            print("Qubit frequency (GHz):")
+            for target in targets:
+                ramsey_data = data["ramsey_experiment"].get(target)
+                bare_freq = (
+                    getattr(ramsey_data, "bare_freq", None)
+                    if ramsey_data is not None
+                    else None
+                )
+                if bare_freq is not None:
+                    print(f"  {target}: {bare_freq:.6f}")
+                else:
+                    print(f"  {target}: null")
+
+        return Result(data=data)
+
+    def characterize_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        in_same_mux: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        """
+        Run basic two-qubit characterization routines.
+
+        Parameters
+        ----------
+        targets
+            Target edges to characterize.
+        in_same_mux
+            Whether to restrict default target edges to the same mux.
+        shots
+            Number of shots per experiment.
+        plot
+            Whether to plot results.
+        """
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if targets is None:
+            targets = self.ctx.get_edge_labels(in_same_mux=in_same_mux)
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        data = {
+            "obtain_coupling_strength": {},
+        }
+
+        def _run_coupling_strength(target: str) -> None:
+            try:
+                pair = target.split("-")
+                result = self.obtain_coupling_strength(
+                    *pair,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                data["obtain_coupling_strength"][target] = result.data
+            except Exception as e:
+                print(f"obtain_coupling_strength failed for {target}: {e}")
+
+        for target in targets:
+            _run_coupling_strength(target)
+
+        if plot:
+            print()
+            print("Qubit-qubit coupling strength g (MHz):")
+            for target in targets:
+                coupling = data["obtain_coupling_strength"].get(target)
+                g = coupling.get("g") if coupling is not None else None
+                if g is not None:
+                    print(f"  {target}: {g * 1e3:.6f}")
+                else:
+                    print(f"  {target}: null")
+            print()
+            print("ZZ coefficient ξ (kHz):")
+            for target in targets:
+                coupling = data["obtain_coupling_strength"].get(target)
+                xi = coupling.get("xi") if coupling is not None else None
+                if xi is not None:
+                    print(f"  {target}: {xi * 1e6:.6f}")
+                else:
+                    print(f"  {target}: null")
+
+        return Result(data=data)

@@ -1,6 +1,12 @@
+"""Clifford operator definitions and utilities."""
+
 from __future__ import annotations
 
+import logging
+
 from .pauli import Pauli
+
+logger = logging.getLogger(__name__)
 
 
 class Clifford:
@@ -10,9 +16,11 @@ class Clifford:
     Attributes
     ----------
     name : str
-        The name of the Clifford operator.
+        Name of the Clifford operator.
+
     map : dict[str, Pauli]
-        The Pauli transformation map of the Clifford operator,
+        Pauli transformation map of the Clifford operator,
+
         supporting single and two qubit Pauli operators.
     """
 
@@ -620,7 +628,8 @@ class Clifford:
         Returns
         -------
         Clifford
-            The inverse of the current Clifford transformation.
+            Inverse of the current Clifford transformation.
+
         """
         inverse_map = {}
         for operator, pauli in self.map.items():
@@ -646,12 +655,14 @@ class Clifford:
         Parameters
         ----------
         other : Clifford
-            The other Clifford transformation to compose with.
+            Other Clifford transformation to compose with.
+
 
         Returns
         -------
         Clifford
-            The resulting Clifford transformation after composing the two input transformations.
+            Resulting Clifford transformation after composing the two input transformations.
+
         """
         composed_map = {}
         for operator, pauli in self.map.items():
@@ -671,24 +682,28 @@ class Clifford:
         Parameters
         ----------
         pauli : Pauli
-            The Pauli operator to transform.
+            Pauli operator to transform.
+
 
         Returns
         -------
         Pauli
-            The resulting Pauli operator after the transformation.
+            Resulting Pauli operator after the transformation.
+
         """
         mapped_pauli = self.map[pauli.operator]
         new_coefficient = pauli.coefficient * mapped_pauli.coefficient
         return Pauli(new_coefficient, mapped_pauli.operator)
 
     def to_string(self) -> str:
+        """Return a human-readable mapping string."""
         map = ", ".join(
             f"{operator}->{pauli.to_string()}" for operator, pauli in self.map.items()
         )
         return f"{{{map}}}"
 
     def to_dict(self) -> dict:
+        """Return a JSON-serializable dictionary representation."""
         return {
             operator: [
                 pauli.coefficient,
@@ -697,14 +712,20 @@ class Clifford:
             for operator, pauli in self.map.items()
         }
 
-    def print(self):
-        print(self.to_string())
+    def log_info(self) -> None:
+        """Log the string representation of the Clifford."""
+        logger.info(self.to_string())
 
     def __repr__(self) -> str:
+        """Return the debug representation of the Clifford."""
         return f"Clifford({self.to_string()})"
 
     def __hash__(self):
+        """Return a hash based on the Clifford mapping."""
         return hash(tuple(self.map.items()))
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
+        """Return whether another object represents the same Clifford."""
+        if not isinstance(other, Clifford):
+            return False
         return self.map == other.map

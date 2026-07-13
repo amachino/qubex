@@ -1,7 +1,9 @@
+"""Tests for the DRAG pulse."""
+
 import pytest
+from qxpulse import Drag, Pulse
 
 import qubex as qx
-from qubex.pulse import Drag, Pulse
 
 dt = qx.pulse.get_sampling_period()
 

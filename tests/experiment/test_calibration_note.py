@@ -1,10 +1,11 @@
-import time
+"""Tests for calibration note helpers."""
+
 from datetime import datetime, timedelta
 
 import pytest
 
-from qubex.experiment.calibration_note import CalibrationNote
-from qubex.experiment.experiment_note import ExperimentNote
+from qubex.experiment.models.calibration_note import CalibrationNote
+from qubex.experiment.models.experiment_note import ExperimentNote
 
 
 def test_inheritance():
@@ -49,7 +50,9 @@ def test_update_rabi_param(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "distance": 0.5,
             "r2": 0.5,
+            "reference_phase": 0.0,
         },
     )
     param = note.get_rabi_param("Q00") or {}
@@ -156,6 +159,7 @@ def test_update_state_param(tmp_path):
         {
             "target": "Q00",
             "centers": {"0": [0.5, 0.5], "1": [0.5, 0.5]},
+            "reference_phase": 0.0,
         },
     )
     param = note.get_state_param("Q00") or {}
@@ -214,13 +218,15 @@ def test_timestamp(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "distance": 0.5,
             "r2": 0.5,
+            "reference_phase": 0.0,
         },
     )
     param = note.get_rabi_param("Q00") or {}
-    timestamp = param.get("timestamp")
-    assert timestamp is not None
-    time.sleep(1)
+    timestamp_text = param.get("timestamp")
+    assert timestamp_text is not None
+    timestamp = datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S")
     note.update_rabi_param(
         "Q00",
         {
@@ -231,12 +237,18 @@ def test_timestamp(tmp_path):
             "offset": 1.0,
             "noise": 1.0,
             "angle": 1.0,
+            "distance": 1.0,
             "r2": 1.0,
+            "reference_phase": 0.0,
+            "timestamp": datetime.strftime(
+                timestamp + timedelta(seconds=1), "%Y-%m-%d %H:%M:%S"
+            ),
         },
     )
     updated_param = note.get_rabi_param("Q00") or {}
-    updated_timestamp = updated_param.get("timestamp")
-    assert updated_timestamp is not None
+    updated_timestamp_text = updated_param.get("timestamp")
+    assert updated_timestamp_text is not None
+    updated_timestamp = datetime.strptime(updated_timestamp_text, "%Y-%m-%d %H:%M:%S")
     assert updated_timestamp > timestamp
 
 
@@ -255,7 +267,9 @@ def test_get_param_with_valid_days(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "distance": 0.5,
             "r2": 0.5,
+            "reference_phase": 0.0,
             "timestamp": datetime.strftime(
                 datetime.now() - timedelta(days=2), "%Y-%m-%d %H:%M:%S"
             ),

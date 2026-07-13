@@ -1,13 +1,19 @@
+"""Chip inspection routines and reporting utilities."""
+
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Literal
 
-from ..backend.config_loader import ConfigLoader
-from ..backend.lattice_graph import LatticeGraph
+from qubex.system import ConfigLoader
+from qubex.system.lattice_graph import LatticeGraph
+
 from . import inspection_library
 from .inspection import Inspection
+
+logger = logging.getLogger(__name__)
 
 InspectionType = Literal[
     "Type0A",
@@ -26,51 +32,89 @@ InspectionType = Literal[
 
 
 class ChipInspector:
+    """Run inspection suites against chip configuration data."""
+
     def __init__(
         self,
-        chip_id: str,
+        chip_id: str | None = None,
+        *,
+        system_id: str | None = None,
         config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         props_dir: Path | str | None = None,
-    ):
+    ) -> None:
+        """
+        Initialize one inspector from system or chip configuration.
+
+        `system_id` is the canonical selector. `chip_id` remains available as a
+        compatibility input for single-system chip configurations.
+
+        Parameters
+        ----------
+        chip_id : str | None, optional
+            Deprecated chip identifier compatibility input.
+        system_id : str | None, optional
+            Canonical system identifier used to resolve configuration resources.
+        config_dir : Path | str | None, optional
+            Base directory that contains system configuration files.
+        params_dir : Path | str | None, optional
+            Base directory that contains control parameter files.
+        props_dir : Path | str | None, optional
+            Legacy alias for `params_dir`.
+        """
         self._init_graph(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
+            params_dir=params_dir,
             props_dir=props_dir,
         )
 
     def _init_graph(
         self,
-        chip_id: str,
+        chip_id: str | None = None,
+        *,
+        system_id: str | None = None,
         config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         props_dir: Path | str | None = None,
-    ):
+    ) -> None:
+        """Load config data and build the inspection graph."""
+        if chip_id is None and system_id is None:
+            raise ValueError("Either `system_id` or `chip_id` must be provided.")
+        resolved_params_dir = params_dir if params_dir is not None else props_dir
         config_loader = ConfigLoader(
             chip_id=chip_id,
+            system_id=system_id,
             config_dir=config_dir,
-            params_dir=props_dir,
+            params_dir=resolved_params_dir,
         )
-        experiment_system = config_loader.get_experiment_system(chip_id)
-        self.graph = experiment_system.quantum_system._graph
+        experiment_system = config_loader.get_experiment_system()
+        self.graph = experiment_system.quantum_system.chip_graph
 
-        frequency_dict = config_loader._load_param_data("qubit_frequency")
-        anharmonicity_dict = config_loader._load_param_data("qubit_anharmonicity")
-        t1_dict = config_loader._load_param_data("t1")
-        t2_echo_dict = config_loader._load_param_data("t2_echo")
-        coupling_dict = config_loader._load_param_data("qubit_qubit_coupling_strength")
+        frequency_dict = config_loader.load_param_data("qubit_frequency")
+        anharmonicity_dict = config_loader.load_param_data("qubit_anharmonicity")
+        t1_dict = config_loader.load_param_data("t1")
+        t2_echo_dict = config_loader.load_param_data("t2_echo")
+        coupling_dict = config_loader.load_param_data("qubit_qubit_coupling_strength")
+
+        def _get_val(d: dict, k: str) -> float:
+            v = d.get(k)
+            return v if v is not None else float("nan")
 
         for node in self.graph.qubit_nodes.values():
             label = node["label"]
-            node["properties"] = {  # type: ignore
-                "frequency": frequency_dict.get(label),
-                "anharmonicity": anharmonicity_dict.get(label),
-                "t1": t1_dict.get(label),
-                "t2_echo": t2_echo_dict.get(label),
+            node["properties"] = {
+                "frequency": _get_val(frequency_dict, label),
+                "anharmonicity": _get_val(anharmonicity_dict, label),
+                "t1": _get_val(t1_dict, label),
+                "t2_echo": _get_val(t2_echo_dict, label),
             }
 
         for edge in self.graph.qubit_edges.values():
             label = edge["label"]
-            edge["properties"] = {  # type: ignore
-                "coupling": coupling_dict.get(label),
+            edge["properties"] = {
+                "coupling": _get_val(coupling_dict, label),
             }
 
     def execute(
@@ -78,8 +122,9 @@ class ChipInspector:
         types: InspectionType | list[InspectionType] | None = None,
         params: dict | None = None,
     ) -> InspectionSummary:
+        """Execute selected inspections and return a summary."""
         if types is None:
-            types = list(InspectionType.__args__)  # type: ignore
+            types = list(InspectionType.__args__)
         elif isinstance(types, str):
             types = [types]
 
@@ -91,8 +136,8 @@ class ChipInspector:
             )
             try:
                 inspection.execute()
-            except Exception as e:
-                print(f"Error in {inspection.name}: {e}")
+            except Exception:
+                logger.exception("Error in %s", inspection.name)
             inspections[type] = inspection
 
         return InspectionSummary(
@@ -102,6 +147,8 @@ class ChipInspector:
 
 
 class InspectionSummary:
+    """Aggregate inspection results and provide reporting helpers."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -112,6 +159,7 @@ class InspectionSummary:
 
     @property
     def invalid_nodes(self) -> dict[str, list[str]]:
+        """Return invalid nodes aggregated across inspections."""
         invalid_nodes = defaultdict(list)
         for result in self.inspections.values():
             for label, messages in result.invalid_nodes.items():
@@ -122,6 +170,7 @@ class InspectionSummary:
 
     @property
     def invalid_edges(self) -> dict[str, list[str]]:
+        """Return invalid edges aggregated across inspections."""
         invalid_edges = defaultdict(list)
         for result in self.inspections.values():
             for label, messages in result.invalid_edges.items():
@@ -130,26 +179,28 @@ class InspectionSummary:
                 )
         return dict(sorted(invalid_edges.items()))
 
-    def print(self):
-        print(f"{len(self.invalid_nodes)} invalid nodes: ")
+    def log_report(self) -> None:
+        """Log a summary of invalid nodes and edges."""
+        logger.info(f"{len(self.invalid_nodes)} invalid nodes: ")
         if self.invalid_nodes:
             for label, messages in self.invalid_nodes.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
-        print(f"{len(self.invalid_edges)} invalid edges: ")
+                    logger.info(f"    - {message}")
+        logger.info(f"{len(self.invalid_edges)} invalid edges: ")
         if self.invalid_edges:
             for label, messages in self.invalid_edges.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
+                    logger.info(f"    - {message}")
 
     def draw(
         self,
         draw_individual_results: bool = True,
         save_image: bool = False,
         images_dir: str = "./images",
-    ):
+    ) -> None:
+        """Visualize inspection results on the chip graph."""
         if len(self.inspections) == 0:
             raise ValueError("No inspections have been executed.")
 
@@ -157,8 +208,8 @@ class InspectionSummary:
         invalid_nodes = set(self.invalid_nodes)
         valid_nodes = all_nodes - invalid_nodes
 
-        invalid_node_values = {label: 1 for label in invalid_nodes}
-        valid_node_values = {label: 1 for label in valid_nodes}
+        invalid_node_values = dict.fromkeys(invalid_nodes, 1)
+        valid_node_values = dict.fromkeys(valid_nodes, 1)
 
         all_edges = {edge["label"] for edge in self.graph.qubit_edges.values()}
         invalid_edges = set(self.invalid_edges)
@@ -171,8 +222,8 @@ class InspectionSummary:
                 all_edges.remove(label)
         valid_edges = all_edges - invalid_edges
 
-        invalid_edge_values = {label: 1 for label in invalid_edges}
-        valid_edge_values = {label: 1 for label in valid_edges}
+        invalid_edge_values = dict.fromkeys(invalid_edges, 1)
+        valid_edge_values = dict.fromkeys(valid_edges, 1)
 
         invalid_types: dict[str, list[str]] = defaultdict(list)
         for type, inspection in self.inspections.items():
@@ -181,7 +232,7 @@ class InspectionSummary:
             for label in inspection.invalid_edges:
                 invalid_types[label].append(type.replace("Type", ""))
 
-        inspection = list(self.inspections.values())[0]
+        inspection = next(iter(self.inspections.values()))
         node_hovertexts = {}
         for data in self.graph.qubit_nodes.values():
             label = data["label"]

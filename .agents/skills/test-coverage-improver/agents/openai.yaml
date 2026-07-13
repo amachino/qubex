@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Coverage Improver"
+  short_description: "Find high-value missing tests from coverage"
+  default_prompt: "Use $test-coverage-improver to inspect current test coverage and identify the highest-value missing tests."

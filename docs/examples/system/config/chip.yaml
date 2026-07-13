@@ -1,0 +1,24 @@
+# Example chip catalog shared by the system examples.
+#
+# Format
+# ------
+# <chip_id>:
+#   name: <chip_name>
+#   n_qubits: <count>
+#   topology:
+#     type: <topology_type>
+#     mux_size: <count_per_mux>
+
+64Q-HF:
+  name: "64-qubit high-frequency example chip"
+  n_qubits: 64
+  topology:
+    type: square_lattice
+    mux_size: 4
+
+144Q-LF:
+  name: "144-qubit low-frequency example chip"
+  n_qubits: 144
+  topology:
+    type: square_lattice
+    mux_size: 4

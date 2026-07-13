@@ -1,0 +1,4 @@
+interface:
+  display_name: "Final Release Review"
+  short_description: "Check qubex release readiness"
+  default_prompt: "Use $final-release-review to compare the current release candidate against the previous release tag and assess readiness."

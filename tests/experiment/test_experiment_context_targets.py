@@ -1,0 +1,188 @@
+"""Tests for ExperimentContext target filtering."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from typing import Literal
+
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.system import Qubit, Target, TargetType
+from qubex.system.control_system import GenChannel, GenPort, PortType
+
+
+class _ExperimentSystemStub:
+    def __init__(
+        self,
+        *,
+        targets: list[Target],
+        cr_pairs: dict[str, tuple[str, str]],
+    ) -> None:
+        self.targets = targets
+        self._cr_pairs = cr_pairs
+
+    def resolve_cr_pair(self, label: str) -> tuple[str, str]:
+        return self._cr_pairs[label]
+
+    def resolve_2q_qubits(self, label: str) -> tuple[str, str]:
+        pair = self._cr_pairs[label]
+        if pair[1] == "CR":
+            raise ValueError(label)
+        return pair
+
+
+def _make_gen_channel(*, sideband: Literal["U", "L"] = "U") -> GenChannel:
+    port = GenPort(
+        id="B0-P0",
+        box_id="B0",
+        number=0,
+        type=PortType.CTRL,
+        channels=(),
+        sideband=sideband,
+        lo_freq=9_000_000_000,
+        cnco_freq=1_000_000_000,
+    )
+    return GenChannel(id="B0-P0-CH0", number=0, _port=port, fnco_freq=0)
+
+
+def _make_qubit(label: str, frequency: float) -> Qubit:
+    return Qubit(
+        index=int(label[1:]),
+        label=label,
+        chip_id="chip",
+        resonator=f"R{label}",
+        _bare_frequency=frequency,
+        _anharmonicity=-0.3,
+        _control_frequency_ge=frequency,
+        _control_frequency_ef=frequency - 0.3,
+    )
+
+
+def test_targets_exclude_cr_pair_with_inactive_spectator(monkeypatch) -> None:
+    """Given inactive spectator, when listing targets, then pair CR target is excluded."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+
+    channel = _make_gen_channel()
+    control_qubit = _make_qubit("Q00", 5.0)
+    spectator_qubit = _make_qubit("Q01", 5.1)
+    ge_target = Target.new_ge_target(qubit=control_qubit, channel=channel)
+    default_cr_target = Target.new_cr_target(
+        control_qubit=control_qubit,
+        channel=channel,
+    )
+    pair_cr_target = Target.new_cr_target(
+        control_qubit=control_qubit,
+        target_qubit=spectator_qubit,
+        channel=channel,
+    )
+    experiment_system = _ExperimentSystemStub(
+        targets=[ge_target, default_cr_target, pair_cr_target],
+        cr_pairs={
+            default_cr_target.label: ("Q00", "CR"),
+            pair_cr_target.label: ("Q00", "Q01"),
+        },
+    )
+
+    monkeypatch.setattr(
+        ExperimentContext,
+        "experiment_system",
+        property(lambda self: experiment_system),
+    )
+
+    assert set(context.targets) == {"Q00", "Q00-CR"}
+
+
+def test_targets_keep_cr_pair_with_active_spectator(monkeypatch) -> None:
+    """Given active spectator, when listing targets, then pair CR target is included."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00", "Q01"]
+
+    channel = _make_gen_channel()
+    control_qubit = _make_qubit("Q00", 5.0)
+    spectator_qubit = _make_qubit("Q01", 5.1)
+    pair_cr_target = Target.new_cr_target(
+        control_qubit=control_qubit,
+        target_qubit=spectator_qubit,
+        channel=channel,
+    )
+    experiment_system = _ExperimentSystemStub(
+        targets=[pair_cr_target],
+        cr_pairs={pair_cr_target.label: ("Q00", "Q01")},
+    )
+
+    monkeypatch.setattr(
+        ExperimentContext,
+        "experiment_system",
+        property(lambda self: experiment_system),
+    )
+
+    assert set(context.targets) == {"Q00-Q01"}
+
+
+def test_targets_exclude_bswap_pair_with_inactive_spectator(monkeypatch) -> None:
+    """Given inactive spectator, when listing targets, then bSWAP pair target is excluded."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+
+    channel = _make_gen_channel()
+    control_qubit = _make_qubit("Q00", 5.0)
+    bswap_target = Target.new_target(
+        label="Q00-Q01-bSWAP",
+        frequency=5.2,
+        object=control_qubit,
+        channel=channel,
+        type=TargetType.CTRL_2Q,
+        metadata={"gate": "BSWAP", "active_qubit": "Q00", "passive_qubit": "Q01"},
+    )
+    experiment_system = _ExperimentSystemStub(
+        targets=[bswap_target],
+        cr_pairs={bswap_target.label: ("Q00", "Q01")},
+    )
+
+    monkeypatch.setattr(
+        ExperimentContext,
+        "experiment_system",
+        property(lambda self: experiment_system),
+    )
+
+    assert set(context.targets) == set()
+
+
+def test_get_edge_labels_filters_to_same_mux_by_default(monkeypatch) -> None:
+    """Given mux-mixed spectators, when getting edge labels, then only same-mux edges are returned by default."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+
+    def _get_spectators(
+        qubit: str, *, in_same_mux: bool = True
+    ) -> list[SimpleNamespace]:
+        assert qubit == "Q00"
+        if in_same_mux:
+            return [SimpleNamespace(label="Q01")]
+        return [SimpleNamespace(label="Q01"), SimpleNamespace(label="Q02")]
+
+    monkeypatch.setattr(context, "get_spectators", _get_spectators)
+
+    assert context.get_edge_labels() == ["Q00-Q01"]
+
+
+def test_get_edge_labels_can_include_cross_mux_edges(monkeypatch) -> None:
+    """Given mux-mixed spectators, when in_same_mux is false, then cross-mux edges are included."""
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+
+    recorded: list[bool] = []
+
+    def _get_spectators(
+        qubit: str, *, in_same_mux: bool = True
+    ) -> list[SimpleNamespace]:
+        assert qubit == "Q00"
+        recorded.append(in_same_mux)
+        if in_same_mux:
+            return [SimpleNamespace(label="Q01")]
+        return [SimpleNamespace(label="Q01"), SimpleNamespace(label="Q02")]
+
+    monkeypatch.setattr(context, "get_spectators", _get_spectators)
+
+    assert context.get_edge_labels(in_same_mux=False) == ["Q00-Q01", "Q00-Q02"]
+    assert recorded == [False]

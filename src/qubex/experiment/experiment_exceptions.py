@@ -1,3 +1,5 @@
+"""Custom exceptions for experiment workflows."""
+
 from __future__ import annotations
 
 
@@ -6,7 +8,7 @@ class CalibrationMissingError(Exception):
 
     def __init__(
         self,
-        message="Calibration data is missing.",
+        message: str = "Calibration data is missing.",
         *,
         target: str | None = None,
     ):
