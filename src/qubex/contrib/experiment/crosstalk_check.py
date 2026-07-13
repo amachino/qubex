@@ -41,7 +41,7 @@ def crosstalk_check(
         target_qubits (list[str]): The qubits that will be measured for crosstalk effects.
         time_ranges (list[range], optional): The ranges of Rabi drive times to apply.
         ramptime (float, optional): The ramp time for the Rabi drive. Defaults to 0.0.
-        plot (bool | None, optional): Whether to plot the results. If None, it will be determined by the experiment settings.
+        plot (bool, optional): Whether to plot the results. Defaults to True.
         save (bool, optional): Whether to save the results. Defaults to False.
     """
     try:
@@ -50,8 +50,8 @@ def crosstalk_check(
         pass
 
     rabi_result = exp.obtain_rabi_params(control_qubit, plot=False)
-
-    params = rabi_result.rabi_params.get(control_qubit)
+    rabi_params = rabi_result.rabi_params
+    params = rabi_params.get(control_qubit) if rabi_params is not None else None
 
     if (
         params is None
