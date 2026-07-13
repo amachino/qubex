@@ -22,7 +22,11 @@ def crosstalk_check(
     exp: Experiment,
     control_qubit: str,
     target_qubits: list[str],
-    time_ranges: list[range]=[range(0, 1201, 40), range(0, 12001, 400), range(0, 120001, 4000)],
+    time_ranges: list[range]=[
+        range(0, 1201, 40), 
+        range(0, 12001, 400), 
+        range(0, 120001, 4000)
+    ],
     shots: int = DEFAULT_SHOTS*2,
     ramptime: float=0.0,
     fft_threshold: float = 0.1,
@@ -31,7 +35,7 @@ def crosstalk_check(
     save: bool = False,
     overwrite: bool = False,
     ssb: Literal["L", "U"] = DEFAULT_SSB,
-    cnco_center: int = DEFAULT_CNCO_CENTER
+    cnco_center: int = DEFAULT_CNCO_CENTER,
 ):
     """
     Perform a crosstalk check by applying a Rabi drive to the control qubit and measuring the response of the target qubits.
@@ -191,9 +195,8 @@ def crosstalk_check(
 
         if overwrite:
             yaml_data["data"][f"{control_qubit}"].update(
-            data_dict["data"][f"{control_qubit}"]
-        )
-            
+                data_dict["data"][f"{control_qubit}"]
+            )
         else:
             for target_qubit, crosstalk_value in crosstalk_results.items():
                 if crosstalk_value is not None:
