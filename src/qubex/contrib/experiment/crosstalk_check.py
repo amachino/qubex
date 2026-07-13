@@ -51,14 +51,16 @@ def crosstalk_check(
 
     rabi_result = exp.obtain_rabi_params(control_qubit, plot=False)
 
+    params = rabi_result.rabi_params.get(control_qubit)
+
     if (
-        rabi_result.rabi_params[control_qubit] is None
-        or not np.isfinite(rabi_result.rabi_params[control_qubit].frequency)
-        or not np.isfinite(rabi_result.rabi_params[control_qubit].r2)
+        params is None
+        or not np.isfinite(params.frequency)
+        or not np.isfinite(params.r2)
     ):
         raise RuntimeError(f"Failed to obtain valid Rabi parameters for {control_qubit}.")
     
-    max_rabi_freq = rabi_result.rabi_params[control_qubit].frequency*1e3 / exp.params.control_amplitude[control_qubit]
+    max_rabi_freq = params.frequency*1e3 / exp.params.control_amplitude[control_qubit]
     print(f"Max Rabi frequency for {control_qubit}: {max_rabi_freq} MHz")
 
     sweep_results = {}
