@@ -10,6 +10,7 @@ from qubex.pulse import PulseSchedule, FlatTop
 from qubex.system import LatticeGraph, SystemManager
 from qubex.system.quel1 import MixingUtil
 from tqdm import tqdm
+from typing import Literal
 import yaml
 
 import math
@@ -21,15 +22,15 @@ def crosstalk_check(
     exp: Experiment,
     control_qubit: str,
     target_qubits: list[str],
-    time_ranges: list[float]=[range(0, 1201, 40), range(0, 12001, 400), range(0, 120001, 4000)],
+    time_ranges: list[range]=[range(0, 1201, 40), range(0, 12001, 400), range(0, 120001, 4000)],
     shots: int = DEFAULT_SHOTS*2,
     ramptime: float=0.0,
     fft_threshold: float = 0.1,
-    plot: bool | None = None,
+    plot: bool = True,
     fft_plot: bool = False,
     save: bool = False,
     overwrite: bool = False,
-    ssb: str = DEFAULT_SSB,
+    ssb: Literal["L", "U"] = DEFAULT_SSB,
     cnco_center: int = DEFAULT_CNCO_CENTER
 ):
     """
@@ -38,7 +39,7 @@ def crosstalk_check(
     Args:
         control_qubit (str): The qubit to which the Rabi drive will be applied.
         target_qubits (list[str]): The qubits that will be measured for crosstalk effects.
-        time_ranges (list[float], optional): The ranges of Rabi drive times to apply. 
+        time_ranges (list[range], optional): The ranges of Rabi drive times to apply.
         ramptime (float, optional): The ramp time for the Rabi drive. Defaults to 0.0.
         plot (bool | None, optional): Whether to plot the results. If None, it will be determined by the experiment settings.
         save (bool, optional): Whether to save the results. Defaults to False.
@@ -49,14 +50,14 @@ def crosstalk_check(
         pass
 
     rabi_result = exp.obtain_rabi_params(control_qubit, plot=False)
-    control_rabi_param = rabi_result.rabi_params.get(control_qubit)
+
     if (
-        control_rabi_param is None
-        or not np.isfinite(control_rabi_param.frequency)
-        or not np.isfinite(control_rabi_param.r2)
+        rabi_result.rabi_params[control_qubit] is None
+        or not np.isfinite(rabi_result.rabi_params[control_qubit].frequency)
+        or not np.isfinite(rabi_result.rabi_params[control_qubit].r2)
     ):
         raise RuntimeError(f"Failed to obtain valid Rabi parameters for {control_qubit}.")
-
+    
     max_rabi_freq = rabi_result.rabi_params[control_qubit].frequency*1e3 / exp.params.control_amplitude[control_qubit]
     print(f"Max Rabi frequency for {control_qubit}: {max_rabi_freq} MHz")
 
