@@ -42,6 +42,10 @@ class _CharacterizationServiceStub:
         self.calls.append(("characterize_2q", kwargs))
         return "characterize_2q_result"
 
+    def find_optimal_readout_frequency(self, **kwargs: Any) -> str:
+        self.calls.append(("find_optimal_readout_frequency", kwargs))
+        return "find_optimal_readout_frequency_result"
+
 
 class _MeasurementServiceStub:
     def __init__(self) -> None:
@@ -305,6 +309,49 @@ def test_characterize_2q_delegates_in_same_mux_to_characterization_service() -> 
             {
                 "targets": None,
                 "in_same_mux": False,
+                "shots": 512,
+                "interval": 240,
+                "plot": False,
+                "save_image": True,
+            },
+        )
+    ]
+
+
+def test_find_optimal_readout_frequency_delegates_objective_to_characterization_service() -> (
+    None
+):
+    """Given objective args, optimal readout frequency delegates to characterization service."""
+    exp = object.__new__(Experiment)
+    characterization_stub = _CharacterizationServiceStub()
+    exp.__dict__["_characterization_service"] = characterization_stub
+
+    result = exp.find_optimal_readout_frequency(
+        "Q00",
+        df=0.001,
+        frequency_width=0.02,
+        readout_amplitude=0.1,
+        electrical_delay=2.0,
+        objective="fidelity",
+        fidelity_ratio=0.98,
+        n_shots=512,
+        shot_interval=240,
+        plot=False,
+        save_image=True,
+    )
+
+    assert result == "find_optimal_readout_frequency_result"
+    assert characterization_stub.calls == [
+        (
+            "find_optimal_readout_frequency",
+            {
+                "target": "Q00",
+                "df": 0.001,
+                "frequency_width": 0.02,
+                "readout_amplitude": 0.1,
+                "electrical_delay": 2.0,
+                "objective": "fidelity",
+                "fidelity_ratio": 0.98,
                 "shots": 512,
                 "interval": 240,
                 "plot": False,

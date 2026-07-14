@@ -4946,18 +4946,22 @@ class Experiment:
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Find the readout frequency maximizing state separation."""
+        """Find the readout frequency maximizing state separation or fidelity."""
         return self.characterization_service.find_optimal_readout_frequency(
             target=target,
             df=df,
             frequency_width=frequency_width,
             readout_amplitude=readout_amplitude,
             electrical_delay=electrical_delay,
+            objective=objective,
+            fidelity_ratio=fidelity_ratio,
             shots=n_shots,
             interval=shot_interval,
             plot=plot,
