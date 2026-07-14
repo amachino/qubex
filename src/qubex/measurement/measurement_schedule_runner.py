@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast
 
 from qubex.backend import (
@@ -90,15 +90,16 @@ class MeasurementScheduleRunner:
         if isinstance(backend_result, MeasurementResult):
             return backend_result
 
-        box_config = getattr(
+        json_safe_box_config = getattr(
             self._backend_controller,
             "json_safe_box_config",
             None,
         )
-        if callable(box_config):
-            device_config = cast(dict[str, Any], box_config())
+        if callable(json_safe_box_config):
+            device_config = cast(dict[str, Any], json_safe_box_config())
         else:
-            device_config = {}
+            box_config = getattr(self._backend_controller, "box_config", None)
+            device_config = dict(box_config) if isinstance(box_config, Mapping) else {}
 
         capture_decimation_factor = getattr(
             self._backend_controller,

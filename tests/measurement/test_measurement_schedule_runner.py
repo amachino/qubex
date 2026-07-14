@@ -126,10 +126,6 @@ def test_execute_async_validates_builds_calls_backend_and_creates_result() -> No
         sampling_period_ns: ClassVar[float] = 2.0
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
 
-        def json_safe_box_config(self) -> dict[str, object]:
-            """Return JSON-safe device config."""
-            return dict(self.box_config)
-
         async def execute_async(
             self, *, request: BackendExecutionRequest
         ) -> Quel1BackendExecutionResult:
