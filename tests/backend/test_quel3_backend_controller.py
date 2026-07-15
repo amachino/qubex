@@ -25,6 +25,7 @@ from qubex.backend.quel3 import (
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
     Quel3CaptureWindow,
+    Quel3ConfigurationManager,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3HardwareState,
@@ -604,38 +605,26 @@ def test_constructor_accepts_injected_session_manager() -> None:
     assert controller.session_manager is session_manager
 
 
-def test_connect_refreshes_existing_instrument_cache() -> None:
-    """Given connect on QuEL-3, controller should refresh alias cache from existing instruments."""
+def test_connect_clears_existing_instrument_cache() -> None:
+    """QuEL-3 connect should clear instrument mappings without refreshing them."""
     calls: list[str] = []
     connection_manager = SimpleNamespace(
-        hash=11,
-        is_connected=False,
-        quelware_endpoint="host-a",
-        quelware_port=50051,
-        client_mode="server",
-        quelware_pat_path=None,
         connect=lambda box_names=None, parallel=None: calls.append("connect"),
         disconnect=lambda: None,
     )
-    configuration_manager = SimpleNamespace(
-        quelware_endpoint="host-a",
-        quelware_port=50051,
-        client_mode="server",
-        quelware_pat_path=None,
-        target_alias_map={},
-        last_deployed_instrument_infos={},
-        refresh_instrument_cache=lambda: calls.append("refresh") or {},
-        deploy_instruments=lambda *, requests: {},
-    )
-
+    configuration_manager = Quel3ConfigurationManager()
+    configuration_manager._last_deployed_instrument_infos = {"Q00": ()}
+    configuration_manager._target_alias_map = {("BOX1", "Q00"): "unit-a:Q00"}
     controller = Quel3BackendController(
         connection_manager=cast(Any, connection_manager),
-        configuration_manager=cast(Any, configuration_manager),
+        configuration_manager=configuration_manager,
     )
 
-    controller.connect(["A"])
+    controller.connect(["BOX1"])
 
-    assert calls == ["connect", "refresh"]
+    assert calls == ["connect"]
+    assert controller.last_deployed_instrument_infos == {}
+    assert controller.target_alias_map == {}
 
 
 def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() -> None:
