@@ -2269,3 +2269,50 @@ def test_load_uses_quel1_system_loader_when_backend_is_unset(
     loader.load()
 
     assert called == ["clock", "control", "wiring"]
+
+
+def test_dc_voltage_controller_config_loads_from_system_yaml(
+    tmp_path: Path,
+) -> None:
+    """Given DC controller settings in system.yaml, loader should expose normalized config."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "system.yaml",
+        {
+            "SYS1": {
+                "chip_id": chip_id,
+                "backend": "quel1",
+                "dc_voltage_controller": {
+                    "driver": "ons61797",
+                    "port": "/dev/system-dc",
+                },
+            }
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id="SYS1",
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.dc_voltage_controller_config.driver == "ons61797"
+    assert loader.dc_voltage_controller_config.port == "/dev/system-dc"
+    assert loader.dc_voltage_controller_config.ip_address is None
+
+
+def test_dc_voltage_controller_config_defaults_when_missing(
+    tmp_path: Path,
+) -> None:
+    """Given missing DC controller settings, loader should expose default config."""
+    config_dir, params_dir, _ = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        chip_id="TESTCHIP",
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    assert loader.dc_voltage_controller_config.driver == "ons61797"
+    assert loader.dc_voltage_controller_config.port is None
+    assert loader.dc_voltage_controller_config.ip_address is None

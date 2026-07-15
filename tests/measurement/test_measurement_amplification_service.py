@@ -14,20 +14,6 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
     """Given targets, when applying DC voltages, then service applies mux-indexed voltages."""
     called: dict[str, Any] = {}
 
-    @contextmanager
-    def _fake_dc_voltage(voltages: dict[int, float]):
-        called["voltages"] = voltages
-        called["entered"] = True
-        try:
-            yield
-        finally:
-            called["exited"] = True
-
-    monkeypatch.setattr(
-        "qubex.measurement.services.measurement_amplification_service.dc_voltage",
-        _fake_dc_voltage,
-    )
-
     class _Mux:
         def __init__(self, index: int) -> None:
             self.index = index
@@ -45,7 +31,29 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
         def get_mux_by_qubit(self, qubit: str) -> _Mux:
             return {"Q00": _Mux(0), "Q02": _Mux(2)}[qubit]
 
-    context = type("_Context", (), {"experiment_system": _ExperimentSystem()})()
+    class _DCVoltageController:
+        @contextmanager
+        def apply_voltages(self, voltages: dict[int, float]):
+            called["voltages"] = voltages
+            called["entered"] = True
+            try:
+                yield
+            finally:
+                called["exited"] = True
+
+    system_manager = type(
+        "_SystemManager",
+        (),
+        {"dc_voltage_controller": _DCVoltageController()},
+    )()
+    context = type(
+        "_Context",
+        (),
+        {
+            "experiment_system": _ExperimentSystem(),
+            "system_manager": system_manager,
+        },
+    )()
     service = MeasurementAmplificationService(context=cast(Any, context))
 
     with service.apply_dc_voltages(["Q00", "RQ02"]):
@@ -60,16 +68,6 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
 def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
     """Given a single target string, when applying DC voltages, then service handles it as one target."""
     called: dict[str, Any] = {}
-
-    @contextmanager
-    def _fake_dc_voltage(voltages: dict[int, float]):
-        called["voltages"] = voltages
-        yield
-
-    monkeypatch.setattr(
-        "qubex.measurement.services.measurement_amplification_service.dc_voltage",
-        _fake_dc_voltage,
-    )
 
     class _Mux:
         def __init__(self, index: int) -> None:
@@ -88,7 +86,25 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
         def get_mux_by_qubit(self, qubit: str) -> _Mux:
             return {"Q00": _Mux(0)}[qubit]
 
-    context = type("_Context", (), {"experiment_system": _ExperimentSystem()})()
+    class _DCVoltageController:
+        @contextmanager
+        def apply_voltages(self, voltages: dict[int, float]):
+            called["voltages"] = voltages
+            yield
+
+    system_manager = type(
+        "_SystemManager",
+        (),
+        {"dc_voltage_controller": _DCVoltageController()},
+    )()
+    context = type(
+        "_Context",
+        (),
+        {
+            "experiment_system": _ExperimentSystem(),
+            "system_manager": system_manager,
+        },
+    )()
     service = MeasurementAmplificationService(context=cast(Any, context))
 
     with service.apply_dc_voltages("Q00"):

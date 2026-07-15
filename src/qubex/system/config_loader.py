@@ -17,6 +17,7 @@ from qubex.backend.backend_controller import (
     BackendKind,
     normalize_backend_kind,
 )
+from qubex.backend.dc_voltage_controller import DCVoltageControllerConfig
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
@@ -301,6 +302,7 @@ class ConfigLoader:
         self._props_dict: dict = {}
         self._params_dict: dict = {}
         self._measurement_defaults: MeasurementDefaults = MeasurementDefaults()
+        self._dc_voltage_controller_config = DCVoltageControllerConfig()
         self._quantum_system: QuantumSystem | None = None
         self._wiring_rows: list[dict[str, Any]] | None = None
         self._control_system: ControlSystem | None = None
@@ -372,6 +374,9 @@ class ConfigLoader:
                 self._params_file
             )  # legacy
             self._measurement_defaults = self._load_measurement_defaults()
+            self._dc_voltage_controller_config = (
+                self._load_dc_voltage_controller_config()
+            )
             self._system_loader = self._create_system_loader(self._backend_kind)
 
             self._quantum_system = self._load_quantum_system()
@@ -409,6 +414,12 @@ class ConfigLoader:
         """Return parsed partial measurement defaults for the loaded system."""
         self._ensure_loaded()
         return self._measurement_defaults
+
+    @property
+    def dc_voltage_controller_config(self) -> DCVoltageControllerConfig:
+        """Return DC voltage controller config for the loaded system."""
+        self._ensure_loaded()
+        return self._dc_voltage_controller_config
 
     @property
     def wiring_file(self) -> str:
@@ -645,6 +656,32 @@ class ConfigLoader:
                 f"Unsupported backend for chip `{self._chip_id}` in `{self._system_file}`: {value!r}"
             )
         return BACKEND_KIND_QUEL1
+
+    def _load_dc_voltage_controller_config(self) -> DCVoltageControllerConfig:
+        """Load optional DC voltage controller settings from system config."""
+        raw_config = self._system_dict.get("dc_voltage_controller")
+        if raw_config is None:
+            return DCVoltageControllerConfig()
+        if not isinstance(raw_config, dict):
+            raise TypeError("`dc_voltage_controller` must be a mapping.")
+
+        driver = str(raw_config.get("driver", "ons61797"))
+        port = raw_config.get("port")
+        ip_address = raw_config.get("ip_address")
+        if port is not None and not isinstance(port, str):
+            raise TypeError("`dc_voltage_controller.port` must be a string.")
+        if ip_address is not None and not isinstance(ip_address, str):
+            raise TypeError("`dc_voltage_controller.ip_address` must be a string.")
+        if port is not None and ip_address is not None:
+            raise TypeError(
+                "Only one of `dc_voltage_controller.port` or "
+                "`dc_voltage_controller.ip_address` should be provided."
+            )
+        return DCVoltageControllerConfig(
+            driver=driver,
+            port=port,
+            ip_address=ip_address,
+        )
 
     def _resolve_wiring_file(self) -> str:
         """Resolve effective wiring file name for the current load."""

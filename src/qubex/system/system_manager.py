@@ -20,6 +20,10 @@ from qubex.backend.backend_controller import (
     BackendKind,
     SystemBackendController,
 )
+from qubex.backend.dc_voltage_controller import (
+    DCVoltageController,
+    create_dc_voltage_controller,
+)
 from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.constants import (
@@ -149,6 +153,7 @@ class SystemManager:
         self._experiment_system = None
         self._backend_kind: BackendKind = BACKEND_KIND_QUEL1
         self._backend_controller = self._create_backend_controller(self._backend_kind)
+        self._dc_voltage_controller = create_dc_voltage_controller()
         self._system_synchronizer = self._create_system_synchronizer(
             self._backend_controller,
             self._backend_kind,
@@ -172,6 +177,11 @@ class SystemManager:
     def backend_kind(self) -> BackendKind:
         """Return backend family selected for the current experiment session."""
         return self._backend_kind
+
+    @property
+    def dc_voltage_controller(self) -> DCVoltageController:
+        """Return configured DC voltage controller for the active system."""
+        return self._dc_voltage_controller
 
     def set_backend_kind(self, backend_kind: BackendKind) -> None:
         """
@@ -379,6 +389,9 @@ class SystemManager:
                 resolved_backend_kind,
             )
             self._backend_settings = BackendSettings()
+        self._dc_voltage_controller = create_dc_voltage_controller(
+            getattr(next_config_loader, "dc_voltage_controller_config", None)
+        )
         self._config_loader = next_config_loader
         self._mock_mode = mock_mode
         self._experiment_system = next_experiment_system

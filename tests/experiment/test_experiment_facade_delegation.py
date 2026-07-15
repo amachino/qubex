@@ -119,6 +119,24 @@ class _ExperimentContextStub:
     def register_custom_target(self, **kwargs: Any) -> None:
         self.calls.append(("register_custom_target", kwargs))
 
+    def set_jpa_dc_voltage(self, **kwargs: Any) -> None:
+        self.calls.append(("set_jpa_dc_voltage", kwargs))
+
+    def turn_off_jpa_dc(self, **kwargs: Any) -> None:
+        self.calls.append(("turn_off_jpa_dc", kwargs))
+
+    def jpa_dc_voltage(self, **kwargs: Any):
+        self.calls.append(("jpa_dc_voltage", {"enter": kwargs}))
+
+        class _Context:
+            def __enter__(_self) -> None:
+                return None
+
+            def __exit__(_self, *_: object) -> None:
+                self.calls.append(("jpa_dc_voltage", {"exit": kwargs}))
+
+        return _Context()
+
 
 class _SessionServiceStub:
     def __init__(self) -> None:
@@ -1041,4 +1059,54 @@ def test_register_custom_target_delegates_legacy_update_lsi_to_context() -> None
                 "update_backend_settings": True,
             },
         )
+    ]
+
+
+def test_set_jpa_dc_voltage_delegates_to_context() -> None:
+    """Given JPA DC voltage arguments, when called, then it delegates to context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.set_jpa_dc_voltage(0.76, mux=6, tolerance=1e-4)
+
+    assert context_stub.calls == [
+        (
+            "set_jpa_dc_voltage",
+            {"voltage": 0.76, "mux": 6, "tolerance": 1e-4},
+        )
+    ]
+
+
+def test_turn_off_jpa_dc_delegates_to_context() -> None:
+    """Given JPA DC off arguments, when called, then it delegates to context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.turn_off_jpa_dc(mux="MUX06")
+
+    assert context_stub.calls == [
+        ("turn_off_jpa_dc", {"mux": "MUX06"}),
+    ]
+
+
+def test_jpa_dc_voltage_context_delegates_to_context() -> None:
+    """Given JPA DC context arguments, when used, then it delegates to context."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    with exp.jpa_dc_voltage(0.5, mux=6, tolerance=1e-4):
+        pass
+
+    assert context_stub.calls == [
+        (
+            "jpa_dc_voltage",
+            {"enter": {"voltage": 0.5, "mux": 6, "tolerance": 1e-4}},
+        ),
+        (
+            "jpa_dc_voltage",
+            {"exit": {"voltage": 0.5, "mux": 6, "tolerance": 1e-4}},
+        ),
     ]

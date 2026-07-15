@@ -884,6 +884,44 @@ class Experiment:
         with self.ctx.modified_frequencies(frequencies):
             yield
 
+    def set_jpa_dc_voltage(
+        self,
+        voltage: float | None = None,
+        *,
+        mux: int | str | None = None,
+        tolerance: float = 1e-3,
+    ) -> None:
+        """Set JPA DC voltage for one mux through the configured controller."""
+        return self.ctx.set_jpa_dc_voltage(
+            voltage=voltage,
+            mux=mux,
+            tolerance=tolerance,
+        )
+
+    def turn_off_jpa_dc(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> None:
+        """Turn off JPA DC output for one mux."""
+        return self.ctx.turn_off_jpa_dc(mux=mux)
+
+    @contextmanager
+    def jpa_dc_voltage(
+        self,
+        voltage: float | None = None,
+        *,
+        mux: int | str | None = None,
+        tolerance: float = 1e-3,
+    ) -> Iterator[None]:
+        """Temporarily set JPA DC voltage for one mux."""
+        with self.ctx.jpa_dc_voltage(
+            voltage=voltage,
+            mux=mux,
+            tolerance=tolerance,
+        ):
+            yield
+
     def save_calib_note(
         self,
         file_path: Path | str | None = None,

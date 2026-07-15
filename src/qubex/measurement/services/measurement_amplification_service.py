@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 
-from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.system import ControlParameters, ExperimentSystem
 
@@ -54,5 +53,5 @@ class MeasurementAmplificationService:
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
         }
         voltages = {mux + 1: self.control_params.get_dc_voltage(mux) for mux in muxes}
-        with dc_voltage(voltages):
+        with self.context.system_manager.dc_voltage_controller.apply_voltages(voltages):
             yield
