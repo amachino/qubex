@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from qubex.experiment.experiment_util import ExperimentUtil
+from qubex.experiment.experiment_util import (
+    DEFAULT_BACKEND_SAMPLING_PERIOD_NS,
+    ExperimentUtil,
+)
 
 
 def test_discretize_time_range_uses_backend_sampling_period_by_default(
@@ -27,3 +30,23 @@ def test_discretize_time_range_uses_backend_sampling_period_by_default(
     )
 
     assert np.allclose(discretized, np.array([0.4, 0.8]))
+
+
+def test_resolve_sampling_period_uses_default_before_backend_selection(
+    monkeypatch,
+) -> None:
+    """Given no selected backend, when resolving sampling period, then the default is returned."""
+
+    class _SystemManager:
+        @property
+        def backend_controller(self) -> object:
+            raise RuntimeError("Backend controller is not initialized.")
+
+    monkeypatch.setattr(
+        "qubex.experiment.experiment_util.SystemManager.shared",
+        _SystemManager,
+    )
+
+    sampling_period = ExperimentUtil.resolve_sampling_period()
+
+    assert sampling_period == float(DEFAULT_BACKEND_SAMPLING_PERIOD_NS)
