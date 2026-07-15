@@ -14,7 +14,6 @@ from qubex.backend.quel1.compat.parallel_action_builder import (
     ClockHealthCheckOptions,
 )
 from qubex.backend.quel1.compat.qubecalib_protocols import SequencerProtocol
-from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
 from qubex.backend.quel1.compat.sequencer_execution_engine import (
     SequencerExecutionEngine,
 )
@@ -150,6 +149,8 @@ class Quel1ExecutionManager:
         interval_ns: int,
     ) -> Sequencer:
         """Create QuEL-1 sequencer instance from prepared execution payload."""
+        from qubex.backend.quel1.compat.sequencer import Quel1Sequencer
+
         return Quel1Sequencer(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
