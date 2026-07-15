@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import pytest
 
-import qubex.backend.quel1.managers.execution_manager as execution_manager_module
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.quel1 import Quel1ExecutionPayload
 from qubex.backend.quel1.managers.execution_manager import Quel1ExecutionManager
@@ -126,6 +125,8 @@ def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
     monkeypatch: Any,
 ) -> None:
     """Given manager sequencer creation, constructor receives driver and sysdb."""
+    import qubex.backend.quel1.compat.sequencer as sequencer_module
+
     created_kwargs: dict[str, Any] = {}
     fake_system = object()
     fake_sysdb = object()
@@ -143,7 +144,7 @@ def test_create_quel1_sequencer_passes_driver_for_constructor_compatibility(
         def quel1system(self) -> Any:
             return fake_system
 
-    monkeypatch.setattr(execution_manager_module, "Quel1Sequencer", _FakeSequencer)
+    monkeypatch.setattr(sequencer_module, "Quel1Sequencer", _FakeSequencer)
 
     class _ExecutionManager(Quel1ExecutionManager):
         def _execute_sequencer(self, **kwargs: Any) -> str:

@@ -50,7 +50,10 @@ class ExperimentUtil:
         """
         if isinstance(sampling_period, (int, float)):
             return float(sampling_period)
-        backend_controller = getattr(SystemManager.shared(), "backend_controller", None)
+        try:
+            backend_controller = SystemManager.shared().backend_controller
+        except RuntimeError:
+            backend_controller = None
         backend_sampling_period_ns = getattr(
             backend_controller,
             "sampling_period_ns",
