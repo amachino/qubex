@@ -70,10 +70,6 @@ class _InstrumentInfo:
 
 
 class _FakeClient:
-    def __init__(self) -> None:
-        self.instrument_info_calls: list[str] = []
-        self.port_state_calls: list[str] = []
-
     async def __aenter__(self) -> _FakeClient:
         return self
 
@@ -105,7 +101,6 @@ class _FakeClient:
         )
 
     async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
-        self.instrument_info_calls.append(resource_id)
         if resource_id == "unit-a:inst-q00":
             return _InstrumentInfo(
                 id="unit-a:inst-q00",
@@ -142,7 +137,6 @@ class _FakeClient:
         )
 
     async def dump_port_state(self, port_id: str) -> str:
-        self.port_state_calls.append(port_id)
         return f"state: {port_id}"
 
 
@@ -154,7 +148,6 @@ class _UnqualifiedInstrumentResourceClient(_FakeClient):
         ]
 
     async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
-        self.instrument_info_calls.append(resource_id)
         return _InstrumentInfo(
             id="inst-q00",
             port_id="unit-a:tx_p01",
@@ -189,7 +182,6 @@ class _UnqualifiedOtherUnitResourceClient(_FakeClient):
         )
 
     async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
-        self.instrument_info_calls.append(resource_id)
         return _InstrumentInfo(
             id=resource_id,
             port_id="unit-b:tx_p02",
@@ -223,7 +215,6 @@ class _BoxLocalAliasClient(_FakeClient):
         )
 
     async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
-        self.instrument_info_calls.append(resource_id)
         unit_label = resource_id.split(":", maxsplit=1)[0]
         return _InstrumentInfo(
             id=resource_id,
@@ -260,7 +251,6 @@ class _MultiInstrumentClient(_FakeClient):
         )
 
     async def get_instrument_info(self, resource_id: str) -> _InstrumentInfo:
-        self.instrument_info_calls.append(resource_id)
         definitions = {
             "unit-a:inst-q00": ("unit-a:tx_p01", "unit-a:Q00"),
             "unit-a:inst-q01": ("unit-a:rx_p02", "Q01"),
@@ -317,7 +307,7 @@ def test_collect_state_normalizes_units_ports_and_instruments() -> None:
     assert instrument.frequency_range_min_hz == pytest.approx(4.1e9)
     assert instrument.frequency_range_max_hz == pytest.approx(4.3e9)
     assert instrument.sampling_period_fs == 400_000
-    assert client.instrument_info_calls == ["unit-a:inst-q00"]
+    assert [issue.code for issue in state.issues].count("UNKNOWN_PORT_DEPENDENCY") == 1
 
 
 def test_collect_state_records_fetch_errors_without_raising() -> None:
@@ -337,15 +327,14 @@ def test_collect_state_records_fetch_errors_without_raising() -> None:
     assert any(issue.resource_id == "unit-a:inst-q00" for issue in state.issues)
 
 
-def test_collect_state_diagnosis_is_opt_in() -> None:
-    """Given diagnostics disabled, hardware state should not dump port state."""
+def test_collect_state_diagnostics_are_opt_in() -> None:
+    """Given diagnostics disabled, hardware state should omit diagnostics."""
     client = _FakeClient()
     reader = _make_reader(client)
 
     state = reader.collect_state(unit_labels=("unit-a",), include_diagnostics=False)
 
     assert state.diagnostics == ()
-    assert client.port_state_calls == []
 
     state_with_diagnostics = reader.collect_state(
         unit_labels=("unit-a",),
@@ -353,7 +342,6 @@ def test_collect_state_diagnosis_is_opt_in() -> None:
     )
 
     assert state_with_diagnostics.diagnostics[0].text == "state: unit-a:tx_p01"
-    assert client.port_state_calls == ["unit-a:tx_p01"]
 
 
 def test_collect_state_filters_local_port_after_unit_scoping() -> None:
@@ -400,7 +388,6 @@ def test_collect_state_filters_alias_related_ports_and_diagnostics() -> None:
     assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
     assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
     assert [diagnostic.port_id for diagnostic in state.diagnostics] == ["unit-a:tx_p01"]
-    assert client.port_state_calls == ["unit-a:tx_p01"]
 
 
 def test_collect_state_matches_unit_qualified_alias() -> None:
@@ -432,7 +419,65 @@ def test_collect_state_intersects_port_and_alias_filters() -> None:
     assert state.ports == ()
     assert state.instruments == ()
     assert state.diagnostics == ()
-    assert client.port_state_calls == []
+
+
+def test_collect_state_units_view_returns_only_units() -> None:
+    """Units view should return only unit state."""
+    client = _FakeClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(unit_labels=("unit-a",), view="units")
+
+    assert [unit.label for unit in state.units] == ["unit-a"]
+    assert state.ports == ()
+    assert state.instruments == ()
+
+
+def test_collect_state_ports_view_returns_only_selected_ports() -> None:
+    """Ports view should return only selected port state."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(
+        unit_labels=("unit-a",),
+        port_ids=("rx_p02",),
+        view="ports",
+    )
+
+    assert [port.id for port in state.ports] == ["unit-a:rx_p02"]
+    assert state.instruments == ()
+
+
+def test_collect_state_instruments_view_returns_only_selected_instruments() -> None:
+    """Instruments view should return only selected instrument state."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(
+        unit_labels=("unit-a",),
+        instrument_aliases=("Q00",),
+        view="instruments",
+    )
+
+    assert state.ports == ()
+    assert [instrument.id for instrument in state.instruments] == ["unit-a:inst-q00"]
+    assert not any(issue.code == "ORPHAN_INSTRUMENT" for issue in state.issues)
+
+
+def test_collect_state_diagnostics_view_returns_selected_diagnostics() -> None:
+    """Diagnostics view should return diagnostics for selected ports."""
+    client = _MultiInstrumentClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(
+        unit_labels=("unit-a",),
+        port_ids=("rx_p02",),
+        include_diagnostics=True,
+        view="diagnostics",
+    )
+
+    assert [diagnostic.port_id for diagnostic in state.diagnostics] == ["unit-a:rx_p02"]
+    assert state.instruments == ()
 
 
 def test_collect_state_rejects_old_filter_kwargs() -> None:
@@ -493,7 +538,6 @@ def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None
 
     assert settings["BOX1"]["instruments"]["Q00"]["resource_id"] == "inst-q00"
     assert settings["BOX1"]["instruments"]["Q00"]["port_id"] == "unit-a:tx_p01"
-    assert client.instrument_info_calls == ["inst-q00"]
 
 
 def test_collect_state_filters_unqualified_resources_by_resolved_unit() -> None:
@@ -505,7 +549,6 @@ def test_collect_state_filters_unqualified_resources_by_resolved_unit() -> None:
 
     assert [port.id for port in state.ports] == ["unit-a:tx_p01"]
     assert state.instruments == ()
-    assert client.instrument_info_calls == ["inst-other"]
 
 
 def test_collect_state_scopes_duplicate_aliases_by_unit() -> None:

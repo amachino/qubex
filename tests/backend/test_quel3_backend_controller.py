@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 from rich.console import Console
 
-import qubex.backend.quel3.quel3_backend_controller as quel3_backend_controller_module
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.backend_controller import BackendController
 from qubex.backend.quel1 import Quel1BackendController
@@ -253,7 +252,7 @@ def test_get_hardware_state_rejects_old_filter_kwargs() -> None:
         cast(Any, controller).get_hardware_state(diagnostic_port_ids=("unit-a:tx_p01",))
 
 
-def test_print_hardware_state_renders_with_rich_console(
+def test_print_hardware_state_collects_view_and_delegates_to_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given hardware state, controller should print a Rich hardware-state view."""
@@ -268,24 +267,21 @@ def test_print_hardware_state_renders_with_rich_console(
         diagnostics=(),
         issues=(),
     )
+    hardware_state_reader = _FakeHardwareStateReader(state)
     controller = Quel3BackendController(
-        hardware_state_reader=cast(Any, _FakeHardwareStateReader(state))
+        hardware_state_reader=cast(Any, hardware_state_reader)
     )
-    output = StringIO()
-
-    def _console_factory(*, highlight: bool) -> Console:
-        assert highlight is False
-        return Console(file=output, force_terminal=False, width=120)
-
+    printed_views: list[str] = []
     monkeypatch.setattr(
-        quel3_backend_controller_module,
-        "Console",
-        _console_factory,
+        Quel3HardwareState,
+        "print",
+        lambda self, *, view: printed_views.append(view),
     )
 
     controller.print_hardware_state(view="summary")
 
-    assert "QuEL-3 hardware state" in output.getvalue()
+    assert hardware_state_reader.last_collect_kwargs["view"] == "summary"
+    assert printed_views == ["summary"]
 
 
 def test_print_hardware_state_rejects_console_kwarg() -> None:
