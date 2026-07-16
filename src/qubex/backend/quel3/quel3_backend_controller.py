@@ -224,6 +224,7 @@ class Quel3BackendController(BackendController):
             parallel=parallel,
         )
         self._configuration_manager.clear_instrument_cache()
+        self._execution_manager.invalidate_instrument_resolver()
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""
@@ -236,10 +237,12 @@ class Quel3BackendController(BackendController):
         parallel: bool = True,
     ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
         """Deploy QuEL-3 instruments for the provided requests."""
-        return self._configuration_manager.deploy_instruments(
+        deployed = self._configuration_manager.deploy_instruments(
             requests=requests,
             parallel=parallel,
         )
+        self._execution_manager.invalidate_instrument_resolver()
+        return deployed
 
     def get_hardware_state(
         self,

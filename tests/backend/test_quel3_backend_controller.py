@@ -605,7 +605,9 @@ def test_constructor_accepts_injected_session_manager() -> None:
     assert controller.session_manager is session_manager
 
 
-def test_connect_clears_existing_instrument_cache() -> None:
+def test_connect_clears_existing_instrument_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """QuEL-3 connect should clear instrument mappings without refreshing them."""
     calls: list[str] = []
     connection_manager = SimpleNamespace(
@@ -619,15 +621,22 @@ def test_connect_clears_existing_instrument_cache() -> None:
         connection_manager=cast(Any, connection_manager),
         configuration_manager=configuration_manager,
     )
+    monkeypatch.setattr(
+        controller.execution_manager,
+        "invalidate_instrument_resolver",
+        lambda: calls.append("invalidate-resolver"),
+    )
 
     controller.connect(["BOX1"])
 
-    assert calls == ["connect"]
+    assert calls == ["connect", "invalidate-resolver"]
     assert controller.last_deployed_instrument_infos == {}
     assert controller.target_alias_map == {}
 
 
-def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() -> None:
+def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Given parallel override, controller deploy_instruments should forward it."""
     captured: dict[str, object] = {}
 
@@ -650,6 +659,12 @@ def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() ->
             ),
         )
     )
+    invalidation_calls: list[str] = []
+    monkeypatch.setattr(
+        controller.execution_manager,
+        "invalidate_instrument_resolver",
+        lambda: invalidation_calls.append("invalidate-resolver"),
+    )
     requests = (
         SimpleNamespace(
             port_id="quel3-02-a01:tx_p02",
@@ -665,6 +680,7 @@ def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() ->
 
     assert result == {"Q00": ()}
     assert captured == {"requests": requests, "parallel": False}
+    assert invalidation_calls == ["invalidate-resolver"]
 
 
 def test_constructor_does_not_infer_runtime_config_from_injected_managers() -> None:
@@ -1354,7 +1370,7 @@ def test_execute_recreates_session_after_transient_request_failure(
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
-    resolver = _FakeInstrumentResolver(
+    resolver = _CountingInstrumentResolver(
         alias_to_info={
             "alias-rq00": _FakeInstrumentInfo(
                 port_id="quel3-02-a01:trx_p00",
@@ -1402,6 +1418,7 @@ def test_execute_recreates_session_after_transient_request_failure(
     )
 
     assert len(clients) == 2
+    assert resolver.refresh_calls == 2
     assert [client.exit_calls for client in clients] == [1, 1]
     assert [session.exit_calls for session in sessions] == [1, 1]
     assert sessions[0].trigger_calls == [["alias-rq00"]]
@@ -1961,6 +1978,72 @@ def test_execute_batch_async_reopens_session_per_payload(
     assert len(session.trigger_calls) == 2
     assert len(driver.apply_calls) == 2
     assert len(results) == 2
+
+
+def test_execute_async_reuses_resolver_until_invalidated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Executions should reuse resolution while keeping resources call-scoped."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        runtime_config=Quel3RuntimeConfig(),
+        sampling_period_ns=0.4,
+        capture_decimation_factor=1,
+    )
+    resolvers: list[_CountingInstrumentResolver] = []
+    clients: list[_FakeClient] = []
+    sessions: list[_FakeSession] = []
+
+    def _create_resolver() -> _CountingInstrumentResolver:
+        resolver = _CountingInstrumentResolver(
+            alias_to_info={
+                "alias-rq00": _FakeInstrumentInfo(
+                    port_id="quel3-02-a01:trx_p00",
+                    definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                )
+            }
+        )
+        resolvers.append(resolver)
+        return resolver
+
+    def _create_client(endpoint: str, port: int) -> _FakeClient:
+        del endpoint, port
+        session = _FakeSession()
+        sessions.append(session)
+        client = _FakeClient(session)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=_create_client,
+            instrument_resolver_factory=_create_resolver,
+            fixed_timeline_driver_factory=lambda _session, _instrument_info: (
+                _FakeInstrumentDriver()
+            ),
+        ),
+    )
+
+    async def _execute_around_invalidation() -> None:
+        request = BackendExecutionRequest(payload=payload)
+        await manager.execute_async(request=request)
+        await manager.execute_async(request=request)
+        manager.invalidate_instrument_resolver()
+        await manager.execute_async(request=request)
+
+    asyncio.run(_execute_around_invalidation())
+
+    assert len(resolvers) == 2
+    assert [resolver.refresh_calls for resolver in resolvers] == [1, 1]
+    assert len(clients) == 3
+    assert [client.exit_calls for client in clients] == [1, 1, 1]
+    assert [session.trigger_calls for session in sessions] == [
+        [["alias-rq00"]],
+        [["alias-rq00"]],
+        [["alias-rq00"]],
+    ]
 
 
 def test_execute_serializes_driver_phases_when_parallel_disabled(
