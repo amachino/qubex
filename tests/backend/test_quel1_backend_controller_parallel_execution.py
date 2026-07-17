@@ -21,6 +21,36 @@ from qubex.backend.quel1.quel1_backend_execution_result import (
 from qubex.backend.quel1.quel1_execution_payload import Quel1ExecutionPayload
 
 
+def test_measurement_options_restore_default_classification_lines() -> None:
+    """Classification without explicit lines should use defaults for every target."""
+
+    class _Sequencer:
+        interval = 256
+
+        def __init__(self) -> None:
+            self.cap_sampled_sequence = {"RQ00": object(), "RQ01": object()}
+
+        def set_measurement_option(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    sequencer = _Sequencer()
+
+    SequencerExecutionEngine.set_measurement_options(
+        sequencer=cast(Any, sequencer),
+        repeats=16,
+        integral_mode="single",
+        dsp_demodulation=True,
+        software_demodulation=False,
+        enable_sum=True,
+        enable_classification=True,
+    )
+
+    lines = cast(dict[str, Any], sequencer.kwargs["classification_lines"])
+    assert set(lines) == {"RQ00", "RQ01"}
+    assert lines["RQ00"].line0 == (1.0, 0.0, 0.0)
+    assert lines["RQ00"].line1 == (0.0, 1.0, 0.0)
+
+
 def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> None:
     """Given parallel mode, when executing through execution manager, then engine result is wrapped in backend result."""
 

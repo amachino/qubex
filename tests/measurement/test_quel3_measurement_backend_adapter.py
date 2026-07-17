@@ -26,6 +26,7 @@ from qubex.measurement.models import (
     MeasurementConfig,
     MeasurementResult,
     MeasurementSchedule,
+    ReturnItem,
 )
 from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.pulse import Arbitrary, PulseArray
@@ -137,13 +138,15 @@ def _make_config(
     mode: MeasurementMode = "avg",
     shots: int = 16,
     time_integration: bool = False,
+    state_classification: bool = False,
 ) -> MeasurementConfig:
     return MeasurementConfig(
         n_shots=shots,
         shot_interval=100.0,
         shot_averaging=(mode == "avg"),
         time_integration=time_integration,
-        state_classification=False,
+        state_classification=state_classification,
+        backend_kind="quel3",
     )
 
 
@@ -900,7 +903,7 @@ def test_quel3_adapter_build_measurement_result_squeezes_avg_mode_waveform() -> 
 
 
 def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> None:
-    """Given integrated single-shot data, adapter conversion should expose one IQ value per shot."""
+    """QuEL-3 VALUES_PER_ITER should remain IQ data with classification enabled."""
     target = "RQ00"
     alias = "alias-RQ00"
     schedule = MeasurementSchedule.model_construct(
@@ -923,7 +926,12 @@ def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> 
             ]
         ),
     )
-    config = _make_config(mode="single", shots=2, time_integration=True)
+    config = _make_config(
+        mode="single",
+        shots=2,
+        time_integration=True,
+        state_classification=True,
+    )
     backend_result = Quel3BackendExecutionResult(
         status={},
         data={
@@ -954,6 +962,7 @@ def test_quel3_adapter_build_measurement_result_normalizes_iq_series_to_1d() -> 
         sampling_period=1.0,
     )
 
+    assert result.measurement_config.primary_return_item == ReturnItem.IQ_SERIES
     assert np.array_equal(
         result.data["Q00"][0].data,
         np.array([8.0 + 4.0j, 12.0 + 6.0j], dtype=np.complex128),

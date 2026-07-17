@@ -172,6 +172,7 @@ class MeasurementExecutionService:
         """Return a measurement-config factory."""
         return MeasurementConfigFactory(
             experiment_system=self.experiment_system,
+            backend_kind=getattr(self.system_manager, "backend_kind", None),
         )
 
     @property

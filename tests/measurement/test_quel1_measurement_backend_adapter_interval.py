@@ -270,6 +270,7 @@ def test_build_execution_request_scales_gmm_linear_line_constants(monkeypatch) -
         time_integration=True,
         state_classification=True,
         classification_source="gmm_linear",
+        backend_kind="quel1",
     )
 
     request = adapter.build_execution_request(
@@ -339,6 +340,7 @@ def test_build_execution_request_scales_gmm_linear_line_constants_without_demodu
         time_integration=True,
         state_classification=True,
         classification_source="gmm_linear",
+        backend_kind="quel1",
     )
 
     request = adapter.build_execution_request(

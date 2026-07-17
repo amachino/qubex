@@ -230,20 +230,21 @@ def test_to_measure_result_propagates_sampling_period() -> None:
 
 
 def test_converter_does_not_attach_classifier_to_state_series(dummy_classifier) -> None:
-    """Given raw DSP state payloads, legacy conversion should keep classifier unset."""
+    """Raw DSP state conversion should post-select disagreeing line outputs."""
     config = MeasurementConfig(
         n_shots=4,
         shot_interval=100.0,
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
+        backend_kind="quel1",
     )
     result = MeasurementResult(
         data={
             "Q00": [
                 _make_capture(
                     target="Q00",
-                    raw=np.array([0, 3, 0, 3], dtype=np.uint8),
+                    raw=np.array([0, 1, 2, 3], dtype=np.uint8),
                     measurement_config=config,
                     sampling_period=0.4,
                 )
@@ -263,9 +264,11 @@ def test_converter_does_not_attach_classifier_to_state_series(dummy_classifier) 
 
     assert multiple.data["Q00"][0].classifier is None
     assert single.data["Q00"].classifier is None
-    assert multiple.get_counts() == {"0": 2, "1": 2}
-    assert single.data["Q00"].classified.tolist() == [0, 1, 0, 1]
-    assert single.get_counts() == {"0": 2, "1": 2}
+    assert multiple.data["Q00"][0].raw.tolist() == [0, 1, 2, 3]
+    assert single.data["Q00"].classified.tolist() == [0, -1, -1, 1]
+    assert single.data["Q00"].counts == {"0": 1, "1": 1}
+    assert multiple.get_counts() == {"0": 1, "1": 1}
+    assert single.get_counts() == {"0": 1, "1": 1}
 
 
 def test_json_roundtrip_preserves_capture_data() -> None:
@@ -767,6 +770,7 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
+        backend_kind="quel1",
         return_items=(ReturnItem.STATE_SERIES, ReturnItem.IQ_SERIES),
     )
     raw = np.array([0, 1], dtype=np.uint8)

@@ -6,6 +6,7 @@ from enum import Enum
 
 from pydantic import model_validator
 
+from qubex.backend import BackendKind
 from qubex.core import Model
 
 
@@ -28,6 +29,7 @@ class MeasurementConfig(Model):
     time_integration: bool
     state_classification: bool
     classification_source: str | None = None
+    backend_kind: BackendKind | None = None
     return_items: tuple[ReturnItem, ...] = ()
 
     @model_validator(mode="after")
@@ -40,6 +42,10 @@ class MeasurementConfig(Model):
             if self.classification_source != "gmm_linear":
                 raise ValueError(
                     "classification_source must be `gmm_linear` when provided."
+                )
+            if self.backend_kind != "quel1":
+                raise ValueError(
+                    "classification_source='gmm_linear' requires backend_kind='quel1'."
                 )
             if not self.state_classification:
                 raise ValueError(
@@ -132,8 +138,9 @@ class MeasurementConfig(Model):
 
     def _uses_dsp_state_series(self) -> bool:
         """Return whether the backend primary payload is DSP-classified states."""
-        return self.classification_source == "gmm_linear" or (
-            self.state_classification
+        return (
+            self.backend_kind == "quel1"
+            and self.state_classification
             and not self.shot_averaging
             and self.time_integration
         )

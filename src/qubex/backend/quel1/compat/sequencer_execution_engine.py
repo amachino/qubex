@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from logging import Logger
 from typing import Any, TypeAlias
 
@@ -36,6 +36,24 @@ RunitSettingFactory: TypeAlias = Callable[..., RunitSettingProtocol]
 RunitIdFactory: TypeAlias = Callable[..., RunitIdProtocol]
 AwgSettingFactory: TypeAlias = Callable[..., AwgSettingProtocol]
 AwgIdFactory: TypeAlias = Callable[..., AwgIdProtocol]
+
+
+def _default_classification_lines(targets: Collection[str]) -> dict[str, Any]:
+    """Build the legacy default classification-line pair for each target."""
+    try:
+        from qxdriver_quel1.classification import ClassificationLineSet
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Default DSP classification lines require qxdriver_quel1 "
+            "classification support."
+        ) from exc
+    return {
+        target: ClassificationLineSet(
+            line0=(1.0, 0.0, 0.0),
+            line1=(0.0, 1.0, 0.0),
+        )
+        for target in targets
+    }
 
 
 class SequencerExecutionEngine:
@@ -91,6 +109,10 @@ class SequencerExecutionEngine:
             Whether to enable DSP summation.
         enable_classification : bool
             Whether to enable DSP classification.
+        classification_lines : Any | None
+            Per-target classification-line pairs. When classification is enabled
+            and this is omitted, the legacy default pair is used for each capture
+            target.
 
         Examples
         --------
@@ -104,6 +126,10 @@ class SequencerExecutionEngine:
         ...     enable_classification=False,
         ... )
         """
+        if enable_classification and classification_lines is None:
+            classification_lines = _default_classification_lines(
+                sequencer.cap_sampled_sequence.keys()
+            )
         sequencer.set_measurement_option(
             repeats=repeats,
             interval=sequencer.interval,

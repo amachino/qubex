@@ -241,6 +241,7 @@ def test_build_measurement_result_treats_manual_dsp_classification_as_state_seri
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
+        backend_kind="quel1",
     )
 
     result = adapter.build_measurement_result(

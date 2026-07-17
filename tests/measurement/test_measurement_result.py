@@ -130,16 +130,16 @@ def test_measure_data_classifies_raw_dsp_bits_without_classifier() -> None:
     assert data.counts == {"0": 2, "1": 2}
 
 
-def test_measure_data_rejects_invalid_raw_dsp_bits() -> None:
-    """MeasureData should reject non 0/3 raw DSP classification payloads."""
+def test_measure_data_rejects_raw_dsp_bits_outside_two_bit_range() -> None:
+    """MeasureData should reject raw DSP values outside the packed output range."""
     data = MeasureData(
         target="Q00",
         mode=MeasureMode.SINGLE,
-        raw=np.array([0, 1, 3], dtype=np.uint8),
+        raw=np.array([0, 4, 3], dtype=np.uint8),
         classifier=None,
     )
 
-    with pytest.raises(ValueError, match="only 0 or 3"):
+    with pytest.raises(ValueError, match="packed two-bit values"):
         _ = data.classified
 
 
