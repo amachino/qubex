@@ -234,12 +234,13 @@ class Quel3BackendController(BackendController):
         parallel: bool = True,
     ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
         """Deploy QuEL-3 instruments for the provided requests."""
-        deployed = self._configuration_manager.deploy_instruments(
-            requests=requests,
-            parallel=parallel,
-        )
-        self._execution_manager.invalidate_instrument_resolver()
-        return deployed
+        try:
+            return self._configuration_manager.deploy_instruments(
+                requests=requests,
+                parallel=parallel,
+            )
+        finally:
+            self._execution_manager.invalidate_instrument_resolver()
 
     def get_hardware_state(
         self,

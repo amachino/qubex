@@ -679,6 +679,33 @@ def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager(
     assert invalidation_calls == ["invalidate-resolver"]
 
 
+def test_deploy_instruments_invalidates_resolution_when_deployment_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given failed deployment, controller should invalidate instrument resolution."""
+    controller = Quel3BackendController()
+    invalidation_calls: list[str] = []
+
+    def _raise_deployment_error(**_: object) -> None:
+        raise RuntimeError("deployment failed")
+
+    monkeypatch.setattr(
+        controller.configuration_manager,
+        "deploy_instruments",
+        _raise_deployment_error,
+    )
+    monkeypatch.setattr(
+        controller.execution_manager,
+        "invalidate_instrument_resolver",
+        lambda: invalidation_calls.append("invalidate-resolver"),
+    )
+
+    with pytest.raises(RuntimeError, match="deployment failed"):
+        controller.deploy_instruments(requests=())
+
+    assert invalidation_calls == ["invalidate-resolver"]
+
+
 def test_constructor_does_not_infer_runtime_config_from_injected_managers() -> None:
     """Given injected managers, controller runtime config should stay explicit."""
     connection_manager = SimpleNamespace(
