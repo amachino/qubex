@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from logging import Logger
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 from qubex.backend.quel1.compat.qubecalib_protocols import (
     ActionProtocol,
@@ -57,8 +57,6 @@ class SequencerExecutionEngine:
     ...     software_demodulation=False,
     ...     enable_sum=False,
     ...     enable_classification=False,
-    ...     line_param0=None,
-    ...     line_param1=None,
     ... )
     """
 
@@ -72,8 +70,7 @@ class SequencerExecutionEngine:
         software_demodulation: bool,
         enable_sum: bool,
         enable_classification: bool,
-        line_param0: tuple[float, float, float] | None,
-        line_param1: tuple[float, float, float] | None,
+        classification_lines: Any | None = None,
     ) -> None:
         """
         Configure sequencer measurement options with stable defaults.
@@ -94,10 +91,6 @@ class SequencerExecutionEngine:
             Whether to enable DSP summation.
         enable_classification : bool
             Whether to enable DSP classification.
-        line_param0 : tuple[float, float, float] | None
-            Classifier line parameter 0. If `None`, `(1, 0, 0)` is used.
-        line_param1 : tuple[float, float, float] | None
-            Classifier line parameter 1. If `None`, `(0, 1, 0)` is used.
 
         Examples
         --------
@@ -109,14 +102,8 @@ class SequencerExecutionEngine:
         ...     software_demodulation=False,
         ...     enable_sum=False,
         ...     enable_classification=False,
-        ...     line_param0=(1.0, 0.0, 0.0),
-        ...     line_param1=(0.0, 1.0, 0.0),
         ... )
         """
-        if line_param0 is None:
-            line_param0 = (1, 0, 0)
-        if line_param1 is None:
-            line_param1 = (0, 1, 0)
         sequencer.set_measurement_option(
             repeats=repeats,
             interval=sequencer.interval,
@@ -125,8 +112,7 @@ class SequencerExecutionEngine:
             software_demodulation=software_demodulation,
             enable_sum=enable_sum,
             enable_classification=enable_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            classification_lines=classification_lines,
         )
 
     @staticmethod

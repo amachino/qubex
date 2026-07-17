@@ -54,6 +54,7 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
         "execute_parallel",
         staticmethod(_fake_execute_parallel),
     )
+    classification_lines = {"RQ00": object()}
 
     result = asyncio.run(
         execution_manager.execute_async(
@@ -68,8 +69,7 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
                     dsp_demodulation=True,
                     enable_sum=False,
                     enable_classification=False,
-                    line_param0=(1.0, 0.0, 0.0),
-                    line_param1=(0.0, 1.0, 0.0),
+                    classification_lines=classification_lines,
                 ),
             ),
             execution_mode="parallel",
@@ -83,6 +83,7 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
     assert called["sequencer"] is sequencer
     assert called["boxpool"] is controller.boxpool
     assert called["system"] is controller.quel1system
+    assert sequencer.kwargs["classification_lines"] is classification_lines
 
 
 def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> None:

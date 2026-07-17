@@ -689,6 +689,22 @@ class ExperimentContext:
         return result
 
     @property
+    def state_stddevs(self) -> dict[str, dict[int, float]]:
+        """Return GMM state standard deviations from calibration notes."""
+        result = {}
+        for target in self.qubit_labels:
+            param = self.calib_note.get_state_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
+            if param is not None and "stddevs" in param:
+                result[target] = {
+                    int(state): float(stddev)
+                    for state, stddev in param["stddevs"].items()
+                }
+        return result
+
+    @property
     def configuration_mode(self) -> ConfigurationMode:
         """Return the configuration mode."""
         return self._configuration_mode

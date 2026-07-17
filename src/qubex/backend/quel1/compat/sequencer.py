@@ -146,8 +146,7 @@ class Quel1Sequencer(Sequencer):
             software_demodulation=self.software_demodulation,
             enable_sum=self.enable_sum,
             enable_classification=self.enable_classification,
-            line_param0=self.line_param0,
-            line_param1=self.line_param1,
+            classification_lines=self.classification_lines,
         )
         gen_e7_settings = driver.Converter.convert_to_gen_device_specific_sequence(
             gen_sampled_sequence=self.gen_sampled_sequence,

@@ -113,8 +113,8 @@ def test_generate_e7_settings_uses_boxpool_port_config_path(monkeypatch: Any) ->
     sequencer.software_demodulation = False
     sequencer.enable_sum = False
     sequencer.enable_classification = False
-    sequencer.line_param0 = (1.0, 0.0, 0.0)
-    sequencer.line_param1 = (0.0, 1.0, 0.0)
+    classification_lines = {"RQ00": object()}
+    sequencer.classification_lines = classification_lines
 
     cap_settings, gen_settings, cap_resource_map = cast(
         Any, sequencer
@@ -125,5 +125,6 @@ def test_generate_e7_settings_uses_boxpool_port_config_path(monkeypatch: Any) ->
     assert cap_resource_map["RQ00"]["port"].port == 0
     assert _FakeConverter.cap_kwargs["resource_map"]["RQ00"]["port"].port == 0
     assert _FakeConverter.gen_kwargs["resource_map"]["RQ00"]["port"].port == 1
+    assert _FakeConverter.cap_kwargs["classification_lines"] is classification_lines
     assert {call["port"] for call in _FakePortConfigAcquirer.calls} == {0, 1}
     assert all("driver" not in call for call in _FakePortConfigAcquirer.calls)

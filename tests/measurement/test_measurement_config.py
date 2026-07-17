@@ -53,6 +53,7 @@ def test_factory_applies_context_defaults() -> None:
     assert config.shot_averaging is True
     assert config.time_integration is True
     assert config.state_classification is False
+    assert config.classification_source is None
 
 
 def test_factory_applies_measurement_defaults_overrides() -> None:
@@ -132,7 +133,7 @@ def test_factory_rejects_frequency_overrides() -> None:
 
 
 def test_model_populates_return_items_from_flags() -> None:
-    """Given legacy booleans, model should infer return items."""
+    """Given DSP single-shot classification flags, model should infer state returns."""
     config = MeasurementConfig(
         n_shots=4,
         shot_interval=100.0,
@@ -141,10 +142,8 @@ def test_model_populates_return_items_from_flags() -> None:
         state_classification=True,
     )
 
-    assert tuple(config.return_items) == (
-        ReturnItem.IQ_SERIES,
-        ReturnItem.STATE_SERIES,
-    )
+    assert config.primary_return_item == ReturnItem.STATE_SERIES
+    assert tuple(config.return_items) == (ReturnItem.STATE_SERIES,)
 
 
 def test_model_rejects_return_items_conflicting_with_flags() -> None:
@@ -171,3 +170,65 @@ def test_model_rejects_duplicate_return_items() -> None:
             state_classification=False,
             return_items=(ReturnItem.WAVEFORM_SERIES, ReturnItem.WAVEFORM_SERIES),
         )
+
+
+def test_model_gmm_linear_classification_forces_state_series_return_item() -> None:
+    """Given gmm_linear classification, model should use state-series payloads only."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        classification_source="gmm_linear",
+    )
+
+    assert config.primary_return_item == ReturnItem.STATE_SERIES
+    assert tuple(config.return_items) == (ReturnItem.STATE_SERIES,)
+
+
+def test_model_rejects_invalid_gmm_linear_flag_combinations() -> None:
+    """Given invalid flags, gmm_linear classification config validation should fail."""
+    with pytest.raises(ValidationError, match="requires shot_averaging=False"):
+        _ = MeasurementConfig(
+            n_shots=4,
+            shot_interval=100.0,
+            shot_averaging=True,
+            time_integration=True,
+            state_classification=True,
+            classification_source="gmm_linear",
+        )
+
+    with pytest.raises(ValidationError, match="requires time_integration=True"):
+        _ = MeasurementConfig(
+            n_shots=4,
+            shot_interval=100.0,
+            shot_averaging=False,
+            time_integration=False,
+            state_classification=True,
+            classification_source="gmm_linear",
+        )
+
+
+def test_factory_forwards_classification_source() -> None:
+    """Given classification_source, factory should persist it on the built config."""
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    factory = MeasurementConfigFactory(
+        experiment_system=cast(ExperimentSystem, experiment_system)
+    )
+
+    config = factory.create(
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        classification_source="gmm_linear",
+    )
+
+    assert config.classification_source == "gmm_linear"

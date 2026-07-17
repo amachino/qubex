@@ -15,7 +15,7 @@ from .models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
-from .models.measurement_config import MeasurementConfig
+from .models.measurement_config import MeasurementConfig, ReturnItem
 from .models.measurement_result import MeasurementResult
 
 
@@ -38,6 +38,16 @@ class MeasurementResultConverter:
     def _resolve_capture_mode(capture: CaptureData) -> MeasureMode:
         """Resolve legacy measure mode from capture-level config."""
         return MeasureMode.AVG if capture.config.shot_averaging else MeasureMode.SINGLE
+
+    @staticmethod
+    def _resolve_legacy_classifier(
+        capture: CaptureData,
+        classifier: StateClassifier | None,
+    ) -> StateClassifier | None:
+        """Return the legacy classifier to attach for one capture payload."""
+        if capture.config.primary_return_item == ReturnItem.STATE_SERIES:
+            return None
+        return classifier
 
     @staticmethod
     def from_multiple(
@@ -112,9 +122,6 @@ class MeasurementResultConverter:
         else:
             resolved_config = config
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {
-            target: classifier_map.get(target) for target in result.data
-        }
         legacy_data: dict[str, list[MeasureData]] = {}
         for target, captures in result.data.items():
             legacy_captures = [
@@ -122,7 +129,10 @@ class MeasurementResultConverter:
                     target=target,
                     mode=mode,
                     raw=np.asarray(capture.data),
-                    classifier=resolved_classifiers.get(target),
+                    classifier=MeasurementResultConverter._resolve_legacy_classifier(
+                        capture,
+                        classifier_map.get(target),
+                    ),
                     sampling_period=(
                         sampling_period
                         if sampling_period is not None
@@ -180,9 +190,6 @@ class MeasurementResultConverter:
             If `index` is out of range for any target.
         """
         classifier_map = {} if classifiers is None else classifiers
-        resolved_classifiers: dict[str, StateClassifier | None] = {
-            target: classifier_map.get(target) for target in result.data
-        }
         single_data: dict[str, MeasureData] = {}
         resolved_mode: MeasureMode | None = None
         for target, captures in result.data.items():
@@ -205,7 +212,10 @@ class MeasurementResultConverter:
                 target=target,
                 mode=selected_mode,
                 raw=np.asarray(selected_capture.data),
-                classifier=resolved_classifiers.get(target),
+                classifier=MeasurementResultConverter._resolve_legacy_classifier(
+                    selected_capture,
+                    classifier_map.get(target),
+                ),
                 sampling_period=(
                     sampling_period
                     if sampling_period is not None

@@ -159,6 +159,7 @@ def test_update_state_param(tmp_path):
         {
             "target": "Q00",
             "centers": {"0": [0.5, 0.5], "1": [0.5, 0.5]},
+            "stddevs": {"0": 0.0, "1": 0.0},
             "reference_phase": 0.0,
         },
     )

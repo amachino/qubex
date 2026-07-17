@@ -1323,6 +1323,57 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
+def test_measure_preserves_default_time_integration_for_gmm_linear() -> None:
+    """GMM classification should let execute resolve an unspecified integration flag."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+    multiple = _make_multiple_result()
+    called: dict[str, Any] = {}
+
+    def fake_execute(
+        self: MeasurementExecutionService, **kwargs: object
+    ) -> MultipleMeasureResult:
+        called["kwargs"] = kwargs
+        return multiple
+
+    measurement.execution_service.execute = MethodType(
+        fake_execute,
+        measurement.execution_service,
+    )
+
+    measurement.measure(
+        waveforms={"Q00": np.array([0.0 + 0.0j])},
+        classification_source="gmm_linear",
+        classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
+        classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
+    )
+
+    assert called["kwargs"]["time_integration"] is None
+
+
+def test_execute_rejects_explicitly_disabled_gmm_time_integration() -> None:
+    """GMM classification should continue rejecting an explicit False value."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+
+    with pytest.raises(ValueError, match="requires time_integration=True"):
+        measurement.execute(
+            schedule={"Q00": np.array([0.0 + 0.0j])},
+            time_integration=False,
+            classification_source="gmm_linear",
+            classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
+            classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
+        )
+
+
 def test_measure_accepts_deprecated_alias_options() -> None:
     """Given deprecated alias options, when measure is called, then it forwards them for compatibility."""
     measurement = Measurement(
@@ -1508,8 +1559,9 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
             config: MeasurementConfig,
             quel1_options: Quel1MeasurementOptions | None = None,
         ) -> MeasurementResult:
-            _ = (schedule, quel1_options)
+            _ = schedule
             called["config"] = config
+            called["run_quel1_options"] = quel1_options
             return MeasurementResultConverter.from_multiple(
                 multiple,
                 measurement_config=_make_config(),
@@ -1552,6 +1604,8 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
     config = called["config"]
     assert config.time_integration is True
     assert config.state_classification is False
+    assert config.classification_source is None
+    assert called["run_quel1_options"] is None
 
 
 def test_run_measurement_delegates_to_executor(

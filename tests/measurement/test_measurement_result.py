@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 
 import numpy as np
+import pytest
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
 from qubex.measurement.models.measure_result import MultipleMeasureResult
@@ -113,6 +114,33 @@ def test_measure_data_threshold_classification(dummy_classifier):
     )
     labels = data.get_classified_data(threshold=0.8)
     assert labels.tolist() == [-1, 1]
+
+
+def test_measure_data_classifies_raw_dsp_bits_without_classifier() -> None:
+    """MeasureData should map raw DSP classification bits to logical labels."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([0, 3, 0, 3], dtype=np.uint8),
+        classifier=None,
+    )
+
+    assert data.n_states == 2
+    assert data.classified.tolist() == [0, 1, 0, 1]
+    assert data.counts == {"0": 2, "1": 2}
+
+
+def test_measure_data_rejects_invalid_raw_dsp_bits() -> None:
+    """MeasureData should reject non 0/3 raw DSP classification payloads."""
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([0, 1, 3], dtype=np.uint8),
+        classifier=None,
+    )
+
+    with pytest.raises(ValueError, match="only 0 or 3"):
+        _ = data.classified
 
 
 def test_measure_result_memory_and_counts(measure_result: MeasureResult):

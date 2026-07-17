@@ -9,5 +9,5 @@ class Quel1MeasurementOptions(Model):
     """Optional QuEL-1 DSP options for QuEL-1 execution."""
 
     demodulation: bool | None = None
-    classification_line_param0: tuple[float, float, float] | None = None
-    classification_line_param1: tuple[float, float, float] | None = None
+    classification_line_param0: dict[str, tuple[float, float, float]] | None = None
+    classification_line_param1: dict[str, tuple[float, float, float]] | None = None
