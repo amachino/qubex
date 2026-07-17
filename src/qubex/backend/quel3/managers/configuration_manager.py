@@ -176,6 +176,11 @@ class Quel3ConfigurationManager:
             )
         )
 
+    def clear_instrument_cache(self) -> None:
+        """Clear cached alias mappings."""
+        self._last_deployed_instrument_infos = {}
+        self._target_alias_map = {}
+
     def refresh_instrument_cache(self) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
         """Refresh cached alias mappings from existing quelware instruments."""
         return _run_async(self._refresh_instrument_cache)
