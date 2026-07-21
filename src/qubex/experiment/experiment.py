@@ -67,8 +67,10 @@ from qubex.typing import (
     TimeLike,
 )
 
+from .dc_voltage_control import DCVoltageControl
 from .experiment_context import ExperimentContext
 from .models.calibration_note import CalibrationNote
+from .models.dc_voltage_state import DCVoltageState
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
 from .models.experiment_result import (
@@ -884,43 +886,47 @@ class Experiment:
         with self.ctx.modified_frequencies(frequencies):
             yield
 
-    def set_jpa_dc_voltage(
+    def set_dc_voltage(
         self,
         voltage: float | None = None,
         *,
         mux: int | str | None = None,
         tolerance: float = 1e-3,
     ) -> None:
-        """Set JPA DC voltage for one mux through the configured controller."""
-        return self.ctx.set_jpa_dc_voltage(
+        """Set DC voltage for one mux through the configured controller."""
+        return self.ctx.set_dc_voltage(
             voltage=voltage,
             mux=mux,
             tolerance=tolerance,
         )
 
-    def turn_off_jpa_dc(
+    def get_dc_voltage_state(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> DCVoltageState:
+        """Return DC voltage and output-state readback for one mux."""
+        return self.ctx.get_dc_voltage_state(mux=mux)
+
+    def turn_off_dc(
         self,
         *,
         mux: int | str | None = None,
     ) -> None:
-        """Turn off JPA DC output for one mux."""
-        return self.ctx.turn_off_jpa_dc(mux=mux)
+        """Turn off DC output for one mux."""
+        return self.ctx.turn_off_dc(mux=mux)
 
     @contextmanager
-    def jpa_dc_voltage(
+    def dc_voltage_control(
         self,
-        voltage: float | None = None,
         *,
         mux: int | str | None = None,
-        tolerance: float = 1e-3,
-    ) -> Iterator[None]:
-        """Temporarily set JPA DC voltage for one mux."""
-        with self.ctx.jpa_dc_voltage(
-            voltage=voltage,
+    ) -> Iterator[DCVoltageControl]:
+        """Yield DC voltage operations bound to one mux and turn off on exit."""
+        with self.ctx.dc_voltage_control(
             mux=mux,
-            tolerance=tolerance,
-        ):
-            yield
+        ) as control:
+            yield control
 
     def save_calib_note(
         self,

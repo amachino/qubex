@@ -17,10 +17,11 @@ from qubex.backend.backend_controller import (
     BackendKind,
     normalize_backend_kind,
 )
-from qubex.backend.dc_voltage_controller import DCVoltageControllerConfig
+from qubex.backend.dc_voltage import DCVoltageControllerConfig
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
+    DC_VOLTAGE_CONTROLLER_FILE,
     MEASUREMENT_DEFAULTS_FILE,
     PARAMS_FILE,
     PROPS_FILE,
@@ -170,7 +171,8 @@ class ConfigLoader:
         files under `params/`). When omitted, Qubex prefers
         `<root>/params/<system_id>`, then `<root>/params/<chip_id>`, and
         finally the legacy nested layout `<root>/<id>/params`.
-    chip_file, system_file, box_file, props_file, params_file : str, optional
+    chip_file, system_file, box_file, dc_voltage_controller_file,
+    props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     wiring_file : str | None, optional
         Wiring filename override. Defaults to `wiring.yaml` when omitted.
@@ -216,6 +218,7 @@ class ConfigLoader:
         chip_file: str = CHIP_FILE,
         system_file: str = SYSTEM_FILE,
         box_file: str = BOX_FILE,
+        dc_voltage_controller_file: str = DC_VOLTAGE_CONTROLLER_FILE,
         wiring_file: str | None = None,
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
@@ -242,6 +245,8 @@ class ConfigLoader:
             System YAML filename.
         box_file : str, optional
             Box YAML filename.
+        dc_voltage_controller_file : str, optional
+            DC voltage controller YAML filename.
         wiring_file : str | None, optional
             Wiring YAML filename override.
         props_file : str, optional
@@ -285,6 +290,7 @@ class ConfigLoader:
         self._chip_file = chip_file
         self._system_file = system_file
         self._box_file = box_file
+        self._dc_voltage_controller_file = dc_voltage_controller_file
         self._wiring_file = wiring_file
         self._resolved_wiring_file = wiring_file or WIRING_FILE
         self._props_file = props_file
@@ -658,9 +664,9 @@ class ConfigLoader:
         return BACKEND_KIND_QUEL1
 
     def _load_dc_voltage_controller_config(self) -> DCVoltageControllerConfig:
-        """Load optional DC voltage controller settings from system config."""
-        raw_config = self._system_dict.get("dc_voltage_controller")
-        if raw_config is None:
+        """Load optional settings from the dedicated DC controller config."""
+        raw_config = self._load_optional_config_file(self._dc_voltage_controller_file)
+        if not raw_config:
             return DCVoltageControllerConfig()
         if not isinstance(raw_config, dict):
             raise TypeError("`dc_voltage_controller` must be a mapping.")
@@ -677,10 +683,37 @@ class ConfigLoader:
                 "Only one of `dc_voltage_controller.port` or "
                 "`dc_voltage_controller.ip_address` should be provided."
             )
+        mux_to_channel = raw_config.get("mux_to_channel", {})
+        if not isinstance(mux_to_channel, dict):
+            raise TypeError("`dc_voltage_controller.mux_to_channel` must be a mapping.")
+        normalized_mapping: dict[int, int] = {}
+        for mux_index, channel in mux_to_channel.items():
+            if type(mux_index) is not int:
+                raise TypeError(
+                    "`dc_voltage_controller.mux_to_channel` must use integer "
+                    "mux indices."
+                )
+            if mux_index < 0:
+                raise ValueError(
+                    "`dc_voltage_controller.mux_to_channel` mux indices must "
+                    "be non-negative."
+                )
+            if type(channel) is not int or channel < 1:
+                raise ValueError(
+                    "`dc_voltage_controller.mux_to_channel` channels must be "
+                    "positive integers."
+                )
+            normalized_mapping[mux_index] = channel
+        if len(set(normalized_mapping.values())) != len(normalized_mapping):
+            raise ValueError(
+                "`dc_voltage_controller.mux_to_channel` must not contain "
+                "duplicate channels."
+            )
         return DCVoltageControllerConfig(
             driver=driver,
             port=port,
             ip_address=ip_address,
+            mux_to_channel=normalized_mapping,
         )
 
     def _resolve_wiring_file(self) -> str:

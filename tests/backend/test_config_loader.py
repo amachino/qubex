@@ -2271,27 +2271,22 @@ def test_load_uses_quel1_system_loader_when_backend_is_unset(
     assert called == ["clock", "control", "wiring"]
 
 
-def test_dc_voltage_controller_config_loads_from_system_yaml(
+def test_dc_voltage_controller_config_loads_from_dedicated_yaml(
     tmp_path: Path,
 ) -> None:
-    """Given DC controller settings in system.yaml, loader should expose normalized config."""
+    """Given dedicated DC settings, loader should expose normalized config."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
-        config_dir / "system.yaml",
+        config_dir / "dc_voltage_controller.yaml",
         {
-            "SYS1": {
-                "chip_id": chip_id,
-                "backend": "quel1",
-                "dc_voltage_controller": {
-                    "driver": "ons61797",
-                    "port": "/dev/system-dc",
-                },
-            }
+            "driver": "ons61797",
+            "port": "/dev/system-dc",
+            "mux_to_channel": {6: 1, 7: 2},
         },
     )
 
     loader = ConfigLoader(
-        system_id="SYS1",
+        chip_id=chip_id,
         config_dir=config_dir,
         params_dir=params_dir,
     )
@@ -2299,6 +2294,7 @@ def test_dc_voltage_controller_config_loads_from_system_yaml(
     assert loader.dc_voltage_controller_config.driver == "ons61797"
     assert loader.dc_voltage_controller_config.port == "/dev/system-dc"
     assert loader.dc_voltage_controller_config.ip_address is None
+    assert loader.dc_voltage_controller_config.mux_to_channel == {6: 1, 7: 2}
 
 
 def test_dc_voltage_controller_config_defaults_when_missing(
@@ -2316,3 +2312,34 @@ def test_dc_voltage_controller_config_defaults_when_missing(
     assert loader.dc_voltage_controller_config.driver == "ons61797"
     assert loader.dc_voltage_controller_config.port is None
     assert loader.dc_voltage_controller_config.ip_address is None
+    assert loader.dc_voltage_controller_config.mux_to_channel == {}
+
+
+@pytest.mark.parametrize(
+    ("mux_to_channel", "match"),
+    [
+        ({6: 0}, "positive integers"),
+        ({6: 1, 7: 1}, "must not contain duplicate channels"),
+        ({"MUX06": 1}, "integer mux indices"),
+    ],
+)
+def test_dc_voltage_controller_config_rejects_invalid_mux_to_channel(
+    tmp_path: Path,
+    mux_to_channel: dict[object, int],
+    match: str,
+) -> None:
+    """Given invalid DC channel mapping, config loading should reject it."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "dc_voltage_controller.yaml",
+        {
+            "mux_to_channel": mux_to_channel,
+        },
+    )
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )

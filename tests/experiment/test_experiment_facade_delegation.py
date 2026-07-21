@@ -119,23 +119,27 @@ class _ExperimentContextStub:
     def register_custom_target(self, **kwargs: Any) -> None:
         self.calls.append(("register_custom_target", kwargs))
 
-    def set_jpa_dc_voltage(self, **kwargs: Any) -> None:
-        self.calls.append(("set_jpa_dc_voltage", kwargs))
+    def set_dc_voltage(self, **kwargs: Any) -> None:
+        self.calls.append(("set_dc_voltage", kwargs))
 
-    def turn_off_jpa_dc(self, **kwargs: Any) -> None:
-        self.calls.append(("turn_off_jpa_dc", kwargs))
+    def turn_off_dc(self, **kwargs: Any) -> None:
+        self.calls.append(("turn_off_dc", kwargs))
 
-    def jpa_dc_voltage(self, **kwargs: Any):
-        self.calls.append(("jpa_dc_voltage", {"enter": kwargs}))
+    def dc_voltage_control(self, **kwargs: Any):
+        self.calls.append(("dc_voltage_control", {"enter": kwargs}))
 
         class _Context:
-            def __enter__(_self) -> None:
-                return None
+            def __enter__(_self) -> object:
+                return self
 
             def __exit__(_self, *_: object) -> None:
-                self.calls.append(("jpa_dc_voltage", {"exit": kwargs}))
+                self.calls.append(("dc_voltage_control", {"exit": kwargs}))
 
         return _Context()
+
+    def get_dc_voltage_state(self, **kwargs: Any) -> object:
+        self.calls.append(("get_dc_voltage_state", kwargs))
+        return self
 
 
 class _SessionServiceStub:
@@ -1062,51 +1066,65 @@ def test_register_custom_target_delegates_legacy_update_lsi_to_context() -> None
     ]
 
 
-def test_set_jpa_dc_voltage_delegates_to_context() -> None:
-    """Given JPA DC voltage arguments, when called, then it delegates to context."""
+def test_set_dc_voltage_delegates_to_context() -> None:
+    """Given DC voltage arguments, when called, then it delegates to context."""
     exp = object.__new__(Experiment)
     context_stub = _ExperimentContextStub()
     exp.__dict__["_experiment_context"] = context_stub
 
-    exp.set_jpa_dc_voltage(0.76, mux=6, tolerance=1e-4)
+    exp.set_dc_voltage(0.76, mux=6, tolerance=1e-4)
 
     assert context_stub.calls == [
         (
-            "set_jpa_dc_voltage",
+            "set_dc_voltage",
             {"voltage": 0.76, "mux": 6, "tolerance": 1e-4},
         )
     ]
 
 
-def test_turn_off_jpa_dc_delegates_to_context() -> None:
-    """Given JPA DC off arguments, when called, then it delegates to context."""
+def test_turn_off_dc_delegates_to_context() -> None:
+    """Given DC off arguments, when called, then it delegates to context."""
     exp = object.__new__(Experiment)
     context_stub = _ExperimentContextStub()
     exp.__dict__["_experiment_context"] = context_stub
 
-    exp.turn_off_jpa_dc(mux="MUX06")
+    exp.turn_off_dc(mux="MUX06")
 
     assert context_stub.calls == [
-        ("turn_off_jpa_dc", {"mux": "MUX06"}),
+        ("turn_off_dc", {"mux": "MUX06"}),
     ]
 
 
-def test_jpa_dc_voltage_context_delegates_to_context() -> None:
-    """Given JPA DC context arguments, when used, then it delegates to context."""
+def test_dc_voltage_control_delegates_to_context() -> None:
+    """Given a mux, the DC control context should delegate and yield its control."""
     exp = object.__new__(Experiment)
     context_stub = _ExperimentContextStub()
     exp.__dict__["_experiment_context"] = context_stub
 
-    with exp.jpa_dc_voltage(0.5, mux=6, tolerance=1e-4):
-        pass
+    with exp.dc_voltage_control(mux=6) as dc:
+        assert dc is context_stub
 
     assert context_stub.calls == [
         (
-            "jpa_dc_voltage",
-            {"enter": {"voltage": 0.5, "mux": 6, "tolerance": 1e-4}},
+            "dc_voltage_control",
+            {"enter": {"mux": 6}},
         ),
         (
-            "jpa_dc_voltage",
-            {"exit": {"voltage": 0.5, "mux": 6, "tolerance": 1e-4}},
+            "dc_voltage_control",
+            {"exit": {"mux": 6}},
         ),
+    ]
+
+
+def test_get_dc_voltage_state_delegates_to_context() -> None:
+    """Given a mux, DC state lookup should delegate and return its result."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    state = exp.get_dc_voltage_state(mux="MUX06")
+
+    assert state is context_stub
+    assert context_stub.calls == [
+        ("get_dc_voltage_state", {"mux": "MUX06"}),
     ]

@@ -20,8 +20,9 @@ from qubex.backend.backend_controller import (
     BackendKind,
     SystemBackendController,
 )
-from qubex.backend.dc_voltage_controller import (
+from qubex.backend.dc_voltage import (
     DCVoltageController,
+    DCVoltageControllerConfig,
     create_dc_voltage_controller,
 )
 from qubex.backend.quel1 import Quel1BackendController
@@ -154,6 +155,7 @@ class SystemManager:
         self._backend_kind: BackendKind = BACKEND_KIND_QUEL1
         self._backend_controller = self._create_backend_controller(self._backend_kind)
         self._dc_voltage_controller = create_dc_voltage_controller()
+        self._dc_voltage_mux_to_channel: dict[int, int] = {}
         self._system_synchronizer = self._create_system_synchronizer(
             self._backend_controller,
             self._backend_kind,
@@ -182,6 +184,10 @@ class SystemManager:
     def dc_voltage_controller(self) -> DCVoltageController:
         """Return configured DC voltage controller for the active system."""
         return self._dc_voltage_controller
+
+    def resolve_dc_voltage_channel(self, mux_index: int) -> int:
+        """Resolve a one-based DC channel for one mux index."""
+        return self._dc_voltage_mux_to_channel.get(mux_index, mux_index + 1)
 
     def set_backend_kind(self, backend_kind: BackendKind) -> None:
         """
@@ -389,9 +395,13 @@ class SystemManager:
                 resolved_backend_kind,
             )
             self._backend_settings = BackendSettings()
-        self._dc_voltage_controller = create_dc_voltage_controller(
-            getattr(next_config_loader, "dc_voltage_controller_config", None)
+        dc_voltage_config = getattr(
+            next_config_loader,
+            "dc_voltage_controller_config",
+            DCVoltageControllerConfig(),
         )
+        self._dc_voltage_controller = create_dc_voltage_controller(dc_voltage_config)
+        self._dc_voltage_mux_to_channel = dict(dc_voltage_config.mux_to_channel)
         self._config_loader = next_config_loader
         self._mock_mode = mock_mode
         self._experiment_system = next_experiment_system

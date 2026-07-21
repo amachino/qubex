@@ -51,6 +51,7 @@ from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
 
 from . import experiment_tool
+from .dc_voltage_control import DCVoltageControl
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
@@ -63,6 +64,7 @@ from .experiment_constants import (
 from .experiment_exceptions import CalibrationMissingError
 from .experiment_util import ExperimentUtil
 from .models.calibration_note import CalibrationNote
+from .models.dc_voltage_state import DCVoltageState
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
 from .models.rabi_param import RabiParam
@@ -1202,8 +1204,8 @@ class ExperimentContext:
             with self.system_manager.modified_frequencies(frequencies):
                 yield
 
-    def _resolve_jpa_mux(self, mux: int | str | None = None) -> Mux:
-        """Resolve the mux used for JPA DC voltage operations."""
+    def _resolve_dc_mux(self, mux: int | str | None = None) -> Mux:
+        """Resolve the mux used for DC voltage operations."""
         if mux is not None:
             return self.experiment_system.get_mux(mux)
         mux_labels = self.mux_labels
@@ -1213,66 +1215,91 @@ class ExperimentContext:
             )
         return self.experiment_system.get_mux(mux_labels[0])
 
-    def _resolve_jpa_dc_voltage(
+    def _resolve_dc_voltage(
         self,
         *,
         mux: Mux,
         voltage: float | None,
     ) -> float:
-        """Resolve explicit or configured JPA DC voltage for one mux."""
+        """Resolve an explicit or configured DC voltage for one mux."""
         if voltage is not None:
             return voltage
         return self.params.get_dc_voltage(mux.index)
 
-    def set_jpa_dc_voltage(
+    def _resolve_dc_output(self, mux: int | str | None) -> tuple[Mux, int]:
+        """Resolve one mux and its configured DC output channel."""
+        resolved_mux = self._resolve_dc_mux(mux)
+        channel = self.system_manager.resolve_dc_voltage_channel(resolved_mux.index)
+        return resolved_mux, channel
+
+    def set_dc_voltage(
         self,
         voltage: float | None = None,
         *,
         mux: int | str | None = None,
         tolerance: float = 1e-3,
     ) -> None:
-        """Set JPA DC voltage for one mux through the configured controller."""
-        resolved_mux = self._resolve_jpa_mux(mux)
-        resolved_voltage = self._resolve_jpa_dc_voltage(
+        """Set DC voltage for one mux through the configured controller."""
+        resolved_mux, channel = self._resolve_dc_output(mux)
+        resolved_voltage = self._resolve_dc_voltage(
             mux=resolved_mux,
             voltage=voltage,
         )
-        channel = resolved_mux.index + 1
         controller = self.system_manager.dc_voltage_controller
         while True:
             controller.on(channel=channel)
             controller.set_voltage(channel=channel, voltage=resolved_voltage)
             current_voltage = controller.get_voltage(channel=channel)
-            output_state = controller.get_output_state(channel=channel)
-            if (
-                abs(resolved_voltage - current_voltage) < tolerance
-                and output_state == 1
-            ):
+            is_output_on = controller.is_output_on(channel=channel)
+            if abs(resolved_voltage - current_voltage) < tolerance and is_output_on:
                 break
 
-    def turn_off_jpa_dc(
+    def get_dc_voltage_state(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> DCVoltageState:
+        """Return DC voltage and output-state readback for one mux."""
+        resolved_mux, channel = self._resolve_dc_output(mux)
+        controller = self.system_manager.dc_voltage_controller
+        output = "on" if controller.is_output_on(channel=channel) else "off"
+        return DCVoltageState(
+            mux_label=resolved_mux.label,
+            mux_index=resolved_mux.index,
+            channel=channel,
+            voltage=controller.get_voltage(channel=channel),
+            output=output,
+        )
+
+    def turn_off_dc(
         self,
         *,
         mux: int | str | None = None,
     ) -> None:
-        """Turn off JPA DC output for one mux."""
-        resolved_mux = self._resolve_jpa_mux(mux)
-        self.system_manager.dc_voltage_controller.off(channel=resolved_mux.index + 1)
+        """Turn off DC output for one mux."""
+        _, channel = self._resolve_dc_output(mux)
+        self.system_manager.dc_voltage_controller.off(channel=channel)
 
     @contextmanager
-    def jpa_dc_voltage(
+    def dc_voltage_control(
         self,
-        voltage: float | None = None,
         *,
         mux: int | str | None = None,
-        tolerance: float = 1e-3,
-    ) -> Iterator[None]:
-        """Temporarily set JPA DC voltage for one mux."""
-        self.set_jpa_dc_voltage(voltage, mux=mux, tolerance=tolerance)
+    ) -> Iterator[DCVoltageControl]:
+        """Yield DC voltage operations bound to one mux and turn off on exit."""
+        resolved_mux = self._resolve_dc_mux(mux)
+        control = DCVoltageControl(
+            set_voltage=lambda voltage, tolerance: self.set_dc_voltage(
+                voltage,
+                mux=resolved_mux.index,
+                tolerance=tolerance,
+            ),
+            get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
+        )
         try:
-            yield
+            yield control
         finally:
-            self.turn_off_jpa_dc(mux=mux)
+            self.turn_off_dc(mux=resolved_mux.index)
 
     def save_calib_note(
         self,

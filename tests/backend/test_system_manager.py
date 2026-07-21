@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
-from qubex.backend.dc_voltage_controller import DCVoltageControllerConfig
+from qubex.backend.dc_voltage import DCVoltageControllerConfig
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.system.control_system import PortType
 from qubex.system.system_manager import BackendSettings, SystemManager
@@ -1130,7 +1130,11 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
 
         @property
         def dc_voltage_controller_config(self) -> DCVoltageControllerConfig:
-            return DCVoltageControllerConfig(driver="ons61797", port="/dev/system-dc")
+            return DCVoltageControllerConfig(
+                driver="ons61797",
+                port="/dev/system-dc",
+                mux_to_channel={6: 1},
+            )
 
         def get_experiment_system(self) -> object:
             return SimpleNamespace(hash=hash("TEST"))
@@ -1155,10 +1159,16 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
     manager.load(chip_id="TEST", mock_mode=False)
 
     assert created_configs == [
-        DCVoltageControllerConfig(driver="ons61797", port="/dev/system-dc")
+        DCVoltageControllerConfig(
+            driver="ons61797",
+            port="/dev/system-dc",
+            mux_to_channel={6: 1},
+        )
     ]
     installed_controller = cast(Any, manager.dc_voltage_controller)
     assert installed_controller.config == created_configs[0]
+    assert manager.resolve_dc_voltage_channel(6) == 1
+    assert manager.resolve_dc_voltage_channel(7) == 8
 
 
 def test_load_does_not_pass_wiring_file_to_config_loader(
