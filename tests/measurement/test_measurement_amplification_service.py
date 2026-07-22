@@ -44,7 +44,10 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
     system_manager = type(
         "_SystemManager",
         (),
-        {"dc_voltage_controller": _DCVoltageController()},
+        {
+            "dc_voltage_controller": _DCVoltageController(),
+            "resolve_dc_voltage_channel": staticmethod({0: 2, 2: 4}.__getitem__),
+        },
     )()
     context = type(
         "_Context",
@@ -59,7 +62,7 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
     with service.apply_dc_voltages(["Q00", "RQ02"]):
         called["inside"] = True
 
-    assert called["voltages"] == {1: 0.25, 3: -0.4}
+    assert called["voltages"] == {2: 0.25, 4: -0.4}
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True
@@ -95,7 +98,10 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
     system_manager = type(
         "_SystemManager",
         (),
-        {"dc_voltage_controller": _DCVoltageController()},
+        {
+            "dc_voltage_controller": _DCVoltageController(),
+            "resolve_dc_voltage_channel": staticmethod({0: 2}.__getitem__),
+        },
     )()
     context = type(
         "_Context",
@@ -110,4 +116,4 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
     with service.apply_dc_voltages("Q00"):
         pass
 
-    assert called["voltages"] == {1: 0.25}
+    assert called["voltages"] == {2: 0.25}

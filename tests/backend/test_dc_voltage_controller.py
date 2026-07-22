@@ -164,3 +164,4 @@ def test_ons61797_adapter_normalizes_third_party_output_state() -> None:
     device.on(1)
 
     assert device.is_output_on(1) is True
+

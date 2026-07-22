@@ -27,7 +27,7 @@ class DCVoltageControl:
         """Return the current voltage and output state."""
         return self._get_state()
 
-    def set(
+    def set_voltage(
         self,
         voltage: float,
         *,

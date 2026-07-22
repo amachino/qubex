@@ -671,7 +671,9 @@ class ConfigLoader:
         if not isinstance(raw_config, dict):
             raise TypeError("`dc_voltage_controller` must be a mapping.")
 
-        driver = str(raw_config.get("driver", "ons61797"))
+        driver = raw_config.get("driver", "ons61797")
+        if not isinstance(driver, str):
+            raise TypeError("`dc_voltage_controller.driver` must be a string.")
         port = raw_config.get("port")
         ip_address = raw_config.get("ip_address")
         if port is not None and not isinstance(port, str):

@@ -2315,6 +2315,24 @@ def test_dc_voltage_controller_config_defaults_when_missing(
     assert loader.dc_voltage_controller_config.mux_to_channel == {}
 
 
+def test_dc_voltage_controller_config_rejects_non_string_driver(
+    tmp_path: Path,
+) -> None:
+    """Given a non-string DC driver, config loading should reject it."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "dc_voltage_controller.yaml",
+        {"driver": 123},
+    )
+
+    with pytest.raises(TypeError, match="driver.*string"):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
 @pytest.mark.parametrize(
     ("mux_to_channel", "match"),
     [

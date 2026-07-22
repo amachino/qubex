@@ -138,7 +138,7 @@ def test_dc_voltage_control_uses_configured_channel_mapping() -> None:
     )
 
     with ctx.dc_voltage_control() as dc:
-        dc.set(0.5)
+        dc.set_voltage(0.5)
         assert dc_controller.voltages[1] == pytest.approx(0.5)
         assert dc_controller.output_states[1] is True
 
@@ -340,7 +340,7 @@ def test_dc_voltage_control_sets_and_reads_bound_mux() -> None:
     )
 
     with ctx.dc_voltage_control(mux=7) as dc:
-        state = dc.set(0.4)
+        state = dc.set_voltage(0.4)
 
         assert state == dc.state
         assert state.mux_label == "MUX07"
@@ -349,3 +349,21 @@ def test_dc_voltage_control_sets_and_reads_bound_mux() -> None:
         assert state.is_on
 
     assert dc_controller.output_states[8] is False
+
+
+def test_set_dc_voltage_stops_after_repeated_readback_mismatch() -> None:
+    """Given persistent readback error, setting DC should fail without hanging."""
+
+    class _MismatchedReadbackController(_DCVoltageController):
+        def get_voltage(self, *, channel: int) -> float:
+            self.calls.append(("get_voltage", channel))
+            return -1.0
+
+    dc_controller = _MismatchedReadbackController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with pytest.raises(RuntimeError, match="failed to reach"):
+        ctx.set_dc_voltage(0.5)
+
+    set_calls = [call for call in dc_controller.calls if call[0] == "set_voltage"]
+    assert len(set_calls) == 3
