@@ -1299,7 +1299,10 @@ class ExperimentContext:
         try:
             yield control
         finally:
-            self.turn_off_dc(mux=resolved_mux.index)
+            try:
+                control._restore_ramp_start()  # noqa: SLF001
+            finally:
+                self.turn_off_dc(mux=resolved_mux.index)
 
     def save_calib_note(
         self,

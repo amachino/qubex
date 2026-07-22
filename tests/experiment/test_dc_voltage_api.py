@@ -41,6 +41,7 @@ class _DCVoltageController:
         self.voltages: dict[int, float] = {}
         self.output_states: dict[int, bool] = {}
         self.calls: list[tuple[object, ...]] = []
+        self.fail_set_voltage = False
 
     def on(self, *, channel: int) -> None:
         self.calls.append(("on", channel))
@@ -51,6 +52,8 @@ class _DCVoltageController:
         self.output_states[channel] = False
 
     def set_voltage(self, *, channel: int, voltage: float) -> None:
+        if self.fail_set_voltage:
+            raise RuntimeError("restore failed")
         self.calls.append(("set_voltage", channel, voltage))
         self.voltages[channel] = voltage
 
@@ -199,6 +202,106 @@ def test_dc_voltage_control_sweeps_states_and_turns_off_on_exit() -> None:
 
     assert dc_controller.output_states[7] is False
     assert dc_controller.voltages[7] == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    ("start", "target", "expected"),
+    [
+        (0.0, 0.25, [0.0, 0.1, 0.2, 0.25]),
+        (0.3, 0.05, [0.3, 0.2, 0.1, 0.05]),
+    ],
+)
+def test_dc_voltage_control_ramps_to_target_from_selected_direction(
+    start: float,
+    target: float,
+    expected: list[float],
+) -> None:
+    """Given a ramp path, control should approach and include the exact target."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with ctx.dc_voltage_control() as dc:
+        state = dc.ramp_to(target, start=start, step=0.1)
+        applied = [call[2] for call in dc_controller.calls if call[0] == "set_voltage"]
+        assert applied == pytest.approx(expected)
+
+    assert state.voltage == pytest.approx(target)
+
+
+def test_dc_voltage_control_restores_ramp_start_before_turning_off() -> None:
+    """Given a ramped control, context exit should ramp back before output off."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with ctx.dc_voltage_control() as dc:
+        dc.ramp_to(0.25, start=0.0, step=0.1)
+
+    applied = [call[2] for call in dc_controller.calls if call[0] == "set_voltage"]
+    assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25, 0.15, 0.05, 0.0])
+    assert dc_controller.calls[-1] == ("off", 7)
+
+
+def test_dc_voltage_control_can_skip_ramp_restore_on_exit() -> None:
+    """Given restore disabled, context exit should turn output off immediately."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with ctx.dc_voltage_control() as dc:
+        dc.ramp_to(
+            0.2,
+            start=0.0,
+            step=0.1,
+            restore_on_exit=False,
+        )
+
+    applied = [call[2] for call in dc_controller.calls if call[0] == "set_voltage"]
+    assert applied == pytest.approx([0.0, 0.1, 0.2])
+    assert dc_controller.calls[-1] == ("off", 7)
+
+
+def test_dc_voltage_control_turns_off_when_ramp_restore_fails() -> None:
+    """Given a restore failure, context exit should still turn the output off."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    def exit_with_failed_restore() -> None:
+        with ctx.dc_voltage_control() as dc:
+            dc.ramp_to(0.2, start=0.0, step=0.1)
+            dc_controller.fail_set_voltage = True
+
+    with pytest.raises(RuntimeError, match="restore failed"):
+        exit_with_failed_restore()
+
+    assert dc_controller.calls[-1] == ("off", 7)
+
+
+def test_dc_voltage_control_ramp_waits_after_every_setpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given a ramp delay, control should settle after every applied setpoint."""
+    delays: list[float] = []
+    monkeypatch.setattr("qubex.experiment.dc_voltage_control.time.sleep", delays.append)
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with ctx.dc_voltage_control() as dc:
+        dc.ramp_to(0.2, start=0.0, step=0.1, delay=0.05)
+        assert delays == [0.05, 0.05, 0.05]
+
+    assert delays == [0.05, 0.05, 0.05, 0.05, 0.05]
+
+
+@pytest.mark.parametrize("step", [0.0, -0.1])
+def test_dc_voltage_control_ramp_rejects_non_positive_step(step: float) -> None:
+    """Given a non-positive step, ramping should reject the ambiguous path."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with (
+        ctx.dc_voltage_control() as dc,
+        pytest.raises(ValueError, match="step must be positive"),
+    ):
+        dc.ramp_to(0.2, start=0.0, step=step)
 
 
 def test_dc_voltage_control_sweep_waits_after_each_setpoint(
