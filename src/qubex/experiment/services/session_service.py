@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Collection
 
 from qubex.experiment.experiment_context import ExperimentContext
@@ -62,12 +63,13 @@ class SessionService:
     ) -> None:
         """Connect measurement backend and synchronize sampling period."""
         try:
+            t = time.time()
             self.measurement.connect(
                 sync_clocks=sync_clocks,
                 parallel=parallel,
             )
             self._sync_pulse_sampling_period()
-            logger.info("Successfully connected.")
+            logger.info(f"Successfully connected in {time.time() - t:.1f} seconds.")
         except Exception:
             logger.exception("Failed to connect to the devices.")
             raise
