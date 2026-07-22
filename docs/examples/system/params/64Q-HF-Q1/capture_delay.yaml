@@ -1,5 +1,6 @@
 meta:
   description: Example capture delay settings for 64Q-HF chip
+  unit: ndelay
 data:
   0: 8
   1: 8
