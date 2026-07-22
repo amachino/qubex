@@ -2390,12 +2390,19 @@ class CharacterizationService:
 
         Parameters
         ----------
-        target
+        target : str
             Target qubit label.
-        f_start
-            Start frequency for the sweep.
-        n_samples
-            Number of frequency samples.
+        f_start : float | None, optional
+            Start frequency for the sweep in GHz.
+        df : float | None, optional
+            Frequency sweep step size in GHz.
+        n_samples : int | None, optional
+            Number of frequency steps.
+
+        Returns
+        -------
+        float
+            The electrical delay in ns.
         """
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -3549,7 +3556,14 @@ class CharacterizationService:
         frequency_range
             Control frequency sweep range in GHz.
         target_rabi_rate
-            Target Rabi rate used for scaling.
+            Target Rabi rate used for scaling in GHz. If None, uses
+            `qubex.experiment.experiment_constants.DEFAULT_RABI_FREQUENCY`.
+
+        Returns
+        -------
+        Result
+            A Result object with the key 'estimated_amplitude', which is the
+            pulse amplitude that is predicted to produce the target Rabi rate.
         """
         if target_rabi_rate is None:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
