@@ -16,10 +16,14 @@ class DCVoltageControl:
         *,
         set_voltage: Callable[[float, float], None],
         get_state: Callable[[], DCVoltageState],
+        turn_on: Callable[[], None],
+        turn_off: Callable[[], None],
     ) -> None:
         """Initialize the bound DC voltage operations."""
         self._set_voltage = set_voltage
         self._get_state = get_state
+        self._turn_on = turn_on
+        self._turn_off = turn_off
         self._restore_profile: tuple[float, float, float, float] | None = None
 
     @property
@@ -35,6 +39,16 @@ class DCVoltageControl:
     ) -> DCVoltageState:
         """Set a voltage and return its readback state."""
         self._set_voltage(voltage, tolerance)
+        return self.state
+
+    def turn_on(self) -> DCVoltageState:
+        """Turn on the bound output and return its readback state."""
+        self._turn_on()
+        return self.state
+
+    def turn_off(self) -> DCVoltageState:
+        """Turn off the bound output and return its readback state."""
+        self._turn_off()
         return self.state
 
     def sweep(

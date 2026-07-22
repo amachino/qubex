@@ -116,7 +116,16 @@ with experiment.dc_voltage_control(mux=6) as dc:
     state = dc.state
 ```
 
-`sweep()` は渡された電圧列をそのまま設定します。一定の電圧幅で目標値へ近づける場合は `ramp_to()` を使います。
+`turn_on()` と `turn_off()` は、電圧値を変更せずに選択した mux の出力を ON/OFF します。既定では、context を抜けると出力は OFF になります。
+
+context を抜けた後も固定バイアスを出力し続ける場合は、自動 OFF を明示的に無効にします。
+
+```python
+with experiment.dc_voltage_control(mux=6, turn_off_on_exit=False) as dc:
+    dc.set_voltage(0.27)
+```
+
+`sweep()` は渡された電圧列をそのまま設定します。一定の電圧幅で目標値へ近づける場合は `ramp_to()` を使います。context を抜けた後も到達した電圧を維持するには、`ramp_to()` にも `restore_on_exit=False` を指定します。
 
 ### 制御レイアウトの解決規則
 

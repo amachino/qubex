@@ -1272,13 +1272,23 @@ class ExperimentContext:
         _, channel = self._resolve_dc_output(mux)
         self.system_manager.dc_voltage_controller.off(channel=channel)
 
+    def _turn_on_dc(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> None:
+        """Turn on DC output for one mux."""
+        _, channel = self._resolve_dc_output(mux)
+        self.system_manager.dc_voltage_controller.on(channel=channel)
+
     @contextmanager
     def dc_voltage_control(
         self,
         *,
         mux: int | str | None = None,
+        turn_off_on_exit: bool = True,
     ) -> Iterator[DCVoltageControl]:
-        """Yield DC voltage operations bound to one mux and turn off on exit."""
+        """Yield DC voltage operations bound to one mux."""
         resolved_mux = self._resolve_dc_mux(mux)
         control = DCVoltageControl(
             set_voltage=lambda voltage, tolerance: self._set_dc_voltage(
@@ -1287,6 +1297,8 @@ class ExperimentContext:
                 tolerance=tolerance,
             ),
             get_state=lambda: self._get_dc_voltage_state(mux=resolved_mux.index),
+            turn_on=lambda: self._turn_on_dc(mux=resolved_mux.index),
+            turn_off=lambda: self._turn_off_dc(mux=resolved_mux.index),
         )
         try:
             yield control
@@ -1294,7 +1306,8 @@ class ExperimentContext:
             try:
                 control._restore_ramp_start()  # noqa: SLF001
             finally:
-                self._turn_off_dc(mux=resolved_mux.index)
+                if turn_off_on_exit:
+                    self._turn_off_dc(mux=resolved_mux.index)
 
     def save_calib_note(
         self,

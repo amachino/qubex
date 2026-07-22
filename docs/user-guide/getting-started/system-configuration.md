@@ -130,8 +130,20 @@ with experiment.dc_voltage_control(mux=6) as dc:
     state = dc.state
 ```
 
+`turn_on()` and `turn_off()` control the output for the selected mux without
+changing its voltage. By default, the output is turned off when the context exits.
+
+To keep a fixed bias enabled after leaving the context, explicitly disable the
+automatic shutdown.
+
+```python
+with experiment.dc_voltage_control(mux=6, turn_off_on_exit=False) as dc:
+    dc.set_voltage(0.27)
+```
+
 `sweep()` applies the supplied setpoints directly. Use `ramp_to()` when the
-target should be approached in fixed voltage steps.
+target should be approached in fixed voltage steps. To keep a ramp target after
+leaving the context, also set `restore_on_exit=False` on `ramp_to()`.
 
 ### Control Layout Resolution
 

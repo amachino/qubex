@@ -238,6 +238,19 @@ def test_dc_voltage_control_can_skip_ramp_restore_on_exit() -> None:
     assert dc_controller.calls[-1] == ("off", 7)
 
 
+def test_dc_voltage_control_can_keep_output_on_after_exit() -> None:
+    """Given shutdown disabled, context exit should leave the output enabled."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with ctx.dc_voltage_control(turn_off_on_exit=False) as dc:
+        dc.set_voltage(0.2)
+
+    assert dc_controller.voltages[7] == pytest.approx(0.2)
+    assert dc_controller.output_states[7] is True
+    assert dc_controller.calls[-1] != ("off", 7)
+
+
 def test_dc_voltage_control_turns_off_when_ramp_restore_fails() -> None:
     """Given a restore failure, context exit should still turn the output off."""
     dc_controller = _DCVoltageController()
@@ -326,6 +339,27 @@ def test_dc_voltage_control_sets_and_reads_bound_mux() -> None:
         assert state.channel == 8
         assert state.voltage == pytest.approx(0.4)
         assert state.is_on
+
+    assert dc_controller.output_states[8] is False
+
+
+def test_dc_voltage_control_turns_bound_output_off_and_on() -> None:
+    """Given a bound control, output operations should use its resolved channel."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(
+        mux_labels=["MUX06", "MUX07"],
+        dc_controller=dc_controller,
+    )
+
+    with ctx.dc_voltage_control(mux=7) as dc:
+        dc.set_voltage(0.4)
+
+        off_state = dc.turn_off()
+        on_state = dc.turn_on()
+
+        assert off_state.output == "off"
+        assert on_state.output == "on"
+        assert off_state.channel == on_state.channel == 8
 
     assert dc_controller.output_states[8] is False
 
