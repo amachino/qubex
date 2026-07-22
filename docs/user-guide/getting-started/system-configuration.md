@@ -33,6 +33,7 @@ qubex-config/
     box.yaml
     system.yaml
     wiring.yaml
+    dc_voltage_controller.yaml  # when using an external DC voltage source
     skew.yaml  # for QuEL-1/QuBE
   params/
     SYSTEM_A/
@@ -51,6 +52,7 @@ qubex-config/
 - `config/` stores the shared system configuration files.
 - Each file under `params/<system_id>/` stores one parameter family.
 - `calibration/<system_id>/calib_note.json` is the default calibration file location.
+- `dc_voltage_controller.yaml` is optional and configures an external DC voltage source used for JPA bias control.
 - `skew.yaml` is optional, but it is required for synchronized experiments that use multiple QuEL-1 control units.
 
 ## Define shared configuration files
@@ -101,6 +103,35 @@ Use it when a box needs a non-default hardware profile.
 For example, `quel1se-riken8` accepts an AWG profile label such as
 `se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. When no AWG
 profile is specified, Qubex uses `se8_mxfe1_awg2222`.
+
+### `dc_voltage_controller.yaml`
+
+Configure the DC voltage source and map each mux index to its output channel.
+Output channels are one-based.
+
+```yaml
+driver: ons61797
+port: /dev/ttyACM0
+mux_to_channel:
+  6: 1
+  7: 2
+```
+
+Use `ip_address` instead of `port` for a network connection. Do not specify
+both. If a mux is not listed in `mux_to_channel`, Qubex uses `mux + 1` as the
+output channel.
+
+DC voltage operations are scoped to a context so that the output is turned off
+when the context exits.
+
+```python
+with experiment.dc_voltage_control(mux=6) as dc:
+    dc.set_voltage(0.27)
+    state = dc.state
+```
+
+`sweep()` applies the supplied setpoints directly. Use `ramp_to()` when the
+target should be approached in fixed voltage steps.
 
 ### Control Layout Resolution
 

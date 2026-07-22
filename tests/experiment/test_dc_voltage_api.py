@@ -103,31 +103,6 @@ class _ContextForTest(ExperimentContext):
         return self._system_manager_for_test
 
 
-def test_set_dc_voltage_uses_default_active_mux_and_param_voltage() -> None:
-    """Given one active mux, setting DC should use the configured default voltage."""
-    dc_controller = _DCVoltageController()
-    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
-
-    ctx.set_dc_voltage()
-
-    assert dc_controller.voltages[7] == pytest.approx(0.76)
-    assert dc_controller.output_states[7] is True
-
-
-def test_set_dc_voltage_accepts_explicit_mux_and_voltage() -> None:
-    """Given explicit mux and voltage, setting DC should use that channel."""
-    dc_controller = _DCVoltageController()
-    ctx = _ContextForTest(
-        mux_labels=["MUX06", "MUX07"],
-        dc_controller=dc_controller,
-    )
-
-    ctx.set_dc_voltage(0.5, mux=7)
-
-    assert dc_controller.voltages[8] == pytest.approx(0.5)
-    assert dc_controller.output_states[8] is True
-
-
 def test_dc_voltage_control_uses_configured_channel_mapping() -> None:
     """Given a mapped mux, DC control should use and turn off the mapped channel."""
     dc_controller = _DCVoltageController()
@@ -149,7 +124,7 @@ def test_dc_voltage_control_uses_configured_channel_mapping() -> None:
     ("controller_state", "output", "is_on"),
     [(False, "off", False), (True, "on", True)],
 )
-def test_get_dc_voltage_state_returns_mapped_controller_readback(
+def test_dc_voltage_control_state_returns_mapped_controller_readback(
     controller_state: bool,
     output: str,
     is_on: bool,
@@ -164,7 +139,8 @@ def test_get_dc_voltage_state_returns_mapped_controller_readback(
         mux_to_channel={6: 1},
     )
 
-    state = ctx.get_dc_voltage_state()
+    with ctx.dc_voltage_control() as dc:
+        state = dc.state
 
     assert state == DCVoltageState(
         mux_label="MUX06",
@@ -176,7 +152,7 @@ def test_get_dc_voltage_state_returns_mapped_controller_readback(
     assert state.is_on is is_on
 
 
-def test_set_dc_voltage_requires_mux_when_multiple_are_active() -> None:
+def test_dc_voltage_control_requires_mux_when_multiple_are_active() -> None:
     """Given multiple active muxes, omitted mux should raise."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(
@@ -184,8 +160,11 @@ def test_set_dc_voltage_requires_mux_when_multiple_are_active() -> None:
         dc_controller=dc_controller,
     )
 
-    with pytest.raises(ValueError, match="multiple active muxes"):
-        ctx.set_dc_voltage()
+    with (
+        pytest.raises(ValueError, match="multiple active muxes"),
+        ctx.dc_voltage_control(),
+    ):
+        pass
 
 
 def test_dc_voltage_control_sweeps_states_and_turns_off_on_exit() -> None:
@@ -351,8 +330,8 @@ def test_dc_voltage_control_sets_and_reads_bound_mux() -> None:
     assert dc_controller.output_states[8] is False
 
 
-def test_set_dc_voltage_stops_after_repeated_readback_mismatch() -> None:
-    """Given persistent readback error, setting DC should fail without hanging."""
+def test_dc_voltage_control_stops_after_repeated_readback_mismatch() -> None:
+    """Given persistent readback error, bound control should fail without hanging."""
 
     class _MismatchedReadbackController(_DCVoltageController):
         def get_voltage(self, *, channel: int) -> float:
@@ -362,8 +341,11 @@ def test_set_dc_voltage_stops_after_repeated_readback_mismatch() -> None:
     dc_controller = _MismatchedReadbackController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
-    with pytest.raises(RuntimeError, match="failed to reach"):
-        ctx.set_dc_voltage(0.5)
+    with (
+        ctx.dc_voltage_control() as dc,
+        pytest.raises(RuntimeError, match="failed to reach"),
+    ):
+        dc.set_voltage(0.5)
 
     set_calls = [call for call in dc_controller.calls if call[0] == "set_voltage"]
     assert len(set_calls) == 3

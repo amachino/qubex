@@ -1217,51 +1217,36 @@ class ExperimentContext:
             )
         return self.experiment_system.get_mux(mux_labels[0])
 
-    def _resolve_dc_voltage(
-        self,
-        *,
-        mux: Mux,
-        voltage: float | None,
-    ) -> float:
-        """Resolve an explicit or configured DC voltage for one mux."""
-        if voltage is not None:
-            return voltage
-        return self.params.get_dc_voltage(mux.index)
-
     def _resolve_dc_output(self, mux: int | str | None) -> tuple[Mux, int]:
         """Resolve one mux and its configured DC output channel."""
         resolved_mux = self._resolve_dc_mux(mux)
         channel = self.system_manager.resolve_dc_voltage_channel(resolved_mux.index)
         return resolved_mux, channel
 
-    def set_dc_voltage(
+    def _set_dc_voltage(
         self,
-        voltage: float | None = None,
+        voltage: float,
         *,
         mux: int | str | None = None,
         tolerance: float = 1e-3,
     ) -> None:
         """Set DC voltage for one mux through the configured controller."""
         resolved_mux, channel = self._resolve_dc_output(mux)
-        resolved_voltage = self._resolve_dc_voltage(
-            mux=resolved_mux,
-            voltage=voltage,
-        )
         controller = self.system_manager.dc_voltage_controller
         for _ in range(_DC_VOLTAGE_SET_MAX_ATTEMPTS):
             controller.on(channel=channel)
-            controller.set_voltage(channel=channel, voltage=resolved_voltage)
+            controller.set_voltage(channel=channel, voltage=voltage)
             current_voltage = controller.get_voltage(channel=channel)
             is_output_on = controller.is_output_on(channel=channel)
-            if abs(resolved_voltage - current_voltage) < tolerance and is_output_on:
+            if abs(voltage - current_voltage) < tolerance and is_output_on:
                 return
         raise RuntimeError(
             f"DC voltage for `{resolved_mux.label}` failed to reach "
-            f"{resolved_voltage} V within tolerance {tolerance} V after "
+            f"{voltage} V within tolerance {tolerance} V after "
             f"{_DC_VOLTAGE_SET_MAX_ATTEMPTS} attempts."
         )
 
-    def get_dc_voltage_state(
+    def _get_dc_voltage_state(
         self,
         *,
         mux: int | str | None = None,
@@ -1278,7 +1263,7 @@ class ExperimentContext:
             output=output,
         )
 
-    def turn_off_dc(
+    def _turn_off_dc(
         self,
         *,
         mux: int | str | None = None,
@@ -1296,12 +1281,12 @@ class ExperimentContext:
         """Yield DC voltage operations bound to one mux and turn off on exit."""
         resolved_mux = self._resolve_dc_mux(mux)
         control = DCVoltageControl(
-            set_voltage=lambda voltage, tolerance: self.set_dc_voltage(
+            set_voltage=lambda voltage, tolerance: self._set_dc_voltage(
                 voltage,
                 mux=resolved_mux.index,
                 tolerance=tolerance,
             ),
-            get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
+            get_state=lambda: self._get_dc_voltage_state(mux=resolved_mux.index),
         )
         try:
             yield control
@@ -1309,7 +1294,7 @@ class ExperimentContext:
             try:
                 control._restore_ramp_start()  # noqa: SLF001
             finally:
-                self.turn_off_dc(mux=resolved_mux.index)
+                self._turn_off_dc(mux=resolved_mux.index)
 
     def save_calib_note(
         self,

@@ -27,6 +27,7 @@ qubex-config/
     box.yaml
     system.yaml
     wiring.yaml
+    dc_voltage_controller.yaml  # 外部 DC 電圧源を使う場合
     skew.yaml  # QuEL-1/QuBE 向け
   params/
     SYSTEM_A/
@@ -45,6 +46,7 @@ qubex-config/
 - `config/` には共有のシステム設定ファイルを置きます。
 - `params/<system_id>/` の各ファイルは、1 つのパラメータファミリを表します。
 - `calibration/<system_id>/calib_note.json` は既定の較正ファイルの保存先です。
+- `dc_voltage_controller.yaml` は任意で、JPA のバイアス制御に使う外部 DC 電圧源を設定します。
 - `skew.yaml` は任意ですが、複数の QuEL-1 制御装置を用いた同期実験を行う場合に必要になります。
 
 ## 共有設定ファイルを定義する
@@ -91,6 +93,30 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
 `options` は任意で、box に対するバックエンドオプションラベルのリストを受け取ります。非既定のハードウェアプロファイルが必要なときに使ってください。
 
 例えば `quel1se-riken8` は `se8_mxfe1_awg1331`、`se8_mxfe1_awg2222`、`se8_mxfe1_awg3113` のような AWG プロファイルラベルを受け取れます。AWG プロファイルが指定されない場合、Qubex は `se8_mxfe1_awg2222` を使います。
+
+### `dc_voltage_controller.yaml`
+
+DC 電圧源の接続方法と、mux index に対応する出力 channel を設定します。出力 channel は 1 始まりです。
+
+```yaml
+driver: ons61797
+port: /dev/ttyACM0
+mux_to_channel:
+  6: 1
+  7: 2
+```
+
+ネットワーク接続では `port` の代わりに `ip_address` を指定します。両方を同時には指定できません。`mux_to_channel` にない mux には、既定で `mux + 1` の channel が使われます。
+
+DC 電圧操作は context 内で行います。context を抜けると出力は OFF になります。
+
+```python
+with experiment.dc_voltage_control(mux=6) as dc:
+    dc.set_voltage(0.27)
+    state = dc.state
+```
+
+`sweep()` は渡された電圧列をそのまま設定します。一定の電圧幅で目標値へ近づける場合は `ramp_to()` を使います。
 
 ### 制御レイアウトの解決規則
 

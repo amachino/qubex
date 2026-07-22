@@ -2325,7 +2325,7 @@ def test_dc_voltage_controller_config_rejects_non_string_driver(
         {"driver": 123},
     )
 
-    with pytest.raises(TypeError, match="driver.*string"):
+    with pytest.raises(TypeError, match=r"driver.*string"):
         ConfigLoader(
             chip_id=chip_id,
             config_dir=config_dir,

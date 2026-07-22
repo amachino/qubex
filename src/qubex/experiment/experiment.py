@@ -70,7 +70,6 @@ from qubex.typing import (
 from .dc_voltage_control import DCVoltageControl
 from .experiment_context import ExperimentContext
 from .models.calibration_note import CalibrationNote
-from .models.dc_voltage_state import DCVoltageState
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
 from .models.experiment_result import (
@@ -885,36 +884,6 @@ class Experiment:
         """Temporarily override target frequencies within the context."""
         with self.ctx.modified_frequencies(frequencies):
             yield
-
-    def set_dc_voltage(
-        self,
-        voltage: float | None = None,
-        *,
-        mux: int | str | None = None,
-        tolerance: float = 1e-3,
-    ) -> None:
-        """Set DC voltage for one mux through the configured controller."""
-        return self.ctx.set_dc_voltage(
-            voltage=voltage,
-            mux=mux,
-            tolerance=tolerance,
-        )
-
-    def get_dc_voltage_state(
-        self,
-        *,
-        mux: int | str | None = None,
-    ) -> DCVoltageState:
-        """Return DC voltage and output-state readback for one mux."""
-        return self.ctx.get_dc_voltage_state(mux=mux)
-
-    def turn_off_dc(
-        self,
-        *,
-        mux: int | str | None = None,
-    ) -> None:
-        """Turn off DC output for one mux."""
-        return self.ctx.turn_off_dc(mux=mux)
 
     @contextmanager
     def dc_voltage_control(
