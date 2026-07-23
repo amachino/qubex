@@ -3506,7 +3506,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "scikit-learn", specifier = ">=1.0" },
     { name = "scipy", specifier = ">=1.0" },
-    { name = "tqdm", specifier = ">=4.0" },
+    { name = "tqdm", specifier = ">=4.27.0" },
     { name = "typedunits", specifier = ">=0.0" },
     { name = "typing-extensions", specifier = ">=4.5" },
 ]
