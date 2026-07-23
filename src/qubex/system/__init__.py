@@ -1,6 +1,7 @@
 """System orchestration components across backends."""
 
 from .config_loader import ConfigLoader
+from .configure_preview import ConfigurePreview, ConfigureStateChange
 from .control_parameter_defaults import ControlParameterDefaults
 from .control_parameters import ControlParameters
 from .control_system import (
@@ -37,6 +38,8 @@ __all__ = [
     "Channel",
     "Chip",
     "ConfigLoader",
+    "ConfigurePreview",
+    "ConfigureStateChange",
     "ControlParameterDefaults",
     "ControlParameters",
     "ControlSystem",
