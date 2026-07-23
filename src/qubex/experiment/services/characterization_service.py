@@ -23,7 +23,7 @@ from qxpulse import (
     Waveform,
 )
 from rich.prompt import Confirm
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from typing_extensions import deprecated
 
 import qubex.visualization as viz
@@ -2390,12 +2390,19 @@ class CharacterizationService:
 
         Parameters
         ----------
-        target
+        target : str
             Target qubit label.
-        f_start
-            Start frequency for the sweep.
-        n_samples
-            Number of frequency samples.
+        f_start : float | None, optional
+            Start frequency for the sweep in GHz.
+        df : float | None, optional
+            Frequency sweep step size in GHz.
+        n_samples : int | None, optional
+            Number of frequency steps.
+
+        Returns
+        -------
+        float
+            The electrical delay in ns.
         """
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -2426,7 +2433,7 @@ class CharacterizationService:
             if reset_awg_and_capunits:
                 self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
             phases = []
-            for freq in frequency_range:
+            for freq in tqdm(frequency_range, desc=f"electrical delay for {target}"):
                 with self.ctx.modified_frequencies({read_label: freq}):
                     result = self._measurement_service.measure(
                         {qubit_label: np.zeros(0)},
@@ -2599,7 +2606,9 @@ class CharacterizationService:
         ssb = read_box.traits.readout_ssb
         cnco_center = read_box.traits.readout_cnco_center
 
-        for subrange in subranges:
+        for subrange in tqdm(
+            subranges, desc=f"resonator freq. scan subranges for {target}"
+        ):
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
@@ -2612,7 +2621,13 @@ class CharacterizationService:
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
-                for sub_idx, freq in enumerate(subrange):
+                for sub_idx, freq in enumerate(
+                    tqdm(
+                        subrange,
+                        desc="resonator frequency within subrange",
+                        leave=False,
+                    )
+                ):
                     if idx > 0 and sub_idx == 0:
                         prev_freq = frequency_range[idx - 1]
                         with self.ctx.modified_frequencies({read_label: prev_freq}):
@@ -3074,7 +3089,7 @@ class CharacterizationService:
 
         self.ctx.reset_awg_and_capunits(qubits=[qubit_label])
 
-        for freq in freq_range:
+        for freq in tqdm(freq_range, desc=f"reflection coefficient for {target}"):
             with self.ctx.modified_frequencies({read_label: freq}):
                 result = self._measurement_service.measure(
                     {qubit_label: initialize_pulse},
@@ -3211,7 +3226,9 @@ class CharacterizationService:
 
         # measure the phase and amplitude
         idx = 0
-        for subrange in subranges:
+        for subrange in tqdm(
+            subranges, desc=f"qubit freq. scan subranges for {target}"
+        ):
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
@@ -3225,7 +3242,9 @@ class CharacterizationService:
                 fnco_freq=0,
             ):
                 self.ctx.reset_awg_and_capunits(qubits=[qubit])
-                for control_frequency in subrange:
+                for control_frequency in tqdm(
+                    subrange, desc="qubit frequency within subrange", leave=False
+                ):
                     with self.ctx.modified_frequencies(
                         {
                             qubit: control_frequency,
@@ -3549,7 +3568,14 @@ class CharacterizationService:
         frequency_range
             Control frequency sweep range in GHz.
         target_rabi_rate
-            Target Rabi rate used for scaling.
+            Target Rabi rate used for scaling in GHz. If None, uses
+            `qubex.experiment.experiment_constants.DEFAULT_RABI_FREQUENCY`.
+
+        Returns
+        -------
+        Result
+            A Result object with the key 'estimated_amplitude', which is the
+            pulse amplitude that is predicted to produce the target Rabi rate.
         """
         if target_rabi_rate is None:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
@@ -3688,7 +3714,7 @@ class CharacterizationService:
 
         power_range = np.array(power_range)
         result2d = []
-        for power in tqdm(power_range):
+        for power in tqdm(power_range, desc=f"control power sweep for {target}"):
             power_linear = 10 ** (power / 10)
             amplitude = np.sqrt(power_linear)
             result1d = self.scan_qubit_frequencies(
