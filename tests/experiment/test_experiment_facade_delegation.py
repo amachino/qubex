@@ -127,6 +127,7 @@ class _ExperimentContextStub:
 class _SessionServiceStub:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.configure_preview = object()
 
     def disconnect(self) -> None:
         self.calls.append(("disconnect", {}))
@@ -146,6 +147,10 @@ class _SessionServiceStub:
 
     def configure(self, **kwargs: Any) -> None:
         self.calls.append(("configure", kwargs))
+
+    def preview_configure(self, **kwargs: Any) -> object:
+        self.calls.append(("preview_configure", kwargs))
+        return self.configure_preview
 
     def linkup(self, **kwargs: Any) -> None:
         self.calls.append(("linkup", kwargs))
@@ -841,6 +846,50 @@ def test_configure_delegates_to_session_service() -> None:
                 "exclude": "Q00",
                 "mode": "ge-cr-cr",
                 "confirm": True,
+                "dry_run": False,
+            },
+        )
+    ]
+
+
+def test_configure_forwards_dry_run_to_session_service() -> None:
+    """Given dry_run configure, when called, then it forwards dry_run to session service."""
+    exp = object.__new__(Experiment)
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
+
+    exp.configure(dry_run=True)
+
+    assert session_stub.calls == [
+        (
+            "configure",
+            {
+                "box_ids": None,
+                "exclude": None,
+                "mode": None,
+                "confirm": True,
+                "dry_run": True,
+            },
+        )
+    ]
+
+
+def test_preview_configure_delegates_to_session_service() -> None:
+    """Given preview args, when called, then it delegates to session service."""
+    exp = object.__new__(Experiment)
+    session_stub = _SessionServiceStub()
+    exp.__dict__["_session_service"] = session_stub
+
+    result = exp.preview_configure(box_ids="Q2A", exclude="Q00", mode="ge-cr-cr")
+
+    assert result is session_stub.configure_preview
+    assert session_stub.calls == [
+        (
+            "preview_configure",
+            {
+                "box_ids": "Q2A",
+                "exclude": "Q00",
+                "mode": "ge-cr-cr",
             },
         )
     ]
