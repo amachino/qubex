@@ -8,14 +8,17 @@ from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
 from qubex.core.parallel_executor import run_parallel, run_parallel_map
 from qubex.system.control_system import PortType
+from qubex.system.quel1.quel1_configure_preview import Quel1BoxPreviewContext
 from qubex.system.quel1.quel1_control_parameter_defaults import DEFAULT_CAPTURE_DELAY
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from qubex.backend.quel1.quel1_backend_controller import Quel1BackendController
+    from qubex.system.configure_preview import ConfigurePreview
     from qubex.system.control_system import Box, CapPort, GenPort
     from qubex.system.experiment_system import ExperimentSystem
+    from qubex.typing import ConfigurationMode
 
 
 class Quel1SystemSynchronizer:
@@ -197,6 +200,51 @@ class Quel1SystemSynchronizer:
             for box_id, box_config in raw_result.items()
             if self._is_valid_dumped_box_config(box_id, box_config)
         }
+
+    def preview_configure(
+        self,
+        *,
+        experiment_system: ExperimentSystem,
+        box_ids: Sequence[str],
+        mode: ConfigurationMode | None,
+        parallel: bool | None = None,
+        target_labels: Sequence[str] | None = None,
+    ) -> ConfigurePreview:
+        """
+        Preview QuEL-1 hardware changes for `configure()`.
+
+        Notes
+        -----
+        Concurrent QuEL-1 controller operations are not supported during preview.
+        """
+        backend_settings = self.fetch_backend_settings_from_hardware(
+            experiment_system=experiment_system,
+            box_ids=box_ids,
+            parallel=parallel,
+        )
+        preview_context = Quel1BoxPreviewContext(
+            backend_controller=self._backend_controller,
+            backend_settings=backend_settings,
+            box_types={
+                box_id: experiment_system.get_box(box_id).type for box_id in box_ids
+            },
+        )
+        boxes = [
+            experiment_system.get_box(box_id)
+            for box_id in box_ids
+            if box_id in backend_settings
+        ]
+        with preview_context:
+            self.sync_experiment_system_to_hardware(
+                experiment_system=experiment_system,
+                boxes=boxes,
+                parallel=parallel,
+                target_labels=target_labels,
+            )
+        return preview_context.build_preview(
+            box_ids=box_ids,
+            mode=mode,
+        )
 
     def sync_backend_settings_to_backend_controller(
         self,
