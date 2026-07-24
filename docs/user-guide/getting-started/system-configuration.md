@@ -98,9 +98,11 @@ entries, they are required.
 `options` is optional and accepts a list of backend option labels for that box.
 Use it when a box needs a non-default hardware profile.
 
-For example, `quel1se-riken8` accepts an AWG profile label such as
-`se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. When no AWG
-profile is specified, Qubex uses `se8_mxfe1_awg2222`.
+For example, `quel1se-riken8` accepts an AWG options label such as
+`se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. Here, the last
+four digits refer to the number of FNCOs for each control port defined during
+the link-up procedure. When no AWG options label is specified, Qubex uses
+`se8_mxfe1_awg2222`.
 
 ### Control Layout Resolution
 
