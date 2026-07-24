@@ -36,7 +36,7 @@ _FREQUENCY_FIELDS: Final = frozenset({"lo_freq", "cnco_freq", "fnco_freq"})
 
 # These groups mirror quel_ic_config's port-to-line, LO, and RF-switch maps.
 _SHARED_RESOURCE_PORT_GROUPS: Final[
-    dict[str, dict[str, tuple[tuple[int, ...], ...]]]
+    dict[str, dict[str, tuple[tuple[_PortNumber, ...], ...]]]
 ] = {
     BoxType.QUEL1SE_A.value: {
         "lo_freq": ((0, 1), (3, 5), (7, 8), (10, 12)),
@@ -47,7 +47,7 @@ _SHARED_RESOURCE_PORT_GROUPS: Final[
     },
     BoxType.QUEL1SE_R8.value: {
         "lo_freq": ((0, 1), (4, 10)),
-        "rfswitch": ((0, 1),),
+        "rfswitch": ((0, 1, (1, 1)),),
     },
     BoxType.QUEL1_A.value: {
         "lo_freq": ((0, 1), (3, 5), (7, 8), (10, 12)),

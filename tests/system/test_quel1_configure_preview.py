@@ -201,10 +201,10 @@ def _make_shared_system(
 
 
 def _shared_backend_settings(
-    *port_configs: tuple[int, str, int | None, str | None],
+    *port_configs: tuple[int | tuple[int, int], str, int | None, str | None],
     include_rfswitch: bool = True,
 ) -> dict[str, dict]:
-    ports: dict[int, dict[str, object]] = {}
+    ports: dict[int | tuple[int, int], dict[str, object]] = {}
     for port_number, direction, lo_freq, rfswitch in port_configs:
         config: dict[str, object] = {
             "direction": direction,
@@ -789,6 +789,64 @@ def test_preview_configure_reports_final_shared_rfswitch_for_each_port() -> None
             field="rfswitch",
             before="pass",
             after="block",
+            unit=None,
+            is_frequency=False,
+        ),
+    )
+
+
+def test_preview_configure_reports_r8_fogi_shared_rfswitch_change() -> None:
+    """R8 preview should report the FOGI port affected by a readout switch."""
+    system = _make_shared_system(
+        box_type=BoxType.QUEL1SE_R8,
+        ports=[
+            _make_port(
+                number=0,
+                port_type=PortType.READ_IN,
+                rfswitch="open",
+            ),
+            _make_port(
+                number=1,
+                port_type=PortType.READ_OUT,
+                rfswitch="pass",
+            ),
+        ],
+    )
+
+    preview = _preview(
+        experiment_system=system,
+        backend_settings=_shared_backend_settings(
+            (0, "in", None, "loop"),
+            (1, "out", None, "block"),
+            ((1, 1), "out", None, "block"),
+        ),
+    )
+
+    assert preview.changes == (
+        ConfigureStateChange(
+            box_id="A",
+            component="port 0",
+            field="rfswitch",
+            before="loop",
+            after="open",
+            unit=None,
+            is_frequency=False,
+        ),
+        ConfigureStateChange(
+            box_id="A",
+            component="port 1",
+            field="rfswitch",
+            before="block",
+            after="pass",
+            unit=None,
+            is_frequency=False,
+        ),
+        ConfigureStateChange(
+            box_id="A",
+            component="port (1, 1)",
+            field="rfswitch",
+            before="block",
+            after="pass",
             unit=None,
             is_frequency=False,
         ),
