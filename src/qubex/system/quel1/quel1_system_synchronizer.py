@@ -213,10 +213,17 @@ class Quel1SystemSynchronizer:
         """
         Preview QuEL-1 hardware changes for `configure()`.
 
+        Raises
+        ------
+        RuntimeError
+            If the backend is disconnected or a target box is absent from the
+            connected box pool.
+
         Notes
         -----
         Concurrent QuEL-1 controller operations are not supported during preview.
         """
+        self._require_preview_boxes_connected(box_ids)
         backend_settings = self.fetch_backend_settings_from_hardware(
             experiment_system=experiment_system,
             box_ids=box_ids,
@@ -245,6 +252,23 @@ class Quel1SystemSynchronizer:
             box_ids=box_ids,
             mode=mode,
         )
+
+    def _require_preview_boxes_connected(self, box_ids: Sequence[str]) -> None:
+        """Require every preview target to exist in the connected box pool."""
+        if not self._backend_controller.is_connected:
+            raise RuntimeError(
+                "Configure preview requires all target boxes to be connected."
+            )
+        pooled_box_ids = self._backend_controller.connected_box_names()
+        missing_box_ids = list(
+            dict.fromkeys(box_id for box_id in box_ids if box_id not in pooled_box_ids)
+        )
+        if missing_box_ids:
+            missing = ", ".join(missing_box_ids)
+            raise RuntimeError(
+                "Configure preview requires all target boxes to be connected; "
+                f"missing from the connected pool: {missing}."
+            )
 
     def sync_backend_settings_to_backend_controller(
         self,

@@ -239,7 +239,7 @@ def _make_backend_controller(
     *,
     backend_settings: dict[str, dict],
     box_type: BoxType,
-    connected: bool = False,
+    connected: bool = True,
 ) -> tuple[Quel1BackendController, _SystemConfigDatabaseStub]:
     database = _SystemConfigDatabaseStub(box_type=box_type)
     _HardwareQuel1Box.snapshots_by_ip = {
@@ -273,8 +273,8 @@ def _make_backend_controller(
     return Quel1BackendController(runtime_context=runtime_context), database
 
 
-def test_preview_configure_temporarily_replaces_quel1_box() -> None:
-    """Preview should configure a mock box and restore the real box class afterward."""
+def test_preview_configure_routes_configuration_away_from_hardware() -> None:
+    """Preview should configure only a mock of an already-connected box."""
     system = _make_system(lo_freq=11_000_000_000)
     backend_settings = _backend_settings(lo_freq=10_000_000_000)
     backend_controller, database = _make_backend_controller(
@@ -290,14 +290,71 @@ def test_preview_configure_temporarily_replaces_quel1_box() -> None:
         parallel=False,
     )
 
-    assert database.created_box_classes[0] is _HardwareQuel1Box
-    assert any(
-        box_class is not _HardwareQuel1Box
-        for box_class in database.created_box_classes[1:]
-    )
+    assert database.created_box_classes == []
     assert Quel1Box is _HardwareQuel1Box
     assert _HardwareQuel1Box.config_calls == []
     assert preview.changes[0].after == 11_000_000_000
+
+
+def test_preview_configure_rejects_disconnected_before_hardware_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preview should fail before fetching hardware when the backend is disconnected."""
+    system = _make_system()
+    backend_controller, _ = _make_backend_controller(
+        backend_settings=_backend_settings(),
+        box_type=BoxType.QUEL1SE_R8,
+        connected=False,
+    )
+    dump_calls: list[str] = []
+
+    def _dump_box(box_id: str) -> dict:
+        dump_calls.append(box_id)
+        return _backend_settings()[box_id]
+
+    monkeypatch.setattr(backend_controller, "dump_box", _dump_box)
+    synchronizer = Quel1SystemSynchronizer(backend_controller=backend_controller)
+
+    with pytest.raises(RuntimeError, match="requires all target boxes to be connected"):
+        synchronizer.preview_configure(
+            experiment_system=cast(Any, system),
+            box_ids=["A"],
+            mode="ge-cr-cr",
+            parallel=False,
+        )
+
+    assert dump_calls == []
+
+
+def test_preview_configure_rejects_box_missing_from_pool_before_hardware_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preview should fail before fetching a target absent from the connected pool."""
+    system = _make_system()
+    backend_controller, _ = _make_backend_controller(
+        backend_settings=_backend_settings(),
+        box_type=BoxType.QUEL1SE_R8,
+    )
+    pooled_boxes = vars(backend_controller.boxpool)["_boxes"]
+    pooled_boxes.clear()
+    dump_calls: list[str] = []
+
+    def _dump_box(box_id: str) -> dict:
+        dump_calls.append(box_id)
+        return _backend_settings()[box_id]
+
+    monkeypatch.setattr(backend_controller, "dump_box", _dump_box)
+    synchronizer = Quel1SystemSynchronizer(backend_controller=backend_controller)
+
+    with pytest.raises(RuntimeError, match="missing from the connected pool: A"):
+        synchronizer.preview_configure(
+            experiment_system=cast(Any, system),
+            box_ids=["A"],
+            mode="ge-cr-cr",
+            parallel=False,
+        )
+
+    assert dump_calls == []
 
 
 def test_preview_configure_uses_hardware_sync_orchestration(
