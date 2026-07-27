@@ -19,14 +19,15 @@ import yaml
 DEFAULT_SSB = "L"
 DEFAULT_CNCO_CENTER = 2_250_000_000
 
+
 def crosstalk_check(
     exp: Experiment,
     control_qubit: str,
     target_qubits: list[str],
-    time_ranges: list[range]=[
-        range(0, 1201, 40), 
-        range(0, 12001, 400), 
-        range(0, 120001, 4000)
+    time_ranges: list[range] = [
+        range(0, 1201, 40),
+        range(0, 12001, 400),
+        range(0, 120001, 4000),
     ],
     shots: int = DEFAULT_SHOTS * 2,
     ramptime: float = 0.0,
@@ -63,8 +64,10 @@ def crosstalk_check(
         or not np.isfinite(params.frequency)
         or not np.isfinite(params.r2)
     ):
-        raise RuntimeError(f"Failed to obtain valid Rabi parameters for {control_qubit}.")
-    
+        raise RuntimeError(
+            f"Failed to obtain valid Rabi parameters for {control_qubit}."
+        )
+
     max_rabi_freq = params.frequency * 1e3 / exp.params.control_amplitude[control_qubit]
     print(f"Max Rabi frequency for {control_qubit}: {max_rabi_freq} MHz")
 
@@ -73,15 +76,16 @@ def crosstalk_check(
 
     for target_qubit in tqdm(target_qubits):
         crosstalk_value = None  # Initialize crosstalk_value for each target qubit
+
         def rabi_sequence(T: float) -> PulseSchedule:
             with PulseSchedule([control_qubit, target_qubit]) as ps:
                 ps.add(
                     control_qubit,
                     FlatTop(
-                        duration = T + 2 * ramptime,
-                        amplitude = 1.0,
-                        tau = ramptime,
-                    )
+                        duration=T + 2 * ramptime,
+                        amplitude=1.0,
+                        tau=ramptime,
+                    ),
                 )
             return ps
 
@@ -89,20 +93,22 @@ def crosstalk_check(
             exp.targets[target_qubit].frequency * 1e9,
             ssb=ssb,
             cnco_center=cnco_center,
-            )
+        )
 
         resonator_label = exp.targets[target_qubit].read_label(target_qubit)
         port = exp.targets[resonator_label].channel.port
-        labels = [t.label
-                for t in exp.experiment_system.read_out_targets 
-                if port.id == t.channel.port.id and t.label != resonator_label]     
+        labels = [
+            t.label
+            for t in exp.experiment_system.read_out_targets
+            if port.id == t.channel.port.id and t.label != resonator_label
+        ]
 
         exp.system_manager.load(
-                    chip_id=exp.chip_id,
-                    config_dir=exp.config_path,
-                    params_dir=exp.params_path,
-                    targets_to_exclude=labels,
-                )
+            chip_id=exp.chip_id,
+            config_dir=exp.config_path,
+            params_dir=exp.params_path,
+            targets_to_exclude=labels,
+        )
         exp.system_manager.push(box_ids=exp.box_ids, confirm=False)
 
         with exp.system_manager.modified_backend_settings(
@@ -117,39 +123,61 @@ def crosstalk_check(
                     sequence=rabi_sequence,
                     sweep_range=time_range,
                     frequencies={control_qubit: exp.targets[target_qubit].frequency},
-                    shots = shots,
+                    shots=shots,
                     interval=DEFAULT_INTERVAL,
                     plot=plot,
                 )
                 for target, data in sweep_result.data.items():
                     if target != target_qubit:
                         continue
-                    data_fft = np.fft.fft((data.data-np.mean(data.data))/np.std(data.data))[:data.data.size//2]
+                    data_fft = np.fft.fft(
+                        (data.data - np.mean(data.data)) / np.std(data.data)
+                    )[: data.data.size // 2]
                     if fft_plot:
-                        fig = viz.plot_fft(time_range,(data.data-np.mean(data.data))/np.std(data.data), title=f"FFT of {target_qubit} response to {control_qubit} Rabi drive", xlabel="Frequency (GHz)", ylabel="Amplitude")
-                    if np.abs(data_fft[1:])[np.argmax(np.abs(data_fft[1:]))]/np.std(data.data)/data.data.size > fft_threshold:
+                        fig = viz.plot_fft(
+                            time_range,
+                            (data.data - np.mean(data.data)) / np.std(data.data),
+                            title=f"FFT of {target_qubit} response to {control_qubit} Rabi drive",
+                            xlabel="Frequency (GHz)",
+                            ylabel="Amplitude",
+                        )
+                    if (
+                        np.abs(data_fft[1:])[np.argmax(np.abs(data_fft[1:]))]
+                        / np.std(data.data)
+                        / data.data.size
+                        > fft_threshold
+                    ):
                         fit_result = fitting.fit_rabi(
                             target=data.target,
                             times=time_range,
                             data=data.data,
-                            reference_point=exp.obtain_reference_points(target)["iq"].get(target),
+                            reference_point=exp.obtain_reference_points(target)[
+                                "iq"
+                            ].get(target),
                             plot=plot,
                             is_damped=True,
                         )
                         if not fit_result.status.value == "success":
                             crosstalk_value = None
                         else:
-                            crosstalk_value = 10 * np.log10((fit_result.data['frequency'] * 1e3 / max_rabi_freq)**2)
+                            crosstalk_value = 10 * np.log10(
+                                (fit_result.data["frequency"] * 1e3 / max_rabi_freq)
+                                ** 2
+                            )
                         break  # Exit the loop after the first successful fit
-                    print(f"Warning: No significant peak found in FFT for {target_qubit} at time range {np.min(time_range)} to {np.max(time_range)} ns. Skipping fitting.")
+                    print(
+                        f"Warning: No significant peak found in FFT for {target_qubit} at time range {np.min(time_range)} to {np.max(time_range)} ns. Skipping fitting."
+                    )
                 else:
                     continue
                 break
 
         crosstalk_results[target_qubit] = crosstalk_value
         sweep_results[target_qubit] = sweep_result
-            
-        exp.system_manager.load(chip_id=exp.chip_id, config_dir=exp.config_path, params_dir=exp.params_path)
+
+        exp.system_manager.load(
+            chip_id=exp.chip_id, config_dir=exp.config_path, params_dir=exp.params_path
+        )
         exp.system_manager.push(box_ids=exp.box_ids, confirm=False)
 
     print("Crosstalk results (dB):")
@@ -158,31 +186,31 @@ def crosstalk_check(
         if crosstalk_value is not None:
             print(f"{target_qubit}: {crosstalk_value:.2f} dB")
         else:
-            print(f"{target_qubit}: Fit failed, crosstalk value is None") 
+            print(f"{target_qubit}: Fit failed, crosstalk value is None")
 
     if save:
+
         def load_yaml(file_path):
-            with open(file_path, 'r') as file:
+            with open(file_path, "r") as file:
                 return yaml.load(file, Loader=yaml.FullLoader)
 
         def write_yaml(data, file_path):
-            with open(file_path, 'w') as file:
+            with open(file_path, "w") as file:
                 yaml.dump(data, file, default_flow_style=False)
 
         data_dict = {
-            'meta':{
-                'description': "Crosstalk",
-                'unit': "dB",
+            "meta": {
+                "description": "Crosstalk",
+                "unit": "dB",
             },
-            'data':{
-                f'{control_qubit}': {
-                    f"{target_qubit}": 
-                    float(crosstalk_value) 
-                    if crosstalk_value is not None 
-                    else None 
+            "data": {
+                f"{control_qubit}": {
+                    f"{target_qubit}": float(crosstalk_value)
+                    if crosstalk_value is not None
+                    else None
                     for target_qubit, crosstalk_value in crosstalk_results.items()
                 }
-            }
+            },
         }
 
         yaml_path = Path(exp.params_path) / "crosstalk.yaml"
@@ -201,22 +229,26 @@ def crosstalk_check(
         else:
             for target_qubit, crosstalk_value in crosstalk_results.items():
                 if crosstalk_value is not None:
-                    yaml_data["data"][f"{control_qubit}"][f"{target_qubit}"] = float(crosstalk_value)
+                    yaml_data["data"][f"{control_qubit}"][f"{target_qubit}"] = float(
+                        crosstalk_value
+                    )
 
         write_yaml(yaml_data, yaml_path)
 
     return Result(
-        data={"sweep_results": sweep_results, 
-              "crosstalk_results": crosstalk_results},
+        data={"sweep_results": sweep_results, "crosstalk_results": crosstalk_results},
     )
+
 
 def _is_valid(value: float | None) -> bool:
     return value is not None and not math.isnan(value)
 
-def plot_crosstalk(exp: Experiment,
-                   control_qubit: str,
-                   save_image: bool = False,
-                   ):
+
+def plot_crosstalk(
+    exp: Experiment,
+    control_qubit: str,
+    save_image: bool = False,
+):
     system_manager = SystemManager.shared()
     chip = exp.chip
     loader = system_manager.config_loader
@@ -226,12 +258,16 @@ def plot_crosstalk(exp: Experiment,
             title="Estimate crosstalk (dB)",
             values=list(values[control_qubit].values()),
             texts=[
-                f"{qubit}<br>control<br>qubit" if qubit == control_qubit else f"{qubit}<br>{value:.3f}<br>dB" if _is_valid(value) else "N/A"
+                f"{qubit}<br>control<br>qubit"
+                if qubit == control_qubit
+                else f"{qubit}<br>{value:.3f}<br>dB"
+                if _is_valid(value)
+                else "N/A"
                 for qubit, value in values[control_qubit].items()
             ],
             hovertexts=[
-                f"{qubit}: control qubit" 
-                if qubit == control_qubit 
+                f"{qubit}: control qubit"
+                if qubit == control_qubit
                 else f"{qubit}: {value:.3f} dB"
                 if _is_valid(value)
                 else f"{qubit}: N/A"
