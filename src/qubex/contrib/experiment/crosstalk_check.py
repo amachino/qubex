@@ -1,7 +1,14 @@
-import math
-import numpy as np
-from pathlib import Path
+"""Crosstalk check experiment utilities."""
 
+from __future__ import annotations
+
+import math
+from contextlib import suppress
+from pathlib import Path
+from typing import Any, Literal
+
+import numpy as np
+import yaml
 from qubex import visualization as viz
 from qubex.analysis import fitting
 from qubex.experiment import Experiment
@@ -10,25 +17,22 @@ from qubex.experiment.models.result import Result
 from qubex.pulse import FlatTop, PulseSchedule
 from qubex.system import LatticeGraph, SystemManager
 from qubex.system.quel1 import MixingUtil
-
 from tqdm import tqdm
-from typing import Literal
-import yaml
-
 
 DEFAULT_SSB = "L"
 DEFAULT_CNCO_CENTER = 2_250_000_000
+DEFAULT_TIME_RANGES: tuple[range, ...] = (
+    range(0, 1201, 40),
+    range(0, 12001, 400),
+    range(0, 120001, 4000),
+)
 
 
 def crosstalk_check(
     exp: Experiment,
     control_qubit: str,
     target_qubits: list[str],
-    time_ranges: list[range] = [
-        range(0, 1201, 40),
-        range(0, 12001, 400),
-        range(0, 120001, 4000),
-    ],
+    time_ranges: list[range] | None = None,
     shots: int = DEFAULT_SHOTS * 2,
     ramptime: float = 0.0,
     fft_threshold: float = 0.1,
@@ -38,22 +42,13 @@ def crosstalk_check(
     overwrite: bool = False,
     ssb: Literal["L", "U"] = DEFAULT_SSB,
     cnco_center: int = DEFAULT_CNCO_CENTER,
-):
-    """
-    Perform a crosstalk check by applying a Rabi drive to the control qubit and measuring the response of the target qubits.
+) -> Result:
+    """Perform a crosstalk check using a control-qubit Rabi drive against target qubits."""
+    if time_ranges is None:
+        time_ranges = list(DEFAULT_TIME_RANGES)
 
-    Args:
-        control_qubit (str): The qubit to which the Rabi drive will be applied.
-        target_qubits (list[str]): The qubits that will be measured for crosstalk effects.
-        time_ranges (list[range], optional): The ranges of Rabi drive times to apply.
-        ramptime (float, optional): The ramp time for the Rabi drive. Defaults to 0.0.
-        plot (bool, optional): Whether to plot the results. Defaults to True.
-        save (bool, optional): Whether to save the results. Defaults to False.
-    """
-    try:
+    with suppress(ValueError):
         target_qubits.remove(control_qubit)
-    except ValueError:
-        pass
 
     rabi_result = exp.obtain_rabi_params(control_qubit, plot=False)
     rabi_params = rabi_result.rabi_params
@@ -77,7 +72,7 @@ def crosstalk_check(
     for target_qubit in tqdm(target_qubits):
         crosstalk_value = None  # Initialize crosstalk_value for each target qubit
 
-        def rabi_sequence(T: float) -> PulseSchedule:
+        def rabi_sequence(T: float, target_qubit: str = target_qubit) -> PulseSchedule:
             with PulseSchedule([control_qubit, target_qubit]) as ps:
                 ps.add(
                     control_qubit,
@@ -134,7 +129,7 @@ def crosstalk_check(
                         (data.data - np.mean(data.data)) / np.std(data.data)
                     )[: data.data.size // 2]
                     if fft_plot:
-                        fig = viz.plot_fft(
+                        viz.plot_fft(
                             time_range,
                             (data.data - np.mean(data.data)) / np.std(data.data),
                             title=f"FFT of {target_qubit} response to {control_qubit} Rabi drive",
@@ -157,7 +152,7 @@ def crosstalk_check(
                             plot=plot,
                             is_damped=True,
                         )
-                        if not fit_result.status.value == "success":
+                        if fit_result.status.value != "success":
                             crosstalk_value = None
                         else:
                             crosstalk_value = 10 * np.log10(
@@ -190,13 +185,14 @@ def crosstalk_check(
 
     if save:
 
-        def load_yaml(file_path):
-            with open(file_path, "r") as file:
-                return yaml.load(file, Loader=yaml.FullLoader)
+        def load_yaml(file_path: str | Path) -> dict[str, Any]:
+            with open(file_path) as file:
+                data = yaml.safe_load(file)
+            return data if data is not None else {}
 
-        def write_yaml(data, file_path):
+        def write_yaml(data: dict[str, Any], file_path: str | Path) -> None:
             with open(file_path, "w") as file:
-                yaml.dump(data, file, default_flow_style=False)
+                yaml.safe_dump(data, file, default_flow_style=False)
 
         data_dict = {
             "meta": {
