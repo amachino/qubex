@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 import numpy as np
 import yaml
+from tqdm import tqdm
+
 from qubex import visualization as viz
 from qubex.analysis import fitting
 from qubex.experiment import Experiment
@@ -17,7 +19,6 @@ from qubex.experiment.models.result import Result
 from qubex.pulse import FlatTop, PulseSchedule
 from qubex.system import LatticeGraph, SystemManager
 from qubex.system.quel1 import MixingUtil
-from tqdm import tqdm
 
 DEFAULT_SSB = "L"
 DEFAULT_CNCO_CENTER = 2_250_000_000
@@ -244,7 +245,8 @@ def plot_crosstalk(
     exp: Experiment,
     control_qubit: str,
     save_image: bool = False,
-):
+) -> None:
+    """Plot crosstalk values on the lattice graph for a control qubit."""
     system_manager = SystemManager.shared()
     chip = exp.chip
     loader = system_manager.config_loader
