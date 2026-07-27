@@ -1,19 +1,20 @@
+import math
+import numpy as np
 from pathlib import Path
 
-import numpy as np
 from qubex import visualization as viz
 from qubex.analysis import fitting
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.experiment.models.result import Result
-from qubex.pulse import PulseSchedule, FlatTop
+from qubex.pulse import FlatTop, PulseSchedule
 from qubex.system import LatticeGraph, SystemManager
 from qubex.system.quel1 import MixingUtil
+
 from tqdm import tqdm
 from typing import Literal
 import yaml
 
-import math
 
 DEFAULT_SSB = "L"
 DEFAULT_CNCO_CENTER = 2_250_000_000
@@ -27,8 +28,8 @@ def crosstalk_check(
         range(0, 12001, 400), 
         range(0, 120001, 4000)
     ],
-    shots: int = DEFAULT_SHOTS*2,
-    ramptime: float=0.0,
+    shots: int = DEFAULT_SHOTS * 2,
+    ramptime: float = 0.0,
     fft_threshold: float = 0.1,
     plot: bool = True,
     fft_plot: bool = False,
@@ -64,7 +65,7 @@ def crosstalk_check(
     ):
         raise RuntimeError(f"Failed to obtain valid Rabi parameters for {control_qubit}.")
     
-    max_rabi_freq = params.frequency*1e3 / exp.params.control_amplitude[control_qubit]
+    max_rabi_freq = params.frequency * 1e3 / exp.params.control_amplitude[control_qubit]
     print(f"Max Rabi frequency for {control_qubit}: {max_rabi_freq} MHz")
 
     sweep_results = {}
@@ -85,7 +86,7 @@ def crosstalk_check(
             return ps
 
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            exp.targets[target_qubit].frequency*1e9,
+            exp.targets[target_qubit].frequency * 1e9,
             ssb=ssb,
             cnco_center=cnco_center,
             )
@@ -138,7 +139,7 @@ def crosstalk_check(
                         if not fit_result.status.value == "success":
                             crosstalk_value = None
                         else:
-                            crosstalk_value = 10 * np.log10((fit_result.data['frequency']*1e3 / max_rabi_freq)**2)
+                            crosstalk_value = 10 * np.log10((fit_result.data['frequency'] * 1e3 / max_rabi_freq)**2)
                         break  # Exit the loop after the first successful fit
                     print(f"Warning: No significant peak found in FFT for {target_qubit} at time range {np.min(time_range)} to {np.max(time_range)} ns. Skipping fitting.")
                 else:
