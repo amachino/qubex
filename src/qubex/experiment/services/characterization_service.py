@@ -3656,6 +3656,8 @@ class CharacterizationService:
                 margin=dict(t=80),
             )
             fig.show()
+        else:
+            fig = None
 
         if save_image:
             viz.save_figure(
