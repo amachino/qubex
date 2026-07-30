@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import pytest
 
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.experiment.models import DCVoltageState
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,7 @@ def test_dc_voltage_control_uses_configured_channel_mapping() -> None:
 )
 def test_dc_voltage_control_state_returns_mapped_controller_readback(
     controller_state: bool,
-    output: str,
+    output: Literal["on", "off"],
     is_on: bool,
 ) -> None:
     """Given a mapped mux, DC state should include its channel and readback."""
@@ -142,14 +142,30 @@ def test_dc_voltage_control_state_returns_mapped_controller_readback(
     with ctx.dc_voltage_control() as dc:
         state = dc.state
 
-    assert state == DCVoltageState(
-        mux_label="MUX06",
-        mux_index=6,
-        channel=1,
-        voltage=pytest.approx(0.54),
-        output=output,
-    )
+    assert state.mux_label == "MUX06"
+    assert state.mux_index == 6
+    assert state.channel == 1
+    assert state.voltage == pytest.approx(0.54)
+    assert state.output == output
     assert state.is_on is is_on
+
+
+def test_get_dc_voltage_state_reads_without_changing_output() -> None:
+    """DC state retrieval should read the mapped output without changing it."""
+    dc_controller = _DCVoltageController()
+    dc_controller.voltages[1] = 0.54
+    dc_controller.output_states[1] = True
+    ctx = _ContextForTest(
+        mux_labels=["MUX06"],
+        dc_controller=dc_controller,
+        mux_to_channel={6: 1},
+    )
+
+    state = ctx.get_dc_voltage_state(mux=6)
+
+    assert state.voltage == pytest.approx(0.54)
+    assert state.output == "on"
+    assert dc_controller.calls == [("is_output_on", 1), ("get_voltage", 1)]
 
 
 def test_dc_voltage_control_requires_mux_when_multiple_are_active() -> None:

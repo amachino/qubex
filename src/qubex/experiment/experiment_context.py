@@ -1246,7 +1246,7 @@ class ExperimentContext:
             f"{_DC_VOLTAGE_SET_MAX_ATTEMPTS} attempts."
         )
 
-    def _get_dc_voltage_state(
+    def get_dc_voltage_state(
         self,
         *,
         mux: int | str | None = None,
@@ -1296,7 +1296,7 @@ class ExperimentContext:
                 mux=resolved_mux.index,
                 tolerance=tolerance,
             ),
-            get_state=lambda: self._get_dc_voltage_state(mux=resolved_mux.index),
+            get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
             turn_on=lambda: self._turn_on_dc(mux=resolved_mux.index),
             turn_off=lambda: self._turn_off_dc(mux=resolved_mux.index),
         )

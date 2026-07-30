@@ -70,6 +70,7 @@ from qubex.typing import (
 from .dc_voltage_control import DCVoltageControl
 from .experiment_context import ExperimentContext
 from .models.calibration_note import CalibrationNote
+from .models.dc_voltage_state import DCVoltageState
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
 from .models.experiment_result import (
@@ -913,6 +914,14 @@ class Experiment:
             turn_off_on_exit=turn_off_on_exit,
         ) as control:
             yield control
+
+    def get_dc_voltage_state(
+        self,
+        *,
+        mux: int | str | None = None,
+    ) -> DCVoltageState:
+        """Return DC voltage and output-state readback for one mux."""
+        return self.ctx.get_dc_voltage_state(mux=mux)
 
     def save_calib_note(
         self,
