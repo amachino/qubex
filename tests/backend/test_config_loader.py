@@ -279,6 +279,44 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     assert mux_ro.index == mux_ri.index == 0
 
 
+def test_load_control_frequency_fh(tmp_path: Path):
+    """Given FH control frequencies, when loading config, then qubits expose FH values."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "control_frequency.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {"Q0": 5.0, "Q1": 6.0},
+        },
+    )
+    _write_yaml(
+        params_dir / "control_frequency_ef.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {"Q0": 4.7, "Q1": 5.6},
+        },
+    )
+    _write_yaml(
+        params_dir / "control_frequency_fh.yaml",
+        {
+            "meta": {"unit": "GHz"},
+            "data": {"Q0": 4.4},
+        },
+    )
+
+    loader = ConfigLoader(
+        system_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+    quantum_system = loader.get_experiment_system().quantum_system
+
+    q0 = quantum_system.get_qubit("Q0")
+    q1 = quantum_system.get_qubit("Q1")
+    assert math.isclose(q0.control_frequency_fh, 4.4, rel_tol=0, abs_tol=1e-9)
+    assert math.isclose(q1.control_frequency_fh, 5.2, rel_tol=0, abs_tol=1e-9)
+
+
 def test_load_uses_empty_measurement_defaults_when_file_is_missing(
     tmp_path: Path,
 ) -> None:
@@ -1832,6 +1870,26 @@ def test_r8_awg1331_with_ge_ef_cr_uses_prefix_layouts(tmp_path: Path) -> None:
     _assert_target_channel(system, "Q3", port_number=9, channel_number=0)
 
 
+def test_r8_awg1331_with_ge_ef_fh_uses_fh_channel(tmp_path: Path) -> None:
+    """Given awg1331 and ge-ef-fh, when building targets, then channel 2 is FH."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg1331",
+        configuration_mode="ge-ef-fh",
+    )
+
+    assert "Q0" in system.gen_targets
+    assert "Q0-ef" not in system.gen_targets
+    assert "Q0-fh" not in system.gen_targets
+    _assert_target_channel(system, "Q0", port_number=6, channel_number=0)
+
+    _assert_target_channel(system, "Q1", port_number=7, channel_number=0)
+    _assert_target_channel(system, "Q1-ef", port_number=7, channel_number=1)
+    _assert_target_channel(system, "Q1-fh", port_number=7, channel_number=2)
+    assert system.resolve_fh_label("Q1") == "Q1-fh"
+    assert "Q1-CR" not in system.gen_targets
+
+
 def test_r8_awg1331_with_ge_cr_cr_keeps_two_cr_channels(tmp_path: Path) -> None:
     """Given awg1331 and ge-cr-cr, when building targets, then 3-channel ports dedicate both extra channels to CR targets."""
     system = _load_r8_experiment_system(
@@ -1899,10 +1957,43 @@ def test_r8_awg2222_uses_two_channel_prefix_for_each_mode(
     assert f"Q3{missing_label[2:]}" not in system.gen_targets
 
 
+def test_r8_awg2222_with_ge_ef_fh_shares_second_channel_for_ef_and_fh(
+    tmp_path: Path,
+) -> None:
+    """Given awg2222 and ge-ef-fh, then EF and FH share channel 1."""
+    system = _load_r8_experiment_system(
+        tmp_path,
+        awg_option="se8_mxfe1_awg2222",
+        configuration_mode="ge-ef-fh",
+    )
+
+    for qubit, port_number in {
+        "Q0": 6,
+        "Q1": 7,
+        "Q2": 8,
+        "Q3": 9,
+    }.items():
+        ge = system.get_target(qubit)
+        ef = system.get_target(f"{qubit}-ef")
+        fh = system.get_target(f"{qubit}-fh")
+
+        assert ge.channel.port.number == port_number
+        assert ge.channel.number == 0
+        assert ef.channel.port.number == port_number
+        assert ef.channel.number == 1
+        assert fh.channel is ef.channel
+        assert ef.fine_frequency == fh.fine_frequency
+        assert ef.frequency != fh.frequency
+        assert ef.awg_frequency != fh.awg_frequency
+        assert system.resolve_fh_label(qubit) == f"{qubit}-fh"
+
+    assert "Q0-CR" not in system.gen_targets
+
+
 def test_quel3_target_registry_is_independent_of_configuration_mode(
     tmp_path: Path,
 ) -> None:
-    """Given QuEL-3 backend, when rebuilding registry with different modes, then logical targets stay unchanged."""
+    """Given QuEL-3 backend, when rebuilding registry with different modes, then logical FH targets stay unchanged."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     _write_yaml(
@@ -1934,12 +2025,13 @@ def test_quel3_target_registry_is_independent_of_configuration_mode(
     )
 
     assert ge_cr_cr_labels == ge_ef_cr_labels
+    assert "Q1-fh" in ge_cr_cr_labels
 
 
 def test_quel3_control_targets_share_one_logical_channel_per_port(
     tmp_path: Path,
 ) -> None:
-    """Given QuEL-3 backend, when building targets, then one port reuses one logical channel for GE and CR."""
+    """Given QuEL-3 backend, when building targets, then one port reuses one logical channel for GE, EF, FH, and CR."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     _write_yaml(
@@ -1966,14 +2058,19 @@ def test_quel3_control_targets_share_one_logical_channel_per_port(
     experiment_system = loader.get_experiment_system()
 
     ge_target = experiment_system.get_target("Q1")
+    ef_target = experiment_system.get_target("Q1-ef")
+    fh_target = experiment_system.get_target("Q1-fh")
     default_cr_target = experiment_system.get_target("Q1-CR")
     pair_cr_label = next(
         label
         for label in experiment_system.gen_targets
-        if label.startswith("Q1-") and label not in {"Q1-CR", "Q1-ef"}
+        if label.startswith("Q1-") and label not in {"Q1-CR", "Q1-ef", "Q1-fh"}
     )
     pair_cr_target = experiment_system.get_target(pair_cr_label)
 
+    assert experiment_system.resolve_fh_label("Q1") == "Q1-fh"
+    assert ge_target.channel.id == ef_target.channel.id
+    assert ge_target.channel.id == fh_target.channel.id
     assert ge_target.channel.id == default_cr_target.channel.id
     assert ge_target.channel.id == pair_cr_target.channel.id
 

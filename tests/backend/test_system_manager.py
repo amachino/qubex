@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
+from qubex.backend.quel1 import Quel1BackendController
 from qubex.backend.quel3 import (
     Quel3BackendController,
     Quel3HttpTransportConfig,
@@ -37,16 +38,16 @@ class FakeBox:
     ports: tuple[FakePort, ...]
 
 
-class FakeBackendController:
+class FakeBackendController(Quel1BackendController):
     """Backend controller stub for backend settings tests."""
 
     def __init__(self, configs: dict[str, dict]) -> None:
         self._configs = configs
         self._box_config_cache: dict[str, dict] = {}
 
-    def dump_box(self, box_id: str) -> dict:
+    def dump_box(self, box_name: str) -> dict:
         """Return a predefined box configuration."""
-        return self._configs.get(box_id, {})
+        return self._configs.get(box_name, {})
 
     def get_box_config_cache(self) -> dict[str, dict]:
         """Return a copy of the current box-cache snapshot."""
@@ -65,6 +66,19 @@ class FakeBackendController:
     def hash(self) -> int:
         """Return a stable hash for controller state."""
         return 0
+
+
+def _set_backend_controller(
+    manager: SystemManager,
+    monkeypatch: pytest.MonkeyPatch,
+    backend_controller: Quel1BackendController | Quel3BackendController,
+) -> None:
+    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    system_synchronizer = manager._create_system_synchronizer(  # noqa: SLF001
+        backend_controller
+    )
+    assert system_synchronizer is not None
+    monkeypatch.setattr(manager, "_system_synchronizer", system_synchronizer)
 
 
 class FakeExperimentSystem:
@@ -204,7 +218,7 @@ def test_fetch_backend_settings_from_hardware_collects_ports(
     }
     manager = SystemManager.shared()
     backend_controller = FakeBackendController(configs)
-    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    _set_backend_controller(manager, monkeypatch, backend_controller)
     monkeypatch.setattr(
         manager, "_experiment_system", FakeExperimentSystem([box_a, box_b])
     )
@@ -241,7 +255,11 @@ def test_sync_backend_settings_to_experiment_system_updates_in_place(
     )
     experiment_system = FakeExperimentSystemForBackendSettings([box])
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
-    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
+    _set_backend_controller(
+        manager,
+        monkeypatch,
+        object.__new__(Quel1BackendController),
+    )
     backend_settings = {
         "A": {
             "ports": {
@@ -306,7 +324,11 @@ def test_sync_backend_settings_to_experiment_system_skips_fnco_count_mismatch(
     )
     experiment_system = FakeExperimentSystemForBackendSettings([box])
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
-    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
+    _set_backend_controller(
+        manager,
+        monkeypatch,
+        object.__new__(Quel1BackendController),
+    )
     backend_settings = {
         "A": {
             "ports": {
@@ -338,9 +360,9 @@ def test_fetch_backend_settings_from_hardware_has_no_side_effect(
     """Given current cache, when fetching, then manager backend settings stay unchanged."""
     manager = SystemManager.shared()
     box = FakeBox(id="A", ports=(FakePort(number=1, type=PortType.CTRL),))
-    monkeypatch.setattr(
+    _set_backend_controller(
         manager,
-        "_backend_controller",
+        monkeypatch,
         FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}}),
     )
     monkeypatch.setattr(manager, "_experiment_system", FakeExperimentSystem([box]))
@@ -358,9 +380,9 @@ def test_is_synced_has_no_side_effect_on_backend_settings(
     """Given mismatch, when checking sync, then backend settings stay unchanged."""
     manager = SystemManager.shared()
     box = FakeBox(id="A", ports=(FakePort(number=1, type=PortType.CTRL),))
-    monkeypatch.setattr(
+    _set_backend_controller(
         manager,
-        "_backend_controller",
+        monkeypatch,
         FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}}),
     )
     monkeypatch.setattr(manager, "_experiment_system", FakeExperimentSystem([box]))
@@ -390,7 +412,7 @@ def test_pull_merges_partial_backend_settings(
     )
     backend_controller = FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}})
     backend_controller.replace_box_config_cache({"B": {"ports": {2: {"mode": "read"}}}})
-    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    _set_backend_controller(manager, monkeypatch, backend_controller)
     monkeypatch.setattr(
         manager,
         "_backend_settings",
@@ -424,7 +446,7 @@ def test_pull_restores_full_cache_after_partial_fetch_when_cache_is_empty(
     )
     backend_controller = FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}})
     backend_controller.replace_box_config_cache({})
-    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    _set_backend_controller(manager, monkeypatch, backend_controller)
     monkeypatch.setattr(
         manager,
         "_backend_settings",
@@ -448,9 +470,9 @@ def test_is_synced_compares_requested_box_subset(
     manager = SystemManager.shared()
     box_a = FakeBox(id="A", ports=())
     monkeypatch.setattr(manager, "_experiment_system", FakeExperimentSystem([box_a]))
-    monkeypatch.setattr(
+    _set_backend_controller(
         manager,
-        "_backend_controller",
+        monkeypatch,
         FakeBackendController({"A": {"ports": {1: {"mode": "ctrl"}}}}),
     )
     monkeypatch.setattr(
@@ -499,6 +521,7 @@ def test_sync_experiment_system_to_hardware_parallel_submits_per_box(
             )
 
     monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
@@ -541,6 +564,7 @@ def test_sync_experiment_system_to_hardware_sequential_calls_in_order(
             )
 
     monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
 
     manager._sync_experiment_system_to_hardware(  # noqa: SLF001
@@ -581,6 +605,7 @@ def test_sync_experiment_system_to_backend_controller_delegates_to_system_synchr
             delegated.append(resolved_experiment_system)
 
     monkeypatch.setattr(manager, "_system_synchronizer", _SystemSyncManager())
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=1))
     monkeypatch.setattr(manager, "_experiment_system", experiment_system)
     monkeypatch.setattr(manager, "_backend_settings", BackendSettings())
 
@@ -609,7 +634,7 @@ def test_modified_backend_settings_initializes_shared_read_box_once(
         number: int
         fnco_freq: int
 
-    class _FakeBackendController:
+    class _FakeBackendController(Quel1BackendController):
         def __init__(self) -> None:
             self._cache = {
                 "BOX0": {
@@ -623,42 +648,53 @@ def test_modified_backend_settings_initializes_shared_read_box_once(
                     }
                 }
             }
-            self.initialize_calls: list[str | list[str]] = []
+            self.initialize_calls: list[str | Sequence[str]] = []
 
         def get_box_config_cache(self) -> dict[str, dict]:
             return deepcopy(self._cache)
 
         def config_port(
             self,
-            *,
             box_name: str,
-            port: int,
-            lo_freq_hz: int | None,
-            cnco_freq_hz: int,
+            *,
+            port: int | tuple[int, int],
+            lo_freq_hz: int | None = None,
+            cnco_freq_hz: int | None = None,
+            vatt: int | None = None,
+            sideband: str | None = None,
+            fullscale_current: int | None = None,
+            rfswitch: str | None = None,
         ) -> None:
+            del vatt, sideband, fullscale_current, rfswitch
+            assert isinstance(port, int)
+            assert cnco_freq_hz is not None
             self._cache[box_name]["ports"][port]["lo_freq"] = lo_freq_hz
             self._cache[box_name]["ports"][port]["cnco_freq"] = cnco_freq_hz
 
         def config_channel(
             self,
-            *,
             box_name: str,
-            port: int,
+            *,
+            port: int | tuple[int, int],
             channel: int,
-            fnco_freq_hz: int,
+            fnco_freq_hz: int | None = None,
         ) -> None:
+            assert isinstance(port, int)
+            assert fnco_freq_hz is not None
             self._cache[box_name]["ports"][port]["channels"][channel]["fnco_freq"] = (
                 fnco_freq_hz
             )
 
         def config_runit(
             self,
-            *,
             box_name: str,
-            port: int,
+            *,
+            port: int | tuple[int, int],
             runit: int,
-            fnco_freq_hz: int,
+            fnco_freq_hz: int | None = None,
         ) -> None:
+            assert isinstance(port, int)
+            assert fnco_freq_hz is not None
             self._cache[box_name]["ports"][port]["runits"][runit]["fnco_freq"] = (
                 fnco_freq_hz
             )
@@ -667,7 +703,13 @@ def test_modified_backend_settings_initializes_shared_read_box_once(
             for box_id, config in box_configs.items():
                 self._cache[box_id] = deepcopy(config)
 
-        def initialize_awg_and_capunits(self, box_names: str | list[str]) -> None:
+        def initialize_awg_and_capunits(
+            self,
+            box_names: str | Sequence[str],
+            *,
+            parallel: bool | None = None,
+        ) -> None:
+            del parallel
             self.initialize_calls.append(box_names)
 
         def replace_box_config_cache(self, box_configs: dict[str, dict]) -> None:
@@ -694,7 +736,7 @@ def test_modified_backend_settings_initializes_shared_read_box_once(
             return
 
     backend_controller = _FakeBackendController()
-    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    _set_backend_controller(manager, monkeypatch, backend_controller)
     monkeypatch.setattr(manager, "_experiment_system", _FakeExperimentSystem())
 
     with manager.modified_backend_settings(
@@ -719,7 +761,7 @@ def test_push_cancel_restores_backend_controller_cache_from_backend_settings(
     backend_settings = {"A": {"ports": {1: {"mode": "ctrl"}}}}
     backend_controller = FakeBackendController({})
     backend_controller.replace_box_config_cache({})
-    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    _set_backend_controller(manager, monkeypatch, backend_controller)
     monkeypatch.setattr(manager, "_backend_settings", backend_settings)
 
     box = SimpleNamespace(id="A", name="Alpha")
@@ -753,7 +795,7 @@ def test_push_does_not_reconfigure_ports(
     """Given user-modified system model, when pushing, then push does not reconfigure ports."""
     manager = SystemManager.shared()
     backend_controller = FakeBackendController({})
-    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    _set_backend_controller(manager, monkeypatch, backend_controller)
     monkeypatch.setattr(manager, "_backend_settings", {})
 
     box = SimpleNamespace(id="A", name="Alpha")
@@ -798,7 +840,7 @@ def test_push_restores_full_cache_after_partial_fetch_when_cache_is_empty(
     manager = SystemManager.shared()
     backend_controller = FakeBackendController({})
     backend_controller.replace_box_config_cache({})
-    monkeypatch.setattr(manager, "_backend_controller", backend_controller)
+    _set_backend_controller(manager, monkeypatch, backend_controller)
     monkeypatch.setattr(
         manager,
         "_backend_settings",
@@ -847,6 +889,7 @@ def test_push_without_cache_sync_still_applies_hardware_sync(
             hash=0,
         ),
     )
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=0))
     monkeypatch.setattr(manager, "_supports_box_settings_cache_sync", lambda: False)
 
     called_sync_hardware = False
@@ -876,6 +919,7 @@ def test_push_forwards_target_labels_to_hardware_sync(
             hash=0,
         ),
     )
+    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace(hash=0))
     monkeypatch.setattr(manager, "_supports_box_settings_cache_sync", lambda: False)
     captured: dict[str, object] = {}
 
@@ -1004,9 +1048,12 @@ def test_modified_backend_settings_is_noop_for_quel3_without_cache_support(
 ) -> None:
     """Given QuEL-3 without cache support, modified_backend_settings should no-op."""
     manager = SystemManager.shared()
-    monkeypatch.setattr(manager, "_backend_kind", BACKEND_KIND_QUEL3)
     monkeypatch.setattr(manager, "_system_synchronizer", SimpleNamespace())
-    monkeypatch.setattr(manager, "_backend_controller", SimpleNamespace())
+    monkeypatch.setattr(
+        manager,
+        "_backend_controller",
+        object.__new__(Quel3BackendController),
+    )
     monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace(hash=0))
 
     entered = False
@@ -1053,7 +1100,6 @@ def test_load_passes_backend_kind_to_selector(
 
     def _fake_set_backend_kind(kind: str) -> None:
         called.append(f"kind:{kind}")
-        manager.__dict__["_backend_kind"] = kind
 
     def _fake_sync() -> None:
         called.append("sync")
@@ -1098,7 +1144,6 @@ def test_load_uses_config_loader_backend_kind_when_backend_kind_is_omitted(
 
     def _fake_set_backend_kind(kind: str) -> None:
         called.append(f"kind:{kind}")
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
@@ -1407,7 +1452,6 @@ def test_load_defaults_to_quel1_when_system_backend_is_missing(
 
     def _fake_set_backend_kind(kind: str) -> None:
         selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
@@ -1458,7 +1502,6 @@ def test_load_resolves_backend_kind_from_system_config(
 
     def _fake_set_backend_kind(kind: str) -> None:
         selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
@@ -1506,7 +1549,6 @@ def test_load_explicit_backend_kind_overrides_default_resolution(
 
     def _fake_set_backend_kind(kind: str) -> None:
         selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
@@ -1560,7 +1602,6 @@ def test_load_explicit_backend_kind_overrides_system_config(
 
     def _fake_set_backend_kind(kind: str) -> None:
         selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
@@ -1609,7 +1650,6 @@ def test_load_defaults_to_quel1_when_chip_and_system_backend_are_missing(
 
     def _fake_set_backend_kind(kind: str) -> None:
         selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
@@ -1656,7 +1696,6 @@ def test_load_ignores_unknown_backend_kind_in_chip_config(
 
     def _fake_set_backend_kind(kind: str) -> None:
         selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
@@ -1703,7 +1742,8 @@ def test_load_preserves_backend_kind_when_experiment_system_resolution_fails(
 ) -> None:
     """Given experiment-system resolution failure, when loading, then backend kind and config loader remain unchanged."""
     manager = SystemManager.shared()
-    manager.__dict__["_backend_kind"] = BACKEND_KIND_QUEL1
+    previous_controller = object.__new__(Quel1BackendController)
+    manager.__dict__["_backend_controller"] = previous_controller
     previous_loader = object()
     manager.__dict__["_config_loader"] = previous_loader
     selected: list[str] = []
@@ -1724,7 +1764,6 @@ def test_load_preserves_backend_kind_when_experiment_system_resolution_fails(
 
     def _fake_set_backend_kind(kind: str) -> None:
         selected.append(kind)
-        manager.__dict__["_backend_kind"] = kind
 
     monkeypatch.setattr(
         "qubex.system.system_manager.ConfigLoader",
@@ -1740,4 +1779,5 @@ def test_load_preserves_backend_kind_when_experiment_system_resolution_fails(
 
     assert selected == []
     assert manager.backend_kind == BACKEND_KIND_QUEL1
+    assert manager.backend_controller is previous_controller
     assert manager.__dict__["_config_loader"] is previous_loader

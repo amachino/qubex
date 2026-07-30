@@ -41,6 +41,18 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
             type=TargetType.CTRL_CR,
             channel=SimpleNamespace(port=ctrl_port),
         ),
+        "Q00-Q01-CUSTOM": SimpleNamespace(
+            label="Q00-Q01-CUSTOM",
+            frequency=4.37,
+            type=TargetType.CTRL_2Q,
+            channel=SimpleNamespace(port=ctrl_port),
+        ),
+        "Q00-Q01-bSWAP": SimpleNamespace(
+            label="Q00-Q01-bSWAP",
+            frequency=4.40,
+            type=TargetType.CTRL_2Q,
+            channel=SimpleNamespace(port=ctrl_port),
+        ),
         "Q01": SimpleNamespace(
             label="Q01",
             frequency=4.50,
@@ -67,7 +79,13 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
     )
 
     request_by_target = {request.target_labels[0]: request for request in requests}
-    assert set(request_by_target) == {"RQ00", "Q00", "Q00-CR"}
+    assert set(request_by_target) == {
+        "RQ00",
+        "Q00",
+        "Q00-CR",
+        "Q00-Q01-CUSTOM",
+        "Q00-Q01-bSWAP",
+    }
 
     read_request = request_by_target["RQ00"]
     assert read_request.port_id == "quel3-02-a01:trx_p00p01"
@@ -95,6 +113,22 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
     assert cr_request.frequency_range_min_hz == pytest.approx(4.25e9)
     assert cr_request.frequency_range_max_hz == pytest.approx(4.45e9)
     assert cr_request.target_labels == ("Q00-CR",)
+
+    custom_2q_request = request_by_target["Q00-Q01-CUSTOM"]
+    assert custom_2q_request.port_id == "quel3-02-a01:tx_p02"
+    assert custom_2q_request.role == "TRANSMITTER"
+    assert custom_2q_request.alias == "Q00-Q01-CUSTOM"
+    assert custom_2q_request.frequency_range_min_hz == pytest.approx(4.27e9)
+    assert custom_2q_request.frequency_range_max_hz == pytest.approx(4.47e9)
+    assert custom_2q_request.target_labels == ("Q00-Q01-CUSTOM",)
+
+    bswap_request = request_by_target["Q00-Q01-bSWAP"]
+    assert bswap_request.port_id == "quel3-02-a01:tx_p02"
+    assert bswap_request.role == "TRANSMITTER"
+    assert bswap_request.alias == "Q00-Q01-bSWAP"
+    assert bswap_request.frequency_range_min_hz == pytest.approx(4.30e9)
+    assert bswap_request.frequency_range_max_hz == pytest.approx(4.50e9)
+    assert bswap_request.target_labels == ("Q00-Q01-bSWAP",)
 
 
 def test_build_deploy_requests_filters_by_target_labels() -> None:

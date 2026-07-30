@@ -17,6 +17,8 @@ _SUPPORTED_TARGET_TYPES: Final[tuple[TargetType, ...]] = (
     TargetType.READ,
     TargetType.CTRL_GE,
     TargetType.CTRL_EF,
+    TargetType.CTRL_FH,
+    TargetType.CTRL_2Q,
     TargetType.CTRL_CR,
     TargetType.PUMP,
 )

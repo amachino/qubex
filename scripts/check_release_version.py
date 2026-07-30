@@ -57,6 +57,28 @@ def _check_dependency_pins(expected_version: str) -> list[str]:
     return errors
 
 
+def _read_citation_version() -> str:
+    """Extract the software version from CITATION.cff."""
+    match = re.search(
+        r'^version:\s*"([^"]+)"',
+        release_version.CITATION_FILE.read_text(),
+        re.MULTILINE,
+    )
+    if match is None:
+        raise ValueError(f"version field not found in {release_version.CITATION_FILE}.")
+    return match.group(1)
+
+
+def _check_citation_version(expected_version: str) -> list[str]:
+    """Return version drift messages for CITATION.cff."""
+    actual_version = _read_citation_version()
+    if actual_version == expected_version:
+        return []
+    return [
+        f"CITATION.cff: expected version {expected_version}, found {actual_version}"
+    ]
+
+
 def _check_lockfile() -> list[str]:
     """Return lockfile drift messages."""
     if UV_EXECUTABLE is None:
@@ -80,6 +102,7 @@ def main() -> int:
     errors = [
         *_check_project_versions(expected_version),
         *_check_dependency_pins(expected_version),
+        *_check_citation_version(expected_version),
         *_check_lockfile(),
     ]
     if not errors:

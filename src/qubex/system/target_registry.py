@@ -67,9 +67,11 @@ class TargetRegistry:
         self._read_label_by_qubit: dict[str, str] = {}
         self._ge_label_by_qubit: dict[str, str] = {}
         self._ef_label_by_qubit: dict[str, str] = {}
+        self._fh_label_by_qubit: dict[str, str] = {}
         self._cr_default_label_by_control: dict[str, str] = {}
         self._cr_pair_label_by_pair: dict[tuple[str, str], str] = {}
         self._cr_pair_by_label: dict[str, tuple[str, str]] = {}
+        self._two_qubit_qubits_by_label: dict[str, tuple[str, str]] = {}
 
         for label, target in self._gen_target_dict.items():
             qubit_label = target.qubit
@@ -82,6 +84,8 @@ class TargetRegistry:
                 self._ge_label_by_qubit.setdefault(qubit_label, label)
             if target.is_ef and qubit_label:
                 self._ef_label_by_qubit.setdefault(qubit_label, label)
+            if target.is_fh and qubit_label:
+                self._fh_label_by_qubit.setdefault(qubit_label, label)
 
         for label, target in self._cap_target_dict.items():
             qubit_label = getattr(target.object, "qubit", None)
@@ -91,36 +95,62 @@ class TargetRegistry:
                 self._read_label_by_qubit.setdefault(qubit_label, label)
 
         for label, target in self._gen_target_dict.items():
-            if not target.is_cr:
+            if target.is_cr:
+                pair = self._metadata_pair(
+                    target.metadata,
+                    first_key="control_qubit",
+                    second_key="target_qubit",
+                )
+                if pair is None:
+                    continue
+                control_qubit, target_qubit = pair
+                self._cr_pair_by_label[label] = pair
+                if target_qubit == "CR":
+                    self._cr_default_label_by_control.setdefault(control_qubit, label)
+                else:
+                    self._cr_pair_label_by_pair.setdefault(pair, label)
+                    self._two_qubit_qubits_by_label.setdefault(label, pair)
                 continue
-            pair = self._extract_cr_pair_from_label(label)
-            if pair is None:
-                continue
-            control_qubit, target_qubit = pair
-            self._cr_pair_by_label[label] = pair
-            if target_qubit == "CR":
-                self._cr_default_label_by_control.setdefault(control_qubit, label)
+
+            if target.is_bswap:
+                pair = self._metadata_pair(
+                    target.metadata,
+                    first_key="active_qubit",
+                    second_key="passive_qubit",
+                )
+            elif target.is_2q:
+                pair = self._metadata_qubits(target.metadata)
             else:
-                self._cr_pair_label_by_pair.setdefault(pair, label)
+                pair = None
 
-    def _extract_cr_pair_from_label(self, label: str) -> tuple[str, str] | None:
-        """
-        Extract CR pair from a registered CR target label.
+            if pair is not None:
+                self._two_qubit_qubits_by_label[label] = pair
 
-        Notes
-        -----
-        This does not perform free-form label parsing. It only interprets labels
-        already registered as CR targets and only for known qubit labels.
-        """
-        if "-" not in label:
-            return None
-        control, target = label.split("-", maxsplit=1)
-        if control not in self._qubit_labels:
-            return None
-        if target == "CR":
-            return (control, target)
-        if target in self._qubit_labels:
-            return (control, target)
+    @staticmethod
+    def _metadata_pair(
+        metadata: Mapping[str, object],
+        *,
+        first_key: str,
+        second_key: str,
+    ) -> tuple[str, str] | None:
+        """Return a qubit-role pair from target metadata."""
+        first = metadata.get(first_key)
+        second = metadata.get(second_key)
+        if isinstance(first, str) and isinstance(second, str):
+            return first, second
+        return None
+
+    @staticmethod
+    def _metadata_qubits(metadata: Mapping[str, object]) -> tuple[str, str] | None:
+        """Return an ordered generic 2Q qubit tuple from target metadata."""
+        qubits = metadata.get("qubits")
+        if (
+            isinstance(qubits, (list, tuple))
+            and len(qubits) == 2
+            and isinstance(qubits[0], str)
+            and isinstance(qubits[1], str)
+        ):
+            return qubits[0], qubits[1]
         return None
 
     @property
@@ -196,6 +226,21 @@ class TargetRegistry:
             raise ValueError(f"EF target is not registered for qubit `{qubit_label}`.")
         return resolved
 
+    def resolve_fh_label(
+        self,
+        label: str,
+        *,
+        allow_legacy: bool = False,
+    ) -> str:
+        """Resolve an FH target label; optionally allow legacy parsing."""
+        qubit_label = self.resolve_qubit_label(label, allow_legacy=allow_legacy)
+        resolved = self._fh_label_by_qubit.get(qubit_label)
+        if resolved is None:
+            if allow_legacy:
+                return Target.fh_label(label)
+            raise ValueError(f"FH target is not registered for qubit `{qubit_label}`.")
+        return resolved
+
     def resolve_read_label(
         self,
         label: str,
@@ -244,15 +289,21 @@ class TargetRegistry:
     def resolve_cr_pair(
         self,
         label: str,
-        *,
-        allow_legacy: bool = False,
     ) -> tuple[str, str]:
-        """Resolve CR pair from registry; optionally allow legacy parsing."""
+        """Resolve CR qubit roles from registered target metadata."""
         resolved = self._cr_pair_by_label.get(label)
         if resolved is None:
-            if allow_legacy:
-                return Target.cr_qubit_pair(label)
             raise ValueError(f"CR target `{label}` is not registered.")
+        return resolved
+
+    def resolve_2q_qubits(
+        self,
+        label: str,
+    ) -> tuple[str, str]:
+        """Resolve two-qubit target qubits from registered target metadata."""
+        resolved = self._two_qubit_qubits_by_label.get(label)
+        if resolved is None:
+            raise ValueError(f"2Q target `{label}` is not registered.")
         return resolved
 
     def measurement_output_label(self, target_label: str) -> str:

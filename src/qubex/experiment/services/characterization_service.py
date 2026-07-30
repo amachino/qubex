@@ -24,7 +24,7 @@ from qxpulse import (
     Waveform,
 )
 from rich.prompt import Confirm
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from typing_extensions import deprecated
 
 import qubex.visualization as viz
@@ -2397,12 +2397,19 @@ class CharacterizationService:
 
         Parameters
         ----------
-        target
+        target : str
             Target qubit label.
-        f_start
-            Start frequency for the sweep.
-        n_samples
-            Number of frequency samples.
+        f_start : float | None, optional
+            Start frequency for the sweep in GHz.
+        df : float | None, optional
+            Frequency sweep step size in GHz.
+        n_samples : int | None, optional
+            Number of frequency steps.
+
+        Returns
+        -------
+        float
+            The electrical delay in ns.
         """
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -2440,7 +2447,7 @@ class CharacterizationService:
             if reset_awg_and_capunits:
                 self.ctx.reset_awg_and_capunits(box_ids=[read_box.id])
             phases = []
-            for freq in frequency_range:
+            for freq in tqdm(frequency_range, desc=f"electrical delay for {target}"):
                 with self.ctx.modified_frequencies({read_label: freq}):
                     result = self._measurement_service.measure(
                         {qubit_label: np.zeros(0)},
@@ -2617,7 +2624,9 @@ class CharacterizationService:
             ssb = read_box.traits.readout_ssb
             cnco_center = read_box.traits.readout_cnco_center
 
-        for subrange in subranges:
+        for subrange in tqdm(
+            subranges, desc=f"resonator freq. scan subranges for {target}"
+        ):
             if use_quel3_frequency_directives:
                 backend_settings = nullcontext()
             else:
@@ -2634,7 +2643,13 @@ class CharacterizationService:
                     fnco_freq=0,
                 )
             with backend_settings:
-                for sub_idx, freq in enumerate(subrange):
+                for sub_idx, freq in enumerate(
+                    tqdm(
+                        subrange,
+                        desc="resonator frequency within subrange",
+                        leave=False,
+                    )
+                ):
                     if idx > 0 and sub_idx == 0:
                         prev_freq = frequency_range[idx - 1]
                         with self.ctx.modified_frequencies({read_label: prev_freq}):
@@ -3096,7 +3111,7 @@ class CharacterizationService:
 
         self.ctx.reset_awg_and_capunits(qubits=[qubit_label])
 
-        for freq in freq_range:
+        for freq in tqdm(freq_range, desc=f"reflection coefficient for {target}"):
             with self.ctx.modified_frequencies({read_label: freq}):
                 result = self._measurement_service.measure(
                     {qubit_label: initialize_pulse},
@@ -3235,7 +3250,9 @@ class CharacterizationService:
 
         # measure the phase and amplitude
         idx = 0
-        for subrange in subranges:
+        for subrange in tqdm(
+            subranges, desc=f"qubit freq. scan subranges for {target}"
+        ):
             if use_quel3_frequency_directives:
                 backend_settings = nullcontext()
             else:
@@ -3253,7 +3270,9 @@ class CharacterizationService:
                 )
             with backend_settings:
                 self.ctx.reset_awg_and_capunits(qubits=[qubit])
-                for control_frequency in subrange:
+                for control_frequency in tqdm(
+                    subrange, desc="qubit frequency within subrange", leave=False
+                ):
                     with self.ctx.modified_frequencies(
                         {
                             qubit: control_frequency,
@@ -3577,7 +3596,14 @@ class CharacterizationService:
         frequency_range
             Control frequency sweep range in GHz.
         target_rabi_rate
-            Target Rabi rate used for scaling.
+            Target Rabi rate used for scaling in GHz. If None, uses
+            `qubex.experiment.experiment_constants.DEFAULT_RABI_FREQUENCY`.
+
+        Returns
+        -------
+        Result
+            A Result object with the key 'estimated_amplitude', which is the
+            pulse amplitude that is predicted to produce the target Rabi rate.
         """
         if target_rabi_rate is None:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
@@ -3716,7 +3742,7 @@ class CharacterizationService:
 
         power_range = np.array(power_range)
         result2d = []
-        for power in tqdm(power_range):
+        for power in tqdm(power_range, desc=f"control power sweep for {target}"):
             power_linear = 10 ** (power / 10)
             amplitude = np.sqrt(power_linear)
             result1d = self.scan_qubit_frequencies(
@@ -3979,13 +4005,15 @@ class CharacterizationService:
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
+        objective: Literal["fidelity", "distance"] | None = None,
+        fidelity_ratio: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
         """
-        Find readout frequency maximizing state separation.
+        Find readout frequency maximizing state separation or readout fidelity.
 
         Parameters
         ----------
@@ -3995,7 +4023,17 @@ class CharacterizationService:
             Frequency step in GHz.
         frequency_width
             Span around the center frequency.
+        objective
+            Optimization objective: `"distance"` maximizes IQ state distance
+            (default), `"fidelity"` maximizes GMM-based readout fidelity.
+        fidelity_ratio
+            Fraction of peak fidelity used as the acceptance threshold (0--1).
+            Only used when `objective="fidelity"`.
         """
+        if objective is None:
+            objective = "distance"
+        if fidelity_ratio is None:
+            fidelity_ratio = 0.99
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -4008,6 +4046,45 @@ class CharacterizationService:
             df = 0.0004
         if frequency_width is None:
             frequency_width = 0.02
+
+        if objective == "fidelity":
+            return self._find_optimal_readout_frequency_by_fidelity(
+                target=target,
+                df=df,
+                frequency_width=frequency_width,
+                readout_amplitude=readout_amplitude,
+                fidelity_ratio=fidelity_ratio,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+
+        return self._find_optimal_readout_frequency_by_distance(
+            target=target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def _find_optimal_readout_frequency_by_distance(
+        self,
+        target: str,
+        df: float,
+        frequency_width: float,
+        readout_amplitude: float | None,
+        electrical_delay: float | None,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout frequency maximizing IQ state distance."""
         result_0 = self.measure_reflection_coefficient(
             target,
             df=df,
@@ -4091,6 +4168,171 @@ class CharacterizationService:
                 "fig": fig,
             },
             figure=fig,
+        )
+
+    def _sweep_readout_frequency(
+        self,
+        target: str,
+        frequency_range: NDArray,
+        mode: Literal["avg", "single"],
+        readout_amplitude: float | None,
+        shots: int,
+        interval: float,
+    ) -> tuple[list[NDArray], list[NDArray]]:
+        """Sweep readout frequency and collect IQ data for states 0 and 1."""
+        read_label = self.ctx.resolve_read_label(target)
+        readout_amplitudes = (
+            None if readout_amplitude is None else {target: readout_amplitude}
+        )
+        buffer_0: list[NDArray] = []
+        buffer_1: list[NDArray] = []
+        for frequency in tqdm(frequency_range):
+            with self.ctx.modified_frequencies({read_label: float(frequency)}):
+                result_0 = self._measurement_service.measure_state(
+                    {target: "0"},
+                    mode=mode,
+                    readout_amplitudes=readout_amplitudes,
+                    shots=shots,
+                    interval=interval,
+                )
+                result_1 = self._measurement_service.measure_state(
+                    {target: "1"},
+                    mode=mode,
+                    readout_amplitudes=readout_amplitudes,
+                    shots=shots,
+                    interval=interval,
+                )
+            buffer_0.append(result_0.data[target].kerneled)
+            buffer_1.append(result_1.data[target].kerneled)
+        return buffer_0, buffer_1
+
+    def _find_optimal_readout_frequency_by_fidelity(
+        self,
+        target: str,
+        df: float,
+        frequency_width: float,
+        readout_amplitude: float | None,
+        fidelity_ratio: float,
+        shots: int,
+        interval: float,
+        plot: bool,
+        save_image: bool,
+    ) -> Result:
+        """Find readout frequency maximizing GMM-based readout fidelity."""
+        from qubex.measurement.classifiers.state_classifier_gmm import (
+            StateClassifierGMM,
+        )
+
+        read_label = self.ctx.resolve_read_label(target)
+        center_frequency = self.ctx.targets[read_label].frequency
+        frequency_range = np.arange(
+            center_frequency - frequency_width / 2,
+            center_frequency + frequency_width / 2,
+            df,
+        )
+        phase = self.ctx.reference_phases.get(target, 0.0)
+
+        buffer_0, buffer_1 = self._sweep_readout_frequency(
+            target,
+            frequency_range,
+            mode="single",
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
+        )
+
+        fidelities: list[float] = []
+        for iq_0, iq_1 in zip(buffer_0, buffer_1, strict=True):
+            classifier = StateClassifierGMM.fit({0: iq_0, 1: iq_1}, phase=phase)
+            fid_per_state = []
+            for state, iq in enumerate([iq_0, iq_1]):
+                predicted = classifier.predict(iq)
+                correct = int(np.sum(predicted == state))
+                fid_per_state.append(correct / len(iq))
+            fidelities.append(float(np.mean(fid_per_state)))
+
+        fid_arr = np.array(fidelities)
+        fid_peak = float(fid_arr.max())
+        plateau_mask = fid_arr >= fid_peak * fidelity_ratio
+        best_idx = int(np.where(plateau_mask)[0][0])
+        optimal_frequency = float(frequency_range[best_idx])
+
+        fig = viz.make_figure(width=600, height=300)
+        fig.add_scatter(
+            x=list(frequency_range),
+            y=list(fid_arr),
+            name="Readout fidelity",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_frequency,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=(
+                f"f_opt: {optimal_frequency:.4f} GHz<br>"
+                f"fidelity: {fid_arr[best_idx]:.4f}<br>"
+                f"peak: {fid_peak:.4f}"
+            ),
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"Readout fidelity : {target}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Readout fidelity",
+        )
+
+        figures: dict[str, Any] = {"readout_fidelity": fig}
+        readout_amplitudes = (
+            None if readout_amplitude is None else {target: readout_amplitude}
+        )
+        with self.ctx.modified_frequencies({read_label: optimal_frequency}):
+            classifier_result = self._measurement_service.build_classifier(
+                targets=target,
+                readout_amplitudes=readout_amplitudes,
+                n_shots=shots,
+                shot_interval=interval,
+                plot=plot,
+            )
+        if classifier_result.figures is not None:
+            figures.update(classifier_result.figures)
+
+        if plot:
+            fig.show()
+            print(
+                f"f_opt: {optimal_frequency:.4f} GHz  "
+                f"readout_fidelity: {fid_arr[best_idx]:.4f}  "
+                f"peak: {fid_peak:.4f}"
+            )
+
+        if save_image:
+            viz.save_figure(
+                fig,
+                name=f"optimal_readout_frequency_fidelity_{target}",
+                width=600,
+                height=300,
+            )
+
+        return Result(
+            data={
+                "optimal_frequency": optimal_frequency,
+                "frequency_range": frequency_range,
+                "signals_0": np.array(buffer_0),
+                "signals_1": np.array(buffer_1),
+                "readout_fidelity": fid_arr,
+                "classifier_result": classifier_result,
+                # TODO: Remove this legacy payload key after callers migrate to .figure.
+                "fig": fig,
+            },
+            figure=fig,
+            figures=figures,
         )
 
     def find_optimal_readout_amplitude(

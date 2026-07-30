@@ -155,6 +155,7 @@ system ごとに `n_shots`、`shot_interval`、readout timing の既定値を変
 `configuration_mode` は channel role の優先順として解釈されるようになりました。
 
 - `ge-ef-cr` は `ge`、`ef`、`cr`
+- `ge-ef-fh` は `ge`、`ef`、`fh`
 - `ge-cr-cr` は `ge`、`cr`、`cr`
 - control port の channel 数が足りない場合は左側の役割だけを残します
 
@@ -163,7 +164,9 @@ system ごとに `n_shots`、`shot_interval`、readout timing の既定値を変
 `se8_mxfe1_awg2222` は profile-controlled port を `2-2-2-2` にするため、
 `configuration_mode="ge-ef-cr"` はそこで `ge-ef` target を生成します。
 その port で CR target が必要なら、
-`configuration_mode="ge-cr-cr"` を使ってください。
+`configuration_mode="ge-cr-cr"` を使ってください。2 channel port で EF/FH workflow
+を使う場合は `configuration_mode="ge-ef-fh"` を指定します。EF と FH は 2 本目の
+channel を共有します。
 
 ## API と import の変更
 

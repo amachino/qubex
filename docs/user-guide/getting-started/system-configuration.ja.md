@@ -97,8 +97,10 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
 `configuration_mode` は固定の channel 数を保証する指定ではなく、優先順を表します。
 
 - `ge-ef-cr` は `ge`、`ef`、`cr` の順に channel を割り当てます。
+- `ge-ef-fh` は 3 channel port では `ge`、`ef`、`fh` を割り当て、
+  2 channel port では channel 0 に `ge`、channel 1 に `ef` と `fh` を共有します。
 - `ge-cr-cr` は `ge`、`cr`、`cr` の順に channel を割り当てます。
-- control port の channel 数が足りない場合は、左から必要な役割だけを残します。
+- それ以外で control port の channel 数が足りない場合は、左から必要な役割だけを残します。
 
 `quel1se-riken8` では、AWG プロファイルが 4 本の profile-dependent control port を決めます。
 
@@ -107,6 +109,7 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
   `ge`、`ge-ef-cr`、`ge-ef-cr`、`ge` です。
 - `se8_mxfe1_awg2222` では、これらの port は `2-2-2-2` になります。
   `configuration_mode="ge-ef-cr"` のときは各 port が `ge-ef` に、
+  `configuration_mode="ge-ef-fh"` のときは各 port が共有 `ge-ef/fh` に、
   `configuration_mode="ge-cr-cr"` のときは各 port が `ge-cr` に解決されます。
 
 ### `system.yaml`

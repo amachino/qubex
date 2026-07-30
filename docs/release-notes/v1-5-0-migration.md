@@ -158,6 +158,7 @@ readout timing.
 `configuration_mode` is now interpreted as a priority-ordered channel layout.
 
 - `ge-ef-cr` means `ge`, then `ef`, then `cr`
+- `ge-ef-fh` means `ge`, then `ef`, then `fh`
 - `ge-cr-cr` means `ge`, then `cr`, then `cr`
 - control ports with fewer channels keep only the leftmost roles
 
@@ -165,7 +166,9 @@ If your hardware profile changes control-port channel counts, the realized
 targets change with it. For example, QuEL-1 SE R8 `se8_mxfe1_awg2222` gives
 `2-2-2-2` on the four profile-controlled ports, so
 `configuration_mode="ge-ef-cr"` now builds `ge-ef` targets there. If you need
-CR targets on those ports, use `configuration_mode="ge-cr-cr"` instead.
+CR targets on those ports, use `configuration_mode="ge-cr-cr"` instead. For
+EF/FH workflows on two-channel ports, use `configuration_mode="ge-ef-fh"`; EF
+and FH share the second channel.
 
 ## API and import changes
 

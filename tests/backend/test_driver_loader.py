@@ -325,6 +325,8 @@ def test_load_quel1_driver_resolves_quel1box_symbol(
 
 def test_load_quel1_driver_applies_qubex_runtime_patches(monkeypatch) -> None:
     """Given driver load, when importing package, then qubex runtime patches are applied."""
+    import qubex.patches.quel_ic_config as quel_ic_config_patches
+
     mapping = _build_fake_driver_modules("qxdriver_quel1", include_compat=True)
     patch_calls: list[str] = []
 
@@ -339,7 +341,7 @@ def test_load_quel1_driver_applies_qubex_runtime_patches(monkeypatch) -> None:
     driver_loader.clear_quel1_driver_cache()
     monkeypatch.setattr(driver_loader, "version", lambda _: "0.10.0")
     monkeypatch.setattr(
-        driver_loader,
+        quel_ic_config_patches,
         "apply_quelware_runtime_patches",
         _apply_qubex_runtime_patches,
     )

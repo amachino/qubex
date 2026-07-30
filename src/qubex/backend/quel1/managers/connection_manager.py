@@ -109,6 +109,35 @@ class Quel1ConnectionManager:
             return {}
         return self.boxpool._box_config_cache
 
+    @staticmethod
+    def _convert_to_string_key_dict(d: Mapping[Any, Any]) -> dict[str, Any]:
+        new_dict: dict[str, Any] = {}
+        for k, v in d.items():
+            new_dict[str(k)] = Quel1ConnectionManager._convert_to_json_safe_value(v)
+        return new_dict
+
+    @staticmethod
+    def _convert_to_json_safe_value(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return Quel1ConnectionManager._convert_to_string_key_dict(value)
+        if isinstance(value, list):
+            return [
+                Quel1ConnectionManager._convert_to_json_safe_value(item)
+                for item in value
+            ]
+        if isinstance(value, tuple):
+            return tuple(
+                Quel1ConnectionManager._convert_to_json_safe_value(item)
+                for item in value
+            )
+        return value
+
+    def get_json_safe_box_config_cache(self) -> dict[str, dict[str, Any]]:
+        """Return connected box-config cache with stringified mapping keys."""
+        if not self.is_connected:
+            return {}
+        return self._convert_to_string_key_dict(self.get_box_config_cache())
+
     def set_connected_state(
         self,
         *,

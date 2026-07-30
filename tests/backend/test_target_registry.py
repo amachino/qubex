@@ -77,6 +77,7 @@ def _build_registry() -> TargetRegistry:
 
     ge0 = Target.new_ge_target(qubit=qubit0, channel=gen_channel)
     ef0 = Target.new_ef_target(qubit=qubit0, channel=gen_channel)
+    fh0 = Target.new_fh_target(qubit=qubit0, channel=gen_channel)
     readout0 = Target.new_read_target(resonator=read0, channel=gen_channel)
     readout1 = Target.new_read_target(resonator=read1, channel=gen_channel)
     cr_default = Target.new_cr_target(control_qubit=qubit0, channel=gen_channel)
@@ -94,6 +95,7 @@ def _build_registry() -> TargetRegistry:
         gen_targets={
             ge0.label: ge0,
             ef0.label: ef0,
+            fh0.label: fh0,
             readout0.label: readout0,
             readout1.label: readout1,
             cr_default.label: cr_default,
@@ -104,14 +106,16 @@ def _build_registry() -> TargetRegistry:
 
 
 def test_target_registry_resolves_qubit_and_phase_labels() -> None:
-    """Given mixed labels, when resolving labels, then qubit/GE/EF/read labels are returned."""
+    """Given mixed labels, when resolving labels, then qubit/control/read labels are returned."""
     registry = _build_registry()
 
     assert registry.resolve_qubit_label("Q00") == "Q00"
     assert registry.resolve_qubit_label("Q00-ef") == "Q00"
+    assert registry.resolve_qubit_label("Q00-fh") == "Q00"
     assert registry.resolve_qubit_label("RQ00") == "Q00"
     assert registry.resolve_ge_label("RQ00") == "Q00"
     assert registry.resolve_ef_label("RQ00") == "Q00-ef"
+    assert registry.resolve_fh_label("RQ00") == "Q00-fh"
     assert registry.resolve_read_label("Q00-ef") == "RQ00"
 
 
@@ -146,7 +150,7 @@ def test_target_registry_resolves_cr_pairs_independent_of_registration_order() -
 
 
 def test_target_registry_legacy_resolution_is_opt_in() -> None:
-    """Given parser-compatible labels, when legacy flag is enabled, then fallback resolution works."""
+    """Given parser-compatible labels, when legacy flag is enabled, then single-qubit fallback works."""
     registry = _build_registry()
 
     with pytest.raises(ValueError, match="Qubit label could not be resolved"):
@@ -156,7 +160,55 @@ def test_target_registry_legacy_resolution_is_opt_in() -> None:
     assert registry.resolve_ge_label("Q00_read", allow_legacy=True) == "Q00"
     assert registry.resolve_ef_label("Q00_read", allow_legacy=True) == "Q00-ef"
     assert registry.resolve_read_label("Q00_read", allow_legacy=True) == "RQ00"
-    assert registry.resolve_cr_pair("Q00-Q01", allow_legacy=True) == ("Q00", "Q01")
+
+
+def test_target_registry_resolves_custom_2q_metadata_without_label_parsing() -> None:
+    """Given custom 2Q targets, when resolving qubits, then target metadata is used."""
+    qubit0 = _make_qubit("Q00")
+    qubit1 = _make_qubit("Q01")
+    channel = _make_gen_channel()
+    ge0 = Target.new_ge_target(qubit=qubit0, channel=channel)
+    ge1 = Target.new_ge_target(qubit=qubit1, channel=channel)
+    bswap = Target.new_target(
+        label="CUSTOM-BSWAP",
+        frequency=5.3,
+        object=qubit0,
+        channel=channel,
+        type=TargetType.CTRL_2Q,
+        metadata={"gate": "BSWAP", "active_qubit": "Q00", "passive_qubit": "Q01"},
+    )
+    generic = Target.new_target(
+        label="CUSTOM-GENERIC",
+        frequency=5.4,
+        object=qubit0,
+        channel=channel,
+        type=TargetType.CTRL_2Q,
+        metadata={"qubits": ("Q00", "Q01")},
+    )
+    registry = TargetRegistry(gen_targets=[ge0, ge1, bswap, generic])
+
+    assert registry.resolve_2q_qubits("CUSTOM-BSWAP") == ("Q00", "Q01")
+    assert registry.resolve_2q_qubits("CUSTOM-GENERIC") == ("Q00", "Q01")
+
+
+def test_target_registry_does_not_parse_custom_2q_label_without_metadata() -> None:
+    """Given custom 2Q target without metadata, when resolving qubits, then label is not parsed."""
+    qubit0 = _make_qubit("Q00")
+    qubit1 = _make_qubit("Q01")
+    channel = _make_gen_channel()
+    ge0 = Target.new_ge_target(qubit=qubit0, channel=channel)
+    ge1 = Target.new_ge_target(qubit=qubit1, channel=channel)
+    bswap = Target.new_target(
+        label="Q00-Q01-bSWAP",
+        frequency=5.3,
+        object=qubit0,
+        channel=channel,
+        type=TargetType.CTRL_2Q,
+    )
+    registry = TargetRegistry(gen_targets=[ge0, ge1, bswap])
+
+    with pytest.raises(ValueError, match="2Q target `Q00-Q01-bSWAP` is not registered"):
+        registry.resolve_2q_qubits("Q00-Q01-bSWAP")
 
 
 def test_target_registry_measurement_output_label_prefers_qubit() -> None:

@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from rich.prompt import Confirm
 from typing_extensions import Self, deprecated
@@ -147,12 +147,8 @@ class SystemManager:
         if self._initialized:
             return
         self._experiment_system = None
-        self._backend_kind: BackendKind = BACKEND_KIND_QUEL1
-        self._backend_controller = self._create_backend_controller(self._backend_kind)
-        self._system_synchronizer = self._create_system_synchronizer(
-            self._backend_controller,
-            self._backend_kind,
-        )
+        self._backend_controller: SystemBackendController | None = None
+        self._system_synchronizer: SystemSynchronizer | None = None
         self._backend_settings: BackendSettings = BackendSettings()
         self._cached_state = SystemState(0, 0, 0)
         self._rawdata_dir = None
@@ -182,9 +178,14 @@ class SystemManager:
         return runtime_config
 
     @property
-    def backend_kind(self) -> BackendKind:
+    def backend_kind(self) -> BackendKind | None:
         """Return backend family selected for the current experiment session."""
-        return self._backend_kind
+        backend_controller = self._backend_controller
+        if isinstance(backend_controller, Quel1BackendController):
+            return BACKEND_KIND_QUEL1
+        if isinstance(backend_controller, Quel3BackendController):
+            return BACKEND_KIND_QUEL3
+        return None
 
     def set_backend_kind(self, backend_kind: BackendKind) -> None:
         """
@@ -195,31 +196,26 @@ class SystemManager:
         backend_kind : BackendKind
             Backend family. One session uses either QuEL-1 or QuEL-3.
         """
-        if backend_kind == self._backend_kind:
+        backend_controller = self._backend_controller
+        if (
+            backend_kind == BACKEND_KIND_QUEL1
+            and isinstance(backend_controller, Quel1BackendController)
+        ) or (
+            backend_kind == BACKEND_KIND_QUEL3
+            and isinstance(backend_controller, Quel3BackendController)
+        ):
             return
-        self._backend_kind = backend_kind
         self._backend_controller = self._create_backend_controller(backend_kind)
         self._system_synchronizer = self._create_system_synchronizer(
             self._backend_controller,
-            self._backend_kind,
         )
         self._backend_settings = BackendSettings()
 
     def _create_system_synchronizer(
         self,
         backend_controller: SystemBackendController,
-        backend_kind: BackendKind | None = None,
     ) -> SystemSynchronizer | None:
         """Create backend-specific system synchronizer when supported."""
-        resolved_backend_kind = backend_kind or self._backend_kind
-        if resolved_backend_kind == BACKEND_KIND_QUEL1:
-            return Quel1SystemSynchronizer(
-                backend_controller=cast(Quel1BackendController, backend_controller),
-            )
-        if resolved_backend_kind == BACKEND_KIND_QUEL3:
-            return Quel3SystemSynchronizer(
-                backend_controller=cast(Quel3BackendController, backend_controller),
-            )
         if isinstance(backend_controller, Quel1BackendController):
             return Quel1SystemSynchronizer(backend_controller=backend_controller)
         if isinstance(backend_controller, Quel3BackendController):
@@ -229,35 +225,12 @@ class SystemManager:
     def _resolve_system_synchronizer(
         self,
     ) -> SystemSynchronizer | None:
-        """Return active system synchronizer, refreshing built-in synchronizers when needed."""
-        system_synchronizer = self._system_synchronizer
-        if system_synchronizer is None:
+        """Return the active system synchronizer."""
+        if self._backend_controller is None:
             return None
-        if isinstance(system_synchronizer, Quel1SystemSynchronizer):
-            if (
-                not isinstance(self._backend_controller, Quel1BackendController)
-                or system_synchronizer.backend_controller
-                is not self._backend_controller
-            ):
-                system_synchronizer = self._create_system_synchronizer(
-                    self._backend_controller,
-                    self._backend_kind,
-                )
-                self._system_synchronizer = system_synchronizer
-            return system_synchronizer
-        if isinstance(system_synchronizer, Quel3SystemSynchronizer):
-            if (
-                not isinstance(self._backend_controller, Quel3BackendController)
-                or system_synchronizer.backend_controller
-                is not self._backend_controller
-            ):
-                system_synchronizer = self._create_system_synchronizer(
-                    self._backend_controller,
-                    self._backend_kind,
-                )
-                self._system_synchronizer = system_synchronizer
-            return system_synchronizer
-        return system_synchronizer
+        if self._system_synchronizer is None:
+            raise RuntimeError("System synchronizer is not initialized.")
+        return self._system_synchronizer
 
     @property
     def rawdata_dir(self) -> Path | None:
@@ -284,7 +257,10 @@ class SystemManager:
     @property
     def backend_controller(self) -> SystemBackendController:
         """Return the backend controller."""
-        return self._backend_controller
+        backend_controller = self._backend_controller
+        if backend_controller is None:
+            raise RuntimeError("Backend controller is not initialized.")
+        return backend_controller
 
     @property
     @deprecated("Use `backend_controller` property instead.")
@@ -390,7 +366,6 @@ class SystemManager:
             self._backend_controller = backend_controller
             self._system_synchronizer = self._create_system_synchronizer(
                 backend_controller,
-                resolved_backend_kind,
             )
             self._backend_settings = BackendSettings()
         elif resolved_backend_kind == BACKEND_KIND_QUEL3:
@@ -400,7 +375,6 @@ class SystemManager:
             )
             self._system_synchronizer = self._create_system_synchronizer(
                 self._backend_controller,
-                resolved_backend_kind,
             )
             self._backend_settings = BackendSettings()
         self._config_loader = next_config_loader
