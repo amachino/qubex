@@ -10,6 +10,8 @@ class TargetType(Enum):
 
     CTRL_GE = "CTRL_GE"
     CTRL_EF = "CTRL_EF"
+    CTRL_FH = "CTRL_FH"
+    CTRL_2Q = "CTRL_2Q"
     CTRL_CR = "CTRL_CR"
     READ = "READ"
     PUMP = "PUMP"

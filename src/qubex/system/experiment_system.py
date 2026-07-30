@@ -160,14 +160,26 @@ class ExperimentSystem:
         return [target for target in self.gen_targets.values() if target.is_ef]
 
     @property
+    def fh_targets(self) -> list[Target]:
+        """Return the fh targets."""
+        return [target for target in self.gen_targets.values() if target.is_fh]
+
+    @property
     def cr_targets(self) -> list[Target]:
         """Return the cr targets."""
         return [target for target in self.gen_targets.values() if target.is_cr]
 
     @property
+    def two_qubit_targets(self) -> list[Target]:
+        """Return the two-qubit control targets."""
+        return [target for target in self.gen_targets.values() if target.is_2q]
+
+    @property
     def ctrl_targets(self) -> list[Target]:
         """Return the control targets."""
-        return self.ge_targets + self.ef_targets + self.cr_targets
+        return (
+            self.ge_targets + self.ef_targets + self.fh_targets + self.two_qubit_targets
+        )
 
     @property
     def read_out_targets(self) -> list[Target]:
@@ -282,6 +294,10 @@ class ExperimentSystem:
         """Resolve EF label via target registry."""
         return self.target_registry.resolve_ef_label(label, allow_legacy=True)
 
+    def resolve_fh_label(self, label: str) -> str:
+        """Resolve FH label via target registry."""
+        return self.target_registry.resolve_fh_label(label, allow_legacy=True)
+
     def resolve_read_label(self, label: str) -> str:
         """Resolve readout label via target registry."""
         return self.target_registry.resolve_read_label(label, allow_legacy=True)
@@ -292,7 +308,11 @@ class ExperimentSystem:
 
     def resolve_cr_pair(self, label: str) -> tuple[str, str]:
         """Resolve CR pair via target registry."""
-        return self.target_registry.resolve_cr_pair(label, allow_legacy=True)
+        return self.target_registry.resolve_cr_pair(label)
+
+    def resolve_2q_qubits(self, label: str) -> tuple[str, str]:
+        """Resolve a two-qubit pair via target registry."""
+        return self.target_registry.resolve_2q_qubits(label)
 
     def ordered_qubit_labels(self, labels: Sequence[str]) -> list[str]:
         """Return qubit labels in first appearance order."""
@@ -312,6 +332,10 @@ class ExperimentSystem:
     def get_ef_target(self, label: str) -> Target:
         """Return an ef target by label."""
         return self.get_target(self.resolve_ef_label(label))
+
+    def get_fh_target(self, label: str) -> Target:
+        """Return an fh target by label."""
+        return self.get_target(self.resolve_fh_label(label))
 
     def get_cr_target(self, label: str) -> Target:
         """Return a cr target by label."""
@@ -789,6 +813,10 @@ class ExperimentSystem:
             qubit = self.get_qubit(match.group(1))
             return Target.new_ef_target(qubit=qubit, channel=channel)
 
+        if match := re.match(r"^(Q\d+)-fh$", target_label):
+            qubit = self.get_qubit(match.group(1))
+            return Target.new_fh_target(qubit=qubit, channel=channel)
+
         if match := re.match(r"^(Q\d+)-CR$", target_label):
             control_qubit = self.get_qubit(match.group(1))
             return self._new_default_cr_target(
@@ -830,6 +858,10 @@ class ExperimentSystem:
         ef_target = Target.new_ef_target(qubit=qubit, channel=channel)
         if ef_target.label not in self.targets_to_exclude:
             gen_targets[ef_target.label] = ef_target
+
+        fh_target = Target.new_fh_target(qubit=qubit, channel=channel)
+        if fh_target.label not in self.targets_to_exclude:
+            gen_targets[fh_target.label] = fh_target
 
         spectators = self.get_spectator_qubits(qubit.label)
         default_cr_frequency = (
@@ -876,6 +908,10 @@ class ExperimentSystem:
             object=control_qubit,
             channel=channel,
             type=TargetType.CTRL_CR,
+            metadata={
+                "control_qubit": control_qubit.label,
+                "target_qubit": "CR",
+            },
         )
 
     @staticmethod
@@ -892,6 +928,10 @@ class ExperimentSystem:
             object=control_qubit,
             channel=channel,
             type=TargetType.CTRL_CR,
+            metadata={
+                "control_qubit": control_qubit.label,
+                "target_qubit": "CR",
+            },
         )
 
     @staticmethod

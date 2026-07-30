@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pytest
@@ -60,24 +61,26 @@ class _ExperimentSystemStub:
         *,
         control_system: _ControlSystemStub,
         target_registry: TargetRegistry,
-        qubit: Qubit,
+        qubits: Mapping[str, Qubit],
         resonator: Resonator,
         mux: Mux,
     ) -> None:
         self.control_system = control_system
         self.target_registry = target_registry
-        self._qubit = qubit
+        self._qubits = dict(qubits)
+        self._qubit = self._qubits["Q00"]
         self._resonator = resonator
         self._mux = mux
         self.added_targets: list[Target] = []
 
     def add_target(self, target: Target) -> None:
         self.added_targets.append(target)
+        self.target_registry.register(target)
 
     def get_qubit(self, label: str) -> Qubit:
-        if label != self._qubit.label:
+        if label not in self._qubits:
             raise KeyError(label)
-        return self._qubit
+        return self._qubits[label]
 
     def get_resonator(self, label: str) -> Resonator:
         if label != self._resonator.label:
@@ -85,12 +88,15 @@ class _ExperimentSystemStub:
         return self._resonator
 
     def get_mux_by_qubit(self, label: str) -> Mux:
-        if label != self._qubit.label:
+        if label not in self._qubits:
             raise KeyError(label)
         return self._mux
 
     def resolve_cr_pair(self, label: str) -> tuple[str, str]:
-        return self.target_registry.resolve_cr_pair(label, allow_legacy=True)
+        return self.target_registry.resolve_cr_pair(label)
+
+    def resolve_2q_qubits(self, label: str) -> tuple[str, str]:
+        return self.target_registry.resolve_2q_qubits(label)
 
 
 class _TestExperimentContext(ExperimentContext):
@@ -173,6 +179,16 @@ def _make_context(
         _control_frequency_ge=5.0,
         _control_frequency_ef=4.7,
     )
+    target_qubit = Qubit(
+        index=1,
+        label="Q01",
+        chip_id="chip",
+        resonator="RQ01",
+        _bare_frequency=5.1,
+        _anharmonicity=-0.3,
+        _control_frequency_ge=5.1,
+        _control_frequency_ef=4.8,
+    )
     resonator = Resonator(
         index=0,
         label="RQ00",
@@ -186,16 +202,6 @@ def _make_context(
     base_target = Target.new_ge_target(qubit=qubit, channel=registry_port.channels[0])
     gen_targets: dict[str, Target] = {base_target.label: base_target}
     if include_cr_pair:
-        target_qubit = Qubit(
-            index=1,
-            label="Q01",
-            chip_id="chip",
-            resonator="RQ01",
-            _bare_frequency=5.1,
-            _anharmonicity=-0.3,
-            _control_frequency_ge=5.1,
-            _control_frequency_ef=4.8,
-        )
         cr_target = Target.new_cr_target(
             control_qubit=qubit,
             target_qubit=target_qubit,
@@ -206,7 +212,7 @@ def _make_context(
     experiment_system = _ExperimentSystemStub(
         control_system=_ControlSystemStub(control_port),
         target_registry=target_registry,
-        qubit=qubit,
+        qubits={qubit.label: qubit, target_qubit.label: target_qubit},
         resonator=resonator,
         mux=mux,
     )
@@ -330,6 +336,8 @@ def test_register_custom_target_rejects_unexpected_deprecated_options() -> None:
 @pytest.mark.parametrize(
     ("target_type", "expected_attr"),
     [
+        (TargetType.CTRL_FH, "_qubit"),
+        (TargetType.CTRL_2Q, "_qubit"),
         (TargetType.READ, "_resonator"),
         (TargetType.PUMP, "_mux"),
     ],
@@ -349,6 +357,7 @@ def test_register_custom_target_selects_physical_object_by_target_type(
         channel_number=0,
         target_type=target_type,
         qubit_label="Q00",
+        target_qubit_label=("Q01" if target_type == TargetType.CTRL_2Q else None),
     )
 
     assert len(experiment_system.added_targets) == 1
@@ -379,8 +388,70 @@ def test_cr_pair_prefers_target_registry_mapping() -> None:
     assert context.cr_pair("Q00-Q01") == ("Q00", "Q01")
 
 
-def test_cr_pair_falls_back_to_legacy_parser() -> None:
-    """Given unregistered CR label, when resolving pair, then legacy parser is used as fallback."""
+def test_cr_pair_rejects_unregistered_label_without_parsing() -> None:
+    """Given unregistered CR label, when resolving pair, then label parsing is not used."""
     context, _, _, _ = _make_context()
 
-    assert context.cr_pair("Q00-Q01") == ("Q00", "Q01")
+    with pytest.raises(ValueError, match="CR target `Q00-Q01` is not registered"):
+        context.cr_pair("Q00-Q01")
+
+
+def test_resolve_2q_qubits_resolves_custom_bswap_target() -> None:
+    """Given a custom bSWAP target, when resolving qubits, then metadata is used."""
+    context, experiment_system, _, _ = _make_context()
+
+    context.register_custom_target(
+        label="CUSTOM-BSWAP",
+        frequency=5.2,
+        box_id="B0",
+        port_number=2,
+        channel_number=0,
+        target_type=TargetType.CTRL_2Q,
+        qubit_label="Q00",
+        target_qubit_label="Q01",
+        metadata={"gate": "BSWAP"},
+    )
+
+    target = experiment_system.added_targets[0]
+    assert target.metadata == {
+        "gate": "BSWAP",
+        "active_qubit": "Q00",
+        "passive_qubit": "Q01",
+    }
+    assert context.resolve_2q_qubits("CUSTOM-BSWAP") == ("Q00", "Q01")
+
+
+def test_resolve_2q_qubits_resolves_generic_2q_target() -> None:
+    """Given a generic custom 2Q target, when resolving qubits, then metadata is used."""
+    context, experiment_system, _, _ = _make_context()
+
+    context.register_custom_target(
+        label="CUSTOM-2Q",
+        frequency=5.2,
+        box_id="B0",
+        port_number=2,
+        channel_number=0,
+        target_type=TargetType.CTRL_2Q,
+        qubit_label="Q00",
+        target_qubit_label="Q01",
+    )
+
+    target = experiment_system.added_targets[0]
+    assert target.metadata == {"qubits": ("Q00", "Q01")}
+    assert context.resolve_2q_qubits("CUSTOM-2Q") == ("Q00", "Q01")
+
+
+def test_register_custom_2q_target_requires_target_qubit_label() -> None:
+    """Given custom 2Q target, when target qubit is omitted, then ValueError is raised."""
+    context, _, _, _ = _make_context()
+
+    with pytest.raises(ValueError, match="target_qubit_label must be provided"):
+        context.register_custom_target(
+            label="CUSTOM-2Q",
+            frequency=5.2,
+            box_id="B0",
+            port_number=2,
+            channel_number=0,
+            target_type=TargetType.CTRL_2Q,
+            qubit_label="Q00",
+        )

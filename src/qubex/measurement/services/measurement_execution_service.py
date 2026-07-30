@@ -801,7 +801,7 @@ class MeasurementExecutionService:
                 schedules=schedules,
                 config=config,
             )
-        return await runner.execute_many_async(
+        return await runner.execute_batch_async(
             schedules=schedules,
             config=config,
         )

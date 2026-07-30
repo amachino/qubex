@@ -9,8 +9,6 @@ from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
-from qubex.patches.quel_ic_config import apply_quelware_runtime_patches
-
 if TYPE_CHECKING:
     from .qubecalib_protocols import (
         ActionProtocol,
@@ -179,6 +177,8 @@ def _resolve_symbol(*, package_name: DriverPackageName, symbol_name: str) -> Any
 
 def _import_driver_symbols(package_name: DriverPackageName) -> Que1lDriver:
     """Import one driver package and map required backend symbols by class-level paths."""
+    from qubex.patches.quel_ic_config import apply_quelware_runtime_patches
+
     importlib.import_module(package_name)
     apply_quelware_runtime_patches()
 

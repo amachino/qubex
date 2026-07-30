@@ -324,6 +324,72 @@ def test_netcdf_roundtrip_preserves_capture_data(tmp_path) -> None:
     assert restored.data["Q01"][0].sampling_period == pytest.approx(1.0)
 
 
+def test_netcdf_writes_nested_capture_payload_as_variables(tmp_path) -> None:
+    """Given nested capture arrays, NetCDF save should store arrays as variables."""
+    config = _make_config(mode="single", shots=4, time_integration=True)
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([1.0 + 2.0j, 3.0 + 4.0j, 5.0 + 6.0j, 7.0 + 8.0j]),
+                    measurement_config=config,
+                    sampling_period=2.0,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+
+    path = result.save_netcdf(tmp_path / "measurement_result.nc")
+
+    with Dataset(path, mode="r", auto_complex=True) as ds:
+        assert "data_Q00_i0_payload_iq_series" in ds.variables
+        assert ds.variables["data_Q00_i0_payload_iq_series"].shape == (4,)
+        payload = json.loads(ds.getncattr("payload_json"))
+
+    variable_ref = payload["data"]["Q00"][0]["payload"]["iq_series"]["__variable__"]
+    assert variable_ref["name"] == "data_Q00_i0_payload_iq_series"
+    assert variable_ref["shape"] == [4]
+
+
+def test_load_netcdf_reads_payload_json_only_measurement_result(tmp_path) -> None:
+    """Given legacy payload-only NetCDF, load_netcdf should restore capture arrays."""
+    config = _make_config(mode="single", shots=4, time_integration=True)
+    original = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([1.0 + 2.0j, 3.0 + 4.0j, 5.0 + 6.0j, 7.0 + 8.0j]),
+                    measurement_config=config,
+                    sampling_period=2.0,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+    payload = original.model_dump(mode="python")
+    payload["__meta__"] = {
+        "format": original.format_name,
+        "version": original.format_version,
+    }
+    path = tmp_path / "legacy_payload_only.nc"
+
+    with Dataset(path, mode="w", format="NETCDF4", auto_complex=True) as ds:
+        ds.setncattr("format", original.format_name)
+        ds.setncattr("format_version", original.format_version)
+        ds.setncattr(
+            "model_class",
+            f"{original.__class__.__module__}.{original.__class__.__name__}",
+        )
+        ds.setncattr("payload_json", json.dumps(payload, ensure_ascii=False))
+
+    restored = MeasurementResult.load_netcdf(path)
+
+    assert np.array_equal(restored.data["Q00"][0].data, original.data["Q00"][0].data)
+
+
 def test_save_writes_netcdf_file(tmp_path) -> None:
     """Given save(), when called, then it writes a readable NetCDF file."""
     config = _make_config(mode="avg", shots=2)

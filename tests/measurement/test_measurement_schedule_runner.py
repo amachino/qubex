@@ -153,6 +153,74 @@ def test_execute_async_validates_builds_calls_backend_and_creates_result() -> No
     assert result is expected
 
 
+def test_execute_async_uses_json_safe_box_config() -> None:
+    """Given backend JSON-safe box config, when result is built, then that config is used."""
+    called: dict[str, object] = {}
+    request = BackendExecutionRequest(payload=object())
+    backend_result = Quel1BackendExecutionResult(status={}, data={}, config={})
+    expected = MeasurementResultConverter.from_multiple(
+        _make_multiple_result(),
+        measurement_config=_make_config(),
+    )
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            _ = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            _ = (schedule, config)
+            return request
+
+        def build_measurement_result(
+            self,
+            *,
+            backend_result: object,
+            measurement_config: MeasurementConfig,
+            device_config: dict[str, object],
+            sampling_period: float,
+        ) -> MeasurementResult:
+            _ = (backend_result, measurement_config, sampling_period)
+            called["device_config"] = device_config
+            return expected
+
+    class _BackendController:
+        box_config: ClassVar[dict[str, object]] = {
+            "A": {"ports": {(1, 1): {"cnco_freq": 100}}}
+        }
+        sampling_period_ns: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
+
+        def json_safe_box_config(self) -> dict[str, object]:
+            """Return JSON-safe box config for measurement results."""
+            return {"A": {"ports": {"(1, 1)": {"cnco_freq": 100}}}}
+
+        async def execute_async(
+            self, *, request: BackendExecutionRequest
+        ) -> Quel1BackendExecutionResult:
+            _ = request
+            return backend_result
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+
+    result = asyncio.run(
+        runner.execute_async(
+            schedule=_make_schedule(),
+            config=_make_config(),
+        )
+    )
+
+    assert called["device_config"] == {"A": {"ports": {"(1, 1)": {"cnco_freq": 100}}}}
+    assert result is expected
+
+
 def test_execute_async_forwards_execution_options_to_backend_controller() -> None:
     """Given execution options, when execute_async is called, then backend controller receives options."""
     called: dict[str, object] = {}
@@ -402,8 +470,8 @@ def test_execute_async_returns_backend_measurement_result_directly() -> None:
     assert result is expected
 
 
-def test_execute_many_async_uses_backend_batch_api_when_available() -> None:
-    """Given backend batch support, execute_many_async should use it once for all schedules."""
+def test_execute_batch_async_uses_backend_batch_api_when_available() -> None:
+    """Given backend batch support, execute_batch_async should use it once for all schedules."""
     called: dict[str, object] = {}
     request_a = BackendExecutionRequest(payload=object())
     request_b = BackendExecutionRequest(payload=object())
@@ -455,7 +523,7 @@ def test_execute_many_async_uses_backend_batch_api_when_available() -> None:
     schedules = [_make_schedule(), _make_schedule()]
 
     results = asyncio.run(
-        runner.execute_many_async(
+        runner.execute_batch_async(
             schedules=schedules,
             config=_make_config(),
         )
@@ -463,6 +531,55 @@ def test_execute_many_async_uses_backend_batch_api_when_available() -> None:
 
     assert called["requests"] == [request_a, request_b]
     assert results == [expected, expected]
+
+
+def test_execute_many_async_delegates_to_batch_alias() -> None:
+    """Deprecated execute_many_async alias should delegate to execute_batch_async."""
+    called: dict[str, object] = {}
+
+    class _Adapter:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            _ = schedule
+
+        def build_execution_request(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> BackendExecutionRequest:
+            _ = schedule
+            _ = config
+            return BackendExecutionRequest(payload=object())
+
+    class _BackendController:
+        sampling_period_ns: ClassVar[float] = 2.0
+        CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
+
+        async def execute_async(
+            self, *, request: BackendExecutionRequest
+        ) -> MeasurementResult:
+            _ = self, request
+            called["execute_async"] = True
+            return MeasurementResultConverter.from_multiple(
+                _make_multiple_result(),
+                measurement_config=_make_config(),
+            )
+
+    runner = MeasurementScheduleRunner(
+        measurement_backend_adapter=cast(Any, _Adapter()),
+        backend_controller=cast(Any, _BackendController()),
+    )
+
+    with pytest.warns(DeprecationWarning, match="execute_batch_async"):
+        results = asyncio.run(
+            runner.execute_many_async(
+                schedules=[_make_schedule()],
+                config=_make_config(),
+            )
+        )
+
+    assert called["execute_async"] is True
+    assert len(results) == 1
 
 
 def test_execute_async_prefers_adapter_measurement_result_builder_when_available() -> (
@@ -519,6 +636,10 @@ def test_execute_async_prefers_adapter_measurement_result_builder_when_available
         box_config: ClassVar[dict[str, str]] = {"kind": "quel3"}
         sampling_period_ns: ClassVar[float] = 0.4
         CAPTURE_DECIMATION_FACTOR: ClassVar[int] = 4
+
+        def json_safe_box_config(self) -> dict[str, object]:
+            """Return JSON-safe device config."""
+            return dict(self.box_config)
 
         async def execute_async(
             self, *, request: BackendExecutionRequest

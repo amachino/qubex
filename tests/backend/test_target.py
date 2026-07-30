@@ -51,13 +51,32 @@ def test_target_label_helpers():
     """Target label helpers should parse and format labels."""
     assert Target.qubit_label("Q00") == "Q00"
     assert Target.qubit_label("Q00-ef") == "Q00"
+    assert Target.qubit_label("Q00-fh") == "Q00"
     assert Target.qubit_label("Q00-CR") == "Q00"
     assert Target.qubit_label("Q00-Q01") == "Q00"
     assert Target.qubit_label("Q00_read") == "Q00"
+    assert Target.fh_label("Q00") == "Q00-fh"
     assert Target.read_label("Q00") == "RQ00"
     assert Target.cr_label("Q00", "Q01") == "Q00-Q01"
     with pytest.raises(ValueError, match="Invalid target label"):
         Target.qubit_label("BAD")
+
+
+def test_cr_target_stores_qubit_roles_in_metadata() -> None:
+    """CR targets should carry qubit roles as metadata."""
+    control = _make_qubit("Q00")
+    target_qubit = _make_qubit("Q01")
+    channel = _make_gen_channel(sideband="U")
+
+    cr_pair = Target.new_cr_target(
+        control_qubit=control,
+        target_qubit=target_qubit,
+        channel=channel,
+    )
+    cr_default = Target.new_cr_target(control_qubit=control, channel=channel)
+
+    assert cr_pair.metadata == {"control_qubit": "Q00", "target_qubit": "Q01"}
+    assert cr_default.metadata == {"control_qubit": "Q00", "target_qubit": "CR"}
 
 
 def test_target_frequency_and_availability():
@@ -88,3 +107,16 @@ def test_target_related_qubits_and_qubit_property():
     assert read_target.is_related_to_qubits(["Q00"]) is True
     assert pump_target.is_related_to_qubits(["Q00"]) is True
     assert qubit_target.type == TargetType.CTRL_GE
+
+
+def test_fh_target_uses_qubit_fh_frequency():
+    """FH target should use the qubit FH control frequency."""
+    qubit = _make_qubit("Q00")
+    channel = _make_gen_channel(sideband="L")
+
+    target = Target.new_fh_target(qubit=qubit, channel=channel)
+
+    assert target.label == "Q00-fh"
+    assert target.type == TargetType.CTRL_FH
+    assert target.is_fh is True
+    assert target.frequency == pytest.approx(4.4)

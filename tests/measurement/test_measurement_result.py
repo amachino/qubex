@@ -7,6 +7,7 @@ import warnings
 import numpy as np
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
+from qubex.measurement.models.measure_result import MultipleMeasureResult
 
 
 def test_legacy_measure_models_do_not_warn_on_init(dummy_classifier) -> None:
@@ -42,6 +43,63 @@ def test_measure_data_counts_and_probabilities(dummy_classifier):
     assert set(counts.keys()) <= {"0", "1"}
     assert np.isclose(sum(probs), 1.0)
     assert len(data.standard_deviations) == len(probs)
+
+
+def test_measure_data_confusion_matrix_normalizes_each_prepared_state(
+    dummy_classifier,
+):
+    """MeasureData should normalize confusion matrices row by row."""
+    dummy_classifier.confusion_matrix = np.array([[8, 2], [3, 3]])
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=np.array([[0.0 + 0.0j]]),
+        classifier=dummy_classifier,
+    )
+
+    assert np.allclose(data.confusion_matrix, np.array([[0.8, 0.2], [0.5, 0.5]]))
+
+
+def test_measure_result_standard_deviations_use_total_shots(dummy_classifier):
+    """MeasureResult should compute bitstring standard deviations with total shots."""
+    raw = np.array([0.0 + 0.0j, 1.0 + 0.0j, 1.0 + 0.0j, 1.0 + 0.0j])[:, None]
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=raw,
+        classifier=dummy_classifier,
+    )
+    result = MeasureResult(mode=MeasureMode.SINGLE, data={"Q00": data}, config={})
+
+    standard_deviations = result.get_standard_deviations()
+
+    expected = np.sqrt(0.25 * 0.75 / 4)
+    assert standard_deviations["0"] == expected
+    assert standard_deviations["1"] == expected
+
+
+def test_multiple_measure_result_standard_deviations_use_total_shots(
+    dummy_classifier,
+):
+    """MultipleMeasureResult should compute bitstring standard deviations with total shots."""
+    raw = np.array([0.0 + 0.0j, 1.0 + 0.0j, 1.0 + 0.0j, 1.0 + 0.0j])[:, None]
+    data = MeasureData(
+        target="Q00",
+        mode=MeasureMode.SINGLE,
+        raw=raw,
+        classifier=dummy_classifier,
+    )
+    result = MultipleMeasureResult(
+        mode=MeasureMode.SINGLE,
+        data={"Q00": [data]},
+        config={},
+    )
+
+    standard_deviations = result.get_standard_deviations()
+
+    expected = np.sqrt(0.25 * 0.75 / 4)
+    assert standard_deviations["0"] == expected
+    assert standard_deviations["1"] == expected
 
 
 def test_measure_data_threshold_classification(dummy_classifier):

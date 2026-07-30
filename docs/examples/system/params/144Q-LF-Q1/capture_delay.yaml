@@ -1,5 +1,6 @@
 meta:
   description: Example capture delay settings for 144Q-LF chip
+  # One ndelay step is 128 ns.
   unit: ndelay
 data:
   0: 8

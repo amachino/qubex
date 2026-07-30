@@ -12,6 +12,7 @@ This section contains contributor-facing guidelines and internal development not
 
 ## Code and API design
 
+- [API compatibility guidelines](api-compatibility-guidelines.md)
 - [Naming guidelines](naming-guidelines.md)
 - [Experiment API delegation guidelines](experiment-api-delegation-guidelines.md)
 - [Typing guidelines](typing-guidelines.md)

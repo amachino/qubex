@@ -108,8 +108,10 @@ profile is specified, Qubex uses `se8_mxfe1_awg2222`.
 guarantee.
 
 - `ge-ef-cr` resolves channels in the order `ge`, `ef`, `cr`.
+- `ge-ef-fh` resolves three-channel ports as `ge`, `ef`, `fh`; two-channel
+  ports use `ge` on channel 0 and share channel 1 between `ef` and `fh`.
 - `ge-cr-cr` resolves channels in the order `ge`, `cr`, `cr`.
-- A control port with fewer channels keeps only the leftmost roles.
+- Other control ports with fewer channels keep only the leftmost roles.
 
 For `quel1se-riken8`, the AWG profile controls the four profile-dependent
 control ports.
@@ -119,7 +121,8 @@ control ports.
   `ge`, `ge-ef-cr`, `ge-ef-cr`, `ge`.
 - `se8_mxfe1_awg2222` resolves those ports as `2-2-2-2`. With
   `configuration_mode="ge-ef-cr"`, each port resolves to `ge-ef`. With
-  `configuration_mode="ge-cr-cr"`, each port resolves to `ge-cr`.
+  `configuration_mode="ge-ef-fh"`, each port resolves to shared `ge-ef/fh`.
+  With `configuration_mode="ge-cr-cr"`, each port resolves to `ge-cr`.
 
 ### `system.yaml`
 
