@@ -56,7 +56,10 @@ def _summary_panel(state: Quel3HardwareState) -> Panel:
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", no_wrap=True)
     grid.add_column()
-    grid.add_row("Endpoint", f"{state.endpoint}:{state.port}")
+    endpoint = (
+        state.endpoint if state.port is None else f"{state.endpoint}:{state.port}"
+    )
+    grid.add_row("Endpoint", endpoint)
     grid.add_row("Generated", state.generated_at)
     grid.add_row(
         "Selected units",

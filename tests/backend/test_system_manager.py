@@ -11,7 +11,11 @@ from types import SimpleNamespace
 import pytest
 
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
-from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3 import (
+    Quel3BackendController,
+    Quel3HttpTransportConfig,
+    Quel3RuntimeConfig,
+)
 from qubex.system.control_system import PortType
 from qubex.system.system_manager import BackendSettings, SystemManager
 
@@ -1284,9 +1288,21 @@ def test_load_creates_quel3_controller_from_runtime_config(
         def backend_runtime_config(self) -> dict[str, object]:
             return {
                 "endpoint": "192.0.2.10",
-                "port": 50052,
+                "port": 443,
                 "client_mode": "server",
                 "pat_path": "/run/secrets/quelware-pat",
+                "transport": "https",
+                "http_transport": {
+                    "base_path": "/quelware",
+                    "default_timeout_seconds": 30.0,
+                    "proxy": {
+                        "url_path": "/run/secrets/quelware-proxy-url",
+                    },
+                    "secret_header_paths": {
+                        "CF-Access-Client-Id": "/run/secrets/cf-access-client-id",
+                        "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
+                    },
+                },
             }
 
         def get_experiment_system(self) -> object:
@@ -1302,9 +1318,25 @@ def test_load_creates_quel3_controller_from_runtime_config(
     controller = manager.backend_controller
     assert isinstance(controller, Quel3BackendController)
     assert controller.quelware_endpoint == "192.0.2.10"
-    assert controller.quelware_port == 50052
+    assert controller.quelware_port == 443
     assert controller.client_mode == "server"
     assert controller.quelware_pat_path == "/run/secrets/quelware-pat"
+    assert controller.runtime_config == Quel3RuntimeConfig(
+        endpoint="192.0.2.10",
+        port=443,
+        client_mode="server",
+        pat_path="/run/secrets/quelware-pat",
+        transport="https",
+        http_transport=Quel3HttpTransportConfig(
+            base_path="/quelware",
+            default_timeout_seconds=30.0,
+            proxy_url_path="/run/secrets/quelware-proxy-url",
+            secret_header_paths={
+                "CF-Access-Client-Id": "/run/secrets/cf-access-client-id",
+                "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
+            },
+        ),
+    )
 
 
 def test_load_rejects_removed_quel3_standalone_runtime_config(

@@ -79,7 +79,7 @@ class Quel3HardwareState:
 
     generated_at: str
     endpoint: str
-    port: int
+    port: int | None
     selected_unit_labels: tuple[str, ...]
     units: tuple[Quel3UnitState, ...]
     ports: tuple[Quel3PortState, ...]

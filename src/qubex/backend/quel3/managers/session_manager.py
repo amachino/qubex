@@ -50,7 +50,7 @@ class Quel3SessionManager:
         return self._runtime_config.endpoint
 
     @property
-    def quelware_port(self) -> int:
+    def quelware_port(self) -> int | None:
         """Return quelware port."""
         return self._runtime_config.port
 

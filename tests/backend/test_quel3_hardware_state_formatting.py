@@ -65,6 +65,24 @@ def test_summary_view_returns_rich_renderable() -> None:
     assert "UNKNOWN_PORT_DEPENDENCY" in text
 
 
+def test_summary_view_omits_absent_endpoint_port() -> None:
+    """An absent endpoint port should not render as a literal None suffix."""
+    state = Quel3HardwareState(
+        generated_at="2026-07-07T00:00:00+00:00",
+        endpoint="api.example.com",
+        port=None,
+        selected_unit_labels=(),
+        units=(),
+        ports=(),
+        instruments=(),
+    )
+
+    text = _render_text(format_quel3_hardware_state(state, view="summary"))
+
+    assert "api.example.com" in text
+    assert "api.example.com:None" not in text
+
+
 def test_diagnostics_view_renders_port_dumps() -> None:
     """Given diagnostic data, diagnostics view should render port dump text."""
     state = Quel3HardwareState(

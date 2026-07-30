@@ -156,7 +156,7 @@ class Quel3ExecutionManager:
         return self._runtime_config.endpoint
 
     @property
-    def quelware_port(self) -> int:
+    def quelware_port(self) -> int | None:
         """Return quelware port used for execution."""
         return self._runtime_config.port
 

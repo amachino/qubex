@@ -4,7 +4,10 @@ from .configuration_manager import Quel3ConfigurationManager
 from .connection_manager import Quel3ConnectionManager
 from .execution_manager import Quel3ExecutionManager
 from .hardware_state_reader import Quel3HardwareStateReader
-from .runtime_config import Quel3RuntimeConfig
+from .runtime_config import (
+    Quel3HttpTransportConfig,
+    Quel3RuntimeConfig,
+)
 from .session_manager import Quel3SessionManager
 
 __all__ = [
@@ -12,6 +15,7 @@ __all__ = [
     "Quel3ConnectionManager",
     "Quel3ExecutionManager",
     "Quel3HardwareStateReader",
+    "Quel3HttpTransportConfig",
     "Quel3RuntimeConfig",
     "Quel3SessionManager",
 ]
