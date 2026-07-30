@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import math
+import os
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 import yaml
-from tqdm import tqdm
-
 from qubex import visualization as viz
 from qubex.analysis import fitting
 from qubex.experiment import Experiment
@@ -19,6 +18,7 @@ from qubex.experiment.models.result import Result
 from qubex.pulse import FlatTop, PulseSchedule
 from qubex.system import LatticeGraph, SystemManager
 from qubex.system.quel1 import MixingUtil
+from tqdm import tqdm
 
 DEFAULT_SSB = "L"
 DEFAULT_CNCO_CENTER = 2_250_000_000
@@ -239,6 +239,22 @@ def crosstalk_check(
 
 def _is_valid(value: float | None) -> bool:
     return value is not None and not math.isnan(value)
+
+
+def init_yaml_file(path, description="Crosstalk", unit="dB"):
+    data = {
+    'meta':{
+        'description': description,
+        'unit': unit,
+    },
+    'data':{
+        f'{"Q"+str(i).zfill(2)}': {f'{"Q"+str(j).zfill(2)}': None for j in range(64)} for i in range(64)
+    }
+    }
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, allow_unicode=True)
 
 
 def plot_crosstalk(
