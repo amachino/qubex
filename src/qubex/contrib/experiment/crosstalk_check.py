@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import math
+from contextlib import suppress
 from os import makedirs
 from os.path import dirname
-from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
 
