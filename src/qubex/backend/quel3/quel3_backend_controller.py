@@ -9,14 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from rich.console import Console
-
 from qubex.backend.backend_controller import (
     BackendController,
     BackendExecutionRequest,
     BackendExecutionResult,
 )
-from qubex.backend.quel3.formatting import format_quel3_hardware_state
 from qubex.backend.quel3.infra import Quel3ClientMode
 from qubex.backend.quel3.interfaces.client import InstrumentInfoProtocol
 
@@ -250,7 +247,8 @@ class Quel3BackendController(BackendController):
             box_names=box_names,
             parallel=parallel,
         )
-        self._configuration_manager.refresh_instrument_cache()
+        self._configuration_manager.clear_instrument_cache()
+        self._execution_manager.invalidate_instrument_resolver()
 
     def disconnect(self) -> None:
         """Disconnect backend resources."""
@@ -263,10 +261,13 @@ class Quel3BackendController(BackendController):
         parallel: bool = True,
     ) -> dict[str, tuple[InstrumentInfoProtocol, ...]]:
         """Deploy QuEL-3 instruments for the provided requests."""
-        return self._configuration_manager.deploy_instruments(
-            requests=requests,
-            parallel=parallel,
-        )
+        try:
+            return self._configuration_manager.deploy_instruments(
+                requests=requests,
+                parallel=parallel,
+            )
+        finally:
+            self._execution_manager.invalidate_instrument_resolver()
 
     def get_hardware_state(
         self,
@@ -343,16 +344,16 @@ class Quel3BackendController(BackendController):
         """
         if include_diagnostics is None:
             include_diagnostics = view in ("diagnostics", "all")
-        state = self.get_hardware_state(
-            unit_labels=unit_labels,
-            port_ids=port_ids,
-            instrument_aliases=instrument_aliases,
+        state = self._hardware_state_reader.collect_state(
+            unit_labels=tuple(unit_labels),
+            port_ids=tuple(port_ids),
+            instrument_aliases=tuple(instrument_aliases),
             include_diagnostics=include_diagnostics,
             parallel=parallel,
             timeout_seconds=timeout_seconds,
+            view=view,
         )
-        output_console = Console(highlight=False)
-        output_console.print(format_quel3_hardware_state(state, view=view))
+        state.print(view=view)
 
     @property
     def sampling_period_ns(self) -> float:

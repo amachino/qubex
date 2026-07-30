@@ -101,9 +101,12 @@ class Quel3SystemSynchronizer:
         backend_settings: dict[str, dict],
     ) -> None:
         """Apply hardware snapshot data to QuEL-3 alias caches."""
-        self._backend_controller.configuration_manager.sync_backend_settings_to_cache(
-            backend_settings=backend_settings,
-        )
+        try:
+            self._backend_controller.configuration_manager.sync_backend_settings_to_cache(
+                backend_settings=backend_settings,
+            )
+        finally:
+            self._backend_controller.execution_manager.invalidate_instrument_resolver()
 
     def sync_backend_settings_to_experiment_system(
         self,

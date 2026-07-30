@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 from rich.console import Console
 
-import qubex.backend.quel3.quel3_backend_controller as quel3_backend_controller_module
 from qubex.backend import BackendExecutionRequest
 from qubex.backend.backend_controller import BackendController
 from qubex.backend.quel1 import Quel1BackendController
@@ -25,6 +24,7 @@ from qubex.backend.quel3 import (
     Quel3BackendExecutionResult,
     Quel3CaptureMode,
     Quel3CaptureWindow,
+    Quel3ConfigurationManager,
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3HardwareState,
@@ -252,7 +252,7 @@ def test_get_hardware_state_rejects_old_filter_kwargs() -> None:
         cast(Any, controller).get_hardware_state(diagnostic_port_ids=("unit-a:tx_p01",))
 
 
-def test_print_hardware_state_renders_with_rich_console(
+def test_print_hardware_state_collects_view_and_delegates_to_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Given hardware state, controller should print a Rich hardware-state view."""
@@ -267,24 +267,41 @@ def test_print_hardware_state_renders_with_rich_console(
         diagnostics=(),
         issues=(),
     )
+    hardware_state_reader = _FakeHardwareStateReader(state)
     controller = Quel3BackendController(
-        hardware_state_reader=cast(Any, _FakeHardwareStateReader(state))
+        hardware_state_reader=cast(Any, hardware_state_reader)
     )
-    output = StringIO()
-
-    def _console_factory(*, highlight: bool) -> Console:
-        assert highlight is False
-        return Console(file=output, force_terminal=False, width=120)
-
+    printed_views: list[str] = []
     monkeypatch.setattr(
-        quel3_backend_controller_module,
-        "Console",
-        _console_factory,
+        Quel3HardwareState,
+        "print",
+        lambda self, *, view: printed_views.append(view),
     )
 
     controller.print_hardware_state(view="summary")
 
-    assert "QuEL-3 hardware state" in output.getvalue()
+    assert hardware_state_reader.last_collect_kwargs["view"] == "summary"
+    assert printed_views == ["summary"]
+
+
+def test_hardware_state_print_omits_absent_endpoint_port() -> None:
+    """An absent endpoint port should not render as a literal None suffix."""
+    state = Quel3HardwareState(
+        generated_at="2026-07-07T00:00:00+00:00",
+        endpoint="api.example.com",
+        port=None,
+        selected_unit_labels=(),
+        units=(),
+        ports=(),
+        instruments=(),
+    )
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, width=120)
+
+    state.print(console=console)
+
+    assert "api.example.com" in output.getvalue()
+    assert "api.example.com:None" not in output.getvalue()
 
 
 def test_print_hardware_state_rejects_console_kwarg() -> None:
@@ -604,41 +621,38 @@ def test_constructor_accepts_injected_session_manager() -> None:
     assert controller.session_manager is session_manager
 
 
-def test_connect_refreshes_existing_instrument_cache() -> None:
-    """Given connect on QuEL-3, controller should refresh alias cache from existing instruments."""
+def test_connect_clears_existing_instrument_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """QuEL-3 connect should clear instrument mappings without refreshing them."""
     calls: list[str] = []
     connection_manager = SimpleNamespace(
-        hash=11,
-        is_connected=False,
-        quelware_endpoint="host-a",
-        quelware_port=50051,
-        client_mode="server",
-        quelware_pat_path=None,
         connect=lambda box_names=None, parallel=None: calls.append("connect"),
         disconnect=lambda: None,
     )
-    configuration_manager = SimpleNamespace(
-        quelware_endpoint="host-a",
-        quelware_port=50051,
-        client_mode="server",
-        quelware_pat_path=None,
-        target_alias_map={},
-        last_deployed_instrument_infos={},
-        refresh_instrument_cache=lambda: calls.append("refresh") or {},
-        deploy_instruments=lambda *, requests: {},
-    )
-
+    configuration_manager = Quel3ConfigurationManager()
+    configuration_manager._last_deployed_instrument_infos = {"Q00": ()}
+    configuration_manager._target_alias_map = {("BOX1", "Q00"): "unit-a:Q00"}
     controller = Quel3BackendController(
         connection_manager=cast(Any, connection_manager),
-        configuration_manager=cast(Any, configuration_manager),
+        configuration_manager=configuration_manager,
+    )
+    monkeypatch.setattr(
+        controller.execution_manager,
+        "invalidate_instrument_resolver",
+        lambda: calls.append("invalidate-resolver"),
     )
 
-    controller.connect(["A"])
+    controller.connect(["BOX1"])
 
-    assert calls == ["connect", "refresh"]
+    assert calls == ["connect", "invalidate-resolver"]
+    assert controller.last_deployed_instrument_infos == {}
+    assert controller.target_alias_map == {}
 
 
-def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() -> None:
+def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Given parallel override, controller deploy_instruments should forward it."""
     captured: dict[str, object] = {}
 
@@ -661,6 +675,12 @@ def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() ->
             ),
         )
     )
+    invalidation_calls: list[str] = []
+    monkeypatch.setattr(
+        controller.execution_manager,
+        "invalidate_instrument_resolver",
+        lambda: invalidation_calls.append("invalidate-resolver"),
+    )
     requests = (
         SimpleNamespace(
             port_id="quel3-02-a01:tx_p02",
@@ -676,6 +696,34 @@ def test_deploy_instruments_forwards_parallel_flag_to_configuration_manager() ->
 
     assert result == {"Q00": ()}
     assert captured == {"requests": requests, "parallel": False}
+    assert invalidation_calls == ["invalidate-resolver"]
+
+
+def test_deploy_instruments_invalidates_resolution_when_deployment_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given failed deployment, controller should invalidate instrument resolution."""
+    controller = Quel3BackendController()
+    invalidation_calls: list[str] = []
+
+    def _raise_deployment_error(**_: object) -> None:
+        raise RuntimeError("deployment failed")
+
+    monkeypatch.setattr(
+        controller.configuration_manager,
+        "deploy_instruments",
+        _raise_deployment_error,
+    )
+    monkeypatch.setattr(
+        controller.execution_manager,
+        "invalidate_instrument_resolver",
+        lambda: invalidation_calls.append("invalidate-resolver"),
+    )
+
+    with pytest.raises(RuntimeError, match="deployment failed"):
+        controller.deploy_instruments(requests=())
+
+    assert invalidation_calls == ["invalidate-resolver"]
 
 
 def test_constructor_does_not_infer_runtime_config_from_injected_managers() -> None:
@@ -1365,7 +1413,7 @@ def test_execute_recreates_session_after_transient_request_failure(
         sampling_period_ns=0.4,
         capture_decimation_factor=4,
     )
-    resolver = _FakeInstrumentResolver(
+    resolver = _CountingInstrumentResolver(
         alias_to_info={
             "alias-rq00": _FakeInstrumentInfo(
                 port_id="quel3-02-a01:trx_p00",
@@ -1413,6 +1461,7 @@ def test_execute_recreates_session_after_transient_request_failure(
     )
 
     assert len(clients) == 2
+    assert resolver.refresh_calls == 2
     assert [client.exit_calls for client in clients] == [1, 1]
     assert [session.exit_calls for session in sessions] == [1, 1]
     assert sessions[0].trigger_calls == [["alias-rq00"]]
@@ -1972,6 +2021,72 @@ def test_execute_batch_async_reopens_session_per_payload(
     assert len(session.trigger_calls) == 2
     assert len(driver.apply_calls) == 2
     assert len(results) == 2
+
+
+def test_execute_async_reuses_resolver_until_invalidated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Executions should reuse resolution while keeping resources call-scoped."""
+    payload = _make_payload()
+    manager = Quel3ExecutionManager(
+        runtime_config=Quel3RuntimeConfig(),
+        sampling_period_ns=0.4,
+        capture_decimation_factor=1,
+    )
+    resolvers: list[_CountingInstrumentResolver] = []
+    clients: list[_FakeClient] = []
+    sessions: list[_FakeSession] = []
+
+    def _create_resolver() -> _CountingInstrumentResolver:
+        resolver = _CountingInstrumentResolver(
+            alias_to_info={
+                "alias-rq00": _FakeInstrumentInfo(
+                    port_id="quel3-02-a01:trx_p00",
+                    definition=_FakeInstrumentDefinition(role="TRANSCEIVER"),
+                )
+            }
+        )
+        resolvers.append(resolver)
+        return resolver
+
+    def _create_client(endpoint: str, port: int) -> _FakeClient:
+        del endpoint, port
+        session = _FakeSession()
+        sessions.append(session)
+        client = _FakeClient(session)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(
+        manager,
+        "_load_quelware_api",
+        lambda: _make_fake_execution_api(
+            client_factory=_create_client,
+            instrument_resolver_factory=_create_resolver,
+            fixed_timeline_driver_factory=lambda _session, _instrument_info: (
+                _FakeInstrumentDriver()
+            ),
+        ),
+    )
+
+    async def _execute_around_invalidation() -> None:
+        request = BackendExecutionRequest(payload=payload)
+        await manager.execute_async(request=request)
+        await manager.execute_async(request=request)
+        manager.invalidate_instrument_resolver()
+        await manager.execute_async(request=request)
+
+    asyncio.run(_execute_around_invalidation())
+
+    assert len(resolvers) == 2
+    assert [resolver.refresh_calls for resolver in resolvers] == [1, 1]
+    assert len(clients) == 3
+    assert [client.exit_calls for client in clients] == [1, 1, 1]
+    assert [session.trigger_calls for session in sessions] == [
+        [["alias-rq00"]],
+        [["alias-rq00"]],
+        [["alias-rq00"]],
+    ]
 
 
 def test_execute_serializes_driver_phases_when_parallel_disabled(

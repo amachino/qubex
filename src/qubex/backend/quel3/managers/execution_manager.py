@@ -144,6 +144,7 @@ class Quel3ExecutionManager:
                 runtime_config=self._runtime_config,
             )
         )
+        self._instrument_resolver: InstrumentResolverProtocol | None = None
 
     @property
     def runtime_config(self) -> Quel3RuntimeConfig:
@@ -174,6 +175,10 @@ class Quel3ExecutionManager:
     def quelware_pat_path(self) -> str | None:
         """Return configured quelware personal access token path."""
         return self._runtime_config.pat_path
+
+    def invalidate_instrument_resolver(self) -> None:
+        """Discard cached instrument resolution state."""
+        self._instrument_resolver = None
 
     def execute_sync(
         self,
@@ -294,12 +299,14 @@ class Quel3ExecutionManager:
     ) -> list[Quel3BackendExecutionResult]:
         """Execute one payload batch with per-payload quelware sessions."""
         # Batch flow:
-        # 1. Lazily open one quelware client and refresh the instrument resolver.
+        # 1. Lazily open one quelware client and refresh the resolver when invalidated.
         # 2. Resolve instrument info for each precomputed payload plan.
         # 3. Reopen a per-payload session for the resolved instrument resource IDs.
         # 4. Execute the resolved payload and collect results.
         # 5. Retry only the failed payload after transient session request failures.
-        resolver = quelware_api.instrument_resolver_factory()
+        resolver = self._instrument_resolver
+        if resolver is None:
+            resolver = quelware_api.instrument_resolver_factory()
 
         try:
             return [
@@ -330,6 +337,7 @@ class Quel3ExecutionManager:
                 await self._ensure_batch_client_ready(
                     resolver=resolver,
                     quelware_api=quelware_api,
+                    force_resolver_refresh=attempt > 0,
                 )
                 alias_to_instrument_info = {
                     alias: self._find_instrument_info_by_alias(
@@ -380,12 +388,15 @@ class Quel3ExecutionManager:
         *,
         resolver: InstrumentResolverProtocol,
         quelware_api: _QuelwareExecutionApi,
+        force_resolver_refresh: bool,
     ) -> None:
         """Open the batch client and refresh resolver state when needed."""
         if self._session_manager.is_open:
             return
         await self._session_manager.open(client_factory=quelware_api.client_factory)
-        await resolver.refresh(self._session_manager.client)
+        if self._instrument_resolver is not resolver or force_resolver_refresh:
+            await resolver.refresh(self._session_manager.client)
+            self._instrument_resolver = resolver
 
     async def _open_payload_execution_session(
         self,

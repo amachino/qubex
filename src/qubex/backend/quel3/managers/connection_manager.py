@@ -87,7 +87,7 @@ class Quel3ConnectionManager:
         self._is_connected = False
 
     async def _probe_quelware_connection(self) -> None:
-        """Probe quelware endpoint by listing resources once."""
+        """Probe quelware endpoint by listing units once."""
         try:
             client_factory = self.load_quelware_client_factory()
         except (ModuleNotFoundError, SyntaxError) as exc:
@@ -99,7 +99,7 @@ class Quel3ConnectionManager:
             self._runtime_config.endpoint,
             self._runtime_config.port,
         ) as client:
-            await client.list_resource_infos()
+            client.list_unit_labels()
 
     def load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""

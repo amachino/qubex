@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -431,3 +432,34 @@ def test_managers_accept_shared_runtime_config() -> None:
     )
 
     assert all(manager.runtime_config is config for manager in managers)
+
+
+def test_connection_probe_lists_units_without_scanning_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """QuEL-3 connect should inspect local unit labels without listing resources."""
+    calls: list[str] = []
+
+    @asynccontextmanager
+    async def _client_factory(
+        endpoint: str,
+        port: int,
+    ) -> AsyncIterator[SimpleNamespace]:
+        calls.append(f"client:{endpoint}:{port}")
+        yield SimpleNamespace(
+            list_unit_labels=lambda: calls.append("list-units") or [],
+        )
+
+    manager = Quel3ConnectionManager(
+        runtime_config=Quel3RuntimeConfig(endpoint="worker-host", port=61000)
+    )
+    monkeypatch.setattr(
+        manager,
+        "load_quelware_client_factory",
+        lambda: _client_factory,
+    )
+
+    manager.connect()
+
+    assert manager.is_connected is True
+    assert calls == ["client:worker-host:61000", "list-units"]

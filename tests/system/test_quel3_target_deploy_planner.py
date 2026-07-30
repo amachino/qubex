@@ -424,3 +424,43 @@ def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> Non
             "parallel": False,
         }
     ]
+
+
+def test_quel3_synchronizer_invalidates_resolution_after_cache_sync() -> None:
+    """Given pulled settings, synchronizer should invalidate instrument resolution."""
+    calls: list[tuple[str, object]] = []
+    backend_settings = {
+        "BOX1": {
+            "instruments": {
+                "Q00": {
+                    "resource_id": "unit-a:inst-q00",
+                    "port_id": "unit-a:tx_p01",
+                    "role": "TRANSMITTER",
+                }
+            }
+        }
+    }
+    backend_controller = SimpleNamespace(
+        configuration_manager=SimpleNamespace(
+            sync_backend_settings_to_cache=lambda *, backend_settings: calls.append(
+                ("sync-cache", backend_settings)
+            ),
+        ),
+        execution_manager=SimpleNamespace(
+            invalidate_instrument_resolver=lambda: calls.append(
+                ("invalidate-resolver", None)
+            ),
+        ),
+    )
+    synchronizer = Quel3SystemSynchronizer(
+        backend_controller=cast(Any, backend_controller),
+    )
+
+    synchronizer.sync_backend_settings_to_backend_controller(
+        backend_settings=backend_settings,
+    )
+
+    assert calls == [
+        ("sync-cache", backend_settings),
+        ("invalidate-resolver", None),
+    ]
