@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-import os
+from os import makedirs
+from os.path import dirname
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
@@ -241,7 +242,12 @@ def _is_valid(value: float | None) -> bool:
     return value is not None and not math.isnan(value)
 
 
-def init_yaml_file(path, description="Crosstalk", unit="dB"):
+def init_yaml_file(
+    path: str | Path,
+    description: str = "Crosstalk",
+    unit: str = "dB",
+) -> None:
+    """Initialize a crosstalk YAML file with default metadata and 64x64 qubit entries."""
     data = {
         "meta": {
             "description": description,
@@ -254,7 +260,7 @@ def init_yaml_file(path, description="Crosstalk", unit="dB"):
             for i in range(64)
         },
     }
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    makedirs(dirname(str(path)), exist_ok=True)
 
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True)
