@@ -166,62 +166,8 @@ class SystemManager:
     ) -> SystemBackendController:
         """Create a backend controller instance for one experiment session."""
         if backend_kind == BACKEND_KIND_QUEL3:
-            return Quel3BackendController(
-                **SystemManager._resolve_quel3_controller_kwargs(backend_runtime_config)
-            )
+            return Quel3BackendController.from_config_mapping(backend_runtime_config)
         return Quel1BackendController()
-
-    @staticmethod
-    def _resolve_quel3_controller_kwargs(
-        backend_runtime_config: Mapping[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Return `Quel3BackendController` kwargs from system runtime config."""
-        if backend_runtime_config is None:
-            return {}
-        kwargs: dict[str, Any] = {}
-        if "standalone_unit_label" in backend_runtime_config:
-            raise ValueError(
-                "QuEL-3 standalone runtime config `standalone_unit_label` is no longer supported."
-            )
-        endpoint = SystemManager._get_runtime_config_value(
-            backend_runtime_config,
-            "quelware_endpoint",
-            "endpoint",
-        )
-        port = SystemManager._get_runtime_config_value(
-            backend_runtime_config,
-            "quelware_port",
-            "port",
-        )
-        client_mode = SystemManager._get_runtime_config_value(
-            backend_runtime_config,
-            "client_mode",
-        )
-        quelware_pat_path = SystemManager._get_runtime_config_value(
-            backend_runtime_config,
-            "quelware_pat_path",
-            "pat_path",
-        )
-        if endpoint is not None:
-            kwargs["quelware_endpoint"] = endpoint
-        if port is not None:
-            kwargs["quelware_port"] = port
-        if client_mode is not None:
-            kwargs["client_mode"] = client_mode
-        if quelware_pat_path is not None:
-            kwargs["quelware_pat_path"] = quelware_pat_path
-        return kwargs
-
-    @staticmethod
-    def _get_runtime_config_value(
-        backend_runtime_config: Mapping[str, Any],
-        *keys: str,
-    ) -> Any | None:
-        """Return the first present runtime config value for one alias set."""
-        for key in keys:
-            if key in backend_runtime_config:
-                return backend_runtime_config[key]
-        return None
 
     @staticmethod
     def _get_backend_runtime_config(

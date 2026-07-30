@@ -7,7 +7,7 @@ built on quelware-client managers.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from qubex.backend.backend_controller import (
     BackendController,
@@ -42,6 +42,14 @@ class Quel3BackendController(BackendController):
     SAMPLING_PERIOD_NS: float = SAMPLING_PERIOD_NS
     CAPTURE_DECIMATION_FACTOR: int = CAPTURE_DECIMATION_FACTOR
 
+    @classmethod
+    def from_config_mapping(
+        cls,
+        value: Mapping[str, object] | None,
+    ) -> Quel3BackendController:
+        """Create a controller from one QuEL-3 system configuration."""
+        return cls(runtime_config=Quel3RuntimeConfig.from_mapping(value))
+
     def __init__(
         self,
         *,
@@ -49,6 +57,7 @@ class Quel3BackendController(BackendController):
         quelware_port: int | None = None,
         client_mode: str | None = None,
         quelware_pat_path: str | None = None,
+        runtime_config: Quel3RuntimeConfig | None = None,
         connection_manager: Quel3ConnectionManager | None = None,
         session_manager: Quel3SessionManager | None = None,
         configuration_manager: Quel3ConfigurationManager | None = None,
@@ -64,6 +73,12 @@ class Quel3BackendController(BackendController):
             quelware API endpoint. Defaults to "localhost".
         quelware_port : int | None, optional
             quelware API port. Defaults to 50051.
+        client_mode : str | None, optional
+            quelware client runtime mode. Defaults to "server".
+        quelware_pat_path : str | None, optional
+            Path to a quelware personal access token file.
+        runtime_config : Quel3RuntimeConfig | None, optional
+            Prebuilt runtime settings. Cannot be combined with quelware options.
         connection_manager : Quel3ConnectionManager | None, optional
             Injected connection manager for testing or customization.
         session_manager : Quel3SessionManager | None, optional
@@ -75,7 +90,19 @@ class Quel3BackendController(BackendController):
         hardware_state_reader : Quel3HardwareStateReader | None, optional
             Injected hardware-state reader for testing or customization.
         """
-        runtime_config = Quel3RuntimeConfig(
+        if runtime_config is not None and any(
+            value is not None
+            for value in (
+                quelware_endpoint,
+                quelware_port,
+                client_mode,
+                quelware_pat_path,
+            )
+        ):
+            raise ValueError(
+                "runtime_config cannot be combined with quelware runtime options"
+            )
+        resolved_runtime_config = runtime_config or Quel3RuntimeConfig(
             endpoint=quelware_endpoint or "localhost",
             port=50051 if quelware_port is None else quelware_port,
             client_mode=client_mode or "server",
@@ -86,34 +113,34 @@ class Quel3BackendController(BackendController):
             if execution_manager is not None
             else self.SAMPLING_PERIOD_NS
         )
-        self._runtime_config = runtime_config
+        self._runtime_config = resolved_runtime_config
 
         self._connection_manager = (
             connection_manager
             if connection_manager is not None
             else Quel3ConnectionManager(
-                runtime_config=runtime_config,
+                runtime_config=resolved_runtime_config,
             )
         )
         self._session_manager = (
             session_manager
             if session_manager is not None
             else Quel3SessionManager(
-                runtime_config=runtime_config,
+                runtime_config=resolved_runtime_config,
             )
         )
         self._configuration_manager = (
             configuration_manager
             if configuration_manager is not None
             else Quel3ConfigurationManager(
-                runtime_config=runtime_config,
+                runtime_config=resolved_runtime_config,
             )
         )
         self._execution_manager = (
             execution_manager
             if execution_manager is not None
             else Quel3ExecutionManager(
-                runtime_config=runtime_config,
+                runtime_config=resolved_runtime_config,
                 sampling_period_ns=self._sampling_period_ns,
                 capture_decimation_factor=self.CAPTURE_DECIMATION_FACTOR,
                 session_manager=self._session_manager,
@@ -123,7 +150,7 @@ class Quel3BackendController(BackendController):
             hardware_state_reader
             if hardware_state_reader is not None
             else Quel3HardwareStateReader(
-                runtime_config=runtime_config,
+                runtime_config=resolved_runtime_config,
             )
         )
 
@@ -153,7 +180,7 @@ class Quel3BackendController(BackendController):
         return self._runtime_config.endpoint
 
     @property
-    def quelware_port(self) -> int:
+    def quelware_port(self) -> int | None:
         """Return configured quelware port."""
         return self._runtime_config.port
 

@@ -251,7 +251,7 @@ class QuelwareClientFactory(Protocol):
     """Factory protocol for quelware clients."""
 
     def __call__(
-        self, endpoint: str, port: int
+        self, endpoint: str, port: int | None
     ) -> AbstractAsyncContextManager[QuelwareClientProtocol]:
         """Create one quelware client context manager."""
         ...

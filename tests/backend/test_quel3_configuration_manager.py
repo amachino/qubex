@@ -11,6 +11,7 @@ import pytest
 
 from qubex.backend.quel3.managers import (
     Quel3ConfigurationManager,
+    Quel3HttpTransportConfig,
     Quel3RuntimeConfig,
     configuration_manager as configuration_manager_module,
     runtime_config as runtime_config_module,
@@ -1365,11 +1366,13 @@ def test_load_client_factory_uses_configured_client_runtime(
     monkeypatch.setattr(
         runtime_config_module,
         "load_quelware_client_factory",
-        lambda *, client_mode, pat_path=None: (
+        lambda *, client_mode, pat_path=None, transport, http_transport: (
             captured.update(
                 {
                     "client_mode": client_mode,
                     "pat_path": pat_path,
+                    "transport": transport,
+                    "http_transport": http_transport,
                 }
             )
             or fake_client_factory
@@ -1385,13 +1388,15 @@ def test_load_client_factory_uses_configured_client_runtime(
     assert captured == {
         "client_mode": "server",
         "pat_path": None,
+        "transport": "grpc",
+        "http_transport": None,
     }
 
 
 def test_load_client_factory_uses_configured_pat_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given PAT path runtime option, client factory loading should forward only the path."""
+    """Given PAT path runtime option, client factory loading should forward runtime settings."""
     captured: dict[str, object] = {}
     fake_client_factory = object()
     pat_path = "/run/secrets/quelware-pat"
@@ -1400,9 +1405,13 @@ def test_load_client_factory_uses_configured_pat_path(
         *,
         client_mode: str,
         pat_path: str,
+        transport: str,
+        http_transport: Quel3HttpTransportConfig | None,
     ) -> object:
         captured["client_mode"] = client_mode
         captured["pat_path"] = pat_path
+        captured["transport"] = transport
+        captured["http_transport"] = http_transport
         return fake_client_factory
 
     monkeypatch.setattr(
@@ -1424,6 +1433,8 @@ def test_load_client_factory_uses_configured_pat_path(
     assert captured == {
         "client_mode": "server",
         "pat_path": pat_path,
+        "transport": "grpc",
+        "http_transport": None,
     }
 
 

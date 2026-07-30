@@ -284,6 +284,26 @@ def test_print_hardware_state_collects_view_and_delegates_to_state(
     assert printed_views == ["summary"]
 
 
+def test_hardware_state_print_omits_absent_endpoint_port() -> None:
+    """An absent endpoint port should not render as a literal None suffix."""
+    state = Quel3HardwareState(
+        generated_at="2026-07-07T00:00:00+00:00",
+        endpoint="api.example.com",
+        port=None,
+        selected_unit_labels=(),
+        units=(),
+        ports=(),
+        instruments=(),
+    )
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, width=120)
+
+    state.print(console=console)
+
+    assert "api.example.com" in output.getvalue()
+    assert "api.example.com:None" not in output.getvalue()
+
+
 def test_print_hardware_state_rejects_console_kwarg() -> None:
     """Given removed console kwarg, controller raises TypeError."""
     controller = Quel3BackendController(

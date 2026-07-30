@@ -5,6 +5,7 @@ from .infra import Quel3ClientMode
 from .managers import (
     Quel3ConfigurationManager,
     Quel3HardwareStateReader,
+    Quel3HttpTransportConfig,
     Quel3RuntimeConfig,
 )
 from .models import (
@@ -42,6 +43,7 @@ __all__ = [
     "Quel3HardwareStateReader",
     "Quel3HardwareStateSeverity",
     "Quel3HardwareStateView",
+    "Quel3HttpTransportConfig",
     "Quel3InstrumentState",
     "Quel3PortDiagnostic",
     "Quel3PortState",
