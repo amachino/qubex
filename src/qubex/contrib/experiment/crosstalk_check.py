@@ -243,13 +243,16 @@ def _is_valid(value: float | None) -> bool:
 
 def init_yaml_file(path, description="Crosstalk", unit="dB"):
     data = {
-    'meta':{
-        'description': description,
-        'unit': unit,
-    },
-    'data':{
-        f'{"Q"+str(i).zfill(2)}': {f'{"Q"+str(j).zfill(2)}': None for j in range(64)} for i in range(64)
-    }
+        "meta": {
+            "description": description,
+            "unit": unit,
+        },
+        "data": {
+            f"{'Q' + str(i).zfill(2)}": {
+                f"{'Q' + str(j).zfill(2)}": None for j in range(64)
+            }
+            for i in range(64)
+        },
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
