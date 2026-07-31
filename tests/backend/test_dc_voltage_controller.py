@@ -192,6 +192,83 @@ def test_apply_voltages_ramps_each_channel_and_shuts_down(
     assert delays == [0.1] * 6
 
 
+def test_apply_voltage_ramps_with_one_device_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Single-channel application should keep one device open for the ramp."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        update_interval_s=0.1,
+        safe_voltage_v=0.0,
+    )
+
+    controller.apply_voltage(channel=1, voltage=0.25, profile=profile)
+
+    assert len(_FakeDCVoltageDevice.instances) == 1
+    device = _FakeDCVoltageDevice.instances[0]
+    applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
+    assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25])
+    assert device.output_states[1] is True
+    assert device.closed is True
+
+
+def test_apply_voltage_immediately_skips_ramp() -> None:
+    """Immediate application should set only the target and enable the output."""
+    _reset_fake_devices()
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(channel=1)
+
+    controller.apply_voltage_immediately(
+        channel=1,
+        voltage=0.25,
+        profile=profile,
+    )
+
+    device = _FakeDCVoltageDevice.instances[0]
+    applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
+    assert applied == pytest.approx([0.25])
+    assert device.output_states[1] is True
+
+
+def test_shutdown_ramps_to_safe_voltage_and_turns_output_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shutdown should ramp to the safe voltage before disabling the output."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+
+    class _EnabledDevice(_FakeDCVoltageDevice):
+        def __init__(self) -> None:
+            super().__init__()
+            self.output_states[1] = True
+            self.voltages[1] = 0.25
+
+    controller = DCVoltageController(device_factory=_EnabledDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        update_interval_s=0.1,
+        safe_voltage_v=0.0,
+    )
+
+    controller.shutdown(channel=1, profile=profile)
+
+    device = _FakeDCVoltageDevice.instances[0]
+    applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
+    assert applied == pytest.approx([0.15, 0.05, 0.0])
+    assert device.calls[-1] == ("off", 1)
+
+
 def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -237,6 +314,34 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
         ("get_voltage", 1),
         ("on", 1),
     ]
+
+
+def test_apply_voltage_stops_after_configured_readback_attempts() -> None:
+    """Single-channel application should fail after its profile retry limit."""
+
+    class _MismatchedReadbackDevice(_FakeDCVoltageDevice):
+        def get_voltage(self, channel: int) -> float:
+            self.calls.append(("get_voltage", channel))
+            return -1.0
+
+    _reset_fake_devices()
+    controller = DCVoltageController(device_factory=_MismatchedReadbackDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        readback_tolerance_v=0.001,
+        max_set_attempts=2,
+    )
+
+    with pytest.raises(RuntimeError, match="after 2 attempts"):
+        controller.apply_voltage_immediately(
+            channel=1,
+            voltage=0.5,
+            profile=profile,
+        )
+
+    device = _FakeDCVoltageDevice.instances[0]
+    set_calls = [call for call in device.calls if call[0] == "set_voltage"]
+    assert len(set_calls) == 2
 
 
 def test_ons61797_adapter_normalizes_third_party_output_state() -> None:

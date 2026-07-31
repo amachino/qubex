@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import replace
 
 from qubex.external_devices import DCVoltageProfile
 
@@ -16,14 +16,18 @@ class DCVoltageControl:
     def __init__(
         self,
         *,
-        set_voltage: Callable[[float, float, int], None],
+        apply_voltage: Callable[[float, DCVoltageProfile], None],
+        apply_voltage_immediately: Callable[[float, DCVoltageProfile], None],
+        shutdown: Callable[[DCVoltageProfile], None],
         get_state: Callable[[], DCVoltageState],
         turn_on: Callable[[], None],
         turn_off: Callable[[], None],
         profile: DCVoltageProfile,
     ) -> None:
         """Initialize bound DC voltage operations."""
-        self._set_voltage = set_voltage
+        self._apply_voltage = apply_voltage
+        self._apply_voltage_immediately = apply_voltage_immediately
+        self._shutdown = shutdown
         self._get_state = get_state
         self._turn_on = turn_on
         self._turn_off = turn_off
@@ -56,25 +60,10 @@ class DCVoltageControl:
         DCVoltageState
             Readback state at the target voltage.
         """
-        resolved_tolerance = self._resolve_tolerance(tolerance)
-        state = self.state
-        if state.is_on:
-            start = state.voltage
-        else:
-            start = self._profile.safe_voltage_v
-            self._set_voltage(
-                start,
-                resolved_tolerance,
-                self._profile.max_set_attempts,
-            )
-            self._turn_on()
-        for setpoint in self._ramp_setpoints(start=start, voltage=float(voltage)):
-            self._set_voltage(
-                setpoint,
-                resolved_tolerance,
-                self._profile.max_set_attempts,
-            )
-            time.sleep(self._profile.update_interval_s)
+        self._apply_voltage(
+            float(voltage),
+            self._profile_with_tolerance(tolerance),
+        )
         return self.state
 
     def apply_voltage_immediately(
@@ -84,14 +73,10 @@ class DCVoltageControl:
         tolerance: float | None = None,
     ) -> DCVoltageState:
         """Enable the output and apply a voltage without ramping."""
-        state = self.state
-        self._set_voltage(
+        self._apply_voltage_immediately(
             float(voltage),
-            self._resolve_tolerance(tolerance),
-            self._profile.max_set_attempts,
+            self._profile_with_tolerance(tolerance),
         )
-        if not state.is_on:
-            self._turn_on()
         return self.state
 
     def turn_on(self) -> DCVoltageState:
@@ -116,34 +101,15 @@ class DCVoltageControl:
 
     def shutdown(self, *, tolerance: float | None = None) -> None:
         """Ramp to the configured safe voltage and turn the output off."""
-        try:
-            if self.state.is_on:
-                self.apply_voltage(
-                    self._profile.safe_voltage_v,
-                    tolerance=tolerance,
-                )
-        finally:
-            self._turn_off()
+        self._shutdown(self._profile_with_tolerance(tolerance))
 
-    def _ramp_setpoints(self, *, start: float, voltage: float) -> list[float]:
-        """Return incremental setpoints after the start through the target."""
-        if start == voltage:
-            return []
-        step = self._profile.ramp_rate_v_per_s * self._profile.update_interval_s
-        direction = 1.0 if voltage >= start else -1.0
-        setpoints: list[float] = []
-        current = float(start)
-        while abs(voltage - current) > step:
-            current += direction * step
-            setpoints.append(current)
-        if not setpoints or setpoints[-1] != voltage:
-            setpoints.append(float(voltage))
-        return setpoints
-
-    def _resolve_tolerance(self, tolerance: float | None) -> float:
-        """Resolve an optional readback tolerance against the mux profile."""
+    def _profile_with_tolerance(
+        self,
+        tolerance: float | None,
+    ) -> DCVoltageProfile:
+        """Return the profile with an optional readback tolerance override."""
         if tolerance is None:
-            return self._profile.readback_tolerance_v
+            return self._profile
         if tolerance < 0:
             raise ValueError("tolerance must be non-negative.")
-        return tolerance
+        return replace(self._profile, readback_tolerance_v=tolerance)

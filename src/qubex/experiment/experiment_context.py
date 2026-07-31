@@ -1221,28 +1221,6 @@ class ExperimentContext:
         channel = self.system_manager.resolve_dc_voltage_channel(resolved_mux.index)
         return resolved_mux, channel
 
-    def _set_dc_voltage(
-        self,
-        voltage: float,
-        *,
-        mux: int | str | None = None,
-        tolerance: float = 1e-3,
-        max_attempts: int = 3,
-    ) -> None:
-        """Set DC voltage for one mux through the configured controller."""
-        resolved_mux, channel = self._resolve_dc_output(mux)
-        controller = self.system_manager.dc_voltage_controller
-        for _ in range(max_attempts):
-            controller.set_voltage(channel=channel, voltage=voltage)
-            current_voltage = controller.get_voltage(channel=channel)
-            if abs(voltage - current_voltage) <= tolerance:
-                return
-        raise RuntimeError(
-            f"DC voltage for `{resolved_mux.label}` failed to reach "
-            f"{voltage} V within tolerance {tolerance} V after "
-            f"{max_attempts} attempts."
-        )
-
     def get_dc_voltage_state(
         self,
         *,
@@ -1288,12 +1266,23 @@ class ExperimentContext:
         """Yield DC voltage operations bound to one mux."""
         resolved_mux = self._resolve_dc_mux(mux)
         profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
+        controller = self.system_manager.dc_voltage_controller
         control = DCVoltageControl(
-            set_voltage=lambda voltage, tolerance, max_attempts: self._set_dc_voltage(
-                voltage,
-                mux=resolved_mux.index,
-                tolerance=tolerance,
-                max_attempts=max_attempts,
+            apply_voltage=lambda voltage, resolved_profile: controller.apply_voltage(
+                channel=profile.channel,
+                voltage=voltage,
+                profile=resolved_profile,
+            ),
+            apply_voltage_immediately=lambda voltage, resolved_profile: (
+                controller.apply_voltage_immediately(
+                    channel=profile.channel,
+                    voltage=voltage,
+                    profile=resolved_profile,
+                )
+            ),
+            shutdown=lambda resolved_profile: controller.shutdown(
+                channel=profile.channel,
+                profile=resolved_profile,
             ),
             get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
             turn_on=lambda: self._turn_on_dc(mux=resolved_mux.index),

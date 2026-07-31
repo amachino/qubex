@@ -65,6 +65,55 @@ class DCVoltageController:
         with self._connection() as device:
             return device.get_voltage(channel=channel)
 
+    def apply_voltage(
+        self,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> None:
+        """Enable one channel and ramp it to a target voltage."""
+        with self._connection() as device:
+            self._apply_voltage(
+                device,
+                channel=channel,
+                voltage=voltage,
+                profile=profile,
+            )
+
+    def apply_voltage_immediately(
+        self,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> None:
+        """Enable one channel and apply a target without ramping."""
+        with self._connection() as device:
+            is_output_on = device.is_output_on(channel)
+            self._set_voltage_verified(
+                device,
+                channel=channel,
+                voltage=voltage,
+                profile=profile,
+            )
+            if not is_output_on:
+                device.on(channel)
+
+    def shutdown(
+        self,
+        *,
+        channel: int,
+        profile: DCVoltageProfile,
+    ) -> None:
+        """Ramp one channel to its safe voltage and turn it off."""
+        with self._connection() as device:
+            self._shutdown(
+                device,
+                channel=channel,
+                profile=profile,
+            )
+
     @contextmanager
     def _connection(self) -> Iterator[DCVoltageDevice]:
         """Yield a connected device and close on exit."""
@@ -92,17 +141,11 @@ class DCVoltageController:
                 yield device
             finally:
                 for channel, (_, profile) in requests.items():
-                    try:
-                        if device.is_output_on(channel):
-                            self._ramp_voltage(
-                                device,
-                                channel=channel,
-                                start=device.get_voltage(channel),
-                                voltage=profile.safe_voltage_v,
-                                profile=profile,
-                            )
-                    finally:
-                        device.off(channel)
+                    self._shutdown(
+                        device,
+                        channel=channel,
+                        profile=profile,
+                    )
 
     def _apply_voltage(
         self,
@@ -131,6 +174,26 @@ class DCVoltageController:
             voltage=voltage,
             profile=profile,
         )
+
+    def _shutdown(
+        self,
+        device: DCVoltageDevice,
+        *,
+        channel: int,
+        profile: DCVoltageProfile,
+    ) -> None:
+        """Safely shut down one output while keeping the active connection."""
+        try:
+            if device.is_output_on(channel):
+                self._ramp_voltage(
+                    device,
+                    channel=channel,
+                    start=device.get_voltage(channel),
+                    voltage=profile.safe_voltage_v,
+                    profile=profile,
+                )
+        finally:
+            device.off(channel)
 
     def _ramp_voltage(
         self,

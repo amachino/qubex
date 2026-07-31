@@ -66,6 +66,37 @@ class _DCVoltageController:
         self.calls.append(("is_output_on", channel))
         return self.output_states.get(channel, False)
 
+    def apply_voltage(
+        self,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> None:
+        self.calls.append(("apply_voltage", channel, voltage, profile))
+        self.voltages[channel] = voltage
+        self.output_states[channel] = True
+
+    def apply_voltage_immediately(
+        self,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> None:
+        self.calls.append(("apply_voltage_immediately", channel, voltage, profile))
+        self.voltages[channel] = voltage
+        self.output_states[channel] = True
+
+    def shutdown(self, *, channel: int, profile: DCVoltageProfile) -> None:
+        self.calls.append(("shutdown", channel, profile))
+        try:
+            if self.fail_set_voltage:
+                raise RuntimeError("restore failed")
+            self.voltages[channel] = profile.safe_voltage_v
+        finally:
+            self.output_states[channel] = False
+
 
 class _SystemManager:
     def __init__(
@@ -209,23 +240,24 @@ def test_dc_voltage_control_sweeps_states_and_turns_off_on_exit() -> None:
     assert dc_controller.voltages[7] == pytest.approx(0.0)
 
 
-def test_dc_voltage_control_applies_voltage_with_configured_ramp(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Applying voltage should enable output and use the configured ramp."""
-    delays: list[float] = []
-    monkeypatch.setattr("qubex.experiment.dc_voltage_control.time.sleep", delays.append)
+def test_dc_voltage_control_applies_voltage_with_configured_ramp() -> None:
+    """Applying voltage should delegate the configured profile to the controller."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
     with ctx.dc_voltage_control(shutdown_on_exit=False) as dc:
         state = dc.apply_voltage(0.25)
-        applied = [call[2] for call in dc_controller.calls if call[0] == "set_voltage"]
-        assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25])
 
     assert state.voltage == pytest.approx(0.25)
     assert state.is_on
-    assert delays == [0.1, 0.1, 0.1]
+    apply_call = next(
+        call for call in dc_controller.calls if call[0] == "apply_voltage"
+    )
+    assert apply_call[1:3] == (7, 0.25)
+    applied_profile = apply_call[3]
+    assert isinstance(applied_profile, DCVoltageProfile)
+    assert applied_profile.ramp_rate_v_per_s == pytest.approx(1.0)
+    assert applied_profile.update_interval_s == pytest.approx(0.1)
 
 
 def test_dc_voltage_control_ramps_to_safe_voltage_before_turning_off() -> None:
@@ -236,11 +268,8 @@ def test_dc_voltage_control_ramps_to_safe_voltage_before_turning_off() -> None:
     with ctx.dc_voltage_control() as dc:
         dc.apply_voltage(0.25)
 
-    applied = [call[2] for call in dc_controller.calls if call[0] == "set_voltage"]
-    assert applied == pytest.approx(
-        [0.0, 0.1, 0.2, 0.25, 0.15, 0.05, 0.0],
-    )
-    assert dc_controller.calls[-1] == ("off", 7)
+    assert dc_controller.voltages[7] == pytest.approx(0.0)
+    assert dc_controller.calls[-1][0:2] == ("shutdown", 7)
 
 
 def test_dc_voltage_control_can_apply_voltage_immediately() -> None:
@@ -251,8 +280,7 @@ def test_dc_voltage_control_can_apply_voltage_immediately() -> None:
     with ctx.dc_voltage_control(shutdown_on_exit=False) as dc:
         state = dc.apply_voltage_immediately(0.2)
 
-    applied = [call[2] for call in dc_controller.calls if call[0] == "set_voltage"]
-    assert applied == pytest.approx([0.2])
+    assert any(call[0] == "apply_voltage_immediately" for call in dc_controller.calls)
     assert state.is_on
 
 
@@ -266,7 +294,7 @@ def test_dc_voltage_control_can_keep_output_on_after_exit() -> None:
 
     assert dc_controller.voltages[7] == pytest.approx(0.2)
     assert dc_controller.output_states[7] is True
-    assert dc_controller.calls[-1] != ("off", 7)
+    assert all(call[0] != "shutdown" for call in dc_controller.calls)
 
 
 def test_dc_voltage_control_turns_off_when_ramp_restore_fails() -> None:
@@ -282,7 +310,7 @@ def test_dc_voltage_control_turns_off_when_ramp_restore_fails() -> None:
     with pytest.raises(RuntimeError, match="restore failed"):
         exit_with_failed_restore()
 
-    assert dc_controller.calls[-1] == ("off", 7)
+    assert dc_controller.calls[-1][0:2] == ("shutdown", 7)
 
 
 def test_dc_voltage_control_turns_off_after_partial_sweep() -> None:
@@ -338,41 +366,18 @@ def test_dc_voltage_control_turns_bound_output_off_and_on() -> None:
     assert dc_controller.output_states[8] is False
 
 
-def test_dc_voltage_control_stops_after_repeated_readback_mismatch() -> None:
-    """Given persistent readback error, bound control should fail without hanging."""
-
-    class _MismatchedReadbackController(_DCVoltageController):
-        def get_voltage(self, *, channel: int) -> float:
-            self.calls.append(("get_voltage", channel))
-            return -1.0
-
-    dc_controller = _MismatchedReadbackController()
-    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
-
-    with (
-        ctx.dc_voltage_control() as dc,
-        pytest.raises(RuntimeError, match="failed to reach"),
-    ):
-        dc.apply_voltage_immediately(0.5)
-
-    set_calls = [call for call in dc_controller.calls if call[0] == "set_voltage"]
-    assert len(set_calls) == 3
-
-
 def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
-    """Voltage application should use the mux profile readback tolerance."""
-
-    class _SlightReadbackOffsetController(_DCVoltageController):
-        def get_voltage(self, *, channel: int) -> float:
-            self.calls.append(("get_voltage", channel))
-            return self.voltages.get(channel, 0.0) + 0.0015
-
-    dc_controller = _SlightReadbackOffsetController()
+    """Voltage application should delegate an overridden readback tolerance."""
+    dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
     with ctx.dc_voltage_control(shutdown_on_exit=False) as dc:
-        state = dc.apply_voltage_immediately(0.5)
+        state = dc.apply_voltage_immediately(0.5, tolerance=0.0015)
 
-    assert state.voltage == pytest.approx(0.5015)
-    set_calls = [call for call in dc_controller.calls if call[0] == "set_voltage"]
-    assert len(set_calls) == 1
+    assert state.voltage == pytest.approx(0.5)
+    call = next(
+        call for call in dc_controller.calls if call[0] == "apply_voltage_immediately"
+    )
+    applied_profile = call[3]
+    assert isinstance(applied_profile, DCVoltageProfile)
+    assert applied_profile.readback_tolerance_v == pytest.approx(0.0015)
