@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
-from qubex.system.control_parameters import ControlParameters, JPAParameters
+from qubex.system.control_parameters import (
+    ControlParameters,
+    DCVoltageOnExit,
+    JPAParameters,
+)
 from qubex.system.target_type import TargetType
 
 if TYPE_CHECKING:
@@ -262,7 +266,7 @@ class ControlParameterDefaults:
         raw_pump_frequency = value.get("pump_frequency")
         raw_pump_amplitude = value.get("pump_amplitude")
         raw_dc_voltage = value.get("dc_voltage")
-        return {
+        resolved: JPAParameters = {
             "pump_frequency": (
                 float(raw_pump_frequency)
                 if raw_pump_frequency is not None
@@ -277,3 +281,19 @@ class ControlParameterDefaults:
                 float(raw_dc_voltage) if raw_dc_voltage is not None else self.dc_voltage
             ),
         }
+        raw_low_noise_dc_voltage = value.get("low_noise_dc_voltage")
+        if raw_low_noise_dc_voltage is not None:
+            resolved["low_noise_dc_voltage"] = float(raw_low_noise_dc_voltage)
+        raw_exit_mode = value.get("dc_voltage_exit_mode")
+        if raw_exit_mode is not None:
+            valid_modes = {"off", "low_noise", "restore", "hold"}
+            if not isinstance(raw_exit_mode, str) or raw_exit_mode not in valid_modes:
+                raise ValueError(
+                    "`dc_voltage_exit_mode` must be one of "
+                    f"{sorted(valid_modes)}, got {raw_exit_mode!r}."
+                )
+            resolved["dc_voltage_exit_mode"] = cast(
+                DCVoltageOnExit,
+                raw_exit_mode,
+            )
+        return resolved

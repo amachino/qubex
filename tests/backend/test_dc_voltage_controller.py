@@ -10,6 +10,8 @@ import pytest
 from qubex.external_devices.dc_voltage import (
     DCVoltageController,
     DCVoltageControllerConfig,
+    DCVoltageExitMode,
+    DCVoltageExitPolicy,
     DCVoltageProfile,
     create_dc_voltage_controller,
 )
@@ -192,6 +194,89 @@ def test_apply_voltages_ramps_each_channel_and_shuts_down(
     assert delays == [0.1] * 6
 
 
+def test_apply_voltages_can_exit_at_target_and_keep_output_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Target exit should ramp to its voltage and keep the output enabled."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        update_interval_s=0.1,
+    )
+
+    with controller.apply_voltages(
+        {1: (0.25, profile)},
+        exit_policies={
+            1: DCVoltageExitPolicy(
+                mode=DCVoltageExitMode.TARGET,
+                target_voltage_v=-0.05,
+            )
+        },
+    ):
+        pass
+
+    device = _FakeDCVoltageDevice.instances[0]
+    assert device.voltages[1] == pytest.approx(-0.05)
+    assert device.output_states[1] is True
+
+
+def test_apply_voltages_can_hold_applied_voltage_on_exit() -> None:
+    """Hold exit should leave the amplification voltage enabled."""
+    _reset_fake_devices()
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(channel=1, ramp_rate_v_per_s=10.0)
+
+    with controller.apply_voltages(
+        {1: (0.25, profile)},
+        exit_policies={
+            1: DCVoltageExitPolicy(mode=DCVoltageExitMode.HOLD),
+        },
+    ):
+        pass
+
+    device = _FakeDCVoltageDevice.instances[0]
+    assert device.voltages[1] == pytest.approx(0.25)
+    assert device.output_states[1] is True
+
+
+def test_apply_voltages_can_restore_initial_voltage_and_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restore exit should reinstate the initial voltage and output state."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+
+    class _InitiallyOffDevice(_FakeDCVoltageDevice):
+        def __init__(self) -> None:
+            super().__init__()
+            self.voltages[1] = -0.12
+            self.output_states[1] = False
+
+    controller = DCVoltageController(device_factory=_InitiallyOffDevice)
+    profile = DCVoltageProfile(channel=1, ramp_rate_v_per_s=1.0)
+
+    with controller.apply_voltages(
+        {1: (0.25, profile)},
+        exit_policies={
+            1: DCVoltageExitPolicy(mode=DCVoltageExitMode.RESTORE),
+        },
+    ):
+        pass
+
+    device = _FakeDCVoltageDevice.instances[0]
+    assert device.voltages[1] == pytest.approx(-0.12)
+    assert device.output_states[1] is False
+
+
 def test_apply_voltage_ramps_with_one_device_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -277,12 +362,15 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
     class _DelayedReadbackDevice(_FakeDCVoltageDevice):
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
-            self.readback_attempts = 0
+            self.set_attempts = 0
+
+        def set_voltage(self, channel: int, voltage: float) -> None:
+            super().set_voltage(channel, voltage)
+            self.set_attempts += 1
 
         def get_voltage(self, channel: int) -> float:
             self.calls.append(("get_voltage", channel))
-            self.readback_attempts += 1
-            if self.readback_attempts == 1:
+            if self.set_attempts == 1:
                 return self.voltages[channel] + 0.01
             return self.voltages[channel]
 
@@ -307,7 +395,10 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
         pass
 
     device = _FakeDCVoltageDevice.instances[0]
-    assert device.calls[:5] == [
+    first_set = next(
+        index for index, call in enumerate(device.calls) if call[0] == "set_voltage"
+    )
+    assert device.calls[first_set : first_set + 5] == [
         ("set_voltage", 1, 0.0),
         ("get_voltage", 1),
         ("set_voltage", 1, 0.0),

@@ -3,6 +3,8 @@
 from .dc_voltage import (
     DCVoltageController,
     DCVoltageControllerConfig,
+    DCVoltageExitMode,
+    DCVoltageExitPolicy,
     DCVoltageProfile,
     ExternalDevicesConfig,
     create_dc_voltage_controller,
@@ -11,6 +13,8 @@ from .dc_voltage import (
 __all__ = [
     "DCVoltageController",
     "DCVoltageControllerConfig",
+    "DCVoltageExitMode",
+    "DCVoltageExitPolicy",
     "DCVoltageProfile",
     "ExternalDevicesConfig",
     "create_dc_voltage_controller",

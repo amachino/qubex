@@ -119,7 +119,13 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
         {
             "meta": {},
             "data": {
-                0: {"pump_frequency": 12.3, "pump_amplitude": 0.1, "dc_voltage": 0.2},
+                0: {
+                    "pump_frequency": 12.3,
+                    "pump_amplitude": 0.1,
+                    "dc_voltage": 0.2,
+                    "low_noise_dc_voltage": -0.08,
+                    "dc_voltage_exit_mode": "low_noise",
+                },
                 1: None,
             },
         },
@@ -555,6 +561,8 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
         "pump_frequency": 12.3,
         "pump_amplitude": 0.1,
         "dc_voltage": 0.2,
+        "low_noise_dc_voltage": -0.08,
+        "dc_voltage_exit_mode": "low_noise",
     }
     assert cp.jpa_params.get(1) == {
         "pump_frequency": DEFAULT_PUMP_FREQUENCY_GHZ,
@@ -562,6 +570,11 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
         "dc_voltage": 0.0,
     }
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
+    assert cp.get_low_noise_dc_voltage(0) == pytest.approx(-0.08)
+    assert cp.get_dc_voltage_exit_mode(0) == "low_noise"
+    assert cp.get_dc_voltage_exit_mode(1) == "off"
+    with pytest.raises(ValueError, match="low-noise DC voltage"):
+        cp.get_low_noise_dc_voltage(1)
     assert math.isclose(
         cp.get_pump_frequency(1),
         DEFAULT_PUMP_FREQUENCY_GHZ,
@@ -573,6 +586,30 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert math.isclose(
         cp.get_frequency_margin("CTRL_GE"), 0.1, rel_tol=0, abs_tol=1e-12
     )
+
+
+def test_jpa_params_reject_unknown_dc_voltage_exit_mode(tmp_path: Path) -> None:
+    """JPA parameters should reject an unsupported DC voltage exit mode."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "jpa_params.yaml",
+        {
+            "meta": {},
+            "data": {
+                0: {
+                    "dc_voltage": 0.2,
+                    "dc_voltage_exit_mode": "unknown",
+                }
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="dc_voltage_exit_mode"):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        ).get_experiment_system()
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):

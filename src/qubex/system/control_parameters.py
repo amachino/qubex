@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
-from typing import TypeVar
+from typing import Literal, TypeVar
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from qubex.core import MutableModel
 
 from .target_type import TargetType
 
 _ValueT = TypeVar("_ValueT")
+DCVoltageOnExit = Literal["off", "low_noise", "restore", "hold"]
 
 
 class JPAParameters(TypedDict):
     """Resolved JPA parameters for one mux."""
 
     dc_voltage: float
+    low_noise_dc_voltage: NotRequired[float]
+    dc_voltage_exit_mode: NotRequired[DCVoltageOnExit]
     pump_frequency: float
     pump_amplitude: float
 
@@ -141,6 +144,17 @@ class ControlParameters(MutableModel):
     def get_dc_voltage(self, mux: int) -> float:
         """Return the materialized DC voltage for a mux."""
         return self.jpa_params[mux]["dc_voltage"]
+
+    def get_low_noise_dc_voltage(self, mux: int) -> float:
+        """Return the calibrated low-noise DC voltage for a mux."""
+        value = self.jpa_params[mux].get("low_noise_dc_voltage")
+        if value is None:
+            raise ValueError(f"No low-noise DC voltage is configured for mux {mux}.")
+        return value
+
+    def get_dc_voltage_exit_mode(self, mux: int) -> DCVoltageOnExit:
+        """Return the default DC voltage exit mode for a mux."""
+        return self.jpa_params[mux].get("dc_voltage_exit_mode", "off")
 
     def _require_qubit_value(
         self,

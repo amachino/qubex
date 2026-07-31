@@ -2617,8 +2617,14 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
 
     class _AmplificationService:
         @contextmanager
-        def apply_dc_voltages(self, targets: str | list[str]):  # type: ignore[no-untyped-def]
+        def apply_dc_voltages(  # type: ignore[no-untyped-def]
+            self,
+            targets: str | list[str],
+            *,
+            on_exit=None,
+        ):
             called["targets"] = targets
+            called["on_exit"] = on_exit
             called["entered"] = True
             try:
                 yield
@@ -2627,10 +2633,11 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
 
     measurement.__dict__["_amplification_service"] = _AmplificationService()
 
-    with measurement.apply_dc_voltages(["Q00"]):
+    with measurement.apply_dc_voltages(["Q00"], on_exit="restore"):
         called["inside"] = True
 
     assert called["targets"] == ["Q00"]
+    assert called["on_exit"] == "restore"
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True
