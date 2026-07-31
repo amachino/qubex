@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, ClassVar
 
 import pytest
@@ -13,6 +14,7 @@ from qubex.external_devices.dc_voltage import (
     create_dc_voltage_controller,
 )
 from qubex.external_devices.dc_voltage.drivers import ONS61797Device
+from qubex.external_devices.dc_voltage.registry import DC_VOLTAGE_DRIVER_REGISTRY
 
 
 class _FakeDCVoltageDevice:
@@ -77,36 +79,49 @@ def _reset_fake_devices() -> None:
     _FakeDCVoltageDevice.instances = []
 
 
-def test_controller_uses_injected_connection_options_for_each_call() -> None:
-    """Given custom connection options, controller operations should use them."""
+def test_controller_creates_and_closes_one_device_for_each_operation() -> None:
+    """Each controller operation should use one short-lived device instance."""
     _reset_fake_devices()
-    controller = DCVoltageController(
-        port="/dev/custom-dc",
-        device_factory=_FakeDCVoltageDevice,
-    )
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
 
     controller.set_voltage(1, 0.7)
-    assert _FakeDCVoltageDevice.instances[0].init_kwargs == {"port": "/dev/custom-dc"}
     assert _FakeDCVoltageDevice.instances[0].closed is True
 
     controller.get_voltage(1)
-    assert _FakeDCVoltageDevice.instances[0].connect_kwargs == [
-        {"port": "/dev/custom-dc"}
-    ]
+    assert len(_FakeDCVoltageDevice.instances) == 2
+    assert all(device.closed for device in _FakeDCVoltageDevice.instances)
 
 
-def test_controller_accepts_ip_address_instead_of_serial_port() -> None:
-    """Given IP connection options, controller should not fall back to serial port."""
+def test_factory_resolves_registered_driver_with_opaque_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registered driver should receive its unchanged connection mapping."""
     _reset_fake_devices()
-    controller = DCVoltageController(
-        port=None,
-        ip_address="192.0.2.10",
-        device_factory=_FakeDCVoltageDevice,
+    connections: list[dict[str, object]] = []
+
+    def build_device_factory(
+        connection: dict[str, object],
+    ):
+        connections.append(connection)
+        return partial(_FakeDCVoltageDevice, resource=connection["resource"])
+
+    monkeypatch.setitem(
+        DC_VOLTAGE_DRIVER_REGISTRY,
+        "fake-dc",
+        build_device_factory,
+    )
+    config = DCVoltageControllerConfig.from_dict(
+        {
+            "driver": "fake-dc",
+            "connection": {"resource": "external-a"},
+        }
     )
 
+    controller = create_dc_voltage_controller(config)
     controller.on(1)
 
-    assert _FakeDCVoltageDevice.instances[0].init_kwargs == {"ip_address": "192.0.2.10"}
+    assert connections == [{"resource": "external-a"}]
+    assert _FakeDCVoltageDevice.instances[0].init_kwargs == {"resource": "external-a"}
 
 
 def test_factory_creates_controller_from_configured_serial_port() -> None:
@@ -114,37 +129,31 @@ def test_factory_creates_controller_from_configured_serial_port() -> None:
     _reset_fake_devices()
     config = DCVoltageControllerConfig(
         driver="ons61797",
-        port="/dev/system-dc",
+        connection={"port": "/dev/system-dc"},
         device_factory=_FakeDCVoltageDevice,
     )
 
     controller = create_dc_voltage_controller(config)
     controller.on(1)
 
-    assert _FakeDCVoltageDevice.instances[0].init_kwargs == {"port": "/dev/system-dc"}
+    assert _FakeDCVoltageDevice.instances[0].init_kwargs == {}
 
 
-def test_controllers_keep_independent_connection_configuration() -> None:
-    """Given two controllers, each should retain its own connection configuration."""
+def test_ons61797_driver_validates_its_own_connection_options() -> None:
+    """ONS61797 should reject conflicting transport settings in its driver layer."""
     _reset_fake_devices()
-    serial = DCVoltageController(
-        port="/dev/serial-dc",
-        device_factory=_FakeDCVoltageDevice,
-    )
-    network = DCVoltageController(
-        port=None,
-        ip_address="192.0.2.20",
-        device_factory=_FakeDCVoltageDevice,
+    config = DCVoltageControllerConfig.from_dict(
+        {
+            "driver": "ons61797",
+            "connection": {
+                "port": "/dev/serial-dc",
+                "ip_address": "192.0.2.20",
+            },
+        }
     )
 
-    serial.on(1)
-    network.on(2)
-
-    assert serial is not network
-    assert [device.init_kwargs for device in _FakeDCVoltageDevice.instances] == [
-        {"port": "/dev/serial-dc"},
-        {"ip_address": "192.0.2.20"},
-    ]
+    with pytest.raises(TypeError, match="Only one"):
+        create_dc_voltage_controller(config)
 
 
 def test_factory_rejects_unknown_driver() -> None:
@@ -207,7 +216,6 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
     )
     controller = DCVoltageController(
         device_factory=_DelayedReadbackDevice,
-        max_set_attempts=2,
     )
     profile = DCVoltageProfile(
         channel=1,
@@ -215,6 +223,7 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
         update_interval_s=0.1,
         safe_voltage_v=0.0,
         readback_tolerance_v=0.001,
+        max_set_attempts=2,
     )
 
     with controller.apply_voltages({1: (0.1, profile)}):

@@ -9,14 +9,6 @@ from typing import Protocol
 class DCVoltageDevice(Protocol):
     """Define the operations required from a DC voltage source."""
 
-    def connect(
-        self,
-        port: str | None = None,
-        ip_address: str | None = None,
-    ) -> None:
-        """Connect to the device."""
-        ...
-
     def close(self) -> None:
         """Close the device connection."""
         ...
@@ -42,4 +34,4 @@ class DCVoltageDevice(Protocol):
         ...
 
 
-DCVoltageDeviceFactory = Callable[..., DCVoltageDevice]
+DCVoltageDeviceFactory = Callable[[], DCVoltageDevice]

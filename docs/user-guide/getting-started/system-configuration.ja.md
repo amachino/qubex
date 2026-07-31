@@ -105,7 +105,6 @@ dc_voltage_controllers:
 
     connection:
       port: /dev/ttyACM0
-      max_set_attempts: 3
 
     voltage_control:
       defaults:
@@ -116,6 +115,7 @@ dc_voltage_controllers:
           voltage_v: 0.0
         readback:
           tolerance_v: 0.001
+          max_attempts: 3
 
       muxes:
         6:
@@ -126,9 +126,9 @@ dc_voltage_controllers:
             rate_v_per_s: 0.05
 ```
 
-ネットワーク接続では `connection.port` の代わりに `connection.ip_address` を指定します。両方を同時には指定できません。mux ごとに省略した制御値は `defaults` から継承します。設定のない mux には channel `mux + 1` と共通の制御値が使われます。
+`connection` の内容は選択したdriverが解釈します。ONS61797をネットワーク接続する場合は `connection.port` の代わりに `connection.ip_address` を指定します。両方を同時には指定できません。mux ごとに省略した制御値は `defaults` から継承します。設定のない mux には channel `mux + 1` と共通の制御値が使われます。
 
-`ramp.rate_v_per_s` は1秒あたりの電圧変化、`ramp.step_interval_s` はsetpointの更新間隔です。両者の積が1 stepの最大電圧変化になります。context終了時は `shutdown.voltage_v` までrampして出力をOFFにします。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `connection.max_set_attempts` 回まで再設定します。
+`ramp.rate_v_per_s` は1秒あたりの電圧変化、`ramp.step_interval_s` はsetpointの更新間隔です。両者の積が1 stepの最大電圧変化になります。context終了時は `shutdown.voltage_v` までrampして出力をOFFにします。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。どちらも mux ごとに上書きできます。
 
 `apply_voltage()` は出力を ON にし、mux に対応する設定で現在値から目標値まで ramp します。出力が OFF の場合は、安全電圧を設定してから ON にします。context を抜けると安全電圧まで ramp して出力を OFF にします。
 

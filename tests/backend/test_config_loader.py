@@ -2282,10 +2282,7 @@ def test_external_devices_config_loads_dc_controller_profiles(
             "dc_voltage_controllers": {
                 "jpa_bias": {
                     "driver": "ons61797",
-                    "connection": {
-                        "port": "/dev/system-dc",
-                        "max_set_attempts": 5,
-                    },
+                    "connection": {"port": "/dev/system-dc"},
                     "voltage_control": {
                         "defaults": {
                             "ramp": {
@@ -2293,7 +2290,10 @@ def test_external_devices_config_loads_dc_controller_profiles(
                                 "step_interval_s": 0.1,
                             },
                             "shutdown": {"voltage_v": 0.0},
-                            "readback": {"tolerance_v": 0.001},
+                            "readback": {
+                                "tolerance_v": 0.001,
+                                "max_attempts": 5,
+                            },
                         },
                         "muxes": {
                             6: {"channel": 1},
@@ -2317,14 +2317,13 @@ def test_external_devices_config_loads_dc_controller_profiles(
 
     controller = loader.external_devices_config.dc_voltage_controllers["jpa_bias"]
     assert controller.driver == "ons61797"
-    assert controller.port == "/dev/system-dc"
-    assert controller.ip_address is None
-    assert controller.max_set_attempts == 5
+    assert controller.connection == {"port": "/dev/system-dc"}
     assert controller.resolve_voltage_profile(6).channel == 1
     assert controller.resolve_voltage_profile(6).ramp_rate_v_per_s == pytest.approx(0.1)
     assert controller.resolve_voltage_profile(6).readback_tolerance_v == pytest.approx(
         0.001
     )
+    assert controller.resolve_voltage_profile(6).max_set_attempts == 5
     assert controller.resolve_voltage_profile(7).channel == 2
     assert controller.resolve_voltage_profile(7).ramp_rate_v_per_s == pytest.approx(
         0.05
@@ -2348,16 +2347,14 @@ def test_external_devices_config_defaults_when_missing(
 
     controller = loader.external_devices_config.dc_voltage_controllers["jpa_bias"]
     assert controller.driver == "ons61797"
-    assert controller.port is None
-    assert controller.ip_address is None
-    assert controller.max_set_attempts == 3
+    assert controller.connection == {}
     assert controller.resolve_voltage_profile(6).channel == 7
+    assert controller.resolve_voltage_profile(6).max_set_attempts == 3
 
 
 @pytest.mark.parametrize(
     ("path", "value", "match"),
     [
-        (("connection", "max_set_attempts"), 0, "max_set_attempts.*positive"),
         (
             ("voltage_control", "defaults", "ramp", "rate_v_per_s"),
             0.0,
@@ -2367,6 +2364,11 @@ def test_external_devices_config_defaults_when_missing(
             ("voltage_control", "defaults", "readback", "tolerance_v"),
             -0.1,
             "tolerance_v.*non-negative",
+        ),
+        (
+            ("voltage_control", "defaults", "readback", "max_attempts"),
+            0,
+            "max_attempts.*positive",
         ),
     ],
 )

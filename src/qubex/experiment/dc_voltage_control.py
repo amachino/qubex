@@ -16,7 +16,7 @@ class DCVoltageControl:
     def __init__(
         self,
         *,
-        set_voltage: Callable[[float, float], None],
+        set_voltage: Callable[[float, float, int], None],
         get_state: Callable[[], DCVoltageState],
         turn_on: Callable[[], None],
         turn_off: Callable[[], None],
@@ -62,10 +62,18 @@ class DCVoltageControl:
             start = state.voltage
         else:
             start = self._profile.safe_voltage_v
-            self._set_voltage(start, resolved_tolerance)
+            self._set_voltage(
+                start,
+                resolved_tolerance,
+                self._profile.max_set_attempts,
+            )
             self._turn_on()
         for setpoint in self._ramp_setpoints(start=start, voltage=float(voltage)):
-            self._set_voltage(setpoint, resolved_tolerance)
+            self._set_voltage(
+                setpoint,
+                resolved_tolerance,
+                self._profile.max_set_attempts,
+            )
             time.sleep(self._profile.update_interval_s)
         return self.state
 
@@ -77,7 +85,11 @@ class DCVoltageControl:
     ) -> DCVoltageState:
         """Enable the output and apply a voltage without ramping."""
         state = self.state
-        self._set_voltage(float(voltage), self._resolve_tolerance(tolerance))
+        self._set_voltage(
+            float(voltage),
+            self._resolve_tolerance(tolerance),
+            self._profile.max_set_attempts,
+        )
         if not state.is_on:
             self._turn_on()
         return self.state

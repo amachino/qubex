@@ -1139,7 +1139,7 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
                 dc_voltage_controllers={
                     "jpa_bias": DCVoltageControllerConfig(
                         driver="ons61797",
-                        port="/dev/system-dc",
+                        connection={"port": "/dev/system-dc"},
                         voltage_defaults=DCVoltageProfile(channel=1),
                         muxes={6: DCVoltageProfileOverride(channel=1)},
                     )
@@ -1171,7 +1171,7 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
     assert created_configs == [
         DCVoltageControllerConfig(
             driver="ons61797",
-            port="/dev/system-dc",
+            connection={"port": "/dev/system-dc"},
             voltage_defaults=DCVoltageProfile(channel=1),
             muxes={6: DCVoltageProfileOverride(channel=1)},
         ),

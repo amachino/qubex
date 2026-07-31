@@ -5,25 +5,10 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Final
 
 from .config import DCVoltageControllerConfig, DCVoltageProfile
-from .drivers import ONS61797Device
 from .protocol import DCVoltageDevice, DCVoltageDeviceFactory
-
-_DEFAULT_PORT: Final = "/dev/ttyACM0"
-
-
-def _resolve_connection_options(
-    *,
-    port: str | None,
-    ip_address: str | None,
-) -> dict[str, str]:
-    if port is not None and ip_address is not None:
-        raise TypeError("Only one of `port` or `ip_address` should be provided.")
-    if ip_address is not None:
-        return {"ip_address": ip_address}
-    return {"port": port or _DEFAULT_PORT}
+from .registry import DC_VOLTAGE_DRIVER_REGISTRY
 
 
 def create_dc_voltage_controller(
@@ -32,17 +17,16 @@ def create_dc_voltage_controller(
     """Create a DC voltage controller from normalized configuration."""
     if config is None:
         config = DCVoltageControllerConfig()
-    driver = config.driver.strip().lower()
-    if driver != "ons61797":
+    if config.device_factory is not None:
+        return DCVoltageController(device_factory=config.device_factory)
+    driver_name = config.driver.strip().lower()
+    try:
+        driver_factory = DC_VOLTAGE_DRIVER_REGISTRY[driver_name]
+    except KeyError:
         raise ValueError(
             f"Unsupported DC voltage controller driver: {config.driver!r}."
-        )
-    return DCVoltageController(
-        port=config.port,
-        ip_address=config.ip_address,
-        max_set_attempts=config.max_set_attempts,
-        device_factory=config.device_factory or ONS61797Device,
-    )
+        ) from None
+    return DCVoltageController(device_factory=driver_factory(config.connection))
 
 
 class DCVoltageController:
@@ -51,39 +35,10 @@ class DCVoltageController:
     def __init__(
         self,
         *,
-        port: str | None = _DEFAULT_PORT,
-        ip_address: str | None = None,
-        max_set_attempts: int = 3,
-        device_factory: DCVoltageDeviceFactory = ONS61797Device,
+        device_factory: DCVoltageDeviceFactory,
     ):
-        """Initialize the controller connection settings."""
-        _resolve_connection_options(port=port, ip_address=ip_address)
-        if max_set_attempts < 1:
-            raise ValueError("max_set_attempts must be positive.")
-        self._device: DCVoltageDevice | None = None
-        self._port = port
-        self._ip_address = ip_address
-        self._max_set_attempts = max_set_attempts
+        """Initialize the controller with a connected-device factory."""
         self._device_factory = device_factory
-
-    def _require_device(self) -> DCVoltageDevice:
-        """Return the active device or raise when disconnected."""
-        if self._device is None:
-            raise RuntimeError("No connection established.")
-        return self._device
-
-    def _connection_options(self) -> dict[str, str]:
-        return _resolve_connection_options(
-            port=self._port,
-            ip_address=self._ip_address,
-        )
-
-    def _connect(self) -> None:
-        connection_options = self._connection_options()
-        if self._device is None:
-            self._device = self._device_factory(**connection_options)
-        else:
-            self._device.connect(**connection_options)
 
     def on(self, channel: int) -> None:
         """Turn on the specified output channel."""
@@ -113,12 +68,11 @@ class DCVoltageController:
     @contextmanager
     def _connection(self) -> Iterator[DCVoltageDevice]:
         """Yield a connected device and close on exit."""
+        device = self._device_factory()
         try:
-            self._connect()
-            yield self._require_device()
+            yield device
         finally:
-            if self._device is not None:
-                self._device.close()
+            device.close()
 
     @contextmanager
     def apply_voltages(
@@ -218,7 +172,7 @@ class DCVoltageController:
         profile: DCVoltageProfile,
     ) -> None:
         """Set one voltage and require readback within configured tolerance."""
-        for _ in range(self._max_set_attempts):
+        for _ in range(profile.max_set_attempts):
             device.set_voltage(channel, voltage)
             if (
                 abs(device.get_voltage(channel) - voltage)
@@ -228,5 +182,5 @@ class DCVoltageController:
         raise RuntimeError(
             f"DC voltage channel {channel} failed to reach {voltage} V "
             f"within tolerance {profile.readback_tolerance_v} V after "
-            f"{self._max_set_attempts} attempts."
+            f"{profile.max_set_attempts} attempts."
         )

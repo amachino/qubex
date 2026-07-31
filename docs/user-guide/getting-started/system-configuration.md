@@ -118,7 +118,6 @@ dc_voltage_controllers:
 
     connection:
       port: /dev/ttyACM0
-      max_set_attempts: 3
 
     voltage_control:
       defaults:
@@ -129,6 +128,7 @@ dc_voltage_controllers:
           voltage_v: 0.0
         readback:
           tolerance_v: 0.001
+          max_attempts: 3
 
       muxes:
         6:
@@ -139,17 +139,18 @@ dc_voltage_controllers:
             rate_v_per_s: 0.05
 ```
 
-Use `connection.ip_address` instead of `connection.port` for a network
-connection. Do not specify both. A mux entry inherits omitted voltage-control
-values from `defaults`. If a mux is not listed, Qubex uses channel `mux + 1`
-and all default voltage-control values.
+The selected driver interprets `connection`. For an ONS61797 network
+connection, use `connection.ip_address` instead of `connection.port`. Do not
+specify both. A mux entry inherits omitted voltage-control values from
+`defaults`. If a mux is not listed, Qubex uses channel `mux + 1` and all
+default voltage-control values.
 
 `ramp.rate_v_per_s` is the voltage change per second and
 `ramp.step_interval_s` is the interval between setpoints. Their product is the
 maximum voltage change per step. On context exit, Qubex ramps to
 `shutdown.voltage_v` and turns the output off. A setpoint succeeds when its
 readback error is within `readback.tolerance_v`; otherwise Qubex retries up to
-`connection.max_set_attempts` times.
+`readback.max_attempts` times. Both values can be overridden per mux.
 
 `apply_voltage()` enables the output and ramps from the current voltage to the
 target using the resolved mux profile. When the output is initially off, Qubex

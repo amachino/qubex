@@ -89,10 +89,6 @@ class _SystemManager:
             readback_tolerance_v=0.002,
         )
 
-    @property
-    def dc_voltage_max_set_attempts(self) -> int:
-        return 3
-
 
 class _ContextForTest(ExperimentContext):
     def __init__(
