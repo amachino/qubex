@@ -73,8 +73,6 @@ logger = logging.getLogger(__name__)
 
 console = Console()
 
-_DC_VOLTAGE_SET_MAX_ATTEMPTS: Final = 3
-
 
 class ExperimentContext:
     """
@@ -1233,15 +1231,15 @@ class ExperimentContext:
         """Set DC voltage for one mux through the configured controller."""
         resolved_mux, channel = self._resolve_dc_output(mux)
         controller = self.system_manager.dc_voltage_controller
-        for _ in range(_DC_VOLTAGE_SET_MAX_ATTEMPTS):
+        for _ in range(self.system_manager.dc_voltage_max_set_attempts):
             controller.set_voltage(channel=channel, voltage=voltage)
             current_voltage = controller.get_voltage(channel=channel)
-            if abs(voltage - current_voltage) < tolerance:
+            if abs(voltage - current_voltage) <= tolerance:
                 return
         raise RuntimeError(
             f"DC voltage for `{resolved_mux.label}` failed to reach "
             f"{voltage} V within tolerance {tolerance} V after "
-            f"{_DC_VOLTAGE_SET_MAX_ATTEMPTS} attempts."
+            f"{self.system_manager.dc_voltage_max_set_attempts} attempts."
         )
 
     def get_dc_voltage_state(

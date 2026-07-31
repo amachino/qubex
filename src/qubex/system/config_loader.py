@@ -702,6 +702,7 @@ class ConfigLoader:
             )
         port = connection.get("port")
         ip_address = connection.get("ip_address")
+        max_set_attempts = connection.get("max_set_attempts", 3)
         if port is not None and not isinstance(port, str):
             raise TypeError("External DC controller `port` must be a string.")
         if ip_address is not None and not isinstance(ip_address, str):
@@ -710,17 +711,39 @@ class ConfigLoader:
             raise TypeError(
                 "Only one external DC controller connection method may be provided."
             )
+        if type(max_set_attempts) is not int or max_set_attempts < 1:
+            raise ValueError("`max_set_attempts` must be a positive integer.")
         voltage_control = raw_config.get("voltage_control", {})
         if not isinstance(voltage_control, dict):
             raise TypeError("`voltage_control` must be a mapping.")
         defaults = voltage_control.get("defaults", {})
         if not isinstance(defaults, dict):
             raise TypeError("`voltage_control.defaults` must be a mapping.")
+        default_ramp = ConfigLoader._nested_mapping(defaults, "ramp")
+        default_shutdown = ConfigLoader._nested_mapping(defaults, "shutdown")
+        default_readback = ConfigLoader._nested_mapping(defaults, "readback")
         default_profile = DCVoltageProfile(
             channel=1,
-            ramp_rate_v_per_s=float(defaults.get("ramp_rate_v_per_s", 0.1)),
-            update_interval_s=float(defaults.get("update_interval_s", 0.1)),
-            safe_voltage_v=float(defaults.get("safe_voltage_v", 0.0)),
+            ramp_rate_v_per_s=ConfigLoader._float_value(
+                default_ramp,
+                "rate_v_per_s",
+                default=0.1,
+            ),
+            update_interval_s=ConfigLoader._float_value(
+                default_ramp,
+                "step_interval_s",
+                default=0.1,
+            ),
+            safe_voltage_v=ConfigLoader._float_value(
+                default_shutdown,
+                "voltage_v",
+                default=0.0,
+            ),
+            readback_tolerance_v=ConfigLoader._float_value(
+                default_readback,
+                "tolerance_v",
+                default=1e-3,
+            ),
         )
         ConfigLoader._validate_ramp_values(default_profile)
         muxes = voltage_control.get("muxes", {})
@@ -737,15 +760,27 @@ class ConfigLoader:
             channel = values.get("channel")
             if type(channel) is not int or channel < 1:
                 raise ValueError("DC voltage channels must be positive integers.")
+            ramp = ConfigLoader._nested_mapping(values, "ramp")
+            shutdown = ConfigLoader._nested_mapping(values, "shutdown")
+            readback = ConfigLoader._nested_mapping(values, "readback")
             override = DCVoltageProfileOverride(
                 channel=channel,
                 ramp_rate_v_per_s=ConfigLoader._optional_float(
-                    values, "ramp_rate_v_per_s"
+                    ramp,
+                    "rate_v_per_s",
                 ),
                 update_interval_s=ConfigLoader._optional_float(
-                    values, "update_interval_s"
+                    ramp,
+                    "step_interval_s",
                 ),
-                safe_voltage_v=ConfigLoader._optional_float(values, "safe_voltage_v"),
+                safe_voltage_v=ConfigLoader._optional_float(
+                    shutdown,
+                    "voltage_v",
+                ),
+                readback_tolerance_v=ConfigLoader._optional_float(
+                    readback,
+                    "tolerance_v",
+                ),
             )
             ConfigLoader._validate_ramp_values(
                 DCVoltageControllerConfig(
@@ -763,9 +798,24 @@ class ConfigLoader:
             driver=driver,
             port=port,
             ip_address=ip_address,
+            max_set_attempts=max_set_attempts,
             voltage_defaults=default_profile,
             muxes=normalized_muxes,
         )
+
+    @staticmethod
+    def _nested_mapping(values: dict, key: str) -> dict:
+        """Return one optional nested config mapping."""
+        value = values.get(key, {})
+        if not isinstance(value, dict):
+            raise TypeError(f"`{key}` must be a mapping.")
+        return value
+
+    @staticmethod
+    def _float_value(values: dict, key: str, *, default: float) -> float:
+        """Return one numeric config value or its default."""
+        value = ConfigLoader._optional_float(values, key)
+        return default if value is None else value
 
     @staticmethod
     def _optional_float(values: dict, key: str) -> float | None:
@@ -783,7 +833,9 @@ class ConfigLoader:
         if profile.ramp_rate_v_per_s <= 0:
             raise ValueError("`ramp_rate_v_per_s` must be positive.")
         if profile.update_interval_s <= 0:
-            raise ValueError("`update_interval_s` must be positive.")
+            raise ValueError("`step_interval_s` must be positive.")
+        if profile.readback_tolerance_v < 0:
+            raise ValueError("`tolerance_v` must be non-negative.")
 
     def _resolve_wiring_file(self) -> str:
         """Resolve effective wiring file name for the current load."""

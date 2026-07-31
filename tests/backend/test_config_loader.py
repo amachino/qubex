@@ -2282,16 +2282,26 @@ def test_external_devices_config_loads_dc_controller_profiles(
             "dc_voltage_controllers": {
                 "jpa_bias": {
                     "driver": "ons61797",
-                    "connection": {"port": "/dev/system-dc"},
+                    "connection": {
+                        "port": "/dev/system-dc",
+                        "max_set_attempts": 5,
+                    },
                     "voltage_control": {
                         "defaults": {
-                            "ramp_rate_v_per_s": 0.1,
-                            "update_interval_s": 0.1,
-                            "safe_voltage_v": 0.0,
+                            "ramp": {
+                                "rate_v_per_s": 0.1,
+                                "step_interval_s": 0.1,
+                            },
+                            "shutdown": {"voltage_v": 0.0},
+                            "readback": {"tolerance_v": 0.001},
                         },
                         "muxes": {
                             6: {"channel": 1},
-                            7: {"channel": 2, "ramp_rate_v_per_s": 0.05},
+                            7: {
+                                "channel": 2,
+                                "ramp": {"rate_v_per_s": 0.05},
+                                "readback": {"tolerance_v": 0.002},
+                            },
                         },
                     },
                 }
@@ -2309,11 +2319,18 @@ def test_external_devices_config_loads_dc_controller_profiles(
     assert controller.driver == "ons61797"
     assert controller.port == "/dev/system-dc"
     assert controller.ip_address is None
+    assert controller.max_set_attempts == 5
     assert controller.resolve_voltage_profile(6).channel == 1
     assert controller.resolve_voltage_profile(6).ramp_rate_v_per_s == pytest.approx(0.1)
+    assert controller.resolve_voltage_profile(6).readback_tolerance_v == pytest.approx(
+        0.001
+    )
     assert controller.resolve_voltage_profile(7).channel == 2
     assert controller.resolve_voltage_profile(7).ramp_rate_v_per_s == pytest.approx(
         0.05
+    )
+    assert controller.resolve_voltage_profile(7).readback_tolerance_v == pytest.approx(
+        0.002
     )
 
 
@@ -2333,7 +2350,52 @@ def test_external_devices_config_defaults_when_missing(
     assert controller.driver == "ons61797"
     assert controller.port is None
     assert controller.ip_address is None
+    assert controller.max_set_attempts == 3
     assert controller.resolve_voltage_profile(6).channel == 7
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "match"),
+    [
+        (("connection", "max_set_attempts"), 0, "max_set_attempts.*positive"),
+        (
+            ("voltage_control", "defaults", "ramp", "rate_v_per_s"),
+            0.0,
+            "rate_v_per_s.*positive",
+        ),
+        (
+            ("voltage_control", "defaults", "readback", "tolerance_v"),
+            -0.1,
+            "tolerance_v.*non-negative",
+        ),
+    ],
+)
+def test_external_devices_config_rejects_invalid_control_values(
+    tmp_path: Path,
+    path: tuple[str, ...],
+    value: object,
+    match: str,
+) -> None:
+    """Invalid nested DC control values should be rejected."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    controller: dict[str, object] = {}
+    current = controller
+    for key in path[:-1]:
+        child: dict[str, object] = {}
+        current[key] = child
+        current = child
+    current[path[-1]] = value
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {"dc_voltage_controllers": {"jpa_bias": controller}},
+    )
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
 
 
 def test_external_devices_config_rejects_non_string_driver(

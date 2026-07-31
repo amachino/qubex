@@ -40,6 +40,7 @@ def create_dc_voltage_controller(
     return DCVoltageController(
         port=config.port,
         ip_address=config.ip_address,
+        max_set_attempts=config.max_set_attempts,
         device_factory=config.device_factory or ONS61797Device,
     )
 
@@ -52,13 +53,17 @@ class DCVoltageController:
         *,
         port: str | None = _DEFAULT_PORT,
         ip_address: str | None = None,
+        max_set_attempts: int = 3,
         device_factory: DCVoltageDeviceFactory = ONS61797Device,
     ):
         """Initialize the controller connection settings."""
         _resolve_connection_options(port=port, ip_address=ip_address)
+        if max_set_attempts < 1:
+            raise ValueError("max_set_attempts must be positive.")
         self._device: DCVoltageDevice | None = None
         self._port = port
         self._ip_address = ip_address
+        self._max_set_attempts = max_set_attempts
         self._device_factory = device_factory
 
     def _require_device(self) -> DCVoltageDevice:
@@ -145,9 +150,8 @@ class DCVoltageController:
                     finally:
                         device.off(channel)
 
-    @classmethod
     def _apply_voltage(
-        cls,
+        self,
         device: DCVoltageDevice,
         *,
         channel: int,
@@ -159,9 +163,14 @@ class DCVoltageController:
             start = device.get_voltage(channel)
         else:
             start = profile.safe_voltage_v
-            device.set_voltage(channel, start)
+            self._set_voltage_verified(
+                device,
+                channel=channel,
+                voltage=start,
+                profile=profile,
+            )
             device.on(channel)
-        cls._ramp_voltage(
+        self._ramp_voltage(
             device,
             channel=channel,
             start=start,
@@ -169,8 +178,8 @@ class DCVoltageController:
             profile=profile,
         )
 
-    @staticmethod
     def _ramp_voltage(
+        self,
         device: DCVoltageDevice,
         *,
         channel: int,
@@ -184,8 +193,40 @@ class DCVoltageController:
         current = float(start)
         while abs(voltage - current) > step:
             current += direction * step
-            device.set_voltage(channel, current)
+            self._set_voltage_verified(
+                device,
+                channel=channel,
+                voltage=current,
+                profile=profile,
+            )
             time.sleep(profile.update_interval_s)
         if current != voltage:
-            device.set_voltage(channel, float(voltage))
+            self._set_voltage_verified(
+                device,
+                channel=channel,
+                voltage=float(voltage),
+                profile=profile,
+            )
             time.sleep(profile.update_interval_s)
+
+    def _set_voltage_verified(
+        self,
+        device: DCVoltageDevice,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> None:
+        """Set one voltage and require readback within configured tolerance."""
+        for _ in range(self._max_set_attempts):
+            device.set_voltage(channel, voltage)
+            if (
+                abs(device.get_voltage(channel) - voltage)
+                <= profile.readback_tolerance_v
+            ):
+                return
+        raise RuntimeError(
+            f"DC voltage channel {channel} failed to reach {voltage} V "
+            f"within tolerance {profile.readback_tolerance_v} V after "
+            f"{self._max_set_attempts} attempts."
+        )

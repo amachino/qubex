@@ -38,7 +38,7 @@ class DCVoltageControl:
         self,
         voltage: float,
         *,
-        tolerance: float = 1e-3,
+        tolerance: float | None = None,
     ) -> DCVoltageState:
         """
         Enable the output and ramp from its current voltage to a target.
@@ -47,23 +47,25 @@ class DCVoltageControl:
         ----------
         voltage : float
             Target voltage in V.
-        tolerance : float
-            Allowed voltage readback error in V.
+        tolerance : float or None, optional
+            Allowed voltage readback error in V. Uses the configured mux
+            profile when omitted.
 
         Returns
         -------
         DCVoltageState
             Readback state at the target voltage.
         """
+        resolved_tolerance = self._resolve_tolerance(tolerance)
         state = self.state
         if state.is_on:
             start = state.voltage
         else:
             start = self._profile.safe_voltage_v
-            self._set_voltage(start, tolerance)
+            self._set_voltage(start, resolved_tolerance)
             self._turn_on()
         for setpoint in self._ramp_setpoints(start=start, voltage=float(voltage)):
-            self._set_voltage(setpoint, tolerance)
+            self._set_voltage(setpoint, resolved_tolerance)
             time.sleep(self._profile.update_interval_s)
         return self.state
 
@@ -71,11 +73,11 @@ class DCVoltageControl:
         self,
         voltage: float,
         *,
-        tolerance: float = 1e-3,
+        tolerance: float | None = None,
     ) -> DCVoltageState:
         """Enable the output and apply a voltage without ramping."""
         state = self.state
-        self._set_voltage(float(voltage), tolerance)
+        self._set_voltage(float(voltage), self._resolve_tolerance(tolerance))
         if not state.is_on:
             self._turn_on()
         return self.state
@@ -94,13 +96,13 @@ class DCVoltageControl:
         self,
         *,
         sweep_range: Iterable[float],
-        tolerance: float = 1e-3,
+        tolerance: float | None = None,
     ) -> Iterator[DCVoltageState]:
         """Ramp to each voltage and yield its readback state."""
         for voltage in sweep_range:
             yield self.apply_voltage(float(voltage), tolerance=tolerance)
 
-    def shutdown(self, *, tolerance: float = 1e-3) -> None:
+    def shutdown(self, *, tolerance: float | None = None) -> None:
         """Ramp to the configured safe voltage and turn the output off."""
         try:
             if self.state.is_on:
@@ -125,3 +127,11 @@ class DCVoltageControl:
         if not setpoints or setpoints[-1] != voltage:
             setpoints.append(float(voltage))
         return setpoints
+
+    def _resolve_tolerance(self, tolerance: float | None) -> float:
+        """Resolve an optional readback tolerance against the mux profile."""
+        if tolerance is None:
+            return self._profile.readback_tolerance_v
+        if tolerance < 0:
+            raise ValueError("tolerance must be non-negative.")
+        return tolerance

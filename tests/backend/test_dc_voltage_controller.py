@@ -183,6 +183,53 @@ def test_apply_voltages_ramps_each_channel_and_shuts_down(
     assert delays == [0.1] * 6
 
 
+def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Temporary voltage application should verify setpoints with configured retries."""
+
+    class _DelayedReadbackDevice(_FakeDCVoltageDevice):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self.readback_attempts = 0
+
+        def get_voltage(self, channel: int) -> float:
+            self.calls.append(("get_voltage", channel))
+            self.readback_attempts += 1
+            if self.readback_attempts == 1:
+                return self.voltages[channel] + 0.01
+            return self.voltages[channel]
+
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    controller = DCVoltageController(
+        device_factory=_DelayedReadbackDevice,
+        max_set_attempts=2,
+    )
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        update_interval_s=0.1,
+        safe_voltage_v=0.0,
+        readback_tolerance_v=0.001,
+    )
+
+    with controller.apply_voltages({1: (0.1, profile)}):
+        pass
+
+    device = _FakeDCVoltageDevice.instances[0]
+    assert device.calls[:5] == [
+        ("set_voltage", 1, 0.0),
+        ("get_voltage", 1),
+        ("set_voltage", 1, 0.0),
+        ("get_voltage", 1),
+        ("on", 1),
+    ]
+
+
 def test_ons61797_adapter_normalizes_third_party_output_state() -> None:
     """Given a third-party client, ONS61797 adapter should expose a boolean state."""
     device = ONS61797Device(

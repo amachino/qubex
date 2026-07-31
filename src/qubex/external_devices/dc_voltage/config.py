@@ -15,6 +15,7 @@ class DCVoltageProfile:
     ramp_rate_v_per_s: float = 0.1
     update_interval_s: float = 0.1
     safe_voltage_v: float = 0.0
+    readback_tolerance_v: float = 1e-3
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class DCVoltageProfileOverride:
     ramp_rate_v_per_s: float | None = None
     update_interval_s: float | None = None
     safe_voltage_v: float | None = None
+    readback_tolerance_v: float | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class DCVoltageControllerConfig:
     driver: str = "ons61797"
     port: str | None = None
     ip_address: str | None = None
+    max_set_attempts: int = 3
     device_factory: DCVoltageDeviceFactory | None = None
     voltage_defaults: DCVoltageProfile = field(
         default_factory=lambda: DCVoltageProfile(channel=1)
@@ -52,6 +55,7 @@ class DCVoltageControllerConfig:
                 "ramp_rate_v_per_s",
                 "update_interval_s",
                 "safe_voltage_v",
+                "readback_tolerance_v",
             )
             if (value := getattr(override, name)) is not None
         }

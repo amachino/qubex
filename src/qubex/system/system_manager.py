@@ -195,6 +195,11 @@ class SystemManager:
         """Resolve voltage-control settings for one mux index."""
         return self._dc_voltage_controller_config.resolve_voltage_profile(mux_index)
 
+    @property
+    def dc_voltage_max_set_attempts(self) -> int:
+        """Return maximum voltage set/readback attempts."""
+        return self._dc_voltage_controller_config.max_set_attempts
+
     def set_backend_kind(self, backend_kind: BackendKind) -> None:
         """
         Select backend family for the current experiment session.

@@ -86,7 +86,12 @@ class _SystemManager:
             ramp_rate_v_per_s=1.0,
             update_interval_s=0.1,
             safe_voltage_v=0.0,
+            readback_tolerance_v=0.002,
         )
+
+    @property
+    def dc_voltage_max_set_attempts(self) -> int:
+        return 3
 
 
 class _ContextForTest(ExperimentContext):
@@ -356,3 +361,22 @@ def test_dc_voltage_control_stops_after_repeated_readback_mismatch() -> None:
 
     set_calls = [call for call in dc_controller.calls if call[0] == "set_voltage"]
     assert len(set_calls) == 3
+
+
+def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
+    """Voltage application should use the mux profile readback tolerance."""
+
+    class _SlightReadbackOffsetController(_DCVoltageController):
+        def get_voltage(self, *, channel: int) -> float:
+            self.calls.append(("get_voltage", channel))
+            return self.voltages.get(channel, 0.0) + 0.0015
+
+    dc_controller = _SlightReadbackOffsetController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    with ctx.dc_voltage_control(shutdown_on_exit=False) as dc:
+        state = dc.apply_voltage_immediately(0.5)
+
+    assert state.voltage == pytest.approx(0.5015)
+    set_calls = [call for call in dc_controller.calls if call[0] == "set_voltage"]
+    assert len(set_calls) == 1
