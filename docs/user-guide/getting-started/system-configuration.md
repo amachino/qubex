@@ -33,7 +33,7 @@ qubex-config/
     box.yaml
     system.yaml
     wiring.yaml
-    dc_voltage_controller.yaml  # when using an external DC voltage source
+    external_devices.yaml  # when using external instruments
     skew.yaml  # for QuEL-1/QuBE
   params/
     SYSTEM_A/
@@ -52,7 +52,8 @@ qubex-config/
 - `config/` stores the shared system configuration files.
 - Each file under `params/<system_id>/` stores one parameter family.
 - `calibration/<system_id>/calib_note.json` is the default calibration file location.
-- `dc_voltage_controller.yaml` is optional and configures an external DC voltage source used for JPA bias control.
+- `external_devices.yaml` is optional and configures instruments outside the
+  QuEL control system, such as a DC voltage source used for JPA bias control.
 - `skew.yaml` is optional, but it is required for synchronized experiments that use multiple QuEL-1 control units.
 
 ## Define shared configuration files
@@ -104,29 +105,48 @@ For example, `quel1se-riken8` accepts an AWG profile label such as
 `se8_mxfe1_awg1331`, `se8_mxfe1_awg2222`, or `se8_mxfe1_awg3113`. When no AWG
 profile is specified, Qubex uses `se8_mxfe1_awg2222`.
 
-### `dc_voltage_controller.yaml`
+### `external_devices.yaml`
 
-Configure the DC voltage source and map each mux index to its output channel.
-Output channels are one-based.
+Configure each external instrument by its purpose. The following example names
+the JPA bias controller, defines the default ramp policy, and overrides the ramp
+rate for mux 7. Output channels are one-based.
 
 ```yaml
-driver: ons61797
-port: /dev/ttyACM0
-mux_to_channel:
-  6: 1
-  7: 2
+dc_voltage_controllers:
+  jpa_bias:
+    driver: ons61797
+
+    connection:
+      port: /dev/ttyACM0
+
+    voltage_control:
+      defaults:
+        ramp_rate_v_per_s: 0.1
+        update_interval_s: 0.1
+        safe_voltage_v: 0.0
+
+      muxes:
+        6:
+          channel: 1
+        7:
+          channel: 2
+          ramp_rate_v_per_s: 0.05
 ```
 
-Use `ip_address` instead of `port` for a network connection. Do not specify
-both. If a mux is not listed in `mux_to_channel`, Qubex uses `mux + 1` as the
-output channel.
+Use `connection.ip_address` instead of `connection.port` for a network
+connection. Do not specify both. A mux entry inherits omitted voltage-control
+values from `defaults`. If a mux is not listed, Qubex uses channel `mux + 1`
+and all default voltage-control values.
 
-DC voltage operations are scoped to a context so that the output is turned off
-when the context exits.
+`apply_voltage()` enables the output and ramps from the current voltage to the
+target using the resolved mux profile. When the output is initially off, Qubex
+sets the configured safe voltage before enabling it. DC voltage operations are
+scoped to a context; exiting it ramps back to the safe voltage and turns the
+output off.
 
 ```python
 with experiment.dc_voltage_control(mux=6) as dc:
-    dc.set_voltage(0.27)
+    dc.apply_voltage(0.27)
     state = dc.state
 ```
 
@@ -137,13 +157,13 @@ To keep a fixed bias enabled after leaving the context, explicitly disable the
 automatic shutdown.
 
 ```python
-with experiment.dc_voltage_control(mux=6, turn_off_on_exit=False) as dc:
-    dc.set_voltage(0.27)
+with experiment.dc_voltage_control(mux=6, shutdown_on_exit=False) as dc:
+    dc.apply_voltage(0.27)
 ```
 
-`sweep()` applies the supplied setpoints directly. Use `ramp_to()` when the
-target should be approached in fixed voltage steps. To keep a ramp target after
-leaving the context, also set `restore_on_exit=False` on `ramp_to()`.
+`sweep()` ramps through each supplied target using the same profile. Use
+`apply_voltage_immediately()` only when the voltage must be applied without a
+ramp.
 
 ### Control Layout Resolution
 

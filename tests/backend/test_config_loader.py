@@ -2271,17 +2271,31 @@ def test_load_uses_quel1_system_loader_when_backend_is_unset(
     assert called == ["clock", "control", "wiring"]
 
 
-def test_dc_voltage_controller_config_loads_from_dedicated_yaml(
+def test_external_devices_config_loads_dc_controller_profiles(
     tmp_path: Path,
 ) -> None:
-    """Given dedicated DC settings, loader should expose normalized config."""
+    """External device settings should expose resolved DC voltage profiles."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
-        config_dir / "dc_voltage_controller.yaml",
+        config_dir / "external_devices.yaml",
         {
-            "driver": "ons61797",
-            "port": "/dev/system-dc",
-            "mux_to_channel": {6: 1, 7: 2},
+            "dc_voltage_controllers": {
+                "jpa_bias": {
+                    "driver": "ons61797",
+                    "connection": {"port": "/dev/system-dc"},
+                    "voltage_control": {
+                        "defaults": {
+                            "ramp_rate_v_per_s": 0.1,
+                            "update_interval_s": 0.1,
+                            "safe_voltage_v": 0.0,
+                        },
+                        "muxes": {
+                            6: {"channel": 1},
+                            7: {"channel": 2, "ramp_rate_v_per_s": 0.05},
+                        },
+                    },
+                }
+            }
         },
     )
 
@@ -2291,16 +2305,22 @@ def test_dc_voltage_controller_config_loads_from_dedicated_yaml(
         params_dir=params_dir,
     )
 
-    assert loader.dc_voltage_controller_config.driver == "ons61797"
-    assert loader.dc_voltage_controller_config.port == "/dev/system-dc"
-    assert loader.dc_voltage_controller_config.ip_address is None
-    assert loader.dc_voltage_controller_config.mux_to_channel == {6: 1, 7: 2}
+    controller = loader.external_devices_config.dc_voltage_controllers["jpa_bias"]
+    assert controller.driver == "ons61797"
+    assert controller.port == "/dev/system-dc"
+    assert controller.ip_address is None
+    assert controller.resolve_voltage_profile(6).channel == 1
+    assert controller.resolve_voltage_profile(6).ramp_rate_v_per_s == pytest.approx(0.1)
+    assert controller.resolve_voltage_profile(7).channel == 2
+    assert controller.resolve_voltage_profile(7).ramp_rate_v_per_s == pytest.approx(
+        0.05
+    )
 
 
-def test_dc_voltage_controller_config_defaults_when_missing(
+def test_external_devices_config_defaults_when_missing(
     tmp_path: Path,
 ) -> None:
-    """Given missing DC controller settings, loader should expose default config."""
+    """Missing external device settings should expose a default JPA controller."""
     config_dir, params_dir, _ = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
@@ -2309,20 +2329,21 @@ def test_dc_voltage_controller_config_defaults_when_missing(
         params_dir=params_dir,
     )
 
-    assert loader.dc_voltage_controller_config.driver == "ons61797"
-    assert loader.dc_voltage_controller_config.port is None
-    assert loader.dc_voltage_controller_config.ip_address is None
-    assert loader.dc_voltage_controller_config.mux_to_channel == {}
+    controller = loader.external_devices_config.dc_voltage_controllers["jpa_bias"]
+    assert controller.driver == "ons61797"
+    assert controller.port is None
+    assert controller.ip_address is None
+    assert controller.resolve_voltage_profile(6).channel == 7
 
 
-def test_dc_voltage_controller_config_rejects_non_string_driver(
+def test_external_devices_config_rejects_non_string_driver(
     tmp_path: Path,
 ) -> None:
-    """Given a non-string DC driver, config loading should reject it."""
+    """A non-string external DC driver should be rejected."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
-        config_dir / "dc_voltage_controller.yaml",
-        {"driver": 123},
+        config_dir / "external_devices.yaml",
+        {"dc_voltage_controllers": {"jpa_bias": {"driver": 123}}},
     )
 
     with pytest.raises(TypeError, match=r"driver.*string"):
@@ -2334,24 +2355,33 @@ def test_dc_voltage_controller_config_rejects_non_string_driver(
 
 
 @pytest.mark.parametrize(
-    ("mux_to_channel", "match"),
+    ("muxes", "match"),
     [
-        ({6: 0}, "positive integers"),
-        ({6: 1, 7: 1}, "must not contain duplicate channels"),
-        ({"MUX06": 1}, "integer mux indices"),
+        ({6: {"channel": 0}}, "positive integer"),
+        (
+            {6: {"channel": 1}, 7: {"channel": 1}},
+            "must not contain duplicate channels",
+        ),
+        ({"MUX06": {"channel": 1}}, "integer mux indices"),
     ],
 )
-def test_dc_voltage_controller_config_rejects_invalid_mux_to_channel(
+def test_external_devices_config_rejects_invalid_mux_profiles(
     tmp_path: Path,
-    mux_to_channel: dict[object, int],
+    muxes: dict[object, object],
     match: str,
 ) -> None:
-    """Given invalid DC channel mapping, config loading should reject it."""
+    """Invalid external DC mux profiles should be rejected."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
-        config_dir / "dc_voltage_controller.yaml",
+        config_dir / "external_devices.yaml",
         {
-            "mux_to_channel": mux_to_channel,
+            "dc_voltage_controllers": {
+                "jpa_bias": {
+                    "voltage_control": {
+                        "muxes": muxes,
+                    }
+                }
+            },
         },
     )
 

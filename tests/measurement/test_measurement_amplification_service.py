@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, cast
 
+from qubex.external_devices import DCVoltageProfile
 from qubex.measurement.services.measurement_amplification_service import (
     MeasurementAmplificationService,
 )
@@ -33,8 +34,11 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
 
     class _DCVoltageController:
         @contextmanager
-        def apply_voltages(self, voltages: dict[int, float]):
-            called["voltages"] = voltages
+        def apply_voltages(
+            self,
+            requests: dict[int, tuple[float, DCVoltageProfile]],
+        ):
+            called["requests"] = requests
             called["entered"] = True
             try:
                 yield
@@ -46,7 +50,12 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
         (),
         {
             "dc_voltage_controller": _DCVoltageController(),
-            "resolve_dc_voltage_channel": staticmethod({0: 2, 2: 4}.__getitem__),
+            "resolve_dc_voltage_profile": staticmethod(
+                {
+                    0: DCVoltageProfile(channel=2),
+                    2: DCVoltageProfile(channel=4, ramp_rate_v_per_s=0.05),
+                }.__getitem__
+            ),
         },
     )()
     context = type(
@@ -62,7 +71,10 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
     with service.apply_dc_voltages(["Q00", "RQ02"]):
         called["inside"] = True
 
-    assert called["voltages"] == {2: 0.25, 4: -0.4}
+    assert called["requests"] == {
+        2: (0.25, DCVoltageProfile(channel=2)),
+        4: (-0.4, DCVoltageProfile(channel=4, ramp_rate_v_per_s=0.05)),
+    }
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True
@@ -91,8 +103,11 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
 
     class _DCVoltageController:
         @contextmanager
-        def apply_voltages(self, voltages: dict[int, float]):
-            called["voltages"] = voltages
+        def apply_voltages(
+            self,
+            requests: dict[int, tuple[float, DCVoltageProfile]],
+        ):
+            called["requests"] = requests
             yield
 
     system_manager = type(
@@ -100,7 +115,9 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
         (),
         {
             "dc_voltage_controller": _DCVoltageController(),
-            "resolve_dc_voltage_channel": staticmethod({0: 2}.__getitem__),
+            "resolve_dc_voltage_profile": staticmethod(
+                {0: DCVoltageProfile(channel=2)}.__getitem__
+            ),
         },
     )()
     context = type(
@@ -116,4 +133,4 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
     with service.apply_dc_voltages("Q00"):
         pass
 
-    assert called["voltages"] == {2: 0.25}
+    assert called["requests"] == {2: (0.25, DCVoltageProfile(channel=2))}

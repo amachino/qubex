@@ -1234,11 +1234,9 @@ class ExperimentContext:
         resolved_mux, channel = self._resolve_dc_output(mux)
         controller = self.system_manager.dc_voltage_controller
         for _ in range(_DC_VOLTAGE_SET_MAX_ATTEMPTS):
-            controller.on(channel=channel)
             controller.set_voltage(channel=channel, voltage=voltage)
             current_voltage = controller.get_voltage(channel=channel)
-            is_output_on = controller.is_output_on(channel=channel)
-            if abs(voltage - current_voltage) < tolerance and is_output_on:
+            if abs(voltage - current_voltage) < tolerance:
                 return
         raise RuntimeError(
             f"DC voltage for `{resolved_mux.label}` failed to reach "
@@ -1286,10 +1284,11 @@ class ExperimentContext:
         self,
         *,
         mux: int | str | None = None,
-        turn_off_on_exit: bool = True,
+        shutdown_on_exit: bool = True,
     ) -> Iterator[DCVoltageControl]:
         """Yield DC voltage operations bound to one mux."""
         resolved_mux = self._resolve_dc_mux(mux)
+        profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
         control = DCVoltageControl(
             set_voltage=lambda voltage, tolerance: self._set_dc_voltage(
                 voltage,
@@ -1299,15 +1298,13 @@ class ExperimentContext:
             get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
             turn_on=lambda: self._turn_on_dc(mux=resolved_mux.index),
             turn_off=lambda: self._turn_off_dc(mux=resolved_mux.index),
+            profile=profile,
         )
         try:
             yield control
         finally:
-            try:
-                control._restore_ramp_start()  # noqa: SLF001
-            finally:
-                if turn_off_on_exit:
-                    self._turn_off_dc(mux=resolved_mux.index)
+            if shutdown_on_exit:
+                control.shutdown()
 
     def save_calib_note(
         self,

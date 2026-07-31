@@ -1,4 +1,4 @@
-"""DC voltage device driver adapters."""
+"""External DC voltage device driver adapters."""
 
 from .ons61797 import ONS61797Device
 

@@ -891,7 +891,7 @@ class Experiment:
         self,
         *,
         mux: int | str | None = None,
-        turn_off_on_exit: bool = True,
+        shutdown_on_exit: bool = True,
     ) -> Iterator[DCVoltageControl]:
         """
         Yield DC voltage operations bound to one mux.
@@ -900,9 +900,10 @@ class Experiment:
         ----------
         mux : int or str, optional
             Mux index or label. Required when multiple muxes are active.
-        turn_off_on_exit : bool
-            Whether to turn off the output when the context exits. Disable this
-            only when the selected mux must remain biased after the operation.
+        shutdown_on_exit : bool
+            Whether to ramp to the safe voltage and turn off the output when
+            the context exits. Disable this only when the selected mux must
+            remain biased after the operation.
 
         Yields
         ------
@@ -911,7 +912,7 @@ class Experiment:
         """
         with self.ctx.dc_voltage_control(
             mux=mux,
-            turn_off_on_exit=turn_off_on_exit,
+            shutdown_on_exit=shutdown_on_exit,
         ) as control:
             yield control
 

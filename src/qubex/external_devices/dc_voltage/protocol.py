@@ -1,4 +1,4 @@
-"""DC voltage device contracts."""
+"""External DC voltage device contracts."""
 
 from __future__ import annotations
 

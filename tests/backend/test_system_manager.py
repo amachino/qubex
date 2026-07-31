@@ -12,8 +12,13 @@ from typing import Any, cast
 import pytest
 
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
-from qubex.backend.dc_voltage import DCVoltageControllerConfig
 from qubex.backend.quel3 import Quel3BackendController
+from qubex.external_devices import (
+    DCVoltageControllerConfig,
+    DCVoltageProfile,
+    ExternalDevicesConfig,
+)
+from qubex.external_devices.dc_voltage.config import DCVoltageProfileOverride
 from qubex.system.control_system import PortType
 from qubex.system.system_manager import BackendSettings, SystemManager
 
@@ -1129,11 +1134,16 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
             return BACKEND_KIND_QUEL1
 
         @property
-        def dc_voltage_controller_config(self) -> DCVoltageControllerConfig:
-            return DCVoltageControllerConfig(
-                driver="ons61797",
-                port="/dev/system-dc",
-                mux_to_channel={6: 1},
+        def external_devices_config(self) -> ExternalDevicesConfig:
+            return ExternalDevicesConfig(
+                dc_voltage_controllers={
+                    "jpa_bias": DCVoltageControllerConfig(
+                        driver="ons61797",
+                        port="/dev/system-dc",
+                        voltage_defaults=DCVoltageProfile(channel=1),
+                        muxes={6: DCVoltageProfileOverride(channel=1)},
+                    )
+                }
             )
 
         def get_experiment_system(self) -> object:
@@ -1162,8 +1172,9 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
         DCVoltageControllerConfig(
             driver="ons61797",
             port="/dev/system-dc",
-            mux_to_channel={6: 1},
-        )
+            voltage_defaults=DCVoltageProfile(channel=1),
+            muxes={6: DCVoltageProfileOverride(channel=1)},
+        ),
     ]
     installed_controller = cast(Any, manager.dc_voltage_controller)
     assert installed_controller.config == created_configs[0]

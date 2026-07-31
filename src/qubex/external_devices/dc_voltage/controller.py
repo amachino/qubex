@@ -1,12 +1,13 @@
-"""Backend-managed DC voltage controller."""
+"""External DC voltage controller."""
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Final
 
-from .config import DCVoltageControllerConfig
+from .config import DCVoltageControllerConfig, DCVoltageProfile
 from .drivers import ONS61797Device
 from .protocol import DCVoltageDevice, DCVoltageDeviceFactory
 
@@ -115,17 +116,76 @@ class DCVoltageController:
                 self._device.close()
 
     @contextmanager
-    def apply_voltages(self, voltages: dict[int, float]) -> Iterator[DCVoltageDevice]:
-        """Temporarily apply DC voltages and restore originals on exit."""
-        original_voltages: dict[int, float] = {}
+    def apply_voltages(
+        self,
+        requests: dict[int, tuple[float, DCVoltageProfile]],
+    ) -> Iterator[DCVoltageDevice]:
+        """Temporarily ramp and apply DC voltages, then safely shut down."""
         with self._connection() as device:
             try:
-                for channel, voltage in voltages.items():
-                    original_voltages[channel] = device.get_voltage(channel)
-                    device.set_voltage(channel, voltage)
-                    device.on(channel)
+                for channel, (voltage, profile) in requests.items():
+                    self._apply_voltage(
+                        device,
+                        channel=channel,
+                        voltage=voltage,
+                        profile=profile,
+                    )
                 yield device
             finally:
-                for channel, voltage in original_voltages.items():
-                    device.set_voltage(channel, voltage)
-                    device.off(channel)
+                for channel, (_, profile) in requests.items():
+                    try:
+                        if device.is_output_on(channel):
+                            self._ramp_voltage(
+                                device,
+                                channel=channel,
+                                start=device.get_voltage(channel),
+                                voltage=profile.safe_voltage_v,
+                                profile=profile,
+                            )
+                    finally:
+                        device.off(channel)
+
+    @classmethod
+    def _apply_voltage(
+        cls,
+        device: DCVoltageDevice,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> None:
+        """Enable one channel and ramp it to a target voltage."""
+        if device.is_output_on(channel):
+            start = device.get_voltage(channel)
+        else:
+            start = profile.safe_voltage_v
+            device.set_voltage(channel, start)
+            device.on(channel)
+        cls._ramp_voltage(
+            device,
+            channel=channel,
+            start=start,
+            voltage=voltage,
+            profile=profile,
+        )
+
+    @staticmethod
+    def _ramp_voltage(
+        device: DCVoltageDevice,
+        *,
+        channel: int,
+        start: float,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> None:
+        """Apply incremental setpoints from a start voltage to a target."""
+        step = profile.ramp_rate_v_per_s * profile.update_interval_s
+        direction = 1.0 if voltage >= start else -1.0
+        current = float(start)
+        while abs(voltage - current) > step:
+            current += direction * step
+            device.set_voltage(channel, current)
+            time.sleep(profile.update_interval_s)
+        if current != voltage:
+            device.set_voltage(channel, float(voltage))
+            time.sleep(profile.update_interval_s)

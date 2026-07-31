@@ -27,7 +27,7 @@ qubex-config/
     box.yaml
     system.yaml
     wiring.yaml
-    dc_voltage_controller.yaml  # 外部 DC 電圧源を使う場合
+    external_devices.yaml  # 外部計測器を使う場合
     skew.yaml  # QuEL-1/QuBE 向け
   params/
     SYSTEM_A/
@@ -46,7 +46,7 @@ qubex-config/
 - `config/` には共有のシステム設定ファイルを置きます。
 - `params/<system_id>/` の各ファイルは、1 つのパラメータファミリを表します。
 - `calibration/<system_id>/calib_note.json` は既定の較正ファイルの保存先です。
-- `dc_voltage_controller.yaml` は任意で、JPA のバイアス制御に使う外部 DC 電圧源を設定します。
+- `external_devices.yaml` は任意で、JPA バイアス用 DC 電圧源など、QuEL 制御系の外にある計測器を設定します。
 - `skew.yaml` は任意ですが、複数の QuEL-1 制御装置を用いた同期実験を行う場合に必要になります。
 
 ## 共有設定ファイルを定義する
@@ -94,25 +94,39 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
 
 例えば `quel1se-riken8` は `se8_mxfe1_awg1331`、`se8_mxfe1_awg2222`、`se8_mxfe1_awg3113` のような AWG プロファイルラベルを受け取れます。AWG プロファイルが指定されない場合、Qubex は `se8_mxfe1_awg2222` を使います。
 
-### `dc_voltage_controller.yaml`
+### `external_devices.yaml`
 
-DC 電圧源の接続方法と、mux index に対応する出力 channel を設定します。出力 channel は 1 始まりです。
+外部機器を用途ごとに設定します。次の例では JPA バイアス用 controller に共通の ramp 設定を定義し、mux 7 の ramp rate だけを上書きしています。出力 channel は 1 始まりです。
 
 ```yaml
-driver: ons61797
-port: /dev/ttyACM0
-mux_to_channel:
-  6: 1
-  7: 2
+dc_voltage_controllers:
+  jpa_bias:
+    driver: ons61797
+
+    connection:
+      port: /dev/ttyACM0
+
+    voltage_control:
+      defaults:
+        ramp_rate_v_per_s: 0.1
+        update_interval_s: 0.1
+        safe_voltage_v: 0.0
+
+      muxes:
+        6:
+          channel: 1
+        7:
+          channel: 2
+          ramp_rate_v_per_s: 0.05
 ```
 
-ネットワーク接続では `port` の代わりに `ip_address` を指定します。両方を同時には指定できません。`mux_to_channel` にない mux には、既定で `mux + 1` の channel が使われます。
+ネットワーク接続では `connection.port` の代わりに `connection.ip_address` を指定します。両方を同時には指定できません。mux ごとに省略した制御値は `defaults` から継承します。設定のない mux には channel `mux + 1` と共通の制御値が使われます。
 
-DC 電圧操作は context 内で行います。context を抜けると出力は OFF になります。
+`apply_voltage()` は出力を ON にし、mux に対応する設定で現在値から目標値まで ramp します。出力が OFF の場合は、安全電圧を設定してから ON にします。context を抜けると安全電圧まで ramp して出力を OFF にします。
 
 ```python
 with experiment.dc_voltage_control(mux=6) as dc:
-    dc.set_voltage(0.27)
+    dc.apply_voltage(0.27)
     state = dc.state
 ```
 
@@ -121,11 +135,11 @@ with experiment.dc_voltage_control(mux=6) as dc:
 context を抜けた後も固定バイアスを出力し続ける場合は、自動 OFF を明示的に無効にします。
 
 ```python
-with experiment.dc_voltage_control(mux=6, turn_off_on_exit=False) as dc:
-    dc.set_voltage(0.27)
+with experiment.dc_voltage_control(mux=6, shutdown_on_exit=False) as dc:
+    dc.apply_voltage(0.27)
 ```
 
-`sweep()` は渡された電圧列をそのまま設定します。一定の電圧幅で目標値へ近づける場合は `ramp_to()` を使います。context を抜けた後も到達した電圧を維持するには、`ramp_to()` にも `restore_on_exit=False` を指定します。
+`sweep()` は同じ設定を使って各目標電圧まで順番に ramp します。ramp せずに電圧を印加する必要がある場合だけ `apply_voltage_immediately()` を使います。
 
 ### 制御レイアウトの解決規則
 

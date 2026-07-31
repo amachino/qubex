@@ -1073,17 +1073,17 @@ def test_dc_voltage_control_delegates_to_context() -> None:
     context_stub = _ExperimentContextStub()
     exp.__dict__["_experiment_context"] = context_stub
 
-    with exp.dc_voltage_control(mux=6, turn_off_on_exit=False) as dc:
+    with exp.dc_voltage_control(mux=6, shutdown_on_exit=False) as dc:
         assert dc is context_stub
 
     assert context_stub.calls == [
         (
             "dc_voltage_control",
-            {"enter": {"mux": 6, "turn_off_on_exit": False}},
+            {"enter": {"mux": 6, "shutdown_on_exit": False}},
         ),
         (
             "dc_voltage_control",
-            {"exit": {"mux": 6, "turn_off_on_exit": False}},
+            {"exit": {"mux": 6, "shutdown_on_exit": False}},
         ),
     ]
 

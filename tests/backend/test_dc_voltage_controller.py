@@ -6,12 +6,13 @@ from typing import Any, ClassVar
 
 import pytest
 
-from qubex.backend.dc_voltage import (
+from qubex.external_devices.dc_voltage import (
     DCVoltageController,
     DCVoltageControllerConfig,
+    DCVoltageProfile,
     create_dc_voltage_controller,
 )
-from qubex.backend.dc_voltage.drivers import ONS61797Device
+from qubex.external_devices.dc_voltage.drivers import ONS61797Device
 
 
 class _FakeDCVoltageDevice:
@@ -152,6 +153,34 @@ def test_factory_rejects_unknown_driver() -> None:
 
     with pytest.raises(ValueError, match="Unsupported DC voltage controller driver"):
         create_dc_voltage_controller(config)
+
+
+def test_apply_voltages_ramps_each_channel_and_shuts_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Temporary voltage application should ramp up and down before output off."""
+    _reset_fake_devices()
+    delays: list[float] = []
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        delays.append,
+    )
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        update_interval_s=0.1,
+        safe_voltage_v=0.0,
+    )
+
+    with controller.apply_voltages({1: (0.25, profile)}):
+        pass
+
+    device = _FakeDCVoltageDevice.instances[0]
+    applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
+    assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25, 0.15, 0.05, 0.0])
+    assert device.calls[-1] == ("off", 1)
+    assert delays == [0.1] * 6
 
 
 def test_ons61797_adapter_normalizes_third_party_output_state() -> None:

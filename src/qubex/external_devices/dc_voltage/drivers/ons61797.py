@@ -1,4 +1,4 @@
-"""Qubex adapter for the vendored ONS61797 client."""
+"""Qubex external-device adapter for the vendored ONS61797 client."""
 
 from __future__ import annotations
 

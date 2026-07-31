@@ -52,11 +52,13 @@ class MeasurementAmplificationService:
         muxes = {
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
         }
-        voltages = {
-            self.context.system_manager.resolve_dc_voltage_channel(
-                mux
-            ): self.control_params.get_dc_voltage(mux)
+        profiles = {
+            mux: self.context.system_manager.resolve_dc_voltage_profile(mux)
             for mux in muxes
         }
-        with self.context.system_manager.dc_voltage_controller.apply_voltages(voltages):
+        requests = {
+            profile.channel: (self.control_params.get_dc_voltage(mux), profile)
+            for mux, profile in profiles.items()
+        }
+        with self.context.system_manager.dc_voltage_controller.apply_voltages(requests):
             yield

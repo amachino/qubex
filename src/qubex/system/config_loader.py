@@ -17,17 +17,22 @@ from qubex.backend.backend_controller import (
     BackendKind,
     normalize_backend_kind,
 )
-from qubex.backend.dc_voltage import DCVoltageControllerConfig
 from qubex.constants import (
     BOX_FILE,
     CHIP_FILE,
-    DC_VOLTAGE_CONTROLLER_FILE,
+    EXTERNAL_DEVICES_FILE,
     MEASUREMENT_DEFAULTS_FILE,
     PARAMS_FILE,
     PROPS_FILE,
     SYSTEM_FILE,
     WIRING_FILE,
 )
+from qubex.external_devices import (
+    DCVoltageControllerConfig,
+    DCVoltageProfile,
+    ExternalDevicesConfig,
+)
+from qubex.external_devices.dc_voltage.config import DCVoltageProfileOverride
 from qubex.system.config_paths import (
     resolve_default_config_dir,
     resolve_default_params_dir,
@@ -171,7 +176,7 @@ class ConfigLoader:
         files under `params/`). When omitted, Qubex prefers
         `<root>/params/<system_id>`, then `<root>/params/<chip_id>`, and
         finally the legacy nested layout `<root>/<id>/params`.
-    chip_file, system_file, box_file, dc_voltage_controller_file,
+    chip_file, system_file, box_file, external_devices_file,
     props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     wiring_file : str | None, optional
@@ -218,7 +223,7 @@ class ConfigLoader:
         chip_file: str = CHIP_FILE,
         system_file: str = SYSTEM_FILE,
         box_file: str = BOX_FILE,
-        dc_voltage_controller_file: str = DC_VOLTAGE_CONTROLLER_FILE,
+        external_devices_file: str = EXTERNAL_DEVICES_FILE,
         wiring_file: str | None = None,
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
@@ -245,8 +250,8 @@ class ConfigLoader:
             System YAML filename.
         box_file : str, optional
             Box YAML filename.
-        dc_voltage_controller_file : str, optional
-            DC voltage controller YAML filename.
+        external_devices_file : str, optional
+            External devices YAML filename.
         wiring_file : str | None, optional
             Wiring YAML filename override.
         props_file : str, optional
@@ -290,7 +295,7 @@ class ConfigLoader:
         self._chip_file = chip_file
         self._system_file = system_file
         self._box_file = box_file
-        self._dc_voltage_controller_file = dc_voltage_controller_file
+        self._external_devices_file = external_devices_file
         self._wiring_file = wiring_file
         self._resolved_wiring_file = wiring_file or WIRING_FILE
         self._props_file = props_file
@@ -308,7 +313,7 @@ class ConfigLoader:
         self._props_dict: dict = {}
         self._params_dict: dict = {}
         self._measurement_defaults: MeasurementDefaults = MeasurementDefaults()
-        self._dc_voltage_controller_config = DCVoltageControllerConfig()
+        self._external_devices_config = ExternalDevicesConfig()
         self._quantum_system: QuantumSystem | None = None
         self._wiring_rows: list[dict[str, Any]] | None = None
         self._control_system: ControlSystem | None = None
@@ -380,9 +385,7 @@ class ConfigLoader:
                 self._params_file
             )  # legacy
             self._measurement_defaults = self._load_measurement_defaults()
-            self._dc_voltage_controller_config = (
-                self._load_dc_voltage_controller_config()
-            )
+            self._external_devices_config = self._load_external_devices_config()
             self._system_loader = self._create_system_loader(self._backend_kind)
 
             self._quantum_system = self._load_quantum_system()
@@ -422,10 +425,10 @@ class ConfigLoader:
         return self._measurement_defaults
 
     @property
-    def dc_voltage_controller_config(self) -> DCVoltageControllerConfig:
-        """Return DC voltage controller config for the loaded system."""
+    def external_devices_config(self) -> ExternalDevicesConfig:
+        """Return external device configuration for the loaded system."""
         self._ensure_loaded()
-        return self._dc_voltage_controller_config
+        return self._external_devices_config
 
     @property
     def wiring_file(self) -> str:
@@ -663,60 +666,124 @@ class ConfigLoader:
             )
         return BACKEND_KIND_QUEL1
 
-    def _load_dc_voltage_controller_config(self) -> DCVoltageControllerConfig:
-        """Load optional settings from the dedicated DC controller config."""
-        raw_config = self._load_optional_config_file(self._dc_voltage_controller_file)
+    def _load_external_devices_config(self) -> ExternalDevicesConfig:
+        """Load external device settings from their dedicated config."""
+        raw_config = self._load_optional_config_file(self._external_devices_file)
         if not raw_config:
-            return DCVoltageControllerConfig()
+            return ExternalDevicesConfig()
         if not isinstance(raw_config, dict):
-            raise TypeError("`dc_voltage_controller` must be a mapping.")
+            raise TypeError("`external_devices` must be a mapping.")
+        controllers = raw_config.get("dc_voltage_controllers", {})
+        if not isinstance(controllers, dict):
+            raise TypeError("`dc_voltage_controllers` must be a mapping.")
+        normalized = {
+            name: self._parse_dc_voltage_controller(name, value)
+            for name, value in controllers.items()
+        }
+        return ExternalDevicesConfig(dc_voltage_controllers=normalized)
 
+    @staticmethod
+    def _parse_dc_voltage_controller(
+        name: object,
+        raw_config: object,
+    ) -> DCVoltageControllerConfig:
+        """Normalize one named external DC voltage controller."""
+        if not isinstance(name, str):
+            raise TypeError("DC voltage controller names must be strings.")
+        if not isinstance(raw_config, dict):
+            raise TypeError(f"`dc_voltage_controllers.{name}` must be a mapping.")
         driver = raw_config.get("driver", "ons61797")
         if not isinstance(driver, str):
-            raise TypeError("`dc_voltage_controller.driver` must be a string.")
-        port = raw_config.get("port")
-        ip_address = raw_config.get("ip_address")
+            raise TypeError(f"`dc_voltage_controllers.{name}.driver` must be a string.")
+        connection = raw_config.get("connection", {})
+        if not isinstance(connection, dict):
+            raise TypeError(
+                f"`dc_voltage_controllers.{name}.connection` must be a mapping."
+            )
+        port = connection.get("port")
+        ip_address = connection.get("ip_address")
         if port is not None and not isinstance(port, str):
-            raise TypeError("`dc_voltage_controller.port` must be a string.")
+            raise TypeError("External DC controller `port` must be a string.")
         if ip_address is not None and not isinstance(ip_address, str):
-            raise TypeError("`dc_voltage_controller.ip_address` must be a string.")
+            raise TypeError("External DC controller `ip_address` must be a string.")
         if port is not None and ip_address is not None:
             raise TypeError(
-                "Only one of `dc_voltage_controller.port` or "
-                "`dc_voltage_controller.ip_address` should be provided."
+                "Only one external DC controller connection method may be provided."
             )
-        mux_to_channel = raw_config.get("mux_to_channel", {})
-        if not isinstance(mux_to_channel, dict):
-            raise TypeError("`dc_voltage_controller.mux_to_channel` must be a mapping.")
-        normalized_mapping: dict[int, int] = {}
-        for mux_index, channel in mux_to_channel.items():
+        voltage_control = raw_config.get("voltage_control", {})
+        if not isinstance(voltage_control, dict):
+            raise TypeError("`voltage_control` must be a mapping.")
+        defaults = voltage_control.get("defaults", {})
+        if not isinstance(defaults, dict):
+            raise TypeError("`voltage_control.defaults` must be a mapping.")
+        default_profile = DCVoltageProfile(
+            channel=1,
+            ramp_rate_v_per_s=float(defaults.get("ramp_rate_v_per_s", 0.1)),
+            update_interval_s=float(defaults.get("update_interval_s", 0.1)),
+            safe_voltage_v=float(defaults.get("safe_voltage_v", 0.0)),
+        )
+        ConfigLoader._validate_ramp_values(default_profile)
+        muxes = voltage_control.get("muxes", {})
+        if not isinstance(muxes, dict):
+            raise TypeError("`voltage_control.muxes` must be a mapping.")
+        normalized_muxes: dict[int, DCVoltageProfileOverride] = {}
+        for mux_index, values in muxes.items():
             if type(mux_index) is not int:
-                raise TypeError(
-                    "`dc_voltage_controller.mux_to_channel` must use integer "
-                    "mux indices."
-                )
+                raise TypeError("`voltage_control.muxes` must use integer mux indices.")
             if mux_index < 0:
-                raise ValueError(
-                    "`dc_voltage_controller.mux_to_channel` mux indices must "
-                    "be non-negative."
-                )
+                raise ValueError("DC voltage mux indices must be non-negative.")
+            if not isinstance(values, dict):
+                raise TypeError("Each DC voltage mux profile must be a mapping.")
+            channel = values.get("channel")
             if type(channel) is not int or channel < 1:
-                raise ValueError(
-                    "`dc_voltage_controller.mux_to_channel` channels must be "
-                    "positive integers."
-                )
-            normalized_mapping[mux_index] = channel
-        if len(set(normalized_mapping.values())) != len(normalized_mapping):
+                raise ValueError("DC voltage channels must be positive integers.")
+            override = DCVoltageProfileOverride(
+                channel=channel,
+                ramp_rate_v_per_s=ConfigLoader._optional_float(
+                    values, "ramp_rate_v_per_s"
+                ),
+                update_interval_s=ConfigLoader._optional_float(
+                    values, "update_interval_s"
+                ),
+                safe_voltage_v=ConfigLoader._optional_float(values, "safe_voltage_v"),
+            )
+            ConfigLoader._validate_ramp_values(
+                DCVoltageControllerConfig(
+                    voltage_defaults=default_profile,
+                    muxes={mux_index: override},
+                ).resolve_voltage_profile(mux_index)
+            )
+            normalized_muxes[mux_index] = override
+        channels = [profile.channel for profile in normalized_muxes.values()]
+        if len(set(channels)) != len(channels):
             raise ValueError(
-                "`dc_voltage_controller.mux_to_channel` must not contain "
-                "duplicate channels."
+                "`voltage_control.muxes` must not contain duplicate channels."
             )
         return DCVoltageControllerConfig(
             driver=driver,
             port=port,
             ip_address=ip_address,
-            mux_to_channel=normalized_mapping,
+            voltage_defaults=default_profile,
+            muxes=normalized_muxes,
         )
+
+    @staticmethod
+    def _optional_float(values: dict, key: str) -> float | None:
+        """Return an optional numeric config value as a float."""
+        value = values.get(key)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f"`{key}` must be numeric.")
+        return float(value)
+
+    @staticmethod
+    def _validate_ramp_values(profile: DCVoltageProfile) -> None:
+        """Validate positive DC ramp rate and update interval."""
+        if profile.ramp_rate_v_per_s <= 0:
+            raise ValueError("`ramp_rate_v_per_s` must be positive.")
+        if profile.update_interval_s <= 0:
+            raise ValueError("`update_interval_s` must be positive.")
 
     def _resolve_wiring_file(self) -> str:
         """Resolve effective wiring file name for the current load."""

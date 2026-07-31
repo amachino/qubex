@@ -5,11 +5,13 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterable, Iterator
 
+from qubex.external_devices import DCVoltageProfile
+
 from .models.dc_voltage_state import DCVoltageState
 
 
 class DCVoltageControl:
-    """Control and sweep the DC voltage bound to one mux."""
+    """Apply and sweep DC voltage for one bound mux."""
 
     def __init__(
         self,
@@ -18,27 +20,64 @@ class DCVoltageControl:
         get_state: Callable[[], DCVoltageState],
         turn_on: Callable[[], None],
         turn_off: Callable[[], None],
+        profile: DCVoltageProfile,
     ) -> None:
-        """Initialize the bound DC voltage operations."""
+        """Initialize bound DC voltage operations."""
         self._set_voltage = set_voltage
         self._get_state = get_state
         self._turn_on = turn_on
         self._turn_off = turn_off
-        self._restore_profile: tuple[float, float, float, float] | None = None
+        self._profile = profile
 
     @property
     def state(self) -> DCVoltageState:
         """Return the current voltage and output state."""
         return self._get_state()
 
-    def set_voltage(
+    def apply_voltage(
         self,
         voltage: float,
         *,
         tolerance: float = 1e-3,
     ) -> DCVoltageState:
-        """Set a voltage and return its readback state."""
-        self._set_voltage(voltage, tolerance)
+        """
+        Enable the output and ramp from its current voltage to a target.
+
+        Parameters
+        ----------
+        voltage : float
+            Target voltage in V.
+        tolerance : float
+            Allowed voltage readback error in V.
+
+        Returns
+        -------
+        DCVoltageState
+            Readback state at the target voltage.
+        """
+        state = self.state
+        if state.is_on:
+            start = state.voltage
+        else:
+            start = self._profile.safe_voltage_v
+            self._set_voltage(start, tolerance)
+            self._turn_on()
+        for setpoint in self._ramp_setpoints(start=start, voltage=float(voltage)):
+            self._set_voltage(setpoint, tolerance)
+            time.sleep(self._profile.update_interval_s)
+        return self.state
+
+    def apply_voltage_immediately(
+        self,
+        voltage: float,
+        *,
+        tolerance: float = 1e-3,
+    ) -> DCVoltageState:
+        """Enable the output and apply a voltage without ramping."""
+        state = self.state
+        self._set_voltage(float(voltage), tolerance)
+        if not state.is_on:
+            self._turn_on()
         return self.state
 
     def turn_on(self) -> DCVoltageState:
@@ -55,135 +94,34 @@ class DCVoltageControl:
         self,
         *,
         sweep_range: Iterable[float],
-        delay: float = 0.0,
         tolerance: float = 1e-3,
     ) -> Iterator[DCVoltageState]:
-        """
-        Sweep voltage values and yield each readback state.
-
-        Parameters
-        ----------
-        sweep_range : Iterable[float]
-            Voltage setpoints in V.
-        delay : float
-            Settling delay after each setpoint in seconds.
-        tolerance : float
-            Allowed voltage readback error in V.
-
-        Yields
-        ------
-        DCVoltageState
-            Readback state after applying each setpoint and delay.
-
-        Raises
-        ------
-        ValueError
-            If `delay` is negative.
-        """
-        if delay < 0:
-            raise ValueError("delay must be non-negative.")
-
+        """Ramp to each voltage and yield its readback state."""
         for voltage in sweep_range:
-            self._set_voltage(float(voltage), tolerance)
-            if delay > 0:
-                time.sleep(delay)
-            yield self.state
+            yield self.apply_voltage(float(voltage), tolerance=tolerance)
 
-    def ramp_to(
-        self,
-        voltage: float,
-        *,
-        start: float,
-        step: float,
-        delay: float = 0.0,
-        tolerance: float = 1e-3,
-        restore_on_exit: bool = True,
-    ) -> DCVoltageState:
-        """
-        Approach a target voltage incrementally from a specified voltage.
+    def shutdown(self, *, tolerance: float = 1e-3) -> None:
+        """Ramp to the configured safe voltage and turn the output off."""
+        try:
+            if self.state.is_on:
+                self.apply_voltage(
+                    self._profile.safe_voltage_v,
+                    tolerance=tolerance,
+                )
+        finally:
+            self._turn_off()
 
-        Parameters
-        ----------
-        voltage : float
-            Target voltage in V.
-        start : float
-            Initial voltage in V. Select this above or below the target to make
-            the approach direction reproducible when the device has hysteresis.
-        step : float
-            Positive maximum voltage increment in V.
-        delay : float
-            Settling delay after every setpoint in seconds.
-        tolerance : float
-            Allowed voltage readback error in V.
-        restore_on_exit : bool
-            Whether to ramp back to `start` with the same step and delay when
-            the bound DC control context exits.
-
-        Returns
-        -------
-        DCVoltageState
-            Readback state at the exact target voltage.
-
-        Raises
-        ------
-        ValueError
-            If `step` is not positive or `delay` is negative.
-        """
-        if step <= 0:
-            raise ValueError("step must be positive.")
-
-        setpoints = self._ramp_setpoints(
-            start=start,
-            voltage=voltage,
-            step=step,
-        )
-
-        states = list(
-            self.sweep(
-                sweep_range=setpoints,
-                delay=delay,
-                tolerance=tolerance,
-            )
-        )
-        self._restore_profile = (
-            (float(start), float(step), float(delay), float(tolerance))
-            if restore_on_exit
-            else None
-        )
-        return states[-1]
-
-    @staticmethod
-    def _ramp_setpoints(
-        *,
-        start: float,
-        voltage: float,
-        step: float,
-    ) -> list[float]:
-        """Return setpoints from the start through the exact target."""
+    def _ramp_setpoints(self, *, start: float, voltage: float) -> list[float]:
+        """Return incremental setpoints after the start through the target."""
+        if start == voltage:
+            return []
+        step = self._profile.ramp_rate_v_per_s * self._profile.update_interval_s
         direction = 1.0 if voltage >= start else -1.0
-        setpoints = [float(start)]
+        setpoints: list[float] = []
         current = float(start)
         while abs(voltage - current) > step:
             current += direction * step
             setpoints.append(current)
-        if setpoints[-1] != voltage:
+        if not setpoints or setpoints[-1] != voltage:
             setpoints.append(float(voltage))
         return setpoints
-
-    def _restore_ramp_start(self) -> None:
-        """Ramp back to the recorded start voltage before context shutdown."""
-        if self._restore_profile is None:
-            return
-        start, step, delay, tolerance = self._restore_profile
-        current = self.state.voltage
-        setpoints = self._ramp_setpoints(
-            start=current,
-            voltage=start,
-            step=step,
-        )[1:]
-        for _ in self.sweep(
-            sweep_range=setpoints,
-            delay=delay,
-            tolerance=tolerance,
-        ):
-            pass
