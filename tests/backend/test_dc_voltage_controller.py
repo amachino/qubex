@@ -43,6 +43,30 @@ class _FakeDCVoltageDevice:
             kwargs["ip_address"] = ip_address
         self.connect_kwargs.append(kwargs)
 
+    @property
+    def supports_output_switch(self) -> bool:
+        """Return that the fake device supports output switching."""
+        return True
+
+    @property
+    def supports_native_ramp(self) -> bool:
+        """Return that the fake device uses controller-generated ramps."""
+        return False
+
+    def ramp_voltage(
+        self,
+        channel: int,
+        start_voltage: float,
+        target_voltage: float,
+        rate_v_per_s: float,
+        step_size_v: float,
+        wait_s: float,
+    ) -> None:
+        """Reject native ramping for the generic fake device."""
+        raise AssertionError(
+            (channel, start_voltage, target_voltage, rate_v_per_s, step_size_v, wait_s)
+        )
+
     def close(self) -> None:
         self.closed = True
 

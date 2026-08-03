@@ -2385,8 +2385,8 @@ def test_external_devices_config_defaults_when_missing(
     controller = loader.external_devices_config.dc_voltage_controllers["jpa_bias"]
     assert controller.driver == "ons61797"
     assert controller.connection == {}
-    assert controller.resolve_voltage_profile(6).channel == 7
-    assert controller.resolve_voltage_profile(6).max_set_attempts == 3
+    with pytest.raises(ValueError, match=r"Mux 6 has no DC voltage channel"):
+        controller.resolve_voltage_profile(6)
 
 
 @pytest.mark.parametrize(
@@ -2458,7 +2458,7 @@ def test_external_devices_config_rejects_non_string_driver(
 @pytest.mark.parametrize(
     ("muxes", "match"),
     [
-        ({6: {"channel": 0}}, "positive integer"),
+        ({6: {"channel": "one"}}, "must be integers"),
         (
             {6: {"channel": 1}, 7: {"channel": 1}},
             "must not contain duplicate channels",

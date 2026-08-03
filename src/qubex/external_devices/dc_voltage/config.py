@@ -46,11 +46,13 @@ class DCVoltageControllerConfig:
     muxes: dict[int, DCVoltageProfileOverride] = field(default_factory=dict)
 
     def resolve_voltage_profile(self, mux_index: int) -> DCVoltageProfile:
-        """Resolve the effective voltage-control profile for one mux."""
-        override = self.muxes.get(
-            mux_index,
-            DCVoltageProfileOverride(channel=mux_index + 1),
-        )
+        """Resolve the explicitly configured voltage-control profile for one mux."""
+        override = self.muxes.get(mux_index)
+        if override is None:
+            raise ValueError(
+                f"Mux {mux_index} has no DC voltage channel configured. "
+                "Add an explicit entry to `voltage_control.muxes`."
+            )
         values = {
             name: value
             for name in (
@@ -96,8 +98,8 @@ class DCVoltageControllerConfig:
             if not isinstance(values, Mapping):
                 raise TypeError("Each DC voltage mux profile must be a mapping.")
             channel = values.get("channel")
-            if type(channel) is not int or channel < 1:
-                raise ValueError("DC voltage channels must be positive integers.")
+            if type(channel) is not int:
+                raise ValueError("DC voltage channels must be integers.")
             resolved = _parse_voltage_profile(
                 values,
                 channel=channel,

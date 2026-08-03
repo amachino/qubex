@@ -64,6 +64,16 @@ class ONS61797Device:
         """Create an ONS61797 client using serial or network transport."""
         self._client = client_factory(port=port, ip_address=ip_address)
 
+    @property
+    def supports_output_switch(self) -> bool:
+        """Return that ONS61797 supports physical output switching."""
+        return True
+
+    @property
+    def supports_native_ramp(self) -> bool:
+        """Return that Qubex must generate ONS61797 ramp setpoints."""
+        return False
+
     def close(self) -> None:
         """Close the underlying ONS61797 client."""
         self._client.close()
@@ -87,3 +97,15 @@ class ONS61797Device:
     def is_output_on(self, channel: int) -> bool:
         """Return whether one output channel is on."""
         return self._client.get_output_state(channel=channel) == 1
+
+    def ramp_voltage(
+        self,
+        channel: int,
+        start_voltage: float,
+        target_voltage: float,
+        rate_v_per_s: float,
+        step_size_v: float,
+        wait_s: float,
+    ) -> None:
+        """Reject native ramping, which this adapter does not expose."""
+        raise NotImplementedError("ONS61797 does not expose native ramping.")

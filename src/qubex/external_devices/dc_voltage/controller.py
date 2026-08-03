@@ -238,7 +238,8 @@ class DCVoltageController:
                     profile=profile,
                 )
         finally:
-            device.off(channel)
+            if device.supports_output_switch:
+                device.off(channel)
 
     def _apply_exit_policy(
         self,
@@ -271,7 +272,11 @@ class DCVoltageController:
                 profile=profile,
             )
         finally:
-            if policy.mode is DCVoltageExitMode.RESTORE and not initial_output_on:
+            if (
+                policy.mode is DCVoltageExitMode.RESTORE
+                and not initial_output_on
+                and device.supports_output_switch
+            ):
                 device.off(channel)
 
     def _ramp_voltage(
@@ -285,6 +290,27 @@ class DCVoltageController:
     ) -> None:
         """Apply incremental setpoints from a start voltage to a target."""
         step = profile.ramp_rate_v_per_s * profile.update_interval_s
+        if start == voltage:
+            return
+        if device.supports_native_ramp:
+            current = start
+            for _ in range(profile.max_set_attempts):
+                device.ramp_voltage(
+                    channel,
+                    current,
+                    voltage,
+                    profile.ramp_rate_v_per_s,
+                    step,
+                    profile.update_interval_s,
+                )
+                current = device.get_voltage(channel)
+                if abs(current - voltage) <= profile.readback_tolerance_v:
+                    return
+            raise RuntimeError(
+                f"DC voltage channel {channel} failed to reach {voltage} V "
+                f"within tolerance {profile.readback_tolerance_v} V after "
+                f"{profile.max_set_attempts} native ramp attempts."
+            )
         direction = 1.0 if voltage >= start else -1.0
         current = float(start)
         while abs(voltage - current) > step:

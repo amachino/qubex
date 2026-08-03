@@ -9,6 +9,16 @@ from typing import Protocol
 class DCVoltageDevice(Protocol):
     """Define the operations required from a DC voltage source."""
 
+    @property
+    def supports_output_switch(self) -> bool:
+        """Return whether the device can physically switch an output."""
+        ...
+
+    @property
+    def supports_native_ramp(self) -> bool:
+        """Return whether the device can execute a complete ramp atomically."""
+        ...
+
     def close(self) -> None:
         """Close the device connection."""
         ...
@@ -31,6 +41,18 @@ class DCVoltageDevice(Protocol):
 
     def is_output_on(self, channel: int) -> bool:
         """Return whether one output channel is on."""
+        ...
+
+    def ramp_voltage(
+        self,
+        channel: int,
+        start_voltage: float,
+        target_voltage: float,
+        rate_v_per_s: float,
+        step_size_v: float,
+        wait_s: float,
+    ) -> None:
+        """Ramp one channel using device-native execution."""
         ...
 
 

@@ -126,11 +126,57 @@ dc_voltage_controllers:
             rate_v_per_s: 0.05
 ```
 
-`connection` の内容は選択したdriverが解釈します。ONS61797をネットワーク接続する場合は `connection.port` の代わりに `connection.ip_address` を指定します。両方を同時には指定できません。mux ごとに省略した制御値は `defaults` から継承します。設定のない mux には channel `mux + 1` と共通の制御値が使われます。
+`connection` の内容は選択したdriverが解釈します。ONS61797をネットワーク接続する場合は `connection.port` の代わりに `connection.ip_address` を指定します。両方を同時には指定できません。mux ごとに省略した制御値は `defaults` から継承します。channel の対応はすべての mux について明示が必要です。`muxes` に設定のない mux を使用するとエラーになります。channel を推測して意図しない出力へ電圧を印加することはありません。
 
-`ramp.rate_v_per_s` は1秒あたりの電圧変化、`ramp.step_interval_s` はsetpointの更新間隔です。両者の積が1 stepの最大電圧変化になります。context終了時は `shutdown.voltage_v` までrampして出力をOFFにします。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。どちらも mux ごとに上書きできます。
+Qblox SPI Rackを、USB接続を所有するserver processを経由して制御する場合は、
+`qblox_server` driverを使用します。QubexはこのserverへTCP clientとして
+接続します。serial deviceを開くprocessを一つに保てるため、複数のシステムが
+同じ装置を利用する環境ではこの構成を推奨します。
 
-`apply_voltage()` は出力を ON にし、mux に対応する設定で現在値から目標値まで ramp します。出力が OFF の場合は、安全電圧を設定してから ON にします。context を抜けると安全電圧まで ramp して出力を OFF にします。
+```yaml
+dc_voltage_controllers:
+  jpa_bias:
+    driver: qblox_server
+
+    connection:
+      host: "<qblox-backend-host>"
+      port: <qblox-backend-port>
+      timeout_s: 1200
+      channels:
+        1: "<backend-device-name-1>"
+        2: "<backend-device-name-2>"
+
+    voltage_control:
+      defaults:
+        ramp:
+          rate_v_per_s: 0.1
+          step_interval_s: 0.1
+        shutdown:
+          voltage_v: 0.0
+        readback:
+          tolerance_v: 0.001
+          max_attempts: 3
+
+      muxes:
+        6:
+          channel: 1
+```
+
+`connection.channels`の値には、serverが管理するdevice識別名を指定します。
+Qubexはramp全体をserver側のsweep commandへ委譲するため、同じrampの
+途中へ別clientのsetpointが割り込みません。serverはsweepを同期処理するため、
+完了まで別channelの操作も待つ場合があります。認証のないsocketを信頼できない
+networkへ公開しないでください。
+
+D5a moduleにはchannelごとの物理的な出力スイッチがなく、標準bipolar spanでは
+-4 Vから4 Vに制限されます。このdriverでのshutdownは`shutdown.voltage_v`まで
+rampすることを意味し、出力を電気的に切断しません。そのため、`turn_on()`と
+`turn_off()`の直接呼び出しは非対応です。読み出される電圧はmoduleが保持して
+いる出力設定値であり、独立した電圧計の実測値ではありません。
+
+`ramp.rate_v_per_s` は1秒あたりの電圧変化、`ramp.step_interval_s` はsetpointの更新間隔です。両者の積が1 stepの最大電圧変化になります。context終了時は `shutdown.voltage_v` までrampし、物理的な出力switchに対応するdeviceでは出力もOFFにします。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。どちらも mux ごとに上書きできます。
+
+`apply_voltage()` は出力を ON にし、mux に対応する設定で現在値から目標値まで ramp します。出力が OFF の場合は、安全電圧を設定してから ON にします。context を抜けると安全電圧まで ramp し、deviceが対応する場合は出力もOFFにします。
 
 ```python
 with experiment.dc_voltage_control(mux=6) as dc:
