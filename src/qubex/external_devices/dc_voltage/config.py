@@ -160,7 +160,7 @@ class DCVoltageControllerConfig:
             "role",
             "ramp",
             "readback",
-            "reset_voltage_v",
+            "reset_voltage",
             "overrides",
         }
         if unknown:
@@ -301,7 +301,7 @@ def _parse_profile_overrides(
             "mux",
             "ramp",
             "readback",
-            "reset_voltage_v",
+            "reset_voltage",
         }
         if unknown:
             raise ValueError(f"Unknown `overrides` settings: {sorted(unknown)}.")
@@ -390,7 +390,7 @@ def _parse_voltage_profile(
         ),
         reset_voltage_v=_float_value(
             values,
-            "reset_voltage_v",
+            "reset_voltage",
             default=base.reset_voltage_v if base else 0.0,
         ),
         readback_tolerance_v=_float_value(

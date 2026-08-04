@@ -300,7 +300,7 @@ def test_dc_voltage_control_applies_voltage_with_configured_ramp() -> None:
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
-    with ctx.dc_voltage_control(on_exit="hold") as dc:
+    with ctx.dc_voltage_control() as dc:
         state = dc.apply_voltage(0.25)
 
     assert state.voltage == pytest.approx(0.25)
@@ -332,24 +332,11 @@ def test_dc_voltage_control_can_apply_voltage_immediately() -> None:
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
-    with ctx.dc_voltage_control(on_exit="hold") as dc:
+    with ctx.dc_voltage_control() as dc:
         state = dc.apply_voltage_immediately(0.2)
 
     assert any(call[0] == "apply_voltage_immediately" for call in dc_controller.calls)
     assert state.is_on
-
-
-def test_dc_voltage_control_can_hold_the_bias_after_exit() -> None:
-    """Given hold on exit, context exit should leave the bias applied."""
-    dc_controller = _DCVoltageController()
-    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
-
-    with ctx.dc_voltage_control(on_exit="hold") as dc:
-        dc.apply_voltage(0.2)
-
-    assert dc_controller.voltages[7] == pytest.approx(0.2)
-    assert dc_controller.output_states[7] is True
-    assert all(call[0] != "idle" for call in dc_controller.calls)
 
 
 def test_dc_voltage_control_attempts_idle_even_when_the_ramp_fails() -> None:
@@ -426,7 +413,7 @@ def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
-    with ctx.dc_voltage_control(on_exit="hold") as dc:
+    with ctx.dc_voltage_control() as dc:
         state = dc.apply_voltage_immediately(0.5, tolerance=0.0015)
 
     assert state.voltage == pytest.approx(0.5)
@@ -546,7 +533,7 @@ def test_turn_off_can_be_cancelled_at_the_prompt(
         lambda *_args, **_kwargs: False,
     )
 
-    with ctx.dc_voltage_control(on_exit="hold") as dc:
+    with ctx.dc_voltage_control() as dc:
         dc.apply_voltage(0.2)
         dc.turn_off()  # Prompt declined: nothing should change.
 

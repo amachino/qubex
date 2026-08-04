@@ -8,7 +8,6 @@ from .config import (
 )
 from .controller import (
     DCVoltageController,
-    DCVoltageExitMode,
     create_dc_voltage_controller,
 )
 
@@ -16,7 +15,6 @@ __all__ = [
     "DCVoltageController",
     "DCVoltageControllerConfig",
     "DCVoltageDeviceConfig",
-    "DCVoltageExitMode",
     "DCVoltageProfile",
     "ExternalDevicesConfig",
     "create_dc_voltage_controller",

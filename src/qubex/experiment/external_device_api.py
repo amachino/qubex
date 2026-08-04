@@ -6,8 +6,6 @@ from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from qubex.system.control_parameters import DCVoltageOnExit
-
 from .dc_voltage_control import DCVoltageControl
 from .models.dc_voltage_state import DCVoltageState
 
@@ -27,7 +25,6 @@ class ExternalDeviceAPI:
         self,
         *,
         mux: int | str | None = None,
-        on_exit: DCVoltageOnExit = "idle",
     ) -> Iterator[DCVoltageControl]:
         """
         Yield DC voltage operations bound to one mux.
@@ -36,16 +33,13 @@ class ExternalDeviceAPI:
         ----------
         mux : int or str, optional
             Mux index or label. Required when multiple muxes are active.
-        on_exit : {"idle", "hold"}
-            Exit behavior. `idle` (default) ramps back to the idle voltage;
-            `hold` leaves the bias applied.
 
         Yields
         ------
         DCVoltageControl
             Operations bound to the resolved mux.
         """
-        with self._ctx.dc_voltage_control(mux=mux, on_exit=on_exit) as control:
+        with self._ctx.dc_voltage_control(mux=mux) as control:
             yield control
 
     def get_dc_voltage_state(
@@ -75,7 +69,7 @@ class ExternalDeviceAPI:
         """
         Bring the selected muxes to their reset voltages, outputs on.
 
-        Off outputs come up at `reset_voltage_v` (default 0 V) before
+        Off outputs come up at `reset_voltage` (default 0 V) before
         being switched on; on outputs are ramped to it. Afterwards the
         selection is in the known reset state, regardless of stale stored
         setpoints.

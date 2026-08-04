@@ -6,20 +6,12 @@ import logging
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from enum import Enum
 
 from .config import DCVoltageControllerConfig, DCVoltageProfile
 from .protocol import DCVoltageDevice, DCVoltageDeviceFactory
 from .registry import DC_VOLTAGE_DRIVER_REGISTRY
 
 logger = logging.getLogger(__name__)
-
-
-class DCVoltageExitMode(str, Enum):
-    """Define controller behavior when a voltage context exits."""
-
-    IDLE = "idle"
-    HOLD = "hold"
 
 
 def create_dc_voltage_controller(
@@ -246,11 +238,9 @@ class DCVoltageController:
     def apply_voltages(
         self,
         requests: dict[int, tuple[float, DCVoltageProfile]],
-        *,
-        exit_modes: dict[int, DCVoltageExitMode] | None = None,
     ) -> Iterator[None]:
         """
-        Apply DC voltages and return each channel to idle unless told to hold.
+        Apply DC voltages and return each channel to idle on exit.
 
         The device connection is open only while voltages are being changed;
         no connection is held while the caller's block runs.
@@ -259,18 +249,10 @@ class DCVoltageController:
             self.apply_channels(requests)
             yield
         finally:
-            idle_profiles = {
-                channel: profile
-                for channel, (_, profile) in requests.items()
-                if (
-                    exit_modes.get(channel, DCVoltageExitMode.IDLE)
-                    if exit_modes is not None
-                    else DCVoltageExitMode.IDLE
+            if requests:
+                self.idle_channels(
+                    {channel: profile for channel, (_, profile) in requests.items()}
                 )
-                is DCVoltageExitMode.IDLE
-            }
-            if idle_profiles:
-                self.idle_channels(idle_profiles)
 
     def _apply_voltage(
         self,

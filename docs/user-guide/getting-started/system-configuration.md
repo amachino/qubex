@@ -133,7 +133,7 @@ settings:
   readback:
     tolerance_v: 0.001
     max_attempts: 3
-  reset_voltage_v: 0.0
+  reset_voltage: 0.0
   overrides:
     - mux: 7
       ramp:
@@ -154,10 +154,8 @@ settings:
 
 The idle voltage — where a line rests between measurements — is a
 calibrated per-mux value: `idle_voltage` in `jpa_params.yaml`, falling back
-to `reset_voltage_v` for uncalibrated muxes. The exit behavior is not
-configuration either: `measurement.apply_dc_voltages(..., on_exit=...)`
-takes `"idle"` (default — ramp back to the idle voltage) or `"hold"` (leave
-the bias applied).
+to `reset_voltage` for uncalibrated muxes. A DC voltage context always
+ramps back to the idle voltage on exit.
 
 To control a Qblox SPI Rack through a server process that owns its USB
 connection, use the `qblox_server` driver. Qubex connects to that server as a
@@ -187,7 +185,7 @@ settings:
   readback:
     tolerance_v: 0.001
     max_attempts: 3
-  reset_voltage_v: 0.0
+  reset_voltage: 0.0
 ```
 
 The server names each output `<device name>-<channel>`, so name the device
@@ -222,7 +220,7 @@ with experiment.external_devices.dc_voltage_control(mux=6) as dc:
 `turn_on()` and `turn_off()` control the output for the selected mux without
 changing its voltage; they are the only operations that change the switch.
 Applying a voltage requires the output to be on already — nothing switches
-it implicitly. Switching always happens at `reset_voltage_v` (default 0 V):
+it implicitly. Switching always happens at `reset_voltage` (default 0 V):
 `turn_on()` writes it to the channel before enabling (stale stored
 setpoints can never reach the line), and `turn_off()` ramps to it before
 disabling. Ramp to idle or an operating point explicitly after turning on.
@@ -233,11 +231,11 @@ on, `bias_dc_voltages()` ramps calibrated muxes to their bias voltages, and
 takes an optional `muxes` selection (indices or labels; all wired muxes when
 omitted), and all writes prompt for confirmation, like a box push.
 
-To keep a bias applied after leaving the context, choose `hold`.
+To bias every wired mux with a calibrated `bias_voltage` outside a temporary
+context, use the bulk operation.
 
 ```python
-with experiment.external_devices.dc_voltage_control(mux=6, on_exit="hold") as dc:
-    dc.apply_voltage(0.27)
+experiment.external_devices.bias_dc_voltages()
 ```
 
 `sweep()` ramps through each supplied target using the same profile. Use

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from typing_extensions import NotRequired, TypedDict
 
@@ -11,7 +11,6 @@ from qubex.core import MutableModel
 from .target_type import TargetType
 
 _ValueT = TypeVar("_ValueT")
-DCVoltageOnExit = Literal["idle", "hold"]
 
 
 class JPAParameters(TypedDict):

@@ -10,7 +10,6 @@ import pytest
 from qubex.external_devices.dc_voltage import (
     DCVoltageController,
     DCVoltageControllerConfig,
-    DCVoltageExitMode,
     DCVoltageProfile,
     ExternalDevicesConfig,
     create_dc_voltage_controller,
@@ -243,7 +242,7 @@ def test_external_devices_config_resolves_device_output_refs() -> None:
 
 
 def test_settings_reset_voltage_resolves_with_overrides() -> None:
-    """`reset_voltage_v` should default from settings and override per mux."""
+    """`reset_voltage` should default from settings and override per mux."""
     config = ExternalDevicesConfig.from_dict(
         {
             "devices": {"ONS1": {"driver": "ons61797"}},
@@ -252,8 +251,8 @@ def test_settings_reset_voltage_resolves_with_overrides() -> None:
                 {"mux": 1, "bias": "ONS1-2"},
             ],
             "settings": {
-                "reset_voltage_v": -0.1,
-                "overrides": [{"mux": 1, "reset_voltage_v": 0.05}],
+                "reset_voltage": -0.1,
+                "overrides": [{"mux": 1, "reset_voltage": 0.05}],
             },
         }
     )
@@ -286,6 +285,8 @@ def test_settings_reject_unknown_keys() -> None:
     }
     with pytest.raises(ValueError, match="Unknown DC voltage settings"):
         ExternalDevicesConfig.from_dict({**base, "settings": {"exit_mode": "idle"}})
+    with pytest.raises(ValueError, match="Unknown DC voltage settings"):
+        ExternalDevicesConfig.from_dict({**base, "settings": {"reset_voltage_v": 0.0}})
     with pytest.raises(ValueError, match="Unknown `overrides` settings"):
         ExternalDevicesConfig.from_dict(
             {**base, "settings": {"overrides": [{"mux": 0, "shutdown": {}}]}}
@@ -400,24 +401,6 @@ def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
     assert delays == [0.1] * 6
     assert len(_FakeDCVoltageDevice.instances) == 2
     assert all(device.closed for device in _FakeDCVoltageDevice.instances)
-
-
-def test_apply_voltages_can_hold_applied_voltage_on_exit() -> None:
-    """Hold exit should leave the amplification voltage enabled."""
-    _reset_fake_devices()
-    _FakeDCVoltageDevice.output_states = {1: True}
-    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
-    profile = DCVoltageProfile(channel=1, ramp_rate_v_per_s=10.0)
-
-    with controller.apply_voltages(
-        {1: (0.25, profile)},
-        exit_modes={1: DCVoltageExitMode.HOLD},
-    ):
-        pass
-
-    device = _FakeDCVoltageDevice.instances[0]
-    assert device.voltages[1] == pytest.approx(0.25)
-    assert device.output_states[1] is True
 
 
 def test_apply_voltage_ramps_with_one_device_connection(

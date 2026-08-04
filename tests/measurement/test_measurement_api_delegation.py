@@ -2620,11 +2620,8 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
         def apply_dc_voltages(  # type: ignore[no-untyped-def]
             self,
             targets: str | list[str],
-            *,
-            on_exit=None,
         ):
             called["targets"] = targets
-            called["on_exit"] = on_exit
             called["entered"] = True
             try:
                 yield
@@ -2633,11 +2630,10 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
 
     measurement.__dict__["_amplification_service"] = _AmplificationService()
 
-    with measurement.apply_dc_voltages(["Q00"], on_exit="hold"):
+    with measurement.apply_dc_voltages(["Q00"]):
         called["inside"] = True
 
     assert called["targets"] == ["Q00"]
-    assert called["on_exit"] == "hold"
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True

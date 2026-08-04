@@ -5,16 +5,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, cast
 
-import pytest
-
-from qubex.external_devices import (
-    DCVoltageExitMode,
-    DCVoltageProfile,
-)
+from qubex.external_devices import DCVoltageProfile
 from qubex.measurement.services.measurement_amplification_service import (
     MeasurementAmplificationService,
 )
-from qubex.system.control_parameters import DCVoltageOnExit
 
 
 def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) -> None:
@@ -46,11 +40,8 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
         def apply_voltages(
             self,
             requests: dict[int, tuple[float, DCVoltageProfile]],
-            *,
-            exit_modes: dict[int, DCVoltageExitMode],
         ):
             called["requests"] = requests
-            called["exit_modes"] = exit_modes
             called["entered"] = True
             try:
                 yield
@@ -87,10 +78,6 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
         2: (0.25, DCVoltageProfile(channel=2)),
         4: (-0.4, DCVoltageProfile(channel=4, ramp_rate_v_per_s=0.05)),
     }
-    assert called["exit_modes"] == {
-        2: DCVoltageExitMode.IDLE,
-        4: DCVoltageExitMode.IDLE,
-    }
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True
@@ -125,11 +112,8 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
         def apply_voltages(
             self,
             requests: dict[int, tuple[float, DCVoltageProfile]],
-            *,
-            exit_modes: dict[int, DCVoltageExitMode],
         ):
             called["requests"] = requests
-            called["exit_modes"] = exit_modes
             yield
 
     system_manager = type(
@@ -156,69 +140,6 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
         pass
 
     assert called["requests"] == {2: (0.25, DCVoltageProfile(channel=2))}
-    assert called["exit_modes"] == {2: DCVoltageExitMode.IDLE}
-
-
-@pytest.mark.parametrize(
-    ("on_exit", "expected_mode"),
-    [
-        ("idle", DCVoltageExitMode.IDLE),
-        ("hold", DCVoltageExitMode.HOLD),
-    ],
-)
-def test_apply_dc_voltages_allows_exit_mode_override(
-    on_exit: DCVoltageOnExit,
-    expected_mode: DCVoltageExitMode,
-) -> None:
-    """An API exit mode should override the mux default."""
-    called: dict[str, Any] = {}
-
-    class _ControlParams:
-        def has_bias_voltage(self, mux: int) -> bool:
-            return True
-
-        def get_bias_voltage(self, mux: int) -> float:
-            return 0.25
-
-    class _ExperimentSystem:
-        control_params = _ControlParams()
-
-        def resolve_qubit_label(self, target: str) -> str:
-            return target
-
-        def get_mux_by_qubit(self, qubit: str):
-            return type("_Mux", (), {"index": 0})()
-
-    class _Controller:
-        @contextmanager
-        def apply_voltages(self, requests, *, exit_modes):
-            called["exit_modes"] = exit_modes
-            yield
-
-    system_manager = type(
-        "_SystemManager",
-        (),
-        {
-            "dc_voltage_controller": _Controller(),
-            "resolve_dc_voltage_profile": staticmethod(
-                lambda mux: DCVoltageProfile(channel=2)
-            ),
-        },
-    )()
-    context = type(
-        "_Context",
-        (),
-        {
-            "experiment_system": _ExperimentSystem(),
-            "system_manager": system_manager,
-        },
-    )()
-    service = MeasurementAmplificationService(context=cast(Any, context))
-
-    with service.apply_dc_voltages("Q00", on_exit=on_exit):
-        pass
-
-    assert called["exit_modes"] == {2: expected_mode}
 
 
 def test_apply_dc_voltages_skips_uncalibrated_muxes() -> None:
@@ -239,7 +160,7 @@ def test_apply_dc_voltages_skips_uncalibrated_muxes() -> None:
 
     class _Controller:
         @contextmanager
-        def apply_voltages(self, requests, *, exit_modes):
+        def apply_voltages(self, requests):
             raise AssertionError("controller must not be used")
             yield
 

@@ -47,7 +47,6 @@ from qubex.system import (
     Target,
 )
 from qubex.system.config_paths import resolve_default_calibration_note_path
-from qubex.system.control_parameters import DCVoltageOnExit
 from qubex.system.target_type import TargetType
 from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
@@ -1418,7 +1417,6 @@ Do you want to continue?
         self,
         *,
         mux: int | str | None = None,
-        on_exit: DCVoltageOnExit = "idle",
     ) -> Iterator[DCVoltageControl]:
         """Yield DC voltage operations bound to one mux."""
         resolved_mux = self._resolve_dc_mux(mux)
@@ -1455,8 +1453,7 @@ Do you want to continue?
         try:
             yield control
         finally:
-            if on_exit == "idle":
-                control.idle()
+            control.idle()
 
     def save_calib_note(
         self,

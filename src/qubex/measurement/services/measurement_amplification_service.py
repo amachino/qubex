@@ -6,10 +6,8 @@ import logging
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 
-from qubex.external_devices import DCVoltageExitMode
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.system import ControlParameters, ExperimentSystem
-from qubex.system.control_parameters import DCVoltageOnExit
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +41,6 @@ class MeasurementAmplificationService:
     def apply_dc_voltages(
         self,
         targets: str | Collection[str],
-        *,
-        on_exit: DCVoltageOnExit | None = None,
     ) -> Iterator[None]:
         """
         Apply amplification-point DC voltages to the specified targets.
@@ -53,9 +49,6 @@ class MeasurementAmplificationService:
         ----------
         targets : str | Collection[str]
             Target label or target labels.
-        on_exit : {"idle", "hold"} or None, optional
-            Exit behavior. `idle` (default) ramps each bias back to its idle
-            voltage; `hold` leaves the applied biases on.
 
         Notes
         -----
@@ -91,10 +84,7 @@ class MeasurementAmplificationService:
             profile.channel: (self.control_params.get_bias_voltage(mux), profile)
             for mux, profile in profiles.items()
         }
-        exit_mode = DCVoltageExitMode(on_exit) if on_exit else DCVoltageExitMode.IDLE
-        exit_modes = {profile.channel: exit_mode for profile in profiles.values()}
         with self.context.system_manager.dc_voltage_controller.apply_voltages(
             requests,
-            exit_modes=exit_modes,
         ):
             yield

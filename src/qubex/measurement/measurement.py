@@ -30,7 +30,6 @@ from qubex.system import (
     SystemManager,
     Target,
 )
-from qubex.system.control_parameters import DCVoltageOnExit
 from qubex.typing import ConfigurationMode, IQArray, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
@@ -647,8 +646,6 @@ class Measurement:
     def apply_dc_voltages(
         self,
         targets: str | Collection[str],
-        *,
-        on_exit: DCVoltageOnExit | None = None,
     ) -> Iterator[None]:
         """
         Apply amplification-point DC voltages to selected targets.
@@ -657,17 +654,11 @@ class Measurement:
         ----------
         targets : str | Collection[str]
             Target label or target labels for DC bias application.
-        on_exit : {"idle", "hold"} or None, optional
-            Exit behavior override. Uses each mux's configured default when omitted.
 
         Yields
         ------
         None
             Context where DC voltages are applied.
-
-        Notes
-        -----
-        Each mux follows its configured exit mode when the context manager exits.
 
         Examples
         --------
@@ -680,10 +671,7 @@ class Measurement:
         ...         }
         ...     )
         """
-        with self.amplification_service.apply_dc_voltages(
-            targets,
-            on_exit=on_exit,
-        ):
+        with self.amplification_service.apply_dc_voltages(targets):
             yield
 
     async def run_measurement(
