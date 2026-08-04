@@ -22,10 +22,6 @@ class DCVoltageDeviceConfig:
         """Create one normalized device config from one YAML mapping."""
         if not isinstance(raw_config, Mapping):
             raise TypeError(f"Device {device_id!r} config must be a mapping.")
-        if "connection" in raw_config:
-            raise ValueError(
-                f"Device {device_id!r} `connection` was renamed to `params`."
-            )
         unknown = set(raw_config) - {"driver", "channels", "params"}
         if unknown:
             raise ValueError(
@@ -162,31 +158,6 @@ class DCVoltageControllerConfig:
             "idle_voltage_v",
             "overrides",
         }
-        if unknown & {"dc_voltage_exit_mode", "exit_mode", "exit"}:
-            raise ValueError(
-                "Exit modes are no longer configured: the config keeps only "
-                "`idle_voltage_v`, and the exit behavior is chosen with the "
-                "API `on_exit` argument (`idle` or `hold`)."
-            )
-        if "shutdown" in unknown:
-            raise ValueError("`shutdown.voltage_v` was renamed to `idle_voltage_v`.")
-        if unknown & {"driver", "connection"}:
-            raise ValueError(
-                "DC voltage `driver` and `connection` moved to the top-level "
-                "`devices` section; wire outputs in the top-level `wiring` "
-                "list."
-            )
-        if "wiring" in unknown:
-            raise ValueError(
-                "DC voltage `wiring` moved to the top level of "
-                "`external_devices.yaml`, next to `devices`."
-            )
-        if unknown & {"voltage_control", "defaults", "muxes"}:
-            raise ValueError(
-                "The `voltage_control` nesting was flattened: put `ramp`, "
-                "`readback`, `exit`, and `overrides` directly in the "
-                "settings entry."
-            )
         if unknown:
             raise ValueError(f"Unknown DC voltage settings: {sorted(unknown)}.")
         role = raw_config.get("role", "bias")
@@ -267,11 +238,6 @@ def _parse_wiring(
     for entry in raw_wiring:
         if not isinstance(entry, Mapping):
             raise TypeError("Each `wiring` entry must be a mapping.")
-        if "channel" in entry:
-            raise ValueError(
-                "DC voltage `channel` was replaced by role outputs with a "
-                "`DEVICE-CHANNEL` reference, e.g. `bias: Qblox1-15`."
-            )
         mux_index = entry.get("mux")
         if type(mux_index) is not int:
             raise TypeError("Each `wiring` entry requires an integer `mux`.")
@@ -322,6 +288,9 @@ def _parse_profile_overrides(
     for entry in raw_overrides:
         if not isinstance(entry, Mapping):
             raise TypeError("Each `overrides` entry must be a mapping.")
+        unknown = set(entry) - {"mux", "ramp", "readback", "idle_voltage_v"}
+        if unknown:
+            raise ValueError(f"Unknown `overrides` settings: {sorted(unknown)}.")
         mux_index = entry.get("mux")
         if type(mux_index) is not int:
             raise TypeError("Each `overrides` entry requires an integer `mux`.")
@@ -350,12 +319,6 @@ class ExternalDevicesConfig:
             return cls()
         if not isinstance(raw_config, Mapping):
             raise TypeError("`external_devices` must be a mapping.")
-        if "dc_voltage_controllers" in raw_config:
-            raise ValueError(
-                "`dc_voltage_controllers` was replaced by a flat `settings` "
-                "section holding `ramp`, `shutdown`, `readback`, and "
-                "`overrides` directly."
-            )
         unknown = set(raw_config) - {"devices", "wiring", "settings"}
         if unknown:
             raise ValueError(f"Unknown external-device settings: {sorted(unknown)}.")
@@ -371,11 +334,6 @@ class ExternalDevicesConfig:
         settings = raw_config.get("settings", {})
         if not isinstance(settings, Mapping):
             raise TypeError("`settings` must be a mapping.")
-        if "jpa_bias" in settings:
-            raise ValueError(
-                "The `jpa_bias` heading was removed: put `ramp`, `shutdown`, "
-                "`readback`, and `overrides` directly under `settings`."
-            )
         if not wiring and not settings:
             return cls(devices=devices)
         dc_voltage = DCVoltageControllerConfig.from_dict(
@@ -397,13 +355,6 @@ def _parse_voltage_profile(
     base: DCVoltageProfile | None,
 ) -> DCVoltageProfile:
     """Parse one complete voltage profile with optional inherited values."""
-    if {"dc_voltage_exit_mode", "exit_mode", "exit"} & set(values):
-        raise ValueError(
-            "Exit modes are no longer configured: keep only `idle_voltage_v` "
-            "and choose the behavior with the API `on_exit` argument."
-        )
-    if "shutdown" in values:
-        raise ValueError("`shutdown.voltage_v` was renamed to `idle_voltage_v`.")
     ramp = _nested_mapping(values, "ramp")
     readback = _nested_mapping(values, "readback")
     profile = DCVoltageProfile(

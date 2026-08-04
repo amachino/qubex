@@ -277,16 +277,4 @@ class ControlParameterDefaults:
         }
         if raw_dc_voltage is not None:
             resolved["dc_voltage"] = float(raw_dc_voltage)
-        if "low_noise_dc_voltage" in value:
-            raise ValueError(
-                "`low_noise_dc_voltage` is no longer used: the exit behavior "
-                "is chosen with the API `on_exit` argument (`idle` or "
-                "`hold`)."
-            )
-        if "dc_voltage_exit_mode" in value:
-            raise ValueError(
-                "`dc_voltage_exit_mode` was removed: choose the exit "
-                "behavior with the API `on_exit` argument (`idle` or "
-                "`hold`)."
-            )
         return resolved

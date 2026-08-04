@@ -93,9 +93,9 @@ def test_connection_config_requires_channels_for_derived_names() -> None:
         )
 
 
-def test_connection_config_rejects_removed_device_prefix() -> None:
-    """`device_prefix` should point to the device name."""
-    with pytest.raises(ValueError, match="`device_prefix` was removed"):
+def test_connection_config_rejects_unknown_settings() -> None:
+    """Unknown driver params should fail at parse time."""
+    with pytest.raises(ValueError, match="Unknown Qblox server settings"):
         QbloxServerConnectionConfig.from_dict(
             "Qblox1",
             {"host": "server", "port": 1, "device_prefix": "Qblox1"},

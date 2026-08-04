@@ -254,23 +254,17 @@ def test_settings_idle_voltage_resolves_with_overrides() -> None:
     assert controller.resolve_voltage_profile(1).idle_voltage_v == -0.2
 
 
-def test_settings_reject_legacy_exit_and_shutdown_keys() -> None:
-    """Removed exit-mode and shutdown keys should fail with guidance."""
+def test_settings_reject_unknown_keys() -> None:
+    """Unknown settings and override keys should fail at parse time."""
     base = {
         "devices": {"ONS1": {"driver": "ons61797"}},
         "wiring": [{"mux": 0, "bias": "ONS1-1"}],
     }
-    for legacy_settings in (
-        {"exit": {"mode": "idle"}},
-        {"exit_mode": "idle"},
-        {"dc_voltage_exit_mode": "off"},
-        {"overrides": [{"mux": 0, "exit_mode": "idle"}]},
-    ):
-        with pytest.raises(ValueError, match="on_exit"):
-            ExternalDevicesConfig.from_dict({**base, "settings": legacy_settings})
-    with pytest.raises(ValueError, match="renamed to `idle_voltage_v`"):
+    with pytest.raises(ValueError, match="Unknown DC voltage settings"):
+        ExternalDevicesConfig.from_dict({**base, "settings": {"exit_mode": "idle"}})
+    with pytest.raises(ValueError, match="Unknown `overrides` settings"):
         ExternalDevicesConfig.from_dict(
-            {**base, "settings": {"shutdown": {"voltage_v": 0.0}}}
+            {**base, "settings": {"overrides": [{"mux": 0, "shutdown": {}}]}}
         )
 
 
@@ -329,26 +323,19 @@ def test_mux_output_rejects_malformed_refs(output: object) -> None:
         )
 
 
-def test_legacy_controller_schema_is_rejected_with_guidance() -> None:
-    """Old `driver`/`connection` and `channel` keys should point to the new schema."""
-    with pytest.raises(ValueError, match="moved to the top-level `devices`"):
+def test_top_level_and_wiring_reject_unknown_keys() -> None:
+    """Unknown top-level sections and malformed wiring values should fail."""
+    with pytest.raises(ValueError, match="Unknown external-device settings"):
+        ExternalDevicesConfig.from_dict({"dc_voltage_controllers": {}})
+    with pytest.raises(ValueError, match="Unknown DC voltage settings"):
         ExternalDevicesConfig.from_dict(
             {
-                "settings": {
-                    "driver": "ons61797",
-                    "connection": {"port": "/dev/ttyACM0"},
-                },
+                "devices": {"ONS1": {"driver": "ons61797"}},
+                "wiring": [{"mux": 0, "bias": "ONS1-1"}],
+                "settings": {"driver": "ons61797"},
             }
         )
-    with pytest.raises(ValueError, match="`jpa_bias` heading was removed"):
-        ExternalDevicesConfig.from_dict(
-            {
-                "settings": {
-                    "jpa_bias": {"ramp": {"rate_v_per_s": 0.1}},
-                },
-            }
-        )
-    with pytest.raises(ValueError, match="replaced by role outputs"):
+    with pytest.raises(TypeError, match="DEVICE-CHANNEL"):
         ExternalDevicesConfig.from_dict(
             {
                 "devices": {"ONS1": {"driver": "ons61797"}},

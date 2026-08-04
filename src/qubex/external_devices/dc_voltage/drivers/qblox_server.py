@@ -39,12 +39,6 @@ class QbloxServerConnectionConfig:
         device_channels: Sequence[int] | None = None,
     ) -> QbloxServerConnectionConfig:
         """Parse Qblox backend endpoint and channel names."""
-        if "device_prefix" in params:
-            raise ValueError(
-                "`device_prefix` was removed: the device name in `devices` "
-                "is used as the backend name prefix (e.g. device `Qblox1` "
-                "-> `Qblox1-15`)."
-            )
         known = {"host", "port", "timeout_s", "device_names"}
         unknown = set(params) - known
         if unknown:
