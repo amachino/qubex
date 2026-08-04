@@ -7,7 +7,7 @@ import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -187,13 +187,29 @@ class SystemManager:
         """Return configured DC voltage controller for the active system."""
         return self._dc_voltage_controller
 
+    def dc_voltage_mux_indices(self) -> list[int]:
+        """Return all mux indices with configured DC voltage wiring."""
+        return sorted(self._dc_voltage_controller_config.muxes)
+
     def resolve_dc_voltage_channel(self, mux_index: int) -> int:
         """Resolve a one-based DC channel for one mux index."""
         return self.resolve_dc_voltage_profile(mux_index).channel
 
     def resolve_dc_voltage_profile(self, mux_index: int) -> DCVoltageProfile:
-        """Resolve voltage-control settings for one mux index."""
-        return self._dc_voltage_controller_config.resolve_voltage_profile(mux_index)
+        """
+        Resolve voltage-control settings for one mux index.
+
+        The idle voltage is the calibrated `idle_voltage` from
+        `jpa_params.yaml` when present, and the reset voltage otherwise.
+        """
+        profile = self._dc_voltage_controller_config.resolve_voltage_profile(mux_index)
+        control_params = getattr(self._experiment_system, "control_params", None)
+        if control_params is None:
+            return profile
+        idle_voltage = control_params.get_idle_voltage(mux_index)
+        if idle_voltage is None:
+            return profile
+        return replace(profile, idle_voltage_v=idle_voltage)
 
     def set_backend_kind(self, backend_kind: BackendKind) -> None:
         """

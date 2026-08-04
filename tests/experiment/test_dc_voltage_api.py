@@ -18,8 +18,20 @@ class _Mux:
 
 
 class _ControlParams:
-    def get_dc_voltage(self, mux: int) -> float:
-        return {6: 0.76, 7: 0.42}[mux]
+    def __init__(self, bias_voltages: dict[int, float] | None = None) -> None:
+        self.bias_voltages = (
+            bias_voltages if bias_voltages is not None else {6: 0.76, 7: 0.42}
+        )
+
+    def has_bias_voltage(self, mux: int) -> bool:
+        return mux in self.bias_voltages
+
+    def get_bias_voltage(self, mux: int) -> float:
+        if mux not in self.bias_voltages:
+            raise ValueError(
+                f"Mux {mux} has no calibrated `bias_voltage` in `jpa_params.yaml`."
+            )
+        return self.bias_voltages[mux]
 
 
 class _ExperimentSystem:
@@ -94,6 +106,47 @@ class _DCVoltageController:
             raise RuntimeError("restore failed")
         self.voltages[channel] = profile.idle_voltage_v
 
+    def apply_channels(
+        self, requests: dict[int, tuple[float, DCVoltageProfile]]
+    ) -> None:
+        self.calls.append(("apply_channels", tuple(requests)))
+        for channel, (voltage, _) in requests.items():
+            self.voltages[channel] = voltage
+            self.output_states[channel] = True
+
+    def turn_on_channels(self, profiles: dict[int, DCVoltageProfile]) -> None:
+        self.calls.append(("turn_on_channels", tuple(profiles)))
+        for channel, profile in profiles.items():
+            self.voltages[channel] = profile.reset_voltage_v
+            self.output_states[channel] = True
+
+    def reset_channels(self, profiles: dict[int, DCVoltageProfile]) -> None:
+        self.calls.append(("reset_channels", tuple(profiles)))
+        for channel, profile in profiles.items():
+            self.voltages[channel] = profile.reset_voltage_v
+            self.output_states[channel] = True
+
+    def turn_off_channels(self, profiles: dict[int, DCVoltageProfile]) -> None:
+        self.calls.append(("turn_off_channels", tuple(profiles)))
+        for channel in profiles:
+            self.voltages[channel] = 0.0
+            self.output_states[channel] = False
+
+    def read_channels(self, channels: list[int]) -> dict[int, tuple[float, bool]]:
+        self.calls.append(("read_channels", tuple(channels)))
+        return {
+            channel: (
+                self.voltages.get(channel, 0.0),
+                self.output_states.get(channel, False),
+            )
+            for channel in channels
+        }
+
+    def idle_channels(self, profiles: dict[int, DCVoltageProfile]) -> None:
+        self.calls.append(("idle_channels", tuple(profiles)))
+        for channel, profile in profiles.items():
+            self.voltages[channel] = profile.idle_voltage_v
+
 
 class _SystemManager:
     def __init__(
@@ -105,6 +158,9 @@ class _SystemManager:
         self.experiment_system = _ExperimentSystem()
         self.mux_to_channel = mux_to_channel or {}
 
+    def dc_voltage_mux_indices(self) -> list[int]:
+        return sorted(self.mux_to_channel) if self.mux_to_channel else [6, 7]
+
     def resolve_dc_voltage_channel(self, mux_index: int) -> int:
         return self.mux_to_channel.get(mux_index, mux_index + 1)
 
@@ -112,7 +168,8 @@ class _SystemManager:
         return DCVoltageProfile(
             channel=self.resolve_dc_voltage_channel(mux_index),
             ramp_rate_v_per_s=1.0,
-            update_interval_s=0.1,
+            ramp_step_size_v=0.1,
+            ramp_wait_s=0.1,
             idle_voltage_v=0.0,
             readback_tolerance_v=0.002,
         )
@@ -204,7 +261,7 @@ def test_get_dc_voltage_state_reads_without_changing_output() -> None:
 
     assert state.voltage == pytest.approx(0.54)
     assert state.output == "on"
-    assert dc_controller.calls == [("is_output_on", 1), ("get_voltage", 1)]
+    assert dc_controller.calls == [("read_channels", (1,))]
 
 
 def test_dc_voltage_control_requires_mux_when_multiple_are_active() -> None:
@@ -255,7 +312,7 @@ def test_dc_voltage_control_applies_voltage_with_configured_ramp() -> None:
     applied_profile = apply_call[3]
     assert isinstance(applied_profile, DCVoltageProfile)
     assert applied_profile.ramp_rate_v_per_s == pytest.approx(1.0)
-    assert applied_profile.update_interval_s == pytest.approx(0.1)
+    assert applied_profile.ramp_step_size_v == pytest.approx(0.1)
 
 
 def test_dc_voltage_control_ramps_to_idle_voltage_on_exit() -> None:
@@ -354,8 +411,8 @@ def test_dc_voltage_control_turns_bound_output_off_and_on() -> None:
     with ctx.dc_voltage_control(mux=7) as dc:
         dc.apply_voltage(0.4)
 
-        off_state = dc.turn_off()
-        on_state = dc.turn_on()
+        off_state = dc.turn_off(confirm=False)
+        on_state = dc.turn_on(confirm=False)
 
         assert off_state.output == "off"
         assert on_state.output == "on"
@@ -379,3 +436,151 @@ def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
     applied_profile = call[3]
     assert isinstance(applied_profile, DCVoltageProfile)
     assert applied_profile.readback_tolerance_v == pytest.approx(0.0015)
+
+
+def test_get_dc_voltage_states_reads_all_wired_muxes_on_one_call() -> None:
+    """Bulk state readback should cover every wired mux with one bulk read."""
+    dc_controller = _DCVoltageController()
+    dc_controller.voltages.update({7: 0.12, 8: -0.34})
+    dc_controller.output_states.update({7: True, 8: False})
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    states = ctx.get_dc_voltage_states()
+
+    assert sorted(states) == [6, 7]
+    assert states[6].mux_label == "MUX06"
+    assert states[6].channel == 7
+    assert states[6].voltage == pytest.approx(0.12)
+    assert states[6].output == "on"
+    assert states[7].channel == 8
+    assert states[7].voltage == pytest.approx(-0.34)
+    assert states[7].output == "off"
+    assert dc_controller.calls == [("read_channels", (7, 8))]
+
+
+def test_idle_dc_voltages_idles_all_wired_muxes() -> None:
+    """Bulk idling should ramp every wired mux and return the new states."""
+    dc_controller = _DCVoltageController()
+    dc_controller.voltages.update({7: 0.5, 8: 0.5})
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    states = ctx.idle_dc_voltages(confirm=False)
+
+    assert dc_controller.calls[0] == ("idle_channels", (7, 8))
+    assert states[6].voltage == pytest.approx(0.0)
+    assert states[7].voltage == pytest.approx(0.0)
+
+
+def test_bias_dc_voltages_applies_calibrated_amplification_points() -> None:
+    """Bulk biasing should ramp each calibrated mux to its jpa_params voltage."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    states = ctx.bias_dc_voltages(confirm=False)
+
+    assert dc_controller.calls[0] == ("apply_channels", (7, 8))
+    assert states[6].voltage == pytest.approx(0.76)
+    assert states[7].voltage == pytest.approx(0.42)
+
+
+def test_bias_dc_voltages_skips_uncalibrated_muxes() -> None:
+    """Muxes without a calibrated dc_voltage should not be biased."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(
+        mux_labels=["MUX06"],
+        dc_controller=dc_controller,
+        mux_to_channel={6: 1, 7: 4},
+    )
+    # mux 7 has no calibrated bias_voltage
+    ctx.system_manager.experiment_system.control_params = _ControlParams({6: 0.76})
+
+    states = ctx.bias_dc_voltages(confirm=False)
+
+    assert dc_controller.calls[0] == ("apply_channels", (1,))
+    assert states[6].voltage == pytest.approx(0.76)
+    assert states[7].voltage == pytest.approx(0.0)
+
+
+def test_bias_dc_voltages_can_be_cancelled_at_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Declining the confirmation prompt should not write to the hardware."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+    monkeypatch.setattr(
+        "qubex.experiment.experiment_context.Confirm.ask",
+        lambda *_args, **_kwargs: False,
+    )
+
+    states = ctx.bias_dc_voltages()
+
+    assert all(call[0] != "apply_channels" for call in dc_controller.calls)
+    assert states[6].voltage == pytest.approx(0.0)
+
+
+def test_reset_dc_voltages_brings_every_wired_mux_to_initial_state() -> None:
+    """Resetting should target every wired mux, on or off."""
+    dc_controller = _DCVoltageController()
+    dc_controller.voltages.update({7: 0.5, 8: 15.0})
+    dc_controller.output_states.update({7: True, 8: False})
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    states = ctx.reset_dc_voltages(confirm=False)
+
+    init_calls = [call for call in dc_controller.calls if call[0] == "reset_channels"]
+    assert init_calls == [("reset_channels", (7, 8))]
+    assert states[6].voltage == pytest.approx(0.0)
+    assert states[6].output == "on"
+    assert states[7].voltage == pytest.approx(0.0)
+    assert states[7].output == "on"
+
+
+def test_turn_off_can_be_cancelled_at_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Declining the switch confirmation should leave the output untouched."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+    monkeypatch.setattr(
+        "qubex.experiment.experiment_context.Confirm.ask",
+        lambda *_args, **_kwargs: False,
+    )
+
+    with ctx.dc_voltage_control(on_exit="hold") as dc:
+        dc.apply_voltage(0.2)
+        dc.turn_off()  # Prompt declined: nothing should change.
+
+    assert dc_controller.output_states[7] is True
+    assert all(call[0] != "turn_off_channels" for call in dc_controller.calls)
+
+
+def test_bulk_operations_accept_a_mux_selection() -> None:
+    """`muxes=` should narrow bias/idle/reset to the selected muxes."""
+    dc_controller = _DCVoltageController()
+    dc_controller.voltages.update({7: 0.5, 8: 0.5})
+    dc_controller.output_states.update({7: True, 8: True})
+    ctx = _ContextForTest(
+        mux_labels=["MUX06", "MUX07"],
+        dc_controller=dc_controller,
+    )
+
+    ctx.bias_dc_voltages(muxes=6, confirm=False)
+    ctx.idle_dc_voltages(muxes=["MUX07"], confirm=False)
+    ctx.reset_dc_voltages(muxes=[6], confirm=False)
+
+    assert ("apply_channels", (7,)) in dc_controller.calls
+    assert ("idle_channels", (8,)) in dc_controller.calls
+    assert ("reset_channels", (7,)) in dc_controller.calls
+
+
+def test_bias_raises_for_an_explicitly_selected_uncalibrated_mux() -> None:
+    """Explicit selection of an uncalibrated mux should fail, not skip."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(
+        mux_labels=["MUX06", "MUX07"],
+        dc_controller=dc_controller,
+    )
+    ctx.system_manager.experiment_system.control_params = _ControlParams({6: 0.76})
+
+    with pytest.raises(ValueError, match="no calibrated `bias_voltage`"):
+        ctx.bias_dc_voltages(muxes=[6, 7], confirm=False)

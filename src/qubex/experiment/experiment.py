@@ -55,7 +55,6 @@ from qubex.system import (
     SystemManager,
     Target,
 )
-from qubex.system.control_parameters import DCVoltageOnExit
 from qubex.system.target_type import TargetType
 from qubex.typing import (
     ConfigurationMode,
@@ -68,10 +67,9 @@ from qubex.typing import (
     TimeLike,
 )
 
-from .dc_voltage_control import DCVoltageControl
 from .experiment_context import ExperimentContext
+from .external_device_api import ExternalDeviceAPI
 from .models.calibration_note import CalibrationNote
-from .models.dc_voltage_state import DCVoltageState
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
 from .models.experiment_result import (
@@ -887,42 +885,10 @@ class Experiment:
         with self.ctx.modified_frequencies(frequencies):
             yield
 
-    @contextmanager
-    def dc_voltage_control(
-        self,
-        *,
-        mux: int | str | None = None,
-        on_exit: DCVoltageOnExit = "idle",
-    ) -> Iterator[DCVoltageControl]:
-        """
-        Yield DC voltage operations bound to one mux.
-
-        Parameters
-        ----------
-        mux : int or str, optional
-            Mux index or label. Required when multiple muxes are active.
-        on_exit : {"idle", "hold"}
-            Exit behavior. `idle` (default) ramps back to the idle voltage;
-            `hold` leaves the bias applied.
-
-        Yields
-        ------
-        DCVoltageControl
-            Operations bound to the resolved mux.
-        """
-        with self.ctx.dc_voltage_control(
-            mux=mux,
-            on_exit=on_exit,
-        ) as control:
-            yield control
-
-    def get_dc_voltage_state(
-        self,
-        *,
-        mux: int | str | None = None,
-    ) -> DCVoltageState:
-        """Return DC voltage and output-state readback for one mux."""
-        return self.ctx.get_dc_voltage_state(mux=mux)
+    @property
+    def external_devices(self) -> ExternalDeviceAPI:
+        """Return operations for external devices (DC voltage sources)."""
+        return ExternalDeviceAPI(context=self.ctx)
 
     def save_calib_note(
         self,

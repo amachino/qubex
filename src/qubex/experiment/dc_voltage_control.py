@@ -20,8 +20,8 @@ class DCVoltageControl:
         apply_voltage_immediately: Callable[[float, DCVoltageProfile], None],
         idle: Callable[[DCVoltageProfile], None],
         get_state: Callable[[], DCVoltageState],
-        turn_on: Callable[[], None],
-        turn_off: Callable[[], None],
+        turn_on: Callable[[bool], None],
+        turn_off: Callable[[bool], None],
         profile: DCVoltageProfile,
     ) -> None:
         """Initialize bound DC voltage operations."""
@@ -79,14 +79,14 @@ class DCVoltageControl:
         )
         return self.state
 
-    def turn_on(self) -> DCVoltageState:
-        """Turn on the bound output and return its readback state."""
-        self._turn_on()
+    def turn_on(self, confirm: bool = True) -> DCVoltageState:
+        """Turn on the bound output at 0 V and return its readback state."""
+        self._turn_on(confirm)
         return self.state
 
-    def turn_off(self) -> DCVoltageState:
-        """Turn off the bound output and return its readback state."""
-        self._turn_off()
+    def turn_off(self, confirm: bool = True) -> DCVoltageState:
+        """Ramp to 0 V, turn off the bound output, and return its state."""
+        self._turn_off(confirm)
         return self.state
 
     def sweep(

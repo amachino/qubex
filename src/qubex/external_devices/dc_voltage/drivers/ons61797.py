@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -9,6 +10,9 @@ from typing import Any
 
 from qubex.external_devices.dc_voltage.protocol import DCVoltageDeviceFactory
 from qubex.third_party.ons61797 import ONS61797
+
+_MIN_VOLTAGE_V = -4.0
+_MAX_VOLTAGE_V = 4.0
 
 
 @dataclass(frozen=True)
@@ -75,7 +79,14 @@ class ONS61797Device:
         self._client.close()
 
     def on(self, channel: int) -> None:
-        """Turn on one output channel."""
+        """Turn on one output channel after checking its stored setpoint."""
+        stored = self._client.get_voltage(channel=channel)
+        if not math.isfinite(stored) or not _MIN_VOLTAGE_V <= stored <= _MAX_VOLTAGE_V:
+            raise ValueError(
+                f"ONS61797 channel {channel} stored setpoint is {stored} V, "
+                f"outside {_MIN_VOLTAGE_V} V to {_MAX_VOLTAGE_V} V. Set a "
+                "valid voltage before turning the output on."
+            )
         self._client.on(channel=channel)
 
     def off(self, channel: int) -> None:
@@ -83,7 +94,15 @@ class ONS61797Device:
         self._client.off(channel=channel)
 
     def set_voltage(self, channel: int, voltage: float) -> None:
-        """Set voltage for one output channel."""
+        """Set voltage for one output channel within the allowed range."""
+        if (
+            not math.isfinite(voltage)
+            or not _MIN_VOLTAGE_V <= voltage <= _MAX_VOLTAGE_V
+        ):
+            raise ValueError(
+                f"ONS61797 voltage must be between {_MIN_VOLTAGE_V} V and "
+                f"{_MAX_VOLTAGE_V} V, got {voltage} V."
+            )
         self._client.set_voltage(channel=channel, voltage=voltage)
 
     def get_voltage(self, channel: int) -> float:

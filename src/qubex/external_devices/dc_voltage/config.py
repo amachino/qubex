@@ -83,7 +83,9 @@ class DCVoltageProfile:
 
     channel: int
     ramp_rate_v_per_s: float = 0.1
-    update_interval_s: float = 0.1
+    ramp_step_size_v: float = 0.01
+    ramp_wait_s: float = 0.1
+    reset_voltage_v: float = 0.0
     idle_voltage_v: float = 0.0
     readback_tolerance_v: float = 1e-3
     max_set_attempts: int = 3
@@ -95,8 +97,9 @@ class DCVoltageProfileOverride:
 
     channel: int
     ramp_rate_v_per_s: float | None = None
-    update_interval_s: float | None = None
-    idle_voltage_v: float | None = None
+    ramp_step_size_v: float | None = None
+    ramp_wait_s: float | None = None
+    reset_voltage_v: float | None = None
     readback_tolerance_v: float | None = None
     max_set_attempts: int | None = None
 
@@ -127,18 +130,20 @@ class DCVoltageControllerConfig:
             name: value
             for name in (
                 "ramp_rate_v_per_s",
-                "update_interval_s",
-                "idle_voltage_v",
+                "ramp_step_size_v",
+                "ramp_wait_s",
+                "reset_voltage_v",
                 "readback_tolerance_v",
                 "max_set_attempts",
             )
             if (value := getattr(override, name)) is not None
         }
-        return replace(
+        resolved = replace(
             self.voltage_defaults,
             channel=override.channel,
             **values,
         )
+        return replace(resolved, idle_voltage_v=resolved.reset_voltage_v)
 
     @classmethod
     def from_dict(
@@ -155,7 +160,7 @@ class DCVoltageControllerConfig:
             "role",
             "ramp",
             "readback",
-            "idle_voltage_v",
+            "reset_voltage_v",
             "overrides",
         }
         if unknown:
@@ -194,13 +199,17 @@ class DCVoltageControllerConfig:
                     resolved.ramp_rate_v_per_s,
                     default_profile.ramp_rate_v_per_s,
                 ),
-                update_interval_s=_override_value(
-                    resolved.update_interval_s,
-                    default_profile.update_interval_s,
+                ramp_step_size_v=_override_value(
+                    resolved.ramp_step_size_v,
+                    default_profile.ramp_step_size_v,
                 ),
-                idle_voltage_v=_override_value(
-                    resolved.idle_voltage_v,
-                    default_profile.idle_voltage_v,
+                ramp_wait_s=_override_value(
+                    resolved.ramp_wait_s,
+                    default_profile.ramp_wait_s,
+                ),
+                reset_voltage_v=_override_value(
+                    resolved.reset_voltage_v,
+                    default_profile.reset_voltage_v,
                 ),
                 readback_tolerance_v=_override_value(
                     resolved.readback_tolerance_v,
@@ -288,7 +297,12 @@ def _parse_profile_overrides(
     for entry in raw_overrides:
         if not isinstance(entry, Mapping):
             raise TypeError("Each `overrides` entry must be a mapping.")
-        unknown = set(entry) - {"mux", "ramp", "readback", "idle_voltage_v"}
+        unknown = set(entry) - {
+            "mux",
+            "ramp",
+            "readback",
+            "reset_voltage_v",
+        }
         if unknown:
             raise ValueError(f"Unknown `overrides` settings: {sorted(unknown)}.")
         mux_index = entry.get("mux")
@@ -364,15 +378,20 @@ def _parse_voltage_profile(
             "rate_v_per_s",
             default=base.ramp_rate_v_per_s if base else 0.1,
         ),
-        update_interval_s=_float_value(
+        ramp_step_size_v=_float_value(
             ramp,
-            "step_interval_s",
-            default=base.update_interval_s if base else 0.1,
+            "step_size_v",
+            default=base.ramp_step_size_v if base else 0.01,
         ),
-        idle_voltage_v=_float_value(
+        ramp_wait_s=_float_value(
+            ramp,
+            "wait_s",
+            default=base.ramp_wait_s if base else 0.1,
+        ),
+        reset_voltage_v=_float_value(
             values,
-            "idle_voltage_v",
-            default=base.idle_voltage_v if base else 0.0,
+            "reset_voltage_v",
+            default=base.reset_voltage_v if base else 0.0,
         ),
         readback_tolerance_v=_float_value(
             readback,
@@ -385,6 +404,7 @@ def _parse_voltage_profile(
             default=base.max_set_attempts if base else 3,
         ),
     )
+    profile = replace(profile, idle_voltage_v=profile.reset_voltage_v)
     _validate_voltage_profile(profile)
     return profile
 
@@ -443,8 +463,10 @@ def _validate_voltage_profile(profile: DCVoltageProfile) -> None:
     """Validate one resolved DC voltage profile."""
     if profile.ramp_rate_v_per_s <= 0:
         raise ValueError("`rate_v_per_s` must be positive.")
-    if profile.update_interval_s <= 0:
-        raise ValueError("`step_interval_s` must be positive.")
+    if profile.ramp_step_size_v <= 0:
+        raise ValueError("`step_size_v` must be positive.")
+    if profile.ramp_wait_s <= 0:
+        raise ValueError("`wait_s` must be positive.")
     if profile.readback_tolerance_v < 0:
         raise ValueError("`tolerance_v` must be non-negative.")
     if profile.max_set_attempts < 1:

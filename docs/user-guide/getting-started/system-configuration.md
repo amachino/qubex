@@ -128,11 +128,12 @@ wiring:
 settings:
   ramp:
     rate_v_per_s: 0.1
-    step_interval_s: 0.1
+    step_size_v: 0.01
+    wait_s: 0.1
   readback:
     tolerance_v: 0.001
     max_attempts: 3
-  idle_voltage_v: 0.0
+  reset_voltage_v: 0.0
   overrides:
     - mux: 7
       ramp:
@@ -142,21 +143,21 @@ settings:
 - `devices` — `driver` selects the adapter and `channels` lists the device
   outputs. Everything under `params` is driver-specific and validated by
   the selected driver (ONS61797: `port` for serial or `ip_address` for
-  network, not both).
+  network, not both). Both drivers reject writes outside -4 V to 4 V.
 - `wiring` — each entry names a role (`bias`) and references an output as
   `DEVICE-CHANNEL` (`ONS1-2` = channel 2 of device `ONS1`, one-based).
   Only wired outputs can be driven: an unwired mux or an unlisted channel
   raises an error instead of guessing.
 - `settings` — the body sets the defaults for every wired mux and
-  `overrides` adjusts them per mux. `idle_voltage_v` is the value the line
-  rests at when not in use. All outputs of one `settings` (role `bias` by
-  default, changeable with `role`) must be on the same device.
+  `overrides` adjusts them per mux. All outputs of one `settings` (role
+  `bias` by default, changeable with `role`) must be on the same device.
 
-The exit behavior is not configuration:
-`measurement.apply_dc_voltages(..., on_exit=...)` takes `"idle"` (default —
-ramp back to the idle voltage) or `"hold"` (leave the bias applied). The
-output switch is never touched automatically; only the explicit `turn_on()`
-and `turn_off()` calls change it.
+The idle voltage — where a line rests between measurements — is a
+calibrated per-mux value: `idle_voltage` in `jpa_params.yaml`, falling back
+to `reset_voltage_v` for uncalibrated muxes. The exit behavior is not
+configuration either: `measurement.apply_dc_voltages(..., on_exit=...)`
+takes `"idle"` (default — ramp back to the idle voltage) or `"hold"` (leave
+the bias applied).
 
 To control a Qblox SPI Rack through a server process that owns its USB
 connection, use the `qblox_server` driver. Qubex connects to that server as a
@@ -181,11 +182,12 @@ wiring:
 settings:
   ramp:
     rate_v_per_s: 0.1
-    step_interval_s: 0.1
+    step_size_v: 0.01
+    wait_s: 0.1
   readback:
     tolerance_v: 0.001
     max_attempts: 3
-  idle_voltage_v: 0.0
+  reset_voltage_v: 0.0
 ```
 
 The server names each output `<device name>-<channel>`, so name the device
@@ -196,32 +198,45 @@ channels may wait until a sweep finishes. Do not expose the unauthenticated
 socket outside a trusted network.
 
 The D5a module has no per-channel output switch and its standard bipolar
-span is -4 V to 4 V: `idle` only ramps to `idle_voltage_v`, `turn_on()` and
+span is -4 V to 4 V: `idle` only ramps to the idle voltage, `turn_on()` and
 `turn_off()` are unsupported, and the reported voltage is the module's
 stored setting, not an independent measurement.
 
-`ramp.rate_v_per_s` × `ramp.step_interval_s` is the maximum voltage change
-per setpoint. A setpoint succeeds when its readback error is within
+The `ramp` values use the backend sweep's own vocabulary and are passed to
+it verbatim: `rate_v_per_s` sets the overall speed (duration ≈ |dV| / rate),
+`step_size_v` the setpoint spacing, and `wait_s` the minimum dwell per
+setpoint. A setpoint succeeds when its readback error is within
 `readback.tolerance_v`, retried up to `readback.max_attempts` times.
 
-`apply_voltage()` enables the output and ramps from the current voltage to
-the target (starting from the idle voltage when the output was off). DC
+`apply_voltage()` ramps an enabled output from its current voltage to the
+target; an off output raises instead of being switched on implicitly. DC
 voltage operations are scoped to a context; exiting it ramps back to the
 idle voltage.
 
 ```python
-with experiment.dc_voltage_control(mux=6) as dc:
+with experiment.external_devices.dc_voltage_control(mux=6) as dc:
     dc.apply_voltage(0.27)
     state = dc.state
 ```
 
 `turn_on()` and `turn_off()` control the output for the selected mux without
 changing its voltage; they are the only operations that change the switch.
+Applying a voltage requires the output to be on already — nothing switches
+it implicitly. Switching always happens at `reset_voltage_v` (default 0 V):
+`turn_on()` writes it to the channel before enabling (stale stored
+setpoints can never reach the line), and `turn_off()` ramps to it before
+disabling. Ramp to idle or an operating point explicitly after turning on.
+`get_dc_voltage_states()` reads every wired mux on one connection;
+`reset_dc_voltages()` brings muxes to their reset voltages with the outputs
+on, `bias_dc_voltages()` ramps calibrated muxes to their bias voltages, and
+`idle_dc_voltages()` ramps them back to idle. Like box operations, each
+takes an optional `muxes` selection (indices or labels; all wired muxes when
+omitted), and all writes prompt for confirmation, like a box push.
 
 To keep a bias applied after leaving the context, choose `hold`.
 
 ```python
-with experiment.dc_voltage_control(mux=6, on_exit="hold") as dc:
+with experiment.external_devices.dc_voltage_control(mux=6, on_exit="hold") as dc:
     dc.apply_voltage(0.27)
 ```
 

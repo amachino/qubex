@@ -90,12 +90,16 @@ class _FakeDCVoltageDevice:
 class _FakeONS61797Client:
     def __init__(self, **_: Any) -> None:
         self.output_states: dict[int, int] = {}
+        self.voltages: dict[int, float] = {}
 
     def on(self, channel: int) -> None:
         self.output_states[channel] = 1
 
     def get_output_state(self, channel: int) -> int:
         return self.output_states.get(channel, 0)
+
+    def get_voltage(self, *, channel: int) -> float:
+        return self.voltages.get(channel, 0.0)
 
 
 def _reset_fake_devices() -> None:
@@ -238,8 +242,8 @@ def test_external_devices_config_resolves_device_output_refs() -> None:
     assert controller.resolve_voltage_profile(9).ramp_rate_v_per_s == 0.05
 
 
-def test_settings_idle_voltage_resolves_with_overrides() -> None:
-    """`idle_voltage_v` should default from settings and override per mux."""
+def test_settings_reset_voltage_resolves_with_overrides() -> None:
+    """`reset_voltage_v` should default from settings and override per mux."""
     config = ExternalDevicesConfig.from_dict(
         {
             "devices": {"ONS1": {"driver": "ons61797"}},
@@ -248,15 +252,30 @@ def test_settings_idle_voltage_resolves_with_overrides() -> None:
                 {"mux": 1, "bias": "ONS1-2"},
             ],
             "settings": {
-                "idle_voltage_v": 0.1,
-                "overrides": [{"mux": 1, "idle_voltage_v": -0.2}],
+                "reset_voltage_v": -0.1,
+                "overrides": [{"mux": 1, "reset_voltage_v": 0.05}],
             },
         }
     )
 
     controller = config.dc_voltage
-    assert controller.resolve_voltage_profile(0).idle_voltage_v == 0.1
-    assert controller.resolve_voltage_profile(1).idle_voltage_v == -0.2
+    assert controller.resolve_voltage_profile(0).reset_voltage_v == -0.1
+    assert controller.resolve_voltage_profile(1).reset_voltage_v == 0.05
+    # Without calibration, the idle voltage falls back to the reset voltage.
+    assert controller.resolve_voltage_profile(0).idle_voltage_v == -0.1
+    assert controller.resolve_voltage_profile(1).idle_voltage_v == 0.05
+
+
+def test_settings_no_longer_accept_idle_voltage() -> None:
+    """The idle voltage is calibration (`jpa_params.yaml`), not settings."""
+    with pytest.raises(ValueError, match="Unknown DC voltage settings"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {"ONS1": {"driver": "ons61797"}},
+                "wiring": [{"mux": 0, "bias": "ONS1-1"}],
+                "settings": {"idle_voltage_v": 0.1},
+            }
+        )
 
 
 def test_settings_reject_unknown_keys() -> None:
@@ -359,11 +378,14 @@ def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
         "qubex.external_devices.dc_voltage.controller.time.sleep",
         delays.append,
     )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.0}
     controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
     profile = DCVoltageProfile(
         channel=1,
         ramp_rate_v_per_s=1.0,
-        update_interval_s=0.1,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
         idle_voltage_v=0.0,
     )
 
@@ -373,7 +395,7 @@ def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
     applied = [
         call[2] for call in _FakeDCVoltageDevice.calls if call[0] == "set_voltage"
     ]
-    assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25, 0.15, 0.05, 0.0])
+    assert applied == pytest.approx([0.1, 0.2, 0.25, 0.15, 0.05, 0.0])
     assert all(call[0] != "off" for call in _FakeDCVoltageDevice.calls)
     assert delays == [0.1] * 6
     assert len(_FakeDCVoltageDevice.instances) == 2
@@ -383,6 +405,7 @@ def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
 def test_apply_voltages_can_hold_applied_voltage_on_exit() -> None:
     """Hold exit should leave the amplification voltage enabled."""
     _reset_fake_devices()
+    _FakeDCVoltageDevice.output_states = {1: True}
     controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
     profile = DCVoltageProfile(channel=1, ramp_rate_v_per_s=10.0)
 
@@ -406,11 +429,14 @@ def test_apply_voltage_ramps_with_one_device_connection(
         "qubex.external_devices.dc_voltage.controller.time.sleep",
         lambda _: None,
     )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.0}
     controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
     profile = DCVoltageProfile(
         channel=1,
         ramp_rate_v_per_s=1.0,
-        update_interval_s=0.1,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
         idle_voltage_v=0.0,
     )
 
@@ -419,14 +445,15 @@ def test_apply_voltage_ramps_with_one_device_connection(
     assert len(_FakeDCVoltageDevice.instances) == 1
     device = _FakeDCVoltageDevice.instances[0]
     applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
-    assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25])
+    assert applied == pytest.approx([0.1, 0.2, 0.25])
     assert device.output_states[1] is True
     assert device.closed is True
 
 
 def test_apply_voltage_immediately_skips_ramp() -> None:
-    """Immediate application should set only the target and enable the output."""
+    """Immediate application should set only the target on an enabled output."""
     _reset_fake_devices()
+    _FakeDCVoltageDevice.output_states = {1: True}
     controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
     profile = DCVoltageProfile(channel=1)
 
@@ -462,7 +489,8 @@ def test_idle_ramps_to_idle_voltage_without_touching_the_switch(
     profile = DCVoltageProfile(
         channel=1,
         ramp_rate_v_per_s=1.0,
-        update_interval_s=0.1,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
         idle_voltage_v=0.0,
     )
 
@@ -472,6 +500,148 @@ def test_idle_ramps_to_idle_voltage_without_touching_the_switch(
     applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
     assert applied == pytest.approx([0.15, 0.05, 0.0])
     assert all(call[0] != "off" for call in device.calls)
+
+
+def test_apply_channels_ramps_each_channel_on_one_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bulk application should ramp every channel with a single connection."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True, 2: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.0, 2: 0.0}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
+        idle_voltage_v=0.0,
+    )
+
+    controller.apply_channels({1: (0.2, profile), 2: (-0.1, profile)})
+
+    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.2)
+    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(-0.1)
+    assert len(_FakeDCVoltageDevice.instances) == 1
+    assert _FakeDCVoltageDevice.instances[0].closed is True
+
+
+def test_turn_on_channels_switches_on_at_initial_voltage() -> None:
+    """Bulk turn-on should come up at the reset voltage and stop there."""
+    _reset_fake_devices()
+    _FakeDCVoltageDevice.output_states = {1: True, 2: False}
+    _FakeDCVoltageDevice.voltages = {1: 0.1, 2: 15.0}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(channel=2, reset_voltage_v=-0.1, idle_voltage_v=0.27)
+
+    controller.turn_on_channels({1: profile, 2: profile})
+
+    on_calls = [call for call in _FakeDCVoltageDevice.calls if call[0] == "on"]
+    assert on_calls == [("on", 2)]
+    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(-0.1)
+    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.1)
+    assert _FakeDCVoltageDevice.output_states == {1: True, 2: True}
+    assert len(_FakeDCVoltageDevice.instances) == 1
+
+
+def test_reset_channels_brings_all_channels_to_initial_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resetting should ramp on channels and switch on off channels."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True, 2: False}
+    _FakeDCVoltageDevice.voltages = {1: 0.2, 2: 15.0}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
+        reset_voltage_v=0.0,
+    )
+
+    controller.reset_channels({1: profile, 2: profile})
+
+    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.0)  # ramped
+    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(0.0)  # overwritten
+    assert _FakeDCVoltageDevice.output_states == {1: True, 2: True}
+    assert len(_FakeDCVoltageDevice.instances) == 1
+
+
+def test_turn_off_channels_ramps_to_zero_before_switching_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bulk turn-off should ramp to 0 V first and skip off outputs."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True, 2: False}
+    _FakeDCVoltageDevice.voltages = {1: 0.2, 2: 0.5}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
+    )
+
+    controller.turn_off_channels({1: profile, 2: profile})
+
+    off_calls = [call for call in _FakeDCVoltageDevice.calls if call[0] == "off"]
+    assert off_calls == [("off", 1)]
+    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.0)
+    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(0.5)
+    assert _FakeDCVoltageDevice.output_states == {1: False, 2: False}
+
+
+def test_read_channels_reads_all_channels_on_one_connection() -> None:
+    """Bulk readback should read every channel with a single connection."""
+    _reset_fake_devices()
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+
+    readings = controller.read_channels([1, 2])
+
+    assert readings == {1: (0.1, False), 2: (-0.2, False)}
+    assert len(_FakeDCVoltageDevice.instances) == 1
+    assert _FakeDCVoltageDevice.instances[0].closed is True
+
+
+def test_idle_channels_ramps_each_channel_on_one_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bulk idling should ramp every channel with a single connection."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.voltages = {1: 0.2, 2: -0.1}
+    _FakeDCVoltageDevice.output_states = {1: True, 2: True}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
+        idle_voltage_v=0.0,
+    )
+
+    controller.idle_channels({1: profile, 2: profile})
+
+    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.0)
+    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(0.0)
+    assert len(_FakeDCVoltageDevice.instances) == 1
+    assert _FakeDCVoltageDevice.instances[0].closed is True
 
 
 def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
@@ -499,13 +669,16 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
         "qubex.external_devices.dc_voltage.controller.time.sleep",
         lambda _: None,
     )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.0}
     controller = DCVoltageController(
         device_factory=_DelayedReadbackDevice,
     )
     profile = DCVoltageProfile(
         channel=1,
         ramp_rate_v_per_s=1.0,
-        update_interval_s=0.1,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
         idle_voltage_v=0.0,
         readback_tolerance_v=0.001,
         max_set_attempts=2,
@@ -518,12 +691,11 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
     first_set = next(
         index for index, call in enumerate(device.calls) if call[0] == "set_voltage"
     )
-    assert device.calls[first_set : first_set + 5] == [
-        ("set_voltage", 1, 0.0),
+    assert device.calls[first_set : first_set + 4] == [
+        ("set_voltage", 1, 0.1),
         ("get_voltage", 1),
-        ("set_voltage", 1, 0.0),
+        ("set_voltage", 1, 0.1),
         ("get_voltage", 1),
-        ("on", 1),
     ]
 
 
@@ -536,6 +708,7 @@ def test_apply_voltage_stops_after_configured_readback_attempts() -> None:
             return -1.0
 
     _reset_fake_devices()
+    _FakeDCVoltageDevice.output_states = {1: True}
     controller = DCVoltageController(device_factory=_MismatchedReadbackDevice)
     profile = DCVoltageProfile(
         channel=1,
@@ -553,6 +726,61 @@ def test_apply_voltage_stops_after_configured_readback_attempts() -> None:
     device = _FakeDCVoltageDevice.instances[0]
     set_calls = [call for call in device.calls if call[0] == "set_voltage"]
     assert len(set_calls) == 2
+
+
+def test_apply_voltage_requires_the_output_to_be_on() -> None:
+    """Applying to an off output should fail instead of switching it on."""
+    _reset_fake_devices()
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(channel=1)
+
+    with pytest.raises(RuntimeError, match="Turn it on explicitly"):
+        controller.apply_voltage(channel=1, voltage=0.1, profile=profile)
+    with pytest.raises(RuntimeError, match="Turn it on explicitly"):
+        controller.apply_voltage_immediately(channel=1, voltage=0.1, profile=profile)
+    assert all(call[0] != "on" for call in _FakeDCVoltageDevice.calls)
+
+
+def test_ons61797_turn_on_refuses_out_of_range_stored_setpoint() -> None:
+    """Turning on should fail while the stored setpoint is outside the range."""
+    from qubex.external_devices.dc_voltage.drivers import ONS61797Device
+
+    client = _FakeONS61797Client()
+    device = ONS61797Device(
+        port="/dev/fake",
+        client_factory=lambda **_: client,
+    )
+    client.voltages[1] = 15.0
+
+    with pytest.raises(ValueError, match="outside"):
+        device.on(1)
+    assert client.get_output_state(channel=1) == 0
+
+    client.voltages[1] = 0.0
+    device.on(1)
+    assert client.get_output_state(channel=1) == 1
+
+
+def test_ons61797_rejects_voltages_outside_the_allowed_range() -> None:
+    """Writes outside -4 V to 4 V should fail before reaching hardware."""
+    from qubex.external_devices.dc_voltage.drivers import ONS61797Device
+
+    written: list[tuple[int, float]] = []
+
+    class _Client:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def set_voltage(self, *, channel: int, voltage: float) -> None:
+            written.append((channel, voltage))
+
+    device = ONS61797Device(port="/dev/fake", client_factory=_Client)
+    with pytest.raises(ValueError, match=r"between -4\.0 V and 4\.0 V"):
+        device.set_voltage(1, 15.0)
+    assert written == []
+
+    device.set_voltage(1, 3.5)
+    assert written == [(1, 3.5)]
 
 
 def test_ons61797_adapter_normalizes_third_party_output_state() -> None:

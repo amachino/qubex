@@ -286,7 +286,8 @@ def test_controller_delegates_complete_ramp_to_native_server() -> None:
         profile=DCVoltageProfile(
             channel=1,
             ramp_rate_v_per_s=0.1,
-            update_interval_s=0.1,
+            ramp_step_size_v=0.01,
+            ramp_wait_s=0.1,
         ),
     )
 

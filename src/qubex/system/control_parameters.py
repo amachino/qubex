@@ -17,7 +17,8 @@ DCVoltageOnExit = Literal["idle", "hold"]
 class JPAParameters(TypedDict):
     """Resolved JPA parameters for one mux."""
 
-    dc_voltage: NotRequired[float]
+    bias_voltage: NotRequired[float]
+    idle_voltage: NotRequired[float]
     pump_frequency: float
     pump_amplitude: float
 
@@ -139,18 +140,22 @@ class ControlParameters(MutableModel):
         """Return the materialized pump amplitude for a mux."""
         return self.jpa_params[mux]["pump_amplitude"]
 
-    def has_dc_voltage(self, mux: int) -> bool:
-        """Return whether a mux has a calibrated amplification DC voltage."""
-        return "dc_voltage" in self.jpa_params.get(mux, {})
+    def has_bias_voltage(self, mux: int) -> bool:
+        """Return whether a mux has a calibrated bias (operating) voltage."""
+        return "bias_voltage" in self.jpa_params.get(mux, {})
 
-    def get_dc_voltage(self, mux: int) -> float:
-        """Return the calibrated amplification DC voltage for a mux."""
-        value = self.jpa_params.get(mux, {}).get("dc_voltage")
+    def get_bias_voltage(self, mux: int) -> float:
+        """Return the calibrated bias (operating) voltage for a mux."""
+        value = self.jpa_params.get(mux, {}).get("bias_voltage")
         if value is None:
             raise ValueError(
-                f"Mux {mux} has no calibrated `dc_voltage` in `jpa_params.yaml`."
+                f"Mux {mux} has no calibrated `bias_voltage` in `jpa_params.yaml`."
             )
         return value
+
+    def get_idle_voltage(self, mux: int) -> float | None:
+        """Return the calibrated idle voltage for a mux, if any."""
+        return self.jpa_params.get(mux, {}).get("idle_voltage")
 
     def _require_qubit_value(
         self,

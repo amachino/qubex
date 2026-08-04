@@ -24,6 +24,7 @@ from qubex.backend.backend_controller import (
     SystemBackendController,
 )
 from qubex.compat.deprecated_options import resolve_deprecated_option
+from qubex.external_devices import DCVoltageProfile
 from qubex.measurement import (
     Measurement,
     StateClassifier,
@@ -1230,32 +1231,187 @@ class ExperimentContext:
         """Return DC voltage and output-state readback for one mux."""
         resolved_mux, channel = self._resolve_dc_output(mux)
         controller = self.system_manager.dc_voltage_controller
-        output = "on" if controller.is_output_on(channel=channel) else "off"
+        voltage, is_on = controller.read_channels([channel])[channel]
         return DCVoltageState(
             mux_label=resolved_mux.label,
             mux_index=resolved_mux.index,
             channel=channel,
-            voltage=controller.get_voltage(channel=channel),
-            output=output,
+            voltage=voltage,
+            output="on" if is_on else "off",
         )
+
+    def get_dc_voltage_states(self) -> dict[int, DCVoltageState]:
+        """Return readback states for every wired mux on one connection."""
+        system_manager = self.system_manager
+        channels = {
+            mux_index: system_manager.resolve_dc_voltage_channel(mux_index)
+            for mux_index in system_manager.dc_voltage_mux_indices()
+        }
+        readings = system_manager.dc_voltage_controller.read_channels(
+            list(channels.values())
+        )
+        states: dict[int, DCVoltageState] = {}
+        for mux_index, channel in channels.items():
+            voltage, is_on = readings[channel]
+            states[mux_index] = DCVoltageState(
+                mux_label=self.experiment_system.get_mux(mux_index).label,
+                mux_index=mux_index,
+                channel=channel,
+                voltage=voltage,
+                output="on" if is_on else "off",
+            )
+        return states
+
+    def _resolve_dc_target_muxes(
+        self,
+        muxes: int | str | Collection[int | str] | None,
+    ) -> list[int]:
+        """Resolve a mux selection into wired mux indices (None = all)."""
+        if muxes is None:
+            return self.system_manager.dc_voltage_mux_indices()
+        if isinstance(muxes, (int, str)):
+            muxes = [muxes]
+        return [self.experiment_system.get_mux(mux).index for mux in muxes]
+
+    def reset_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Bring the selected muxes to their reset voltages, outputs on."""
+        system_manager = self.system_manager
+        profiles = {
+            mux_index: system_manager.resolve_dc_voltage_profile(mux_index)
+            for mux_index in self._resolve_dc_target_muxes(muxes)
+        }
+        if not profiles:
+            return {}
+        plan = {
+            mux_index: profile.reset_voltage_v
+            for mux_index, profile in profiles.items()
+        }
+        if not self._confirm_dc_voltage_write(
+            "reset the DC outputs to their reset voltages",
+            plan,
+            confirm=confirm,
+        ):
+            return self.get_dc_voltage_states()
+        system_manager.dc_voltage_controller.reset_channels(
+            {profile.channel: profile for profile in profiles.values()}
+        )
+        return self.get_dc_voltage_states()
+
+    def bias_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Ramp the selected calibrated muxes to their bias voltages."""
+        system_manager = self.system_manager
+        control_params = self.experiment_system.control_params
+        requests: dict[int, tuple[float, DCVoltageProfile]] = {}
+        plan: dict[int, float] = {}
+        for mux_index in self._resolve_dc_target_muxes(muxes):
+            if muxes is None and not control_params.has_bias_voltage(mux_index):
+                continue
+            profile = system_manager.resolve_dc_voltage_profile(mux_index)
+            # Explicitly selected muxes must be calibrated: raise otherwise.
+            voltage = control_params.get_bias_voltage(mux_index)
+            requests[profile.channel] = (voltage, profile)
+            plan[mux_index] = voltage
+        if requests and not self._confirm_dc_voltage_write(
+            "ramp to the amplification-point DC voltages",
+            plan,
+            confirm=confirm,
+        ):
+            return self.get_dc_voltage_states()
+        if requests:
+            system_manager.dc_voltage_controller.apply_channels(requests)
+        return self.get_dc_voltage_states()
+
+    def idle_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Ramp the selected muxes to their idle voltages."""
+        system_manager = self.system_manager
+        profiles: dict[int, DCVoltageProfile] = {}
+        plan: dict[int, float] = {}
+        for mux_index in self._resolve_dc_target_muxes(muxes):
+            profile = system_manager.resolve_dc_voltage_profile(mux_index)
+            profiles[profile.channel] = profile
+            plan[mux_index] = profile.idle_voltage_v
+        if profiles and not self._confirm_dc_voltage_write(
+            "ramp to the idle DC voltages",
+            plan,
+            confirm=confirm,
+        ):
+            return self.get_dc_voltage_states()
+        if profiles:
+            system_manager.dc_voltage_controller.idle_channels(profiles)
+        return self.get_dc_voltage_states()
+
+    @staticmethod
+    def _confirm_dc_voltage_write(
+        operation: str,
+        plan: dict[int, float],
+        *,
+        confirm: bool,
+    ) -> bool:
+        """Ask before a bulk DC voltage write, mirroring hardware pushes."""
+        if not confirm:
+            return True
+        plan_str = "\n".join(
+            f"mux {mux_index}: {voltage:+.3f} V"
+            for mux_index, voltage in sorted(plan.items())
+        )
+        confirmed = Confirm.ask(
+            f"""
+You are going to {operation}:
+
+[bold bright_green]{plan_str}[/bold bright_green]
+
+Do you want to continue?
+"""
+        )
+        if not confirmed:
+            logger.info("Operation cancelled.")
+        return confirmed
 
     def _turn_off_dc(
         self,
         *,
         mux: int | str | None = None,
+        confirm: bool = True,
     ) -> None:
-        """Turn off DC output for one mux."""
-        _, channel = self._resolve_dc_output(mux)
-        self.system_manager.dc_voltage_controller.off(channel=channel)
+        """Ramp one mux to its reset voltage and turn its output off."""
+        resolved_mux, channel = self._resolve_dc_output(mux)
+        profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
+        if not self._confirm_dc_voltage_write(
+            "ramp to the reset voltage and turn off the DC output",
+            {resolved_mux.index: profile.reset_voltage_v},
+            confirm=confirm,
+        ):
+            return
+        self.system_manager.dc_voltage_controller.turn_off_channels({channel: profile})
 
     def _turn_on_dc(
         self,
         *,
         mux: int | str | None = None,
+        confirm: bool = True,
     ) -> None:
-        """Turn on DC output for one mux."""
-        _, channel = self._resolve_dc_output(mux)
-        self.system_manager.dc_voltage_controller.on(channel=channel)
+        """Turn on DC output for one mux at its reset voltage."""
+        resolved_mux, channel = self._resolve_dc_output(mux)
+        profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
+        if not self._confirm_dc_voltage_write(
+            "turn on the DC output at its reset voltage",
+            {resolved_mux.index: profile.reset_voltage_v},
+            confirm=confirm,
+        ):
+            return
+        self.system_manager.dc_voltage_controller.turn_on_channels({channel: profile})
 
     @contextmanager
     def dc_voltage_control(
@@ -1286,8 +1442,14 @@ class ExperimentContext:
                 profile=resolved_profile,
             ),
             get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
-            turn_on=lambda: self._turn_on_dc(mux=resolved_mux.index),
-            turn_off=lambda: self._turn_off_dc(mux=resolved_mux.index),
+            turn_on=lambda confirm: self._turn_on_dc(
+                mux=resolved_mux.index,
+                confirm=confirm,
+            ),
+            turn_off=lambda confirm: self._turn_off_dc(
+                mux=resolved_mux.index,
+                confirm=confirm,
+            ),
             profile=profile,
         )
         try:

@@ -262,7 +262,8 @@ class ControlParameterDefaults:
             }
         raw_pump_frequency = value.get("pump_frequency")
         raw_pump_amplitude = value.get("pump_amplitude")
-        raw_dc_voltage = value.get("dc_voltage")
+        raw_bias_voltage = value.get("bias_voltage")
+        raw_idle_voltage = value.get("idle_voltage")
         resolved: JPAParameters = {
             "pump_frequency": (
                 float(raw_pump_frequency)
@@ -275,6 +276,8 @@ class ControlParameterDefaults:
                 else self.pump_amplitude
             ),
         }
-        if raw_dc_voltage is not None:
-            resolved["dc_voltage"] = float(raw_dc_voltage)
+        if raw_bias_voltage is not None:
+            resolved["bias_voltage"] = float(raw_bias_voltage)
+        if raw_idle_voltage is not None:
+            resolved["idle_voltage"] = float(raw_idle_voltage)
         return resolved

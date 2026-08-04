@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from enum import Enum
 
 from .config import DCVoltageControllerConfig, DCVoltageProfile
 from .protocol import DCVoltageDevice, DCVoltageDeviceFactory
 from .registry import DC_VOLTAGE_DRIVER_REGISTRY
+
+logger = logging.getLogger(__name__)
 
 
 class DCVoltageExitMode(str, Enum):
@@ -86,7 +89,7 @@ class DCVoltageController:
         voltage: float,
         profile: DCVoltageProfile,
     ) -> None:
-        """Enable one channel and ramp it to a target voltage."""
+        """Ramp one enabled channel to a target voltage."""
         with self._connection() as device:
             self._apply_voltage(
                 device,
@@ -102,17 +105,19 @@ class DCVoltageController:
         voltage: float,
         profile: DCVoltageProfile,
     ) -> None:
-        """Enable one channel and apply a target without ramping."""
+        """Apply a target to one enabled channel without ramping."""
         with self._connection() as device:
-            is_output_on = device.is_output_on(channel)
+            if not device.is_output_on(channel):
+                raise RuntimeError(
+                    f"DC voltage channel {channel} output is off. Turn it on "
+                    "explicitly with `turn_on()` before applying a voltage."
+                )
             self._set_voltage_verified(
                 device,
                 channel=channel,
                 voltage=voltage,
                 profile=profile,
             )
-            if not is_output_on:
-                device.on(channel)
 
     def idle(
         self,
@@ -127,6 +132,106 @@ class DCVoltageController:
                 channel=channel,
                 profile=profile,
             )
+
+    def apply_channels(
+        self,
+        requests: Mapping[int, tuple[float, DCVoltageProfile]],
+    ) -> None:
+        """Ramp many channels to their target voltages on one connection."""
+        with self._connection() as device:
+            for channel, (voltage, profile) in requests.items():
+                self._apply_voltage(
+                    device,
+                    channel=channel,
+                    voltage=voltage,
+                    profile=profile,
+                )
+
+    def turn_on_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
+        """Turn on off outputs at their reset voltages, on one connection."""
+        with self._connection() as device:
+            for channel, profile in profiles.items():
+                if device.is_output_on(channel):
+                    logger.info("DC channel %d: output is already on.", channel)
+                    continue
+                self._set_voltage_verified(
+                    device,
+                    channel=channel,
+                    voltage=profile.reset_voltage_v,
+                    profile=profile,
+                )
+                device.on(channel)
+                logger.info(
+                    "DC channel %d: output switched on at %+.3f V.",
+                    channel,
+                    profile.reset_voltage_v,
+                )
+
+    def reset_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
+        """Bring channels to their reset voltages with outputs on."""
+        with self._connection() as device:
+            for channel, profile in profiles.items():
+                if device.is_output_on(channel):
+                    self._ramp_voltage(
+                        device,
+                        channel=channel,
+                        start=device.get_voltage(channel),
+                        voltage=profile.reset_voltage_v,
+                        profile=profile,
+                    )
+                    continue
+                self._set_voltage_verified(
+                    device,
+                    channel=channel,
+                    voltage=profile.reset_voltage_v,
+                    profile=profile,
+                )
+                device.on(channel)
+                logger.info(
+                    "DC channel %d: output switched on at %+.3f V.",
+                    channel,
+                    profile.reset_voltage_v,
+                )
+
+    def turn_off_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
+        """Ramp on outputs to their reset voltages and turn them off."""
+        with self._connection() as device:
+            for channel, profile in profiles.items():
+                if not device.is_output_on(channel):
+                    logger.info("DC channel %d: output is already off.", channel)
+                    continue
+                self._ramp_voltage(
+                    device,
+                    channel=channel,
+                    start=device.get_voltage(channel),
+                    voltage=profile.reset_voltage_v,
+                    profile=profile,
+                )
+                device.off(channel)
+                logger.info("DC channel %d: output switched off.", channel)
+
+    def read_channels(
+        self,
+        channels: Sequence[int],
+    ) -> dict[int, tuple[float, bool]]:
+        """Read voltage and output state for many channels on one connection."""
+        with self._connection() as device:
+            return {
+                channel: (
+                    device.get_voltage(channel),
+                    device.is_output_on(channel),
+                )
+                for channel in channels
+            }
+
+    def idle_channels(
+        self,
+        profiles: Mapping[int, DCVoltageProfile],
+    ) -> None:
+        """Ramp many channels back to their idle voltages on one connection."""
+        with self._connection() as device:
+            for channel, profile in profiles.items():
+                self._ramp_to_idle(device, channel=channel, profile=profile)
 
     @contextmanager
     def _connection(self) -> Iterator[DCVoltageDevice]:
@@ -151,34 +256,21 @@ class DCVoltageController:
         no connection is held while the caller's block runs.
         """
         try:
-            with self._connection() as device:
-                for channel, (voltage, profile) in requests.items():
-                    self._apply_voltage(
-                        device,
-                        channel=channel,
-                        voltage=voltage,
-                        profile=profile,
-                    )
+            self.apply_channels(requests)
             yield
         finally:
-            idle_channels = [
-                channel
-                for channel in requests
+            idle_profiles = {
+                channel: profile
+                for channel, (_, profile) in requests.items()
                 if (
                     exit_modes.get(channel, DCVoltageExitMode.IDLE)
                     if exit_modes is not None
                     else DCVoltageExitMode.IDLE
                 )
                 is DCVoltageExitMode.IDLE
-            ]
-            if idle_channels:
-                with self._connection() as device:
-                    for channel in idle_channels:
-                        self._ramp_to_idle(
-                            device,
-                            channel=channel,
-                            profile=requests[channel][1],
-                        )
+            }
+            if idle_profiles:
+                self.idle_channels(idle_profiles)
 
     def _apply_voltage(
         self,
@@ -188,18 +280,13 @@ class DCVoltageController:
         voltage: float,
         profile: DCVoltageProfile,
     ) -> None:
-        """Enable one channel and ramp it to a target voltage."""
-        if device.is_output_on(channel):
-            start = device.get_voltage(channel)
-        else:
-            start = profile.idle_voltage_v
-            self._set_voltage_verified(
-                device,
-                channel=channel,
-                voltage=start,
-                profile=profile,
+        """Ramp one enabled channel to a target voltage."""
+        if not device.is_output_on(channel):
+            raise RuntimeError(
+                f"DC voltage channel {channel} output is off. Turn it on "
+                "explicitly with `turn_on()` before applying a voltage."
             )
-            device.on(channel)
+        start = device.get_voltage(channel)
         self._ramp_voltage(
             device,
             channel=channel,
@@ -224,6 +311,13 @@ class DCVoltageController:
                 voltage=profile.idle_voltage_v,
                 profile=profile,
             )
+        else:
+            logger.info(
+                "DC channel %d: output is off; not ramped, its stored "
+                "setpoint stays at %+.3f V.",
+                channel,
+                device.get_voltage(channel),
+            )
 
     def _ramp_voltage(
         self,
@@ -235,9 +329,17 @@ class DCVoltageController:
         profile: DCVoltageProfile,
     ) -> None:
         """Apply incremental setpoints from a start voltage to a target."""
-        step = profile.ramp_rate_v_per_s * profile.update_interval_s
+        step = profile.ramp_step_size_v
+        wait = max(step / profile.ramp_rate_v_per_s, profile.ramp_wait_s)
         if start == voltage:
             return
+        logger.info(
+            "DC channel %d: ramping %+.3f V -> %+.3f V at %.3f V/s.",
+            channel,
+            start,
+            voltage,
+            profile.ramp_rate_v_per_s,
+        )
         if device.supports_native_ramp:
             current = start
             for _ in range(profile.max_set_attempts):
@@ -247,7 +349,7 @@ class DCVoltageController:
                     voltage,
                     profile.ramp_rate_v_per_s,
                     step,
-                    profile.update_interval_s,
+                    profile.ramp_wait_s,
                 )
                 current = device.get_voltage(channel)
                 if abs(current - voltage) <= profile.readback_tolerance_v:
@@ -267,7 +369,7 @@ class DCVoltageController:
                 voltage=current,
                 profile=profile,
             )
-            time.sleep(profile.update_interval_s)
+            time.sleep(wait)
         if current != voltage:
             self._set_voltage_verified(
                 device,
@@ -275,7 +377,7 @@ class DCVoltageController:
                 voltage=float(voltage),
                 profile=profile,
             )
-            time.sleep(profile.update_interval_s)
+            time.sleep(wait)
 
     def _set_voltage_verified(
         self,

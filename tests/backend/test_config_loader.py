@@ -121,7 +121,8 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
                 0: {
                     "pump_frequency": 12.3,
                     "pump_amplitude": 0.1,
-                    "dc_voltage": 0.2,
+                    "bias_voltage": 0.2,
+                    "idle_voltage": -0.05,
                 },
                 1: None,
             },
@@ -557,16 +558,19 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert cp.jpa_params.get(0) == {
         "pump_frequency": 12.3,
         "pump_amplitude": 0.1,
-        "dc_voltage": 0.2,
+        "bias_voltage": 0.2,
+        "idle_voltage": -0.05,
     }
     assert cp.jpa_params.get(1) == {
         "pump_frequency": DEFAULT_PUMP_FREQUENCY_GHZ,
         "pump_amplitude": 0.0,
     }
-    assert cp.has_dc_voltage(0) is True
-    assert cp.has_dc_voltage(1) is False
-    with pytest.raises(ValueError, match="no calibrated `dc_voltage`"):
-        cp.get_dc_voltage(1)
+    assert cp.has_bias_voltage(0) is True
+    assert cp.has_bias_voltage(1) is False
+    assert cp.get_idle_voltage(0) == pytest.approx(-0.05)
+    assert cp.get_idle_voltage(1) is None
+    with pytest.raises(ValueError, match="no calibrated `bias_voltage`"):
+        cp.get_bias_voltage(1)
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
         cp.get_pump_frequency(1),
@@ -1428,7 +1432,7 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     assert control_parameters.get_pump_frequency(1) == pytest.approx(
         DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ
     )
-    assert control_parameters.has_dc_voltage(1) is False
+    assert control_parameters.has_bias_voltage(1) is False
 
 
 def test_load_preserves_quel3_capture_delay_ns_without_ndelay_side_effect(
@@ -2297,9 +2301,9 @@ def test_external_devices_config_loads_dc_controller_profiles(
             "settings": {
                 "ramp": {
                     "rate_v_per_s": 0.1,
-                    "step_interval_s": 0.1,
+                    "step_size_v": 0.01,
+                    "wait_s": 0.1,
                 },
-                "idle_voltage_v": 0.0,
                 "readback": {
                     "tolerance_v": 0.001,
                     "max_attempts": 5,

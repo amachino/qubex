@@ -59,7 +59,7 @@ class MeasurementAmplificationService:
 
         Notes
         -----
-        Muxes without a calibrated `dc_voltage` in `jpa_params.yaml` are
+        Muxes without a calibrated `bias_voltage` in `jpa_params.yaml` are
         skipped: no DC voltage source is touched for them.
         """
         if isinstance(targets, str):
@@ -71,12 +71,12 @@ class MeasurementAmplificationService:
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
         }
         uncalibrated = {
-            mux for mux in muxes if not self.control_params.has_dc_voltage(mux)
+            mux for mux in muxes if not self.control_params.has_bias_voltage(mux)
         }
         if uncalibrated:
             logger.info(
                 "Skipping DC voltage application for muxes without a "
-                "calibrated `dc_voltage` in `jpa_params.yaml`: %s",
+                "calibrated `bias_voltage` in `jpa_params.yaml`: %s",
                 sorted(uncalibrated),
             )
         muxes -= uncalibrated
@@ -88,7 +88,7 @@ class MeasurementAmplificationService:
             for mux in muxes
         }
         requests = {
-            profile.channel: (self.control_params.get_dc_voltage(mux), profile)
+            profile.channel: (self.control_params.get_bias_voltage(mux), profile)
             for mux, profile in profiles.items()
         }
         exit_mode = DCVoltageExitMode(on_exit) if on_exit else DCVoltageExitMode.IDLE

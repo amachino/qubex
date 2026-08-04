@@ -26,10 +26,10 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
             self.index = index
 
     class _ControlParams:
-        def has_dc_voltage(self, mux: int) -> bool:
+        def has_bias_voltage(self, mux: int) -> bool:
             return True
 
-        def get_dc_voltage(self, mux: int) -> float:
+        def get_bias_voltage(self, mux: int) -> float:
             return {0: 0.25, 2: -0.4}[mux]
 
     class _ExperimentSystem:
@@ -105,10 +105,10 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
             self.index = index
 
     class _ControlParams:
-        def has_dc_voltage(self, mux: int) -> bool:
+        def has_bias_voltage(self, mux: int) -> bool:
             return True
 
-        def get_dc_voltage(self, mux: int) -> float:
+        def get_bias_voltage(self, mux: int) -> float:
             return {0: 0.25}[mux]
 
     class _ExperimentSystem:
@@ -174,10 +174,10 @@ def test_apply_dc_voltages_allows_exit_mode_override(
     called: dict[str, Any] = {}
 
     class _ControlParams:
-        def has_dc_voltage(self, mux: int) -> bool:
+        def has_bias_voltage(self, mux: int) -> bool:
             return True
 
-        def get_dc_voltage(self, mux: int) -> float:
+        def get_bias_voltage(self, mux: int) -> float:
             return 0.25
 
     class _ExperimentSystem:
@@ -225,7 +225,7 @@ def test_apply_dc_voltages_skips_uncalibrated_muxes() -> None:
     """Muxes without a calibrated dc_voltage should not touch the controller."""
 
     class _ControlParams:
-        def has_dc_voltage(self, mux: int) -> bool:
+        def has_bias_voltage(self, mux: int) -> bool:
             return False
 
     class _ExperimentSystem:

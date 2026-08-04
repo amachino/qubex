@@ -1115,6 +1115,33 @@ def test_load_uses_config_loader_backend_kind_when_backend_kind_is_omitted(
     assert captured_load_kwargs["backend_kind"] is None
 
 
+def test_resolve_dc_voltage_profile_overlays_calibrated_idle_voltage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A calibrated jpa_params idle voltage should override the reset fallback."""
+    manager = SystemManager.shared()
+    config = DCVoltageControllerConfig(
+        voltage_defaults=DCVoltageProfile(channel=1, reset_voltage_v=0.1),
+        muxes={6: DCVoltageProfileOverride(channel=1)},
+    )
+    monkeypatch.setattr(manager, "_dc_voltage_controller_config", config)
+
+    class _ControlParams:
+        def get_idle_voltage(self, mux: int) -> float | None:
+            return {6: -0.05}.get(mux)
+
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(control_params=_ControlParams()),
+    )
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(-0.05)
+
+    monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace())
+    # Without calibration data, the idle voltage falls back to the reset voltage.
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.1)
+
+
 def test_load_creates_dc_voltage_controller_from_config_loader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
