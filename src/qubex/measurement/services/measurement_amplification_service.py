@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 
-from qubex.external_devices import DCVoltageExitMode, DCVoltageExitPolicy
+from qubex.external_devices import DCVoltageExitMode
 from qubex.measurement.measurement_context import MeasurementContext
 from qubex.system import ControlParameters, ExperimentSystem
 from qubex.system.control_parameters import DCVoltageOnExit
+
+logger = logging.getLogger(__name__)
 
 
 class MeasurementAmplificationService:
@@ -50,8 +53,14 @@ class MeasurementAmplificationService:
         ----------
         targets : str | Collection[str]
             Target label or target labels.
-        on_exit : {"off", "low_noise", "restore", "hold"} or None, optional
-            Exit behavior override. Uses each mux's JPA parameter when omitted.
+        on_exit : {"idle", "hold"} or None, optional
+            Exit behavior. `idle` (default) ramps each bias back to its idle
+            voltage; `hold` leaves the applied biases on.
+
+        Notes
+        -----
+        Muxes without a calibrated `dc_voltage` in `jpa_params.yaml` are
+        skipped: no DC voltage source is touched for them.
         """
         if isinstance(targets, str):
             targets = [targets]
@@ -61,6 +70,19 @@ class MeasurementAmplificationService:
         muxes = {
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
         }
+        uncalibrated = {
+            mux for mux in muxes if not self.control_params.has_dc_voltage(mux)
+        }
+        if uncalibrated:
+            logger.info(
+                "Skipping DC voltage application for muxes without a "
+                "calibrated `dc_voltage` in `jpa_params.yaml`: %s",
+                sorted(uncalibrated),
+            )
+        muxes -= uncalibrated
+        if not muxes:
+            yield
+            return
         profiles = {
             mux: self.context.system_manager.resolve_dc_voltage_profile(mux)
             for mux in muxes
@@ -69,33 +91,10 @@ class MeasurementAmplificationService:
             profile.channel: (self.control_params.get_dc_voltage(mux), profile)
             for mux, profile in profiles.items()
         }
-        exit_policies = {
-            profile.channel: self._resolve_exit_policy(mux=mux, on_exit=on_exit)
-            for mux, profile in profiles.items()
-        }
+        exit_mode = DCVoltageExitMode(on_exit) if on_exit else DCVoltageExitMode.IDLE
+        exit_modes = {profile.channel: exit_mode for profile in profiles.values()}
         with self.context.system_manager.dc_voltage_controller.apply_voltages(
             requests,
-            exit_policies=exit_policies,
+            exit_modes=exit_modes,
         ):
             yield
-
-    def _resolve_exit_policy(
-        self,
-        *,
-        mux: int,
-        on_exit: DCVoltageOnExit | None,
-    ) -> DCVoltageExitPolicy:
-        """Resolve one measurement exit mode into a generic controller policy."""
-        mode = on_exit or self.control_params.get_dc_voltage_exit_mode(mux)
-        if mode == "off":
-            return DCVoltageExitPolicy(mode=DCVoltageExitMode.SHUTDOWN)
-        if mode == "hold":
-            return DCVoltageExitPolicy(mode=DCVoltageExitMode.HOLD)
-        if mode == "restore":
-            return DCVoltageExitPolicy(mode=DCVoltageExitMode.RESTORE)
-        if mode == "low_noise":
-            return DCVoltageExitPolicy(
-                mode=DCVoltageExitMode.TARGET,
-                target_voltage_v=self.control_params.get_low_noise_dc_voltage(mux),
-            )
-        raise ValueError(f"Unsupported DC voltage exit mode: {mode!r}.")

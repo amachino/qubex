@@ -181,7 +181,7 @@ data:
 | `pump_fsc.yaml` | mux | integer or `null` | Pump-line full-scale current setting for backends that support it. | `params.yaml:<chip_id>.pump_fsc` |
 | `capture_delay.yaml` | mux | backend-specific | Capture timing offset. QuEL-1 requires `meta.unit: ndelay`; QuEL-3 requires `meta.unit: ns`. | `params.yaml:<chip_id>.capture_delay` |
 | `capture_delay_word.yaml` | mux | `word` or `words` | QuEL-1 capture-delay word offset. This file is not supported for QuEL-3. | `params.yaml:<chip_id>.capture_delay_word` |
-| `jpa_params.yaml` | mux | internal units | JPA parameters. Each mux entry may contain `pump_frequency` in `GHz`, `pump_amplitude`, amplification-point `dc_voltage`, optional `low_noise_dc_voltage`, and optional `dc_voltage_exit_mode`. Missing core fields are filled from backend defaults. | `params.yaml:<chip_id>.jpa_params` |
+| `jpa_params.yaml` | mux | internal units | JPA parameters. Each mux entry may contain `pump_frequency` in `GHz`, `pump_amplitude`, and the amplification-point `dc_voltage`. Missing pump fields are filled from backend defaults; `dc_voltage` has no default — a mux without it is skipped by DC voltage application. | `params.yaml:<chip_id>.jpa_params` |
 
 QuEL-1 materializes defaults for VATT, FSC, capture delay, and JPA fields.
 QuEL-3 materializes `null` for unsupported VATT/FSC/capture-delay-word settings
@@ -218,18 +218,13 @@ data:
     pump_frequency: 6.000
     pump_amplitude: 0.10
     dc_voltage: 0.27
-    low_noise_dc_voltage: -0.08
-    dc_voltage_exit_mode: "low_noise"
 ```
 
-`dc_voltage_exit_mode` controls the default behavior after
-`measurement.apply_dc_voltages()` exits. Choose `off`, `low_noise`, `restore`,
-or `hold`. The default is `off`. The `low_noise` mode requires
-`low_noise_dc_voltage`. An explicit `on_exit` API argument overrides this value
-for that measurement only.
-
-Quote `dc_voltage_exit_mode` values in YAML. In particular, an unquoted `off`
-can be parsed as a boolean by YAML 1.1-compatible loaders.
+This file holds calibrated values only. `dc_voltage` has no default:
+`measurement.apply_dc_voltages()` skips muxes without one, so a system
+without this file performs no DC voltage operations. The idle voltage and
+control policy live in `external_devices.yaml` (see the system
+configuration guide).
 
 ### Measurement defaults
 

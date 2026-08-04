@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import socket
 import struct
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -34,40 +34,33 @@ class QbloxServerConnectionConfig:
     @classmethod
     def from_dict(
         cls,
-        connection: Mapping[str, object],
+        device_id: str,
+        params: Mapping[str, object],
+        device_channels: Sequence[int] | None = None,
     ) -> QbloxServerConnectionConfig:
         """Parse Qblox backend endpoint and channel names."""
-        known = {"host", "port", "timeout_s", "channels"}
-        unknown = set(connection) - known
-        if unknown:
+        if "device_prefix" in params:
             raise ValueError(
-                f"Unknown Qblox server connection settings: {sorted(unknown)}."
+                "`device_prefix` was removed: the device name in `devices` "
+                "is used as the backend name prefix (e.g. device `Qblox1` "
+                "-> `Qblox1-15`)."
             )
-        host = connection.get("host")
+        known = {"host", "port", "timeout_s", "device_names"}
+        unknown = set(params) - known
+        if unknown:
+            raise ValueError(f"Unknown Qblox server settings: {sorted(unknown)}.")
+        host = params.get("host")
         if not isinstance(host, str) or not host.strip():
             raise ValueError("Qblox server `host` must be a non-empty string.")
-        port = connection.get("port")
+        port = params.get("port")
         if type(port) is not int or not 1 <= port <= 65535:
             raise ValueError("Qblox server `port` must be between 1 and 65535.")
-        timeout_s = connection.get("timeout_s", 1200.0)
+        timeout_s = params.get("timeout_s", 1200.0)
         if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)):
             raise TypeError("Qblox server `timeout_s` must be numeric.")
         if not math.isfinite(timeout_s) or timeout_s <= 0:
             raise ValueError("Qblox server `timeout_s` must be positive and finite.")
-        raw_channels = connection.get("channels")
-        if not isinstance(raw_channels, Mapping) or not raw_channels:
-            raise ValueError("Qblox server `channels` must be a non-empty mapping.")
-        channels: dict[int, str] = {}
-        for channel, device_name in raw_channels.items():
-            if type(channel) is not int:
-                raise ValueError("Qblox server channel keys must be integers.")
-            if not isinstance(device_name, str) or not device_name:
-                raise ValueError("Qblox server device names must be non-empty strings.")
-            if "\x00" in device_name:
-                raise ValueError(
-                    "Qblox server device names must not contain NUL bytes."
-                )
-            channels[channel] = device_name
+        channels = _parse_device_names(device_id, params, device_channels)
         return cls(
             host=host,
             port=port,
@@ -76,11 +69,50 @@ class QbloxServerConnectionConfig:
         )
 
 
+def _parse_device_names(
+    device_id: str,
+    params: Mapping[str, object],
+    device_channels: Sequence[int] | None,
+) -> dict[int, str]:
+    """Derive backend device names from the device id or an explicit mapping."""
+    raw_names = params.get("device_names")
+    if raw_names is None:
+        if not device_id:
+            raise ValueError("Qblox server requires a non-empty device name.")
+        if "\x00" in device_id:
+            raise ValueError("Qblox server device names must not contain NUL bytes.")
+        if not device_channels:
+            raise ValueError(
+                "Qblox server requires a non-empty device `channels` list."
+            )
+        return {channel: f"{device_id}-{channel}" for channel in device_channels}
+    if not isinstance(raw_names, Mapping) or not raw_names:
+        raise ValueError("Qblox server `device_names` must be a non-empty mapping.")
+    names: dict[int, str] = {}
+    for channel, device_name in raw_names.items():
+        if type(channel) is not int:
+            raise ValueError("Qblox server `device_names` keys must be integers.")
+        if not isinstance(device_name, str) or not device_name:
+            raise ValueError("Qblox server device names must be non-empty strings.")
+        if "\x00" in device_name:
+            raise ValueError("Qblox server device names must not contain NUL bytes.")
+        names[channel] = device_name
+    if device_channels is not None:
+        missing = sorted(set(device_channels) - set(names))
+        if missing:
+            raise ValueError(
+                f"Qblox server `device_names` is missing device channels {missing}."
+            )
+    return names
+
+
 def create_qblox_server_device_factory(
-    connection: Mapping[str, object],
+    device_id: str,
+    params: Mapping[str, object],
+    device_channels: Sequence[int] | None = None,
 ) -> DCVoltageDeviceFactory:
     """Create a Qblox backend server device factory."""
-    config = QbloxServerConnectionConfig.from_dict(connection)
+    config = QbloxServerConnectionConfig.from_dict(device_id, params, device_channels)
     return partial(
         QbloxServerDevice,
         host=config.host,
@@ -106,11 +138,6 @@ class QbloxServerDevice:
         self._channels = dict(channels)
         factory = socket.create_connection if socket_factory is None else socket_factory
         self._socket = factory((host, port), timeout=timeout_s)
-
-    @property
-    def supports_output_switch(self) -> bool:
-        """Return that the backend exposes no physical output switch."""
-        return False
 
     @property
     def supports_native_ramp(self) -> bool:

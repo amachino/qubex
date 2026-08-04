@@ -25,7 +25,6 @@ from qubex.system.quel1.quel1_system_constants import (
 )
 from qubex.system.quel3.quel3_control_parameter_defaults import (
     DEFAULT_CONTROL_AMPLITUDE as DEFAULT_QUEL3_CONTROL_AMPLITUDE,
-    DEFAULT_DC_VOLTAGE as DEFAULT_QUEL3_DC_VOLTAGE,
     DEFAULT_PUMP_FREQUENCY_GHZ as DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ,
     DEFAULT_READOUT_AMPLITUDE as DEFAULT_QUEL3_READOUT_AMPLITUDE,
 )
@@ -123,8 +122,6 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
                     "pump_frequency": 12.3,
                     "pump_amplitude": 0.1,
                     "dc_voltage": 0.2,
-                    "low_noise_dc_voltage": -0.08,
-                    "dc_voltage_exit_mode": "low_noise",
                 },
                 1: None,
             },
@@ -561,20 +558,16 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
         "pump_frequency": 12.3,
         "pump_amplitude": 0.1,
         "dc_voltage": 0.2,
-        "low_noise_dc_voltage": -0.08,
-        "dc_voltage_exit_mode": "low_noise",
     }
     assert cp.jpa_params.get(1) == {
         "pump_frequency": DEFAULT_PUMP_FREQUENCY_GHZ,
         "pump_amplitude": 0.0,
-        "dc_voltage": 0.0,
     }
+    assert cp.has_dc_voltage(0) is True
+    assert cp.has_dc_voltage(1) is False
+    with pytest.raises(ValueError, match="no calibrated `dc_voltage`"):
+        cp.get_dc_voltage(1)
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
-    assert cp.get_low_noise_dc_voltage(0) == pytest.approx(-0.08)
-    assert cp.get_dc_voltage_exit_mode(0) == "low_noise"
-    assert cp.get_dc_voltage_exit_mode(1) == "off"
-    with pytest.raises(ValueError, match="low-noise DC voltage"):
-        cp.get_low_noise_dc_voltage(1)
     assert math.isclose(
         cp.get_pump_frequency(1),
         DEFAULT_PUMP_FREQUENCY_GHZ,
@@ -588,8 +581,8 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     )
 
 
-def test_jpa_params_reject_unknown_dc_voltage_exit_mode(tmp_path: Path) -> None:
-    """JPA parameters should reject an unsupported DC voltage exit mode."""
+def test_jpa_params_reject_moved_dc_voltage_exit_mode(tmp_path: Path) -> None:
+    """JPA parameters should point a legacy exit mode to the API argument."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
         params_dir / "jpa_params.yaml",
@@ -598,13 +591,13 @@ def test_jpa_params_reject_unknown_dc_voltage_exit_mode(tmp_path: Path) -> None:
             "data": {
                 0: {
                     "dc_voltage": 0.2,
-                    "dc_voltage_exit_mode": "unknown",
+                    "dc_voltage_exit_mode": "off",
                 }
             },
         },
     )
 
-    with pytest.raises(ValueError, match="dc_voltage_exit_mode"):
+    with pytest.raises(ValueError, match="on_exit"):
         ConfigLoader(
             system_id=chip_id,
             config_dir=config_dir,
@@ -1459,9 +1452,7 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     assert control_parameters.get_pump_frequency(1) == pytest.approx(
         DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ
     )
-    assert control_parameters.get_dc_voltage(1) == pytest.approx(
-        DEFAULT_QUEL3_DC_VOLTAGE
-    )
+    assert control_parameters.has_dc_voltage(1) is False
 
 
 def test_load_preserves_quel3_capture_delay_ns_without_ndelay_side_effect(
@@ -2316,33 +2307,35 @@ def test_external_devices_config_loads_dc_controller_profiles(
     _write_yaml(
         config_dir / "external_devices.yaml",
         {
-            "dc_voltage_controllers": {
-                "jpa_bias": {
+            "devices": {
+                "ONS1": {
                     "driver": "ons61797",
-                    "connection": {"port": "/dev/system-dc"},
-                    "voltage_control": {
-                        "defaults": {
-                            "ramp": {
-                                "rate_v_per_s": 0.1,
-                                "step_interval_s": 0.1,
-                            },
-                            "shutdown": {"voltage_v": 0.0},
-                            "readback": {
-                                "tolerance_v": 0.001,
-                                "max_attempts": 5,
-                            },
-                        },
-                        "muxes": {
-                            6: {"channel": 1},
-                            7: {
-                                "channel": 2,
-                                "ramp": {"rate_v_per_s": 0.05},
-                                "readback": {"tolerance_v": 0.002},
-                            },
-                        },
+                    "params": {"port": "/dev/system-dc"},
+                    "channels": [1, 2],
+                },
+            },
+            "wiring": [
+                {"mux": 6, "bias": "ONS1-1"},
+                {"mux": 7, "bias": "ONS1-2"},
+            ],
+            "settings": {
+                "ramp": {
+                    "rate_v_per_s": 0.1,
+                    "step_interval_s": 0.1,
+                },
+                "idle_voltage_v": 0.0,
+                "readback": {
+                    "tolerance_v": 0.001,
+                    "max_attempts": 5,
+                },
+                "overrides": [
+                    {
+                        "mux": 7,
+                        "ramp": {"rate_v_per_s": 0.05},
+                        "readback": {"tolerance_v": 0.002},
                     },
-                }
-            }
+                ],
+            },
         },
     )
 
@@ -2352,9 +2345,10 @@ def test_external_devices_config_loads_dc_controller_profiles(
         params_dir=params_dir,
     )
 
-    controller = loader.external_devices_config.dc_voltage_controllers["jpa_bias"]
+    controller = loader.external_devices_config.dc_voltage
     assert controller.driver == "ons61797"
-    assert controller.connection == {"port": "/dev/system-dc"}
+    assert controller.params == {"port": "/dev/system-dc"}
+    assert controller.device_id == "ONS1"
     assert controller.resolve_voltage_profile(6).channel == 1
     assert controller.resolve_voltage_profile(6).ramp_rate_v_per_s == pytest.approx(0.1)
     assert controller.resolve_voltage_profile(6).readback_tolerance_v == pytest.approx(
@@ -2382,31 +2376,19 @@ def test_external_devices_config_defaults_when_missing(
         params_dir=params_dir,
     )
 
-    controller = loader.external_devices_config.dc_voltage_controllers["jpa_bias"]
+    controller = loader.external_devices_config.dc_voltage
     assert controller.driver == "ons61797"
-    assert controller.connection == {}
-    with pytest.raises(ValueError, match=r"Mux 6 has no DC voltage channel"):
+    assert controller.params == {}
+    with pytest.raises(ValueError, match=r"Mux 6 has no DC voltage wiring"):
         controller.resolve_voltage_profile(6)
 
 
 @pytest.mark.parametrize(
     ("path", "value", "match"),
     [
-        (
-            ("voltage_control", "defaults", "ramp", "rate_v_per_s"),
-            0.0,
-            "rate_v_per_s.*positive",
-        ),
-        (
-            ("voltage_control", "defaults", "readback", "tolerance_v"),
-            -0.1,
-            "tolerance_v.*non-negative",
-        ),
-        (
-            ("voltage_control", "defaults", "readback", "max_attempts"),
-            0,
-            "max_attempts.*positive",
-        ),
+        (("ramp", "rate_v_per_s"), 0.0, "rate_v_per_s.*positive"),
+        (("readback", "tolerance_v"), -0.1, "tolerance_v.*non-negative"),
+        (("readback", "max_attempts"), 0, "max_attempts.*positive"),
     ],
 )
 def test_external_devices_config_rejects_invalid_control_values(
@@ -2426,7 +2408,7 @@ def test_external_devices_config_rejects_invalid_control_values(
     current[path[-1]] = value
     _write_yaml(
         config_dir / "external_devices.yaml",
-        {"dc_voltage_controllers": {"jpa_bias": controller}},
+        {"settings": controller},
     )
 
     with pytest.raises((TypeError, ValueError), match=match):
@@ -2440,14 +2422,14 @@ def test_external_devices_config_rejects_invalid_control_values(
 def test_external_devices_config_rejects_non_string_driver(
     tmp_path: Path,
 ) -> None:
-    """A non-string external DC driver should be rejected."""
+    """A non-string external DC device driver should be rejected."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
         config_dir / "external_devices.yaml",
-        {"dc_voltage_controllers": {"jpa_bias": {"driver": 123}}},
+        {"devices": {"ONS1": {"driver": 123}}},
     )
 
-    with pytest.raises(TypeError, match=r"driver.*string"):
+    with pytest.raises(ValueError, match=r"driver.*string"):
         ConfigLoader(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -2456,33 +2438,33 @@ def test_external_devices_config_rejects_non_string_driver(
 
 
 @pytest.mark.parametrize(
-    ("muxes", "match"),
+    ("wiring", "match"),
     [
-        ({6: {"channel": "one"}}, "must be integers"),
+        ([{"mux": 6, "bias": "ONS1-one"}], "DEVICE-CHANNEL"),
         (
-            {6: {"channel": 1}, 7: {"channel": 1}},
-            "must not contain duplicate channels",
+            [{"mux": 6, "bias": "ONS1-1"}, {"mux": 7, "bias": "ONS1-1"}],
+            "more than once",
         ),
-        ({"MUX06": {"channel": 1}}, "integer mux indices"),
+        (
+            [{"mux": 6, "bias": "ONS1-1"}, {"mux": 6, "bias": "ONS1-2"}],
+            "lists mux 6 twice",
+        ),
+        ([{"mux": "MUX06", "bias": "ONS1-1"}], "integer `mux`"),
+        ({6: {"bias": "ONS1-1"}}, "must be a list of entries"),
     ],
 )
-def test_external_devices_config_rejects_invalid_mux_profiles(
+def test_external_devices_config_rejects_invalid_wiring_entries(
     tmp_path: Path,
-    muxes: dict[object, object],
+    wiring: object,
     match: str,
 ) -> None:
-    """Invalid external DC mux profiles should be rejected."""
+    """Invalid external DC wiring entries should be rejected."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
         config_dir / "external_devices.yaml",
         {
-            "dc_voltage_controllers": {
-                "jpa_bias": {
-                    "voltage_control": {
-                        "muxes": muxes,
-                    }
-                }
-            },
+            "devices": {"ONS1": {"driver": "ons61797"}},
+            "wiring": wiring,
         },
     )
 

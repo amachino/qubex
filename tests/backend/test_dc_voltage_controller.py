@@ -11,8 +11,8 @@ from qubex.external_devices.dc_voltage import (
     DCVoltageController,
     DCVoltageControllerConfig,
     DCVoltageExitMode,
-    DCVoltageExitPolicy,
     DCVoltageProfile,
+    ExternalDevicesConfig,
     create_dc_voltage_controller,
 )
 from qubex.external_devices.dc_voltage.drivers import ONS61797Device
@@ -42,11 +42,6 @@ class _FakeDCVoltageDevice:
         if ip_address is not None:
             kwargs["ip_address"] = ip_address
         self.connect_kwargs.append(kwargs)
-
-    @property
-    def supports_output_switch(self) -> bool:
-        """Return that the fake device supports output switching."""
-        return True
 
     @property
     def supports_native_ramp(self) -> bool:
@@ -123,12 +118,14 @@ def test_factory_resolves_registered_driver_with_opaque_connection(
 ) -> None:
     """A registered driver should receive its unchanged connection mapping."""
     _reset_fake_devices()
-    connections: list[dict[str, object]] = []
+    connections: list[tuple[str, dict[str, object], tuple[int, ...] | None]] = []
 
     def build_device_factory(
+        device_id: str,
         connection: dict[str, object],
+        ports: tuple[int, ...] | None,
     ):
-        connections.append(connection)
+        connections.append((device_id, connection, ports))
         return partial(_FakeDCVoltageDevice, resource=connection["resource"])
 
     monkeypatch.setitem(
@@ -136,17 +133,23 @@ def test_factory_resolves_registered_driver_with_opaque_connection(
         "fake-dc",
         build_device_factory,
     )
-    config = DCVoltageControllerConfig.from_dict(
+    config = ExternalDevicesConfig.from_dict(
         {
-            "driver": "fake-dc",
-            "connection": {"resource": "external-a"},
+            "devices": {
+                "FAKE1": {
+                    "driver": "fake-dc",
+                    "params": {"resource": "external-a"},
+                    "channels": [1],
+                },
+            },
+            "wiring": [{"mux": 0, "bias": "FAKE1-1"}],
         }
-    )
+    ).dc_voltage
 
     controller = create_dc_voltage_controller(config)
     controller.on(1)
 
-    assert connections == [{"resource": "external-a"}]
+    assert connections == [("FAKE1", {"resource": "external-a"}, (1,))]
     assert _FakeDCVoltageDevice.instances[0].init_kwargs == {"resource": "external-a"}
 
 
@@ -155,7 +158,7 @@ def test_factory_creates_controller_from_configured_serial_port() -> None:
     _reset_fake_devices()
     config = DCVoltageControllerConfig(
         driver="ons61797",
-        connection={"port": "/dev/system-dc"},
+        params={"port": "/dev/system-dc"},
         device_factory=_FakeDCVoltageDevice,
     )
 
@@ -168,15 +171,20 @@ def test_factory_creates_controller_from_configured_serial_port() -> None:
 def test_ons61797_driver_validates_its_own_connection_options() -> None:
     """ONS61797 should reject conflicting transport settings in its driver layer."""
     _reset_fake_devices()
-    config = DCVoltageControllerConfig.from_dict(
+    config = ExternalDevicesConfig.from_dict(
         {
-            "driver": "ons61797",
-            "connection": {
-                "port": "/dev/serial-dc",
-                "ip_address": "192.0.2.20",
+            "devices": {
+                "ONS1": {
+                    "driver": "ons61797",
+                    "params": {
+                        "port": "/dev/serial-dc",
+                        "ip_address": "192.0.2.20",
+                    },
+                },
             },
+            "wiring": [{"mux": 0, "bias": "ONS1-1"}],
         }
-    )
+    ).dc_voltage
 
     with pytest.raises(TypeError, match="Only one"):
         create_dc_voltage_controller(config)
@@ -190,10 +198,169 @@ def test_factory_rejects_unknown_driver() -> None:
         create_dc_voltage_controller(config)
 
 
-def test_apply_voltages_ramps_each_channel_and_shuts_down(
+def test_external_devices_config_resolves_device_output_refs() -> None:
+    """Mux outputs should resolve `DEVICE-CHANNEL` refs against `devices`."""
+    config = ExternalDevicesConfig.from_dict(
+        {
+            "devices": {
+                "ONS1": {
+                    "driver": "ons61797",
+                    "params": {"port": "/dev/ttyACM0"},
+                    "channels": [9, 10],
+                },
+            },
+            "wiring": [
+                {"mux": 8, "bias": "ONS1-9"},
+                {"mux": 9, "bias": "ONS1-10"},
+            ],
+            "settings": {
+                "ramp": {"rate_v_per_s": 0.2},
+                "overrides": [
+                    {"mux": 9, "ramp": {"rate_v_per_s": 0.05}},
+                ],
+            },
+        }
+    )
+
+    controller = config.dc_voltage
+    assert controller.driver == "ons61797"
+    assert controller.params == {"port": "/dev/ttyACM0"}
+    assert controller.device_id == "ONS1"
+    assert controller.channels == (9, 10)
+    assert controller.resolve_voltage_profile(8).channel == 9
+    assert controller.resolve_voltage_profile(8).ramp_rate_v_per_s == 0.2
+    assert controller.resolve_voltage_profile(9).channel == 10
+    assert controller.resolve_voltage_profile(9).ramp_rate_v_per_s == 0.05
+
+
+def test_settings_idle_voltage_resolves_with_overrides() -> None:
+    """`idle_voltage_v` should default from settings and override per mux."""
+    config = ExternalDevicesConfig.from_dict(
+        {
+            "devices": {"ONS1": {"driver": "ons61797"}},
+            "wiring": [
+                {"mux": 0, "bias": "ONS1-1"},
+                {"mux": 1, "bias": "ONS1-2"},
+            ],
+            "settings": {
+                "idle_voltage_v": 0.1,
+                "overrides": [{"mux": 1, "idle_voltage_v": -0.2}],
+            },
+        }
+    )
+
+    controller = config.dc_voltage
+    assert controller.resolve_voltage_profile(0).idle_voltage_v == 0.1
+    assert controller.resolve_voltage_profile(1).idle_voltage_v == -0.2
+
+
+def test_settings_reject_legacy_exit_and_shutdown_keys() -> None:
+    """Removed exit-mode and shutdown keys should fail with guidance."""
+    base = {
+        "devices": {"ONS1": {"driver": "ons61797"}},
+        "wiring": [{"mux": 0, "bias": "ONS1-1"}],
+    }
+    for legacy_settings in (
+        {"exit": {"mode": "idle"}},
+        {"exit_mode": "idle"},
+        {"dc_voltage_exit_mode": "off"},
+        {"overrides": [{"mux": 0, "exit_mode": "idle"}]},
+    ):
+        with pytest.raises(ValueError, match="on_exit"):
+            ExternalDevicesConfig.from_dict({**base, "settings": legacy_settings})
+    with pytest.raises(ValueError, match="renamed to `idle_voltage_v`"):
+        ExternalDevicesConfig.from_dict(
+            {**base, "settings": {"shutdown": {"voltage_v": 0.0}}}
+        )
+
+
+def test_mux_output_rejects_unknown_device() -> None:
+    """An output referencing an undefined device should fail at parse time."""
+    with pytest.raises(ValueError, match="unknown device 'QBLOX1'"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {
+                    "ONS1": {"driver": "ons61797"},
+                },
+                "wiring": [{"mux": 8, "bias": "QBLOX1-15"}],
+            }
+        )
+
+
+def test_mux_outputs_must_reference_one_device() -> None:
+    """One controller should reject outputs spread across devices."""
+    with pytest.raises(ValueError, match="same device"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {
+                    "ONS1": {"driver": "ons61797"},
+                    "ONS2": {"driver": "ons61797"},
+                },
+                "wiring": [
+                    {"mux": 0, "bias": "ONS1-1"},
+                    {"mux": 1, "bias": "ONS2-2"},
+                ],
+            }
+        )
+
+
+def test_mux_output_channel_must_be_whitelisted() -> None:
+    """An output channel outside the device `channels` list should fail."""
+    with pytest.raises(ValueError, match="not in device 'ONS1'"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {
+                    "ONS1": {"driver": "ons61797", "channels": [1, 2]},
+                },
+                "wiring": [{"mux": 0, "bias": "ONS1-3"}],
+            }
+        )
+
+
+@pytest.mark.parametrize("output", ["ONS1", "ONS1-", "-15", "ONS1-x", 15, None])
+def test_mux_output_rejects_malformed_refs(output: object) -> None:
+    """Outputs must use the `DEVICE-CHANNEL` reference form."""
+    with pytest.raises((TypeError, ValueError), match="DEVICE-CHANNEL"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {"ONS1": {"driver": "ons61797"}},
+                "wiring": [{"mux": 0, "bias": output}],
+            }
+        )
+
+
+def test_legacy_controller_schema_is_rejected_with_guidance() -> None:
+    """Old `driver`/`connection` and `channel` keys should point to the new schema."""
+    with pytest.raises(ValueError, match="moved to the top-level `devices`"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "settings": {
+                    "driver": "ons61797",
+                    "connection": {"port": "/dev/ttyACM0"},
+                },
+            }
+        )
+    with pytest.raises(ValueError, match="`jpa_bias` heading was removed"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "settings": {
+                    "jpa_bias": {"ramp": {"rate_v_per_s": 0.1}},
+                },
+            }
+        )
+    with pytest.raises(ValueError, match="replaced by role outputs"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {"ONS1": {"driver": "ons61797"}},
+                "wiring": [{"mux": 0, "channel": 1}],
+            }
+        )
+
+
+def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Temporary voltage application should ramp up and down before output off."""
+    """Temporary voltage application should ramp up and back to idle."""
     _reset_fake_devices()
     delays: list[float] = []
     monkeypatch.setattr(
@@ -205,7 +372,7 @@ def test_apply_voltages_ramps_each_channel_and_shuts_down(
         channel=1,
         ramp_rate_v_per_s=1.0,
         update_interval_s=0.1,
-        safe_voltage_v=0.0,
+        idle_voltage_v=0.0,
     )
 
     with controller.apply_voltages({1: (0.25, profile)}):
@@ -214,40 +381,8 @@ def test_apply_voltages_ramps_each_channel_and_shuts_down(
     device = _FakeDCVoltageDevice.instances[0]
     applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
     assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25, 0.15, 0.05, 0.0])
-    assert device.calls[-1] == ("off", 1)
+    assert all(call[0] != "off" for call in device.calls)
     assert delays == [0.1] * 6
-
-
-def test_apply_voltages_can_exit_at_target_and_keep_output_on(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Target exit should ramp to its voltage and keep the output enabled."""
-    _reset_fake_devices()
-    monkeypatch.setattr(
-        "qubex.external_devices.dc_voltage.controller.time.sleep",
-        lambda _: None,
-    )
-    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
-    profile = DCVoltageProfile(
-        channel=1,
-        ramp_rate_v_per_s=1.0,
-        update_interval_s=0.1,
-    )
-
-    with controller.apply_voltages(
-        {1: (0.25, profile)},
-        exit_policies={
-            1: DCVoltageExitPolicy(
-                mode=DCVoltageExitMode.TARGET,
-                target_voltage_v=-0.05,
-            )
-        },
-    ):
-        pass
-
-    device = _FakeDCVoltageDevice.instances[0]
-    assert device.voltages[1] == pytest.approx(-0.05)
-    assert device.output_states[1] is True
 
 
 def test_apply_voltages_can_hold_applied_voltage_on_exit() -> None:
@@ -258,47 +393,13 @@ def test_apply_voltages_can_hold_applied_voltage_on_exit() -> None:
 
     with controller.apply_voltages(
         {1: (0.25, profile)},
-        exit_policies={
-            1: DCVoltageExitPolicy(mode=DCVoltageExitMode.HOLD),
-        },
+        exit_modes={1: DCVoltageExitMode.HOLD},
     ):
         pass
 
     device = _FakeDCVoltageDevice.instances[0]
     assert device.voltages[1] == pytest.approx(0.25)
     assert device.output_states[1] is True
-
-
-def test_apply_voltages_can_restore_initial_voltage_and_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Restore exit should reinstate the initial voltage and output state."""
-    _reset_fake_devices()
-    monkeypatch.setattr(
-        "qubex.external_devices.dc_voltage.controller.time.sleep",
-        lambda _: None,
-    )
-
-    class _InitiallyOffDevice(_FakeDCVoltageDevice):
-        def __init__(self) -> None:
-            super().__init__()
-            self.voltages[1] = -0.12
-            self.output_states[1] = False
-
-    controller = DCVoltageController(device_factory=_InitiallyOffDevice)
-    profile = DCVoltageProfile(channel=1, ramp_rate_v_per_s=1.0)
-
-    with controller.apply_voltages(
-        {1: (0.25, profile)},
-        exit_policies={
-            1: DCVoltageExitPolicy(mode=DCVoltageExitMode.RESTORE),
-        },
-    ):
-        pass
-
-    device = _FakeDCVoltageDevice.instances[0]
-    assert device.voltages[1] == pytest.approx(-0.12)
-    assert device.output_states[1] is False
 
 
 def test_apply_voltage_ramps_with_one_device_connection(
@@ -315,7 +416,7 @@ def test_apply_voltage_ramps_with_one_device_connection(
         channel=1,
         ramp_rate_v_per_s=1.0,
         update_interval_s=0.1,
-        safe_voltage_v=0.0,
+        idle_voltage_v=0.0,
     )
 
     controller.apply_voltage(channel=1, voltage=0.25, profile=profile)
@@ -346,10 +447,10 @@ def test_apply_voltage_immediately_skips_ramp() -> None:
     assert device.output_states[1] is True
 
 
-def test_shutdown_ramps_to_safe_voltage_and_turns_output_off(
+def test_idle_ramps_to_idle_voltage_without_touching_the_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Shutdown should ramp to the safe voltage before disabling the output."""
+    """Idling should ramp to the idle voltage and leave the output switch alone."""
     _reset_fake_devices()
     monkeypatch.setattr(
         "qubex.external_devices.dc_voltage.controller.time.sleep",
@@ -367,15 +468,15 @@ def test_shutdown_ramps_to_safe_voltage_and_turns_output_off(
         channel=1,
         ramp_rate_v_per_s=1.0,
         update_interval_s=0.1,
-        safe_voltage_v=0.0,
+        idle_voltage_v=0.0,
     )
 
-    controller.shutdown(channel=1, profile=profile)
+    controller.idle(channel=1, profile=profile)
 
     device = _FakeDCVoltageDevice.instances[0]
     applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
     assert applied == pytest.approx([0.15, 0.05, 0.0])
-    assert device.calls[-1] == ("off", 1)
+    assert all(call[0] != "off" for call in device.calls)
 
 
 def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
@@ -410,7 +511,7 @@ def test_apply_voltages_retries_until_readback_is_within_profile_tolerance(
         channel=1,
         ramp_rate_v_per_s=1.0,
         update_interval_s=0.1,
-        safe_voltage_v=0.0,
+        idle_voltage_v=0.0,
         readback_tolerance_v=0.001,
         max_set_attempts=2,
     )

@@ -96,37 +96,41 @@ QuEL-3 のエントリでは `address` と `adapter` は任意です。QuBE と 
 
 ### `external_devices.yaml`
 
-外部機器を用途ごとに設定します。次の例では JPA バイアス用 controller に共通の ramp 設定を定義し、mux 7 の ramp rate だけを上書きしています。出力 channel は 1 始まりです。
+このファイルはシステム設定本体と同じ構成です: `devices` が `box.yaml` と同じ発想でデバイスを定義し、`wiring` が `wiring.yaml` と同じ発想で mux とデバイス出力を接続し、`settings` が制御ポリシーを持ちます。
 
 ```yaml
-dc_voltage_controllers:
-  jpa_bias:
+devices:
+  ONS1:
     driver: ons61797
-
-    connection:
+    channels: [1, 2]
+    params:
       port: /dev/ttyACM0
 
-    voltage_control:
-      defaults:
-        ramp:
-          rate_v_per_s: 0.1
-          step_interval_s: 0.1
-        shutdown:
-          voltage_v: 0.0
-        readback:
-          tolerance_v: 0.001
-          max_attempts: 3
+wiring:
+  - mux: 6
+    bias: ONS1-1
+  - mux: 7
+    bias: ONS1-2
 
-      muxes:
-        6:
-          channel: 1
-        7:
-          channel: 2
-          ramp:
-            rate_v_per_s: 0.05
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_interval_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  idle_voltage_v: 0.0
+  overrides:
+    - mux: 7
+      ramp:
+        rate_v_per_s: 0.05
 ```
 
-`connection` の内容は選択したdriverが解釈します。ONS61797をネットワーク接続する場合は `connection.port` の代わりに `connection.ip_address` を指定します。両方を同時には指定できません。mux ごとに省略した制御値は `defaults` から継承します。channel の対応はすべての mux について明示が必要です。`muxes` に設定のない mux を使用するとエラーになります。channel を推測して意図しない出力へ電圧を印加することはありません。
+- `devices` — `driver` が adapter を選び、`channels` がデバイスの出力を列挙します。`params` の中身は driver 固有で、選択した driver 自身が検証します (ONS61797: serial は `port`、network は `ip_address`。両方は不可)。
+- `wiring` — 各エントリは役割名 (`bias`) と `デバイス名-チャンネル` 形式の出力参照 (`ONS1-2` = デバイス `ONS1` の channel 2、1 始まり) を持ちます。操作できるのは配線済みの出力だけで、未配線の mux や `channels` 外のチャンネルは推測せず明示エラーになります。
+- `settings` — 直下の値が配線済み全 mux の既定値、`overrides` が mux 単位の上書きです。`idle_voltage_v` は未使用時にこの線が待機する値です。1 つの `settings` (役割は既定 `bias`、`role` で変更可) が拾う出力はすべて同じデバイスにある必要があります。
+
+context 終了時の挙動は設定ではなく呼び出し側で選びます: `measurement.apply_dc_voltages(..., on_exit=...)` に `"idle"` (既定 — アイドル電圧まで ramp) か `"hold"` (バイアスを残す) を渡します。出力スイッチが自動で切り替わることはありません — 変えるのは明示的な `turn_on()` / `turn_off()` だけです。
 
 Qblox SPI Rackを、USB接続を所有するserver processを経由して制御する場合は、
 `qblox_server` driverを使用します。QubexはこのserverへTCP clientとして
@@ -134,49 +138,36 @@ Qblox SPI Rackを、USB接続を所有するserver processを経由して制御�
 同じ装置を利用する環境ではこの構成を推奨します。
 
 ```yaml
-dc_voltage_controllers:
-  jpa_bias:
+devices:
+  Qblox1:
     driver: qblox_server
-
-    connection:
+    channels: [1, 2]
+    params:
       host: "<qblox-backend-host>"
       port: <qblox-backend-port>
       timeout_s: 1200
-      channels:
-        1: "<backend-device-name-1>"
-        2: "<backend-device-name-2>"
 
-    voltage_control:
-      defaults:
-        ramp:
-          rate_v_per_s: 0.1
-          step_interval_s: 0.1
-        shutdown:
-          voltage_v: 0.0
-        readback:
-          tolerance_v: 0.001
-          max_attempts: 3
+wiring:
+  - mux: 6
+    bias: Qblox1-1
 
-      muxes:
-        6:
-          channel: 1
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_interval_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  idle_voltage_v: 0.0
 ```
 
-`connection.channels`の値には、serverが管理するdevice識別名を指定します。
-Qubexはramp全体をserver側のsweep commandへ委譲するため、同じrampの
-途中へ別clientのsetpointが割り込みません。serverはsweepを同期処理するため、
-完了まで別channelの操作も待つ場合があります。認証のないsocketを信頼できない
-networkへ公開しないでください。
+serverは各出力を `<デバイス名>-<channel>` で識別するため、デバイス名はbackendの報告名に合わせます (`Qblox1` → `Qblox1-15`)。命名が規則的でない場合は `params` の `device_names: {channel: 名前}` で対応します。rampはserver側で一括実行されるため他clientは割り込めませんが、完了まで他channelの操作が待つことがあります。認証のないsocketを信頼できないnetworkへ公開しないでください。
 
-D5a moduleにはchannelごとの物理的な出力スイッチがなく、標準bipolar spanでは
--4 Vから4 Vに制限されます。このdriverでのshutdownは`shutdown.voltage_v`まで
-rampすることを意味し、出力を電気的に切断しません。そのため、`turn_on()`と
-`turn_off()`の直接呼び出しは非対応です。読み出される電圧はmoduleが保持して
-いる出力設定値であり、独立した電圧計の実測値ではありません。
+D5a moduleにはchannelごとの出力スイッチがなく、標準bipolar spanは-4 V〜4 Vです: `idle` は `idle_voltage_v` までのrampのみで電気的には切断されず、`turn_on()`/`turn_off()` は非対応、読み出される電圧はmoduleの保持値であり実測値ではありません。
 
-`ramp.rate_v_per_s` は1秒あたりの電圧変化、`ramp.step_interval_s` はsetpointの更新間隔です。両者の積が1 stepの最大電圧変化になります。context終了時は `shutdown.voltage_v` までrampし、物理的な出力switchに対応するdeviceでは出力もOFFにします。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。どちらも mux ごとに上書きできます。
+`ramp.rate_v_per_s` × `ramp.step_interval_s` が1 setpointあたりの最大電圧変化です。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。
 
-`apply_voltage()` は出力を ON にし、mux に対応する設定で現在値から目標値まで ramp します。出力が OFF の場合は、安全電圧を設定してから ON にします。context を抜けると安全電圧まで ramp し、deviceが対応する場合は出力もOFFにします。
+`apply_voltage()` は出力を ON にし、現在値 (出力が OFF だった場合はアイドル電圧) から目標値まで ramp します。DC電圧操作は context に紐づき、抜けるとアイドル電圧まで ramp します。
 
 ```python
 with experiment.dc_voltage_control(mux=6) as dc:
@@ -184,12 +175,12 @@ with experiment.dc_voltage_control(mux=6) as dc:
     state = dc.state
 ```
 
-`turn_on()` と `turn_off()` は、電圧値を変更せずに選択した mux の出力を ON/OFF します。既定では、context を抜けると出力は OFF になります。
+`turn_on()` と `turn_off()` は、電圧値を変更せずに選択した mux の出力を ON/OFF します。スイッチを変えるのはこの 2 つの明示操作だけです。
 
-context を抜けた後も固定バイアスを出力し続ける場合は、自動 OFF を明示的に無効にします。
+context を抜けた後もバイアスを残す場合は `hold` を選びます。
 
 ```python
-with experiment.dc_voltage_control(mux=6, shutdown_on_exit=False) as dc:
+with experiment.dc_voltage_control(mux=6, on_exit="hold") as dc:
     dc.apply_voltage(0.27)
 ```
 

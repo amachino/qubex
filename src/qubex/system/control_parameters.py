@@ -11,15 +11,13 @@ from qubex.core import MutableModel
 from .target_type import TargetType
 
 _ValueT = TypeVar("_ValueT")
-DCVoltageOnExit = Literal["off", "low_noise", "restore", "hold"]
+DCVoltageOnExit = Literal["idle", "hold"]
 
 
 class JPAParameters(TypedDict):
     """Resolved JPA parameters for one mux."""
 
-    dc_voltage: float
-    low_noise_dc_voltage: NotRequired[float]
-    dc_voltage_exit_mode: NotRequired[DCVoltageOnExit]
+    dc_voltage: NotRequired[float]
     pump_frequency: float
     pump_amplitude: float
 
@@ -141,20 +139,18 @@ class ControlParameters(MutableModel):
         """Return the materialized pump amplitude for a mux."""
         return self.jpa_params[mux]["pump_amplitude"]
 
+    def has_dc_voltage(self, mux: int) -> bool:
+        """Return whether a mux has a calibrated amplification DC voltage."""
+        return "dc_voltage" in self.jpa_params.get(mux, {})
+
     def get_dc_voltage(self, mux: int) -> float:
-        """Return the materialized DC voltage for a mux."""
-        return self.jpa_params[mux]["dc_voltage"]
-
-    def get_low_noise_dc_voltage(self, mux: int) -> float:
-        """Return the calibrated low-noise DC voltage for a mux."""
-        value = self.jpa_params[mux].get("low_noise_dc_voltage")
+        """Return the calibrated amplification DC voltage for a mux."""
+        value = self.jpa_params.get(mux, {}).get("dc_voltage")
         if value is None:
-            raise ValueError(f"No low-noise DC voltage is configured for mux {mux}.")
+            raise ValueError(
+                f"Mux {mux} has no calibrated `dc_voltage` in `jpa_params.yaml`."
+            )
         return value
-
-    def get_dc_voltage_exit_mode(self, mux: int) -> DCVoltageOnExit:
-        """Return the default DC voltage exit mode for a mux."""
-        return self.jpa_params[mux].get("dc_voltage_exit_mode", "off")
 
     def _require_qubit_value(
         self,

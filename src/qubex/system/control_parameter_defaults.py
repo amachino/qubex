@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final, cast
+from typing import TYPE_CHECKING, Any, Final
 
 from qubex.system.control_parameters import (
     ControlParameters,
-    DCVoltageOnExit,
     JPAParameters,
 )
 from qubex.system.target_type import TargetType
@@ -50,7 +49,6 @@ class ControlParameterDefaults:
     capture_delay_word: int | None
     pump_frequency: float
     pump_amplitude: float
-    dc_voltage: float
     frequency_margin_by_type: dict[str, float] | None = None
 
     def create_control_parameters(
@@ -261,7 +259,6 @@ class ControlParameterDefaults:
             return {
                 "pump_frequency": default_pump_frequency,
                 "pump_amplitude": self.pump_amplitude,
-                "dc_voltage": self.dc_voltage,
             }
         raw_pump_frequency = value.get("pump_frequency")
         raw_pump_amplitude = value.get("pump_amplitude")
@@ -277,23 +274,19 @@ class ControlParameterDefaults:
                 if raw_pump_amplitude is not None
                 else self.pump_amplitude
             ),
-            "dc_voltage": (
-                float(raw_dc_voltage) if raw_dc_voltage is not None else self.dc_voltage
-            ),
         }
-        raw_low_noise_dc_voltage = value.get("low_noise_dc_voltage")
-        if raw_low_noise_dc_voltage is not None:
-            resolved["low_noise_dc_voltage"] = float(raw_low_noise_dc_voltage)
-        raw_exit_mode = value.get("dc_voltage_exit_mode")
-        if raw_exit_mode is not None:
-            valid_modes = {"off", "low_noise", "restore", "hold"}
-            if not isinstance(raw_exit_mode, str) or raw_exit_mode not in valid_modes:
-                raise ValueError(
-                    "`dc_voltage_exit_mode` must be one of "
-                    f"{sorted(valid_modes)}, got {raw_exit_mode!r}."
-                )
-            resolved["dc_voltage_exit_mode"] = cast(
-                DCVoltageOnExit,
-                raw_exit_mode,
+        if raw_dc_voltage is not None:
+            resolved["dc_voltage"] = float(raw_dc_voltage)
+        if "low_noise_dc_voltage" in value:
+            raise ValueError(
+                "`low_noise_dc_voltage` is no longer used: the exit behavior "
+                "is chosen with the API `on_exit` argument (`idle` or "
+                "`hold`)."
+            )
+        if "dc_voltage_exit_mode" in value:
+            raise ValueError(
+                "`dc_voltage_exit_mode` was removed: choose the exit "
+                "behavior with the API `on_exit` argument (`idle` or "
+                "`hold`)."
             )
         return resolved

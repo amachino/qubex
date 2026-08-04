@@ -657,7 +657,7 @@ class Measurement:
         ----------
         targets : str | Collection[str]
             Target label or target labels for DC bias application.
-        on_exit : {"off", "low_noise", "restore", "hold"} or None, optional
+        on_exit : {"idle", "hold"} or None, optional
             Exit behavior override. Uses each mux's configured default when omitted.
 
         Yields

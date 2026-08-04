@@ -10,11 +10,6 @@ class DCVoltageDevice(Protocol):
     """Define the operations required from a DC voltage source."""
 
     @property
-    def supports_output_switch(self) -> bool:
-        """Return whether the device can physically switch an output."""
-        ...
-
-    @property
     def supports_native_ramp(self) -> bool:
         """Return whether the device can execute a complete ramp atomically."""
         ...

@@ -55,6 +55,7 @@ from qubex.system import (
     SystemManager,
     Target,
 )
+from qubex.system.control_parameters import DCVoltageOnExit
 from qubex.system.target_type import TargetType
 from qubex.typing import (
     ConfigurationMode,
@@ -891,7 +892,7 @@ class Experiment:
         self,
         *,
         mux: int | str | None = None,
-        shutdown_on_exit: bool = True,
+        on_exit: DCVoltageOnExit = "idle",
     ) -> Iterator[DCVoltageControl]:
         """
         Yield DC voltage operations bound to one mux.
@@ -900,10 +901,9 @@ class Experiment:
         ----------
         mux : int or str, optional
             Mux index or label. Required when multiple muxes are active.
-        shutdown_on_exit : bool
-            Whether to ramp to the safe voltage and turn off the output when
-            the context exits. Disable this only when the selected mux must
-            remain biased after the operation.
+        on_exit : {"idle", "hold"}
+            Exit behavior. `idle` (default) ramps back to the idle voltage;
+            `hold` leaves the bias applied.
 
         Yields
         ------
@@ -912,7 +912,7 @@ class Experiment:
         """
         with self.ctx.dc_voltage_control(
             mux=mux,
-            shutdown_on_exit=shutdown_on_exit,
+            on_exit=on_exit,
         ) as control:
             yield control
 

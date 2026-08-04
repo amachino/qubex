@@ -18,7 +18,7 @@ class DCVoltageControl:
         *,
         apply_voltage: Callable[[float, DCVoltageProfile], None],
         apply_voltage_immediately: Callable[[float, DCVoltageProfile], None],
-        shutdown: Callable[[DCVoltageProfile], None],
+        idle: Callable[[DCVoltageProfile], None],
         get_state: Callable[[], DCVoltageState],
         turn_on: Callable[[], None],
         turn_off: Callable[[], None],
@@ -27,7 +27,7 @@ class DCVoltageControl:
         """Initialize bound DC voltage operations."""
         self._apply_voltage = apply_voltage
         self._apply_voltage_immediately = apply_voltage_immediately
-        self._shutdown = shutdown
+        self._idle = idle
         self._get_state = get_state
         self._turn_on = turn_on
         self._turn_off = turn_off
@@ -99,9 +99,9 @@ class DCVoltageControl:
         for voltage in sweep_range:
             yield self.apply_voltage(float(voltage), tolerance=tolerance)
 
-    def shutdown(self, *, tolerance: float | None = None) -> None:
-        """Ramp to the configured safe voltage and turn the output off."""
-        self._shutdown(self._profile_with_tolerance(tolerance))
+    def idle(self, *, tolerance: float | None = None) -> None:
+        """Ramp back to the configured idle voltage."""
+        self._idle(self._profile_with_tolerance(tolerance))
 
     def _profile_with_tolerance(
         self,

@@ -11,9 +11,9 @@ import pytest
 from qubex.external_devices.dc_voltage import (
     DCVoltageController,
     DCVoltageProfile,
+    ExternalDevicesConfig,
     create_dc_voltage_controller,
 )
-from qubex.external_devices.dc_voltage.config import DCVoltageControllerConfig
 from qubex.external_devices.dc_voltage.drivers.qblox_server import (
     QbloxServerConnectionConfig,
     QbloxServerDevice,
@@ -53,12 +53,13 @@ def _socket_factory(fake_socket: _FakeSocket) -> Callable[..., _FakeSocket]:
 def test_connection_config_parses_server_and_channel_mapping() -> None:
     """Qblox server config should parse endpoint and logical channel names."""
     config = QbloxServerConnectionConfig.from_dict(
+        "QBLOX1",
         {
             "host": "dc-backend.example",
             "port": 12345,
             "timeout_s": 600,
-            "channels": {1: "Qblox-A-1", 2: "Qblox-A-2"},
-        }
+            "device_names": {1: "Qblox-A-1", 2: "Qblox-A-2"},
+        },
     )
 
     assert config == QbloxServerConnectionConfig(
@@ -69,19 +70,51 @@ def test_connection_config_parses_server_and_channel_mapping() -> None:
     )
 
 
+def test_connection_config_derives_channels_from_device_id() -> None:
+    """Backend device names should derive from the device id and channels."""
+    config = QbloxServerConnectionConfig.from_dict(
+        "Qblox1",
+        {
+            "host": "dc-backend.example",
+            "port": 12345,
+        },
+        device_channels=(15, 16),
+    )
+
+    assert config.channels == {15: "Qblox1-15", 16: "Qblox1-16"}
+
+
+def test_connection_config_requires_channels_for_derived_names() -> None:
+    """Deriving backend names requires a device `channels` list."""
+    with pytest.raises(ValueError, match="channels"):
+        QbloxServerConnectionConfig.from_dict(
+            "Qblox1",
+            {"host": "server", "port": 1},
+        )
+
+
+def test_connection_config_rejects_removed_device_prefix() -> None:
+    """`device_prefix` should point to the device name."""
+    with pytest.raises(ValueError, match="`device_prefix` was removed"):
+        QbloxServerConnectionConfig.from_dict(
+            "Qblox1",
+            {"host": "server", "port": 1, "device_prefix": "Qblox1"},
+            device_channels=(1,),
+        )
+
+
 @pytest.mark.parametrize(
     ("connection", "error", "message"),
     [
-        ({"port": 1, "channels": {1: "dev"}}, ValueError, "host"),
-        ({"host": "server", "channels": {1: "dev"}}, ValueError, "port"),
-        ({"host": "server", "port": 1}, ValueError, "channels"),
+        ({"port": 1, "device_names": {1: "dev"}}, ValueError, "host"),
+        ({"host": "server", "device_names": {1: "dev"}}, ValueError, "port"),
         (
-            {"host": "server", "port": 1, "channels": {"1": "dev"}},
+            {"host": "server", "port": 1, "device_names": {"1": "dev"}},
             ValueError,
             "must be integers",
         ),
         (
-            {"host": "server", "port": 1, "channels": {1: "bad\x00name"}},
+            {"host": "server", "port": 1, "device_names": {1: "bad\x00name"}},
             ValueError,
             "NUL",
         ),
@@ -94,7 +127,7 @@ def test_connection_config_rejects_invalid_settings(
 ) -> None:
     """Qblox server config should reject unsafe endpoint and channel settings."""
     with pytest.raises(error, match=message):
-        QbloxServerConnectionConfig.from_dict(connection)
+        QbloxServerConnectionConfig.from_dict("QBLOX1", connection)
 
 
 def test_device_sends_existing_set_voltage_protocol() -> None:
@@ -175,22 +208,27 @@ def test_controller_factory_resolves_qblox_server_driver(
         "qubex.external_devices.dc_voltage.drivers.qblox_server.socket.create_connection",
         _socket_factory(fake_socket),
     )
-    config = DCVoltageControllerConfig.from_dict(
+    config = ExternalDevicesConfig.from_dict(
         {
-            "driver": "qblox_server",
-            "connection": {
-                "host": "server",
-                "port": 12345,
-                "channels": {1: "Qblox-A-1"},
+            "devices": {
+                "Qblox1": {
+                    "driver": "qblox_server",
+                    "params": {
+                        "host": "server",
+                        "port": 12345,
+                    },
+                    "channels": [15],
+                },
             },
+            "wiring": [{"mux": 8, "bias": "Qblox1-15"}],
         }
-    )
+    ).dc_voltage
 
     controller = create_dc_voltage_controller(config)
-    controller.set_voltage(channel=1, voltage=0.1)
+    controller.set_voltage(channel=15, voltage=0.1)
 
     assert fake_socket.closed is True
-    assert fake_socket.sent == [b"\x62Qblox-A-1\x00" + struct.pack("<d", 0.1)]
+    assert fake_socket.sent == [b"\x62Qblox1-15\x00" + struct.pack("<d", 0.1)]
 
 
 def test_controller_delegates_complete_ramp_to_native_server() -> None:
@@ -199,7 +237,6 @@ def test_controller_delegates_complete_ramp_to_native_server() -> None:
     readbacks = iter([0.0, 0.2])
 
     class _NativeRampDevice:
-        supports_output_switch = False
         supports_native_ramp = True
 
         def close(self) -> None:

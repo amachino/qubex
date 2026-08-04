@@ -107,44 +107,56 @@ profile is specified, Qubex uses `se8_mxfe1_awg2222`.
 
 ### `external_devices.yaml`
 
-Configure each external instrument by its purpose. The following example names
-the JPA bias controller, defines the default ramp policy, and overrides the ramp
-rate for mux 7. Output channels are one-based.
+The file mirrors the main system configuration: `devices` declares each
+external instrument like `box.yaml`, `wiring` connects muxes to device
+outputs like `wiring.yaml`, and `settings` holds the control policy.
 
 ```yaml
-dc_voltage_controllers:
-  jpa_bias:
+devices:
+  ONS1:
     driver: ons61797
-
-    connection:
+    channels: [1, 2]
+    params:
       port: /dev/ttyACM0
 
-    voltage_control:
-      defaults:
-        ramp:
-          rate_v_per_s: 0.1
-          step_interval_s: 0.1
-        shutdown:
-          voltage_v: 0.0
-        readback:
-          tolerance_v: 0.001
-          max_attempts: 3
+wiring:
+  - mux: 6
+    bias: ONS1-1
+  - mux: 7
+    bias: ONS1-2
 
-      muxes:
-        6:
-          channel: 1
-        7:
-          channel: 2
-          ramp:
-            rate_v_per_s: 0.05
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_interval_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  idle_voltage_v: 0.0
+  overrides:
+    - mux: 7
+      ramp:
+        rate_v_per_s: 0.05
 ```
 
-The selected driver interprets `connection`. For an ONS61797 network
-connection, use `connection.ip_address` instead of `connection.port`. Do not
-specify both. A mux entry inherits omitted voltage-control values from
-`defaults`. Every mux must map its channel explicitly: using a mux that is
-not listed raises an error instead of guessing a channel, so a voltage can
-never reach an unintended output.
+- `devices` — `driver` selects the adapter and `channels` lists the device
+  outputs. Everything under `params` is driver-specific and validated by
+  the selected driver (ONS61797: `port` for serial or `ip_address` for
+  network, not both).
+- `wiring` — each entry names a role (`bias`) and references an output as
+  `DEVICE-CHANNEL` (`ONS1-2` = channel 2 of device `ONS1`, one-based).
+  Only wired outputs can be driven: an unwired mux or an unlisted channel
+  raises an error instead of guessing.
+- `settings` — the body sets the defaults for every wired mux and
+  `overrides` adjusts them per mux. `idle_voltage_v` is the value the line
+  rests at when not in use. All outputs of one `settings` (role `bias` by
+  default, changeable with `role`) must be on the same device.
+
+The exit behavior is not configuration:
+`measurement.apply_dc_voltages(..., on_exit=...)` takes `"idle"` (default —
+ramp back to the idle voltage) or `"hold"` (leave the bias applied). The
+output switch is never touched automatically; only the explicit `turn_on()`
+and `turn_off()` calls change it.
 
 To control a Qblox SPI Rack through a server process that owns its USB
 connection, use the `qblox_server` driver. Qubex connects to that server as a
@@ -153,61 +165,49 @@ this is the recommended configuration when multiple systems use the same
 instrument.
 
 ```yaml
-dc_voltage_controllers:
-  jpa_bias:
+devices:
+  Qblox1:
     driver: qblox_server
-
-    connection:
+    channels: [1, 2]
+    params:
       host: "<qblox-backend-host>"
       port: <qblox-backend-port>
       timeout_s: 1200
-      channels:
-        1: "<backend-device-name-1>"
-        2: "<backend-device-name-2>"
 
-    voltage_control:
-      defaults:
-        ramp:
-          rate_v_per_s: 0.1
-          step_interval_s: 0.1
-        shutdown:
-          voltage_v: 0.0
-        readback:
-          tolerance_v: 0.001
-          max_attempts: 3
+wiring:
+  - mux: 6
+    bias: Qblox1-1
 
-      muxes:
-        6:
-          channel: 1
+settings:
+  ramp:
+    rate_v_per_s: 0.1
+    step_interval_s: 0.1
+  readback:
+    tolerance_v: 0.001
+    max_attempts: 3
+  idle_voltage_v: 0.0
 ```
 
-The channel values in `connection.channels` are the device identifiers managed
-by the server. Qubex delegates each complete ramp to the server-side sweep
-command so another client cannot interleave setpoints within that ramp. The
-server processes a sweep synchronously, so operations on other channels may
-wait until it finishes. Do not expose an unauthenticated socket outside a
-trusted network.
+The server names each output `<device name>-<channel>`, so name the device
+exactly as the backend reports it (`Qblox1` → `Qblox1-15`); for irregular
+names use `device_names: {channel: name}` in `params`. Ramps run as one
+server-side sweep — no other client can interleave setpoints, but other
+channels may wait until a sweep finishes. Do not expose the unauthenticated
+socket outside a trusted network.
 
-The D5a module has no physical per-channel output switch, and the standard
-bipolar span is limited to -4 V through 4 V. With this driver, shutdown means
-ramping to `shutdown.voltage_v`; it does not electrically disconnect the
-output, and direct `turn_on()` and `turn_off()` calls are unsupported. The
-reported voltage is the module's stored output setting, not an independent
-voltage measurement.
+The D5a module has no per-channel output switch and its standard bipolar
+span is -4 V to 4 V: `idle` only ramps to `idle_voltage_v`, `turn_on()` and
+`turn_off()` are unsupported, and the reported voltage is the module's
+stored setting, not an independent measurement.
 
-`ramp.rate_v_per_s` is the voltage change per second and
-`ramp.step_interval_s` is the interval between setpoints. Their product is the
-maximum voltage change per step. On context exit, Qubex ramps to
-`shutdown.voltage_v` and turns the output off when the device supports physical
-output switching. A setpoint succeeds when its readback error is within
-`readback.tolerance_v`; otherwise Qubex retries up to `readback.max_attempts`
-times. Both values can be overridden per mux.
+`ramp.rate_v_per_s` × `ramp.step_interval_s` is the maximum voltage change
+per setpoint. A setpoint succeeds when its readback error is within
+`readback.tolerance_v`, retried up to `readback.max_attempts` times.
 
-`apply_voltage()` enables the output and ramps from the current voltage to the
-target using the resolved mux profile. When the output is initially off, Qubex
-sets the configured safe voltage before enabling it. DC voltage operations are
-scoped to a context; exiting it ramps back to the safe voltage and, when
-supported, turns the output off.
+`apply_voltage()` enables the output and ramps from the current voltage to
+the target (starting from the idle voltage when the output was off). DC
+voltage operations are scoped to a context; exiting it ramps back to the
+idle voltage.
 
 ```python
 with experiment.dc_voltage_control(mux=6) as dc:
@@ -216,13 +216,12 @@ with experiment.dc_voltage_control(mux=6) as dc:
 ```
 
 `turn_on()` and `turn_off()` control the output for the selected mux without
-changing its voltage. By default, the output is turned off when the context exits.
+changing its voltage; they are the only operations that change the switch.
 
-To keep a fixed bias enabled after leaving the context, explicitly disable the
-automatic shutdown.
+To keep a bias applied after leaving the context, choose `hold`.
 
 ```python
-with experiment.dc_voltage_control(mux=6, shutdown_on_exit=False) as dc:
+with experiment.dc_voltage_control(mux=6, on_exit="hold") as dc:
     dc.apply_voltage(0.27)
 ```
 

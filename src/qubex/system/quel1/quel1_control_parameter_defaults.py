@@ -18,7 +18,6 @@ DEFAULT_CAPTURE_DELAY: Final[int] = 7
 DEFAULT_CAPTURE_DELAY_WORD: Final[int] = 0
 DEFAULT_PUMP_FREQUENCY_GHZ: Final[float] = 10.0
 DEFAULT_PUMP_AMPLITUDE: Final[float] = 0.0
-DEFAULT_DC_VOLTAGE: Final[float] = 0.0
 
 
 class Quel1ControlParameterDefaults(ControlParameterDefaults):
@@ -38,5 +37,4 @@ class Quel1ControlParameterDefaults(ControlParameterDefaults):
             capture_delay_word=DEFAULT_CAPTURE_DELAY_WORD,
             pump_frequency=DEFAULT_PUMP_FREQUENCY_GHZ,
             pump_amplitude=DEFAULT_PUMP_AMPLITUDE,
-            dc_voltage=DEFAULT_DC_VOLTAGE,
         )

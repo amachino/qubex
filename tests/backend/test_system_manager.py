@@ -1136,14 +1136,12 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
         @property
         def external_devices_config(self) -> ExternalDevicesConfig:
             return ExternalDevicesConfig(
-                dc_voltage_controllers={
-                    "jpa_bias": DCVoltageControllerConfig(
-                        driver="ons61797",
-                        connection={"port": "/dev/system-dc"},
-                        voltage_defaults=DCVoltageProfile(channel=1),
-                        muxes={6: DCVoltageProfileOverride(channel=1)},
-                    )
-                }
+                dc_voltage=DCVoltageControllerConfig(
+                    driver="ons61797",
+                    params={"port": "/dev/system-dc"},
+                    voltage_defaults=DCVoltageProfile(channel=1),
+                    muxes={6: DCVoltageProfileOverride(channel=1)},
+                )
             )
 
         def get_experiment_system(self) -> object:
@@ -1171,7 +1169,7 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
     assert created_configs == [
         DCVoltageControllerConfig(
             driver="ons61797",
-            connection={"port": "/dev/system-dc"},
+            params={"port": "/dev/system-dc"},
             voltage_defaults=DCVoltageProfile(channel=1),
             muxes={6: DCVoltageProfileOverride(channel=1)},
         ),
@@ -1179,7 +1177,8 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
     installed_controller = cast(Any, manager.dc_voltage_controller)
     assert installed_controller.config == created_configs[0]
     assert manager.resolve_dc_voltage_channel(6) == 1
-    assert manager.resolve_dc_voltage_channel(7) == 8
+    with pytest.raises(ValueError, match="Mux 7 has no DC voltage wiring"):
+        manager.resolve_dc_voltage_channel(7)
 
 
 def test_load_does_not_pass_wiring_file_to_config_loader(

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 from .drivers.ons61797 import create_ons61797_device_factory
 from .drivers.qblox_server import create_qblox_server_device_factory
 from .protocol import DCVoltageDeviceFactory
 
 DCVoltageDriverFactory = Callable[
-    [Mapping[str, object]],
+    [str, Mapping[str, object], Sequence[int] | None],
     DCVoltageDeviceFactory,
 ]
 

@@ -9,12 +9,12 @@ import pytest
 
 from qubex.external_devices import (
     DCVoltageExitMode,
-    DCVoltageExitPolicy,
     DCVoltageProfile,
 )
 from qubex.measurement.services.measurement_amplification_service import (
     MeasurementAmplificationService,
 )
+from qubex.system.control_parameters import DCVoltageOnExit
 
 
 def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) -> None:
@@ -26,14 +26,11 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
             self.index = index
 
     class _ControlParams:
+        def has_dc_voltage(self, mux: int) -> bool:
+            return True
+
         def get_dc_voltage(self, mux: int) -> float:
             return {0: 0.25, 2: -0.4}[mux]
-
-        def get_dc_voltage_exit_mode(self, mux: int) -> str:
-            return {0: "low_noise", 2: "off"}[mux]
-
-        def get_low_noise_dc_voltage(self, mux: int) -> float:
-            return {0: -0.08}[mux]
 
     class _ExperimentSystem:
         control_params = _ControlParams()
@@ -50,10 +47,10 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
             self,
             requests: dict[int, tuple[float, DCVoltageProfile]],
             *,
-            exit_policies: dict[int, DCVoltageExitPolicy],
+            exit_modes: dict[int, DCVoltageExitMode],
         ):
             called["requests"] = requests
-            called["exit_policies"] = exit_policies
+            called["exit_modes"] = exit_modes
             called["entered"] = True
             try:
                 yield
@@ -90,12 +87,9 @@ def test_apply_dc_voltages_resolves_targets_and_applies_voltages(monkeypatch) ->
         2: (0.25, DCVoltageProfile(channel=2)),
         4: (-0.4, DCVoltageProfile(channel=4, ramp_rate_v_per_s=0.05)),
     }
-    assert called["exit_policies"] == {
-        2: DCVoltageExitPolicy(
-            mode=DCVoltageExitMode.TARGET,
-            target_voltage_v=-0.08,
-        ),
-        4: DCVoltageExitPolicy(mode=DCVoltageExitMode.SHUTDOWN),
+    assert called["exit_modes"] == {
+        2: DCVoltageExitMode.IDLE,
+        4: DCVoltageExitMode.IDLE,
     }
     assert called["entered"] is True
     assert called["inside"] is True
@@ -111,11 +105,11 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
             self.index = index
 
     class _ControlParams:
+        def has_dc_voltage(self, mux: int) -> bool:
+            return True
+
         def get_dc_voltage(self, mux: int) -> float:
             return {0: 0.25}[mux]
-
-        def get_dc_voltage_exit_mode(self, mux: int) -> str:
-            return "off"
 
     class _ExperimentSystem:
         control_params = _ControlParams()
@@ -132,10 +126,10 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
             self,
             requests: dict[int, tuple[float, DCVoltageProfile]],
             *,
-            exit_policies: dict[int, DCVoltageExitPolicy],
+            exit_modes: dict[int, DCVoltageExitMode],
         ):
             called["requests"] = requests
-            called["exit_policies"] = exit_policies
+            called["exit_modes"] = exit_modes
             yield
 
     system_manager = type(
@@ -162,42 +156,29 @@ def test_apply_dc_voltages_accepts_single_target(monkeypatch) -> None:
         pass
 
     assert called["requests"] == {2: (0.25, DCVoltageProfile(channel=2))}
-    assert called["exit_policies"] == {
-        2: DCVoltageExitPolicy(mode=DCVoltageExitMode.SHUTDOWN)
-    }
+    assert called["exit_modes"] == {2: DCVoltageExitMode.IDLE}
 
 
 @pytest.mark.parametrize(
-    ("on_exit", "expected_policy"),
+    ("on_exit", "expected_mode"),
     [
-        ("off", DCVoltageExitPolicy(mode=DCVoltageExitMode.SHUTDOWN)),
-        ("hold", DCVoltageExitPolicy(mode=DCVoltageExitMode.HOLD)),
-        ("restore", DCVoltageExitPolicy(mode=DCVoltageExitMode.RESTORE)),
-        (
-            "low_noise",
-            DCVoltageExitPolicy(
-                mode=DCVoltageExitMode.TARGET,
-                target_voltage_v=-0.08,
-            ),
-        ),
+        ("idle", DCVoltageExitMode.IDLE),
+        ("hold", DCVoltageExitMode.HOLD),
     ],
 )
 def test_apply_dc_voltages_allows_exit_mode_override(
-    on_exit: str,
-    expected_policy: DCVoltageExitPolicy,
+    on_exit: DCVoltageOnExit,
+    expected_mode: DCVoltageExitMode,
 ) -> None:
     """An API exit mode should override the mux default."""
     called: dict[str, Any] = {}
 
     class _ControlParams:
+        def has_dc_voltage(self, mux: int) -> bool:
+            return True
+
         def get_dc_voltage(self, mux: int) -> float:
             return 0.25
-
-        def get_dc_voltage_exit_mode(self, mux: int) -> str:
-            return "off"
-
-        def get_low_noise_dc_voltage(self, mux: int) -> float:
-            return -0.08
 
     class _ExperimentSystem:
         control_params = _ControlParams()
@@ -210,8 +191,8 @@ def test_apply_dc_voltages_allows_exit_mode_override(
 
     class _Controller:
         @contextmanager
-        def apply_voltages(self, requests, *, exit_policies):
-            called["exit_policies"] = exit_policies
+        def apply_voltages(self, requests, *, exit_modes):
+            called["exit_modes"] = exit_modes
             yield
 
     system_manager = type(
@@ -237,21 +218,15 @@ def test_apply_dc_voltages_allows_exit_mode_override(
     with service.apply_dc_voltages("Q00", on_exit=on_exit):
         pass
 
-    assert called["exit_policies"] == {2: expected_policy}
+    assert called["exit_modes"] == {2: expected_mode}
 
 
-def test_apply_dc_voltages_requires_low_noise_voltage() -> None:
-    """Low-noise exit should fail when its mux has no calibrated voltage."""
+def test_apply_dc_voltages_skips_uncalibrated_muxes() -> None:
+    """Muxes without a calibrated dc_voltage should not touch the controller."""
 
     class _ControlParams:
-        def get_dc_voltage(self, mux: int) -> float:
-            return 0.25
-
-        def get_dc_voltage_exit_mode(self, mux: int) -> str:
-            return "low_noise"
-
-        def get_low_noise_dc_voltage(self, mux: int) -> float:
-            raise ValueError("No low-noise DC voltage")
+        def has_dc_voltage(self, mux: int) -> bool:
+            return False
 
     class _ExperimentSystem:
         control_params = _ControlParams()
@@ -262,14 +237,16 @@ def test_apply_dc_voltages_requires_low_noise_voltage() -> None:
         def get_mux_by_qubit(self, qubit: str):
             return type("_Mux", (), {"index": 0})()
 
+    class _Controller:
+        @contextmanager
+        def apply_voltages(self, requests, *, exit_modes):
+            raise AssertionError("controller must not be used")
+            yield
+
     system_manager = type(
         "_SystemManager",
         (),
-        {
-            "resolve_dc_voltage_profile": staticmethod(
-                lambda mux: DCVoltageProfile(channel=2)
-            )
-        },
+        {"dc_voltage_controller": _Controller()},
     )()
     context = type(
         "_Context",
@@ -281,8 +258,5 @@ def test_apply_dc_voltages_requires_low_noise_voltage() -> None:
     )()
     service = MeasurementAmplificationService(context=cast(Any, context))
 
-    with (
-        pytest.raises(ValueError, match="low-noise DC voltage"),
-        service.apply_dc_voltages("Q00"),
-    ):
+    with service.apply_dc_voltages("Q00"):
         pass

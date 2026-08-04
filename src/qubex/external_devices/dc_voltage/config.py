@@ -2,11 +2,83 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TypeVar
 
 from .protocol import DCVoltageDeviceFactory
+
+
+@dataclass(frozen=True)
+class DCVoltageDeviceConfig:
+    """Configure one external DC voltage source device."""
+
+    driver: str
+    params: dict[str, object] = field(default_factory=dict)
+    channels: tuple[int, ...] | None = None
+
+    @classmethod
+    def from_dict(cls, device_id: str, raw_config: object) -> DCVoltageDeviceConfig:
+        """Create one normalized device config from one YAML mapping."""
+        if not isinstance(raw_config, Mapping):
+            raise TypeError(f"Device {device_id!r} config must be a mapping.")
+        if "connection" in raw_config:
+            raise ValueError(
+                f"Device {device_id!r} `connection` was renamed to `params`."
+            )
+        unknown = set(raw_config) - {"driver", "channels", "params"}
+        if unknown:
+            raise ValueError(
+                f"Unknown device {device_id!r} settings: {sorted(unknown)}. "
+                "Put driver-specific settings under `params`."
+            )
+        driver = raw_config.get("driver")
+        if not isinstance(driver, str) or not driver.strip():
+            raise ValueError(
+                f"Device {device_id!r} requires a non-empty `driver` string."
+            )
+        raw_params = raw_config.get("params", {})
+        if not isinstance(raw_params, Mapping):
+            raise TypeError(f"Device {device_id!r} `params` must be a mapping.")
+        params = {str(key): value for key, value in raw_params.items()}
+        raw_channels = raw_config.get("channels")
+        channels: tuple[int, ...] | None = None
+        if raw_channels is not None:
+            if not isinstance(raw_channels, (list, tuple)) or not raw_channels:
+                raise ValueError(
+                    f"Device {device_id!r} `channels` must be a non-empty list."
+                )
+            for channel in raw_channels:
+                if type(channel) is not int or channel < 1:
+                    raise ValueError(
+                        f"Device {device_id!r} channels must be positive integers."
+                    )
+            if len(set(raw_channels)) != len(raw_channels):
+                raise ValueError(
+                    f"Device {device_id!r} `channels` must not contain duplicates."
+                )
+            channels = tuple(raw_channels)
+        return cls(
+            driver=driver,
+            params=params,
+            channels=channels,
+        )
+
+
+def parse_device_output_ref(ref: object) -> tuple[str, int]:
+    """Parse one `DEVICE-CHANNEL` output reference into its device and channel."""
+    if not isinstance(ref, str):
+        raise TypeError("DC voltage `bias` must be a `DEVICE-CHANNEL` string.")
+    device_id, separator, channel_text = ref.rpartition("-")
+    if not separator or not device_id or not channel_text.isdigit():
+        raise ValueError(
+            f"DC voltage bias {ref!r} must use the `DEVICE-CHANNEL` form, "
+            "e.g. `Qblox1-15`."
+        )
+    channel = int(channel_text)
+    if channel < 1:
+        raise ValueError(f"DC voltage bias {ref!r} channel must be positive.")
+    return device_id, channel
 
 
 @dataclass(frozen=True)
@@ -16,7 +88,7 @@ class DCVoltageProfile:
     channel: int
     ramp_rate_v_per_s: float = 0.1
     update_interval_s: float = 0.1
-    safe_voltage_v: float = 0.0
+    idle_voltage_v: float = 0.0
     readback_tolerance_v: float = 1e-3
     max_set_attempts: int = 3
 
@@ -28,7 +100,7 @@ class DCVoltageProfileOverride:
     channel: int
     ramp_rate_v_per_s: float | None = None
     update_interval_s: float | None = None
-    safe_voltage_v: float | None = None
+    idle_voltage_v: float | None = None
     readback_tolerance_v: float | None = None
     max_set_attempts: int | None = None
 
@@ -38,7 +110,9 @@ class DCVoltageControllerConfig:
     """Configure one external DC voltage controller."""
 
     driver: str = "ons61797"
-    connection: dict[str, object] = field(default_factory=dict)
+    params: dict[str, object] = field(default_factory=dict)
+    device_id: str | None = None
+    channels: tuple[int, ...] | None = None
     device_factory: DCVoltageDeviceFactory | None = None
     voltage_defaults: DCVoltageProfile = field(
         default_factory=lambda: DCVoltageProfile(channel=1)
@@ -50,15 +124,15 @@ class DCVoltageControllerConfig:
         override = self.muxes.get(mux_index)
         if override is None:
             raise ValueError(
-                f"Mux {mux_index} has no DC voltage channel configured. "
-                "Add an explicit entry to `voltage_control.muxes`."
+                f"Mux {mux_index} has no DC voltage wiring configured. "
+                "Add an entry to the `wiring` list in `external_devices.yaml`."
             )
         values = {
             name: value
             for name in (
                 "ramp_rate_v_per_s",
                 "update_interval_s",
-                "safe_voltage_v",
+                "idle_voltage_v",
                 "readback_tolerance_v",
                 "max_set_attempts",
             )
@@ -71,37 +145,75 @@ class DCVoltageControllerConfig:
         )
 
     @classmethod
-    def from_dict(cls, raw_config: object) -> DCVoltageControllerConfig:
+    def from_dict(
+        cls,
+        raw_config: object,
+        *,
+        devices: Mapping[str, DCVoltageDeviceConfig],
+        wiring: Mapping[str, Mapping[int, tuple[str, int]]],
+    ) -> DCVoltageControllerConfig:
         """Create a normalized controller config from one YAML mapping."""
         if not isinstance(raw_config, Mapping):
-            raise TypeError("DC voltage controller config must be a mapping.")
-        driver = raw_config.get("driver", "ons61797")
-        if not isinstance(driver, str):
-            raise TypeError("DC voltage controller `driver` must be a string.")
-        connection = raw_config.get("connection", {})
-        if not isinstance(connection, Mapping):
-            raise TypeError("DC voltage controller `connection` must be a mapping.")
-        voltage_control = _nested_mapping(raw_config, "voltage_control")
-        defaults = _nested_mapping(voltage_control, "defaults")
+            raise TypeError("DC voltage settings entry must be a mapping.")
+        unknown = set(raw_config) - {
+            "role",
+            "ramp",
+            "readback",
+            "idle_voltage_v",
+            "overrides",
+        }
+        if unknown & {"dc_voltage_exit_mode", "exit_mode", "exit"}:
+            raise ValueError(
+                "Exit modes are no longer configured: the config keeps only "
+                "`idle_voltage_v`, and the exit behavior is chosen with the "
+                "API `on_exit` argument (`idle` or `hold`)."
+            )
+        if "shutdown" in unknown:
+            raise ValueError("`shutdown.voltage_v` was renamed to `idle_voltage_v`.")
+        if unknown & {"driver", "connection"}:
+            raise ValueError(
+                "DC voltage `driver` and `connection` moved to the top-level "
+                "`devices` section; wire outputs in the top-level `wiring` "
+                "list."
+            )
+        if "wiring" in unknown:
+            raise ValueError(
+                "DC voltage `wiring` moved to the top level of "
+                "`external_devices.yaml`, next to `devices`."
+            )
+        if unknown & {"voltage_control", "defaults", "muxes"}:
+            raise ValueError(
+                "The `voltage_control` nesting was flattened: put `ramp`, "
+                "`readback`, `exit`, and `overrides` directly in the "
+                "settings entry."
+            )
+        if unknown:
+            raise ValueError(f"Unknown DC voltage settings: {sorted(unknown)}.")
+        role = raw_config.get("role", "bias")
+        if not isinstance(role, str) or not role.strip():
+            raise TypeError("DC voltage `role` must be a non-empty string.")
         default_profile = _parse_voltage_profile(
-            defaults,
+            raw_config,
             channel=1,
             base=None,
         )
-        muxes = _nested_mapping(voltage_control, "muxes")
+        role_wiring = wiring.get(role)
+        if not role_wiring:
+            raise ValueError(
+                f"No `wiring` entry defines a {role!r} output for this "
+                "DC voltage controller."
+            )
+        device_ids = {device_id for device_id, _ in role_wiring.values()}
+        if len(device_ids) > 1:
+            raise ValueError(
+                f"All {role!r} outputs of one DC voltage controller must "
+                f"reference the same device, found {sorted(device_ids)}."
+            )
+        overrides = _parse_profile_overrides(raw_config, set(role_wiring))
         normalized_muxes: dict[int, DCVoltageProfileOverride] = {}
-        for mux_index, values in muxes.items():
-            if type(mux_index) is not int:
-                raise TypeError("`voltage_control.muxes` must use integer mux indices.")
-            if mux_index < 0:
-                raise ValueError("DC voltage mux indices must be non-negative.")
-            if not isinstance(values, Mapping):
-                raise TypeError("Each DC voltage mux profile must be a mapping.")
-            channel = values.get("channel")
-            if type(channel) is not int:
-                raise ValueError("DC voltage channels must be integers.")
+        for mux_index, (_, channel) in role_wiring.items():
             resolved = _parse_voltage_profile(
-                values,
+                overrides.get(mux_index, {}),
                 channel=channel,
                 base=default_profile,
             )
@@ -115,9 +227,9 @@ class DCVoltageControllerConfig:
                     resolved.update_interval_s,
                     default_profile.update_interval_s,
                 ),
-                safe_voltage_v=_override_value(
-                    resolved.safe_voltage_v,
-                    default_profile.safe_voltage_v,
+                idle_voltage_v=_override_value(
+                    resolved.idle_voltage_v,
+                    default_profile.idle_voltage_v,
                 ),
                 readback_tolerance_v=_override_value(
                     resolved.readback_tolerance_v,
@@ -128,25 +240,107 @@ class DCVoltageControllerConfig:
                     default_profile.max_set_attempts,
                 ),
             )
-        channels = [profile.channel for profile in normalized_muxes.values()]
-        if len(set(channels)) != len(channels):
-            raise ValueError(
-                "`voltage_control.muxes` must not contain duplicate channels."
-            )
+        device_id = next(iter(device_ids))
+        device = devices[device_id]
         return cls(
-            driver=driver,
-            connection=dict(connection),
+            driver=device.driver,
+            params=dict(device.params),
+            device_id=device_id,
+            channels=device.channels,
             voltage_defaults=default_profile,
             muxes=normalized_muxes,
         )
+
+
+def _parse_wiring(
+    raw_wiring: object,
+    devices: Mapping[str, DCVoltageDeviceConfig],
+) -> dict[str, dict[int, tuple[str, int]]]:
+    """Parse the wiring list into role -> mux -> (device, channel)."""
+    if not isinstance(raw_wiring, Sequence) or isinstance(raw_wiring, (str, bytes)):
+        raise TypeError(
+            "`wiring` must be a list of entries, e.g. `- mux: 8` + `bias: Qblox1-15`."
+        )
+    roles: dict[str, dict[int, tuple[str, int]]] = {}
+    used_outputs: set[tuple[str, int]] = set()
+    seen_muxes: set[int] = set()
+    for entry in raw_wiring:
+        if not isinstance(entry, Mapping):
+            raise TypeError("Each `wiring` entry must be a mapping.")
+        if "channel" in entry:
+            raise ValueError(
+                "DC voltage `channel` was replaced by role outputs with a "
+                "`DEVICE-CHANNEL` reference, e.g. `bias: Qblox1-15`."
+            )
+        mux_index = entry.get("mux")
+        if type(mux_index) is not int:
+            raise TypeError("Each `wiring` entry requires an integer `mux`.")
+        if mux_index < 0:
+            raise ValueError("`wiring` mux indices must be non-negative.")
+        if mux_index in seen_muxes:
+            raise ValueError(f"`wiring` lists mux {mux_index} twice.")
+        seen_muxes.add(mux_index)
+        outputs = {key: value for key, value in entry.items() if key != "mux"}
+        if not outputs:
+            raise ValueError(f"`wiring` entry for mux {mux_index} defines no outputs.")
+        for role, ref in outputs.items():
+            if not isinstance(role, str) or not role.strip():
+                raise TypeError("`wiring` output roles must be non-empty strings.")
+            device_id, channel = parse_device_output_ref(ref)
+            device = devices.get(device_id)
+            if device is None:
+                raise ValueError(
+                    f"`wiring` mux {mux_index} {role} references unknown "
+                    f"device {device_id!r}. Define it in `devices`."
+                )
+            if device.channels is not None and channel not in device.channels:
+                raise ValueError(
+                    f"`wiring` mux {mux_index} {role} references channel "
+                    f"{channel}, which is not in device {device_id!r} "
+                    "`channels`."
+                )
+            if (device_id, channel) in used_outputs:
+                raise ValueError(
+                    f"`wiring` connects device output {ref!r} more than once."
+                )
+            used_outputs.add((device_id, channel))
+            roles.setdefault(role, {})[mux_index] = (device_id, channel)
+    return roles
+
+
+def _parse_profile_overrides(
+    settings: Mapping[object, object],
+    wired_muxes: set[int],
+) -> dict[int, Mapping[object, object]]:
+    """Parse per-mux voltage-control overrides for wired muxes."""
+    raw_overrides = settings.get("overrides", [])
+    if not isinstance(raw_overrides, Sequence) or isinstance(
+        raw_overrides, (str, bytes)
+    ):
+        raise TypeError("`overrides` must be a list of entries.")
+    overrides: dict[int, Mapping[object, object]] = {}
+    for entry in raw_overrides:
+        if not isinstance(entry, Mapping):
+            raise TypeError("Each `overrides` entry must be a mapping.")
+        mux_index = entry.get("mux")
+        if type(mux_index) is not int:
+            raise TypeError("Each `overrides` entry requires an integer `mux`.")
+        if mux_index in overrides:
+            raise ValueError(f"`overrides` lists mux {mux_index} twice.")
+        if mux_index not in wired_muxes:
+            raise ValueError(f"`overrides` mux {mux_index} has no `wiring` entry.")
+        overrides[mux_index] = entry
+    return overrides
 
 
 @dataclass(frozen=True)
 class ExternalDevicesConfig:
     """Configure external devices attached to one Qubex system."""
 
-    dc_voltage_controllers: dict[str, DCVoltageControllerConfig] = field(
-        default_factory=lambda: {"jpa_bias": DCVoltageControllerConfig()}
+    devices: dict[str, DCVoltageDeviceConfig] = field(default_factory=dict)
+    wiring: dict[str, dict[int, tuple[str, int]]] = field(default_factory=dict)
+    dc_voltage: DCVoltageControllerConfig = field(
+        default_factory=DCVoltageControllerConfig
     )
 
     @classmethod
@@ -156,15 +350,44 @@ class ExternalDevicesConfig:
             return cls()
         if not isinstance(raw_config, Mapping):
             raise TypeError("`external_devices` must be a mapping.")
-        controllers = raw_config.get("dc_voltage_controllers", {})
-        if not isinstance(controllers, Mapping):
-            raise TypeError("`dc_voltage_controllers` must be a mapping.")
-        normalized: dict[str, DCVoltageControllerConfig] = {}
-        for name, value in controllers.items():
-            if not isinstance(name, str):
-                raise TypeError("DC voltage controller names must be strings.")
-            normalized[name] = DCVoltageControllerConfig.from_dict(value)
-        return cls(dc_voltage_controllers=normalized)
+        if "dc_voltage_controllers" in raw_config:
+            raise ValueError(
+                "`dc_voltage_controllers` was replaced by a flat `settings` "
+                "section holding `ramp`, `shutdown`, `readback`, and "
+                "`overrides` directly."
+            )
+        unknown = set(raw_config) - {"devices", "wiring", "settings"}
+        if unknown:
+            raise ValueError(f"Unknown external-device settings: {sorted(unknown)}.")
+        raw_devices = raw_config.get("devices", {})
+        if not isinstance(raw_devices, Mapping):
+            raise TypeError("`devices` must be a mapping.")
+        devices: dict[str, DCVoltageDeviceConfig] = {}
+        for device_id, value in raw_devices.items():
+            if not isinstance(device_id, str) or not device_id.strip():
+                raise TypeError("Device names must be non-empty strings.")
+            devices[device_id] = DCVoltageDeviceConfig.from_dict(device_id, value)
+        wiring = _parse_wiring(raw_config.get("wiring", []), devices)
+        settings = raw_config.get("settings", {})
+        if not isinstance(settings, Mapping):
+            raise TypeError("`settings` must be a mapping.")
+        if "jpa_bias" in settings:
+            raise ValueError(
+                "The `jpa_bias` heading was removed: put `ramp`, `shutdown`, "
+                "`readback`, and `overrides` directly under `settings`."
+            )
+        if not wiring and not settings:
+            return cls(devices=devices)
+        dc_voltage = DCVoltageControllerConfig.from_dict(
+            settings,
+            devices=devices,
+            wiring=wiring,
+        )
+        return cls(
+            devices=devices,
+            wiring=wiring,
+            dc_voltage=dc_voltage,
+        )
 
 
 def _parse_voltage_profile(
@@ -174,8 +397,14 @@ def _parse_voltage_profile(
     base: DCVoltageProfile | None,
 ) -> DCVoltageProfile:
     """Parse one complete voltage profile with optional inherited values."""
+    if {"dc_voltage_exit_mode", "exit_mode", "exit"} & set(values):
+        raise ValueError(
+            "Exit modes are no longer configured: keep only `idle_voltage_v` "
+            "and choose the behavior with the API `on_exit` argument."
+        )
+    if "shutdown" in values:
+        raise ValueError("`shutdown.voltage_v` was renamed to `idle_voltage_v`.")
     ramp = _nested_mapping(values, "ramp")
-    shutdown = _nested_mapping(values, "shutdown")
     readback = _nested_mapping(values, "readback")
     profile = DCVoltageProfile(
         channel=channel,
@@ -189,10 +418,10 @@ def _parse_voltage_profile(
             "step_interval_s",
             default=base.update_interval_s if base else 0.1,
         ),
-        safe_voltage_v=_float_value(
-            shutdown,
-            "voltage_v",
-            default=base.safe_voltage_v if base else 0.0,
+        idle_voltage_v=_float_value(
+            values,
+            "idle_voltage_v",
+            default=base.idle_voltage_v if base else 0.0,
         ),
         readback_tolerance_v=_float_value(
             readback,

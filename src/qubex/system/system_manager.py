@@ -406,14 +406,7 @@ class SystemManager:
             "external_devices_config",
             ExternalDevicesConfig(),
         )
-        dc_voltage_config = external_devices_config.dc_voltage_controllers.get(
-            "jpa_bias"
-        )
-        if dc_voltage_config is None:
-            raise ValueError(
-                "`external_devices.yaml` must define the `jpa_bias` "
-                "DC voltage controller."
-            )
+        dc_voltage_config = external_devices_config.dc_voltage
         self._dc_voltage_controller = create_dc_voltage_controller(dc_voltage_config)
         self._dc_voltage_controller_config = dc_voltage_config
         self._config_loader = next_config_loader

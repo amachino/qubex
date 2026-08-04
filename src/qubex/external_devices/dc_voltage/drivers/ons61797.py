@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -19,15 +19,13 @@ class ONS61797ConnectionConfig:
     ip_address: str | None = None
 
     @classmethod
-    def from_dict(cls, connection: Mapping[str, object]) -> ONS61797ConnectionConfig:
+    def from_dict(cls, params: Mapping[str, object]) -> ONS61797ConnectionConfig:
         """Parse driver-specific connection settings."""
-        unknown = set(connection) - {"port", "ip_address"}
+        unknown = set(params) - {"port", "ip_address"}
         if unknown:
-            raise ValueError(
-                f"Unknown ONS61797 connection settings: {sorted(unknown)}."
-            )
-        port = connection.get("port")
-        ip_address = connection.get("ip_address")
+            raise ValueError(f"Unknown ONS61797 settings: {sorted(unknown)}.")
+        port = params.get("port")
+        ip_address = params.get("ip_address")
         if port is not None and not isinstance(port, str):
             raise TypeError("ONS61797 `port` must be a string.")
         if ip_address is not None and not isinstance(ip_address, str):
@@ -40,10 +38,13 @@ class ONS61797ConnectionConfig:
 
 
 def create_ons61797_device_factory(
-    connection: Mapping[str, object],
+    device_id: str,
+    params: Mapping[str, object],
+    device_channels: Sequence[int] | None = None,
 ) -> DCVoltageDeviceFactory:
-    """Create an ONS61797 device factory from opaque connection settings."""
-    config = ONS61797ConnectionConfig.from_dict(connection)
+    """Create an ONS61797 device factory from opaque driver settings."""
+    del device_id, device_channels  # ONS61797 addresses outputs by channel.
+    config = ONS61797ConnectionConfig.from_dict(params)
     return partial(
         ONS61797Device,
         port=config.port,
@@ -63,11 +64,6 @@ class ONS61797Device:
     ) -> None:
         """Create an ONS61797 client using serial or network transport."""
         self._client = client_factory(port=port, ip_address=ip_address)
-
-    @property
-    def supports_output_switch(self) -> bool:
-        """Return that ONS61797 supports physical output switching."""
-        return True
 
     @property
     def supports_native_ramp(self) -> bool:

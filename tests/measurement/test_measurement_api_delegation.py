@@ -2633,11 +2633,11 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
 
     measurement.__dict__["_amplification_service"] = _AmplificationService()
 
-    with measurement.apply_dc_voltages(["Q00"], on_exit="restore"):
+    with measurement.apply_dc_voltages(["Q00"], on_exit="hold"):
         called["inside"] = True
 
     assert called["targets"] == ["Q00"]
-    assert called["on_exit"] == "restore"
+    assert called["on_exit"] == "hold"
     assert called["entered"] is True
     assert called["inside"] is True
     assert called["exited"] is True

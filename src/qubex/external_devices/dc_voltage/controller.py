@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from enum import Enum
 
 from .config import DCVoltageControllerConfig, DCVoltageProfile
@@ -14,30 +13,10 @@ from .registry import DC_VOLTAGE_DRIVER_REGISTRY
 
 
 class DCVoltageExitMode(str, Enum):
-    """Define generic controller behavior when a voltage context exits."""
+    """Define controller behavior when a voltage context exits."""
 
-    SHUTDOWN = "shutdown"
+    IDLE = "idle"
     HOLD = "hold"
-    RESTORE = "restore"
-    TARGET = "target"
-
-
-@dataclass(frozen=True)
-class DCVoltageExitPolicy:
-    """Configure the generic exit behavior for one DC output channel."""
-
-    mode: DCVoltageExitMode = DCVoltageExitMode.SHUTDOWN
-    target_voltage_v: float | None = None
-
-    def __post_init__(self) -> None:
-        """Validate target voltage requirements for the selected mode."""
-        if self.mode is DCVoltageExitMode.TARGET and self.target_voltage_v is None:
-            raise ValueError("Target exit mode requires `target_voltage_v`.")
-        if (
-            self.mode is not DCVoltageExitMode.TARGET
-            and self.target_voltage_v is not None
-        ):
-            raise ValueError("Only target exit mode accepts `target_voltage_v`.")
 
 
 def create_dc_voltage_controller(
@@ -55,7 +34,13 @@ def create_dc_voltage_controller(
         raise ValueError(
             f"Unsupported DC voltage controller driver: {config.driver!r}."
         ) from None
-    return DCVoltageController(device_factory=driver_factory(config.connection))
+    return DCVoltageController(
+        device_factory=driver_factory(
+            config.device_id or "",
+            config.params,
+            config.channels,
+        )
+    )
 
 
 class DCVoltageController:
@@ -129,15 +114,15 @@ class DCVoltageController:
             if not is_output_on:
                 device.on(channel)
 
-    def shutdown(
+    def idle(
         self,
         *,
         channel: int,
         profile: DCVoltageProfile,
     ) -> None:
-        """Ramp one channel to its safe voltage and turn it off."""
+        """Ramp one channel to its idle voltage."""
         with self._connection() as device:
-            self._shutdown(
+            self._ramp_to_idle(
                 device,
                 channel=channel,
                 profile=profile,
@@ -157,17 +142,10 @@ class DCVoltageController:
         self,
         requests: dict[int, tuple[float, DCVoltageProfile]],
         *,
-        exit_policies: dict[int, DCVoltageExitPolicy] | None = None,
+        exit_modes: dict[int, DCVoltageExitMode] | None = None,
     ) -> Iterator[DCVoltageDevice]:
-        """Apply DC voltages and run each channel's configured exit policy."""
+        """Apply DC voltages and return each channel to idle unless told to hold."""
         with self._connection() as device:
-            initial_states = {
-                channel: (
-                    device.get_voltage(channel),
-                    device.is_output_on(channel),
-                )
-                for channel in requests
-            }
             try:
                 for channel, (voltage, profile) in requests.items():
                     self._apply_voltage(
@@ -179,18 +157,13 @@ class DCVoltageController:
                 yield device
             finally:
                 for channel, (_, profile) in requests.items():
-                    self._apply_exit_policy(
-                        device=device,
-                        channel=channel,
-                        profile=profile,
-                        policy=(
-                            exit_policies.get(channel, DCVoltageExitPolicy())
-                            if exit_policies is not None
-                            else DCVoltageExitPolicy()
-                        ),
-                        initial_voltage=initial_states[channel][0],
-                        initial_output_on=initial_states[channel][1],
+                    mode = (
+                        exit_modes.get(channel, DCVoltageExitMode.IDLE)
+                        if exit_modes is not None
+                        else DCVoltageExitMode.IDLE
                     )
+                    if mode is DCVoltageExitMode.IDLE:
+                        self._ramp_to_idle(device, channel=channel, profile=profile)
 
     def _apply_voltage(
         self,
@@ -204,7 +177,7 @@ class DCVoltageController:
         if device.is_output_on(channel):
             start = device.get_voltage(channel)
         else:
-            start = profile.safe_voltage_v
+            start = profile.idle_voltage_v
             self._set_voltage_verified(
                 device,
                 channel=channel,
@@ -220,64 +193,22 @@ class DCVoltageController:
             profile=profile,
         )
 
-    def _shutdown(
+    def _ramp_to_idle(
         self,
         device: DCVoltageDevice,
         *,
         channel: int,
         profile: DCVoltageProfile,
     ) -> None:
-        """Safely shut down one output while keeping the active connection."""
-        try:
-            if device.is_output_on(channel):
-                self._ramp_voltage(
-                    device,
-                    channel=channel,
-                    start=device.get_voltage(channel),
-                    voltage=profile.safe_voltage_v,
-                    profile=profile,
-                )
-        finally:
-            if device.supports_output_switch:
-                device.off(channel)
-
-    def _apply_exit_policy(
-        self,
-        *,
-        device: DCVoltageDevice,
-        channel: int,
-        profile: DCVoltageProfile,
-        policy: DCVoltageExitPolicy,
-        initial_voltage: float,
-        initial_output_on: bool,
-    ) -> None:
-        """Apply one generic exit policy using the active device connection."""
-        if policy.mode is DCVoltageExitMode.HOLD:
-            return
-        if policy.mode is DCVoltageExitMode.SHUTDOWN:
-            self._shutdown(device, channel=channel, profile=profile)
-            return
-        target_voltage = (
-            initial_voltage
-            if policy.mode is DCVoltageExitMode.RESTORE
-            else policy.target_voltage_v
-        )
-        if target_voltage is None:
-            raise RuntimeError("DC voltage exit target was not resolved.")
-        try:
-            self._apply_voltage(
+        """Ramp one enabled output back to its idle voltage."""
+        if device.is_output_on(channel):
+            self._ramp_voltage(
                 device,
                 channel=channel,
-                voltage=target_voltage,
+                start=device.get_voltage(channel),
+                voltage=profile.idle_voltage_v,
                 profile=profile,
             )
-        finally:
-            if (
-                policy.mode is DCVoltageExitMode.RESTORE
-                and not initial_output_on
-                and device.supports_output_switch
-            ):
-                device.off(channel)
 
     def _ramp_voltage(
         self,
