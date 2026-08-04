@@ -20,15 +20,17 @@ from qubex.external_devices.dc_voltage.registry import DC_VOLTAGE_DRIVER_REGISTR
 
 
 class _FakeDCVoltageDevice:
+    # Hardware state is class-level: it persists across connections, like the
+    # real instrument.
     instances: ClassVar[list[_FakeDCVoltageDevice]] = []
+    output_states: ClassVar[dict[int, bool]] = {}
+    voltages: ClassVar[dict[int, float]] = {}
+    calls: ClassVar[list[tuple[Any, ...]]] = []
 
     def __init__(self, **kwargs: Any) -> None:
         self.init_kwargs = kwargs
         self.connect_kwargs: list[dict[str, Any]] = []
         self.closed = False
-        self.output_states: dict[int, bool] = {}
-        self.voltages = {1: 0.1, 2: -0.2}
-        self.calls: list[tuple[Any, ...]] = []
         _FakeDCVoltageDevice.instances.append(self)
 
     def connect(
@@ -98,6 +100,9 @@ class _FakeONS61797Client:
 
 def _reset_fake_devices() -> None:
     _FakeDCVoltageDevice.instances = []
+    _FakeDCVoltageDevice.output_states = {}
+    _FakeDCVoltageDevice.voltages = {1: 0.1, 2: -0.2}
+    _FakeDCVoltageDevice.calls = []
 
 
 def test_controller_creates_and_closes_one_device_for_each_operation() -> None:
@@ -365,11 +370,14 @@ def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
     with controller.apply_voltages({1: (0.25, profile)}):
         pass
 
-    device = _FakeDCVoltageDevice.instances[0]
-    applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
+    applied = [
+        call[2] for call in _FakeDCVoltageDevice.calls if call[0] == "set_voltage"
+    ]
     assert applied == pytest.approx([0.0, 0.1, 0.2, 0.25, 0.15, 0.05, 0.0])
-    assert all(call[0] != "off" for call in device.calls)
+    assert all(call[0] != "off" for call in _FakeDCVoltageDevice.calls)
     assert delays == [0.1] * 6
+    assert len(_FakeDCVoltageDevice.instances) == 2
+    assert all(device.closed for device in _FakeDCVoltageDevice.instances)
 
 
 def test_apply_voltages_can_hold_applied_voltage_on_exit() -> None:

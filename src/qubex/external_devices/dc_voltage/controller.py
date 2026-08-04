@@ -143,10 +143,15 @@ class DCVoltageController:
         requests: dict[int, tuple[float, DCVoltageProfile]],
         *,
         exit_modes: dict[int, DCVoltageExitMode] | None = None,
-    ) -> Iterator[DCVoltageDevice]:
-        """Apply DC voltages and return each channel to idle unless told to hold."""
-        with self._connection() as device:
-            try:
+    ) -> Iterator[None]:
+        """
+        Apply DC voltages and return each channel to idle unless told to hold.
+
+        The device connection is open only while voltages are being changed;
+        no connection is held while the caller's block runs.
+        """
+        try:
+            with self._connection() as device:
                 for channel, (voltage, profile) in requests.items():
                     self._apply_voltage(
                         device,
@@ -154,16 +159,26 @@ class DCVoltageController:
                         voltage=voltage,
                         profile=profile,
                     )
-                yield device
-            finally:
-                for channel, (_, profile) in requests.items():
-                    mode = (
-                        exit_modes.get(channel, DCVoltageExitMode.IDLE)
-                        if exit_modes is not None
-                        else DCVoltageExitMode.IDLE
-                    )
-                    if mode is DCVoltageExitMode.IDLE:
-                        self._ramp_to_idle(device, channel=channel, profile=profile)
+            yield
+        finally:
+            idle_channels = [
+                channel
+                for channel in requests
+                if (
+                    exit_modes.get(channel, DCVoltageExitMode.IDLE)
+                    if exit_modes is not None
+                    else DCVoltageExitMode.IDLE
+                )
+                is DCVoltageExitMode.IDLE
+            ]
+            if idle_channels:
+                with self._connection() as device:
+                    for channel in idle_channels:
+                        self._ramp_to_idle(
+                            device,
+                            channel=channel,
+                            profile=requests[channel][1],
+                        )
 
     def _apply_voltage(
         self,
