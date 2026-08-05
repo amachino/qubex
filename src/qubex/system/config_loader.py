@@ -679,7 +679,7 @@ class ConfigLoader:
         known_mux_indices = {mux.index for mux in self._quantum_system.muxes}
         for mux_index in sorted(mux_indices):
             if mux_index not in known_mux_indices:
-                raise KeyError(
+                raise ValueError(
                     f"External device wiring references unknown mux {mux_index}."
                 )
 

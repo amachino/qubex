@@ -173,6 +173,8 @@ D5a moduleにはchannelごとの出力スイッチがなく、標準bipolar span
 
 `ramp` の各値は backend sweep と同じ語彙で、そのまま backend へ渡されます: `rate_v_per_s` が全体の速さ (所要時間 ≈ |ΔV| / rate)、`step_size_v` が setpoint の電圧刻み、`wait_s` が 1 setpoint の最小滞在時間です。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。
 
+Qblox固有のrate・step・wait制約は、channelを変更する前の設定load時に検証します。ソフトウェア生成するONS61797のrampは、中間setpointごとの通信を避け、最終目標だけreadback検証します。
+
 `apply_voltage()` は ON 状態の出力を現在値から目標値まで ramp します (OFF なら暗黙に ON 化せずエラー)。DC電圧操作は context に紐づき、抜けるとアイドル電圧まで ramp します。
 
 ```python
@@ -181,11 +183,11 @@ with experiment.external_devices.dc_voltage(mux=6) as dc:
     state = dc.state
 ```
 
-電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。`reset_dc_voltages()` は選択した mux を「出力 ON・リセット電圧」の既知状態に揃えます。保守・チップ交換・安全停止時に使う `shutdown_dc_voltages()` はリセット電圧まで ramp して、対応機器では物理出力を OFF にします。通常の実験contextはshutdownせずidleへ戻ります。`get_dc_voltage_states()` は配線済み全 mux を 1 接続でまとめて読み、`bias_dc_voltages()` は較正済み mux を bias 電圧へ、`idle_dc_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時は配線済み全 mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。
+電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。`reset_dc_voltages()` は選択した mux を「出力 ON・リセット電圧」の既知状態に揃えます。保守・チップ交換・安全停止時に使う `shutdown_dc_voltages()` はリセット電圧まで ramp して、対応機器では物理出力を OFF にします。通常の実験contextはshutdownせずidleへ戻ります。`get_dc_voltage_states()` はactiveな配線済み全muxを1接続でまとめて読み、`bias_dc_voltages()` は較正済み mux を bias 電圧へ、`idle_dc_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時はactiveな配線済み全mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。各一括書き込みと、その直後のreadbackは1つのデバイス接続を共有します。
 
 選択が空、または確認を拒否した場合は、装置へ接続せず `{}` を返します。
 
-一時的な context を使わず、較正済みの配線済み全 mux を bias 電圧へ設定する場合は一括操作を使います。
+一時的な context を使わず、較正済みのactiveな配線済み全muxを bias 電圧へ設定する場合は一括操作を使います。
 
 ```python
 experiment.external_devices.bias_dc_voltages()

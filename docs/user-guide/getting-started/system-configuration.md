@@ -212,6 +212,10 @@ it verbatim: `rate_v_per_s` sets the overall speed (duration ≈ |dV| / rate),
 `step_size_v` the setpoint spacing, and `wait_s` the minimum dwell per
 setpoint. A setpoint succeeds when its readback error is within
 `readback.tolerance_v`, retried up to `readback.max_attempts` times.
+Qblox-specific rate, step, and wait limits are checked while loading the
+configuration, before any channel is changed. Software-generated ONS61797
+ramps avoid a readback round trip at each intermediate setpoint and verify
+the final target instead.
 
 `apply_voltage()` ramps an enabled output from its current voltage to the
 target; an off output raises instead of being switched on implicitly. DC
@@ -230,19 +234,20 @@ it implicitly. Use `reset_dc_voltages()` to initialize selected outputs at
 For maintenance or a deliberate safe stop, use `shutdown_dc_voltages()` to
 ramp selected outputs back to `reset_voltage` and switch them off when the
 device supports it. Normal experiment contexts return to idle instead.
-`get_dc_voltage_states()` reads every wired mux on one connection;
+`get_dc_voltage_states()` reads every active wired mux on one connection;
 `reset_dc_voltages()` brings muxes to their reset voltages with the outputs
 on, `bias_dc_voltages()` ramps calibrated muxes to their bias voltages,
 `idle_dc_voltages()` ramps them back to idle, and
 `shutdown_dc_voltages()` switches them off when supported. Like box operations,
-each
-takes an optional `muxes` selection (indices or labels; all wired muxes when
-omitted), and all writes prompt for confirmation, like a box push.
+these methods take an optional `muxes` selection (indices or labels; all active
+wired muxes when omitted), and all writes prompt for confirmation, like a box
+push.
+Each bulk write and its resulting readback share one device connection.
 An empty selection or a declined confirmation returns `{}` without opening a
 device connection.
 
-To bias every wired mux with a calibrated `bias_voltage` outside a temporary
-context, use the bulk operation.
+To bias every active wired mux with a calibrated `bias_voltage` outside a
+temporary context, use the bulk operation.
 
 ```python
 experiment.external_devices.bias_dc_voltages()

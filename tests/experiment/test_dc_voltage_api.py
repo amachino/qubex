@@ -58,9 +58,11 @@ class _DCVoltageController:
         self.output_states: dict[int, bool] = {}
         self.calls: list[tuple[object, ...]] = []
         self.fail_set_voltage = False
+        self.connection_count = 0
 
     @contextmanager
     def connected(self) -> Iterator[_DCVoltageController]:
+        self.connection_count += 1
         yield self
 
     def on(self, *, channel: int) -> None:
@@ -481,6 +483,7 @@ def test_idle_dc_voltages_idles_all_wired_muxes() -> None:
     assert dc_controller.calls[0] == ("idle_channels", (7, 8))
     assert states[6].voltage == pytest.approx(0.0)
     assert states[7].voltage == pytest.approx(0.0)
+    assert dc_controller.connection_count == 1
 
 
 def test_bias_dc_voltages_applies_calibrated_amplification_points() -> None:
@@ -493,6 +496,47 @@ def test_bias_dc_voltages_applies_calibrated_amplification_points() -> None:
     assert dc_controller.calls[0] == ("apply_channels", (7, 8))
     assert states[6].voltage == pytest.approx(0.76)
     assert states[7].voltage == pytest.approx(0.42)
+    assert dc_controller.connection_count == 1
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["reset_dc_voltages", "idle_dc_voltages", "shutdown_dc_voltages"],
+)
+def test_bulk_writes_skip_wired_muxes_absent_from_active_system(
+    operation: str,
+) -> None:
+    """Bulk writes should use the same active-mux filter as their readback."""
+    dc_controller = _DCVoltageController()
+    dc_controller.output_states.update({7: True, 8: True})
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+    del ctx.system_manager.experiment_system.muxes["MUX07"]
+
+    states = getattr(ctx, operation)(confirm=False)
+
+    write_call = next(
+        call for call in dc_controller.calls if call[0] != "read_channels"
+    )
+    assert write_call[1] == (7,)
+    assert sorted(states) == [6]
+    assert dc_controller.connection_count == 1
+
+
+def test_bias_confirmation_uses_bias_vocabulary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bulk bias confirmation should use the API's bias terminology."""
+    prompts: list[str] = []
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+    monkeypatch.setattr(
+        "qubex.experiment.experiment_context.Confirm.ask",
+        lambda prompt: prompts.append(prompt) or False,
+    )
+
+    ctx.bias_dc_voltages()
+
+    assert "bias DC voltages" in prompts[0]
 
 
 def test_bias_dc_voltages_skips_uncalibrated_muxes() -> None:

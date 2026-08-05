@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
+from qubex.external_devices.dc_voltage.config import DCVoltageProfile
 from qubex.external_devices.dc_voltage.protocol import DCVoltageDeviceFactory
 
 _COMMAND_SET_VOLTAGE = b"\x62"
@@ -20,6 +21,33 @@ _MAX_VOLTAGE_V = 4.0
 _MAX_RAMP_RATE_V_PER_S = 1.0
 _MIN_STEP_SIZE_V = 0.001 / 8.192
 _MIN_WAIT_S = 0.001
+
+
+def _validate_qblox_server_ramp_settings(
+    rate_v_per_s: float,
+    step_size_v: float,
+    wait_s: float,
+) -> None:
+    """Validate the Qblox server's native sweep constraints."""
+    if not math.isfinite(rate_v_per_s) or not (
+        0 < rate_v_per_s <= _MAX_RAMP_RATE_V_PER_S
+    ):
+        raise ValueError("Qblox backend ramp rate must be above 0 and at most 1 V/s.")
+    if not math.isfinite(step_size_v) or step_size_v < _MIN_STEP_SIZE_V:
+        raise ValueError(
+            f"Qblox backend ramp step must be at least {_MIN_STEP_SIZE_V} V."
+        )
+    if not math.isfinite(wait_s) or wait_s < _MIN_WAIT_S:
+        raise ValueError("Qblox backend ramp wait must be at least 0.001 s.")
+
+
+def validate_qblox_server_profile(profile: DCVoltageProfile) -> None:
+    """Validate one resolved profile for the Qblox server driver."""
+    _validate_qblox_server_ramp_settings(
+        profile.ramp_rate_v_per_s,
+        profile.ramp_step_size_v,
+        profile.ramp_wait_s,
+    )
 
 
 @dataclass(frozen=True)
@@ -193,18 +221,7 @@ class QbloxServerDevice:
         """Request one complete backend-side voltage sweep."""
         self._validate_voltage(start_voltage)
         self._validate_voltage(target_voltage)
-        if not math.isfinite(rate_v_per_s) or not (
-            0 < rate_v_per_s <= _MAX_RAMP_RATE_V_PER_S
-        ):
-            raise ValueError(
-                "Qblox backend ramp rate must be above 0 and at most 1 V/s."
-            )
-        if not math.isfinite(step_size_v) or step_size_v < _MIN_STEP_SIZE_V:
-            raise ValueError(
-                f"Qblox backend ramp step must be at least {_MIN_STEP_SIZE_V} V."
-            )
-        if not math.isfinite(wait_s) or wait_s < _MIN_WAIT_S:
-            raise ValueError("Qblox backend ramp wait must be at least 0.001 s.")
+        _validate_qblox_server_ramp_settings(rate_v_per_s, step_size_v, wait_s)
         request = (
             _COMMAND_SWEEP_VOLTAGE
             + self._device_name(channel)

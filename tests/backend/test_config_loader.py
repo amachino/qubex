@@ -2404,7 +2404,7 @@ def test_external_devices_config_rejects_unknown_mux(tmp_path: Path) -> None:
     )
 
     with pytest.raises(
-        KeyError,
+        ValueError,
         match=r"External device wiring references unknown mux 99",
     ):
         ConfigLoader(

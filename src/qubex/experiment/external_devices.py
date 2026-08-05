@@ -52,7 +52,7 @@ class ExternalDevices:
 
     def get_dc_voltage_states(self) -> dict[int, DCVoltageState]:
         """
-        Return DC readback states for every wired mux.
+        Return DC readback states for every active wired mux.
 
         Returns
         -------
@@ -77,15 +77,15 @@ class ExternalDevices:
         Parameters
         ----------
         muxes : int, str, or collection of them, optional
-            Target mux indices or labels. All wired muxes when omitted.
+            Target mux indices or labels. All active wired muxes when omitted.
         confirm : bool, optional
             Whether to prompt before writing to the hardware.
 
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states keyed by mux index after resetting, or an empty
-            mapping when the selection is empty or confirmation is declined.
+            Readback states for every active wired mux after resetting, or an
+            empty mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.reset_dc_voltages(muxes=muxes, confirm=confirm)
 
@@ -97,7 +97,7 @@ class ExternalDevices:
         """
         Ramp the selected calibrated muxes to their bias voltages.
 
-        When `muxes` is omitted, every wired mux with a calibrated
+        When `muxes` is omitted, every active wired mux with a calibrated
         `bias_voltage` in `jpa_params.yaml` is biased and the rest are
         skipped; an explicitly selected mux without one raises. Ramp back
         with `idle_dc_voltages()`.
@@ -105,15 +105,15 @@ class ExternalDevices:
         Parameters
         ----------
         muxes : int, str, or collection of them, optional
-            Target mux indices or labels. All wired muxes when omitted.
+            Target mux indices or labels. All active wired muxes when omitted.
         confirm : bool, optional
             Whether to prompt before writing to the hardware.
 
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states keyed by mux index after biasing, or an empty
-            mapping when the selection is empty or confirmation is declined.
+            Readback states for every active wired mux after biasing, or an
+            empty mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.bias_dc_voltages(muxes=muxes, confirm=confirm)
 
@@ -128,15 +128,15 @@ class ExternalDevices:
         Parameters
         ----------
         muxes : int, str, or collection of them, optional
-            Target mux indices or labels. All wired muxes when omitted.
+            Target mux indices or labels. All active wired muxes when omitted.
         confirm : bool, optional
             Whether to prompt before writing to the hardware.
 
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states keyed by mux index after idling, or an empty
-            mapping when the selection is empty or confirmation is declined.
+            Readback states for every active wired mux after idling, or an
+            empty mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.idle_dc_voltages(muxes=muxes, confirm=confirm)
 
@@ -151,14 +151,14 @@ class ExternalDevices:
         Parameters
         ----------
         muxes : int, str, or collection of them, optional
-            Target mux indices or labels. All wired muxes when omitted.
+            Target mux indices or labels. All active wired muxes when omitted.
         confirm : bool, optional
             Whether to prompt before writing to the hardware.
 
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states for every wired mux after shutdown, or an empty
-            mapping when the selection is empty or confirmation is declined.
+            Readback states for every active wired mux after shutdown, or an
+            empty mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.shutdown_dc_voltages(muxes=muxes, confirm=confirm)

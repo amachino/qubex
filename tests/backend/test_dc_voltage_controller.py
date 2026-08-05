@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from functools import partial
 from typing import Any, ClassVar
 
@@ -16,7 +17,10 @@ from qubex.external_devices.dc_voltage import (
     create_dc_voltage_controller,
 )
 from qubex.external_devices.dc_voltage.drivers import ONS61797Device
-from qubex.external_devices.dc_voltage.registry import DC_VOLTAGE_DRIVER_REGISTRY
+from qubex.external_devices.dc_voltage.registry import (
+    DC_VOLTAGE_DRIVER_REGISTRY,
+    DCVoltageDriverSpec,
+)
 
 
 class _FakeDCVoltageDevice:
@@ -131,16 +135,18 @@ def test_factory_resolves_registered_driver_with_opaque_connection(
 
     def build_device_factory(
         device_id: str,
-        connection: dict[str, object],
-        ports: tuple[int, ...] | None,
+        connection: Mapping[str, object],
+        ports: Sequence[int] | None,
     ):
-        connections.append((device_id, connection, ports))
+        connections.append(
+            (device_id, dict(connection), None if ports is None else tuple(ports))
+        )
         return partial(_FakeDCVoltageDevice, resource=connection["resource"])
 
     monkeypatch.setitem(
         DC_VOLTAGE_DRIVER_REGISTRY,
         "fake-dc",
-        build_device_factory,
+        DCVoltageDriverSpec(create_device_factory=build_device_factory),
     )
     config = ExternalDevicesConfig.from_dict(
         {
@@ -416,6 +422,36 @@ def test_wiring_rejects_roles_unused_by_controller_settings() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("ramp", "match"),
+    [
+        ({"rate_v_per_s": 2.0}, "at most 1 V/s"),
+        ({"step_size_v": 0.00001}, "step must be at least"),
+        ({"wait_s": 0.0001}, "wait must be at least"),
+    ],
+)
+def test_qblox_ramp_constraints_fail_during_controller_creation(
+    ramp: dict[str, float],
+    match: str,
+) -> None:
+    """Qblox-only ramp constraints should fail before hardware operations."""
+    config = ExternalDevicesConfig.from_dict(
+        {
+            "devices": {
+                "QBLOX1": {
+                    "driver": "qblox_server",
+                    "channels": [1],
+                    "params": {"host": "server", "port": 12345},
+                }
+            },
+            "wiring": [{"mux": 0, "bias": "QBLOX1-1"}],
+            "settings": {"ramp": ramp},
+        }
+    ).dc_voltage
+    with pytest.raises(ValueError, match=match):
+        create_dc_voltage_controller(config)
+
+
 def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -598,6 +634,35 @@ def test_connected_session_reuses_one_device_for_sweep_and_idle(
         assert len(_FakeDCVoltageDevice.instances) == 1
         assert not _FakeDCVoltageDevice.instances[0].closed
 
+    assert _FakeDCVoltageDevice.instances[0].closed
+
+
+def test_connected_session_reuses_one_device_for_bulk_write_and_readback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bulk write and readback should share one connected device."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True, 2: True}
+    profile_1 = DCVoltageProfile(channel=1, ramp_step_size_v=0.1)
+    profile_2 = DCVoltageProfile(channel=2, ramp_step_size_v=0.1)
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+
+    with controller.connected() as session:
+        session.apply_channels(
+            {
+                1: (0.2, profile_1),
+                2: (0.3, profile_2),
+            }
+        )
+        readings = session.read_channels([1, 2])
+
+    assert readings[1] == pytest.approx((0.2, True))
+    assert readings[2] == pytest.approx((0.3, True))
+    assert len(_FakeDCVoltageDevice.instances) == 1
     assert _FakeDCVoltageDevice.instances[0].closed
 
 
