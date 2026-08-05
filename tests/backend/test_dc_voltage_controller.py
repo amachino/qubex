@@ -421,6 +421,8 @@ def test_apply_voltage_ramps_with_one_device_connection(
     device = _FakeDCVoltageDevice.instances[0]
     applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
     assert applied == pytest.approx([0.1, 0.2, 0.25])
+    readbacks = [call for call in device.calls if call[0] == "get_voltage"]
+    assert readbacks == [("get_voltage", 1), ("get_voltage", 1)]
     assert device.output_states[1] is True
     assert device.closed is True
 

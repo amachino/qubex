@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TypeVar
@@ -430,7 +431,10 @@ def _optional_float(
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"`{key}` must be numeric.")
-    return float(value)
+    resolved = float(value)
+    if not math.isfinite(resolved):
+        raise ValueError(f"`{key}` must be finite.")
+    return resolved
 
 
 def _float_value(

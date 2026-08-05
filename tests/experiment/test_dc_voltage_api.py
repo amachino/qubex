@@ -382,12 +382,12 @@ def test_dc_voltage_control_sets_and_reads_bound_mux() -> None:
 
 
 def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
-    """Voltage application should delegate an overridden readback tolerance."""
+    """Voltage application should delegate the configured readback tolerance."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
     with ctx.dc_voltage_control() as dc:
-        state = dc.apply_voltage_immediately(0.5, tolerance=0.0015)
+        state = dc.apply_voltage_immediately(0.5)
 
     assert state.voltage == pytest.approx(0.5)
     call = next(
@@ -395,7 +395,7 @@ def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
     )
     applied_profile = call[3]
     assert isinstance(applied_profile, DCVoltageProfile)
-    assert applied_profile.readback_tolerance_v == pytest.approx(0.0015)
+    assert applied_profile.readback_tolerance_v == pytest.approx(0.002)
 
 
 def test_get_dc_voltage_states_reads_all_wired_muxes_on_one_call() -> None:

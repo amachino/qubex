@@ -318,12 +318,7 @@ class DCVoltageController:
         current = float(start)
         while abs(voltage - current) > step:
             current += direction * step
-            self._set_voltage_verified(
-                device,
-                channel=channel,
-                voltage=current,
-                profile=profile,
-            )
+            device.set_voltage(channel, current)
             time.sleep(wait)
         if current != voltage:
             self._set_voltage_verified(

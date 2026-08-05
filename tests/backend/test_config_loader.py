@@ -2386,7 +2386,12 @@ def test_external_devices_config_defaults_when_missing(
     ("path", "value", "match"),
     [
         (("ramp", "rate_v_per_s"), 0.0, "rate_v_per_s.*positive"),
+        (("ramp", "rate_v_per_s"), float("nan"), "rate_v_per_s.*finite"),
+        (("ramp", "step_size_v"), float("inf"), "step_size_v.*finite"),
+        (("ramp", "wait_s"), float("-inf"), "wait_s.*finite"),
+        (("reset_voltage",), float("inf"), "reset_voltage.*finite"),
         (("readback", "tolerance_v"), -0.1, "tolerance_v.*non-negative"),
+        (("readback", "tolerance_v"), float("inf"), "tolerance_v.*finite"),
         (("readback", "max_attempts"), 0, "max_attempts.*positive"),
     ],
 )

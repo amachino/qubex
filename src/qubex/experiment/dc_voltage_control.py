@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import replace
 
 from qubex.external_devices import DCVoltageProfile
 
@@ -37,8 +36,6 @@ class DCVoltageControl:
     def apply_voltage(
         self,
         voltage: float,
-        *,
-        tolerance: float | None = None,
     ) -> DCVoltageState:
         """
         Ramp an enabled output from its current voltage to a target.
@@ -47,9 +44,6 @@ class DCVoltageControl:
         ----------
         voltage : float
             Target voltage in V.
-        tolerance : float or None, optional
-            Allowed voltage readback error in V. Uses the configured mux
-            profile when omitted.
 
         Returns
         -------
@@ -58,20 +52,18 @@ class DCVoltageControl:
         """
         self._apply_voltage(
             float(voltage),
-            self._profile_with_tolerance(tolerance),
+            self._profile,
         )
         return self.state
 
     def apply_voltage_immediately(
         self,
         voltage: float,
-        *,
-        tolerance: float | None = None,
     ) -> DCVoltageState:
         """Apply a voltage to an enabled output without ramping."""
         self._apply_voltage_immediately(
             float(voltage),
-            self._profile_with_tolerance(tolerance),
+            self._profile,
         )
         return self.state
 
@@ -79,23 +71,11 @@ class DCVoltageControl:
         self,
         *,
         sweep_range: Iterable[float],
-        tolerance: float | None = None,
     ) -> Iterator[DCVoltageState]:
         """Ramp to each voltage and yield its readback state."""
         for voltage in sweep_range:
-            yield self.apply_voltage(float(voltage), tolerance=tolerance)
+            yield self.apply_voltage(float(voltage))
 
-    def idle(self, *, tolerance: float | None = None) -> None:
+    def idle(self) -> None:
         """Ramp back to the configured idle voltage."""
-        self._idle(self._profile_with_tolerance(tolerance))
-
-    def _profile_with_tolerance(
-        self,
-        tolerance: float | None,
-    ) -> DCVoltageProfile:
-        """Return the profile with an optional readback tolerance override."""
-        if tolerance is None:
-            return self._profile
-        if tolerance < 0:
-            raise ValueError("tolerance must be non-negative.")
-        return replace(self._profile, readback_tolerance_v=tolerance)
+        self._idle(self._profile)
