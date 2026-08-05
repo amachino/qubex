@@ -11,7 +11,7 @@ from typing import Any
 from qubex.external_devices.dc_voltage.protocol import DCVoltageDeviceFactory
 from qubex.third_party.ons61797 import ONS61797
 
-_MIN_VOLTAGE_V = -4.0
+_MIN_VOLTAGE_V = 0.0
 _MAX_VOLTAGE_V = 4.0
 
 
@@ -68,6 +68,13 @@ class ONS61797Device:
     ) -> None:
         """Create an ONS61797 client using serial or network transport."""
         self._client = client_factory(port=port, ip_address=ip_address)
+        output_mode = self._client.get_output_mode()
+        if output_mode != 0:
+            self._client.close()
+            raise RuntimeError(
+                "ONS61797 must use independent output mode (OMD 0) for "
+                "per-channel control."
+            )
 
     @property
     def supports_native_ramp(self) -> bool:
@@ -85,6 +92,7 @@ class ONS61797Device:
 
     def on(self, channel: int) -> None:
         """Turn on one output channel after checking its stored setpoint."""
+        self._validate_channel(channel)
         stored = self._client.get_voltage(channel=channel)
         if not math.isfinite(stored) or not _MIN_VOLTAGE_V <= stored <= _MAX_VOLTAGE_V:
             raise ValueError(
@@ -96,10 +104,12 @@ class ONS61797Device:
 
     def off(self, channel: int) -> None:
         """Turn off one output channel."""
+        self._validate_channel(channel)
         self._client.off(channel=channel)
 
     def set_voltage(self, channel: int, voltage: float) -> None:
         """Set voltage for one output channel within the allowed range."""
+        self._validate_channel(channel)
         if (
             not math.isfinite(voltage)
             or not _MIN_VOLTAGE_V <= voltage <= _MAX_VOLTAGE_V
@@ -112,11 +122,19 @@ class ONS61797Device:
 
     def get_voltage(self, channel: int) -> float:
         """Return voltage for one output channel."""
+        self._validate_channel(channel)
         return self._client.get_voltage(channel=channel)
 
     def is_output_on(self, channel: int) -> bool:
         """Return whether one output channel is on."""
+        self._validate_channel(channel)
         return self._client.get_output_state(channel=channel) == 1
+
+    @staticmethod
+    def _validate_channel(channel: int) -> None:
+        """Require one documented ONS61797 channel number."""
+        if type(channel) is not int or not 1 <= channel <= 16:
+            raise ValueError("ONS61797 channel must be between 1 and 16.")
 
     def ramp_voltage(
         self,

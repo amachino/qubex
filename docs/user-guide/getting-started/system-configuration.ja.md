@@ -127,11 +127,11 @@ settings:
         rate_v_per_s: 0.05
 ```
 
-- `devices` — `driver` が adapter を選び、`channels` がデバイスの出力を列挙します。`params` の中身は driver 固有で、選択した driver 自身が検証します (ONS61797: serial は `port`、network は `ip_address`。両方は不可)。どちらの driver も ±4 V を超える書き込みを拒否します。
+- `devices` — `driver` が adapter を選び、`channels` がデバイスの出力を列挙します。`params` の中身は driver 固有で、選択した driver 自身が検証します (ONS61797: serial は `port`、network は `ip_address`。両方は不可)。Qubex は ONS61797 の書き込みを 0 V〜4 V、channel を 1〜16 に制限し、独立制御モード (`OMD 0`) を必須とします。Qblox driver は -4 V〜4 V を許可します。
 - `wiring` — 各エントリは役割名 (`bias`) と `デバイス名-チャンネル` 形式の出力参照 (`ONS1-2` = デバイス `ONS1` の channel 2、1 始まり) を持ちます。操作できるのは配線済みの出力だけで、未配線の mux や `channels` 外のチャンネルは推測せず明示エラーになります。
 - `settings` — 直下の値が配線済み全 mux の既定値、`overrides` が mux 単位の上書きです。1 つの `settings` (役割は既定 `bias`、`role` で変更可) が拾う出力はすべて同じデバイスにある必要があります。
 
-アイドル電圧 (DC bias を使用していない間、各出力を保持する電圧) は較正値で、`jpa_params.yaml` の `idle_voltage` に置きます (未較正の mux は `reset_voltage` へフォールバック)。DC 電圧 context は終了時に必ずアイドル電圧まで ramp します。出力スイッチは電圧印加時に暗黙には切り替わらず、`reset_dc_voltages()` と `shutdown_dc_voltages()` で明示的に管理します。
+アイドル電圧 (DC bias を使用していない間、各出力を保持する電圧) は較正値で、`jpa_params.yaml` の `idle_voltage` に置きます (未較正の mux は `reset_voltage` へフォールバック)。DC 電圧 context は電圧印加・sweep・readbackの間に1つのデバイス接続を保持し、終了時に必ずアイドル電圧まで ramp してから接続を閉じます。出力スイッチは電圧印加時に暗黙には切り替わらず、`reset_dc_voltages()` と `shutdown_dc_voltages()` で明示的に管理します。
 
 Qblox SPI Rackを、USB接続を所有するserver processを経由して制御する場合は、
 `qblox_server` driverを使用します。QubexはこのserverへTCP clientとして

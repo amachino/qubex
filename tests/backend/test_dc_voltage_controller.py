@@ -95,6 +95,13 @@ class _FakeONS61797Client:
     def __init__(self, **_: Any) -> None:
         self.output_states: dict[int, int] = {}
         self.voltages: dict[int, float] = {}
+        self.output_mode = 0
+
+    def get_output_mode(self) -> int:
+        return self.output_mode
+
+    def close(self) -> None:
+        pass
 
     def on(self, channel: int) -> None:
         self.output_states[channel] = 1
@@ -457,6 +464,93 @@ def test_apply_voltage_ramps_with_one_device_connection(
     assert device.closed is True
 
 
+def test_apply_voltage_and_read_uses_one_device_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Voltage application and readback should share one device connection."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.0}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
+    )
+
+    reading = controller.apply_voltage_and_read(
+        channel=1,
+        voltage=0.25,
+        profile=profile,
+    )
+
+    assert reading[0] == pytest.approx(0.25)
+    assert reading[1] is True
+    assert len(_FakeDCVoltageDevice.instances) == 1
+    assert _FakeDCVoltageDevice.instances[0].closed
+
+
+def test_connected_session_reuses_one_device_for_sweep_and_idle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A connected session should reuse one device through sweep and idle."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.0}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
+        idle_voltage_v=0.0,
+    )
+
+    with controller.connected() as session:
+        first = session.apply_voltage_and_read(
+            channel=1,
+            voltage=0.1,
+            profile=profile,
+        )
+        second = session.apply_voltage_and_read(
+            channel=1,
+            voltage=0.2,
+            profile=profile,
+        )
+        session.idle(channel=1, profile=profile)
+
+        assert first[0] == pytest.approx(0.1)
+        assert second[0] == pytest.approx(0.2)
+        assert len(_FakeDCVoltageDevice.instances) == 1
+        assert not _FakeDCVoltageDevice.instances[0].closed
+
+    assert _FakeDCVoltageDevice.instances[0].closed
+
+
+def test_connected_session_closes_device_after_body_error() -> None:
+    """A connected session should close its device after a body error."""
+    _reset_fake_devices()
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+
+    with (
+        pytest.raises(RuntimeError, match="measurement failed"),
+        controller.connected(),
+    ):
+        raise RuntimeError("measurement failed")
+
+    assert len(_FakeDCVoltageDevice.instances) == 1
+    assert _FakeDCVoltageDevice.instances[0].closed
+
+
 def test_idle_ramps_to_idle_voltage_without_touching_the_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -770,7 +864,7 @@ def test_ons61797_turn_on_refuses_out_of_range_stored_setpoint() -> None:
         port="/dev/fake",
         client_factory=lambda **_: client,
     )
-    client.voltages[1] = 15.0
+    client.voltages[1] = -0.1
 
     with pytest.raises(ValueError, match="outside"):
         device.on(1)
@@ -782,7 +876,7 @@ def test_ons61797_turn_on_refuses_out_of_range_stored_setpoint() -> None:
 
 
 def test_ons61797_rejects_voltages_outside_the_allowed_range() -> None:
-    """Writes outside -4 V to 4 V should fail before reaching hardware."""
+    """Writes outside the Qubex 0 V to 4 V guard should fail before hardware."""
     from qubex.external_devices.dc_voltage.drivers import ONS61797Device
 
     written: list[tuple[int, float]] = []
@@ -791,16 +885,51 @@ def test_ons61797_rejects_voltages_outside_the_allowed_range() -> None:
         def __init__(self, **_: object) -> None:
             pass
 
+        def get_output_mode(self) -> int:
+            return 0
+
         def set_voltage(self, *, channel: int, voltage: float) -> None:
             written.append((channel, voltage))
 
     device = ONS61797Device(port="/dev/fake", client_factory=_Client)
-    with pytest.raises(ValueError, match=r"between -4\.0 V and 4\.0 V"):
+    with pytest.raises(ValueError, match=r"between 0\.0 V and 4\.0 V"):
+        device.set_voltage(1, -0.1)
+    with pytest.raises(ValueError, match=r"between 0\.0 V and 4\.0 V"):
         device.set_voltage(1, 15.0)
     assert written == []
 
     device.set_voltage(1, 3.5)
     assert written == [(1, 3.5)]
+
+
+def test_ons61797_requires_independent_output_mode() -> None:
+    """The adapter should reject linked output mode before any channel access."""
+    from qubex.external_devices.dc_voltage.drivers import ONS61797Device
+
+    client = _FakeONS61797Client()
+    client.output_mode = 1
+
+    with pytest.raises(RuntimeError, match="independent output mode"):
+        ONS61797Device(
+            port="/dev/fake",
+            client_factory=lambda **_: client,
+        )
+
+
+@pytest.mark.parametrize("channel", [0, 17])
+def test_ons61797_rejects_channels_outside_the_hardware_range(
+    channel: int,
+) -> None:
+    """The adapter should reject channels outside the documented 1 to 16."""
+    from qubex.external_devices.dc_voltage.drivers import ONS61797Device
+
+    device = ONS61797Device(
+        port="/dev/fake",
+        client_factory=_FakeONS61797Client,
+    )
+
+    with pytest.raises(ValueError, match="between 1 and 16"):
+        device.get_voltage(channel)
 
 
 def test_ons61797_adapter_normalizes_third_party_output_state() -> None:

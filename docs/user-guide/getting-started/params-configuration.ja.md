@@ -215,7 +215,7 @@ data:
     pump_frequency: 6.000
     pump_amplitude: 0.10
     bias_voltage: 0.27
-    idle_voltage: -0.05
+    idle_voltage: 0.05
 ```
 
 このfileには較正値だけを置きます。`bias_voltage` にdefaultはなく、

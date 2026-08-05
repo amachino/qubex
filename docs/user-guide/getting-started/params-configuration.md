@@ -218,7 +218,7 @@ data:
     pump_frequency: 6.000
     pump_amplitude: 0.10
     bias_voltage: 0.27
-    idle_voltage: -0.05
+    idle_voltage: 0.05
 ```
 
 This file holds calibrated values only. `bias_voltage` has no default:

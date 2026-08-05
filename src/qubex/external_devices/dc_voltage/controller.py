@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 
 from .config import DCVoltageControllerConfig, DCVoltageProfile
@@ -38,6 +38,41 @@ def create_dc_voltage_controller(
     )
 
 
+class DCVoltageConnection:
+    """Operate a DC voltage device through one open connection."""
+
+    def __init__(
+        self,
+        *,
+        device: DCVoltageDevice,
+        apply_voltage: Callable[[int, float, DCVoltageProfile], None],
+        idle: Callable[[int, DCVoltageProfile], None],
+    ) -> None:
+        """Bind controller operations to one connected device."""
+        self._device = device
+        self._apply_voltage = apply_voltage
+        self._idle = idle
+
+    def apply_voltage_and_read(
+        self,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> tuple[float, bool]:
+        """Ramp one channel and return readback without reconnecting."""
+        self._apply_voltage(channel, voltage, profile)
+        return self.read_channel(channel)
+
+    def read_channel(self, channel: int) -> tuple[float, bool]:
+        """Return one channel's voltage and output state."""
+        return self._device.get_voltage(channel), self._device.is_output_on(channel)
+
+    def idle(self, *, channel: int, profile: DCVoltageProfile) -> None:
+        """Ramp one channel to idle without reconnecting."""
+        self._idle(channel, profile)
+
+
 class DCVoltageController:
     """Provide access to a configured DC voltage device."""
 
@@ -48,6 +83,25 @@ class DCVoltageController:
     ):
         """Initialize the controller with a connected-device factory."""
         self._device_factory = device_factory
+
+    @contextmanager
+    def connected(self) -> Iterator[DCVoltageConnection]:
+        """Yield operations bound to one open device connection."""
+        with self._connection() as device:
+            yield DCVoltageConnection(
+                device=device,
+                apply_voltage=lambda channel, voltage, profile: self._apply_voltage(
+                    device,
+                    channel=channel,
+                    voltage=voltage,
+                    profile=profile,
+                ),
+                idle=lambda channel, profile: self._ramp_to_idle(
+                    device,
+                    channel=channel,
+                    profile=profile,
+                ),
+            )
 
     def apply_voltage(
         self,
@@ -64,6 +118,23 @@ class DCVoltageController:
                 voltage=voltage,
                 profile=profile,
             )
+
+    def apply_voltage_and_read(
+        self,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> tuple[float, bool]:
+        """Ramp one channel and return its readback on the same connection."""
+        with self._connection() as device:
+            self._apply_voltage(
+                device,
+                channel=channel,
+                voltage=voltage,
+                profile=profile,
+            )
+            return device.get_voltage(channel), device.is_output_on(channel)
 
     def idle(
         self,

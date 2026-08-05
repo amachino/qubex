@@ -1416,31 +1416,46 @@ Do you want to continue?
         resolved_mux = self._resolve_dc_mux(mux)
         profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
         controller = self.system_manager.dc_voltage_controller
-        control = DCVoltageControl(
-            apply_voltage=lambda voltage: controller.apply_voltage(
+
+        def create_state(readback: float, is_on: bool) -> DCVoltageState:
+            return DCVoltageState(
+                mux_label=resolved_mux.label,
+                mux_index=resolved_mux.index,
                 channel=profile.channel,
-                voltage=voltage,
-                profile=profile,
-            ),
-            idle=lambda: controller.idle(
-                channel=profile.channel,
-                profile=profile,
-            ),
-            get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
-        )
-        try:
-            yield control
-        except BaseException:
+                voltage=readback,
+                output="on" if is_on else "off",
+            )
+
+        with controller.connected() as connection:
+            control = DCVoltageControl(
+                apply_voltage=lambda voltage: create_state(
+                    *connection.apply_voltage_and_read(
+                        channel=profile.channel,
+                        voltage=voltage,
+                        profile=profile,
+                    )
+                ),
+                idle=lambda: connection.idle(
+                    channel=profile.channel,
+                    profile=profile,
+                ),
+                get_state=lambda: create_state(
+                    *connection.read_channel(profile.channel)
+                ),
+            )
             try:
-                control.idle()
+                yield control
             except BaseException:
-                logger.exception(
-                    "Failed to return DC voltage output to idle while handling "
-                    "an experiment error."
-                )
-            raise
-        else:
-            control.idle()
+                try:
+                    control.idle()
+                except BaseException:
+                    logger.exception(
+                        "Failed to return DC voltage output to idle while handling "
+                        "an experiment error."
+                    )
+                raise
+            else:
+                control.idle()
 
     def save_calib_note(
         self,

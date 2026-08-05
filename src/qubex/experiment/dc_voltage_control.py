@@ -13,7 +13,7 @@ class DCVoltageControl:
     def __init__(
         self,
         *,
-        apply_voltage: Callable[[float], None],
+        apply_voltage: Callable[[float], DCVoltageState],
         idle: Callable[[], None],
         get_state: Callable[[], DCVoltageState],
     ) -> None:
@@ -44,8 +44,7 @@ class DCVoltageControl:
         DCVoltageState
             Readback state at the target voltage.
         """
-        self._apply_voltage(float(voltage))
-        return self.state
+        return self._apply_voltage(float(voltage))
 
     def sweep(
         self,

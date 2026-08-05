@@ -143,7 +143,9 @@ settings:
 - `devices` — `driver` selects the adapter and `channels` lists the device
   outputs. Everything under `params` is driver-specific and validated by
   the selected driver (ONS61797: `port` for serial or `ip_address` for
-  network, not both). Both drivers reject writes outside -4 V to 4 V.
+  network, not both). Qubex limits ONS61797 writes to 0 V through 4 V and
+  channels 1 through 16, and requires its independent output mode (`OMD 0`);
+  the Qblox driver accepts -4 V through 4 V.
 - `wiring` — each entry names a role (`bias`) and references an output as
   `DEVICE-CHANNEL` (`ONS1-2` = channel 2 of device `ONS1`, one-based).
   Only wired outputs can be driven: an unwired mux or an unlisted channel
@@ -154,8 +156,9 @@ settings:
 
 The idle voltage — where each output remains while DC bias is not in use — is a
 calibrated per-mux value: `idle_voltage` in `jpa_params.yaml`, falling back
-to `reset_voltage` for uncalibrated muxes. A DC voltage context always
-ramps back to the idle voltage on exit.
+to `reset_voltage` for uncalibrated muxes. A DC voltage context holds one
+device connection across its voltage applications, sweeps, and readbacks,
+then ramps back to the idle voltage and closes the connection on exit.
 
 To control a Qblox SPI Rack through a server process that owns its USB
 connection, use the `qblox_server` driver. Qubex connects to that server as a

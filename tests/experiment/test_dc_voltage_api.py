@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal
 
@@ -57,6 +59,10 @@ class _DCVoltageController:
         self.calls: list[tuple[object, ...]] = []
         self.fail_set_voltage = False
 
+    @contextmanager
+    def connected(self) -> Iterator[_DCVoltageController]:
+        yield self
+
     def on(self, *, channel: int) -> None:
         self.calls.append(("on", channel))
         self.output_states[channel] = True
@@ -89,6 +95,25 @@ class _DCVoltageController:
         self.calls.append(("apply_voltage", channel, voltage, profile))
         self.voltages[channel] = voltage
         self.output_states[channel] = True
+
+    def apply_voltage_and_read(
+        self,
+        *,
+        channel: int,
+        voltage: float,
+        profile: DCVoltageProfile,
+    ) -> tuple[float, bool]:
+        self.calls.append(("apply_voltage_and_read", channel, voltage, profile))
+        self.voltages[channel] = voltage
+        self.output_states[channel] = True
+        return voltage, True
+
+    def read_channel(self, channel: int) -> tuple[float, bool]:
+        self.calls.append(("read_channel", channel))
+        return (
+            self.voltages.get(channel, 0.0),
+            self.output_states.get(channel, False),
+        )
 
     def idle(self, *, channel: int, profile: DCVoltageProfile) -> None:
         self.calls.append(("idle", channel, profile))
@@ -290,7 +315,7 @@ def test_dc_voltage_control_applies_voltage_with_configured_ramp() -> None:
     assert state.voltage == pytest.approx(0.25)
     assert state.is_on
     apply_call = next(
-        call for call in dc_controller.calls if call[0] == "apply_voltage"
+        call for call in dc_controller.calls if call[0] == "apply_voltage_and_read"
     )
     assert apply_call[1:3] == (7, 0.25)
     applied_profile = apply_call[3]
@@ -393,7 +418,9 @@ def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
         state = dc.apply_voltage(0.5)
 
     assert state.voltage == pytest.approx(0.5)
-    call = next(call for call in dc_controller.calls if call[0] == "apply_voltage")
+    call = next(
+        call for call in dc_controller.calls if call[0] == "apply_voltage_and_read"
+    )
     applied_profile = call[3]
     assert isinstance(applied_profile, DCVoltageProfile)
     assert applied_profile.readback_tolerance_v == pytest.approx(0.002)
