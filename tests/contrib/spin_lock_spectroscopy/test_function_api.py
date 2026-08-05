@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from contextlib import nullcontext
 from types import SimpleNamespace
 from typing import Any
 
@@ -18,6 +19,7 @@ from qubex.contrib.experiment import (
 from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _analyze_spin_lock_target,
     _chevron_detuning_half_width_limit,
+    _estimate_spin_lock_parameters_with_chevron,
     _final_projection_phase,
     _final_projection_phase_maps,
     _fit_data_without_figure,
@@ -27,6 +29,7 @@ from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _resolve_bool,
     _resolve_drive_detuning,
     _resolve_duration_range,
+    _resolve_frequency_range,
     _resolve_nonnegative_finite_float,
     _resolve_positive_integer,
     _resolve_spin_lock_calibration,
@@ -54,11 +57,19 @@ def test_all_spin_lock_spectroscopy_functions_are_exported_from_experiment() -> 
 def test_default_spin_lock_frequency_range_uses_tangent_spacing_to_120_mhz() -> None:
     """Given defaults, when inspected, then the Rabi-frequency range uses tangent spacing."""
     frequency_range = spin_lock_module.DEFAULT_SPIN_LOCK_FREQUENCY_RANGE
-    expected = 0.01 + 0.11 * np.tan(np.pi / 3 * np.linspace(0, 1, 12)) / np.sqrt(3)
+    expected = 0.12 * np.tan(np.pi / 3 * np.linspace(0, 1, 15)) / np.sqrt(3)
 
     np.testing.assert_allclose(frequency_range, expected)
-    assert frequency_range[0] == pytest.approx(0.01)
+    assert frequency_range[0] == pytest.approx(0.0)
     assert frequency_range[-1] == pytest.approx(0.12)
+
+
+def test_resolve_frequency_range_accepts_zero_and_rejects_negative() -> None:
+    """Given frequency inputs, then zero is allowed but negative values are rejected."""
+    np.testing.assert_allclose(_resolve_frequency_range([0.0, 0.01]), [0.0, 0.01])
+
+    with pytest.raises(ValueError, match="nonnegative"):
+        _resolve_frequency_range([-0.01, 0.01])
 
 
 def test_scaled_chevron_ranges_match_reference_at_12p5_mhz() -> None:
@@ -252,6 +263,100 @@ def test_resolve_spin_lock_parameters_reuses_supplied_chevron_results() -> None:
     assert resolved_results == chevron_results
 
 
+def test_resolve_spin_lock_parameters_reuses_zero_rabi_result() -> None:
+    """Given zero-frequency metadata, then a zero measured Rabi rate is accepted."""
+    chevron_results = {
+        "Q00": [
+            {
+                "requested_rabi_frequency": 0.0,
+                "drive_amplitude": 0.0,
+                "qubit_frequency": 5.0,
+                "rabi_frequency": 0.0,
+            }
+        ]
+    }
+
+    qubit_frequency_map, rabi_frequency_map, _ = (
+        _resolve_spin_lock_parameters_from_chevron_results(
+            targets=["Q00"],
+            requested_rabi_frequency_range=np.array([0.0]),
+            amplitude_map={"Q00": np.array([0.0])},
+            chevron_results=chevron_results,
+        )
+    )
+
+    np.testing.assert_allclose(qubit_frequency_map["Q00"], [5.0])
+    np.testing.assert_allclose(rabi_frequency_map["Q00"], [0.0])
+
+
+def test_estimate_spin_lock_parameters_skips_zero_rabi_chevron(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given a zero-frequency point, then no chevron measurement is taken for it."""
+
+    class _Util:
+        @staticmethod
+        def no_output() -> Any:
+            return nullcontext()
+
+        @staticmethod
+        def discretize_time_range(
+            values: Any,
+            *,
+            sampling_period: float,
+        ) -> np.ndarray:
+            array = np.asarray(values, dtype=np.float64)
+            return np.round(array / sampling_period) * sampling_period
+
+    exp: Any = SimpleNamespace(
+        ctx=SimpleNamespace(
+            util=_Util(),
+            measurement=SimpleNamespace(sampling_period=2.0),
+        )
+    )
+    calls: list[dict[str, Any]] = []
+
+    def _estimate_chevron(*_args: Any, **kwargs: Any) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(
+            data={
+                "results": {
+                    "Q00": {
+                        "omega_q": 5.001,
+                        "omega_rabi": 0.012,
+                        "peak_background_rms_ratio": 10.0,
+                    }
+                }
+            },
+            figures=None,
+        )
+
+    monkeypatch.setattr(
+        spin_lock_module,
+        "estimate_qubit_frequency_from_chevron",
+        _estimate_chevron,
+    )
+
+    qubit_frequency_map, rabi_frequency_map, chevron_results, _ = (
+        _estimate_spin_lock_parameters_with_chevron(
+            exp,
+            targets=["Q00"],
+            requested_rabi_frequency_range=np.array([0.0, 0.0125]),
+            amplitude_map={"Q00": np.array([0.0, 0.1])},
+            base_frequencies={"Q00": 5.0},
+            chevron_n_shots=10,
+            shot_interval=0.0,
+            return_chevron_figures=False,
+        )
+    )
+
+    assert len(calls) == 1
+    np.testing.assert_allclose(qubit_frequency_map["Q00"], [5.0, 5.001])
+    np.testing.assert_allclose(rabi_frequency_map["Q00"], [0.0, 0.012])
+    assert chevron_results["Q00"][0]["chevron_measured"] is False
+    assert chevron_results["Q00"][1]["chevron_measured"] is True
+
+
 def test_resolve_spin_lock_parameters_rejects_mismatched_chevron_results() -> None:
     """Given stale chevron metadata, then reuse is rejected before measurement."""
     chevron_results = {
@@ -405,6 +510,7 @@ def test_spin_lock_relaxation_figure_yaxis_starts_at_zero() -> None:
     assert fig.layout.yaxis.range[0] == 0
     assert fig.layout.yaxis.title.text == "Relaxation time (μs)"
     assert fig.layout.xaxis.type == "linear"
+    assert fig.layout.xaxis.range[0] == 0
 
 
 def test_spin_lock_heatmap_figure_uses_linear_frequency_axis() -> None:
@@ -417,6 +523,7 @@ def test_spin_lock_heatmap_figure_uses_linear_frequency_axis() -> None:
     )
 
     assert fig.layout.xaxis.type == "linear"
+    assert fig.layout.xaxis.range[0] == 0
     assert fig.layout.yaxis.type == "log"
     heatmap_trace: Any = fig.data[0]
     assert heatmap_trace.zmin == 0
@@ -468,6 +575,54 @@ def test_analyze_spin_lock_target_returns_expected_shapes_and_figures(
     assert {kwargs["xlabel"] for kwargs in fit_kwargs} == {"Duration (ns)"}
     assert "Q00_heatmap" in analysis.figures
     assert "Q00_relaxation" in analysis.figures
+
+
+def test_analyze_spin_lock_target_fits_zero_rabi_point(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given a zero Rabi point, then decay fitting is still applied."""
+
+    class _FitResult(dict[str, float]):
+        status = FitStatus.SUCCESS
+        message = "ok"
+        figure = None
+
+        def __init__(self, **kwargs: float) -> None:
+            super().__init__(**kwargs)
+            self.data = dict(self)
+
+    fit_kwargs: list[dict[str, Any]] = []
+
+    def _fit_exp_decay(**kwargs: Any) -> _FitResult:
+        fit_kwargs.append(kwargs)
+        return _FitResult(tau=1000.0, tau_err=100.0, r2=0.99)
+
+    monkeypatch.setattr(spin_lock_module.fitting, "fit_exp_decay", _fit_exp_decay)
+    sweep_data = SimpleNamespace(
+        data=np.arange(6, dtype=np.float64),
+        normalized=np.linspace(-1.0, 1.0, 6),
+    )
+
+    analysis = _analyze_spin_lock_target(
+        target="Q00",
+        sweep_data=sweep_data,
+        durations=np.array([100.0, 200.0, 300.0]),
+        requested_rabi_frequency_range=np.array([0.0, 0.01]),
+        rabi_frequency_range=np.array([0.0, 0.01]),
+        effective_frequency_range=np.array([0.0, 0.01]),
+        drive_frequencies=np.array([5.0, 5.0]),
+        qubit_frequencies=np.array([5.0, 5.0]),
+    )
+
+    assert [kwargs["target"] for kwargs in fit_kwargs] == [
+        "Q00_0_MHz",
+        "Q00_10_MHz",
+    ]
+    np.testing.assert_allclose(analysis.relaxation_times, [1000.0, 1000.0])
+    assert [fit_result["status"] for fit_result in analysis.fit_results] == [
+        "success",
+        "success",
+    ]
 
 
 def test_resolve_duration_range_removes_duplicate_discretized_points() -> None:

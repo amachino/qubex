@@ -23,9 +23,9 @@ from qubex.pulse import PulseSchedule, Rect
 
 __all__ = ["spin_lock_sequence", "spin_lock_spectroscopy"]
 
-DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = 0.01 + 0.11 * np.tan(
-    np.pi / 3 * np.linspace(0, 1, 12)
-) / np.sqrt(3)
+DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = (
+    0.12 * np.tan(np.pi / 3 * np.linspace(0, 1, 15)) / np.sqrt(3)
+)
 DEFAULT_DURATION_RANGE = np.geomspace(100, 200e3, 31)
 DEFAULT_DRIVE_PHASE = 0.0
 FINAL_PROJECTION_PHASE_CORRECTION_SIGN = -1.0
@@ -39,7 +39,8 @@ CHEVRON_OMEGA_RABI_POINTS = 128
 MIN_DECAY_FIT_POINTS = 3
 
 ArrayMap = dict[str, np.ndarray]
-ChevronMetadataMap = dict[str, list[dict[str, Any]]]
+ChevronMetadata = dict[str, Any]
+ChevronMetadataMap = dict[str, list[ChevronMetadata]]
 ChevronSource = Literal["measured", "provided", "none"]
 FigureMap = dict[str, go.Figure]
 
@@ -195,8 +196,8 @@ def _resolve_frequency_range(
         raise ValueError("spin_lock_frequency_range must be a non-empty 1D array.")
     if not np.all(np.isfinite(frequencies)):
         raise ValueError("spin_lock_frequency_range must contain finite values.")
-    if np.any(frequencies <= 0):
-        raise ValueError("spin_lock_frequency_range must contain positive values.")
+    if np.any(frequencies < 0):
+        raise ValueError("spin_lock_frequency_range must contain nonnegative values.")
     return frequencies
 
 
@@ -521,6 +522,49 @@ def _validate_matching_chevron_value(
         )
 
 
+def _is_zero_rabi_frequency(frequency: float) -> bool:
+    return bool(np.isclose(float(frequency), 0.0, rtol=0.0, atol=1e-15))
+
+
+def _is_valid_chevron_rabi_frequency(
+    *,
+    requested_rabi_frequency: float,
+    measured_rabi_frequency: float,
+) -> bool:
+    if not np.isfinite(measured_rabi_frequency):
+        return False
+    if measured_rabi_frequency > 0:
+        return True
+    return bool(
+        _is_zero_rabi_frequency(requested_rabi_frequency)
+        and np.isclose(
+            measured_rabi_frequency,
+            0.0,
+            rtol=0.0,
+            atol=1e-15,
+        )
+    )
+
+
+def _zero_rabi_chevron_metadata(
+    *,
+    requested_rabi_frequency: float,
+    drive_amplitude: float,
+    qubit_frequency: float,
+) -> ChevronMetadata:
+    return {
+        "requested_rabi_frequency": float(requested_rabi_frequency),
+        "drive_amplitude": float(drive_amplitude),
+        "qubit_frequency": float(qubit_frequency),
+        "rabi_frequency": 0.0,
+        "peak_background_rms_ratio": np.nan,
+        "detuning_range": np.array([], dtype=np.float64),
+        "time_range": np.array([], dtype=np.float64),
+        "omega_rabi_range": np.array([], dtype=np.float64),
+        "chevron_measured": False,
+    }
+
+
 def _resolve_spin_lock_parameters_from_chevron_results(
     *,
     targets: list[str],
@@ -581,7 +625,12 @@ def _resolve_spin_lock_parameters_from_chevron_results(
                 raise ValueError(
                     f"Chevron qubit frequency for `{target}` must be finite."
                 )
-            if not np.isfinite(rabi_frequency) or rabi_frequency <= 0:
+            if not _is_valid_chevron_rabi_frequency(
+                requested_rabi_frequency=float(
+                    requested_rabi_frequency_range[frequency_index]
+                ),
+                measured_rabi_frequency=rabi_frequency,
+            ):
                 raise ValueError(
                     f"Chevron Rabi frequency for `{target}` must be positive and finite."
                 )
@@ -590,6 +639,30 @@ def _resolve_spin_lock_parameters_from_chevron_results(
             measured_rabi_frequency_map[target][frequency_index] = rabi_frequency
 
     return qubit_frequency_map, measured_rabi_frequency_map, resolved_chevron_results
+
+
+def _record_zero_rabi_chevron_point(
+    *,
+    targets: list[str],
+    frequency_index: int,
+    requested_rabi_frequency: float,
+    amplitude_map: ArrayMap,
+    base_frequencies: dict[str, float],
+    measured_qubit_frequencies: ArrayMap,
+    measured_rabi_frequencies: ArrayMap,
+    chevron_results: ChevronMetadataMap,
+) -> None:
+    for target in targets:
+        base_frequency = float(base_frequencies[target])
+        measured_qubit_frequencies[target][frequency_index] = base_frequency
+        measured_rabi_frequencies[target][frequency_index] = 0.0
+        chevron_results[target].append(
+            _zero_rabi_chevron_metadata(
+                requested_rabi_frequency=requested_rabi_frequency,
+                drive_amplitude=float(amplitude_map[target][frequency_index]),
+                qubit_frequency=base_frequency,
+            )
+        )
 
 
 def _estimate_spin_lock_parameters_with_chevron(
@@ -625,6 +698,19 @@ def _estimate_spin_lock_parameters_with_chevron(
         unit="freq",
     )
     for frequency_index, expected_rabi_frequency in enumerate(progress):
+        if _is_zero_rabi_frequency(float(expected_rabi_frequency)):
+            _record_zero_rabi_chevron_point(
+                targets=targets,
+                frequency_index=frequency_index,
+                requested_rabi_frequency=float(expected_rabi_frequency),
+                amplitude_map=amplitude_map,
+                base_frequencies=base_frequencies,
+                measured_qubit_frequencies=measured_qubit_frequencies,
+                measured_rabi_frequencies=measured_rabi_frequencies,
+                chevron_results=chevron_results,
+            )
+            continue
+
         detuning_range, time_range, omega_rabi_range = _scaled_chevron_ranges(
             exp,
             expected_rabi_frequency=float(expected_rabi_frequency),
@@ -679,6 +765,7 @@ def _estimate_spin_lock_parameters_with_chevron(
                     "detuning_range": detuning_range,
                     "time_range": time_range,
                     "omega_rabi_range": omega_rabi_range,
+                    "chevron_measured": True,
                 }
             )
 
@@ -816,6 +903,16 @@ def _add_spin_lock_pulse(
     schedule.add(target, half_pi.shifted(final_phase))
 
 
+def _frequency_axis_range_mhz(frequency_range: np.ndarray) -> list[float]:
+    frequencies_mhz = np.asarray(frequency_range, dtype=np.float64) * 1e3
+    finite_frequencies_mhz = frequencies_mhz[np.isfinite(frequencies_mhz)]
+    if finite_frequencies_mhz.size == 0:
+        return [0.0, 1.0]
+
+    upper = float(np.max(finite_frequencies_mhz))
+    return [0.0, 1.05 * upper if upper > 0 else 1.0]
+
+
 def _make_spin_lock_heatmap_figure(
     *,
     target: str,
@@ -842,6 +939,7 @@ def _make_spin_lock_heatmap_figure(
         ),
         xaxis_title="Spin-lock Rabi frequency (MHz)",
         xaxis_type="linear",
+        xaxis_range=_frequency_axis_range_mhz(spin_lock_rabi_frequency_range),
         yaxis_title="Duration (ns)",
         yaxis_type="log",
         width=700,
@@ -893,6 +991,7 @@ def _make_spin_lock_relaxation_figure(
         ),
         xaxis_title="Spin-lock Rabi frequency (MHz)",
         xaxis_type="linear",
+        xaxis_range=_frequency_axis_range_mhz(spin_lock_rabi_frequency_range),
         yaxis_title="Relaxation time (μs)",
         yaxis_range=[0, yaxis_upper],
         width=700,
@@ -1232,8 +1331,8 @@ def spin_lock_spectroscopy(
     spin_lock_frequency_range
         Spin-lock frequencies in GHz. These values are treated as desired Rabi
         rates. If omitted,
-        ``0.01 + 0.11 * tan(pi / 3 * linspace(0, 1, 12)) / sqrt(3)`` is used,
-        i.e. 10 MHz to 120 MHz with denser points at low frequencies.
+        ``0.12 * tan(pi / 3 * linspace(0, 1, 15)) / sqrt(3)`` is used,
+        i.e. 0 MHz to 120 MHz with denser points at low frequencies.
     duration_range
         Spin-lock drive durations in ns. Values must be positive because the
         heatmap and fit figures use a log time axis. The range is discretized to
@@ -1252,7 +1351,9 @@ def spin_lock_spectroscopy(
         Rabi frequencies from chevron. The chevron detuning half-width is scaled
         from the expected Rabi rate and capped at 80% of the Nyquist frequency
         implied by ``exp.ctx.measurement.sampling_period``. Defaults to
-        ``True``. Ignored when ``chevron_results`` is supplied.
+        ``True``. The zero-frequency point, if present, is kept in the
+        spin-lock sweep but skipped in chevron pre-measurements. Ignored when
+        ``chevron_results`` is supplied.
     chevron_n_shots
         Number of shots for each pre-measurement chevron sweep point. Used only
         when chevrons are measured in this call and defaults to
@@ -1342,7 +1443,8 @@ def spin_lock_spectroscopy(
             Per-frequency fit metadata and fit parameters.
         ``chevron_results``
             Per-frequency chevron metadata. Empty unless chevron calibration is
-            measured or supplied through ``chevron_results``.
+            measured or supplied through ``chevron_results``. Entries for a
+            zero-frequency point have ``chevron_measured=False``.
         ``chevron_source``
             ``"measured"``, ``"provided"``, or ``"none"`` depending on how the
             chevron calibration values were obtained.
@@ -1373,6 +1475,9 @@ def spin_lock_spectroscopy(
       in this call or supplied through ``chevron_results``, the figure x-axis
       uses the measured Rabi-rate axis from chevron; otherwise it uses this
       requested Rabi-rate axis.
+    - A zero-frequency point is a free-precession reference without a spin-lock
+      drive. It is kept in the final sweep and plots, but chevron calibration is
+      skipped for that point.
     - The initial and final half-pi pulses are left at the calibrated qubit
       frequency. When the spin-lock drive is detuned from that frequency, the
       final half-pi pulse phase is shifted by
