@@ -138,6 +138,11 @@ class QbloxServerDevice:
         """Return that the backend can execute one complete sweep request."""
         return True
 
+    @property
+    def supports_output_switch(self) -> bool:
+        """Return that the D5a backend has no physical output switch."""
+        return False
+
     def close(self) -> None:
         """Close the backend socket without changing output voltages."""
         self._socket.close()

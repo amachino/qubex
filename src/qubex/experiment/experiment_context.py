@@ -1351,6 +1351,34 @@ class ExperimentContext:
             system_manager.dc_voltage_controller.idle_channels(profiles)
         return self.get_dc_voltage_states()
 
+    def shutdown_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """Ramp selected muxes to reset voltage and switch off supported outputs."""
+        system_manager = self.system_manager
+        profiles = {
+            mux_index: system_manager.resolve_dc_voltage_profile(mux_index)
+            for mux_index in self._resolve_dc_target_muxes(muxes)
+        }
+        if not profiles:
+            return {}
+        plan = {
+            mux_index: profile.reset_voltage_v
+            for mux_index, profile in profiles.items()
+        }
+        if not self._confirm_dc_voltage_write(
+            "ramp to the reset voltages and turn off the DC outputs",
+            plan,
+            confirm=confirm,
+        ):
+            return self.get_dc_voltage_states()
+        system_manager.dc_voltage_controller.turn_off_channels(
+            {profile.channel: profile for profile in profiles.values()}
+        )
+        return self.get_dc_voltage_states()
+
     @staticmethod
     def _confirm_dc_voltage_write(
         operation: str,
@@ -1377,40 +1405,6 @@ Do you want to continue?
         if not confirmed:
             logger.info("Operation cancelled.")
         return confirmed
-
-    def _turn_off_dc(
-        self,
-        *,
-        mux: int | str | None = None,
-        confirm: bool = True,
-    ) -> None:
-        """Ramp one mux to its reset voltage and turn its output off."""
-        resolved_mux, channel = self._resolve_dc_output(mux)
-        profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
-        if not self._confirm_dc_voltage_write(
-            "ramp to the reset voltage and turn off the DC output",
-            {resolved_mux.index: profile.reset_voltage_v},
-            confirm=confirm,
-        ):
-            return
-        self.system_manager.dc_voltage_controller.turn_off_channels({channel: profile})
-
-    def _turn_on_dc(
-        self,
-        *,
-        mux: int | str | None = None,
-        confirm: bool = True,
-    ) -> None:
-        """Turn on DC output for one mux at its reset voltage."""
-        resolved_mux, channel = self._resolve_dc_output(mux)
-        profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
-        if not self._confirm_dc_voltage_write(
-            "turn on the DC output at its reset voltage",
-            {resolved_mux.index: profile.reset_voltage_v},
-            confirm=confirm,
-        ):
-            return
-        self.system_manager.dc_voltage_controller.turn_on_channels({channel: profile})
 
     @contextmanager
     def dc_voltage_control(
@@ -1440,14 +1434,6 @@ Do you want to continue?
                 profile=resolved_profile,
             ),
             get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
-            turn_on=lambda confirm: self._turn_on_dc(
-                mux=resolved_mux.index,
-                confirm=confirm,
-            ),
-            turn_off=lambda confirm: self._turn_off_dc(
-                mux=resolved_mux.index,
-                confirm=confirm,
-            ),
             profile=profile,
         )
         try:

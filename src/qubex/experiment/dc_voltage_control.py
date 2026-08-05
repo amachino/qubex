@@ -20,8 +20,6 @@ class DCVoltageControl:
         apply_voltage_immediately: Callable[[float, DCVoltageProfile], None],
         idle: Callable[[DCVoltageProfile], None],
         get_state: Callable[[], DCVoltageState],
-        turn_on: Callable[[bool], None],
-        turn_off: Callable[[bool], None],
         profile: DCVoltageProfile,
     ) -> None:
         """Initialize bound DC voltage operations."""
@@ -29,8 +27,6 @@ class DCVoltageControl:
         self._apply_voltage_immediately = apply_voltage_immediately
         self._idle = idle
         self._get_state = get_state
-        self._turn_on = turn_on
-        self._turn_off = turn_off
         self._profile = profile
 
     @property
@@ -45,7 +41,7 @@ class DCVoltageControl:
         tolerance: float | None = None,
     ) -> DCVoltageState:
         """
-        Enable the output and ramp from its current voltage to a target.
+        Ramp an enabled output from its current voltage to a target.
 
         Parameters
         ----------
@@ -72,21 +68,11 @@ class DCVoltageControl:
         *,
         tolerance: float | None = None,
     ) -> DCVoltageState:
-        """Enable the output and apply a voltage without ramping."""
+        """Apply a voltage to an enabled output without ramping."""
         self._apply_voltage_immediately(
             float(voltage),
             self._profile_with_tolerance(tolerance),
         )
-        return self.state
-
-    def turn_on(self, confirm: bool = True) -> DCVoltageState:
-        """Turn on the bound output at 0 V and return its readback state."""
-        self._turn_on(confirm)
-        return self.state
-
-    def turn_off(self, confirm: bool = True) -> DCVoltageState:
-        """Ramp to 0 V, turn off the bound output, and return its state."""
-        self._turn_off(confirm)
         return self.state
 
     def sweep(

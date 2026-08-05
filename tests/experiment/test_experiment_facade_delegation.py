@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from qubex.experiment.experiment import Experiment
+from qubex.experiment.external_devices import ExternalDevices
 from qubex.experiment.models.dc_voltage_state import DCVoltageState
 
 
@@ -129,6 +130,10 @@ class _ExperimentContextStub:
             voltage=0.54,
             output="on",
         )
+
+    def shutdown_dc_voltages(self, **kwargs: Any) -> dict[int, DCVoltageState]:
+        self.calls.append(("shutdown_dc_voltages", kwargs))
+        return {6: self.get_dc_voltage_state(mux=6)}
 
     def dc_voltage_control(self, **kwargs: Any):
         self.calls.append(("dc_voltage_control", {"enter": kwargs}))
@@ -1067,13 +1072,13 @@ def test_register_custom_target_delegates_legacy_update_lsi_to_context() -> None
     ]
 
 
-def test_dc_voltage_control_delegates_to_context() -> None:
-    """Given a mux, the DC control context should delegate and yield its control."""
+def test_dc_voltage_delegates_to_context() -> None:
+    """Given a mux, the DC voltage context should delegate and yield its control."""
     exp = object.__new__(Experiment)
     context_stub = _ExperimentContextStub()
     exp.__dict__["_experiment_context"] = context_stub
 
-    with exp.external_devices.dc_voltage_control(mux=6) as dc:
+    with exp.external_devices.dc_voltage(mux=6) as dc:
         assert dc is context_stub
 
     assert context_stub.calls == [
@@ -1086,6 +1091,28 @@ def test_dc_voltage_control_delegates_to_context() -> None:
             {"exit": {"mux": 6}},
         ),
     ]
+
+
+def test_external_devices_property_returns_named_facade() -> None:
+    """The external-devices property should return the dedicated facade."""
+    exp = object.__new__(Experiment)
+    exp.__dict__["_experiment_context"] = _ExperimentContextStub()
+
+    assert isinstance(exp.external_devices, ExternalDevices)
+
+
+def test_shutdown_dc_voltages_delegates_to_context() -> None:
+    """Shutdown should delegate the selected muxes and confirmation setting."""
+    context_stub = _ExperimentContextStub()
+    external_devices = ExternalDevices(context=cast(Any, context_stub))
+
+    states = external_devices.shutdown_dc_voltages(muxes=[6], confirm=False)
+
+    assert list(states) == [6]
+    assert context_stub.calls[0] == (
+        "shutdown_dc_voltages",
+        {"muxes": [6], "confirm": False},
+    )
 
 
 def test_get_dc_voltage_state_delegates_to_context() -> None:

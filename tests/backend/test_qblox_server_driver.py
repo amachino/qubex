@@ -70,6 +70,18 @@ def test_connection_config_parses_server_and_channel_mapping() -> None:
     )
 
 
+def test_qblox_server_reports_no_physical_output_switch() -> None:
+    """Qblox server devices should report that physical switching is unavailable."""
+    device = QbloxServerDevice(
+        host="server",
+        port=12345,
+        channels={1: "Qblox1-1"},
+        socket_factory=_socket_factory(_FakeSocket([])),
+    )
+
+    assert device.supports_output_switch is False
+
+
 def test_connection_config_derives_channels_from_device_id() -> None:
     """Backend device names should derive from the device id and channels."""
     config = QbloxServerConnectionConfig.from_dict(
@@ -238,6 +250,7 @@ def test_controller_delegates_complete_ramp_to_native_server() -> None:
 
     class _NativeRampDevice:
         supports_native_ramp = True
+        supports_output_switch = False
 
         def close(self) -> None:
             calls.append(("close",))

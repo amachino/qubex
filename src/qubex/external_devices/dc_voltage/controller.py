@@ -101,8 +101,8 @@ class DCVoltageController:
         with self._connection() as device:
             if not device.is_output_on(channel):
                 raise RuntimeError(
-                    f"DC voltage channel {channel} output is off. Turn it on "
-                    "explicitly with `turn_on()` before applying a voltage."
+                    f"DC voltage channel {channel} output is off. Initialize it "
+                    "with `reset_dc_voltages()` before applying a voltage."
                 )
             self._set_voltage_verified(
                 device,
@@ -139,26 +139,6 @@ class DCVoltageController:
                     profile=profile,
                 )
 
-    def turn_on_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
-        """Turn on off outputs at their reset voltages, on one connection."""
-        with self._connection() as device:
-            for channel, profile in profiles.items():
-                if device.is_output_on(channel):
-                    logger.info("DC channel %d: output is already on.", channel)
-                    continue
-                self._set_voltage_verified(
-                    device,
-                    channel=channel,
-                    voltage=profile.reset_voltage_v,
-                    profile=profile,
-                )
-                device.on(channel)
-                logger.info(
-                    "DC channel %d: output switched on at %+.3f V.",
-                    channel,
-                    profile.reset_voltage_v,
-                )
-
     def reset_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
         """Bring channels to their reset voltages with outputs on."""
         with self._connection() as device:
@@ -186,7 +166,7 @@ class DCVoltageController:
                 )
 
     def turn_off_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
-        """Ramp on outputs to their reset voltages and turn them off."""
+        """Ramp outputs to reset voltage and switch them off when supported."""
         with self._connection() as device:
             for channel, profile in profiles.items():
                 if not device.is_output_on(channel):
@@ -199,8 +179,15 @@ class DCVoltageController:
                     voltage=profile.reset_voltage_v,
                     profile=profile,
                 )
-                device.off(channel)
-                logger.info("DC channel %d: output switched off.", channel)
+                if device.supports_output_switch:
+                    device.off(channel)
+                    logger.info("DC channel %d: output switched off.", channel)
+                else:
+                    logger.info(
+                        "DC channel %d: no physical output switch; held at %+.3f V.",
+                        channel,
+                        profile.reset_voltage_v,
+                    )
 
     def read_channels(
         self,
@@ -265,8 +252,8 @@ class DCVoltageController:
         """Ramp one enabled channel to a target voltage."""
         if not device.is_output_on(channel):
             raise RuntimeError(
-                f"DC voltage channel {channel} output is off. Turn it on "
-                "explicitly with `turn_on()` before applying a voltage."
+                f"DC voltage channel {channel} output is off. Initialize it "
+                "with `reset_dc_voltages()` before applying a voltage."
             )
         start = device.get_voltage(channel)
         self._ramp_voltage(

@@ -14,6 +14,11 @@ class DCVoltageDevice(Protocol):
         """Return whether the device can execute a complete ramp atomically."""
         ...
 
+    @property
+    def supports_output_switch(self) -> bool:
+        """Return whether the device can physically switch an output off."""
+        ...
+
     def close(self) -> None:
         """Close the device connection."""
         ...

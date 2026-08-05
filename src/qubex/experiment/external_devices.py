@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .experiment_context import ExperimentContext
 
 
-class ExternalDeviceAPI:
+class ExternalDevices:
     """Operate external devices (DC voltage sources) from an experiment."""
 
     def __init__(self, *, context: ExperimentContext) -> None:
@@ -21,7 +21,7 @@ class ExternalDeviceAPI:
         self._ctx = context
 
     @contextmanager
-    def dc_voltage_control(
+    def dc_voltage(
         self,
         *,
         mux: int | str | None = None,
@@ -136,3 +136,25 @@ class ExternalDeviceAPI:
             Readback states keyed by mux index after idling.
         """
         return self._ctx.idle_dc_voltages(muxes=muxes, confirm=confirm)
+
+    def shutdown_dc_voltages(
+        self,
+        muxes: int | str | Collection[int | str] | None = None,
+        confirm: bool = True,
+    ) -> dict[int, DCVoltageState]:
+        """
+        Ramp selected muxes to reset voltage and switch off supported outputs.
+
+        Parameters
+        ----------
+        muxes : int, str, or collection of them, optional
+            Target mux indices or labels. All wired muxes when omitted.
+        confirm : bool, optional
+            Whether to prompt before writing to the hardware.
+
+        Returns
+        -------
+        dict[int, DCVoltageState]
+            Readback states for every wired mux after shutdown.
+        """
+        return self._ctx.shutdown_dc_voltages(muxes=muxes, confirm=confirm)

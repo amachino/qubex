@@ -6,10 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
-from qubex.system.control_parameters import (
-    ControlParameters,
-    JPAParameters,
-)
+from qubex.system.control_parameters import ControlParameters, JPAParameters
 from qubex.system.target_type import TargetType
 
 if TYPE_CHECKING:

@@ -643,22 +643,23 @@ class Measurement:
             yield
 
     @contextmanager
-    def apply_dc_voltages(
-        self,
-        targets: str | Collection[str],
-    ) -> Iterator[None]:
+    def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:
         """
-        Apply amplification-point DC voltages to selected targets.
+        Temporarily apply DC voltages to selected targets.
 
         Parameters
         ----------
         targets : str | Collection[str]
-            Target label or target labels for DC bias application.
+            Target label or target labels for temporary DC bias application.
 
         Yields
         ------
         None
             Context where DC voltages are applied.
+
+        Notes
+        -----
+        DC voltages are removed automatically when exiting the context manager.
 
         Examples
         --------

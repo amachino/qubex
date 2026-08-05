@@ -114,12 +114,6 @@ class _DCVoltageController:
             self.voltages[channel] = voltage
             self.output_states[channel] = True
 
-    def turn_on_channels(self, profiles: dict[int, DCVoltageProfile]) -> None:
-        self.calls.append(("turn_on_channels", tuple(profiles)))
-        for channel, profile in profiles.items():
-            self.voltages[channel] = profile.reset_voltage_v
-            self.output_states[channel] = True
-
     def reset_channels(self, profiles: dict[int, DCVoltageProfile]) -> None:
         self.calls.append(("reset_channels", tuple(profiles)))
         for channel, profile in profiles.items():
@@ -387,27 +381,6 @@ def test_dc_voltage_control_sets_and_reads_bound_mux() -> None:
     assert dc_controller.voltages[8] == pytest.approx(0.0)
 
 
-def test_dc_voltage_control_turns_bound_output_off_and_on() -> None:
-    """Given a bound control, output operations should use its resolved channel."""
-    dc_controller = _DCVoltageController()
-    ctx = _ContextForTest(
-        mux_labels=["MUX06", "MUX07"],
-        dc_controller=dc_controller,
-    )
-
-    with ctx.dc_voltage_control(mux=7) as dc:
-        dc.apply_voltage(0.4)
-
-        off_state = dc.turn_off(confirm=False)
-        on_state = dc.turn_on(confirm=False)
-
-        assert off_state.output == "off"
-        assert on_state.output == "on"
-        assert off_state.channel == on_state.channel == 8
-
-    assert dc_controller.output_states[8] is True
-
-
 def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
     """Voltage application should delegate an overridden readback tolerance."""
     dc_controller = _DCVoltageController()
@@ -522,22 +495,38 @@ def test_reset_dc_voltages_brings_every_wired_mux_to_initial_state() -> None:
     assert states[7].output == "on"
 
 
-def test_turn_off_can_be_cancelled_at_the_prompt(
+def test_shutdown_dc_voltages_turns_off_every_wired_mux() -> None:
+    """Shutdown should ramp every wired mux to reset voltage and turn it off."""
+    dc_controller = _DCVoltageController()
+    dc_controller.voltages.update({7: 0.5, 8: -0.4})
+    dc_controller.output_states.update({7: True, 8: True})
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    states = ctx.shutdown_dc_voltages(confirm=False)
+
+    assert ("turn_off_channels", (7, 8)) in dc_controller.calls
+    assert states[6].voltage == pytest.approx(0.0)
+    assert states[6].output == "off"
+    assert states[7].voltage == pytest.approx(0.0)
+    assert states[7].output == "off"
+
+
+def test_shutdown_can_be_cancelled_at_the_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Declining the switch confirmation should leave the output untouched."""
+    """Declining shutdown confirmation should leave outputs untouched."""
     dc_controller = _DCVoltageController()
+    dc_controller.output_states.update({7: True, 8: True})
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
     monkeypatch.setattr(
         "qubex.experiment.experiment_context.Confirm.ask",
         lambda *_args, **_kwargs: False,
     )
 
-    with ctx.dc_voltage_control() as dc:
-        dc.apply_voltage(0.2)
-        dc.turn_off()  # Prompt declined: nothing should change.
+    states = ctx.shutdown_dc_voltages()
 
     assert dc_controller.output_states[7] is True
+    assert states[6].output == "on"
     assert all(call[0] != "turn_off_channels" for call in dc_controller.calls)
 
 
@@ -554,10 +543,12 @@ def test_bulk_operations_accept_a_mux_selection() -> None:
     ctx.bias_dc_voltages(muxes=6, confirm=False)
     ctx.idle_dc_voltages(muxes=["MUX07"], confirm=False)
     ctx.reset_dc_voltages(muxes=[6], confirm=False)
+    ctx.shutdown_dc_voltages(muxes=["MUX07"], confirm=False)
 
     assert ("apply_channels", (7,)) in dc_controller.calls
     assert ("idle_channels", (8,)) in dc_controller.calls
     assert ("reset_channels", (7,)) in dc_controller.calls
+    assert ("turn_off_channels", (8,)) in dc_controller.calls
 
 
 def test_bias_raises_for_an_explicitly_selected_uncalibrated_mux() -> None:

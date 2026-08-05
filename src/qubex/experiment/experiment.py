@@ -68,7 +68,7 @@ from qubex.typing import (
 )
 
 from .experiment_context import ExperimentContext
-from .external_device_api import ExternalDeviceAPI
+from .external_devices import ExternalDevices
 from .models.calibration_note import CalibrationNote
 from .models.experiment_note import ExperimentNote
 from .models.experiment_record import ExperimentRecord
@@ -886,9 +886,9 @@ class Experiment:
             yield
 
     @property
-    def external_devices(self) -> ExternalDeviceAPI:
+    def external_devices(self) -> ExternalDevices:
         """Return operations for external devices (DC voltage sources)."""
-        return ExternalDeviceAPI(context=self.ctx)
+        return ExternalDevices(context=self.ctx)
 
     def save_calib_note(
         self,

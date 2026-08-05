@@ -131,7 +131,7 @@ settings:
 - `wiring` — 各エントリは役割名 (`bias`) と `デバイス名-チャンネル` 形式の出力参照 (`ONS1-2` = デバイス `ONS1` の channel 2、1 始まり) を持ちます。操作できるのは配線済みの出力だけで、未配線の mux や `channels` 外のチャンネルは推測せず明示エラーになります。
 - `settings` — 直下の値が配線済み全 mux の既定値、`overrides` が mux 単位の上書きです。1 つの `settings` (役割は既定 `bias`、`role` で変更可) が拾う出力はすべて同じデバイスにある必要があります。
 
-アイドル電圧 (測定間に線が待機する値) は較正値で、`jpa_params.yaml` の `idle_voltage` に置きます (未較正の mux は `reset_voltage` へフォールバック)。DC 電圧 context は終了時に必ずアイドル電圧まで ramp します。出力スイッチが自動で切り替わることはありません — 変えるのは明示的な `turn_on()` / `turn_off()` だけです。
+アイドル電圧 (DC bias を使用していない間、各出力を保持する電圧) は較正値で、`jpa_params.yaml` の `idle_voltage` に置きます (未較正の mux は `reset_voltage` へフォールバック)。DC 電圧 context は終了時に必ずアイドル電圧まで ramp します。出力スイッチは電圧印加時に暗黙には切り替わらず、`reset_dc_voltages()` と `shutdown_dc_voltages()` で明示的に管理します。
 
 Qblox SPI Rackを、USB接続を所有するserver processを経由して制御する場合は、
 `qblox_server` driverを使用します。QubexはこのserverへTCP clientとして
@@ -165,19 +165,19 @@ settings:
 
 serverは各出力を `<デバイス名>-<channel>` で識別するため、デバイス名はbackendの報告名に合わせます (`Qblox1` → `Qblox1-15`)。命名が規則的でない場合は `params` の `device_names: {channel: 名前}` で対応します。rampはserver側で一括実行されるため他clientは割り込めませんが、完了まで他channelの操作が待つことがあります。認証のないsocketを信頼できないnetworkへ公開しないでください。
 
-D5a moduleにはchannelごとの出力スイッチがなく、標準bipolar spanは-4 V〜4 Vです: `idle` は `idle_voltage_v` までのrampのみで電気的には切断されず、`turn_on()`/`turn_off()` は非対応、読み出される電圧はmoduleの保持値であり実測値ではありません。
+D5a moduleにはchannelごとの出力スイッチがなく、標準bipolar spanは-4 V〜4 Vです: `idle` と `shutdown` は指定電圧までのrampのみで電気的には切断されず、読み出される電圧はmoduleの保持値であり実測値ではありません。
 
 `ramp` の各値は backend sweep と同じ語彙で、そのまま backend へ渡されます: `rate_v_per_s` が全体の速さ (所要時間 ≈ |ΔV| / rate)、`step_size_v` が setpoint の電圧刻み、`wait_s` が 1 setpoint の最小滞在時間です。readback誤差が `readback.tolerance_v` 以内なら設定成功とし、範囲外なら `readback.max_attempts` 回まで再設定します。
 
 `apply_voltage()` は ON 状態の出力を現在値から目標値まで ramp します (OFF なら暗黙に ON 化せずエラー)。DC電圧操作は context に紐づき、抜けるとアイドル電圧まで ramp します。
 
 ```python
-with experiment.external_devices.dc_voltage_control(mux=6) as dc:
+with experiment.external_devices.dc_voltage(mux=6) as dc:
     dc.apply_voltage(0.27)
     state = dc.state
 ```
 
-`turn_on()` と `turn_off()` は、電圧値を変更せずに選択した mux の出力を ON/OFF します。スイッチを変えるのはこの 2 つの明示操作だけです。電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。スイッチ操作は必ず `reset_voltage` (既定 0 V) で行われます: `turn_on()` はこの値を書いてから ON にし (古い保存値が線に乗ることはない)、`turn_off()` はこの値まで ramp してから OFF にします。アイドル点や動作点へは ON 後に明示的に ramp してください。`get_dc_voltage_states()` は配線済み全 mux を 1 接続でまとめて読みます。`reset_dc_voltages()` は mux を「出力 ON・リセット電圧」の既知状態に揃え、`bias_dc_voltages()` は較正済み mux を bias 電圧へ、`idle_dc_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時は配線済み全 mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。
+電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。`reset_dc_voltages()` は選択した mux を「出力 ON・リセット電圧」の既知状態に揃えます。保守・チップ交換・安全停止時に使う `shutdown_dc_voltages()` はリセット電圧まで ramp して、対応機器では物理出力を OFF にします。通常の実験contextはshutdownせずidleへ戻ります。`get_dc_voltage_states()` は配線済み全 mux を 1 接続でまとめて読み、`bias_dc_voltages()` は較正済み mux を bias 電圧へ、`idle_dc_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時は配線済み全 mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。
 
 一時的な context を使わず、較正済みの配線済み全 mux を bias 電圧へ設定する場合は一括操作を使います。
 

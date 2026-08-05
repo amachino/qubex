@@ -74,6 +74,11 @@ class ONS61797Device:
         """Return that Qubex must generate ONS61797 ramp setpoints."""
         return False
 
+    @property
+    def supports_output_switch(self) -> bool:
+        """Return that ONS61797 supports physical output switching."""
+        return True
+
     def close(self) -> None:
         """Close the underlying ONS61797 client."""
         self._client.close()

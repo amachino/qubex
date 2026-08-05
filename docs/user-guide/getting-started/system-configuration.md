@@ -152,7 +152,7 @@ settings:
   `overrides` adjusts them per mux. All outputs of one `settings` (role
   `bias` by default, changeable with `role`) must be on the same device.
 
-The idle voltage — where a line rests between measurements — is a
+The idle voltage — where each output remains while DC bias is not in use — is a
 calibrated per-mux value: `idle_voltage` in `jpa_params.yaml`, falling back
 to `reset_voltage` for uncalibrated muxes. A DC voltage context always
 ramps back to the idle voltage on exit.
@@ -196,9 +196,9 @@ channels may wait until a sweep finishes. Do not expose the unauthenticated
 socket outside a trusted network.
 
 The D5a module has no per-channel output switch and its standard bipolar
-span is -4 V to 4 V: `idle` only ramps to the idle voltage, `turn_on()` and
-`turn_off()` are unsupported, and the reported voltage is the module's
-stored setting, not an independent measurement.
+span is -4 V to 4 V: `idle` and `shutdown` only ramp to their configured
+voltages without electrically disconnecting the output, and the reported
+voltage is the module's stored setting, not an independent measurement.
 
 The `ramp` values use the backend sweep's own vocabulary and are passed to
 it verbatim: `rate_v_per_s` sets the overall speed (duration ≈ |dV| / rate),
@@ -212,22 +212,23 @@ voltage operations are scoped to a context; exiting it ramps back to the
 idle voltage.
 
 ```python
-with experiment.external_devices.dc_voltage_control(mux=6) as dc:
+with experiment.external_devices.dc_voltage(mux=6) as dc:
     dc.apply_voltage(0.27)
     state = dc.state
 ```
 
-`turn_on()` and `turn_off()` control the output for the selected mux without
-changing its voltage; they are the only operations that change the switch.
 Applying a voltage requires the output to be on already — nothing switches
-it implicitly. Switching always happens at `reset_voltage` (default 0 V):
-`turn_on()` writes it to the channel before enabling (stale stored
-setpoints can never reach the line), and `turn_off()` ramps to it before
-disabling. Ramp to idle or an operating point explicitly after turning on.
+it implicitly. Use `reset_dc_voltages()` to initialize selected outputs at
+`reset_voltage` (default 0 V), then ramp them to idle or an operating point.
+For maintenance or a deliberate safe stop, use `shutdown_dc_voltages()` to
+ramp selected outputs back to `reset_voltage` and switch them off when the
+device supports it. Normal experiment contexts return to idle instead.
 `get_dc_voltage_states()` reads every wired mux on one connection;
 `reset_dc_voltages()` brings muxes to their reset voltages with the outputs
-on, `bias_dc_voltages()` ramps calibrated muxes to their bias voltages, and
-`idle_dc_voltages()` ramps them back to idle. Like box operations, each
+on, `bias_dc_voltages()` ramps calibrated muxes to their bias voltages,
+`idle_dc_voltages()` ramps them back to idle, and
+`shutdown_dc_voltages()` switches them off when supported. Like box operations,
+each
 takes an optional `muxes` selection (indices or labels; all wired muxes when
 omitted), and all writes prompt for confirmation, like a box push.
 

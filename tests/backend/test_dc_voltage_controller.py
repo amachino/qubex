@@ -49,6 +49,11 @@ class _FakeDCVoltageDevice:
         """Return that the fake device uses controller-generated ramps."""
         return False
 
+    @property
+    def supports_output_switch(self) -> bool:
+        """Return that the fake device supports physical output switching."""
+        return True
+
     def ramp_voltage(
         self,
         channel: int,
@@ -513,24 +518,6 @@ def test_apply_channels_ramps_each_channel_on_one_connection(
     assert _FakeDCVoltageDevice.instances[0].closed is True
 
 
-def test_turn_on_channels_switches_on_at_initial_voltage() -> None:
-    """Bulk turn-on should come up at the reset voltage and stop there."""
-    _reset_fake_devices()
-    _FakeDCVoltageDevice.output_states = {1: True, 2: False}
-    _FakeDCVoltageDevice.voltages = {1: 0.1, 2: 15.0}
-    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
-    profile = DCVoltageProfile(channel=2, reset_voltage_v=-0.1, idle_voltage_v=0.27)
-
-    controller.turn_on_channels({1: profile, 2: profile})
-
-    on_calls = [call for call in _FakeDCVoltageDevice.calls if call[0] == "on"]
-    assert on_calls == [("on", 2)]
-    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(-0.1)
-    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.1)
-    assert _FakeDCVoltageDevice.output_states == {1: True, 2: True}
-    assert len(_FakeDCVoltageDevice.instances) == 1
-
-
 def test_reset_channels_brings_all_channels_to_initial_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -596,6 +583,41 @@ def test_read_channels_reads_all_channels_on_one_connection() -> None:
 
     assert readings == {1: (0.1, False), 2: (-0.2, False)}
     assert len(_FakeDCVoltageDevice.instances) == 1
+
+
+def test_turn_off_channels_skips_switch_for_devices_without_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shutdown should stop after ramping when output switching is unavailable."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.2}
+
+    class _NoSwitchDevice(_FakeDCVoltageDevice):
+        @property
+        def supports_output_switch(self) -> bool:
+            return False
+
+        def off(self, channel: int) -> None:
+            raise AssertionError(channel)
+
+    controller = DCVoltageController(device_factory=_NoSwitchDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.1,
+        ramp_wait_s=0.1,
+        reset_voltage_v=0.0,
+    )
+
+    controller.turn_off_channels({1: profile})
+
+    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.0)
+    assert all(call[0] != "off" for call in _FakeDCVoltageDevice.calls)
     assert _FakeDCVoltageDevice.instances[0].closed is True
 
 
@@ -717,9 +739,9 @@ def test_apply_voltage_requires_the_output_to_be_on() -> None:
     controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
     profile = DCVoltageProfile(channel=1)
 
-    with pytest.raises(RuntimeError, match="Turn it on explicitly"):
+    with pytest.raises(RuntimeError, match="reset_dc_voltages"):
         controller.apply_voltage(channel=1, voltage=0.1, profile=profile)
-    with pytest.raises(RuntimeError, match="Turn it on explicitly"):
+    with pytest.raises(RuntimeError, match="reset_dc_voltages"):
         controller.apply_voltage_immediately(channel=1, voltage=0.1, profile=profile)
     assert all(call[0] != "on" for call in _FakeDCVoltageDevice.calls)
 
