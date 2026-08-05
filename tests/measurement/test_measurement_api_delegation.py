@@ -2617,10 +2617,7 @@ def test_apply_dc_voltages_delegates_to_amplification_service() -> None:
 
     class _AmplificationService:
         @contextmanager
-        def apply_dc_voltages(  # type: ignore[no-untyped-def]
-            self,
-            targets: str | list[str],
-        ):
+        def apply_dc_voltages(self, targets: str | list[str]):  # type: ignore[no-untyped-def]
             called["targets"] = targets
             called["entered"] = True
             try:
