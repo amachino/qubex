@@ -173,9 +173,8 @@ class QbloxServerDevice:
         """Return one backend device's configured voltage in volts."""
         request = _COMMAND_GET_VOLTAGE + self._device_name(channel) + b"\x00"
         self._socket.sendall(request)
-        response = self._recv_exact(9)
-        self._require_success("get voltage", status=response[:1])
-        return struct.unpack("<d", response[1:])[0]
+        self._require_success("get voltage")
+        return struct.unpack("<d", self._recv_exact(8))[0]
 
     def is_output_on(self, channel: int) -> bool:
         """Return true because the backend cannot switch D5a outputs off."""

@@ -159,6 +159,8 @@ class DCVoltageController:
         channels: Sequence[int],
     ) -> dict[int, tuple[float, bool]]:
         """Read voltage and output state for many channels on one connection."""
+        if not channels:
+            return {}
         with self._connection() as device:
             return {
                 channel: (

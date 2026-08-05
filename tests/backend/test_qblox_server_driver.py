@@ -174,6 +174,22 @@ def test_device_reads_fragmented_voltage_response_exactly() -> None:
     assert fake_socket.sent == [b"\x63Qblox-A-1\x00"]
 
 
+def test_device_rejects_get_voltage_error_without_waiting_for_payload() -> None:
+    """A failed voltage read should reject its status-only response immediately."""
+    fake_socket = _FakeSocket([b"\xff"])
+    device = QbloxServerDevice(
+        host="server",
+        port=12345,
+        channels={1: "Qblox-A-1"},
+        socket_factory=_socket_factory(fake_socket),
+    )
+
+    with pytest.raises(RuntimeError, match="rejected"):
+        device.get_voltage(channel=1)
+
+    assert fake_socket.responses == []
+
+
 def test_device_sends_existing_native_sweep_protocol() -> None:
     """Native ramp should use command 0x64 and the backend's five doubles."""
     fake_socket = _FakeSocket([b"\x00"])

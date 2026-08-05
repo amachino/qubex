@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 
-from qubex.external_devices import DCVoltageProfile
-
 from .models.dc_voltage_state import DCVoltageState
 
 
@@ -15,16 +13,14 @@ class DCVoltageControl:
     def __init__(
         self,
         *,
-        apply_voltage: Callable[[float, DCVoltageProfile], None],
-        idle: Callable[[DCVoltageProfile], None],
+        apply_voltage: Callable[[float], None],
+        idle: Callable[[], None],
         get_state: Callable[[], DCVoltageState],
-        profile: DCVoltageProfile,
     ) -> None:
         """Initialize bound DC voltage operations."""
         self._apply_voltage = apply_voltage
         self._idle = idle
         self._get_state = get_state
-        self._profile = profile
 
     @property
     def state(self) -> DCVoltageState:
@@ -48,10 +44,7 @@ class DCVoltageControl:
         DCVoltageState
             Readback state at the target voltage.
         """
-        self._apply_voltage(
-            float(voltage),
-            self._profile,
-        )
+        self._apply_voltage(float(voltage))
         return self.state
 
     def sweep(
@@ -65,4 +58,4 @@ class DCVoltageControl:
 
     def idle(self) -> None:
         """Ramp back to the configured idle voltage."""
-        self._idle(self._profile)
+        self._idle()

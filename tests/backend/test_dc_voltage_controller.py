@@ -555,6 +555,17 @@ def test_read_channels_reads_all_channels_on_one_connection() -> None:
     assert len(_FakeDCVoltageDevice.instances) == 1
 
 
+def test_read_channels_skips_connection_for_empty_selection() -> None:
+    """An empty bulk read should return without opening a device connection."""
+    _reset_fake_devices()
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+
+    readings = controller.read_channels([])
+
+    assert readings == {}
+    assert _FakeDCVoltageDevice.instances == []
+
+
 def test_turn_off_channels_skips_switch_for_devices_without_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

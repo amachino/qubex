@@ -1417,17 +1417,16 @@ Do you want to continue?
         profile = self.system_manager.resolve_dc_voltage_profile(resolved_mux.index)
         controller = self.system_manager.dc_voltage_controller
         control = DCVoltageControl(
-            apply_voltage=lambda voltage, resolved_profile: controller.apply_voltage(
+            apply_voltage=lambda voltage: controller.apply_voltage(
                 channel=profile.channel,
                 voltage=voltage,
-                profile=resolved_profile,
+                profile=profile,
             ),
-            idle=lambda resolved_profile: controller.idle(
+            idle=lambda: controller.idle(
                 channel=profile.channel,
-                profile=resolved_profile,
+                profile=profile,
             ),
             get_state=lambda: self.get_dc_voltage_state(mux=resolved_mux.index),
-            profile=profile,
         )
         try:
             yield control
