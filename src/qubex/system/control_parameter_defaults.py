@@ -257,6 +257,11 @@ class ControlParameterDefaults:
                 "pump_frequency": default_pump_frequency,
                 "pump_amplitude": self.pump_amplitude,
             }
+        if "dc_voltage" in value:
+            raise ValueError(
+                "JPA parameter `dc_voltage` is no longer supported; rename it "
+                "to `bias_voltage`."
+            )
         raw_pump_frequency = value.get("pump_frequency")
         raw_pump_amplitude = value.get("pump_amplitude")
         raw_bias_voltage = value.get("bias_voltage")

@@ -49,31 +49,6 @@ class DCVoltageController:
         """Initialize the controller with a connected-device factory."""
         self._device_factory = device_factory
 
-    def on(self, channel: int) -> None:
-        """Turn on the specified output channel."""
-        with self._connection() as device:
-            device.on(channel=channel)
-
-    def off(self, channel: int) -> None:
-        """Turn off the specified output channel."""
-        with self._connection() as device:
-            device.off(channel=channel)
-
-    def is_output_on(self, channel: int) -> bool:
-        """Return whether the specified output channel is on."""
-        with self._connection() as device:
-            return device.is_output_on(channel=channel)
-
-    def set_voltage(self, channel: int, voltage: float) -> None:
-        """Set the voltage for the specified channel."""
-        with self._connection() as device:
-            device.set_voltage(channel=channel, voltage=voltage)
-
-    def get_voltage(self, channel: int) -> float:
-        """Get the voltage for the specified channel."""
-        with self._connection() as device:
-            return device.get_voltage(channel=channel)
-
     def apply_voltage(
         self,
         *,
@@ -170,7 +145,18 @@ class DCVoltageController:
         with self._connection() as device:
             for channel, profile in profiles.items():
                 if not device.is_output_on(channel):
-                    logger.info("DC channel %d: output is already off.", channel)
+                    self._set_voltage_verified(
+                        device,
+                        channel=channel,
+                        voltage=profile.reset_voltage_v,
+                        profile=profile,
+                    )
+                    logger.info(
+                        "DC channel %d: output remains off with its setpoint "
+                        "reset to %+.3f V.",
+                        channel,
+                        profile.reset_voltage_v,
+                    )
                     continue
                 self._ramp_voltage(
                     device,

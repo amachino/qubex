@@ -113,19 +113,6 @@ def _reset_fake_devices() -> None:
     _FakeDCVoltageDevice.calls = []
 
 
-def test_controller_creates_and_closes_one_device_for_each_operation() -> None:
-    """Each controller operation should use one short-lived device instance."""
-    _reset_fake_devices()
-    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
-
-    controller.set_voltage(1, 0.7)
-    assert _FakeDCVoltageDevice.instances[0].closed is True
-
-    controller.get_voltage(1)
-    assert len(_FakeDCVoltageDevice.instances) == 2
-    assert all(device.closed for device in _FakeDCVoltageDevice.instances)
-
-
 def test_factory_resolves_registered_driver_with_opaque_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -160,7 +147,7 @@ def test_factory_resolves_registered_driver_with_opaque_connection(
     ).dc_voltage
 
     controller = create_dc_voltage_controller(config)
-    controller.on(1)
+    controller.read_channels([1])
 
     assert connections == [("FAKE1", {"resource": "external-a"}, (1,))]
     assert _FakeDCVoltageDevice.instances[0].init_kwargs == {"resource": "external-a"}
@@ -176,7 +163,7 @@ def test_factory_creates_controller_from_configured_serial_port() -> None:
     )
 
     controller = create_dc_voltage_controller(config)
-    controller.on(1)
+    controller.read_channels([1])
 
     assert _FakeDCVoltageDevice.instances[0].init_kwargs == {}
 
@@ -549,7 +536,7 @@ def test_reset_channels_brings_all_channels_to_initial_state(
 def test_turn_off_channels_ramps_to_zero_before_switching_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bulk turn-off should ramp to 0 V first and skip off outputs."""
+    """Bulk turn-off should leave every output off with a reset setpoint."""
     _reset_fake_devices()
     monkeypatch.setattr(
         "qubex.external_devices.dc_voltage.controller.time.sleep",
@@ -570,7 +557,7 @@ def test_turn_off_channels_ramps_to_zero_before_switching_off(
     off_calls = [call for call in _FakeDCVoltageDevice.calls if call[0] == "off"]
     assert off_calls == [("off", 1)]
     assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.0)
-    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(0.5)
+    assert _FakeDCVoltageDevice.voltages[2] == pytest.approx(0.0)
     assert _FakeDCVoltageDevice.output_states == {1: False, 2: False}
 
 

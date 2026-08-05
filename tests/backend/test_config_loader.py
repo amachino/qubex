@@ -585,6 +585,25 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     )
 
 
+def test_legacy_dc_voltage_name_fails_with_migration_guidance(tmp_path: Path) -> None:
+    """Legacy dc_voltage should fail explicitly instead of being silently skipped."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        params_dir / "jpa_params.yaml",
+        {
+            "meta": {},
+            "data": {0: {"dc_voltage": 0.2}},
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"`dc_voltage`.*`bias_voltage`"):
+        ConfigLoader(
+            system_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
+
+
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
     """Given deprecated arguments, when calling get_experiment_system, then ConfigLoader emits a warning."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)

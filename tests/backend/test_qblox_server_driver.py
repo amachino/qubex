@@ -215,7 +215,7 @@ def test_controller_factory_resolves_qblox_server_driver(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Controller factory should create the registered Qblox server driver."""
-    fake_socket = _FakeSocket([b"\x00"])
+    fake_socket = _FakeSocket([b"\x00" + struct.pack("<d", 0.1)])
     monkeypatch.setattr(
         "qubex.external_devices.dc_voltage.drivers.qblox_server.socket.create_connection",
         _socket_factory(fake_socket),
@@ -237,10 +237,11 @@ def test_controller_factory_resolves_qblox_server_driver(
     ).dc_voltage
 
     controller = create_dc_voltage_controller(config)
-    controller.set_voltage(channel=15, voltage=0.1)
+    readings = controller.read_channels([15])
 
     assert fake_socket.closed is True
-    assert fake_socket.sent == [b"\x62Qblox1-15\x00" + struct.pack("<d", 0.1)]
+    assert fake_socket.sent == [b"\x63Qblox1-15\x00"]
+    assert readings == {15: (0.1, True)}
 
 
 def test_controller_delegates_complete_ramp_to_native_server() -> None:

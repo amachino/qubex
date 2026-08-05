@@ -228,6 +228,8 @@ optional; without it a mux idles at the configured reset voltage. The
 control policy lives in `external_devices.yaml` (see the system
 configuration guide).
 
+The former `dc_voltage` key is not accepted; rename it to `bias_voltage`.
+
 ### Measurement defaults
 
 `measurement_defaults.yaml` does not use the `meta` / `data` format. It is a
