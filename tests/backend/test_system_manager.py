@@ -1732,3 +1732,56 @@ def test_load_preserves_backend_kind_when_experiment_system_resolution_fails(
     assert selected == []
     assert manager.backend_kind == BACKEND_KIND_QUEL1
     assert manager.__dict__["_config_loader"] is previous_loader
+
+
+def test_load_preserves_state_when_dc_controller_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid DC driver settings should fail before manager state is updated."""
+    manager = SystemManager.shared()
+    manager.__dict__["_backend_kind"] = BACKEND_KIND_QUEL1
+    previous_loader = object()
+    previous_controller = object()
+    previous_config = DCVoltageControllerConfig()
+    manager.__dict__["_config_loader"] = previous_loader
+    manager.__dict__["_dc_voltage_controller"] = previous_controller
+    manager.__dict__["_dc_voltage_controller_config"] = previous_config
+    selected: list[str] = []
+
+    class _InvalidDCConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        @property
+        def external_devices_config(self) -> ExternalDevicesConfig:
+            return ExternalDevicesConfig(
+                dc_voltage=DCVoltageControllerConfig(driver="unsupported")
+            )
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    def _fake_set_backend_kind(kind: str) -> None:
+        selected.append(kind)
+
+    monkeypatch.setattr(
+        "qubex.system.system_manager.ConfigLoader",
+        _InvalidDCConfigLoader,
+    )
+    monkeypatch.setattr(manager, "set_backend_kind", _fake_set_backend_kind)
+
+    with pytest.raises(ValueError, match="Unsupported DC voltage controller driver"):
+        manager.load(chip_id="TEST", mock_mode=True)
+
+    assert selected == []
+    assert manager.backend_kind == BACKEND_KIND_QUEL1
+    assert manager.__dict__["_config_loader"] is previous_loader
+    assert manager.dc_voltage_controller is previous_controller
+    assert manager.__dict__["_dc_voltage_controller_config"] is previous_config

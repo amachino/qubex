@@ -384,6 +384,7 @@ class ConfigLoader:
             self._system_loader = self._create_system_loader(self._backend_kind)
 
             self._quantum_system = self._load_quantum_system()
+            self._validate_external_device_muxes()
             self._control_system = self._load_control_system()
             self._wiring_info = self._load_wiring_info()
             self._control_params = self._load_control_params()
@@ -665,6 +666,22 @@ class ConfigLoader:
         """Load external device settings from their dedicated config."""
         raw_config = self._load_optional_config_file(self._external_devices_file)
         return ExternalDevicesConfig.from_dict(raw_config)
+
+    def _validate_external_device_muxes(self) -> None:
+        """Require external device wiring to reference known muxes."""
+        if self._quantum_system is None:
+            return
+        mux_indices = {
+            mux_index
+            for role_wiring in self._external_devices_config.wiring.values()
+            for mux_index in role_wiring
+        }
+        known_mux_indices = {mux.index for mux in self._quantum_system.muxes}
+        for mux_index in sorted(mux_indices):
+            if mux_index not in known_mux_indices:
+                raise KeyError(
+                    f"External device wiring references unknown mux {mux_index}."
+                )
 
     def _resolve_wiring_file(self) -> str:
         """Resolve effective wiring file name for the current load."""

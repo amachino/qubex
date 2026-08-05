@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
@@ -324,6 +325,31 @@ def test_dc_voltage_control_attempts_idle_even_when_the_ramp_fails() -> None:
         exit_with_failed_restore()
 
     assert dc_controller.calls[-1][0:2] == ("idle", 7)
+
+
+def test_dc_voltage_control_preserves_body_error_when_idle_also_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A body error should remain primary when the idle ramp also fails."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    def fail_during_control() -> None:
+        with ctx.dc_voltage_control():
+            dc_controller.fail_set_voltage = True
+            raise ValueError("measurement failed")
+
+    with (
+        caplog.at_level(logging.ERROR),
+        pytest.raises(
+            ValueError,
+            match="measurement failed",
+        ),
+    ):
+        fail_during_control()
+
+    assert "Failed to return DC voltage output to idle" in caplog.text
+    assert "restore failed" in caplog.text
 
 
 def test_dc_voltage_control_idles_after_partial_sweep() -> None:

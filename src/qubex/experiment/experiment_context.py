@@ -1430,7 +1430,16 @@ Do you want to continue?
         )
         try:
             yield control
-        finally:
+        except BaseException:
+            try:
+                control.idle()
+            except BaseException:
+                logger.exception(
+                    "Failed to return DC voltage output to idle while handling "
+                    "an experiment error."
+                )
+            raise
+        else:
             control.idle()
 
     def save_calib_note(

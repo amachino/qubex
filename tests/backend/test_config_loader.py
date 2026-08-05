@@ -2304,6 +2304,16 @@ def test_external_devices_config_loads_dc_controller_profiles(
     """External device settings should expose resolved DC voltage profiles."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
+        config_dir / "chip.yaml",
+        {
+            chip_id: {
+                "name": "Test Chip",
+                "n_qubits": 16,
+                "clock_master": "10.0.0.1",
+            }
+        },
+    )
+    _write_yaml(
         config_dir / "external_devices.yaml",
         {
             "devices": {
@@ -2314,8 +2324,8 @@ def test_external_devices_config_loads_dc_controller_profiles(
                 },
             },
             "wiring": [
-                {"mux": 6, "bias": "ONS1-1"},
-                {"mux": 7, "bias": "ONS1-2"},
+                {"mux": 0, "bias": "ONS1-1"},
+                {"mux": 1, "bias": "ONS1-2"},
             ],
             "settings": {
                 "ramp": {
@@ -2329,7 +2339,7 @@ def test_external_devices_config_loads_dc_controller_profiles(
                 },
                 "overrides": [
                     {
-                        "mux": 7,
+                        "mux": 1,
                         "ramp": {"rate_v_per_s": 0.05},
                         "readback": {"tolerance_v": 0.002},
                     },
@@ -2348,17 +2358,17 @@ def test_external_devices_config_loads_dc_controller_profiles(
     assert controller.driver == "ons61797"
     assert controller.params == {"port": "/dev/system-dc"}
     assert controller.device_id == "ONS1"
-    assert controller.resolve_voltage_profile(6).channel == 1
-    assert controller.resolve_voltage_profile(6).ramp_rate_v_per_s == pytest.approx(0.1)
-    assert controller.resolve_voltage_profile(6).readback_tolerance_v == pytest.approx(
+    assert controller.resolve_voltage_profile(0).channel == 1
+    assert controller.resolve_voltage_profile(0).ramp_rate_v_per_s == pytest.approx(0.1)
+    assert controller.resolve_voltage_profile(0).readback_tolerance_v == pytest.approx(
         0.001
     )
-    assert controller.resolve_voltage_profile(6).max_set_attempts == 5
-    assert controller.resolve_voltage_profile(7).channel == 2
-    assert controller.resolve_voltage_profile(7).ramp_rate_v_per_s == pytest.approx(
+    assert controller.resolve_voltage_profile(0).max_set_attempts == 5
+    assert controller.resolve_voltage_profile(1).channel == 2
+    assert controller.resolve_voltage_profile(1).ramp_rate_v_per_s == pytest.approx(
         0.05
     )
-    assert controller.resolve_voltage_profile(7).readback_tolerance_v == pytest.approx(
+    assert controller.resolve_voltage_profile(1).readback_tolerance_v == pytest.approx(
         0.002
     )
 
@@ -2380,6 +2390,28 @@ def test_external_devices_config_defaults_when_missing(
     assert controller.params == {}
     with pytest.raises(ValueError, match=r"Mux 6 has no DC voltage wiring"):
         controller.resolve_voltage_profile(6)
+
+
+def test_external_devices_config_rejects_unknown_mux(tmp_path: Path) -> None:
+    """External device wiring should reference a mux in the quantum system."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+    _write_yaml(
+        config_dir / "external_devices.yaml",
+        {
+            "devices": {"ONS1": {"driver": "ons61797"}},
+            "wiring": [{"mux": 99, "bias": "ONS1-1"}],
+        },
+    )
+
+    with pytest.raises(
+        KeyError,
+        match=r"External device wiring references unknown mux 99",
+    ):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )
 
 
 @pytest.mark.parametrize(

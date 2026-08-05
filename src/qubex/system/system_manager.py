@@ -403,6 +403,13 @@ class SystemManager:
             backend_kind=backend_kind,
         )
         next_experiment_system = next_config_loader.get_experiment_system()
+        external_devices_config = getattr(
+            next_config_loader,
+            "external_devices_config",
+            ExternalDevicesConfig(),
+        )
+        dc_voltage_config = external_devices_config.dc_voltage
+        next_dc_voltage_controller = create_dc_voltage_controller(dc_voltage_config)
 
         resolved_backend_kind = next_config_loader.backend_kind
         self.set_backend_kind(resolved_backend_kind)
@@ -417,13 +424,7 @@ class SystemManager:
                 resolved_backend_kind,
             )
             self._backend_settings = BackendSettings()
-        external_devices_config = getattr(
-            next_config_loader,
-            "external_devices_config",
-            ExternalDevicesConfig(),
-        )
-        dc_voltage_config = external_devices_config.dc_voltage
-        self._dc_voltage_controller = create_dc_voltage_controller(dc_voltage_config)
+        self._dc_voltage_controller = next_dc_voltage_controller
         self._dc_voltage_controller_config = dc_voltage_config
         self._config_loader = next_config_loader
         self._mock_mode = mock_mode
