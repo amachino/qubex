@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 
 from .config import DCVoltageControllerConfig, DCVoltageProfile
@@ -37,7 +37,8 @@ def create_dc_voltage_controller(
             config.device_id or "",
             config.params,
             config.channels,
-        )
+        ),
+        validate_voltage=driver_spec.validate_voltage,
     )
 
 
@@ -123,9 +124,11 @@ class DCVoltageController:
         self,
         *,
         device_factory: DCVoltageDeviceFactory,
+        validate_voltage: Callable[[float], None] | None = None,
     ):
         """Initialize the controller with a connected-device factory."""
         self._device_factory = device_factory
+        self._validate_voltage = validate_voltage
 
     @contextmanager
     def connected(self) -> Iterator[DCVoltageConnection]:
@@ -170,6 +173,7 @@ class DCVoltageController:
         profile: DCVoltageProfile,
     ) -> None:
         """Ramp one enabled channel to a target voltage."""
+        self._validate_voltages((voltage,))
         with self._connection() as device:
             self._apply_voltage(
                 device,
@@ -186,6 +190,7 @@ class DCVoltageController:
         profile: DCVoltageProfile,
     ) -> tuple[float, bool]:
         """Ramp one channel and return its readback on the same connection."""
+        self._validate_voltages((voltage,))
         with self._connection() as device:
             self._apply_voltage(
                 device,
@@ -202,6 +207,7 @@ class DCVoltageController:
         profile: DCVoltageProfile,
     ) -> None:
         """Ramp one channel to its idle voltage."""
+        self._validate_voltages((profile.idle_voltage_v,))
         with self._connection() as device:
             self._ramp_to_idle(
                 device,
@@ -214,16 +220,23 @@ class DCVoltageController:
         requests: Mapping[int, tuple[float, DCVoltageProfile]],
     ) -> None:
         """Ramp many channels to their target voltages on one connection."""
+        self._validate_voltages(voltage for voltage, _ in requests.values())
         with self._connection() as device:
             self._apply_channels(device, requests)
 
     def reset_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
         """Bring channels to their reset voltages with outputs on."""
+        self._validate_voltages(
+            profile.reset_voltage_v for profile in profiles.values()
+        )
         with self._connection() as device:
             self._reset_channels(device, profiles)
 
     def turn_off_channels(self, profiles: Mapping[int, DCVoltageProfile]) -> None:
         """Ramp outputs to reset voltage and switch them off when supported."""
+        self._validate_voltages(
+            profile.reset_voltage_v for profile in profiles.values()
+        )
         with self._connection() as device:
             self._turn_off_channels(device, profiles)
 
@@ -242,6 +255,7 @@ class DCVoltageController:
         profiles: Mapping[int, DCVoltageProfile],
     ) -> None:
         """Ramp many channels back to their idle voltages on one connection."""
+        self._validate_voltages(profile.idle_voltage_v for profile in profiles.values())
         with self._connection() as device:
             self._idle_channels(device, profiles)
 
@@ -251,6 +265,7 @@ class DCVoltageController:
         requests: Mapping[int, tuple[float, DCVoltageProfile]],
     ) -> None:
         """Ramp many channels through one connected device."""
+        self._validate_voltages(voltage for voltage, _ in requests.values())
         for channel, (voltage, profile) in requests.items():
             self._apply_voltage(
                 device,
@@ -265,6 +280,9 @@ class DCVoltageController:
         profiles: Mapping[int, DCVoltageProfile],
     ) -> None:
         """Reset many channels through one connected device."""
+        self._validate_voltages(
+            profile.reset_voltage_v for profile in profiles.values()
+        )
         for channel, profile in profiles.items():
             if device.is_output_on(channel):
                 self._ramp_voltage(
@@ -294,6 +312,9 @@ class DCVoltageController:
         profiles: Mapping[int, DCVoltageProfile],
     ) -> None:
         """Shut down many channels through one connected device."""
+        self._validate_voltages(
+            profile.reset_voltage_v for profile in profiles.values()
+        )
         for channel, profile in profiles.items():
             if not device.is_output_on(channel):
                 self._set_voltage_verified(
@@ -346,8 +367,16 @@ class DCVoltageController:
         profiles: Mapping[int, DCVoltageProfile],
     ) -> None:
         """Idle many channels through one connected device."""
+        self._validate_voltages(profile.idle_voltage_v for profile in profiles.values())
         for channel, profile in profiles.items():
             self._ramp_to_idle(device, channel=channel, profile=profile)
+
+    def _validate_voltages(self, voltages: Iterable[float]) -> None:
+        """Validate every target before performing any hardware operation."""
+        if self._validate_voltage is None:
+            return
+        for voltage in voltages:
+            self._validate_voltage(voltage)
 
     @contextmanager
     def _connection(self) -> Iterator[DCVoltageDevice]:
@@ -355,7 +384,16 @@ class DCVoltageController:
         device = self._device_factory()
         try:
             yield device
-        finally:
+        except BaseException:
+            try:
+                device.close()
+            except BaseException:
+                logger.exception(
+                    "Failed to close DC voltage device connection while handling "
+                    "an operation error."
+                )
+            raise
+        else:
             device.close()
 
     @contextmanager
@@ -396,6 +434,7 @@ class DCVoltageController:
         profile: DCVoltageProfile,
     ) -> None:
         """Ramp one enabled channel to a target voltage."""
+        self._validate_voltages((voltage,))
         if not device.is_output_on(channel):
             raise RuntimeError(
                 f"DC voltage channel {channel} output is off. Initialize it "
@@ -418,6 +457,7 @@ class DCVoltageController:
         profile: DCVoltageProfile,
     ) -> None:
         """Ramp one enabled output back to its idle voltage."""
+        self._validate_voltages((profile.idle_voltage_v,))
         if device.is_output_on(channel):
             self._ramp_voltage(
                 device,

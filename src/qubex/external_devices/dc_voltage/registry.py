@@ -6,10 +6,15 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from .config import DCVoltageProfile
-from .drivers.ons61797 import create_ons61797_device_factory
+from .drivers.ons61797 import (
+    create_ons61797_device_factory,
+    validate_ons61797_profile,
+    validate_ons61797_voltage,
+)
 from .drivers.qblox_server import (
     create_qblox_server_device_factory,
     validate_qblox_server_profile,
+    validate_qblox_server_voltage,
 )
 from .protocol import DCVoltageDeviceFactory
 
@@ -21,18 +26,22 @@ DCVoltageDriverFactory = Callable[
 
 @dataclass(frozen=True)
 class DCVoltageDriverSpec:
-    """Register one device factory and its optional profile validator."""
+    """Register one device factory and its optional safety validators."""
 
     create_device_factory: DCVoltageDriverFactory
     validate_profile: Callable[[DCVoltageProfile], None] | None = None
+    validate_voltage: Callable[[float], None] | None = None
 
 
 DC_VOLTAGE_DRIVER_REGISTRY: dict[str, DCVoltageDriverSpec] = {
     "ons61797": DCVoltageDriverSpec(
         create_device_factory=create_ons61797_device_factory,
+        validate_profile=validate_ons61797_profile,
+        validate_voltage=validate_ons61797_voltage,
     ),
     "qblox_server": DCVoltageDriverSpec(
         create_device_factory=create_qblox_server_device_factory,
         validate_profile=validate_qblox_server_profile,
+        validate_voltage=validate_qblox_server_voltage,
     ),
 }

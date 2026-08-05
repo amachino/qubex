@@ -533,6 +533,90 @@ def test_apply_voltages_attempts_idle_after_partial_apply_failure(
     assert idle_calls == [{1: profile}]
 
 
+def test_apply_channels_validates_every_target_before_opening_device() -> None:
+    """An invalid bulk target should prevent every hardware operation."""
+    _reset_fake_devices()
+
+    def validate_voltage(voltage: float) -> None:
+        if not 0.0 <= voltage <= 4.0:
+            raise ValueError("voltage outside safe range")
+
+    controller = DCVoltageController(
+        device_factory=_FakeDCVoltageDevice,
+        validate_voltage=validate_voltage,
+    )
+    profiles = {channel: DCVoltageProfile(channel=channel) for channel in (1, 2)}
+
+    with pytest.raises(ValueError, match="outside safe range"):
+        controller.apply_channels(
+            {
+                1: (1.0, profiles[1]),
+                2: (16.0, profiles[2]),
+            }
+        )
+
+    assert _FakeDCVoltageDevice.instances == []
+    assert _FakeDCVoltageDevice.calls == []
+
+
+def test_idle_channels_validates_every_target_before_opening_device() -> None:
+    """An invalid idle target should prevent every hardware operation."""
+    _reset_fake_devices()
+
+    def validate_voltage(voltage: float) -> None:
+        if not 0.0 <= voltage <= 4.0:
+            raise ValueError("voltage outside safe range")
+
+    controller = DCVoltageController(
+        device_factory=_FakeDCVoltageDevice,
+        validate_voltage=validate_voltage,
+    )
+    profiles = {
+        1: DCVoltageProfile(channel=1, idle_voltage_v=1.0),
+        2: DCVoltageProfile(channel=2, idle_voltage_v=16.0),
+    }
+
+    with pytest.raises(ValueError, match="outside safe range"):
+        controller.idle_channels(profiles)
+
+    assert _FakeDCVoltageDevice.instances == []
+    assert _FakeDCVoltageDevice.calls == []
+
+
+def test_connection_preserves_operation_error_when_close_also_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An operation error should remain primary when connection close fails."""
+
+    class _CloseFailingDevice(_FakeDCVoltageDevice):
+        def close(self) -> None:
+            raise RuntimeError("close failed")
+
+    controller = DCVoltageController(device_factory=_CloseFailingDevice)
+
+    with (
+        caplog.at_level(logging.ERROR),
+        pytest.raises(RuntimeError, match="operation failed"),
+        controller.connected(),
+    ):
+        raise RuntimeError("operation failed")
+
+    assert "Failed to close DC voltage device connection" in caplog.text
+
+
+def test_connection_raises_close_error_after_successful_operation() -> None:
+    """A close failure should surface when the device operation succeeded."""
+
+    class _CloseFailingDevice(_FakeDCVoltageDevice):
+        def close(self) -> None:
+            raise RuntimeError("close failed")
+
+    controller = DCVoltageController(device_factory=_CloseFailingDevice)
+
+    with pytest.raises(RuntimeError, match="close failed"), controller.connected():
+        pass
+
+
 def test_apply_voltage_ramps_with_one_device_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

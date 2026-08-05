@@ -48,6 +48,13 @@ def validate_qblox_server_profile(profile: DCVoltageProfile) -> None:
         profile.ramp_step_size_v,
         profile.ramp_wait_s,
     )
+    validate_qblox_server_voltage(profile.reset_voltage_v)
+
+
+def validate_qblox_server_voltage(voltage: float) -> None:
+    """Validate one target against the Qblox backend voltage range."""
+    if not math.isfinite(voltage) or not _MIN_VOLTAGE_V <= voltage <= _MAX_VOLTAGE_V:
+        raise ValueError("Qblox backend voltage must be between -4.0 V and 4.0 V.")
 
 
 @dataclass(frozen=True)
@@ -250,11 +257,7 @@ class QbloxServerDevice:
     @staticmethod
     def _validate_voltage(voltage: float) -> None:
         """Validate the backend's standard bipolar voltage range."""
-        if (
-            not math.isfinite(voltage)
-            or not _MIN_VOLTAGE_V <= voltage <= _MAX_VOLTAGE_V
-        ):
-            raise ValueError("Qblox backend voltage must be between -4.0 V and 4.0 V.")
+        validate_qblox_server_voltage(voltage)
 
     def _require_success(self, operation: str, *, status: bytes | None = None) -> None:
         """Require the backend's one-byte zero success response."""

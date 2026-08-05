@@ -8,11 +8,26 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
+from qubex.external_devices.dc_voltage.config import DCVoltageProfile
 from qubex.external_devices.dc_voltage.protocol import DCVoltageDeviceFactory
 from qubex.third_party.ons61797 import ONS61797
 
 _MIN_VOLTAGE_V = 0.0
 _MAX_VOLTAGE_V = 4.0
+
+
+def validate_ons61797_voltage(voltage: float) -> None:
+    """Validate one target against the Qubex ONS61797 safety range."""
+    if not math.isfinite(voltage) or not _MIN_VOLTAGE_V <= voltage <= _MAX_VOLTAGE_V:
+        raise ValueError(
+            f"ONS61797 voltage must be between {_MIN_VOLTAGE_V} V and "
+            f"{_MAX_VOLTAGE_V} V, got {voltage} V."
+        )
+
+
+def validate_ons61797_profile(profile: DCVoltageProfile) -> None:
+    """Validate one resolved profile for the ONS61797 driver."""
+    validate_ons61797_voltage(profile.reset_voltage_v)
 
 
 @dataclass(frozen=True)
@@ -114,14 +129,7 @@ class ONS61797Device:
     def set_voltage(self, channel: int, voltage: float) -> None:
         """Set voltage for one output channel within the allowed range."""
         self._validate_channel(channel)
-        if (
-            not math.isfinite(voltage)
-            or not _MIN_VOLTAGE_V <= voltage <= _MAX_VOLTAGE_V
-        ):
-            raise ValueError(
-                f"ONS61797 voltage must be between {_MIN_VOLTAGE_V} V and "
-                f"{_MAX_VOLTAGE_V} V, got {voltage} V."
-            )
+        validate_ons61797_voltage(voltage)
         self._client.set_voltage(channel=channel, voltage=voltage)
 
     def get_voltage(self, channel: int) -> float:
