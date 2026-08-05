@@ -427,25 +427,6 @@ def test_apply_voltage_ramps_with_one_device_connection(
     assert device.closed is True
 
 
-def test_apply_voltage_immediately_skips_ramp() -> None:
-    """Immediate application should set only the target on an enabled output."""
-    _reset_fake_devices()
-    _FakeDCVoltageDevice.output_states = {1: True}
-    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
-    profile = DCVoltageProfile(channel=1)
-
-    controller.apply_voltage_immediately(
-        channel=1,
-        voltage=0.25,
-        profile=profile,
-    )
-
-    device = _FakeDCVoltageDevice.instances[0]
-    applied = [call[2] for call in device.calls if call[0] == "set_voltage"]
-    assert applied == pytest.approx([0.25])
-    assert device.output_states[1] is True
-
-
 def test_idle_ramps_to_idle_voltage_without_touching_the_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -697,8 +678,13 @@ def test_apply_voltage_stops_after_configured_readback_attempts() -> None:
     """Single-channel application should fail after its profile retry limit."""
 
     class _MismatchedReadbackDevice(_FakeDCVoltageDevice):
+        read_count = 0
+
         def get_voltage(self, channel: int) -> float:
             self.calls.append(("get_voltage", channel))
+            self.read_count += 1
+            if self.read_count == 1:
+                return 0.0
             return -1.0
 
     _reset_fake_devices()
@@ -706,12 +692,13 @@ def test_apply_voltage_stops_after_configured_readback_attempts() -> None:
     controller = DCVoltageController(device_factory=_MismatchedReadbackDevice)
     profile = DCVoltageProfile(
         channel=1,
+        ramp_step_size_v=1.0,
         readback_tolerance_v=0.001,
         max_set_attempts=2,
     )
 
     with pytest.raises(RuntimeError, match="after 2 attempts"):
-        controller.apply_voltage_immediately(
+        controller.apply_voltage(
             channel=1,
             voltage=0.5,
             profile=profile,
@@ -730,8 +717,6 @@ def test_apply_voltage_requires_the_output_to_be_on() -> None:
 
     with pytest.raises(RuntimeError, match="reset_dc_voltages"):
         controller.apply_voltage(channel=1, voltage=0.1, profile=profile)
-    with pytest.raises(RuntimeError, match="reset_dc_voltages"):
-        controller.apply_voltage_immediately(channel=1, voltage=0.1, profile=profile)
     assert all(call[0] != "on" for call in _FakeDCVoltageDevice.calls)
 
 

@@ -89,17 +89,6 @@ class _DCVoltageController:
         self.voltages[channel] = voltage
         self.output_states[channel] = True
 
-    def apply_voltage_immediately(
-        self,
-        *,
-        channel: int,
-        voltage: float,
-        profile: DCVoltageProfile,
-    ) -> None:
-        self.calls.append(("apply_voltage_immediately", channel, voltage, profile))
-        self.voltages[channel] = voltage
-        self.output_states[channel] = True
-
     def idle(self, *, channel: int, profile: DCVoltageProfile) -> None:
         self.calls.append(("idle", channel, profile))
         if self.fail_set_voltage:
@@ -321,18 +310,6 @@ def test_dc_voltage_control_ramps_to_idle_voltage_on_exit() -> None:
     assert dc_controller.calls[-1][0:2] == ("idle", 7)
 
 
-def test_dc_voltage_control_can_apply_voltage_immediately() -> None:
-    """Explicit immediate application should skip intermediate ramp setpoints."""
-    dc_controller = _DCVoltageController()
-    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
-
-    with ctx.dc_voltage_control() as dc:
-        state = dc.apply_voltage_immediately(0.2)
-
-    assert any(call[0] == "apply_voltage_immediately" for call in dc_controller.calls)
-    assert state.is_on
-
-
 def test_dc_voltage_control_attempts_idle_even_when_the_ramp_fails() -> None:
     """A failing idle ramp on exit should still be attempted and surfaced."""
     dc_controller = _DCVoltageController()
@@ -387,12 +364,10 @@ def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
 
     with ctx.dc_voltage_control() as dc:
-        state = dc.apply_voltage_immediately(0.5)
+        state = dc.apply_voltage(0.5)
 
     assert state.voltage == pytest.approx(0.5)
-    call = next(
-        call for call in dc_controller.calls if call[0] == "apply_voltage_immediately"
-    )
+    call = next(call for call in dc_controller.calls if call[0] == "apply_voltage")
     applied_profile = call[3]
     assert isinstance(applied_profile, DCVoltageProfile)
     assert applied_profile.readback_tolerance_v == pytest.approx(0.002)

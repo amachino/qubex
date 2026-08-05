@@ -65,27 +65,6 @@ class DCVoltageController:
                 profile=profile,
             )
 
-    def apply_voltage_immediately(
-        self,
-        *,
-        channel: int,
-        voltage: float,
-        profile: DCVoltageProfile,
-    ) -> None:
-        """Apply a target to one enabled channel without ramping."""
-        with self._connection() as device:
-            if not device.is_output_on(channel):
-                raise RuntimeError(
-                    f"DC voltage channel {channel} output is off. Initialize it "
-                    "with `reset_dc_voltages()` before applying a voltage."
-                )
-            self._set_voltage_verified(
-                device,
-                channel=channel,
-                voltage=voltage,
-                profile=profile,
-            )
-
     def idle(
         self,
         *,

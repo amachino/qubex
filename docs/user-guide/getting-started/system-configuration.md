@@ -239,9 +239,7 @@ context, use the bulk operation.
 experiment.external_devices.bias_dc_voltages()
 ```
 
-`sweep()` ramps through each supplied target using the same profile. Use
-`apply_voltage_immediately()` only when the voltage must be applied without a
-ramp.
+`sweep()` ramps through each supplied target using the same profile.
 
 ### Control Layout Resolution
 

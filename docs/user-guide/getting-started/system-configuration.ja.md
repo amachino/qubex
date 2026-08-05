@@ -185,7 +185,7 @@ with experiment.external_devices.dc_voltage(mux=6) as dc:
 experiment.external_devices.bias_dc_voltages()
 ```
 
-`sweep()` は同じ設定を使って各目標電圧まで順番に ramp します。ramp せずに電圧を印加する必要がある場合だけ `apply_voltage_immediately()` を使います。
+`sweep()` は同じ設定を使って各目標電圧まで順番に ramp します。
 
 ### 制御レイアウトの解決規則
 

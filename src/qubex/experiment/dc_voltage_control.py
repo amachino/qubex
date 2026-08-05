@@ -16,14 +16,12 @@ class DCVoltageControl:
         self,
         *,
         apply_voltage: Callable[[float, DCVoltageProfile], None],
-        apply_voltage_immediately: Callable[[float, DCVoltageProfile], None],
         idle: Callable[[DCVoltageProfile], None],
         get_state: Callable[[], DCVoltageState],
         profile: DCVoltageProfile,
     ) -> None:
         """Initialize bound DC voltage operations."""
         self._apply_voltage = apply_voltage
-        self._apply_voltage_immediately = apply_voltage_immediately
         self._idle = idle
         self._get_state = get_state
         self._profile = profile
@@ -51,17 +49,6 @@ class DCVoltageControl:
             Readback state at the target voltage.
         """
         self._apply_voltage(
-            float(voltage),
-            self._profile,
-        )
-        return self.state
-
-    def apply_voltage_immediately(
-        self,
-        voltage: float,
-    ) -> DCVoltageState:
-        """Apply a voltage to an enabled output without ramping."""
-        self._apply_voltage_immediately(
             float(voltage),
             self._profile,
         )

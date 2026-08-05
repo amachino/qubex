@@ -1422,13 +1422,6 @@ Do you want to continue?
                 voltage=voltage,
                 profile=resolved_profile,
             ),
-            apply_voltage_immediately=lambda voltage, resolved_profile: (
-                controller.apply_voltage_immediately(
-                    channel=profile.channel,
-                    voltage=voltage,
-                    profile=resolved_profile,
-                )
-            ),
             idle=lambda resolved_profile: controller.idle(
                 channel=profile.channel,
                 profile=resolved_profile,
