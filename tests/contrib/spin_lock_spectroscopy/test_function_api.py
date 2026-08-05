@@ -17,51 +17,26 @@ from qubex.contrib.experiment import (
 )
 from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _analyze_spin_lock_target,
+    _chevron_detuning_half_width_limit,
     _final_projection_phase,
     _final_projection_phase_maps,
+    _fit_data_without_figure,
     _frequency_sort_indices,
+    _make_spin_lock_heatmap_figure,
     _make_spin_lock_relaxation_figure,
-    _resolve_awg_max_frequency,
     _resolve_bool,
     _resolve_drive_detuning,
     _resolve_duration_range,
     _resolve_nonnegative_finite_float,
     _resolve_positive_integer,
+    _resolve_spin_lock_calibration,
+    _resolve_spin_lock_parameters_from_chevron_results,
     _scaled_chevron_ranges,
-    _validate_awg_frequency_ranges,
-    _validate_chevron_awg_frequency_range,
 )
 
 spin_lock_module = importlib.import_module(
     "qubex.contrib.experiment.spin_lock_spectroscopy"
 )
-
-
-def _make_awg_validation_exp(
-    *,
-    sideband: str,
-    nco_frequency: float,
-    awg_max_frequency_hz: float | None = 250_000_000,
-) -> Any:
-    class _ExperimentSystem:
-        @staticmethod
-        def get_target(_target: str) -> SimpleNamespace:
-            return SimpleNamespace(sideband=sideband)
-
-        @staticmethod
-        def get_nco_frequency(_target: str) -> float:
-            return nco_frequency
-
-    return SimpleNamespace(
-        ctx=SimpleNamespace(
-            experiment_system=_ExperimentSystem(),
-            measurement=SimpleNamespace(
-                constraint_profile=SimpleNamespace(
-                    awg_max_frequency_hz=awg_max_frequency_hz
-                )
-            ),
-        )
-    )
 
 
 def test_all_spin_lock_spectroscopy_functions_are_exported_from_contrib() -> None:
@@ -76,16 +51,14 @@ def test_all_spin_lock_spectroscopy_functions_are_exported_from_experiment() -> 
     assert experiment_spin_lock_spectroscopy is spin_lock_spectroscopy
 
 
-def test_default_spin_lock_frequency_range_is_log_spaced_to_150_mhz() -> None:
-    """Given defaults, when inspected, then the Rabi-frequency range reaches 150 MHz."""
+def test_default_spin_lock_frequency_range_uses_tangent_spacing_to_120_mhz() -> None:
+    """Given defaults, when inspected, then the Rabi-frequency range uses tangent spacing."""
     frequency_range = spin_lock_module.DEFAULT_SPIN_LOCK_FREQUENCY_RANGE
+    expected = 0.01 + 0.11 * np.tan(np.pi / 3 * np.linspace(0, 1, 12)) / np.sqrt(3)
 
+    np.testing.assert_allclose(frequency_range, expected)
     assert frequency_range[0] == pytest.approx(0.01)
-    assert frequency_range[-1] == pytest.approx(0.15)
-    np.testing.assert_allclose(
-        np.diff(np.log(frequency_range)),
-        np.diff(np.log(frequency_range))[0],
-    )
+    assert frequency_range[-1] == pytest.approx(0.12)
 
 
 def test_scaled_chevron_ranges_match_reference_at_12p5_mhz() -> None:
@@ -104,7 +77,7 @@ def test_scaled_chevron_ranges_match_reference_at_12p5_mhz() -> None:
     exp: Any = SimpleNamespace(
         ctx=SimpleNamespace(
             util=_Util(),
-            measurement=SimpleNamespace(sampling_period=10.0),
+            measurement=SimpleNamespace(sampling_period=2.0),
         )
     )
 
@@ -148,8 +121,8 @@ def test_scaled_chevron_ranges_shorten_time_for_larger_rabi_rate() -> None:
     assert omega_rabi_range[-1] == pytest.approx(0.05)
 
 
-def test_scaled_chevron_ranges_caps_detuning_span_at_200_mhz() -> None:
-    """Given strong drive, then chevron detuning span is capped at +/-200 MHz."""
+def test_scaled_chevron_ranges_caps_detuning_span_by_sampling_nyquist() -> None:
+    """Given strong drive, then chevron detuning span is capped by sampling Nyquist."""
 
     class _Util:
         @staticmethod
@@ -172,9 +145,10 @@ def test_scaled_chevron_ranges_caps_detuning_span_at_200_mhz() -> None:
         expected_rabi_frequency=0.2,
     )
 
-    assert detuning_range[0] == pytest.approx(-0.2)
-    assert detuning_range[-1] == pytest.approx(0.2)
-    assert time_range[-1] == pytest.approx(15.625)
+    assert detuning_range[0] == pytest.approx(-0.4)
+    assert detuning_range[-1] == pytest.approx(0.4)
+    assert time_range.size == spin_lock_module.CHEVRON_TIME_POINTS
+    assert time_range[-1] == pytest.approx(25.0)
     assert omega_rabi_range[-1] == pytest.approx(0.4)
 
 
@@ -207,8 +181,8 @@ def test_scaled_chevron_ranges_rounds_time_to_sampling_grid() -> None:
     np.testing.assert_allclose(time_range / 7.0, np.round(time_range / 7.0))
 
 
-def test_scaled_chevron_ranges_rejects_too_few_time_points() -> None:
-    """Given a coarse sampling grid, then an unusable chevron time range is rejected."""
+def test_scaled_chevron_ranges_keeps_time_point_count_on_coarse_grid() -> None:
+    """Given a coarse sampling grid, then chevron time point count is preserved."""
 
     class _Util:
         @staticmethod
@@ -227,113 +201,142 @@ def test_scaled_chevron_ranges_rejects_too_few_time_points() -> None:
         )
     )
 
-    with pytest.raises(ValueError, match="chevron time_range"):
-        _scaled_chevron_ranges(
-            exp,
-            expected_rabi_frequency=0.2,
-        )
-
-
-def test_validate_chevron_awg_frequency_range_accepts_reachable_span() -> None:
-    """Given reachable drive frequencies, then current NCO validation passes."""
-    exp = _make_awg_validation_exp(sideband="U", nco_frequency=5.0)
-
-    _validate_chevron_awg_frequency_range(
+    _, time_range, _ = _scaled_chevron_ranges(
         exp,
-        targets=["Q00"],
-        base_frequencies={"Q00": 5.0},
-        detuning_range=np.array([-0.2, 0.0, 0.2]),
+        expected_rabi_frequency=0.2,
     )
 
+    assert time_range.size == spin_lock_module.CHEVRON_TIME_POINTS
+    np.testing.assert_allclose(np.diff(time_range), 1000.0)
 
-def test_validate_chevron_awg_frequency_range_rejects_unreachable_span() -> None:
-    """Given unreachable drive frequencies, then current NCO validation fails."""
-    exp = _make_awg_validation_exp(sideband="U", nco_frequency=5.0)
 
-    with pytest.raises(ValueError, match="AWG modulation"):
-        _validate_chevron_awg_frequency_range(
-            exp,
+def test_chevron_detuning_half_width_limit_uses_sampling_period_nyquist() -> None:
+    """Given a sampling grid, then the detuning cap is 80% of Nyquist."""
+    exp: Any = SimpleNamespace(
+        ctx=SimpleNamespace(measurement=SimpleNamespace(sampling_period=2.0))
+    )
+
+    assert _chevron_detuning_half_width_limit(exp) == pytest.approx(0.2)
+
+
+def test_resolve_spin_lock_parameters_reuses_supplied_chevron_results() -> None:
+    """Given previous chevron metadata, then measured axes are recovered from it."""
+    chevron_results = {
+        "Q00": [
+            {
+                "requested_rabi_frequency": 0.01,
+                "drive_amplitude": 0.1,
+                "qubit_frequency": 5.001,
+                "rabi_frequency": 0.011,
+            },
+            {
+                "requested_rabi_frequency": 0.02,
+                "drive_amplitude": 0.2,
+                "qubit_frequency": 5.004,
+                "rabi_frequency": 0.021,
+            },
+        ]
+    }
+
+    qubit_frequency_map, rabi_frequency_map, resolved_results = (
+        _resolve_spin_lock_parameters_from_chevron_results(
             targets=["Q00"],
-            base_frequencies={"Q00": 5.1},
-            detuning_range=np.array([-0.2, 0.0, 0.2]),
+            requested_rabi_frequency_range=np.array([0.01, 0.02]),
+            amplitude_map={"Q00": np.array([0.1, 0.2])},
+            chevron_results=chevron_results,
+        )
+    )
+
+    np.testing.assert_allclose(qubit_frequency_map["Q00"], [5.001, 5.004])
+    np.testing.assert_allclose(rabi_frequency_map["Q00"], [0.011, 0.021])
+    assert resolved_results == chevron_results
+
+
+def test_resolve_spin_lock_parameters_rejects_mismatched_chevron_results() -> None:
+    """Given stale chevron metadata, then reuse is rejected before measurement."""
+    chevron_results = {
+        "Q00": [
+            {
+                "requested_rabi_frequency": 0.03,
+                "drive_amplitude": 0.1,
+                "qubit_frequency": 5.001,
+                "rabi_frequency": 0.011,
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="requested_rabi_frequency"):
+        _resolve_spin_lock_parameters_from_chevron_results(
+            targets=["Q00"],
+            requested_rabi_frequency_range=np.array([0.01]),
+            amplitude_map={"Q00": np.array([0.1])},
+            chevron_results=chevron_results,
         )
 
 
-def test_validate_awg_frequency_range_accepts_lower_sideband_span() -> None:
-    """Given lower sideband, then AWG validation uses NCO minus drive frequency."""
-    exp = _make_awg_validation_exp(sideband="L", nco_frequency=5.0)
+def test_resolve_spin_lock_parameters_requires_matching_chevron_metadata() -> None:
+    """Given incomplete previous metadata, then reuse is rejected."""
+    chevron_results = {
+        "Q00": [
+            {
+                "drive_amplitude": 0.1,
+                "qubit_frequency": 5.001,
+                "rabi_frequency": 0.011,
+            }
+        ]
+    }
 
-    _validate_awg_frequency_ranges(
-        exp,
+    with pytest.raises(ValueError, match="requested_rabi_frequency"):
+        _resolve_spin_lock_parameters_from_chevron_results(
+            targets=["Q00"],
+            requested_rabi_frequency_range=np.array([0.01]),
+            amplitude_map={"Q00": np.array([0.1])},
+            chevron_results=chevron_results,
+        )
+
+
+def test_resolve_spin_lock_calibration_reuses_provided_chevron_without_measuring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given previous chevron metadata, then calibration skips new chevron sweeps."""
+
+    def _unexpected_chevron_measurement(**_kwargs: Any) -> None:
+        raise AssertionError("Chevron measurement should not be called.")
+
+    monkeypatch.setattr(
+        spin_lock_module,
+        "_estimate_spin_lock_parameters_with_chevron",
+        _unexpected_chevron_measurement,
+    )
+
+    calibration = _resolve_spin_lock_calibration(
+        object(),  # type: ignore[arg-type]
         targets=["Q00"],
-        drive_frequency_ranges={"Q00": np.array([4.8, 4.9, 5.0])},
-        description="test frequencies",
+        requested_rabi_frequency_range=np.array([0.01]),
+        amplitude_map={"Q00": np.array([0.1])},
+        base_frequencies={"Q00": 5.0},
+        estimate_with_chevron=True,
+        chevron_results={
+            "Q00": [
+                {
+                    "requested_rabi_frequency": 0.01,
+                    "drive_amplitude": 0.1,
+                    "qubit_frequency": 5.001,
+                    "rabi_frequency": 0.011,
+                }
+            ]
+        },
+        chevron_n_shots=10,
+        n_shots=100,
+        shot_interval=0.0,
+        return_chevron_figures=True,
     )
 
-
-def test_validate_awg_frequency_range_skips_unknown_backend_limit() -> None:
-    """Given no AWG limit in profile, then validation is left to the backend."""
-    exp = _make_awg_validation_exp(
-        sideband="U",
-        nco_frequency=5.0,
-        awg_max_frequency_hz=None,
-    )
-
-    _validate_awg_frequency_ranges(
-        exp,
-        targets=["Q00"],
-        drive_frequency_ranges={"Q00": np.array([5.0, 6.0])},
-        description="test frequencies",
-    )
-
-
-def test_resolve_awg_max_frequency_skips_legacy_context_without_profile() -> None:
-    """Given old fake measurement context, then AWG validation is skipped."""
-    exp: Any = SimpleNamespace(ctx=SimpleNamespace(measurement=SimpleNamespace()))
-
-    assert _resolve_awg_max_frequency(exp) is None
-
-
-def test_resolve_awg_max_frequency_uses_quel1_like_profile() -> None:
-    """Given QuEL-1-like constraints, then the contrib fallback uses QuEL-1 AWG limit."""
-    exp: Any = SimpleNamespace(
-        ctx=SimpleNamespace(
-            measurement=SimpleNamespace(
-                constraint_profile=SimpleNamespace(
-                    sampling_period_ns=2.0,
-                    word_length_samples=4,
-                    block_length_samples=64,
-                    require_workaround_capture=True,
-                    enforce_word_alignment=True,
-                    enforce_block_alignment=True,
-                    enforce_capture_spacing=True,
-                )
-            )
-        )
-    )
-
-    assert _resolve_awg_max_frequency(exp) == pytest.approx(0.25)
-
-
-def test_resolve_awg_max_frequency_skips_non_quel1_strict_profile() -> None:
-    """Given strict non-QuEL-1 constraints, then no QuEL-1 AWG limit is assumed."""
-    exp: Any = SimpleNamespace(
-        ctx=SimpleNamespace(
-            measurement=SimpleNamespace(
-                constraint_profile=SimpleNamespace(
-                    sampling_period_ns=0.4,
-                    word_length_samples=4,
-                    block_length_samples=64,
-                    require_workaround_capture=True,
-                    enforce_word_alignment=True,
-                    enforce_block_alignment=True,
-                    enforce_capture_spacing=True,
-                )
-            )
-        )
-    )
-
-    assert _resolve_awg_max_frequency(exp) is None
+    assert calibration.chevron_source == "provided"
+    assert calibration.chevron_n_shots is None
+    assert calibration.chevron_figures == {}
+    np.testing.assert_allclose(calibration.qubit_frequency_map["Q00"], [5.001])
+    np.testing.assert_allclose(calibration.rabi_frequency_map["Q00"], [0.011])
 
 
 def test_frequency_sort_indices_sorts_nonmonotonic_axis() -> None:
@@ -401,6 +404,23 @@ def test_spin_lock_relaxation_figure_yaxis_starts_at_zero() -> None:
 
     assert fig.layout.yaxis.range[0] == 0
     assert fig.layout.yaxis.title.text == "Relaxation time (μs)"
+    assert fig.layout.xaxis.type == "linear"
+
+
+def test_spin_lock_heatmap_figure_uses_linear_frequency_axis() -> None:
+    """Given heatmap data, then the spin-lock frequency axis is linear."""
+    fig = _make_spin_lock_heatmap_figure(
+        target="Q00",
+        spin_lock_rabi_frequency_range=np.array([0.01, 0.02]),
+        duration_range=np.array([100.0, 200.0, 300.0]),
+        population=np.ones((3, 2)),
+    )
+
+    assert fig.layout.xaxis.type == "linear"
+    assert fig.layout.yaxis.type == "log"
+    heatmap_trace: Any = fig.data[0]
+    assert heatmap_trace.zmin == 0
+    assert heatmap_trace.zmax == 1
 
 
 def test_analyze_spin_lock_target_returns_expected_shapes_and_figures(
@@ -417,7 +437,10 @@ def test_analyze_spin_lock_target_returns_expected_shapes_and_figures(
             super().__init__(**kwargs)
             self.data = dict(self)
 
-    def _fit_exp_decay(**_kwargs: Any) -> _FitResult:
+    fit_kwargs: list[dict[str, Any]] = []
+
+    def _fit_exp_decay(**kwargs: Any) -> _FitResult:
+        fit_kwargs.append(kwargs)
         return _FitResult(tau=1000.0, tau_err=100.0, r2=0.99)
 
     monkeypatch.setattr(spin_lock_module.fitting, "fit_exp_decay", _fit_exp_decay)
@@ -442,6 +465,7 @@ def test_analyze_spin_lock_target_returns_expected_shapes_and_figures(
     assert analysis.population.shape == (3, 2)
     np.testing.assert_allclose(analysis.relaxation_times, [1000.0, 1000.0])
     np.testing.assert_allclose(analysis.sort_indices, [1, 0])
+    assert {kwargs["xlabel"] for kwargs in fit_kwargs} == {"Duration (ns)"}
     assert "Q00_heatmap" in analysis.figures
     assert "Q00_relaxation" in analysis.figures
 
@@ -493,6 +517,31 @@ def test_resolve_duration_range_rejects_too_few_fit_points() -> None:
 
     with pytest.raises(ValueError, match="duration_range"):
         _resolve_duration_range(exp, [9.0, 11.0, 21.0])
+
+
+def test_resolve_duration_range_rejects_invalid_sampling_period() -> None:
+    """Given an invalid sampling period, then duration discretization is rejected."""
+    exp: Any = SimpleNamespace(
+        ctx=SimpleNamespace(
+            util=SimpleNamespace(),
+            measurement=SimpleNamespace(sampling_period=0.0),
+        )
+    )
+
+    with pytest.raises(ValueError, match="sampling_period"):
+        _resolve_duration_range(exp, [10.0, 20.0, 30.0])
+
+
+def test_fit_data_without_figure_tolerates_missing_data_attribute() -> None:
+    """Given a nonstandard fit result, then no figure payload is returned."""
+    assert _fit_data_without_figure(SimpleNamespace()) == {}
+
+
+def test_fit_data_without_figure_drops_embedded_figure() -> None:
+    """Given fit result data, then embedded figure payload is omitted."""
+    fit_result = SimpleNamespace(data={"tau": 100.0, "fig": object()})
+
+    assert _fit_data_without_figure(fit_result) == {"tau": 100.0}
 
 
 def test_resolve_drive_detuning_rejects_nonfinite_values() -> None:

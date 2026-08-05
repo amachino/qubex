@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike
+from tqdm import tqdm
 
 import qubex.visualization as viz
 from qubex.analysis import FitStatus, fitting
@@ -22,26 +23,24 @@ from qubex.pulse import PulseSchedule, Rect
 
 __all__ = ["spin_lock_sequence", "spin_lock_spectroscopy"]
 
-DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = np.geomspace(0.01, 0.15, 16)
+DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = 0.01 + 0.11 * np.tan(
+    np.pi / 3 * np.linspace(0, 1, 12)
+) / np.sqrt(3)
 DEFAULT_DURATION_RANGE = np.geomspace(100, 200e3, 31)
 DEFAULT_DRIVE_PHASE = 0.0
 FINAL_PROJECTION_PHASE_CORRECTION_SIGN = -1.0
 CHEVRON_REFERENCE_RABI_FREQUENCY = 0.0125
 CHEVRON_REFERENCE_DETUNING_HALF_WIDTH = 0.05
-CHEVRON_MAX_DETUNING_HALF_WIDTH = 0.2
+CHEVRON_NYQUIST_DETUNING_MARGIN = 0.8
 CHEVRON_REFERENCE_TIME_MAX = 250.0
 CHEVRON_DETUNING_POINTS = 41
 CHEVRON_TIME_POINTS = 26
 CHEVRON_OMEGA_RABI_POINTS = 128
-MIN_CHEVRON_TIME_POINTS = 3
 MIN_DECAY_FIT_POINTS = 3
-QUEL1_AWG_MAX_FREQUENCY = 0.25  # GHz
-QUEL1_SAMPLING_PERIOD_NS = 2.0
-QUEL1_WORD_LENGTH_SAMPLES = 4
-QUEL1_BLOCK_LENGTH_SAMPLES = 64
 
 ArrayMap = dict[str, np.ndarray]
 ChevronMetadataMap = dict[str, list[dict[str, Any]]]
+ChevronSource = Literal["measured", "provided", "none"]
 FigureMap = dict[str, go.Figure]
 
 
@@ -55,6 +54,29 @@ class _TargetAnalysis:
     r2: np.ndarray
     fit_results: list[dict[str, Any]]
     sort_indices: np.ndarray
+    figures: FigureMap
+
+
+@dataclass(frozen=True)
+class _SpinLockCalibration:
+    qubit_frequency_map: ArrayMap
+    rabi_frequency_map: ArrayMap
+    chevron_results: ChevronMetadataMap
+    chevron_figures: FigureMap
+    chevron_source: ChevronSource
+    chevron_n_shots: int | None
+
+
+@dataclass(frozen=True)
+class _SpinLockAnalysis:
+    raw_data: ArrayMap
+    normalized_signal: ArrayMap
+    population: ArrayMap
+    relaxation_times: ArrayMap
+    relaxation_time_errors: ArrayMap
+    r2: ArrayMap
+    fit_results: dict[str, list[dict[str, Any]]]
+    rabi_sort_indices: ArrayMap
     figures: FigureMap
 
 
@@ -192,7 +214,7 @@ def _resolve_duration_range(
     if np.any(durations <= 0):
         raise ValueError("duration_range must contain positive values.")
 
-    sampling_period = exp.ctx.measurement.sampling_period
+    sampling_period = _measurement_sampling_period_ns(exp)
     discretized = exp.ctx.util.discretize_time_range(
         durations,
         sampling_period=sampling_period,
@@ -296,6 +318,36 @@ def _nan_array_map(
     }
 
 
+def _measurement_sampling_period_ns(exp: Experiment) -> float:
+    sampling_period = float(exp.ctx.measurement.sampling_period)
+    if not np.isfinite(sampling_period) or sampling_period <= 0:
+        raise ValueError("measurement sampling_period must be positive and finite.")
+    return sampling_period
+
+
+def _chevron_detuning_half_width_limit(exp: Experiment) -> float:
+    return CHEVRON_NYQUIST_DETUNING_MARGIN * 0.5 / _measurement_sampling_period_ns(exp)
+
+
+def _discretized_chevron_time_step(exp: Experiment, time_step: float) -> float:
+    sampling_period = _measurement_sampling_period_ns(exp)
+    discretized_time_step = exp.ctx.util.discretize_time_range(
+        [time_step],
+        sampling_period=sampling_period,
+    )
+    if discretized_time_step is None:
+        raise ValueError("chevron time step could not be discretized.")
+
+    discretized_time_step = np.asarray(discretized_time_step, dtype=np.float64)
+    if discretized_time_step.size == 0:
+        raise ValueError("chevron time step could not be discretized.")
+
+    time_step = float(discretized_time_step[0])
+    if not np.isfinite(time_step):
+        raise ValueError("chevron time step must be finite after discretization.")
+    return max(time_step, sampling_period)
+
+
 def _scaled_chevron_ranges(
     exp: Experiment,
     *,
@@ -307,7 +359,7 @@ def _scaled_chevron_ranges(
 
     detuning_half_width = min(
         CHEVRON_REFERENCE_DETUNING_HALF_WIDTH * scale,
-        CHEVRON_MAX_DETUNING_HALF_WIDTH,
+        _chevron_detuning_half_width_limit(exp),
     )
     detuning_range = np.linspace(
         -detuning_half_width,
@@ -315,19 +367,11 @@ def _scaled_chevron_ranges(
         CHEVRON_DETUNING_POINTS,
     )
 
-    time_max = CHEVRON_REFERENCE_TIME_MAX / scale
-    time_range = exp.ctx.util.discretize_time_range(
-        np.linspace(0, time_max, CHEVRON_TIME_POINTS),
-        sampling_period=exp.ctx.measurement.sampling_period,
+    time_step = _discretized_chevron_time_step(
+        exp,
+        CHEVRON_REFERENCE_TIME_MAX / scale / (CHEVRON_TIME_POINTS - 1),
     )
-    if time_range is None:
-        raise ValueError("chevron time_range could not be discretized.")
-    time_range = np.unique(np.asarray(time_range, dtype=np.float64))
-    if time_range.size < MIN_CHEVRON_TIME_POINTS:
-        raise ValueError(
-            "chevron time_range must contain at least "
-            f"{MIN_CHEVRON_TIME_POINTS} unique points after discretization."
-        )
+    time_range = time_step * np.arange(CHEVRON_TIME_POINTS, dtype=np.float64)
 
     omega_rabi_range = (
         expected_rabi_frequency
@@ -340,140 +384,6 @@ def _scaled_chevron_ranges(
 
 def _target_base_frequencies(exp: Experiment, targets: list[str]) -> dict[str, float]:
     return {target: float(exp.ctx.targets[target].frequency) for target in targets}
-
-
-def _chevron_drive_frequency_range(
-    *,
-    base_frequency: float,
-    detuning_range: np.ndarray,
-) -> np.ndarray:
-    return float(base_frequency) + np.asarray(detuning_range, dtype=np.float64)
-
-
-def _chevron_awg_frequency_range(
-    exp: Experiment,
-    *,
-    target: str,
-    drive_frequency_range: np.ndarray,
-) -> np.ndarray:
-    experiment_system = exp.ctx.experiment_system
-    target_info = experiment_system.get_target(target)
-    nco_frequency = float(experiment_system.get_nco_frequency(target))
-
-    if target_info.sideband == "L":
-        return nco_frequency - drive_frequency_range
-    return drive_frequency_range - nco_frequency
-
-
-def _looks_like_quel1_constraint_profile(constraint_profile: Any) -> bool:
-    if constraint_profile is None:
-        return False
-
-    strict_quel1_flags = all(
-        bool(getattr(constraint_profile, name, False))
-        for name in (
-            "require_workaround_capture",
-            "enforce_word_alignment",
-            "enforce_block_alignment",
-            "enforce_capture_spacing",
-        )
-    )
-    if not strict_quel1_flags:
-        return False
-
-    try:
-        sampling_period_ns = float(
-            getattr(constraint_profile, "sampling_period_ns", np.nan)
-        )
-        word_length_samples = int(
-            getattr(constraint_profile, "word_length_samples", -1)
-        )
-        block_length_samples = int(
-            getattr(constraint_profile, "block_length_samples", -1)
-        )
-    except (TypeError, ValueError):
-        return False
-
-    sampling_period_matches = bool(
-        np.isclose(sampling_period_ns, QUEL1_SAMPLING_PERIOD_NS)
-    )
-    return (
-        sampling_period_matches
-        and word_length_samples == QUEL1_WORD_LENGTH_SAMPLES
-        and block_length_samples == QUEL1_BLOCK_LENGTH_SAMPLES
-    )
-
-
-def _resolve_awg_max_frequency(exp: Experiment) -> float | None:
-    constraint_profile = getattr(exp.ctx.measurement, "constraint_profile", None)
-    if constraint_profile is None:
-        return None
-
-    awg_max_frequency_hz = getattr(constraint_profile, "awg_max_frequency_hz", None)
-    if awg_max_frequency_hz is not None:
-        awg_max_frequency = float(awg_max_frequency_hz) * 1e-9
-        if not np.isfinite(awg_max_frequency) or awg_max_frequency <= 0:
-            raise ValueError("awg_max_frequency_hz must be positive and finite.")
-        return awg_max_frequency
-
-    if _looks_like_quel1_constraint_profile(constraint_profile):
-        return QUEL1_AWG_MAX_FREQUENCY
-
-    return None
-
-
-def _validate_awg_frequency_ranges(
-    exp: Experiment,
-    *,
-    targets: list[str],
-    drive_frequency_ranges: ArrayMap,
-    description: str,
-) -> None:
-    awg_max_frequency = _resolve_awg_max_frequency(exp)
-    if awg_max_frequency is None:
-        return
-
-    for target in targets:
-        drive_frequency_range = drive_frequency_ranges[target]
-        awg_frequency_range = _chevron_awg_frequency_range(
-            exp,
-            target=target,
-            drive_frequency_range=drive_frequency_range,
-        )
-        max_abs_awg_frequency = float(np.max(np.abs(awg_frequency_range)))
-        if max_abs_awg_frequency <= awg_max_frequency + 1e-12:
-            continue
-
-        raise ValueError(
-            f"{description} for `{target}` requires AWG modulation up to "
-            f"{max_abs_awg_frequency * 1e3:.3f} MHz, exceeding "
-            f"{awg_max_frequency * 1e3:.3f} MHz with the current NCO setting. "
-            "Reduce spin_lock_frequency_range or retune the backend settings. "
-            f"Drive frequency range is {np.min(drive_frequency_range):.9g} GHz to "
-            f"{np.max(drive_frequency_range):.9g} GHz."
-        )
-
-
-def _validate_chevron_awg_frequency_range(
-    exp: Experiment,
-    *,
-    targets: list[str],
-    base_frequencies: dict[str, float],
-    detuning_range: np.ndarray,
-) -> None:
-    drive_frequency_ranges = {
-        target: _chevron_drive_frequency_range(
-            base_frequency=base_frequencies[target],
-            detuning_range=detuning_range,
-        )
-        for target in targets
-    }
-    _validate_awg_frequency_ranges(
-        exp,
-        targets=targets,
-        drive_frequency_ranges=drive_frequency_ranges,
-        description="Chevron detuning_range",
-    )
 
 
 def _constant_frequency_map(
@@ -570,12 +480,125 @@ def _final_projection_phase_maps(
     return phase_corrections, final_phases
 
 
+def _chevron_value(
+    entry: dict[str, Any],
+    *,
+    primary_key: str,
+    fallback_key: str | None,
+    target: str,
+    frequency_index: int,
+) -> float:
+    value = entry.get(primary_key)
+    if value is None and fallback_key is not None:
+        value = entry.get(fallback_key)
+    if value is None:
+        raise ValueError(
+            f"chevron_results for `{target}` at index {frequency_index} "
+            f"must contain `{primary_key}`."
+        )
+    return float(value)
+
+
+def _validate_matching_chevron_value(
+    entry: dict[str, Any],
+    *,
+    key: str,
+    expected: float,
+    target: str,
+    frequency_index: int,
+) -> None:
+    if key not in entry:
+        raise ValueError(
+            f"chevron_results for `{target}` at index {frequency_index} "
+            f"must contain `{key}`."
+        )
+
+    value = float(entry[key])
+    if not np.isclose(value, expected, rtol=1e-6, atol=1e-12):
+        raise ValueError(
+            f"chevron_results for `{target}` at index {frequency_index} "
+            f"has {key}={value:.9g}, but expected {expected:.9g}."
+        )
+
+
+def _resolve_spin_lock_parameters_from_chevron_results(
+    *,
+    targets: list[str],
+    requested_rabi_frequency_range: np.ndarray,
+    amplitude_map: ArrayMap,
+    chevron_results: ChevronMetadataMap,
+) -> tuple[ArrayMap, ArrayMap, ChevronMetadataMap]:
+    qubit_frequency_map = _nan_array_map(
+        targets=targets,
+        shape=requested_rabi_frequency_range.shape,
+    )
+    measured_rabi_frequency_map = _nan_array_map(
+        targets=targets,
+        shape=requested_rabi_frequency_range.shape,
+    )
+    resolved_chevron_results: ChevronMetadataMap = {}
+
+    for target in targets:
+        target_results = list(chevron_results.get(target, []))
+        if len(target_results) != requested_rabi_frequency_range.size:
+            raise ValueError(
+                f"chevron_results for `{target}` must contain "
+                f"{requested_rabi_frequency_range.size} entries."
+            )
+        resolved_chevron_results[target] = target_results
+
+        for frequency_index, entry in enumerate(target_results):
+            _validate_matching_chevron_value(
+                entry,
+                key="requested_rabi_frequency",
+                expected=float(requested_rabi_frequency_range[frequency_index]),
+                target=target,
+                frequency_index=frequency_index,
+            )
+            _validate_matching_chevron_value(
+                entry,
+                key="drive_amplitude",
+                expected=float(amplitude_map[target][frequency_index]),
+                target=target,
+                frequency_index=frequency_index,
+            )
+
+            qubit_frequency = _chevron_value(
+                entry,
+                primary_key="qubit_frequency",
+                fallback_key="omega_q",
+                target=target,
+                frequency_index=frequency_index,
+            )
+            rabi_frequency = _chevron_value(
+                entry,
+                primary_key="rabi_frequency",
+                fallback_key="omega_rabi",
+                target=target,
+                frequency_index=frequency_index,
+            )
+            if not np.isfinite(qubit_frequency):
+                raise ValueError(
+                    f"Chevron qubit frequency for `{target}` must be finite."
+                )
+            if not np.isfinite(rabi_frequency) or rabi_frequency <= 0:
+                raise ValueError(
+                    f"Chevron Rabi frequency for `{target}` must be positive and finite."
+                )
+
+            qubit_frequency_map[target][frequency_index] = qubit_frequency
+            measured_rabi_frequency_map[target][frequency_index] = rabi_frequency
+
+    return qubit_frequency_map, measured_rabi_frequency_map, resolved_chevron_results
+
+
 def _estimate_spin_lock_parameters_with_chevron(
     exp: Experiment,
     *,
     targets: list[str],
     requested_rabi_frequency_range: np.ndarray,
     amplitude_map: ArrayMap,
+    base_frequencies: dict[str, float],
     chevron_n_shots: int,
     shot_interval: float,
     return_chevron_figures: bool,
@@ -585,7 +608,6 @@ def _estimate_spin_lock_parameters_with_chevron(
     ChevronMetadataMap,
     FigureMap,
 ]:
-    base_frequencies = _target_base_frequencies(exp, targets)
     measured_qubit_frequencies = _nan_array_map(
         targets=targets,
         shape=requested_rabi_frequency_range.shape,
@@ -597,18 +619,15 @@ def _estimate_spin_lock_parameters_with_chevron(
     chevron_results: ChevronMetadataMap = {target: [] for target in targets}
     chevron_figures: FigureMap = {}
 
-    for frequency_index, expected_rabi_frequency in enumerate(
-        requested_rabi_frequency_range
-    ):
+    progress = tqdm(
+        requested_rabi_frequency_range,
+        desc="Chevron pre-measurements",
+        unit="freq",
+    )
+    for frequency_index, expected_rabi_frequency in enumerate(progress):
         detuning_range, time_range, omega_rabi_range = _scaled_chevron_ranges(
             exp,
             expected_rabi_frequency=float(expected_rabi_frequency),
-        )
-        _validate_chevron_awg_frequency_range(
-            exp,
-            targets=targets,
-            base_frequencies=base_frequencies,
-            detuning_range=detuning_range,
         )
         with exp.ctx.util.no_output():
             chevron_result = estimate_qubit_frequency_from_chevron(
@@ -679,6 +698,86 @@ def _estimate_spin_lock_parameters_with_chevron(
     )
 
 
+def _resolve_spin_lock_calibration(
+    exp: Experiment,
+    *,
+    targets: list[str],
+    requested_rabi_frequency_range: np.ndarray,
+    amplitude_map: ArrayMap,
+    base_frequencies: dict[str, float],
+    estimate_with_chevron: bool,
+    chevron_results: ChevronMetadataMap | None,
+    chevron_n_shots: int | None,
+    n_shots: int,
+    shot_interval: float,
+    return_chevron_figures: bool,
+) -> _SpinLockCalibration:
+    if chevron_results is not None:
+        (
+            qubit_frequency_map,
+            rabi_frequency_map,
+            resolved_chevron_results,
+        ) = _resolve_spin_lock_parameters_from_chevron_results(
+            targets=targets,
+            requested_rabi_frequency_range=requested_rabi_frequency_range,
+            amplitude_map=amplitude_map,
+            chevron_results=chevron_results,
+        )
+        return _SpinLockCalibration(
+            qubit_frequency_map=qubit_frequency_map,
+            rabi_frequency_map=rabi_frequency_map,
+            chevron_results=resolved_chevron_results,
+            chevron_figures={},
+            chevron_source="provided",
+            chevron_n_shots=None,
+        )
+
+    if estimate_with_chevron:
+        chevron_n_shots_value = _resolve_positive_integer(
+            chevron_n_shots,
+            name="chevron_n_shots",
+            default=max(1, n_shots // 4),
+        )
+        (
+            qubit_frequency_map,
+            rabi_frequency_map,
+            measured_chevron_results,
+            chevron_figures,
+        ) = _estimate_spin_lock_parameters_with_chevron(
+            exp,
+            targets=targets,
+            requested_rabi_frequency_range=requested_rabi_frequency_range,
+            amplitude_map=amplitude_map,
+            base_frequencies=base_frequencies,
+            chevron_n_shots=chevron_n_shots_value,
+            shot_interval=shot_interval,
+            return_chevron_figures=return_chevron_figures,
+        )
+        return _SpinLockCalibration(
+            qubit_frequency_map=qubit_frequency_map,
+            rabi_frequency_map=rabi_frequency_map,
+            chevron_results=measured_chevron_results,
+            chevron_figures=chevron_figures,
+            chevron_source="measured",
+            chevron_n_shots=chevron_n_shots_value,
+        )
+
+    return _SpinLockCalibration(
+        qubit_frequency_map=_constant_frequency_map(
+            targets=targets,
+            values=base_frequencies,
+            shape=requested_rabi_frequency_range.shape,
+        ),
+        rabi_frequency_map={
+            target: requested_rabi_frequency_range.copy() for target in targets
+        },
+        chevron_results={target: [] for target in targets},
+        chevron_figures={},
+        chevron_source="none",
+        chevron_n_shots=None,
+    )
+
+
 def _add_spin_lock_pulse(
     schedule: PulseSchedule,
     exp: Experiment,
@@ -742,7 +841,7 @@ def _make_spin_lock_heatmap_figure(
             xanchor="center",
         ),
         xaxis_title="Spin-lock Rabi frequency (MHz)",
-        xaxis_type="log",
+        xaxis_type="linear",
         yaxis_title="Duration (ns)",
         yaxis_type="log",
         width=700,
@@ -793,7 +892,7 @@ def _make_spin_lock_relaxation_figure(
             xanchor="center",
         ),
         xaxis_title="Spin-lock Rabi frequency (MHz)",
-        xaxis_type="log",
+        xaxis_type="linear",
         yaxis_title="Relaxation time (μs)",
         yaxis_range=[0, yaxis_upper],
         width=700,
@@ -837,7 +936,8 @@ def _make_fit_summary(
 
 
 def _fit_data_without_figure(fit_result: Any) -> dict[str, Any]:
-    return {key: value for key, value in fit_result.data.items() if key != "fig"}
+    data = getattr(fit_result, "data", {})
+    return {key: value for key, value in dict(data).items() if key != "fig"}
 
 
 def _analyze_spin_lock_target(
@@ -887,7 +987,7 @@ def _analyze_spin_lock_target(
                 y=fit_population[frequency_index],
                 plot=False,
                 title="Spin-lock relaxation",
-                xlabel="Duration (μs)",
+                xlabel="Duration (ns)",
                 ylabel="Normalized signal",
                 xaxis_type="log",
                 yaxis_type="linear",
@@ -958,6 +1058,84 @@ def _analyze_spin_lock_target(
     )
 
 
+def _analyze_spin_lock_targets(
+    *,
+    targets: list[str],
+    sweep_result: Any,
+    durations: np.ndarray,
+    requested_rabi_frequency_range: np.ndarray,
+    rabi_frequency_map: ArrayMap,
+    effective_frequency_map: ArrayMap,
+    drive_frequency_map: ArrayMap,
+    qubit_frequency_map: ArrayMap,
+    initial_figures: FigureMap,
+) -> _SpinLockAnalysis:
+    raw_data: ArrayMap = {}
+    normalized_signal: ArrayMap = {}
+    population: ArrayMap = {}
+    relaxation_times: ArrayMap = {}
+    relaxation_time_errors: ArrayMap = {}
+    r2_values: ArrayMap = {}
+    fit_results: dict[str, list[dict[str, Any]]] = {}
+    rabi_sort_indices: ArrayMap = {}
+    figures: FigureMap = dict(initial_figures)
+
+    for target in targets:
+        analysis = _analyze_spin_lock_target(
+            target=target,
+            sweep_data=sweep_result.data[target],
+            durations=durations,
+            requested_rabi_frequency_range=requested_rabi_frequency_range,
+            rabi_frequency_range=rabi_frequency_map[target],
+            effective_frequency_range=effective_frequency_map[target],
+            drive_frequencies=drive_frequency_map[target],
+            qubit_frequencies=qubit_frequency_map[target],
+        )
+
+        raw_data[target] = analysis.raw_data
+        normalized_signal[target] = analysis.normalized_signal
+        population[target] = analysis.population
+        relaxation_times[target] = analysis.relaxation_times
+        relaxation_time_errors[target] = analysis.relaxation_time_errors
+        r2_values[target] = analysis.r2
+        fit_results[target] = analysis.fit_results
+        rabi_sort_indices[target] = analysis.sort_indices
+        figures.update(analysis.figures)
+
+    return _SpinLockAnalysis(
+        raw_data=raw_data,
+        normalized_signal=normalized_signal,
+        population=population,
+        relaxation_times=relaxation_times,
+        relaxation_time_errors=relaxation_time_errors,
+        r2=r2_values,
+        fit_results=fit_results,
+        rabi_sort_indices=rabi_sort_indices,
+        figures=figures,
+    )
+
+
+def _show_or_save_spin_lock_figures(
+    *,
+    targets: list[str],
+    figures: FigureMap,
+    plot: bool,
+    save_image: bool,
+) -> None:
+    for target in targets:
+        heatmap = figures[f"{target}_heatmap"]
+        relaxation = figures[f"{target}_relaxation"]
+
+        if plot:
+            heatmap.show(config=viz.get_config(filename=f"spin_lock_heatmap_{target}"))
+            relaxation.show(
+                config=viz.get_config(filename=f"spin_lock_relaxation_{target}")
+            )
+        if save_image:
+            viz.save_figure(heatmap, name=f"spin_lock_heatmap_{target}")
+            viz.save_figure(relaxation, name=f"spin_lock_relaxation_{target}")
+
+
 def _measure_spin_lock_grid(
     exp: Experiment,
     *,
@@ -1016,6 +1194,7 @@ def spin_lock_spectroscopy(
     *,
     spin_lock_frequency_range: ArrayLike | None = None,
     duration_range: ArrayLike | None = None,
+    chevron_results: ChevronMetadataMap | None = None,
     estimate_with_chevron: bool | None = None,
     chevron_n_shots: int | None = None,
     return_chevron_figures: bool | None = None,
@@ -1052,23 +1231,31 @@ def spin_lock_spectroscopy(
         are measured.
     spin_lock_frequency_range
         Spin-lock frequencies in GHz. These values are treated as desired Rabi
-        rates. If omitted, ``np.geomspace(0.01, 0.15, 16)`` is used, i.e.
-        10 MHz to 150 MHz.
+        rates. If omitted,
+        ``0.01 + 0.11 * tan(pi / 3 * linspace(0, 1, 12)) / sqrt(3)`` is used,
+        i.e. 10 MHz to 120 MHz with denser points at low frequencies.
     duration_range
         Spin-lock drive durations in ns. Values must be positive because the
         heatmap and fit figures use a log time axis. The range is discretized to
         ``exp.ctx.measurement.sampling_period``. If omitted,
         ``np.geomspace(100, 200e3, 31)`` is used.
+    chevron_results
+        Previously returned ``Result.data["chevron_results"]``. When supplied,
+        these values are reused and chevron pre-measurements are skipped. The
+        entries must match the requested spin-lock frequency range and
+        calculated drive amplitudes for the current targets.
     estimate_with_chevron
         Whether to run ``estimate_qubit_frequency_from_chevron()`` before the
         spin-lock sweep for each requested spin-lock frequency. When ``True``,
         the spin-lock pulse frequency is shifted to the AC-Stark-shifted qubit
         frequency estimated by chevron, and the figure x-axes use the measured
         Rabi frequencies from chevron. The chevron detuning half-width is scaled
-        from the expected Rabi rate and capped at 200 MHz.
+        from the expected Rabi rate and capped at 80% of the Nyquist frequency
+        implied by ``exp.ctx.measurement.sampling_period``. Defaults to
+        ``True``. Ignored when ``chevron_results`` is supplied.
     chevron_n_shots
         Number of shots for each pre-measurement chevron sweep point. Used only
-        when ``estimate_with_chevron=True`` and defaults to
+        when chevrons are measured in this call and defaults to
         ``max(1, n_shots // 4)``.
     return_chevron_figures
         Whether to include the intermediate chevron measurement and transform
@@ -1096,7 +1283,9 @@ def spin_lock_spectroscopy(
         Whether to save the heatmap and relaxation-time figures.
     enable_tqdm
         Whether to show progress bars inside ``sweep_parameter()``. Defaults to
-        ``False`` to match the measurement service default.
+        ``False`` to match the measurement service default. Chevron
+        pre-measurement progress is shown separately whenever chevrons are
+        measured.
 
     Returns
     -------
@@ -1108,16 +1297,15 @@ def spin_lock_spectroscopy(
             Requested spin-lock Rabi-frequency axis in GHz.
         ``measured_spin_lock_rabi_frequency_range``
             Per-target Rabi-frequency axis in GHz used for plotting and fit
-            metadata. This matches the requested axis unless
-            ``estimate_with_chevron=True``.
+            metadata. This matches the requested axis unless chevron
+            calibration is measured or supplied.
         ``spin_lock_qubit_frequencies``
             Per-target qubit frequencies in GHz used as the spin-lock frequency
             reference before adding ``drive_detuning``.
         ``spin_lock_drive_frequencies``
             Per-target microwave drive frequencies in GHz including
-            ``drive_detuning``. When ``estimate_with_chevron=True``, these are
-            AC-Stark-shifted qubit frequencies estimated by chevron plus
-            ``drive_detuning``.
+            ``drive_detuning``. With chevron calibration, these are
+            AC-Stark-shifted qubit frequencies plus ``drive_detuning``.
         ``spin_lock_frequency_offsets``
             Per-target detunings in GHz applied to the spin-lock pulse relative
             to the calibrated qubit frequencies.
@@ -1153,14 +1341,23 @@ def spin_lock_spectroscopy(
         ``fit_results``
             Per-frequency fit metadata and fit parameters.
         ``chevron_results``
-            Per-frequency chevron metadata. Empty unless
-            ``estimate_with_chevron=True``.
+            Per-frequency chevron metadata. Empty unless chevron calibration is
+            measured or supplied through ``chevron_results``.
+        ``chevron_source``
+            ``"measured"``, ``"provided"``, or ``"none"`` depending on how the
+            chevron calibration values were obtained.
+        ``use_chevron_calibration``
+            Whether chevron-derived qubit and Rabi frequencies were used for the
+            spin-lock sweep.
+        ``estimate_with_chevron``
+            Whether chevrons were measured in this call. ``False`` when
+            ``chevron_results`` was supplied and reused.
         ``return_chevron_figures``
             Whether intermediate chevron figures were included in
             ``Result.figures``.
         ``chevron_n_shots``
             Number of shots used for each chevron sweep point, or ``None`` when
-            ``estimate_with_chevron=False``.
+            chevrons were not measured in this call.
         ``spin_lock_rabi_sort_indices``
             Per-target indices used to sort measured Rabi frequencies for
             plotting. Measured arrays in the payload keep the acquisition order.
@@ -1172,20 +1369,23 @@ def spin_lock_spectroscopy(
     Notes
     -----
     - ``spin_lock_frequency_range`` is not a detuning sweep; it is the target
-      Rabi rate of the locking drive. With ``estimate_with_chevron=True``, the
-      figure x-axis uses the measured Rabi-rate axis from chevron; otherwise it
-      uses this requested Rabi-rate axis.
+      Rabi rate of the locking drive. With chevron calibration, either measured
+      in this call or supplied through ``chevron_results``, the figure x-axis
+      uses the measured Rabi-rate axis from chevron; otherwise it uses this
+      requested Rabi-rate axis.
     - The initial and final half-pi pulses are left at the calibrated qubit
       frequency. When the spin-lock drive is detuned from that frequency, the
       final half-pi pulse phase is shifted by
-      ``-2 * pi * drive_detuning * duration`` to follow the detuned drive frame.
+      ``-2 * pi * spin_lock_frequency_offset * duration`` to follow the
+      spin-lock drive frame, including AC-Stark-shifted frequency offsets when
+      chevron calibration is used.
     - The implementation raises an error if any calculated drive amplitude has
       absolute value larger than 1.
-    - If the active measurement constraint profile defines
-      ``awg_max_frequency_hz``, chevron pre-measurements and the final spin-lock
-      drive frequencies are checked against that AWG modulation limit using the
-      current NCO setting. For current QuEL-1-style strict timing profiles that
-      do not expose such a field, a local 250 MHz contrib fallback is used.
+    - Chevron detuning ranges are capped to stay within 80% of the Nyquist
+      frequency implied by the measurement sampling period.
+    - Spin-lock durations and chevron time steps are discretized on
+      ``exp.ctx.measurement.sampling_period``. Backend-specific word or block
+      alignment, if required, is left to the measurement stack.
     - The fitted relaxation uses ``0.5 * (1 + normalized_signal)`` and
       ``fitting.fit_exp_decay()``, matching the sign convention used by the T2
       echo analysis path.
@@ -1207,7 +1407,7 @@ def spin_lock_spectroscopy(
     plot = _resolve_bool(plot, default=True)
     save_image = _resolve_bool(save_image, default=False)
     enable_tqdm = _resolve_bool(enable_tqdm, default=False)
-    estimate_with_chevron = _resolve_bool(estimate_with_chevron, default=False)
+    estimate_with_chevron = _resolve_bool(estimate_with_chevron, default=True)
     return_chevron_figures = _resolve_bool(return_chevron_figures, default=False)
 
     exp.pulse.validate_rabi_params(target_list)
@@ -1226,48 +1426,24 @@ def spin_lock_spectroscopy(
         spin_lock_frequency_range=requested_rabi_frequency_range,
     )
     base_frequencies = _target_base_frequencies(exp, target_list)
-    chevron_results: ChevronMetadataMap = {target: [] for target in target_list}
-    chevron_figures: FigureMap = {}
-    chevron_n_shots_value: int | None = None
-    if estimate_with_chevron:
-        chevron_n_shots_value = _resolve_positive_integer(
-            chevron_n_shots,
-            name="chevron_n_shots",
-            default=max(1, n_shots // 4),
-        )
-        (
-            qubit_frequency_map,
-            measured_rabi_frequency_map,
-            chevron_results,
-            chevron_figures,
-        ) = _estimate_spin_lock_parameters_with_chevron(
-            exp,
-            targets=target_list,
-            requested_rabi_frequency_range=requested_rabi_frequency_range,
-            amplitude_map=amplitude_map,
-            chevron_n_shots=chevron_n_shots_value,
-            shot_interval=shot_interval,
-            return_chevron_figures=return_chevron_figures,
-        )
-    else:
-        qubit_frequency_map = _constant_frequency_map(
-            targets=target_list,
-            values=base_frequencies,
-            shape=requested_rabi_frequency_range.shape,
-        )
-        measured_rabi_frequency_map = {
-            target: requested_rabi_frequency_range.copy() for target in target_list
-        }
-    drive_frequency_map = {
-        target: qubit_frequency_map[target] + drive_detuning_value
-        for target in target_list
-    }
-    _validate_awg_frequency_ranges(
+    calibration = _resolve_spin_lock_calibration(
         exp,
         targets=target_list,
-        drive_frequency_ranges=drive_frequency_map,
-        description="Spin-lock drive frequencies",
+        requested_rabi_frequency_range=requested_rabi_frequency_range,
+        amplitude_map=amplitude_map,
+        base_frequencies=base_frequencies,
+        estimate_with_chevron=estimate_with_chevron,
+        chevron_results=chevron_results,
+        chevron_n_shots=chevron_n_shots,
+        n_shots=n_shots,
+        shot_interval=shot_interval,
+        return_chevron_figures=return_chevron_figures,
     )
+
+    drive_frequency_map = {
+        target: calibration.qubit_frequency_map[target] + drive_detuning_value
+        for target in target_list
+    }
     frequency_offset_map = {
         target: drive_frequency_map[target] - base_frequencies[target]
         for target in target_list
@@ -1282,7 +1458,7 @@ def spin_lock_spectroscopy(
         final_phase=final_phase,
     )
     effective_measured_frequency_map = _effective_frequency_map(
-        rabi_frequency_map=measured_rabi_frequency_map,
+        rabi_frequency_map=calibration.rabi_frequency_map,
         drive_detuning=drive_detuning_value,
     )
 
@@ -1301,76 +1477,53 @@ def spin_lock_spectroscopy(
         enable_tqdm=enable_tqdm,
     )
 
-    normalized_signal: ArrayMap = {}
-    population: ArrayMap = {}
-    raw_data: ArrayMap = {}
-    relaxation_times: ArrayMap = {}
-    relaxation_time_errors: ArrayMap = {}
-    r2_values: ArrayMap = {}
-    fit_results: dict[str, list[dict[str, Any]]] = {}
-    rabi_sort_indices: ArrayMap = {}
-    figures: FigureMap = dict(chevron_figures)
+    analysis = _analyze_spin_lock_targets(
+        targets=target_list,
+        sweep_result=sweep_result,
+        durations=durations,
+        requested_rabi_frequency_range=requested_rabi_frequency_range,
+        rabi_frequency_map=calibration.rabi_frequency_map,
+        effective_frequency_map=effective_measured_frequency_map,
+        drive_frequency_map=drive_frequency_map,
+        qubit_frequency_map=calibration.qubit_frequency_map,
+        initial_figures=calibration.chevron_figures,
+    )
+    _show_or_save_spin_lock_figures(
+        targets=target_list,
+        figures=analysis.figures,
+        plot=plot,
+        save_image=save_image,
+    )
 
-    for target in target_list:
-        analysis = _analyze_spin_lock_target(
-            target=target,
-            sweep_data=sweep_result.data[target],
-            durations=durations,
-            requested_rabi_frequency_range=requested_rabi_frequency_range,
-            rabi_frequency_range=measured_rabi_frequency_map[target],
-            effective_frequency_range=effective_measured_frequency_map[target],
-            drive_frequencies=drive_frequency_map[target],
-            qubit_frequencies=qubit_frequency_map[target],
-        )
-
-        raw_data[target] = analysis.raw_data
-        normalized_signal[target] = analysis.normalized_signal
-        population[target] = analysis.population
-        relaxation_times[target] = analysis.relaxation_times
-        relaxation_time_errors[target] = analysis.relaxation_time_errors
-        r2_values[target] = analysis.r2
-        fit_results[target] = analysis.fit_results
-        rabi_sort_indices[target] = analysis.sort_indices
-        figures.update(analysis.figures)
-        heatmap = figures[f"{target}_heatmap"]
-        relaxation = figures[f"{target}_relaxation"]
-
-        if plot:
-            heatmap.show(config=viz.get_config(filename=f"spin_lock_heatmap_{target}"))
-            relaxation.show(
-                config=viz.get_config(filename=f"spin_lock_relaxation_{target}")
-            )
-        if save_image:
-            viz.save_figure(heatmap, name=f"spin_lock_heatmap_{target}")
-            viz.save_figure(relaxation, name=f"spin_lock_relaxation_{target}")
-
-    primary_figure = figures.get(f"{target_list[0]}_relaxation")
+    primary_figure = analysis.figures.get(f"{target_list[0]}_relaxation")
     return Result(
         data={
             "targets": target_list,
             "requested_spin_lock_rabi_frequency_range": requested_rabi_frequency_range,
-            "measured_spin_lock_rabi_frequency_range": measured_rabi_frequency_map,
+            "measured_spin_lock_rabi_frequency_range": calibration.rabi_frequency_map,
             "effective_spin_lock_frequency_range": effective_measured_frequency_map,
-            "spin_lock_qubit_frequencies": qubit_frequency_map,
+            "spin_lock_qubit_frequencies": calibration.qubit_frequency_map,
             "spin_lock_drive_frequencies": drive_frequency_map,
             "spin_lock_frequency_offsets": frequency_offset_map,
             "final_projection_phase_corrections": final_projection_phase_corrections,
             "final_projection_phases": final_projection_phases,
             "duration_range": durations,
             "drive_amplitudes": amplitude_map,
-            "estimate_with_chevron": estimate_with_chevron,
-            "chevron_n_shots": chevron_n_shots_value,
+            "use_chevron_calibration": calibration.chevron_source != "none",
+            "estimate_with_chevron": calibration.chevron_source == "measured",
+            "chevron_n_shots": calibration.chevron_n_shots,
             "return_chevron_figures": return_chevron_figures,
-            "chevron_results": chevron_results,
-            "spin_lock_rabi_sort_indices": rabi_sort_indices,
-            "raw_data": raw_data,
-            "normalized_signal": normalized_signal,
-            "population": population,
-            "relaxation_times": relaxation_times,
-            "relaxation_time_errors": relaxation_time_errors,
-            "r2": r2_values,
-            "fit_results": fit_results,
+            "chevron_source": calibration.chevron_source,
+            "chevron_results": calibration.chevron_results,
+            "spin_lock_rabi_sort_indices": analysis.rabi_sort_indices,
+            "raw_data": analysis.raw_data,
+            "normalized_signal": analysis.normalized_signal,
+            "population": analysis.population,
+            "relaxation_times": analysis.relaxation_times,
+            "relaxation_time_errors": analysis.relaxation_time_errors,
+            "r2": analysis.r2,
+            "fit_results": analysis.fit_results,
         },
         figure=primary_figure,
-        figures=figures,
+        figures=analysis.figures,
     )
