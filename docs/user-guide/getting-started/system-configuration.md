@@ -159,6 +159,10 @@ calibrated per-mux value: `idle_voltage` in `jpa_params.yaml`, falling back
 to `reset_voltage` for uncalibrated muxes. A DC voltage context holds one
 device connection across its voltage applications, sweeps, and readbacks,
 then ramps back to the idle voltage and closes the connection on exit.
+The direct `ons61797` driver owns the instrument connection exclusively for
+that context. Do not open another context or process for a different channel
+on the same instrument concurrently. A future server-backed NF driver is the
+planned multi-client path.
 
 To control a Qblox SPI Rack through a server process that owns its USB
 connection, use the `qblox_server` driver. Qubex connects to that server as a
@@ -234,6 +238,8 @@ on, `bias_dc_voltages()` ramps calibrated muxes to their bias voltages,
 each
 takes an optional `muxes` selection (indices or labels; all wired muxes when
 omitted), and all writes prompt for confirmation, like a box push.
+An empty selection or a declined confirmation returns `{}` without opening a
+device connection.
 
 To bias every wired mux with a calibrated `bias_voltage` outside a temporary
 context, use the bulk operation.

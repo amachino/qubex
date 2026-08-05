@@ -133,6 +133,10 @@ settings:
 
 アイドル電圧 (DC bias を使用していない間、各出力を保持する電圧) は較正値で、`jpa_params.yaml` の `idle_voltage` に置きます (未較正の mux は `reset_voltage` へフォールバック)。DC 電圧 context は電圧印加・sweep・readbackの間に1つのデバイス接続を保持し、終了時に必ずアイドル電圧まで ramp してから接続を閉じます。出力スイッチは電圧印加時に暗黙には切り替わらず、`reset_dc_voltages()` と `shutdown_dc_voltages()` で明示的に管理します。
 
+直接接続の `ons61797` driverはcontextの間、装置接続を排他的に所有します。
+同じ装置の別channelを別contextや別processから同時に開かないでください。
+複数clientでの利用は、将来追加するNF向けserver driverで対応する予定です。
+
 Qblox SPI Rackを、USB接続を所有するserver processを経由して制御する場合は、
 `qblox_server` driverを使用します。QubexはこのserverへTCP clientとして
 接続します。serial deviceを開くprocessを一つに保てるため、複数のシステムが
@@ -178,6 +182,8 @@ with experiment.external_devices.dc_voltage(mux=6) as dc:
 ```
 
 電圧印加は出力が ON であることが前提で、OFF なら暗黙に ON 化せずエラーになります。`reset_dc_voltages()` は選択した mux を「出力 ON・リセット電圧」の既知状態に揃えます。保守・チップ交換・安全停止時に使う `shutdown_dc_voltages()` はリセット電圧まで ramp して、対応機器では物理出力を OFF にします。通常の実験contextはshutdownせずidleへ戻ります。`get_dc_voltage_states()` は配線済み全 mux を 1 接続でまとめて読み、`bias_dc_voltages()` は較正済み mux を bias 電圧へ、`idle_dc_voltages()` はアイドル電圧へ ramp します。box 系 API と同じく任意の `muxes` 引数 (index またはラベル、省略時は配線済み全 mux) で対象を絞れます。いずれも書き込み操作なので、box への push と同様に実行前へ確認プロンプトが出ます。
+
+選択が空、または確認を拒否した場合は、装置へ接続せず `{}` を返します。
 
 一時的な context を使わず、較正済みの配線済み全 mux を bias 電圧へ設定する場合は一括操作を使います。
 

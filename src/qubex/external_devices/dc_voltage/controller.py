@@ -270,14 +270,23 @@ class DCVoltageController:
         The device connection is open only while voltages are being changed;
         no connection is held while the caller's block runs.
         """
+        profiles = {channel: profile for channel, (_, profile) in requests.items()}
         try:
             self.apply_channels(requests)
             yield
-        finally:
-            if requests:
-                self.idle_channels(
-                    {channel: profile for channel, (_, profile) in requests.items()}
+        except BaseException:
+            try:
+                if profiles:
+                    self.idle_channels(profiles)
+            except BaseException:
+                logger.exception(
+                    "Failed to return DC voltage outputs to idle while handling "
+                    "a measurement error."
                 )
+            raise
+        else:
+            if profiles:
+                self.idle_channels(profiles)
 
     def _apply_voltage(
         self,

@@ -446,6 +446,30 @@ def test_get_dc_voltage_states_reads_all_wired_muxes_on_one_call() -> None:
     assert dc_controller.calls == [("read_channels", (7, 8))]
 
 
+def test_get_dc_voltage_states_skips_wired_muxes_absent_from_active_system() -> None:
+    """Bulk state readback should skip muxes excluded from the active system."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+    del ctx.system_manager.experiment_system.muxes["MUX07"]
+
+    states = ctx.get_dc_voltage_states()
+
+    assert sorted(states) == [6]
+    assert dc_controller.calls == [("read_channels", (7,))]
+
+
+@pytest.mark.parametrize("operation", ["bias_dc_voltages", "idle_dc_voltages"])
+def test_empty_bulk_selection_returns_without_connecting(operation: str) -> None:
+    """An empty bulk selection should return without opening a device connection."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
+
+    states = getattr(ctx, operation)(muxes=[], confirm=False)
+
+    assert states == {}
+    assert dc_controller.calls == []
+
+
 def test_idle_dc_voltages_idles_all_wired_muxes() -> None:
     """Bulk idling should ramp every wired mux and return the new states."""
     dc_controller = _DCVoltageController()
@@ -502,8 +526,8 @@ def test_bias_dc_voltages_can_be_cancelled_at_the_prompt(
 
     states = ctx.bias_dc_voltages()
 
-    assert all(call[0] != "apply_channels" for call in dc_controller.calls)
-    assert states[6].voltage == pytest.approx(0.0)
+    assert states == {}
+    assert dc_controller.calls == []
 
 
 def test_reset_dc_voltages_brings_every_wired_mux_to_initial_state() -> None:
@@ -554,8 +578,8 @@ def test_shutdown_can_be_cancelled_at_the_prompt(
     states = ctx.shutdown_dc_voltages()
 
     assert dc_controller.output_states[7] is True
-    assert states[6].output == "on"
-    assert all(call[0] != "turn_off_channels" for call in dc_controller.calls)
+    assert states == {}
+    assert dc_controller.calls == []
 
 
 def test_bulk_operations_accept_a_mux_selection() -> None:

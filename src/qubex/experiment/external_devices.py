@@ -84,7 +84,8 @@ class ExternalDevices:
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states keyed by mux index after resetting.
+            Readback states keyed by mux index after resetting, or an empty
+            mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.reset_dc_voltages(muxes=muxes, confirm=confirm)
 
@@ -111,7 +112,8 @@ class ExternalDevices:
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states keyed by mux index after biasing.
+            Readback states keyed by mux index after biasing, or an empty
+            mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.bias_dc_voltages(muxes=muxes, confirm=confirm)
 
@@ -133,7 +135,8 @@ class ExternalDevices:
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states keyed by mux index after idling.
+            Readback states keyed by mux index after idling, or an empty
+            mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.idle_dc_voltages(muxes=muxes, confirm=confirm)
 
@@ -155,6 +158,7 @@ class ExternalDevices:
         Returns
         -------
         dict[int, DCVoltageState]
-            Readback states for every wired mux after shutdown.
+            Readback states for every wired mux after shutdown, or an empty
+            mapping when the selection is empty or confirmation is declined.
         """
         return self._ctx.shutdown_dc_voltages(muxes=muxes, confirm=confirm)

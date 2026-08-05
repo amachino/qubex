@@ -68,7 +68,11 @@ class ONS61797Device:
     ) -> None:
         """Create an ONS61797 client using serial or network transport."""
         self._client = client_factory(port=port, ip_address=ip_address)
-        output_mode = self._client.get_output_mode()
+        try:
+            output_mode = self._client.get_output_mode()
+        except BaseException:
+            self._client.close()
+            raise
         if output_mode != 0:
             self._client.close()
             raise RuntimeError(

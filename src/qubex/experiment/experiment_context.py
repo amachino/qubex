@@ -1222,6 +1222,18 @@ class ExperimentContext:
         channel = self.system_manager.resolve_dc_voltage_channel(resolved_mux.index)
         return resolved_mux, channel
 
+    def _get_active_dc_mux(self, mux_index: int) -> Mux | None:
+        """Return a wired mux only when it exists in the active system."""
+        try:
+            return self.experiment_system.get_mux(mux_index)
+        except (KeyError, ValueError):
+            logger.info(
+                "Skipping DC voltage wiring for mux %d because it is absent "
+                "from the active experiment system.",
+                mux_index,
+            )
+            return None
+
     def get_dc_voltage_state(
         self,
         *,
@@ -1242,9 +1254,14 @@ class ExperimentContext:
     def get_dc_voltage_states(self) -> dict[int, DCVoltageState]:
         """Return readback states for every wired mux on one connection."""
         system_manager = self.system_manager
+        active_muxes = {
+            mux_index: mux
+            for mux_index in system_manager.dc_voltage_mux_indices()
+            if (mux := self._get_active_dc_mux(mux_index)) is not None
+        }
         channels = {
             mux_index: system_manager.resolve_dc_voltage_channel(mux_index)
-            for mux_index in system_manager.dc_voltage_mux_indices()
+            for mux_index in active_muxes
         }
         readings = system_manager.dc_voltage_controller.read_channels(
             list(channels.values())
@@ -1253,7 +1270,7 @@ class ExperimentContext:
         for mux_index, channel in channels.items():
             voltage, is_on = readings[channel]
             states[mux_index] = DCVoltageState(
-                mux_label=self.experiment_system.get_mux(mux_index).label,
+                mux_label=active_muxes[mux_index].label,
                 mux_index=mux_index,
                 channel=channel,
                 voltage=voltage,
@@ -1294,7 +1311,7 @@ class ExperimentContext:
             plan,
             confirm=confirm,
         ):
-            return self.get_dc_voltage_states()
+            return {}
         system_manager.dc_voltage_controller.reset_channels(
             {profile.channel: profile for profile in profiles.values()}
         )
@@ -1318,14 +1335,15 @@ class ExperimentContext:
             voltage = control_params.get_bias_voltage(mux_index)
             requests[profile.channel] = (voltage, profile)
             plan[mux_index] = voltage
-        if requests and not self._confirm_dc_voltage_write(
+        if not requests:
+            return {}
+        if not self._confirm_dc_voltage_write(
             "ramp to the amplification-point DC voltages",
             plan,
             confirm=confirm,
         ):
-            return self.get_dc_voltage_states()
-        if requests:
-            system_manager.dc_voltage_controller.apply_channels(requests)
+            return {}
+        system_manager.dc_voltage_controller.apply_channels(requests)
         return self.get_dc_voltage_states()
 
     def idle_dc_voltages(
@@ -1341,14 +1359,15 @@ class ExperimentContext:
             profile = system_manager.resolve_dc_voltage_profile(mux_index)
             profiles[profile.channel] = profile
             plan[mux_index] = profile.idle_voltage_v
-        if profiles and not self._confirm_dc_voltage_write(
+        if not profiles:
+            return {}
+        if not self._confirm_dc_voltage_write(
             "ramp to the idle DC voltages",
             plan,
             confirm=confirm,
         ):
-            return self.get_dc_voltage_states()
-        if profiles:
-            system_manager.dc_voltage_controller.idle_channels(profiles)
+            return {}
+        system_manager.dc_voltage_controller.idle_channels(profiles)
         return self.get_dc_voltage_states()
 
     def shutdown_dc_voltages(
@@ -1373,7 +1392,7 @@ class ExperimentContext:
             plan,
             confirm=confirm,
         ):
-            return self.get_dc_voltage_states()
+            return {}
         system_manager.dc_voltage_controller.turn_off_channels(
             {profile.channel: profile for profile in profiles.values()}
         )

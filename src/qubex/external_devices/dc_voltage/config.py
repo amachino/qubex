@@ -118,6 +118,7 @@ class DCVoltageControllerConfig:
         default_factory=lambda: DCVoltageProfile(channel=1)
     )
     muxes: dict[int, DCVoltageProfileOverride] = field(default_factory=dict)
+    role: str = "bias"
 
     def resolve_voltage_profile(self, mux_index: int) -> DCVoltageProfile:
         """Resolve the explicitly configured voltage-control profile for one mux."""
@@ -225,6 +226,7 @@ class DCVoltageControllerConfig:
         device = devices[device_id]
         return cls(
             driver=device.driver,
+            role=role,
             params=dict(device.params),
             device_id=device_id,
             channels=device.channels,
@@ -356,6 +358,12 @@ class ExternalDevicesConfig:
             devices=devices,
             wiring=wiring,
         )
+        unused_roles = sorted(set(wiring) - {dc_voltage.role})
+        if unused_roles:
+            raise ValueError(
+                f"Unused DC voltage wiring roles: {unused_roles}. The configured "
+                f"controller uses role {dc_voltage.role!r}."
+            )
         return cls(
             devices=devices,
             wiring=wiring,

@@ -214,6 +214,32 @@ def test_device_sends_existing_native_sweep_protocol() -> None:
     ]
 
 
+def test_device_reuses_one_socket_for_ramps_and_readbacks() -> None:
+    """Sequential ramps and readbacks should reuse the device socket."""
+    fake_socket = _FakeSocket(
+        [
+            b"\x00",
+            b"\x00" + struct.pack("<d", 0.2),
+            b"\x00",
+            b"\x00" + struct.pack("<d", 0.0),
+        ]
+    )
+    device = QbloxServerDevice(
+        host="server",
+        port=12345,
+        channels={2: "Qblox-A-2"},
+        socket_factory=_socket_factory(fake_socket),
+    )
+
+    device.ramp_voltage(2, 0.0, 0.2, 0.1, 0.01, 0.1)
+    assert device.get_voltage(2) == pytest.approx(0.2)
+    device.ramp_voltage(2, 0.2, 0.0, 0.1, 0.01, 0.1)
+    assert device.get_voltage(2) == pytest.approx(0.0)
+
+    assert len(fake_socket.sent) == 4
+    assert not fake_socket.closed
+
+
 def test_device_rejects_backend_error_status() -> None:
     """A nonzero backend status should raise an operation error."""
     device = QbloxServerDevice(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import partial
 from typing import Any, ClassVar
 
@@ -96,12 +97,13 @@ class _FakeONS61797Client:
         self.output_states: dict[int, int] = {}
         self.voltages: dict[int, float] = {}
         self.output_mode = 0
+        self.closed = False
 
     def get_output_mode(self) -> int:
         return self.output_mode
 
     def close(self) -> None:
-        pass
+        self.closed = True
 
     def on(self, channel: int) -> None:
         self.output_states[channel] = 1
@@ -398,6 +400,22 @@ def test_top_level_and_wiring_reject_unknown_keys() -> None:
         )
 
 
+def test_wiring_rejects_roles_unused_by_controller_settings() -> None:
+    """Wiring roles unused by controller settings should fail as config mistakes."""
+    with pytest.raises(ValueError, match=r"Unused DC voltage wiring roles.*bais"):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {
+                    "ONS1": {"driver": "ons61797", "channels": [1, 2]},
+                },
+                "wiring": [
+                    {"mux": 0, "bias": "ONS1-1", "bais": "ONS1-2"},
+                ],
+                "settings": {"role": "bias"},
+            }
+        )
+
+
 def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -430,6 +448,53 @@ def test_apply_voltages_ramps_each_channel_and_returns_to_idle(
     assert delays == [0.1] * 6
     assert len(_FakeDCVoltageDevice.instances) == 2
     assert all(device.closed for device in _FakeDCVoltageDevice.instances)
+
+
+def test_apply_voltages_preserves_body_error_when_idle_also_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A measurement error should remain primary when idle cleanup also fails."""
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(channel=1)
+    monkeypatch.setattr(controller, "apply_channels", lambda _: None)
+
+    def fail_idle(_: object) -> None:
+        raise RuntimeError("idle failed")
+
+    monkeypatch.setattr(controller, "idle_channels", fail_idle)
+
+    with (
+        caplog.at_level(logging.ERROR),
+        pytest.raises(RuntimeError, match="measurement failed"),
+        controller.apply_voltages({1: (0.1, profile)}),
+    ):
+        raise RuntimeError("measurement failed")
+
+    assert "Failed to return DC voltage outputs to idle" in caplog.text
+
+
+def test_apply_voltages_attempts_idle_after_partial_apply_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed multi-channel apply should still attempt idle cleanup."""
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(channel=1)
+    idle_calls: list[object] = []
+
+    def fail_apply(_: object) -> None:
+        raise RuntimeError("apply failed")
+
+    monkeypatch.setattr(controller, "apply_channels", fail_apply)
+    monkeypatch.setattr(controller, "idle_channels", idle_calls.append)
+
+    with (
+        pytest.raises(RuntimeError, match="apply failed"),
+        controller.apply_voltages({1: (0.1, profile)}),
+    ):
+        pass
+
+    assert idle_calls == [{1: profile}]
 
 
 def test_apply_voltage_ramps_with_one_device_connection(
@@ -914,6 +979,24 @@ def test_ons61797_requires_independent_output_mode() -> None:
             port="/dev/fake",
             client_factory=lambda **_: client,
         )
+
+
+def test_ons61797_closes_client_when_output_mode_query_fails() -> None:
+    """A failed output-mode query should close the newly opened client."""
+
+    class _FailingClient(_FakeONS61797Client):
+        def get_output_mode(self) -> int:
+            raise TimeoutError("OMD query timed out")
+
+    client = _FailingClient()
+
+    with pytest.raises(TimeoutError, match="OMD query timed out"):
+        ONS61797Device(
+            port="/dev/fake",
+            client_factory=lambda **_: client,
+        )
+
+    assert client.closed
 
 
 @pytest.mark.parametrize("channel", [0, 17])
