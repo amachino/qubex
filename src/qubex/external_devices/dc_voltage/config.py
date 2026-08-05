@@ -370,8 +370,16 @@ def _parse_voltage_profile(
     base: DCVoltageProfile | None,
 ) -> DCVoltageProfile:
     """Parse one complete voltage profile with optional inherited values."""
-    ramp = _nested_mapping(values, "ramp")
-    readback = _nested_mapping(values, "readback")
+    ramp = _nested_mapping(
+        values,
+        "ramp",
+        allowed_keys={"rate_v_per_s", "step_size_v", "wait_s"},
+    )
+    readback = _nested_mapping(
+        values,
+        "readback",
+        allowed_keys={"tolerance_v", "max_attempts"},
+    )
     profile = DCVoltageProfile(
         channel=channel,
         ramp_rate_v_per_s=_float_value(
@@ -413,11 +421,16 @@ def _parse_voltage_profile(
 def _nested_mapping(
     values: Mapping[object, object],
     key: str,
+    *,
+    allowed_keys: set[str],
 ) -> Mapping[object, object]:
-    """Return one optional nested config mapping."""
+    """Return one optional nested config mapping with known keys only."""
     value = values.get(key, {})
     if not isinstance(value, Mapping):
         raise TypeError(f"`{key}` must be a mapping.")
+    unknown = set(value) - allowed_keys
+    if unknown:
+        raise ValueError(f"Unknown `{key}` settings: {sorted(unknown)}.")
     return value
 
 

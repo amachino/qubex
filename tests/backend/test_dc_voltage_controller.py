@@ -285,6 +285,36 @@ def test_settings_reject_unknown_keys() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("settings", "match"),
+    [
+        ({"ramp": {"rate_v_per_sec": 0.1}}, "Unknown `ramp` settings"),
+        ({"readback": {"attempts": 3}}, "Unknown `readback` settings"),
+        (
+            {"overrides": [{"mux": 0, "ramp": {"step_size": 0.01}}]},
+            "Unknown `ramp` settings",
+        ),
+        (
+            {"overrides": [{"mux": 0, "readback": {"tolerance": 1e-3}}]},
+            "Unknown `readback` settings",
+        ),
+    ],
+)
+def test_settings_reject_unknown_nested_keys(
+    settings: dict[str, object],
+    match: str,
+) -> None:
+    """Unknown ramp and readback keys should fail at parse time."""
+    with pytest.raises(ValueError, match=match):
+        ExternalDevicesConfig.from_dict(
+            {
+                "devices": {"ONS1": {"driver": "ons61797"}},
+                "wiring": [{"mux": 0, "bias": "ONS1-1"}],
+                "settings": settings,
+            }
+        )
+
+
 def test_mux_output_rejects_unknown_device() -> None:
     """An output referencing an undefined device should fail at parse time."""
     with pytest.raises(ValueError, match="unknown device 'QBLOX1'"):
