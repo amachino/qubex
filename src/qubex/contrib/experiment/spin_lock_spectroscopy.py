@@ -22,9 +22,10 @@ from qubex.pulse import PulseSchedule, Rect
 
 __all__ = ["spin_lock_sequence", "spin_lock_spectroscopy"]
 
-DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = np.geomspace(0.01, 0.2, 16)
+DEFAULT_SPIN_LOCK_FREQUENCY_RANGE = np.geomspace(0.01, 0.15, 16)
 DEFAULT_DURATION_RANGE = np.geomspace(100, 200e3, 31)
 DEFAULT_DRIVE_PHASE = 0.0
+FINAL_PROJECTION_PHASE_CORRECTION_SIGN = -1.0
 CHEVRON_REFERENCE_RABI_FREQUENCY = 0.0125
 CHEVRON_REFERENCE_DETUNING_HALF_WIDTH = 0.05
 CHEVRON_MAX_DETUNING_HALF_WIDTH = 0.2
@@ -95,8 +96,10 @@ def spin_lock_sequence(
         Optional phase for the initial half-pi pulse in radians. Defaults to
         ``drive_phase - pi/2``.
     final_phase
-        Optional phase for the final half-pi pulse in radians. Defaults to
-        ``drive_phase + pi/2``.
+        Optional base phase for the final half-pi pulse in radians. Defaults to
+        ``drive_phase + pi/2``. When ``drive_detuning`` is nonzero, the final
+        projection phase is adjusted by ``-2 * pi * drive_detuning * duration``
+        so the projection tracks the detuned spin-lock drive frame.
 
     Returns
     -------
@@ -500,6 +503,73 @@ def _effective_frequency_map(
     }
 
 
+def _final_projection_phase(
+    *,
+    final_phase: float,
+    drive_detuning: float | None,
+    duration: float,
+) -> float:
+    if drive_detuning is None:
+        return final_phase
+
+    phase_correction = _final_projection_phase_correction(
+        drive_detuning=float(drive_detuning),
+        duration=float(duration),
+    )
+    if not np.isfinite(phase_correction):
+        raise ValueError("final projection phase correction must be finite.")
+    return final_phase + phase_correction
+
+
+def _final_projection_phase_correction(
+    *,
+    drive_detuning: float,
+    duration: float,
+) -> float:
+    return (
+        FINAL_PROJECTION_PHASE_CORRECTION_SIGN * 2.0 * np.pi * drive_detuning * duration
+    )
+
+
+def _final_projection_phase_correction_grid(
+    *,
+    frequency_offsets: np.ndarray,
+    durations: np.ndarray,
+) -> np.ndarray:
+    return (
+        FINAL_PROJECTION_PHASE_CORRECTION_SIGN
+        * 2.0
+        * np.pi
+        * np.asarray(frequency_offsets, dtype=np.float64)[:, None]
+        * np.asarray(durations, dtype=np.float64)[None, :]
+    )
+
+
+def _final_projection_phase_maps(
+    *,
+    targets: list[str],
+    frequency_offset_map: ArrayMap,
+    durations: np.ndarray,
+    final_phase: float,
+) -> tuple[ArrayMap, ArrayMap]:
+    phase_corrections: ArrayMap = {}
+    final_phases: ArrayMap = {}
+
+    for target in targets:
+        correction = _final_projection_phase_correction_grid(
+            frequency_offsets=frequency_offset_map[target],
+            durations=durations,
+        )
+        if not np.all(np.isfinite(correction)):
+            raise ValueError(
+                f"Final projection phase corrections for `{target}` must be finite."
+            )
+        phase_corrections[target] = correction
+        final_phases[target] = final_phase + correction
+
+    return phase_corrections, final_phases
+
+
 def _estimate_spin_lock_parameters_with_chevron(
     exp: Experiment,
     *,
@@ -635,6 +705,12 @@ def _add_spin_lock_pulse(
 
     if drive_detuning is not None:
         spin_lock_drive = spin_lock_drive.detuned(drive_detuning)
+
+    final_phase = _final_projection_phase(
+        final_phase=final_phase,
+        drive_detuning=drive_detuning,
+        duration=duration,
+    )
 
     schedule.add(target, half_pi.shifted(initial_phase))
     schedule.add(target, spin_lock_drive)
@@ -976,8 +1052,8 @@ def spin_lock_spectroscopy(
         are measured.
     spin_lock_frequency_range
         Spin-lock frequencies in GHz. These values are treated as desired Rabi
-        rates. If omitted, ``np.geomspace(0.01, 0.2, 16)`` is used, i.e.
-        10 MHz to 200 MHz.
+        rates. If omitted, ``np.geomspace(0.01, 0.15, 16)`` is used, i.e.
+        10 MHz to 150 MHz.
     duration_range
         Spin-lock drive durations in ns. Values must be positive because the
         heatmap and fit figures use a log time axis. The range is discretized to
@@ -1007,7 +1083,9 @@ def spin_lock_spectroscopy(
         ``drive_phase - pi/2`` is used.
     final_phase
         Final half-pi pulse phase in radians. When omitted,
-        ``drive_phase + pi/2`` is used.
+        ``drive_phase + pi/2`` is used. The actual final projection phase is
+        additionally corrected by the accumulated detuned-drive phase for each
+        spin-lock duration.
     n_shots
         Number of shots per sweep point. Defaults to ``DEFAULT_SHOTS``.
     shot_interval
@@ -1040,6 +1118,16 @@ def spin_lock_spectroscopy(
             ``drive_detuning``. When ``estimate_with_chevron=True``, these are
             AC-Stark-shifted qubit frequencies estimated by chevron plus
             ``drive_detuning``.
+        ``spin_lock_frequency_offsets``
+            Per-target detunings in GHz applied to the spin-lock pulse relative
+            to the calibrated qubit frequencies.
+        ``final_projection_phase_corrections``
+            Per-target phase corrections in radians applied to the final
+            half-pi pulse, with shape
+            ``(len(requested_spin_lock_rabi_frequency_range), len(duration_range))``.
+        ``final_projection_phases``
+            Per-target final half-pi pulse phases in radians after applying
+            ``final_projection_phase_corrections``.
         ``effective_spin_lock_frequency_range``
             Per-target effective lock-frequency axis in GHz including
             ``drive_detuning``.
@@ -1087,6 +1175,10 @@ def spin_lock_spectroscopy(
       Rabi rate of the locking drive. With ``estimate_with_chevron=True``, the
       figure x-axis uses the measured Rabi-rate axis from chevron; otherwise it
       uses this requested Rabi-rate axis.
+    - The initial and final half-pi pulses are left at the calibrated qubit
+      frequency. When the spin-lock drive is detuned from that frequency, the
+      final half-pi pulse phase is shifted by
+      ``-2 * pi * drive_detuning * duration`` to follow the detuned drive frame.
     - The implementation raises an error if any calculated drive amplitude has
       absolute value larger than 1.
     - If the active measurement constraint profile defines
@@ -1180,6 +1272,15 @@ def spin_lock_spectroscopy(
         target: drive_frequency_map[target] - base_frequencies[target]
         for target in target_list
     }
+    (
+        final_projection_phase_corrections,
+        final_projection_phases,
+    ) = _final_projection_phase_maps(
+        targets=target_list,
+        frequency_offset_map=frequency_offset_map,
+        durations=durations,
+        final_phase=final_phase,
+    )
     effective_measured_frequency_map = _effective_frequency_map(
         rabi_frequency_map=measured_rabi_frequency_map,
         drive_detuning=drive_detuning_value,
@@ -1253,6 +1354,8 @@ def spin_lock_spectroscopy(
             "spin_lock_qubit_frequencies": qubit_frequency_map,
             "spin_lock_drive_frequencies": drive_frequency_map,
             "spin_lock_frequency_offsets": frequency_offset_map,
+            "final_projection_phase_corrections": final_projection_phase_corrections,
+            "final_projection_phases": final_projection_phases,
             "duration_range": durations,
             "drive_amplitudes": amplitude_map,
             "estimate_with_chevron": estimate_with_chevron,

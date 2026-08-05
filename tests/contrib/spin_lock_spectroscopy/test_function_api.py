@@ -17,6 +17,8 @@ from qubex.contrib.experiment import (
 )
 from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _analyze_spin_lock_target,
+    _final_projection_phase,
+    _final_projection_phase_maps,
     _frequency_sort_indices,
     _make_spin_lock_relaxation_figure,
     _resolve_awg_max_frequency,
@@ -74,12 +76,12 @@ def test_all_spin_lock_spectroscopy_functions_are_exported_from_experiment() -> 
     assert experiment_spin_lock_spectroscopy is spin_lock_spectroscopy
 
 
-def test_default_spin_lock_frequency_range_is_log_spaced_to_200_mhz() -> None:
-    """Given defaults, when inspected, then the Rabi-frequency range reaches 200 MHz."""
+def test_default_spin_lock_frequency_range_is_log_spaced_to_150_mhz() -> None:
+    """Given defaults, when inspected, then the Rabi-frequency range reaches 150 MHz."""
     frequency_range = spin_lock_module.DEFAULT_SPIN_LOCK_FREQUENCY_RANGE
 
     assert frequency_range[0] == pytest.approx(0.01)
-    assert frequency_range[-1] == pytest.approx(0.2)
+    assert frequency_range[-1] == pytest.approx(0.15)
     np.testing.assert_allclose(
         np.diff(np.log(frequency_range)),
         np.diff(np.log(frequency_range))[0],
@@ -341,6 +343,51 @@ def test_frequency_sort_indices_sorts_nonmonotonic_axis() -> None:
     indices = _frequency_sort_indices(frequency_range)
 
     np.testing.assert_allclose(frequency_range[indices], [0.01, 0.02, 0.03])
+
+
+def test_final_projection_phase_tracks_detuned_drive_frame() -> None:
+    """Given detuned spin-lock drive, then final projection tracks accumulated phase."""
+    final_phase = _final_projection_phase(
+        final_phase=np.pi / 2,
+        drive_detuning=0.001,
+        duration=100.0,
+    )
+
+    assert final_phase == pytest.approx(np.pi / 2 - 2.0 * np.pi * 0.001 * 100.0)
+
+
+def test_final_projection_phase_is_unchanged_without_detuning() -> None:
+    """Given no spin-lock detuning, then final projection phase is unchanged."""
+    final_phase = _final_projection_phase(
+        final_phase=np.pi / 2,
+        drive_detuning=None,
+        duration=100.0,
+    )
+
+    assert final_phase == pytest.approx(np.pi / 2)
+
+
+def test_final_projection_phase_maps_return_frequency_duration_grids() -> None:
+    """Given offsets and durations, then final projection metadata matches sweep grid."""
+    corrections, phases = _final_projection_phase_maps(
+        targets=["Q00"],
+        frequency_offset_map={"Q00": np.array([0.001, -0.002])},
+        durations=np.array([100.0, 200.0, 300.0]),
+        final_phase=np.pi / 2,
+    )
+
+    expected_corrections = (
+        -2.0
+        * np.pi
+        * np.array(
+            [
+                [0.001 * 100.0, 0.001 * 200.0, 0.001 * 300.0],
+                [-0.002 * 100.0, -0.002 * 200.0, -0.002 * 300.0],
+            ]
+        )
+    )
+    np.testing.assert_allclose(corrections["Q00"], expected_corrections)
+    np.testing.assert_allclose(phases["Q00"], np.pi / 2 + expected_corrections)
 
 
 def test_spin_lock_relaxation_figure_yaxis_starts_at_zero() -> None:
