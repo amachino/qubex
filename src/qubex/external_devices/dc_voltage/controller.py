@@ -165,6 +165,10 @@ class DCVoltageController:
                 ),
             )
 
+    def validate_voltage(self, voltage: float) -> None:
+        """Validate one target voltage without opening a device connection."""
+        self._validate_voltages((voltage,))
+
     def apply_voltage(
         self,
         *,

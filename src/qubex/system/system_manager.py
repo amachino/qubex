@@ -204,12 +204,12 @@ class SystemManager:
         """
         profile = self._dc_voltage_controller_config.resolve_voltage_profile(mux_index)
         control_params = getattr(self._experiment_system, "control_params", None)
-        if control_params is None:
-            return profile
-        idle_voltage = control_params.get_idle_voltage(mux_index)
-        if idle_voltage is None:
-            return profile
-        return replace(profile, idle_voltage_v=idle_voltage)
+        if control_params is not None:
+            idle_voltage = control_params.get_idle_voltage(mux_index)
+            if idle_voltage is not None:
+                profile = replace(profile, idle_voltage_v=idle_voltage)
+        self._dc_voltage_controller.validate_voltage(profile.idle_voltage_v)
+        return profile
 
     def set_backend_kind(self, backend_kind: BackendKind) -> None:
         """

@@ -1128,6 +1128,33 @@ def test_resolve_dc_voltage_profile_overlays_calibrated_idle_voltage(
 
     class _ControlParams:
         def get_idle_voltage(self, mux: int) -> float | None:
+            return {6: 0.05}.get(mux)
+
+    monkeypatch.setattr(
+        manager,
+        "_experiment_system",
+        SimpleNamespace(control_params=_ControlParams()),
+    )
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.05)
+
+    monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace())
+    # Without calibration data, the idle voltage falls back to the reset voltage.
+    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.1)
+
+
+def test_resolve_dc_voltage_profile_rejects_invalid_calibrated_idle_voltage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid calibrated idle voltage should fail before device access."""
+    manager = SystemManager.shared()
+    config = DCVoltageControllerConfig(
+        voltage_defaults=DCVoltageProfile(channel=1),
+        muxes={6: DCVoltageProfileOverride(channel=1)},
+    )
+    monkeypatch.setattr(manager, "_dc_voltage_controller_config", config)
+
+    class _ControlParams:
+        def get_idle_voltage(self, mux: int) -> float | None:
             return {6: -0.05}.get(mux)
 
     monkeypatch.setattr(
@@ -1135,11 +1162,9 @@ def test_resolve_dc_voltage_profile_overlays_calibrated_idle_voltage(
         "_experiment_system",
         SimpleNamespace(control_params=_ControlParams()),
     )
-    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(-0.05)
 
-    monkeypatch.setattr(manager, "_experiment_system", SimpleNamespace())
-    # Without calibration data, the idle voltage falls back to the reset voltage.
-    assert manager.resolve_dc_voltage_profile(6).idle_voltage_v == pytest.approx(0.1)
+    with pytest.raises(ValueError, match="ONS61797 voltage"):
+        manager.resolve_dc_voltage_profile(6)
 
 
 def test_load_creates_dc_voltage_controller_from_config_loader(
@@ -1178,7 +1203,7 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
         config: DCVoltageControllerConfig,
     ) -> object:
         created_configs.append(config)
-        return SimpleNamespace(config=config)
+        return SimpleNamespace(config=config, validate_voltage=lambda _: None)
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(

@@ -306,7 +306,7 @@ def test_dc_voltage_control_sweeps_states_and_idles_on_exit() -> None:
     assert dc_controller.output_states[7] is True
 
 
-def test_dc_voltage_control_applies_voltage_with_configured_ramp() -> None:
+def test_dc_voltage_control_applies_voltage_with_configured_profile() -> None:
     """Applying voltage should delegate the configured profile to the controller."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
@@ -324,18 +324,7 @@ def test_dc_voltage_control_applies_voltage_with_configured_ramp() -> None:
     assert isinstance(applied_profile, DCVoltageProfile)
     assert applied_profile.ramp_rate_v_per_s == pytest.approx(1.0)
     assert applied_profile.ramp_step_size_v == pytest.approx(0.1)
-
-
-def test_dc_voltage_control_ramps_to_idle_voltage_on_exit() -> None:
-    """Context exit should ramp back to the configured idle voltage."""
-    dc_controller = _DCVoltageController()
-    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
-
-    with ctx.dc_voltage_control() as dc:
-        dc.apply_voltage(0.25)
-
-    assert dc_controller.voltages[7] == pytest.approx(0.0)
-    assert dc_controller.calls[-1][0:2] == ("idle", 7)
+    assert applied_profile.readback_tolerance_v == pytest.approx(0.002)
 
 
 def test_dc_voltage_control_attempts_idle_even_when_the_ramp_fails() -> None:
@@ -409,23 +398,6 @@ def test_dc_voltage_control_sets_and_reads_bound_mux() -> None:
         assert state.is_on
 
     assert dc_controller.voltages[8] == pytest.approx(0.0)
-
-
-def test_dc_voltage_control_uses_configured_readback_tolerance() -> None:
-    """Voltage application should delegate the configured readback tolerance."""
-    dc_controller = _DCVoltageController()
-    ctx = _ContextForTest(mux_labels=["MUX06"], dc_controller=dc_controller)
-
-    with ctx.dc_voltage_control() as dc:
-        state = dc.apply_voltage(0.5)
-
-    assert state.voltage == pytest.approx(0.5)
-    call = next(
-        call for call in dc_controller.calls if call[0] == "apply_voltage_and_read"
-    )
-    applied_profile = call[3]
-    assert isinstance(applied_profile, DCVoltageProfile)
-    assert applied_profile.readback_tolerance_v == pytest.approx(0.002)
 
 
 def test_get_dc_voltage_states_reads_all_wired_muxes_on_one_call() -> None:
