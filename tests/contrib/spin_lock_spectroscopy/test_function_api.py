@@ -36,6 +36,7 @@ from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _resolve_spin_lock_calibration,
     _resolve_spin_lock_parameters_from_calibration,
     _scaled_chevron_ranges,
+    _validate_hpi_pulses,
 )
 
 spin_lock_module = importlib.import_module(
@@ -53,6 +54,51 @@ def test_all_spin_lock_spectroscopy_functions_are_exported_from_experiment() -> 
     """Given experiment package, when imported, then spin-lock helpers are available."""
     assert experiment_spin_lock_sequence is spin_lock_sequence
     assert experiment_spin_lock_spectroscopy is spin_lock_spectroscopy
+
+
+def test_spin_lock_spectroscopy_checks_hpi_pulse_before_measurement() -> None:
+    """Given unavailable half-pi pulse, then spectroscopy fails before calibration."""
+
+    class _Pulse:
+        def get_hpi_pulse(self, target: str) -> None:
+            raise ValueError(f"hpi pulse for {target} is unavailable.")
+
+        def validate_rabi_params(self, _targets: list[str]) -> None:
+            raise AssertionError("Rabi validation should not run after hpi failure.")
+
+    exp: Any = SimpleNamespace(pulse=_Pulse())
+
+    with pytest.raises(ValueError, match="hpi pulse"):
+        spin_lock_spectroscopy(
+            exp,
+            targets=["Q00"],
+            spin_lock_calibration={
+                "Q00": {
+                    "drive_amplitudes": np.array([0.0]),
+                    "qubit_frequencies": np.array([5.0]),
+                    "rabi_frequencies": np.array([0.0]),
+                }
+            },
+        )
+
+
+def test_validate_hpi_pulses_checks_each_target() -> None:
+    """Given multiple targets, then half-pi pulse availability is checked for all."""
+
+    class _Pulse:
+        def __init__(self) -> None:
+            self.targets: list[str] = []
+
+        def get_hpi_pulse(self, target: str) -> object:
+            self.targets.append(target)
+            return object()
+
+    pulse = _Pulse()
+    exp: Any = SimpleNamespace(pulse=pulse)
+
+    _validate_hpi_pulses(exp, ["Q00", "Q01"])
+
+    assert pulse.targets == ["Q00", "Q01"]
 
 
 def test_default_spin_lock_frequency_range_uses_tangent_spacing_to_120_mhz() -> None:
@@ -696,7 +742,7 @@ def test_analyze_spin_lock_target_returns_expected_shapes_and_figures(
     assert analysis.normalized_signal.shape == (3, 2)
     assert analysis.population.shape == (3, 2)
     np.testing.assert_allclose(analysis.relaxation_times, [1000.0, 1000.0])
-    assert {kwargs["xlabel"] for kwargs in fit_kwargs} == {"Duration (ns)"}
+    assert {kwargs["xlabel"] for kwargs in fit_kwargs} == {"Duration (μs)"}
     assert "Q00_heatmap" in analysis.figures
     assert "Q00_relaxation" in analysis.figures
     heatmap_figure: Any = analysis.figures["Q00_heatmap"]

@@ -191,6 +191,11 @@ def _normalize_targets(
     return list(targets)
 
 
+def _validate_hpi_pulses(exp: Experiment, targets: list[str]) -> None:
+    for target in targets:
+        exp.pulse.get_hpi_pulse(target)
+
+
 def _resolve_frequency_range(
     spin_lock_frequency_range: ArrayLike | None,
 ) -> np.ndarray:
@@ -1275,7 +1280,7 @@ def _analyze_spin_lock_target(
                 y=fit_population[frequency_index],
                 plot=False,
                 title="Spin-lock relaxation",
-                xlabel="Duration (ns)",
+                xlabel="Duration (μs)",
                 ylabel="Normalized signal",
                 xaxis_type="log",
                 yaxis_type="linear",
@@ -1687,6 +1692,7 @@ def spin_lock_spectroscopy(
     target_list = _normalize_targets(exp, targets)
     if len(target_list) == 0:
         raise ValueError("targets must contain at least one target.")
+    _validate_hpi_pulses(exp, target_list)
 
     n_shots = _resolve_positive_integer(
         n_shots,
