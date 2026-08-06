@@ -23,6 +23,7 @@ from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _final_projection_phase,
     _final_projection_phase_maps,
     _fit_data_without_figure,
+    _frequency_axis_from_calibration,
     _frequency_sort_indices,
     _make_spin_lock_heatmap_figure,
     _make_spin_lock_relaxation_figure,
@@ -33,7 +34,7 @@ from qubex.contrib.experiment.spin_lock_spectroscopy import (
     _resolve_nonnegative_finite_float,
     _resolve_positive_integer,
     _resolve_spin_lock_calibration,
-    _resolve_spin_lock_parameters_from_chevron_results,
+    _resolve_spin_lock_parameters_from_calibration,
     _scaled_chevron_ranges,
 )
 
@@ -230,61 +231,109 @@ def test_chevron_detuning_half_width_limit_uses_sampling_period_nyquist() -> Non
     assert _chevron_detuning_half_width_limit(exp) == pytest.approx(0.2)
 
 
-def test_resolve_spin_lock_parameters_reuses_supplied_chevron_results() -> None:
-    """Given previous chevron metadata, then measured axes are recovered from it."""
-    chevron_results = {
-        "Q00": [
-            {
-                "requested_rabi_frequency": 0.01,
-                "drive_amplitude": 0.1,
-                "qubit_frequency": 5.001,
-                "rabi_frequency": 0.011,
-            },
-            {
-                "requested_rabi_frequency": 0.02,
-                "drive_amplitude": 0.2,
-                "qubit_frequency": 5.004,
-                "rabi_frequency": 0.021,
-            },
-        ]
+def test_resolve_spin_lock_parameters_reuses_supplied_calibration() -> None:
+    """Given previous calibration data, then measured axes are recovered from it."""
+    spin_lock_calibration = {
+        "Q00": {
+            "requested_rabi_frequencies": np.array([0.01, 0.02]),
+            "drive_amplitudes": np.array([0.1, 0.2]),
+            "qubit_frequencies": np.array([5.001, 5.004]),
+            "rabi_frequencies": np.array([0.011, 0.021]),
+        }
     }
 
-    qubit_frequency_map, rabi_frequency_map, resolved_results = (
-        _resolve_spin_lock_parameters_from_chevron_results(
+    drive_amplitude_map, qubit_frequency_map, rabi_frequency_map, resolved = (
+        _resolve_spin_lock_parameters_from_calibration(
             targets=["Q00"],
             requested_rabi_frequency_range=np.array([0.01, 0.02]),
-            amplitude_map={"Q00": np.array([0.1, 0.2])},
-            chevron_results=chevron_results,
+            spin_lock_calibration=spin_lock_calibration,
+            base_frequencies={"Q00": 5.0},
+        )
+    )
+
+    np.testing.assert_allclose(drive_amplitude_map["Q00"], [0.1, 0.2])
+    np.testing.assert_allclose(qubit_frequency_map["Q00"], [5.001, 5.004])
+    np.testing.assert_allclose(rabi_frequency_map["Q00"], [0.011, 0.021])
+    np.testing.assert_allclose(resolved["Q00"]["ac_stark_shifts"], [0.001, 0.004])
+
+
+def test_resolve_spin_lock_parameters_accepts_ac_stark_shifts() -> None:
+    """Given AC Stark shifts, then qubit frequencies are reconstructed."""
+    spin_lock_calibration = {
+        "Q00": {
+            "drive_amplitudes": np.array([0.1, 0.2]),
+            "ac_stark_shifts": np.array([0.001, 0.004]),
+            "rabi_frequencies": np.array([0.011, 0.021]),
+        }
+    }
+
+    _, qubit_frequency_map, rabi_frequency_map, _ = (
+        _resolve_spin_lock_parameters_from_calibration(
+            targets=["Q00"],
+            requested_rabi_frequency_range=np.array([0.01, 0.02]),
+            spin_lock_calibration=spin_lock_calibration,
+            base_frequencies={"Q00": 5.0},
         )
     )
 
     np.testing.assert_allclose(qubit_frequency_map["Q00"], [5.001, 5.004])
     np.testing.assert_allclose(rabi_frequency_map["Q00"], [0.011, 0.021])
-    assert resolved_results == chevron_results
+
+
+def test_frequency_axis_from_calibration_prefers_requested_axis() -> None:
+    """Given calibration data, then the stored requested axis is reused if present."""
+    spin_lock_calibration = {
+        "Q00": {
+            "requested_rabi_frequencies": np.array([0.01, 0.02]),
+            "rabi_frequencies": np.array([0.011, 0.021]),
+        }
+    }
+
+    frequency_axis = _frequency_axis_from_calibration(
+        targets=["Q00"],
+        spin_lock_calibration=spin_lock_calibration,
+    )
+
+    np.testing.assert_allclose(frequency_axis, [0.01, 0.02])
+
+
+def test_frequency_axis_from_calibration_falls_back_to_rabi_axis() -> None:
+    """Given manual calibration data, then the Rabi axis can define the sweep."""
+    spin_lock_calibration = {
+        "Q00": {
+            "rabi_frequencies": np.array([0.011, 0.021]),
+        }
+    }
+
+    frequency_axis = _frequency_axis_from_calibration(
+        targets=["Q00"],
+        spin_lock_calibration=spin_lock_calibration,
+    )
+
+    np.testing.assert_allclose(frequency_axis, [0.011, 0.021])
 
 
 def test_resolve_spin_lock_parameters_reuses_zero_rabi_result() -> None:
-    """Given zero-frequency metadata, then a zero measured Rabi rate is accepted."""
-    chevron_results = {
-        "Q00": [
-            {
-                "requested_rabi_frequency": 0.0,
-                "drive_amplitude": 0.0,
-                "qubit_frequency": 5.0,
-                "rabi_frequency": 0.0,
-            }
-        ]
+    """Given zero-frequency calibration, then a zero measured Rabi rate is accepted."""
+    spin_lock_calibration = {
+        "Q00": {
+            "requested_rabi_frequencies": np.array([0.0]),
+            "drive_amplitudes": np.array([0.0]),
+            "qubit_frequencies": np.array([5.0]),
+            "rabi_frequencies": np.array([0.0]),
+        }
     }
 
-    qubit_frequency_map, rabi_frequency_map, _ = (
-        _resolve_spin_lock_parameters_from_chevron_results(
+    drive_amplitude_map, qubit_frequency_map, rabi_frequency_map, _ = (
+        _resolve_spin_lock_parameters_from_calibration(
             targets=["Q00"],
             requested_rabi_frequency_range=np.array([0.0]),
-            amplitude_map={"Q00": np.array([0.0])},
-            chevron_results=chevron_results,
+            spin_lock_calibration=spin_lock_calibration,
+            base_frequencies={"Q00": 5.0},
         )
     )
 
+    np.testing.assert_allclose(drive_amplitude_map["Q00"], [0.0])
     np.testing.assert_allclose(qubit_frequency_map["Q00"], [5.0])
     np.testing.assert_allclose(rabi_frequency_map["Q00"], [0.0])
 
@@ -315,6 +364,7 @@ def test_estimate_spin_lock_parameters_skips_zero_rabi_chevron(
         )
     )
     calls: list[dict[str, Any]] = []
+    progress_iterables: list[list[int]] = []
 
     def _estimate_chevron(*_args: Any, **kwargs: Any) -> SimpleNamespace:
         calls.append(kwargs)
@@ -331,13 +381,19 @@ def test_estimate_spin_lock_parameters_skips_zero_rabi_chevron(
             figures=None,
         )
 
+    def _fake_tqdm(iterable: Any, **_kwargs: Any) -> list[int]:
+        values = list(iterable)
+        progress_iterables.append(values)
+        return values
+
     monkeypatch.setattr(
         spin_lock_module,
         "estimate_qubit_frequency_from_chevron",
         _estimate_chevron,
     )
+    monkeypatch.setattr(spin_lock_module, "tqdm", _fake_tqdm)
 
-    qubit_frequency_map, rabi_frequency_map, chevron_results, _ = (
+    qubit_frequency_map, rabi_frequency_map, spin_lock_calibration, _ = (
         _estimate_spin_lock_parameters_with_chevron(
             exp,
             targets=["Q00"],
@@ -351,59 +407,86 @@ def test_estimate_spin_lock_parameters_skips_zero_rabi_chevron(
     )
 
     assert len(calls) == 1
+    assert progress_iterables == [[1]]
     np.testing.assert_allclose(qubit_frequency_map["Q00"], [5.0, 5.001])
     np.testing.assert_allclose(rabi_frequency_map["Q00"], [0.0, 0.012])
-    assert chevron_results["Q00"][0]["chevron_measured"] is False
-    assert chevron_results["Q00"][1]["chevron_measured"] is True
+    np.testing.assert_allclose(
+        spin_lock_calibration["Q00"]["drive_amplitudes"],
+        [0.0, 0.1],
+    )
+    np.testing.assert_allclose(
+        spin_lock_calibration["Q00"]["rabi_frequencies"],
+        [0.0, 0.012],
+    )
+    np.testing.assert_array_equal(
+        spin_lock_calibration["Q00"]["chevron_measured"],
+        [False, True],
+    )
 
 
-def test_resolve_spin_lock_parameters_rejects_mismatched_chevron_results() -> None:
-    """Given stale chevron metadata, then reuse is rejected before measurement."""
-    chevron_results = {
-        "Q00": [
-            {
-                "requested_rabi_frequency": 0.03,
-                "drive_amplitude": 0.1,
-                "qubit_frequency": 5.001,
-                "rabi_frequency": 0.011,
-            }
-        ]
+def test_resolve_spin_lock_parameters_rejects_mismatched_calibration() -> None:
+    """Given stale calibration metadata, then reuse is rejected before measurement."""
+    spin_lock_calibration = {
+        "Q00": {
+            "requested_rabi_frequencies": np.array([0.03]),
+            "drive_amplitudes": np.array([0.1]),
+            "qubit_frequencies": np.array([5.001]),
+            "rabi_frequencies": np.array([0.011]),
+        }
     }
 
-    with pytest.raises(ValueError, match="requested_rabi_frequency"):
-        _resolve_spin_lock_parameters_from_chevron_results(
+    with pytest.raises(ValueError, match="spin_lock_frequency_range"):
+        _resolve_spin_lock_parameters_from_calibration(
             targets=["Q00"],
             requested_rabi_frequency_range=np.array([0.01]),
-            amplitude_map={"Q00": np.array([0.1])},
-            chevron_results=chevron_results,
+            spin_lock_calibration=spin_lock_calibration,
+            base_frequencies={"Q00": 5.0},
         )
 
 
-def test_resolve_spin_lock_parameters_requires_matching_chevron_metadata() -> None:
-    """Given incomplete previous metadata, then reuse is rejected."""
-    chevron_results = {
-        "Q00": [
-            {
-                "drive_amplitude": 0.1,
-                "qubit_frequency": 5.001,
-                "rabi_frequency": 0.011,
-            }
-        ]
+def test_resolve_spin_lock_parameters_requires_frequency_calibration() -> None:
+    """Given incomplete previous calibration, then reuse is rejected."""
+    spin_lock_calibration = {
+        "Q00": {
+            "drive_amplitudes": np.array([0.1]),
+            "rabi_frequencies": np.array([0.011]),
+        }
     }
 
-    with pytest.raises(ValueError, match="requested_rabi_frequency"):
-        _resolve_spin_lock_parameters_from_chevron_results(
+    with pytest.raises(ValueError, match="ac_stark_shifts"):
+        _resolve_spin_lock_parameters_from_calibration(
             targets=["Q00"],
             requested_rabi_frequency_range=np.array([0.01]),
-            amplitude_map={"Q00": np.array([0.1])},
-            chevron_results=chevron_results,
+            spin_lock_calibration=spin_lock_calibration,
+            base_frequencies={"Q00": 5.0},
         )
 
 
-def test_resolve_spin_lock_calibration_reuses_provided_chevron_without_measuring(
+def test_resolve_spin_lock_parameters_rejects_non_bool_chevron_measured() -> None:
+    """Given non-bool chevron flags, then manual calibration is rejected."""
+    spin_lock_calibration = {
+        "Q00": {
+            "requested_rabi_frequencies": np.array([0.01]),
+            "drive_amplitudes": np.array([0.1]),
+            "qubit_frequencies": np.array([5.001]),
+            "rabi_frequencies": np.array([0.011]),
+            "chevron_measured": np.array([1]),
+        }
+    }
+
+    with pytest.raises(TypeError, match="chevron_measured"):
+        _resolve_spin_lock_parameters_from_calibration(
+            targets=["Q00"],
+            requested_rabi_frequency_range=np.array([0.01]),
+            spin_lock_calibration=spin_lock_calibration,
+            base_frequencies={"Q00": 5.0},
+        )
+
+
+def test_resolve_spin_lock_calibration_reuses_provided_dataset_without_measuring(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given previous chevron metadata, then calibration skips new chevron sweeps."""
+    """Given previous calibration data, then calibration skips new chevron sweeps."""
 
     def _unexpected_chevron_measurement(**_kwargs: Any) -> None:
         raise AssertionError("Chevron measurement should not be called.")
@@ -418,30 +501,72 @@ def test_resolve_spin_lock_calibration_reuses_provided_chevron_without_measuring
         object(),  # type: ignore[arg-type]
         targets=["Q00"],
         requested_rabi_frequency_range=np.array([0.01]),
-        amplitude_map={"Q00": np.array([0.1])},
         base_frequencies={"Q00": 5.0},
-        estimate_with_chevron=True,
-        chevron_results={
-            "Q00": [
-                {
-                    "requested_rabi_frequency": 0.01,
-                    "drive_amplitude": 0.1,
-                    "qubit_frequency": 5.001,
-                    "rabi_frequency": 0.011,
-                }
-            ]
+        spin_lock_calibration={
+            "Q00": {
+                "requested_rabi_frequencies": np.array([0.01]),
+                "drive_amplitudes": np.array([0.1]),
+                "qubit_frequencies": np.array([5.001]),
+                "rabi_frequencies": np.array([0.011]),
+            }
         },
+        estimate_with_chevron=True,
         chevron_n_shots=10,
         n_shots=100,
         shot_interval=0.0,
         return_chevron_figures=True,
     )
 
-    assert calibration.chevron_source == "provided"
+    assert calibration.calibration_source == "provided"
     assert calibration.chevron_n_shots is None
     assert calibration.chevron_figures == {}
+    np.testing.assert_allclose(calibration.drive_amplitude_map["Q00"], [0.1])
     np.testing.assert_allclose(calibration.qubit_frequency_map["Q00"], [5.001])
     np.testing.assert_allclose(calibration.rabi_frequency_map["Q00"], [0.011])
+
+
+def test_resolve_spin_lock_calibration_marks_zero_only_axis_as_not_measured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given only zero Rabi points, then chevron calibration is not marked measured."""
+
+    def _unexpected_chevron_measurement(**_kwargs: Any) -> None:
+        raise AssertionError("Chevron measurement should not be called.")
+
+    exp: Any = SimpleNamespace(
+        pulse=SimpleNamespace(
+            calc_control_amplitude=lambda _target, _frequency: 0.0,
+        )
+    )
+    monkeypatch.setattr(
+        spin_lock_module,
+        "_estimate_spin_lock_parameters_with_chevron",
+        _unexpected_chevron_measurement,
+    )
+
+    calibration = _resolve_spin_lock_calibration(
+        exp,
+        targets=["Q00"],
+        requested_rabi_frequency_range=np.array([0.0]),
+        base_frequencies={"Q00": 5.0},
+        spin_lock_calibration=None,
+        estimate_with_chevron=True,
+        chevron_n_shots=0,
+        n_shots=100,
+        shot_interval=0.0,
+        return_chevron_figures=True,
+    )
+
+    assert calibration.calibration_source == "none"
+    assert calibration.chevron_n_shots is None
+    assert calibration.chevron_figures == {}
+    np.testing.assert_allclose(calibration.drive_amplitude_map["Q00"], [0.0])
+    np.testing.assert_allclose(calibration.qubit_frequency_map["Q00"], [5.0])
+    np.testing.assert_allclose(calibration.rabi_frequency_map["Q00"], [0.0])
+    np.testing.assert_array_equal(
+        calibration.calibration_dataset["Q00"]["chevron_measured"],
+        [False],
+    )
 
 
 def test_frequency_sort_indices_sorts_nonmonotonic_axis() -> None:
@@ -571,10 +696,12 @@ def test_analyze_spin_lock_target_returns_expected_shapes_and_figures(
     assert analysis.normalized_signal.shape == (3, 2)
     assert analysis.population.shape == (3, 2)
     np.testing.assert_allclose(analysis.relaxation_times, [1000.0, 1000.0])
-    np.testing.assert_allclose(analysis.sort_indices, [1, 0])
     assert {kwargs["xlabel"] for kwargs in fit_kwargs} == {"Duration (ns)"}
     assert "Q00_heatmap" in analysis.figures
     assert "Q00_relaxation" in analysis.figures
+    heatmap_figure: Any = analysis.figures["Q00_heatmap"]
+    heatmap_trace: Any = heatmap_figure.data[0]
+    np.testing.assert_allclose(heatmap_trace.x, [10.0, 20.0])
 
 
 def test_analyze_spin_lock_target_fits_zero_rabi_point(
@@ -623,6 +750,8 @@ def test_analyze_spin_lock_target_fits_zero_rabi_point(
         "success",
         "success",
     ]
+    assert "rabi_frequency" in analysis.fit_results[0]
+    assert "frequency" not in analysis.fit_results[0]
 
 
 def test_resolve_duration_range_removes_duplicate_discretized_points() -> None:
