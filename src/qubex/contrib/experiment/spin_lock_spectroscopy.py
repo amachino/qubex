@@ -1589,7 +1589,9 @@ def spin_lock_spectroscopy(
         is used as the sweep axis when present; otherwise ``rabi_frequencies``
         from the first target is used. All per-target arrays must have the same
         shape and order as the resolved spin-lock frequency sweep. Optional
-        ``chevron_measured`` entries must be bool arrays.
+        ``chevron_measured`` entries must be bool arrays. Rabi parameters are
+        still required for readout normalization even when this calibration is
+        supplied.
     estimate_with_chevron
         Whether to run ``estimate_qubit_frequency_from_chevron()`` before the
         spin-lock sweep for each requested spin-lock frequency. When ``True``,
@@ -1693,6 +1695,7 @@ def spin_lock_spectroscopy(
     if len(target_list) == 0:
         raise ValueError("targets must contain at least one target.")
     _validate_hpi_pulses(exp, target_list)
+    exp.pulse.validate_rabi_params(target_list)
 
     n_shots = _resolve_positive_integer(
         n_shots,
@@ -1708,9 +1711,6 @@ def spin_lock_spectroscopy(
     save_image = _resolve_bool(save_image, default=False)
     estimate_with_chevron = _resolve_bool(estimate_with_chevron, default=True)
     return_chevron_figures = _resolve_bool(return_chevron_figures, default=False)
-
-    if spin_lock_calibration is None:
-        exp.pulse.validate_rabi_params(target_list)
 
     if spin_lock_frequency_range is None and spin_lock_calibration is not None:
         spin_lock_frequency_range = _frequency_axis_from_calibration(

@@ -82,6 +82,34 @@ def test_spin_lock_spectroscopy_checks_hpi_pulse_before_measurement() -> None:
         )
 
 
+def test_spin_lock_spectroscopy_requires_rabi_params_with_calibration() -> None:
+    """Given reusable calibration, then Rabi params are still checked for normalization."""
+
+    class _Pulse:
+        @staticmethod
+        def get_hpi_pulse(_target: str) -> object:
+            return object()
+
+        @staticmethod
+        def validate_rabi_params(_targets: list[str]) -> None:
+            raise ValueError("Rabi parameters are not stored.")
+
+    exp: Any = SimpleNamespace(pulse=_Pulse())
+
+    with pytest.raises(ValueError, match="Rabi parameters"):
+        spin_lock_spectroscopy(
+            exp,
+            targets=["Q00"],
+            spin_lock_calibration={
+                "Q00": {
+                    "drive_amplitudes": np.array([0.0]),
+                    "qubit_frequencies": np.array([5.0]),
+                    "rabi_frequencies": np.array([0.0]),
+                }
+            },
+        )
+
+
 def test_validate_hpi_pulses_checks_each_target() -> None:
     """Given multiple targets, then half-pi pulse availability is checked for all."""
 
