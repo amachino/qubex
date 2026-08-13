@@ -3488,7 +3488,7 @@ requires-dist = [
     { name = "kaleido", specifier = "==0.2.1" },
     { name = "nbformat", specifier = ">=5.0" },
     { name = "networkx", specifier = ">=2.7" },
-    { name = "numpy", specifier = ">=1.22" },
+    { name = "numpy", specifier = ">=1.22,<2.4" },
     { name = "plotly", specifier = ">=5.23,<6" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyserial", specifier = ">=3.5" },

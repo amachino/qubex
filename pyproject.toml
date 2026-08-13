@@ -22,7 +22,7 @@ dependencies = [
     "kaleido == 0.2.1",
     "networkx >= 2.7",
     "nbformat >= 5.0",
-    "numpy >= 1.22",
+    "numpy >= 1.22, <2.4",
     # Plotly v6 FigureWidget uses anywidget and can persist a multi-MB _esm bundle
     # per widget in notebook metadata.widgets, making saved .ipynb files very large.
     "plotly >= 5.23, <6",
