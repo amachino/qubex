@@ -697,10 +697,10 @@ class ExperimentContext:
                 target,
                 valid_days=self._calibration_valid_days,
             )
-            if param is not None and "stddevs" in param:
+            stddevs = None if param is None else param.get("stddevs")
+            if stddevs is not None:
                 result[target] = {
-                    int(state): float(stddev)
-                    for state, stddev in param["stddevs"].items()
+                    int(state): float(stddev) for state, stddev in stddevs.items()
                 }
         return result
 

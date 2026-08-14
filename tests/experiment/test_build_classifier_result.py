@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import qubex.visualization as viz
 from qubex.experiment.models.result import Result
 from qubex.experiment.services.measurement_service import MeasurementService
-from qubex.measurement.classifiers import StateClassifierGMM
+from qubex.measurement.classifiers import StateClassifierKMeans
 
 
 class _PredictOnlyClassifier:
@@ -99,7 +99,7 @@ def test__build_classifier_uses_predict_counts_and_returns_figures(
     updated_classifiers: dict[str, object] = {}
     service.__dict__["_ctx"] = SimpleNamespace(
         qubit_labels=["Q00"],
-        classifier_type="gmm",
+        classifier_type="kmeans",
         reference_phases={"Q00": 0.0},
         measurement=SimpleNamespace(
             update_classifiers=lambda classifiers: updated_classifiers.update(
@@ -167,9 +167,9 @@ def test__build_classifier_uses_predict_counts_and_returns_figures(
         MethodType(fake_measure_state_distribution, service),
     )
     monkeypatch.setattr(
-        StateClassifierGMM,
+        StateClassifierKMeans,
         "fit",
-        classmethod(lambda cls, data, phase=0.0: classifier),
+        classmethod(lambda cls, data: classifier),
     )
     monkeypatch.setattr(
         viz, "make_classification_figure", fake_make_classification_figure
@@ -189,3 +189,4 @@ def test__build_classifier_uses_predict_counts_and_returns_figures(
     assert list((result.figures or {}).values()) == figure_calls
     assert result["readout_fidelities"]["Q00"] == [2 / 3, 2 / 3]
     assert result["average_readout_fidelity"]["Q00"] == 2 / 3
+    assert service.ctx.calib_note.state_params["Q00"]["stddevs"] is None

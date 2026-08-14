@@ -156,6 +156,39 @@ class MeasurementService:
             ]
         )
 
+    def _resolve_gmm_readout_labels(
+        self,
+        *,
+        labels: Sequence[str],
+        include_derived_readouts: bool,
+    ) -> list[str]:
+        """Resolve only labels that produce readout captures for GMM lines."""
+        readout_labels: list[str] = []
+        for label in labels:
+            try:
+                readout_label = self.ctx.resolve_read_label(label)
+            except (KeyError, ValueError):
+                continue
+            if include_derived_readouts or readout_label == label:
+                readout_labels.append(readout_label)
+        return self.unique_in_order(readout_labels)
+
+    def _resolve_gmm_schedule_readout_labels(
+        self,
+        *,
+        schedule: PulseSchedule,
+        final_measurement: bool,
+    ) -> list[str]:
+        """Return readout labels that the schedule will actually capture."""
+        readout_labels = self._resolve_gmm_readout_labels(
+            labels=schedule.labels,
+            include_derived_readouts=final_measurement,
+        )
+        if final_measurement or not readout_labels:
+            return readout_labels
+        pulse_ranges = schedule.get_pulse_ranges(readout_labels)
+        return [label for label in readout_labels if pulse_ranges.get(label)]
+
     def _resolve_gmm_linear_line_param_maps(
         self,
         *,
@@ -787,12 +820,23 @@ class MeasurementService:
             plot = False
         self._reject_removed_line_param_options(deprecated_options)
 
+        classification_labels = schedule.labels
+        if classification_source == "gmm_linear":
+            appends_final_measurement = final_measurement is True or (
+                final_measurement is None
+                and deprecated_options.get("add_last_measurement") is True
+            )
+            classification_labels = self._resolve_gmm_schedule_readout_labels(
+                schedule=schedule,
+                final_measurement=appends_final_measurement,
+            )
+
         (
             state_classification,
             classification_line_param0,
             classification_line_param1,
         ) = self._resolve_classification_source_options(
-            labels=schedule.labels,
+            labels=classification_labels,
             classification_source=classification_source,
             classification_sigma_multiplier=classification_sigma_multiplier,
             state_classification=state_classification,
@@ -985,6 +1029,15 @@ class MeasurementService:
                         waveforms[target] = waveform.values
                     else:
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
+
+        classification_labels = tuple(waveforms)
+        if classification_source == "gmm_linear":
+            classification_labels = tuple(
+                self._resolve_gmm_readout_labels(
+                    labels=classification_labels,
+                    include_derived_readouts=True,
+                )
+            )
 
         (
             state_classification,
@@ -2448,7 +2501,7 @@ class MeasurementService:
                     str(state): float(stddev) for state, stddev in stddevs.items()
                 }
                 if stddevs is not None
-                else {},
+                else None,
                 "reference_phase": self.ctx.calib_note.reference_phases[target],
             }
         self.ctx.calib_note.state_params = state_params

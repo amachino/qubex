@@ -134,19 +134,24 @@ class Quel1Sequencer(Sequencer):
             )
 
         interval_ns = self.interval if self.interval is not None else 10240
+        cap_conversion_options: dict[str, Any] = {
+            "gen_sampled_sequence": self.gen_sampled_sequence,
+            "cap_sampled_sequence": self.cap_sampled_sequence,
+            "resource_map": cap_resource_map,
+            "port_config": cap_target_portconf,
+            "repeats": self.repeats,
+            "interval": interval_ns,
+            "integral_mode": self.integral_mode,
+            "dsp_demodulation": self.dsp_demodulation,
+            "software_demodulation": self.software_demodulation,
+            "enable_sum": self.enable_sum,
+            "enable_classification": self.enable_classification,
+        }
+        classification_lines = getattr(self, "classification_lines", None)
+        if self.enable_classification and classification_lines is not None:
+            cap_conversion_options["classification_lines"] = classification_lines
         cap_e7_settings = driver.Converter.convert_to_cap_device_specific_sequence(
-            gen_sampled_sequence=self.gen_sampled_sequence,
-            cap_sampled_sequence=self.cap_sampled_sequence,
-            resource_map=cap_resource_map,
-            port_config=cap_target_portconf,
-            repeats=self.repeats,
-            interval=interval_ns,
-            integral_mode=self.integral_mode,
-            dsp_demodulation=self.dsp_demodulation,
-            software_demodulation=self.software_demodulation,
-            enable_sum=self.enable_sum,
-            enable_classification=self.enable_classification,
-            classification_lines=self.classification_lines,
+            **cap_conversion_options
         )
         gen_e7_settings = driver.Converter.convert_to_gen_device_specific_sequence(
             gen_sampled_sequence=self.gen_sampled_sequence,

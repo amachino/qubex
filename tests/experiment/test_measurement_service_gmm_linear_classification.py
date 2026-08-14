@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
-from qxpulse import PulseSchedule
+from qxpulse import Arbitrary, PulseSchedule
 
 from qubex.experiment.services.measurement_service import MeasurementService
 
@@ -41,6 +41,14 @@ def _make_service() -> tuple[MeasurementService, dict[str, list[dict[str, object
             stddevs={0: 0.25, 1: 0.5},
         ),
     }
+
+    def _resolve_read_label(label: str) -> str:
+        if label in {"Q00", "RQ00"}:
+            return "RQ00"
+        if label in {"Q01", "RQ01"}:
+            return "RQ01"
+        raise ValueError(f"No readout target for {label}.")
+
     ctx = SimpleNamespace(
         state_centers={},
         state_stddevs={},
@@ -50,7 +58,7 @@ def _make_service() -> tuple[MeasurementService, dict[str, list[dict[str, object
             for qubit in ("Q01", "Q00")
             if qubit in labels or f"R{qubit}" in labels
         ],
-        resolve_read_label=lambda qubit: f"R{qubit}",
+        resolve_read_label=_resolve_read_label,
         resolve_qubit_label=lambda label: label.replace("R", ""),
         modified_frequencies=_modified_frequencies,
         measurement=SimpleNamespace(
@@ -77,8 +85,9 @@ def test_execute_resolves_gmm_linear_line_pairs_per_readout_target() -> None:
     """Given multi-qubit GMM classifiers, execute should derive ordered DSP lines per readout target."""
     service, captured = _make_service()
 
-    with PulseSchedule(["Q01", "Q00"]) as schedule:
-        pass
+    with PulseSchedule(["RQ01", "RQ00"]) as schedule:
+        schedule.add("RQ01", Arbitrary(np.array([1.0 + 0.0j])))
+        schedule.add("RQ00", Arbitrary(np.array([1.0 + 0.0j])))
 
     service.execute(schedule, classification_source="gmm_linear", plot=False)
     kwargs = captured["execute_calls"][0]
@@ -104,8 +113,8 @@ def test_execute_resolves_gmm_linear_line_pairs_with_sigma_multiplier() -> None:
     """Given a sigma multiplier, execute should scale generated DSP line offsets."""
     service, captured = _make_service()
 
-    with PulseSchedule(["Q01"]) as schedule:
-        pass
+    with PulseSchedule(["RQ01"]) as schedule:
+        schedule.add("RQ01", Arbitrary(np.array([1.0 + 0.0j])))
 
     service.execute(
         schedule,
@@ -153,6 +162,27 @@ def test_measure_resolves_gmm_linear_line_pairs_from_waveform_targets() -> None:
     assert kwargs["state_classification"] is True
     assert set(line_param0) == {"RQ00", "RQ01"}
     assert set(line_param1) == {"RQ00", "RQ01"}
+
+
+def test_execute_builds_gmm_lines_only_for_active_readout_targets() -> None:
+    """Control, pump, and inactive readout channels should not require GMM data."""
+    service, captured = _make_service()
+    cast(Any, service.ctx).classifiers.pop("Q00")
+
+    with PulseSchedule(["Q00", "RQ00", "RQ01", "MUX00"]) as schedule:
+        schedule.add("Q00", Arbitrary(np.array([1.0 + 0.0j])))
+        schedule.add("RQ01", Arbitrary(np.array([1.0 + 0.0j])))
+        schedule.add("MUX00", Arbitrary(np.array([1.0 + 0.0j])))
+
+    service.execute(schedule, classification_source="gmm_linear", plot=False)
+
+    kwargs = captured["execute_calls"][0]
+    assert set(cast(dict[str, object], kwargs["classification_line_param0"])) == {
+        "RQ01"
+    }
+    assert set(cast(dict[str, object], kwargs["classification_line_param1"])) == {
+        "RQ01"
+    }
 
 
 def test_execute_rejects_removed_manual_line_overrides() -> None:

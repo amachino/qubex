@@ -130,16 +130,18 @@ class SequencerExecutionEngine:
             classification_lines = _default_classification_lines(
                 sequencer.cap_sampled_sequence.keys()
             )
-        sequencer.set_measurement_option(
-            repeats=repeats,
-            interval=sequencer.interval,
-            integral_mode=integral_mode,
-            dsp_demodulation=dsp_demodulation,
-            software_demodulation=software_demodulation,
-            enable_sum=enable_sum,
-            enable_classification=enable_classification,
-            classification_lines=classification_lines,
-        )
+        measurement_options: dict[str, Any] = {
+            "repeats": repeats,
+            "interval": sequencer.interval,
+            "integral_mode": integral_mode,
+            "dsp_demodulation": dsp_demodulation,
+            "software_demodulation": software_demodulation,
+            "enable_sum": enable_sum,
+            "enable_classification": enable_classification,
+        }
+        if enable_classification and classification_lines is not None:
+            measurement_options["classification_lines"] = classification_lines
+        sequencer.set_measurement_option(**measurement_options)
 
     @staticmethod
     def create_direct_settings(

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.calibration_note import CalibrationNote
 from qubex.experiment.models.experiment_note import ExperimentNote
 
@@ -167,6 +168,47 @@ def test_update_state_param(tmp_path):
     assert param["target"] == "Q00"
     assert param["centers"]["0"] == [0.5, 0.5]
     assert param["centers"]["1"] == [0.5, 0.5]
+
+
+def test_update_state_param_replaces_stale_stddevs_with_none(tmp_path) -> None:
+    """Saving KMeans state parameters should remove prior GMM deviations."""
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id="CHIP_ID", calibration_dir=calibration_dir)
+    note.update_state_param(
+        "Q00",
+        {
+            "target": "Q00",
+            "centers": {"0": [0.0, 0.0], "1": [1.0, 0.0]},
+            "stddevs": {"0": 0.1, "1": 0.2},
+            "reference_phase": 0.0,
+            "timestamp": "2026-01-01 00:00:00",
+        },
+    )
+    note.save()
+
+    note.update_state_param(
+        "Q00",
+        {
+            "target": "Q00",
+            "centers": {"0": [0.5, 0.0], "1": [1.5, 0.0]},
+            "stddevs": None,
+            "reference_phase": 0.0,
+            "timestamp": "2026-01-02 00:00:00",
+        },
+    )
+    note.save()
+
+    reloaded = CalibrationNote(chip_id="CHIP_ID", calibration_dir=calibration_dir)
+    param = reloaded.get_state_param("Q00")
+    assert param is not None
+    assert param["stddevs"] is None
+    assert param["centers"]["0"] == [0.5, 0.0]
+
+    context = object.__new__(ExperimentContext)
+    context.__dict__["_qubits"] = ["Q00"]
+    context.__dict__["_calib_note"] = reloaded
+    context.__dict__["_calibration_valid_days"] = None
+    assert context.state_stddevs == {}
 
 
 def test_update_cr_param(tmp_path):

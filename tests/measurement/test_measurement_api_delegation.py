@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from qxpulse import PulseSchedule
 
-from qubex.backend import BackendExecutionRequest
+from qubex.backend import BackendExecutionRequest, BackendKind
 from qubex.backend.quel1 import Quel1BackendExecutionResult
 from qubex.measurement.measurement import Measurement
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
@@ -22,6 +22,7 @@ from qubex.measurement.models import (
     MeasurementSchedule,
     NDSweepMeasurementResult,
     Quel1MeasurementOptions,
+    ReturnItem,
     SweepMeasurementResult,
     SweepPoint,
     SweepValue,
@@ -101,6 +102,7 @@ def _bind_runtime(
     backend_controller: object,
     experiment_system: object,
     rawdata_dir: object = None,
+    backend_kind: BackendKind | None = None,
 ) -> None:
     context = type(
         "_CTX",
@@ -109,7 +111,11 @@ def _bind_runtime(
             "backend_controller": backend_controller,
             "experiment_system": experiment_system,
             "mux_dict": {},
-            "system_manager": type("_SM", (), {"rawdata_dir": rawdata_dir})(),
+            "system_manager": type(
+                "_SM",
+                (),
+                {"rawdata_dir": rawdata_dir, "backend_kind": backend_kind},
+            )(),
         },
     )()
     session_service = type(
@@ -1323,8 +1329,8 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
-def test_measure_preserves_default_time_integration_for_gmm_linear() -> None:
-    """GMM classification should let execute resolve an unspecified integration flag."""
+def test_measure_preserves_default_time_integration_for_dsp_classification() -> None:
+    """DSP classification should let execute resolve an unspecified integration flag."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1348,6 +1354,15 @@ def test_measure_preserves_default_time_integration_for_gmm_linear() -> None:
     measurement.measure(
         waveforms={"Q00": np.array([0.0 + 0.0j])},
         classification_source="gmm_linear",
+        classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
+        classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
+    )
+
+    assert called["kwargs"]["time_integration"] is None
+
+    measurement.measure(
+        waveforms={"Q00": np.array([0.0 + 0.0j])},
+        state_classification=True,
         classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
         classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
     )
@@ -1524,10 +1539,10 @@ def test_measure_noise_runs_via_run_measurement_with_noise_defaults() -> None:
     assert called["run_quel1_options"] is None
 
 
-def test_execute_initializes_optional_flags_with_execute_defaults(
+def test_execute_normalizes_optional_flags_with_execute_defaults(
     monkeypatch,
 ) -> None:
-    """Given None optional flags, when execute is called, then it applies execute defaults."""
+    """Execute defaults should preserve regular mode and normalize manual DSP mode."""
     measurement = Measurement(
         chip_id="TEST",
         qubits=["Q00"],
@@ -1590,6 +1605,7 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
         backend_controller=backend_controller,
         experiment_system=experiment_system,
         rawdata_dir=None,
+        backend_kind="quel1",
     )
 
     measurement.execute(
@@ -1606,6 +1622,43 @@ def test_execute_initializes_optional_flags_with_execute_defaults(
     assert config.state_classification is False
     assert config.classification_source is None
     assert called["run_quel1_options"] is None
+
+    line_param0 = {"RQ00": (1.0, 0.0, 0.0)}
+    line_param1 = {"RQ00": (1.0, 0.0, -1.0)}
+    measurement.execute(
+        schedule=pulse_schedule,
+        state_classification=True,
+        classification_line_param0=line_param0,
+        classification_line_param1=line_param1,
+    )
+
+    config = called["config"]
+    options = cast(Quel1MeasurementOptions, called["run_quel1_options"])
+    assert config.shot_averaging is False
+    assert config.time_integration is True
+    assert config.state_classification is True
+    assert config.primary_return_item == ReturnItem.STATE_SERIES
+    assert options.classification_line_param0 == line_param0
+    assert options.classification_line_param1 == line_param1
+
+
+def test_execute_rejects_averaged_manual_dsp_classification() -> None:
+    """Manual DSP lines should reject an explicitly averaged-shot configuration."""
+    measurement = Measurement(
+        chip_id="TEST",
+        qubits=["Q00"],
+        load_configs=False,
+        connect_devices=False,
+    )
+
+    with pytest.raises(ValueError, match="require shot_averaging=False"):
+        measurement.execute(
+            schedule={"Q00": np.array([0.0 + 0.0j])},
+            shot_averaging=True,
+            state_classification=True,
+            classification_line_param0={"RQ00": (1.0, 0.0, 0.0)},
+            classification_line_param1={"RQ00": (1.0, 0.0, -1.0)},
+        )
 
 
 def test_run_measurement_delegates_to_executor(

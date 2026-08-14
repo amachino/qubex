@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, cast
 
 import pytest
@@ -51,6 +50,52 @@ def test_measurement_options_restore_default_classification_lines() -> None:
     assert lines["RQ00"].line1 == (0.0, 1.0, 0.0)
 
 
+def test_measurement_options_omit_classification_lines_when_disabled() -> None:
+    """Legacy sequencers should not receive an unsupported classification keyword."""
+
+    class _LegacySequencer:
+        interval = 256
+
+        def __init__(self) -> None:
+            self.called = False
+
+        def set_measurement_option(
+            self,
+            *,
+            repeats: int,
+            interval: int,
+            integral_mode: str,
+            dsp_demodulation: bool,
+            software_demodulation: bool,
+            enable_sum: bool,
+            enable_classification: bool,
+        ) -> None:
+            _ = (
+                repeats,
+                interval,
+                integral_mode,
+                dsp_demodulation,
+                software_demodulation,
+                enable_sum,
+                enable_classification,
+            )
+            self.called = True
+
+    sequencer = _LegacySequencer()
+
+    SequencerExecutionEngine.set_measurement_options(
+        sequencer=cast(Any, sequencer),
+        repeats=16,
+        integral_mode="integral",
+        dsp_demodulation=True,
+        software_demodulation=False,
+        enable_sum=True,
+        enable_classification=False,
+    )
+
+    assert sequencer.called is True
+
+
 def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> None:
     """Given parallel mode, when executing through execution manager, then engine result is wrapped in backend result."""
 
@@ -86,24 +131,22 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
     )
     classification_lines = {"RQ00": object()}
 
-    result = asyncio.run(
-        execution_manager.execute_async(
-            request=BackendExecutionRequest(
-                payload=Quel1ExecutionPayload(
-                    gen_sampled_sequence={"Q00": object()},
-                    cap_sampled_sequence={"RQ00": object()},
-                    resource_map={"Q00": [{}]},
-                    interval_ns=128,
-                    repeats=16,
-                    integral_mode="integral",
-                    dsp_demodulation=True,
-                    enable_sum=False,
-                    enable_classification=False,
-                    classification_lines=classification_lines,
-                ),
+    result = execution_manager.execute_sync(
+        request=BackendExecutionRequest(
+            payload=Quel1ExecutionPayload(
+                gen_sampled_sequence={"Q00": object()},
+                cap_sampled_sequence={"RQ00": object()},
+                resource_map={"Q00": [{}]},
+                interval_ns=128,
+                repeats=16,
+                integral_mode="integral",
+                dsp_demodulation=True,
+                enable_sum=False,
+                enable_classification=False,
+                classification_lines=classification_lines,
             ),
-            execution_mode="parallel",
-        )
+        ),
+        execution_mode="parallel",
     )
 
     assert isinstance(result, Quel1BackendExecutionResult)
@@ -113,7 +156,7 @@ def test_execution_manager_parallel_path_wraps_engine_result(monkeypatch) -> Non
     assert called["sequencer"] is sequencer
     assert called["boxpool"] is controller.boxpool
     assert called["system"] is controller.quel1system
-    assert sequencer.kwargs["classification_lines"] is classification_lines
+    assert "classification_lines" not in sequencer.kwargs
 
 
 def test_initialize_awg_and_capunits_parallel_calls_each_box(monkeypatch) -> None:

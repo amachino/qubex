@@ -934,6 +934,8 @@ class MeasurementExecutionService:
         if (
             time_integration is None
             and classification_source is None
+            and classification_line_param0 is None
+            and classification_line_param1 is None
             and deprecated_options.get("enable_dsp_sum") is None
         ):
             time_integration = False
@@ -1087,9 +1089,6 @@ class MeasurementExecutionService:
                 )
             if shot_averaging is None:
                 shot_averaging = legacy_shot_averaging
-        if shot_averaging is None:
-            shot_averaging = classification_source != "gmm_linear"
-
         n_shots = self._resolve_deprecated_alias(
             new_value=n_shots,
             old_value=legacy_options.pop("shots", None),
@@ -1167,7 +1166,35 @@ class MeasurementExecutionService:
         if plot is None:
             plot = False
 
+        has_manual_classification_lines = classification_source is None and (
+            classification_line_param0 is not None
+            or classification_line_param1 is not None
+        )
+        if has_manual_classification_lines:
+            if classification_line_param0 is None or classification_line_param1 is None:
+                raise ValueError(
+                    "Both classification_line_param0 and classification_line_param1 "
+                    "are required."
+                )
+            if not state_classification:
+                raise ValueError(
+                    "Manual classification lines require state_classification=True."
+                )
+            if shot_averaging is None:
+                shot_averaging = False
+            if shot_averaging:
+                raise ValueError(
+                    "Manual classification lines require shot_averaging=False."
+                )
+            if explicit_time_integration is False or legacy_enable_dsp_sum is False:
+                raise ValueError(
+                    "Manual classification lines require time_integration=True."
+                )
+            time_integration = True
+
         if classification_source == "gmm_linear":
+            if shot_averaging is None:
+                shot_averaging = False
             if shot_averaging:
                 raise ValueError(
                     "classification_source='gmm_linear' requires shot_averaging=False."
@@ -1189,6 +1216,9 @@ class MeasurementExecutionService:
                 )
             time_integration = True
             state_classification = True
+
+        if shot_averaging is None:
+            shot_averaging = True
 
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
