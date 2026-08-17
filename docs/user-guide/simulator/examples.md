@@ -3,6 +3,8 @@
 This page highlights the main notebook entry points for the `QuantumSimulator` workflow.
 Use these notebooks to study pulse-level dynamics offline before moving to hardware-backed execution.
 
+The notebooks below provide focused examples and calibration studies.
+
 ## Recommended starting points
 
 - [Rabi oscillation](../../examples/simulator/1_rabi_oscillation.ipynb): Start with a single driven transmon and inspect the resulting dynamics.
