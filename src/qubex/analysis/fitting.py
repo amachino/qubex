@@ -1661,8 +1661,8 @@ def fit_sqrt_lorentzian(
 def fit_rabi(
     *,
     target: str,
-    times: NDArray,
-    data: NDArray,
+    times: NDArray[np.float64],
+    data: NDArray[np.complex64],
     tau_est: float | None = None,
     reference_point: complex | None = None,
     plot: bool = True,
