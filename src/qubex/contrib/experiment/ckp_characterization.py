@@ -45,6 +45,7 @@ from tqdm import tqdm
 
 import qubex.visualization as viz
 from qubex.analysis import fitting
+from qubex.compat.numpy_compat import trapezoid
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import DEFAULT_SHOTS
 from qubex.experiment.models import Result
@@ -1410,9 +1411,9 @@ def estimate_filtered_ckp_initial_params(
     x = x[order]
     delta = delta[order]
 
-    M0 = np.trapz(delta, x)
-    M1 = np.trapz(x * delta, x)
-    M2 = np.trapz((x**2) * delta, x)
+    M0 = trapezoid(delta, x)
+    M1 = trapezoid(x * delta, x)
+    M2 = trapezoid((x**2) * delta, x)
 
     if np.abs(M0) < 1e-18:
         raise ValueError("Moment M0 is too small.")
