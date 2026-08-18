@@ -404,7 +404,7 @@ class BenchmarkingService:
                 sweep_range.append(n_clifford)
 
                 trial_data = defaultdict(list)
-                for seed in seeds:
+                for seed in np.asarray(seeds):
                     seed = int(seed)  # Ensure seed is an integer
                     result = self.measurement_service.measure(
                         sequence=rb_sequence(
@@ -633,7 +633,7 @@ class BenchmarkingService:
                 sweep_range.append(n_clifford)
 
                 trial_data = defaultdict(list)
-                for seed in seeds:
+                for seed in np.asarray(seeds):
                     seed = int(seed)  # Ensure seed is an integer
                     result = self.measurement_service.measure(
                         sequence=rb_sequence(

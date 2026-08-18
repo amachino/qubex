@@ -140,6 +140,7 @@ select = [
     "PT",   # flake8-pytest-style
     "TID",  # flake8-tidy-imports
     "I",    # isort
+    "NPY201", # NumPy 2.0 removed APIs
     "PERF", # Perflint
     "E",    # pycodestyle
     "D",    # pydocstyle

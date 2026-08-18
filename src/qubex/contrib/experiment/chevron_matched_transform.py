@@ -10,6 +10,7 @@ from numpy.typing import ArrayLike
 from qxpulse import Rect, get_sampling_period
 
 import qubex.visualization as viz
+from qubex.compat.numpy_compat import trapezoid
 from qubex.experiment import Experiment
 from qubex.experiment.experiment_constants import (
     DEFAULT_INTERVAL,
@@ -749,8 +750,8 @@ def _measure_and_analyze_chevron(
     # The matched-transform resonance search intentionally spans about twice
     # the measured detuning interval so a peak near the edge is still captured.
     omega_q_range = np.linspace(
-        frequency + 2 * np.min(detuning_range),
-        frequency + 2 * np.max(detuning_range),
+        frequency + 2 * np.min(np.asarray(detuning_range)),
+        frequency + 2 * np.max(np.asarray(detuning_range)),
         1024,
     )
 
@@ -1242,13 +1243,13 @@ def analyze_chevron_matched_transform(
 
         integrand = f_expanded * kernel
 
-        tmp = np.trapz(
+        tmp = trapezoid(
             integrand,
             x=time_range,
             axis=0,
         )
 
-        transform[i] = np.trapz(
+        transform[i] = trapezoid(
             tmp,
             x=omega_d,
             axis=0,
