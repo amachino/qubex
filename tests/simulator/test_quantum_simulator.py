@@ -466,8 +466,8 @@ def test_pulse_schedule_frame_shifts_change_result_coordinates(
         )
 
 
-def test_simulate_includes_all_control_boundaries() -> None:
-    """Integration grid should split intervals at every control boundary."""
+def test_simulate_uses_only_the_fixed_dt_grid() -> None:
+    """Control boundaries should not alter the fixed-step integration grid."""
     qubit = Transmon(label="Q0", dimension=2, frequency=5.0)
     system = QuantumSystem(objects=[qubit])
     controls = [
@@ -485,7 +485,7 @@ def test_simulate_includes_all_control_boundaries() -> None:
 
     result = QuantumSimulator(system).simulate(controls, dt=0.2)
 
-    assert_allclose(result.times, [0.0, 0.1, 0.15, 0.2, 0.4], atol=1e-12)
+    assert_allclose(result.times, [0.0, 0.2, 0.4], atol=1e-12)
     assert np.max(np.diff(result.times)) <= 0.2 + 1e-12
 
 
@@ -520,7 +520,7 @@ def test_simulate_evaluates_continuous_terms_at_interval_midpoints() -> None:
 
 
 def test_simulate_propagates_each_constant_control_segment() -> None:
-    """Discontinuous controls should propagate as separate constant segments."""
+    """A fixed grid aligned with boundaries should resolve every segment."""
     qubit = Transmon(label="Q0", dimension=2, frequency=5.0)
     system = QuantumSystem(objects=[qubit])
     amplitudes = np.array([0.3 + 0.1j, -0.2j])
@@ -531,7 +531,7 @@ def test_simulate_propagates_each_constant_control_segment() -> None:
         durations=durations,
     )
 
-    result = QuantumSimulator(system).simulate([control], dt=control.duration)
+    result = QuantumSimulator(system).simulate([control], dt=0.05)
 
     lowering_operator = system.get_lowering_operator(qubit.label)
     raising_operator = system.get_raising_operator(qubit.label)
@@ -675,8 +675,8 @@ def test_simulate_output_sampling_preserves_temporal_endpoints() -> None:
     )
 
 
-def test_simulate_returns_uniform_output_times() -> None:
-    """Requested simulate outputs should be uniformly spaced in physical time."""
+def test_simulate_downsamples_existing_integration_times() -> None:
+    """Requested samples should select from the completed fixed-step trajectory."""
     qubit = Transmon(label="Q0", dimension=2, frequency=5.0)
     system = QuantumSystem(objects=[qubit])
     control = Control(
@@ -688,12 +688,42 @@ def test_simulate_returns_uniform_output_times() -> None:
     result = QuantumSimulator(system).simulate(
         [control],
         dt=0.4,
-        n_samples=4,
+        n_samples=3,
     )
 
-    assert_allclose(result.times, np.linspace(0.0, 1.0, 4), rtol=0.0, atol=0.0)
-    assert len(result.states) == 4
-    assert len(result.propagators) == 4
+    assert_allclose(result.times, [0.0, 0.4, 1.0], rtol=0.0, atol=0.0)
+    assert len(result.states) == 3
+    assert len(result.propagators) == 3
+
+
+def test_simulate_downsampling_does_not_change_time_evolution() -> None:
+    """Output downsampling should not alter the propagated final state."""
+    qubit_0 = Transmon(label="Q0", dimension=2, frequency=5.0)
+    qubit_1 = Transmon(label="Q1", dimension=2, frequency=5.7)
+    coupling = Coupling(pair=(qubit_0, qubit_1), strength=0.03)
+    system = QuantumSystem(objects=[qubit_0, qubit_1], couplings=[coupling])
+    control = Control(
+        target=qubit_0,
+        waveform=np.zeros(1, dtype=np.complex128),
+        durations=np.array([1.0]),
+    )
+    simulator = QuantumSimulator(system)
+
+    full = simulator.simulate([control], dt=0.2)
+    sampled = simulator.simulate([control], dt=0.2, n_samples=2)
+
+    assert_allclose(
+        sampled.final_state.full(),
+        full.final_state.full(),
+        rtol=0.0,
+        atol=0.0,
+    )
+    assert_allclose(
+        sampled.propagators[-1].full(),
+        full.propagators[-1].full(),
+        rtol=0.0,
+        atol=0.0,
+    )
 
 
 def test_simulate_keeps_final_frame_shift_as_result_metadata() -> None:

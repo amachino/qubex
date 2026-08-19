@@ -341,14 +341,14 @@ may still use empty waveform and duration arrays.
 
 ### Update `simulate()` propagation settings
 
-`QuantumSimulator.simulate()` now interprets `dt` as the maximum propagation
-interval rather than a guarantee of uniform output spacing. Its integration
-grid combines a uniform `dt` grid with every `Control` segment boundary and
-every requested output time. A boundary or output time can therefore introduce
-a shorter interval.
+`QuantumSimulator.simulate()` now uses `dt` as its fixed propagation interval.
+The final interval may be shorter so evolution ends exactly at the common
+control duration. Control segment boundaries and requested output times are not
+inserted into this integration grid, so discontinuities that do not coincide
+with the fixed grid are resolved only as `dt` is reduced.
 
 The `TIME_STEP` constant has been removed. `simulate()` now declares its
-default directly as `dt=0.1`; pass `dt` explicitly when a different maximum
+default directly as `dt=0.1`; pass `dt` explicitly when a different fixed
 propagation interval is required.
 
 Within each interval, the zero-order-held control amplitude is selected at the
@@ -362,9 +362,12 @@ Intermediate shifts from a `PulseSchedule` are already reflected in the phases
 of subsequent waveform samples. The per-segment metadata additionally lets
 `SimulationResult` interpret the returned trajectory in the changing logical
 frame. If `n_samples` is specified, it must be at least 2 so that the initial
-and final physical evolution points are both retained. For a positive control
-duration, the result contains exactly `n_samples` uniformly spaced times from
-zero through the common duration. A zero-duration trajectory contains only its
+and final physical evolution points are both retained. Downsampling occurs only
+after the complete fixed-step evolution, so `n_samples` does not change the
+simulated final state. Uniformly spaced trajectory indices are selected, which
+need not produce exactly uniform physical times when the terminal interval is
+shorter than `dt`. If the trajectory already contains at most `n_samples`
+points, all points are returned. A zero-duration trajectory contains only its
 initial point. If `n_samples` is omitted, every fixed-step integration point is
 returned.
 

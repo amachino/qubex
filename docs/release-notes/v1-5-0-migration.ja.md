@@ -337,13 +337,13 @@ duration は有限かつゼロより大きい必要があります。空の cont
 
 ### `simulate()` の伝播設定を更新する
 
-`QuantumSimulator.simulate()` は、`dt` を一様な出力間隔の保証ではなく、最大伝播幅
-として解釈するようになりました。積分グリッドは、一様な `dt` グリッドとすべての
-`Control` segment 境界、および要求したすべての出力時刻を組み合わせます。そのため、
-境界や出力時刻によって `dt` より短い区間が追加されることがあります。
+`QuantumSimulator.simulate()` は、`dt` を固定伝播幅として使用します。共通の control
+duration で正確に時間発展を終えるため、最後の区間だけ `dt` より短くなる場合があります。
+`Control` segment 境界と要求した出力時刻は積分グリッドへ追加しません。そのため、固定
+グリッドと一致しない不連続点は、`dt` を小さくすることでのみ細かく解像されます。
 
 `TIME_STEP` 定数を削除しました。`simulate()` は default を `dt=0.1` として直接
-宣言します。異なる最大伝播幅が必要な場合は、`dt` を明示してください。
+宣言します。異なる固定伝播幅が必要な場合は、`dt` を明示してください。
 
 各区間では、zero-order hold された control 振幅を左端点で選択します。連続的に
 時間依存する carrier 項と coupling 項は区間の中点で評価します。このため、離調した
@@ -354,10 +354,12 @@ drive や回転する coupling の結果は、従来の左端点による伝播�
 の途中の frame shift は、後続 waveform sample の位相へすでに反映されています。segment
 ごとの metadata は、それとは別に `SimulationResult` が返却 trajectory を変化する
 logical frame で解釈するために使います。`n_samples` を指定する場合は、物理的な時間発展
-の初期点と終端点の両方を保持するため、2 以上にしてください。正の control duration
-では、result は時刻ゼロから共通 duration までを等間隔に分けた、ちょうど
-`n_samples` 個の時刻を含みます。duration がゼロなら初期点だけを含みます。
-`n_samples` を省略した場合は、固定 step 積分のすべての点を返します。
+の初期点と終端点の両方を保持するため、2 以上にしてください。downsample は固定 step
+による時間発展をすべて完了した後に行うため、`n_samples` は最終状態を変えません。
+trajectory の index を等間隔に選ぶので、最後の積分区間が `dt` より短い場合、返却される
+物理時刻は厳密な等間隔にならないことがあります。trajectory がすでに `n_samples` 以下
+なら全点を返します。duration がゼロなら初期点だけを含みます。`n_samples` を省略した
+場合は、固定 step 積分のすべての点を返します。
 
 ### QuTiP solver の積分設定を `options` で指定する
 

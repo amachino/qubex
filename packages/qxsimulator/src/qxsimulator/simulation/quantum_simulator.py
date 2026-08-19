@@ -19,7 +19,7 @@ from qxsimulator.system import (
     UnitarySpecification,
 )
 
-from . import _pulse_schedule_adapter, _time_grid
+from . import _pulse_schedule_adapter, _sampling, _time_grid
 from .control import Control
 from .simulation_model import SimulationModel
 from .simulation_result import FrameType, SimulationResult, SubspaceType
@@ -83,15 +83,16 @@ class QuantumSimulator:
             accepted by `QuantumSystem.state`. If omitted, use the system
             ground state.
         dt : float, optional
-            Finite, positive maximum propagation interval in ns. The default
-            is 0.1. Control boundaries and requested output times may introduce
-            shorter intervals.
+            Finite, positive fixed propagation step in ns. The default is 0.1.
+            The final interval may be shorter so evolution ends exactly at the
+            common control duration.
         n_samples : int | None, optional
-            Number of uniformly spaced trajectory points to return from zero
-            through the common control duration. If specified, it must be at
-            least 2 so the initial and final points are retained. If omitted,
-            return every fixed-step integration point. A zero-duration
-            trajectory always contains only its initial point.
+            Maximum number of computed trajectory points to return. If fewer
+            points are requested, uniformly spaced indices are selected after
+            propagation while retaining the initial and final points. If the
+            fixed-step trajectory already has at most this many points, all
+            points are returned. If specified, it must be at least 2. A
+            zero-duration trajectory always contains only its initial point.
         compute_propagators : bool, optional
             Whether to compute and return cumulative Hilbert-space
             propagators. The default is `True`.
@@ -112,11 +113,13 @@ class QuantumSimulator:
         Notes
         -----
         Hamiltonians use angular-frequency units of rad/ns and the rotating
-        frames defined by the system objects. The integration grid combines a
-        uniform grid with every control boundary and requested output time.
-        Within each interval, piecewise-constant control amplitudes are selected
-        at the left endpoint, while continuously time-dependent carrier and
-        coupling terms are evaluated at the midpoint.
+        frames defined by the system objects. The integration grid advances by
+        fixed `dt` steps without inserting control boundaries or requested
+        output times. Within each interval, piecewise-constant control
+        amplitudes are selected at the left endpoint, while continuously
+        time-dependent carrier and coupling terms are evaluated at the
+        midpoint. Output downsampling occurs only after propagation and cannot
+        change the simulated final state.
 
         Couplings retain exchange terms only, and controls retain co-rotating
         drive terms only. These coupling and drive rotating-wave
@@ -131,18 +134,20 @@ class QuantumSimulator:
         controls = _prepare_controls(controls)
         initial_state = _prepare_initial_state(self.system, initial_state)
 
-        integration_times = _time_grid.create_integration_grid(controls, dt)
-        output_times, evolution_times, output_indices = _prepare_trajectory_times(
-            integration_times,
-            n_samples,
+        if n_samples is not None and n_samples < 2:
+            raise ValueError("n_samples must be at least 2 when specified.")
+
+        integration_times = _time_grid.create_integration_grid(
+            controls[0].duration,
+            dt,
         )
-        delta_times = np.diff(evolution_times)
-        midpoints = evolution_times[:-1] + delta_times / 2
+        delta_times = np.diff(integration_times)
+        midpoints = integration_times[:-1] + delta_times / 2
         drive_coefficients: list[npt.NDArray[np.complex128]] = []
         for control in controls:
             frame_frequency = self.system.get_object(control.target).frequency
             detuning = 2 * np.pi * (control.frequency - frame_frequency)
-            samples = control.get_samples(evolution_times[:-1])
+            samples = control.get_samples(integration_times[:-1])
             drive_coefficients.append(
                 0.5 * samples * np.exp(-1j * detuning * midpoints)
             )
@@ -183,10 +188,9 @@ class QuantumSimulator:
                 state = step_propagator @ states[-1] @ step_propagator.dag()
                 states.append(state)
 
-        states = [states[index] for index in output_indices]
-        propagators = (
-            [propagators[index] for index in output_indices] if propagators else []
-        )
+        output_times = _sampling.downsample(integration_times, n_samples)
+        states = _sampling.downsample(states, n_samples)
+        propagators = _sampling.downsample(propagators, n_samples)
 
         return SimulationResult(
             system=self.system,

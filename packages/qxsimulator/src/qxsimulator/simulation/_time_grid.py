@@ -9,45 +9,38 @@ from .control import Control
 
 
 def create_integration_grid(
-    controls: list[Control],
-    max_step: float,
+    duration: float,
+    dt: float,
 ) -> npt.NDArray[np.float64]:
     """
-    Combine a uniform maximum-step grid with all control boundaries.
+    Create a fixed-step integration grid.
 
     Parameters
     ----------
-    controls : list[Control]
-        Nonempty controls with a common duration.
-    max_step : float
-        Maximum interval of the uniform grid in ns. Must be finite and
-        positive.
+    duration : float
+        Terminal time in ns.
+    dt : float
+        Fixed integration step in ns. Must be finite and positive.
 
     Returns
     -------
     npt.NDArray[np.float64]
         Strictly increasing integration times in ns, starting at zero and
-        ending at the common control duration.
+        ending at `duration`.
 
     Raises
     ------
     ValueError
-        If `max_step` is not finite and positive.
+        If `dt` is not finite and positive.
 
     Notes
     -----
-    Control boundaries can split a uniform interval, so adjacent returned
-    times may be separated by less than `max_step`.
+    Every interval has width `dt` except for a potentially shorter terminal
+    interval. Control boundaries are not inserted into this grid.
     """
-    if not np.isfinite(max_step) or max_step <= 0:
+    if not np.isfinite(dt) or dt <= 0:
         raise ValueError("dt must be finite and greater than zero.")
-
-    duration = controls[0].duration
-    uniform_times = _create_uniform_times(duration, max_step)
-    return _merge_times(
-        [uniform_times, *(control.times for control in controls)],
-        duration,
-    )
+    return _create_uniform_times(duration, dt)
 
 
 def create_control_boundary_times(
@@ -223,7 +216,7 @@ def _merge_times(
 
 def _create_uniform_times(
     duration: float,
-    max_step: float,
+    dt: float,
 ) -> npt.NDArray[np.float64]:
     """
     Create uniform times from zero through a finite duration.
@@ -232,15 +225,15 @@ def _create_uniform_times(
     ----------
     duration : float
         Terminal time in ns.
-    max_step : float
-        Uniform interval in ns.
+    dt : float
+        Fixed integration step in ns.
 
     Returns
     -------
     npt.NDArray[np.float64]
         Times whose final element is exactly `duration`.
     """
-    times = np.arange(0, duration, max_step)
+    times = np.arange(0, duration, dt)
 
     # Handle potential floating point overshoot from arange.
     if len(times) > 0 and times[-1] > duration:
