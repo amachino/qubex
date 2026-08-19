@@ -16,9 +16,9 @@ PORT: Final = "/dev/ttyACM0"
 @contextmanager
 def dc_voltage(voltages: dict[int, float]) -> Iterator[ONS61797]:
     """Temporarily apply DC voltages and restore originals on exit."""
+    ons61797 = ONS61797(port=PORT)
+    original_voltages: dict[int, float] = {}
     try:
-        ons61797 = ONS61797(port=PORT)
-        original_voltages = {}
         for channel, voltage in voltages.items():
             original_voltages[channel] = ons61797.get_voltage(channel)
             ons61797.set_voltage(channel, voltage)
