@@ -14,9 +14,11 @@ import pytest
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.backend.quel3 import Quel3BackendController
 from qubex.external_devices import (
+    DCVoltageConfig,
     DCVoltageControllerConfig,
     DCVoltageProfile,
     ExternalDevicesConfig,
+    ExternalDevicesController,
 )
 from qubex.external_devices.dc_voltage.config import DCVoltageProfileOverride
 from qubex.system.control_system import PortType
@@ -1124,7 +1126,13 @@ def test_resolve_dc_voltage_profile_overlays_calibrated_idle_voltage(
         voltage_defaults=DCVoltageProfile(channel=1, reset_voltage_v=0.1),
         muxes={6: DCVoltageProfileOverride(channel=1)},
     )
-    monkeypatch.setattr(manager, "_dc_voltage_controller_config", config)
+    monkeypatch.setattr(
+        manager,
+        "_external_devices_controller",
+        ExternalDevicesController(
+            ExternalDevicesConfig(dc_voltage=DCVoltageConfig(controller=config))
+        ),
+    )
 
     class _ControlParams:
         def get_idle_voltage(self, mux: int) -> float | None:
@@ -1151,7 +1159,13 @@ def test_resolve_dc_voltage_profile_rejects_invalid_calibrated_idle_voltage(
         voltage_defaults=DCVoltageProfile(channel=1),
         muxes={6: DCVoltageProfileOverride(channel=1)},
     )
-    monkeypatch.setattr(manager, "_dc_voltage_controller_config", config)
+    monkeypatch.setattr(
+        manager,
+        "_external_devices_controller",
+        ExternalDevicesController(
+            ExternalDevicesConfig(dc_voltage=DCVoltageConfig(controller=config))
+        ),
+    )
 
     class _ControlParams:
         def get_idle_voltage(self, mux: int) -> float | None:
@@ -1188,11 +1202,13 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
         @property
         def external_devices_config(self) -> ExternalDevicesConfig:
             return ExternalDevicesConfig(
-                dc_voltage=DCVoltageControllerConfig(
-                    driver="ons61797",
-                    params={"port": "/dev/system-dc"},
-                    voltage_defaults=DCVoltageProfile(channel=1),
-                    muxes={6: DCVoltageProfileOverride(channel=1)},
+                dc_voltage=DCVoltageConfig(
+                    controller=DCVoltageControllerConfig(
+                        driver="ons61797",
+                        params={"port": "/dev/system-dc"},
+                        voltage_defaults=DCVoltageProfile(channel=1),
+                        muxes={6: DCVoltageProfileOverride(channel=1)},
+                    )
                 )
             )
 
@@ -1207,7 +1223,7 @@ def test_load_creates_dc_voltage_controller_from_config_loader(
 
     monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
     monkeypatch.setattr(
-        "qubex.system.system_manager.create_dc_voltage_controller",
+        "qubex.external_devices.controller.create_dc_voltage_controller",
         _fake_create_dc_voltage_controller,
     )
     monkeypatch.setattr(
@@ -1766,11 +1782,13 @@ def test_load_preserves_state_when_dc_controller_validation_fails(
     manager = SystemManager.shared()
     manager.__dict__["_backend_kind"] = BACKEND_KIND_QUEL1
     previous_loader = object()
-    previous_controller = object()
-    previous_config = DCVoltageControllerConfig()
+    previous_dc_controller = object()
+    previous_external_controller = SimpleNamespace(
+        dc_voltage=previous_dc_controller,
+        config=ExternalDevicesConfig(),
+    )
     manager.__dict__["_config_loader"] = previous_loader
-    manager.__dict__["_dc_voltage_controller"] = previous_controller
-    manager.__dict__["_dc_voltage_controller_config"] = previous_config
+    manager.__dict__["_external_devices_controller"] = previous_external_controller
     selected: list[str] = []
 
     class _InvalidDCConfigLoader:
@@ -1787,7 +1805,9 @@ def test_load_preserves_state_when_dc_controller_validation_fails(
         @property
         def external_devices_config(self) -> ExternalDevicesConfig:
             return ExternalDevicesConfig(
-                dc_voltage=DCVoltageControllerConfig(driver="unsupported")
+                dc_voltage=DCVoltageConfig(
+                    controller=DCVoltageControllerConfig(driver="unsupported")
+                )
             )
 
         def get_experiment_system(self) -> object:
@@ -1808,5 +1828,7 @@ def test_load_preserves_state_when_dc_controller_validation_fails(
     assert selected == []
     assert manager.backend_kind == BACKEND_KIND_QUEL1
     assert manager.__dict__["_config_loader"] is previous_loader
-    assert manager.dc_voltage_controller is previous_controller
-    assert manager.__dict__["_dc_voltage_controller_config"] is previous_config
+    assert manager.dc_voltage_controller is previous_dc_controller
+    assert (
+        manager.__dict__["_external_devices_controller"] is previous_external_controller
+    )

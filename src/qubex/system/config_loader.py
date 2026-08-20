@@ -673,7 +673,7 @@ class ConfigLoader:
             return
         mux_indices = {
             mux_index
-            for role_wiring in self._external_devices_config.wiring.values()
+            for role_wiring in self._external_devices_config.dc_voltage.wiring.values()
             for mux_index in role_wiring
         }
         known_mux_indices = {mux.index for mux in self._quantum_system.muxes}

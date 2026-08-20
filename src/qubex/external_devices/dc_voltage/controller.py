@@ -412,6 +412,7 @@ class DCVoltageController:
         no connection is held while the caller's block runs.
         """
         profiles = {channel: profile for channel, (_, profile) in requests.items()}
+        self._validate_voltages(profile.idle_voltage_v for profile in profiles.values())
         try:
             self.apply_channels(requests)
             yield

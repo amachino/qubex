@@ -9,11 +9,11 @@ from typing import Any, ClassVar
 
 import pytest
 
+from qubex.external_devices import ExternalDevicesConfig
 from qubex.external_devices.dc_voltage import (
     DCVoltageController,
     DCVoltageControllerConfig,
     DCVoltageProfile,
-    ExternalDevicesConfig,
     create_dc_voltage_controller,
 )
 from qubex.external_devices.dc_voltage.drivers import ONS61797Device
@@ -159,7 +159,7 @@ def test_factory_resolves_registered_driver_with_opaque_connection(
             },
             "wiring": [{"mux": 0, "bias": "FAKE1-1"}],
         }
-    ).dc_voltage
+    ).dc_voltage.controller
 
     controller = create_dc_voltage_controller(config)
     controller.read_channels([1])
@@ -199,7 +199,7 @@ def test_ons61797_driver_validates_its_own_connection_options() -> None:
             },
             "wiring": [{"mux": 0, "bias": "ONS1-1"}],
         }
-    ).dc_voltage
+    ).dc_voltage.controller
 
     with pytest.raises(TypeError, match="Only one"):
         create_dc_voltage_controller(config)
@@ -237,7 +237,7 @@ def test_external_devices_config_resolves_device_output_refs() -> None:
         }
     )
 
-    controller = config.dc_voltage
+    controller = config.dc_voltage.controller
     assert controller.driver == "ons61797"
     assert controller.params == {"port": "/dev/ttyACM0"}
     assert controller.device_id == "ONS1"
@@ -264,7 +264,7 @@ def test_settings_reset_voltage_resolves_with_overrides() -> None:
         }
     )
 
-    controller = config.dc_voltage
+    controller = config.dc_voltage.controller
     assert controller.resolve_voltage_profile(0).reset_voltage_v == -0.1
     assert controller.resolve_voltage_profile(1).reset_voltage_v == 0.05
     # Without calibration, the idle voltage falls back to the reset voltage.
@@ -439,7 +439,7 @@ def test_qblox_ramp_constraints_fail_during_controller_creation(
         {
             "devices": {
                 "QBLOX1": {
-                    "driver": "qblox_server",
+                    "driver": "qblox_backend",
                     "channels": [1],
                     "params": {"host": "server", "port": 12345},
                 }
@@ -447,7 +447,7 @@ def test_qblox_ramp_constraints_fail_during_controller_creation(
             "wiring": [{"mux": 0, "bias": "QBLOX1-1"}],
             "settings": {"ramp": ramp},
         }
-    ).dc_voltage
+    ).dc_voltage.controller
     with pytest.raises(ValueError, match=match):
         create_dc_voltage_controller(config)
 
@@ -531,6 +531,32 @@ def test_apply_voltages_attempts_idle_after_partial_apply_failure(
         pass
 
     assert idle_calls == [{1: profile}]
+
+
+def test_apply_voltages_validates_idle_targets_before_applying_bias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid idle target should prevent every bias-voltage write."""
+    applied: list[object] = []
+
+    def validate_voltage(voltage: float) -> None:
+        if voltage < 0.0:
+            raise ValueError("voltage outside safe range")
+
+    controller = DCVoltageController(
+        device_factory=_FakeDCVoltageDevice,
+        validate_voltage=validate_voltage,
+    )
+    monkeypatch.setattr(controller, "apply_channels", applied.append)
+    profile = DCVoltageProfile(channel=1, idle_voltage_v=-0.05)
+
+    with (
+        pytest.raises(ValueError, match="outside safe range"),
+        controller.apply_voltages({1: (0.25, profile)}),
+    ):
+        pass
+
+    assert applied == []
 
 
 def test_apply_channels_validates_every_target_before_opening_device() -> None:

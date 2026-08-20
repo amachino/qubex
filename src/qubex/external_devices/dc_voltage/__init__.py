@@ -1,10 +1,10 @@
 """External DC voltage configuration and device control."""
 
 from .config import (
+    DCVoltageConfig,
     DCVoltageControllerConfig,
     DCVoltageDeviceConfig,
     DCVoltageProfile,
-    ExternalDevicesConfig,
 )
 from .controller import (
     DCVoltageController,
@@ -12,10 +12,10 @@ from .controller import (
 )
 
 __all__ = [
+    "DCVoltageConfig",
     "DCVoltageController",
     "DCVoltageControllerConfig",
     "DCVoltageDeviceConfig",
     "DCVoltageProfile",
-    "ExternalDevicesConfig",
     "create_dc_voltage_controller",
 ]

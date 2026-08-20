@@ -8,15 +8,15 @@ from typing import Any
 
 import pytest
 
+from qubex.external_devices import ExternalDevicesConfig
 from qubex.external_devices.dc_voltage import (
     DCVoltageController,
     DCVoltageProfile,
-    ExternalDevicesConfig,
     create_dc_voltage_controller,
 )
-from qubex.external_devices.dc_voltage.drivers.qblox_server import (
-    QbloxServerConnectionConfig,
-    QbloxServerDevice,
+from qubex.external_devices.dc_voltage.drivers.qblox_backend import (
+    QbloxBackendClient,
+    QbloxBackendConnectionConfig,
 )
 
 
@@ -52,7 +52,7 @@ def _socket_factory(fake_socket: _FakeSocket) -> Callable[..., _FakeSocket]:
 
 def test_connection_config_parses_server_and_channel_mapping() -> None:
     """Qblox server config should parse endpoint and logical channel names."""
-    config = QbloxServerConnectionConfig.from_dict(
+    config = QbloxBackendConnectionConfig.from_dict(
         "QBLOX1",
         {
             "host": "dc-backend.example",
@@ -62,7 +62,7 @@ def test_connection_config_parses_server_and_channel_mapping() -> None:
         },
     )
 
-    assert config == QbloxServerConnectionConfig(
+    assert config == QbloxBackendConnectionConfig(
         host="dc-backend.example",
         port=12345,
         timeout_s=600.0,
@@ -72,7 +72,7 @@ def test_connection_config_parses_server_and_channel_mapping() -> None:
 
 def test_qblox_server_reports_no_physical_output_switch() -> None:
     """Qblox server devices should report that physical switching is unavailable."""
-    device = QbloxServerDevice(
+    device = QbloxBackendClient(
         host="server",
         port=12345,
         channels={1: "Qblox1-1"},
@@ -84,7 +84,7 @@ def test_qblox_server_reports_no_physical_output_switch() -> None:
 
 def test_connection_config_derives_channels_from_device_id() -> None:
     """Backend device names should derive from the device id and channels."""
-    config = QbloxServerConnectionConfig.from_dict(
+    config = QbloxBackendConnectionConfig.from_dict(
         "Qblox1",
         {
             "host": "dc-backend.example",
@@ -99,7 +99,7 @@ def test_connection_config_derives_channels_from_device_id() -> None:
 def test_connection_config_requires_channels_for_derived_names() -> None:
     """Deriving backend names requires a device `channels` list."""
     with pytest.raises(ValueError, match="channels"):
-        QbloxServerConnectionConfig.from_dict(
+        QbloxBackendConnectionConfig.from_dict(
             "Qblox1",
             {"host": "server", "port": 1},
         )
@@ -108,7 +108,7 @@ def test_connection_config_requires_channels_for_derived_names() -> None:
 def test_connection_config_rejects_unknown_settings() -> None:
     """Unknown driver params should fail at parse time."""
     with pytest.raises(ValueError, match="Unknown Qblox server settings"):
-        QbloxServerConnectionConfig.from_dict(
+        QbloxBackendConnectionConfig.from_dict(
             "Qblox1",
             {"host": "server", "port": 1, "device_prefix": "Qblox1"},
             device_channels=(1,),
@@ -139,13 +139,13 @@ def test_connection_config_rejects_invalid_settings(
 ) -> None:
     """Qblox server config should reject unsafe endpoint and channel settings."""
     with pytest.raises(error, match=message):
-        QbloxServerConnectionConfig.from_dict("QBLOX1", connection)
+        QbloxBackendConnectionConfig.from_dict("QBLOX1", connection)
 
 
 def test_device_sends_existing_set_voltage_protocol() -> None:
     """Voltage setting should use command 0x62 and a little-endian double."""
     fake_socket = _FakeSocket([b"\x00"])
-    device = QbloxServerDevice(
+    device = QbloxBackendClient(
         host="server",
         port=12345,
         channels={1: "Qblox-A-1"},
@@ -161,7 +161,7 @@ def test_device_reads_fragmented_voltage_response_exactly() -> None:
     """Voltage readback should assemble a fragmented 9-byte TCP response."""
     payload = struct.pack("<d", 0.375)
     fake_socket = _FakeSocket([b"\x00" + payload[:2], payload[2:5], payload[5:]])
-    device = QbloxServerDevice(
+    device = QbloxBackendClient(
         host="server",
         port=12345,
         channels={1: "Qblox-A-1"},
@@ -177,7 +177,7 @@ def test_device_reads_fragmented_voltage_response_exactly() -> None:
 def test_device_rejects_get_voltage_error_without_waiting_for_payload() -> None:
     """A failed voltage read should reject its status-only response immediately."""
     fake_socket = _FakeSocket([b"\xff"])
-    device = QbloxServerDevice(
+    device = QbloxBackendClient(
         host="server",
         port=12345,
         channels={1: "Qblox-A-1"},
@@ -193,7 +193,7 @@ def test_device_rejects_get_voltage_error_without_waiting_for_payload() -> None:
 def test_device_sends_existing_native_sweep_protocol() -> None:
     """Native ramp should use command 0x64 and the backend's five doubles."""
     fake_socket = _FakeSocket([b"\x00"])
-    device = QbloxServerDevice(
+    device = QbloxBackendClient(
         host="server",
         port=12345,
         channels={2: "Qblox-A-2"},
@@ -224,7 +224,7 @@ def test_device_reuses_one_socket_for_ramps_and_readbacks() -> None:
             b"\x00" + struct.pack("<d", 0.0),
         ]
     )
-    device = QbloxServerDevice(
+    device = QbloxBackendClient(
         host="server",
         port=12345,
         channels={2: "Qblox-A-2"},
@@ -242,7 +242,7 @@ def test_device_reuses_one_socket_for_ramps_and_readbacks() -> None:
 
 def test_device_rejects_backend_error_status() -> None:
     """A nonzero backend status should raise an operation error."""
-    device = QbloxServerDevice(
+    device = QbloxBackendClient(
         host="server",
         port=12345,
         channels={1: "Qblox-A-1"},
@@ -259,14 +259,14 @@ def test_controller_factory_resolves_qblox_server_driver(
     """Controller factory should create the registered Qblox server driver."""
     fake_socket = _FakeSocket([b"\x00" + struct.pack("<d", 0.1)])
     monkeypatch.setattr(
-        "qubex.external_devices.dc_voltage.drivers.qblox_server.socket.create_connection",
+        "qubex.external_devices.dc_voltage.drivers.qblox_backend.socket.create_connection",
         _socket_factory(fake_socket),
     )
     config = ExternalDevicesConfig.from_dict(
         {
             "devices": {
                 "Qblox1": {
-                    "driver": "qblox_server",
+                    "driver": "qblox_backend",
                     "params": {
                         "host": "server",
                         "port": 12345,
@@ -276,7 +276,7 @@ def test_controller_factory_resolves_qblox_server_driver(
             },
             "wiring": [{"mux": 8, "bias": "Qblox1-15"}],
         }
-    ).dc_voltage
+    ).dc_voltage.controller
 
     controller = create_dc_voltage_controller(config)
     readings = controller.read_channels([15])

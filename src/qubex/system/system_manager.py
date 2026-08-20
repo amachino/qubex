@@ -27,10 +27,9 @@ from qubex.constants import (
 )
 from qubex.external_devices import (
     DCVoltageController,
-    DCVoltageControllerConfig,
     DCVoltageProfile,
     ExternalDevicesConfig,
-    create_dc_voltage_controller,
+    ExternalDevicesController,
 )
 from qubex.typing import ConfigurationMode
 
@@ -156,8 +155,7 @@ class SystemManager:
         self._experiment_system = None
         self._backend_kind: BackendKind = BACKEND_KIND_QUEL1
         self._backend_controller = self._create_backend_controller(self._backend_kind)
-        self._dc_voltage_controller = create_dc_voltage_controller()
-        self._dc_voltage_controller_config = DCVoltageControllerConfig()
+        self._external_devices_controller = ExternalDevicesController()
         self._system_synchronizer = self._create_system_synchronizer(
             self._backend_controller,
             self._backend_kind,
@@ -185,11 +183,13 @@ class SystemManager:
     @property
     def dc_voltage_controller(self) -> DCVoltageController:
         """Return configured DC voltage controller for the active system."""
-        return self._dc_voltage_controller
+        return self._external_devices_controller.dc_voltage
 
     def dc_voltage_mux_indices(self) -> list[int]:
         """Return all mux indices with configured DC voltage wiring."""
-        return sorted(self._dc_voltage_controller_config.muxes)
+        return sorted(
+            self._external_devices_controller.config.dc_voltage.controller.muxes
+        )
 
     def resolve_dc_voltage_channel(self, mux_index: int) -> int:
         """Resolve a one-based DC channel for one mux index."""
@@ -202,13 +202,15 @@ class SystemManager:
         The idle voltage is the calibrated `idle_voltage` from
         `jpa_params.yaml` when present, and the reset voltage otherwise.
         """
-        profile = self._dc_voltage_controller_config.resolve_voltage_profile(mux_index)
+        profile = self._external_devices_controller.config.dc_voltage.controller.resolve_voltage_profile(
+            mux_index
+        )
         control_params = getattr(self._experiment_system, "control_params", None)
         if control_params is not None:
             idle_voltage = control_params.get_idle_voltage(mux_index)
             if idle_voltage is not None:
                 profile = replace(profile, idle_voltage_v=idle_voltage)
-        self._dc_voltage_controller.validate_voltage(profile.idle_voltage_v)
+        self.dc_voltage_controller.validate_voltage(profile.idle_voltage_v)
         return profile
 
     def set_backend_kind(self, backend_kind: BackendKind) -> None:
@@ -408,8 +410,9 @@ class SystemManager:
             "external_devices_config",
             ExternalDevicesConfig(),
         )
-        dc_voltage_config = external_devices_config.dc_voltage
-        next_dc_voltage_controller = create_dc_voltage_controller(dc_voltage_config)
+        next_external_devices_controller = ExternalDevicesController(
+            external_devices_config
+        )
 
         resolved_backend_kind = next_config_loader.backend_kind
         self.set_backend_kind(resolved_backend_kind)
@@ -424,8 +427,7 @@ class SystemManager:
                 resolved_backend_kind,
             )
             self._backend_settings = BackendSettings()
-        self._dc_voltage_controller = next_dc_voltage_controller
-        self._dc_voltage_controller_config = dc_voltage_config
+        self._external_devices_controller = next_external_devices_controller
         self._config_loader = next_config_loader
         self._mock_mode = mock_mode
         self._experiment_system = next_experiment_system

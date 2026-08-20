@@ -23,7 +23,7 @@ _MIN_STEP_SIZE_V = 0.001 / 8.192
 _MIN_WAIT_S = 0.001
 
 
-def _validate_qblox_server_ramp_settings(
+def _validate_qblox_backend_ramp_settings(
     rate_v_per_s: float,
     step_size_v: float,
     wait_s: float,
@@ -41,24 +41,24 @@ def _validate_qblox_server_ramp_settings(
         raise ValueError("Qblox backend ramp wait must be at least 0.001 s.")
 
 
-def validate_qblox_server_profile(profile: DCVoltageProfile) -> None:
-    """Validate one resolved profile for the Qblox server driver."""
-    _validate_qblox_server_ramp_settings(
+def validate_qblox_backend_profile(profile: DCVoltageProfile) -> None:
+    """Validate one resolved profile for the Qblox backend driver."""
+    _validate_qblox_backend_ramp_settings(
         profile.ramp_rate_v_per_s,
         profile.ramp_step_size_v,
         profile.ramp_wait_s,
     )
-    validate_qblox_server_voltage(profile.reset_voltage_v)
+    validate_qblox_backend_voltage(profile.reset_voltage_v)
 
 
-def validate_qblox_server_voltage(voltage: float) -> None:
+def validate_qblox_backend_voltage(voltage: float) -> None:
     """Validate one target against the Qblox backend voltage range."""
     if not math.isfinite(voltage) or not _MIN_VOLTAGE_V <= voltage <= _MAX_VOLTAGE_V:
         raise ValueError("Qblox backend voltage must be between -4.0 V and 4.0 V.")
 
 
 @dataclass(frozen=True)
-class QbloxServerConnectionConfig:
+class QbloxBackendConnectionConfig:
     """Configure a connection to a Qblox backend server."""
 
     host: str
@@ -72,7 +72,7 @@ class QbloxServerConnectionConfig:
         device_id: str,
         params: Mapping[str, object],
         device_channels: Sequence[int] | None = None,
-    ) -> QbloxServerConnectionConfig:
+    ) -> QbloxBackendConnectionConfig:
         """Parse Qblox backend endpoint and channel names."""
         known = {"host", "port", "timeout_s", "device_names"}
         unknown = set(params) - known
@@ -135,15 +135,15 @@ def _parse_device_names(
     return names
 
 
-def create_qblox_server_device_factory(
+def create_qblox_backend_device_factory(
     device_id: str,
     params: Mapping[str, object],
     device_channels: Sequence[int] | None = None,
 ) -> DCVoltageDeviceFactory:
     """Create a Qblox backend server device factory."""
-    config = QbloxServerConnectionConfig.from_dict(device_id, params, device_channels)
+    config = QbloxBackendConnectionConfig.from_dict(device_id, params, device_channels)
     return partial(
-        QbloxServerDevice,
+        QbloxBackendClient,
         host=config.host,
         port=config.port,
         channels=config.channels,
@@ -151,7 +151,7 @@ def create_qblox_server_device_factory(
     )
 
 
-class QbloxServerDevice:
+class QbloxBackendClient:
     """Use a Qblox backend server as the single USB device owner."""
 
     def __init__(
@@ -228,7 +228,7 @@ class QbloxServerDevice:
         """Request one complete backend-side voltage sweep."""
         self._validate_voltage(start_voltage)
         self._validate_voltage(target_voltage)
-        _validate_qblox_server_ramp_settings(rate_v_per_s, step_size_v, wait_s)
+        _validate_qblox_backend_ramp_settings(rate_v_per_s, step_size_v, wait_s)
         request = (
             _COMMAND_SWEEP_VOLTAGE
             + self._device_name(channel)
@@ -257,7 +257,7 @@ class QbloxServerDevice:
     @staticmethod
     def _validate_voltage(voltage: float) -> None:
         """Validate the backend's standard bipolar voltage range."""
-        validate_qblox_server_voltage(voltage)
+        validate_qblox_backend_voltage(voltage)
 
     def _require_success(self, operation: str, *, status: bytes | None = None) -> None:
         """Require the backend's one-byte zero success response."""

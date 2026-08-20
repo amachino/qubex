@@ -585,8 +585,8 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     )
 
 
-def test_legacy_dc_voltage_name_fails_with_migration_guidance(tmp_path: Path) -> None:
-    """Legacy dc_voltage should fail explicitly instead of being silently skipped."""
+def test_legacy_dc_voltage_name_warns_and_maps_to_bias_voltage(tmp_path: Path) -> None:
+    """Legacy dc_voltage should warn and remain available as bias_voltage."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
         params_dir / "jpa_params.yaml",
@@ -596,12 +596,20 @@ def test_legacy_dc_voltage_name_fails_with_migration_guidance(tmp_path: Path) ->
         },
     )
 
-    with pytest.raises(ValueError, match=r"`dc_voltage`.*`bias_voltage`"):
-        ConfigLoader(
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"`dc_voltage`.*`bias_voltage`.*v1\.6\.0",
+    ):
+        loader = ConfigLoader(
             system_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
         )
+
+    control_parameters = loader.get_experiment_system().control_params
+    assert control_parameters.get_bias_voltage(0) == pytest.approx(0.2)
+    with pytest.warns(DeprecationWarning, match=r"get_dc_voltage.*v1\.6\.0"):
+        assert control_parameters.get_dc_voltage(0) == pytest.approx(0.2)
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
@@ -2354,7 +2362,7 @@ def test_external_devices_config_loads_dc_controller_profiles(
         params_dir=params_dir,
     )
 
-    controller = loader.external_devices_config.dc_voltage
+    controller = loader.external_devices_config.dc_voltage.controller
     assert controller.driver == "ons61797"
     assert controller.params == {"port": "/dev/system-dc"}
     assert controller.device_id == "ONS1"
@@ -2385,7 +2393,7 @@ def test_external_devices_config_defaults_when_missing(
         params_dir=params_dir,
     )
 
-    controller = loader.external_devices_config.dc_voltage
+    controller = loader.external_devices_config.dc_voltage.controller
     assert controller.driver == "ons61797"
     assert controller.params == {}
     with pytest.raises(ValueError, match=r"Mux 6 has no DC voltage wiring"):

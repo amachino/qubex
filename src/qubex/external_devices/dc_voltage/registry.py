@@ -11,10 +11,10 @@ from .drivers.ons61797 import (
     validate_ons61797_profile,
     validate_ons61797_voltage,
 )
-from .drivers.qblox_server import (
-    create_qblox_server_device_factory,
-    validate_qblox_server_profile,
-    validate_qblox_server_voltage,
+from .drivers.qblox_backend import (
+    create_qblox_backend_device_factory,
+    validate_qblox_backend_profile,
+    validate_qblox_backend_voltage,
 )
 from .protocol import DCVoltageDeviceFactory
 
@@ -39,9 +39,9 @@ DC_VOLTAGE_DRIVER_REGISTRY: dict[str, DCVoltageDriverSpec] = {
         validate_profile=validate_ons61797_profile,
         validate_voltage=validate_ons61797_voltage,
     ),
-    "qblox_server": DCVoltageDriverSpec(
-        create_device_factory=create_qblox_server_device_factory,
-        validate_profile=validate_qblox_server_profile,
-        validate_voltage=validate_qblox_server_voltage,
+    "qblox_backend": DCVoltageDriverSpec(
+        create_device_factory=create_qblox_backend_device_factory,
+        validate_profile=validate_qblox_backend_profile,
+        validate_voltage=validate_qblox_backend_voltage,
     ),
 }

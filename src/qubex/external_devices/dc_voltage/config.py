@@ -320,18 +320,18 @@ def _parse_profile_overrides(
 
 
 @dataclass(frozen=True)
-class ExternalDevicesConfig:
-    """Configure external devices attached to one Qubex system."""
+class DCVoltageConfig:
+    """Configure the DC-voltage section of external devices."""
 
     devices: dict[str, DCVoltageDeviceConfig] = field(default_factory=dict)
     wiring: dict[str, dict[int, tuple[str, int]]] = field(default_factory=dict)
-    dc_voltage: DCVoltageControllerConfig = field(
+    controller: DCVoltageControllerConfig = field(
         default_factory=DCVoltageControllerConfig
     )
 
     @classmethod
-    def from_dict(cls, raw_config: object) -> ExternalDevicesConfig:
-        """Create external-device configuration from one YAML mapping."""
+    def from_dict(cls, raw_config: object) -> DCVoltageConfig:
+        """Create DC-voltage configuration from the external-device mapping."""
         if raw_config is None or raw_config == {}:
             return cls()
         if not isinstance(raw_config, Mapping):
@@ -367,7 +367,7 @@ class ExternalDevicesConfig:
         return cls(
             devices=devices,
             wiring=wiring,
-            dc_voltage=dc_voltage,
+            controller=dc_voltage,
         )
 
 

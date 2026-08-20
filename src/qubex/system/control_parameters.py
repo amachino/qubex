@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import NotRequired, TypedDict, deprecated
 
 from qubex.core import MutableModel
 
@@ -151,6 +151,14 @@ class ControlParameters(MutableModel):
                 f"Mux {mux} has no calibrated `bias_voltage` in `jpa_params.yaml`."
             )
         return value
+
+    @deprecated(
+        "`get_dc_voltage()` is deprecated; use `get_bias_voltage()` instead. "
+        "Deprecated in v1.5.0; will be removed no earlier than v1.6.0."
+    )
+    def get_dc_voltage(self, mux: int) -> float:
+        """Return the calibrated bias voltage through the deprecated API."""
+        return self.get_bias_voltage(mux)
 
     def get_idle_voltage(self, mux: int) -> float | None:
         """Return the calibrated idle voltage for a mux, if any."""

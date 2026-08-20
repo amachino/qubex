@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
@@ -258,13 +259,21 @@ class ControlParameterDefaults:
                 "pump_amplitude": self.pump_amplitude,
             }
         if "dc_voltage" in value:
-            raise ValueError(
-                "JPA parameter `dc_voltage` is no longer supported; rename it "
-                "to `bias_voltage`."
+            if "bias_voltage" in value:
+                raise ValueError(
+                    "JPA parameters cannot define both deprecated `dc_voltage` "
+                    "and `bias_voltage`."
+                )
+            warnings.warn(
+                "JPA parameter `dc_voltage` is deprecated; use `bias_voltage` "
+                "instead. Deprecated in v1.5.0; will be removed no earlier "
+                "than v1.6.0.",
+                DeprecationWarning,
+                stacklevel=3,
             )
         raw_pump_frequency = value.get("pump_frequency")
         raw_pump_amplitude = value.get("pump_amplitude")
-        raw_bias_voltage = value.get("bias_voltage")
+        raw_bias_voltage = value.get("bias_voltage", value.get("dc_voltage"))
         raw_idle_voltage = value.get("idle_voltage")
         resolved: JPAParameters = {
             "pump_frequency": (
