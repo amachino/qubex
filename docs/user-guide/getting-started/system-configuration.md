@@ -165,7 +165,7 @@ on the same instrument concurrently. A future server-backed NF driver is the
 planned multi-client path.
 
 To control a Qblox SPI Rack through a server process that owns its USB
-connection, use the `qblox_server` driver. Qubex connects to that server as a
+connection, use the `qblox_backend` driver. Qubex connects to that server as a
 TCP client. Because a single process keeps ownership of the serial device,
 this is the recommended configuration when multiple systems use the same
 instrument.
@@ -173,7 +173,7 @@ instrument.
 ```yaml
 devices:
   Qblox1:
-    driver: qblox_server
+    driver: qblox_backend
     channels: [1, 2]
     params:
       host: "<qblox-backend-host>"

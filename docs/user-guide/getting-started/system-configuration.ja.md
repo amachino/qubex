@@ -138,14 +138,14 @@ settings:
 複数clientでの利用は、将来追加するNF向けserver driverで対応する予定です。
 
 Qblox SPI Rackを、USB接続を所有するserver processを経由して制御する場合は、
-`qblox_server` driverを使用します。QubexはこのserverへTCP clientとして
+`qblox_backend` driverを使用します。QubexはこのserverへTCP clientとして
 接続します。serial deviceを開くprocessを一つに保てるため、複数のシステムが
 同じ装置を利用する環境ではこの構成を推奨します。
 
 ```yaml
 devices:
   Qblox1:
-    driver: qblox_server
+    driver: qblox_backend
     channels: [1, 2]
     params:
       host: "<qblox-backend-host>"

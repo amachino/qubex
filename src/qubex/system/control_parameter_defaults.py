@@ -266,8 +266,7 @@ class ControlParameterDefaults:
                 )
             warnings.warn(
                 "JPA parameter `dc_voltage` is deprecated; use `bias_voltage` "
-                "instead. Deprecated in v1.5.0; will be removed no earlier "
-                "than v1.6.0.",
+                "instead. Deprecated in v1.5.0.",
                 DeprecationWarning,
                 stacklevel=3,
             )

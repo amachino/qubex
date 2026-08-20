@@ -224,7 +224,9 @@ fileが無い system ではDC電圧操作は行われません。`idle_voltage` 
 無い mux は reset 電圧で待機します。制御ポリシーは
 `external_devices.yaml` に置きます (システム設定ガイド参照)。
 
-旧 `dc_voltage` key は使用できません。`bias_voltage` へ変更してください。
+正規の key は `bias_voltage` です。旧 `dc_voltage` key は deprecated alias として
+引き続き読み込めますが、`DeprecationWarning` が発生します。既存設定を
+`bias_voltage` へ変更してください。
 
 ### Measurement defaults
 

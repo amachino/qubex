@@ -228,7 +228,9 @@ optional; without it a mux idles at the configured reset voltage. The
 control policy lives in `external_devices.yaml` (see the system
 configuration guide).
 
-The former `dc_voltage` key is not accepted; rename it to `bias_voltage`.
+`bias_voltage` is the canonical key. The former `dc_voltage` key remains a
+deprecated alias and emits `DeprecationWarning`. Rename existing configurations
+to `bias_voltage`.
 
 ### Measurement defaults
 

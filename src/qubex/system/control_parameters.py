@@ -154,7 +154,7 @@ class ControlParameters(MutableModel):
 
     @deprecated(
         "`get_dc_voltage()` is deprecated; use `get_bias_voltage()` instead. "
-        "Deprecated in v1.5.0; will be removed no earlier than v1.6.0."
+        "Deprecated in v1.5.0."
     )
     def get_dc_voltage(self, mux: int) -> float:
         """Return the calibrated bias voltage through the deprecated API."""

@@ -598,18 +598,23 @@ def test_legacy_dc_voltage_name_warns_and_maps_to_bias_voltage(tmp_path: Path) -
 
     with pytest.warns(
         DeprecationWarning,
-        match=r"`dc_voltage`.*`bias_voltage`.*v1\.6\.0",
-    ):
+        match=r"`dc_voltage`.*`bias_voltage`",
+    ) as config_warnings:
         loader = ConfigLoader(
             system_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
         )
+    assert "v1.6.0" not in str(config_warnings[0].message)
 
     control_parameters = loader.get_experiment_system().control_params
     assert control_parameters.get_bias_voltage(0) == pytest.approx(0.2)
-    with pytest.warns(DeprecationWarning, match=r"get_dc_voltage.*v1\.6\.0"):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"get_dc_voltage.*get_bias_voltage",
+    ) as api_warnings:
         assert control_parameters.get_dc_voltage(0) == pytest.approx(0.2)
+    assert "v1.6.0" not in str(api_warnings[0].message)
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
