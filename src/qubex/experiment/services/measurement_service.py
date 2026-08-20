@@ -2756,7 +2756,7 @@ class MeasurementService:
 
         sequences = [
             {
-                target: self.partial_waveform(pulse, i)
+                target: self.partial_waveform(pulse, int(i))
                 for target, pulse in flattened_pulses.items()
             }
             for i in indices
@@ -3265,10 +3265,10 @@ class MeasurementService:
         bell_state = np.zeros((dim, 1), dtype=np.complex128)
         bell_state[0, 0] = 1 / np.sqrt(2)
         bell_state[-1, 0] = 1 / np.sqrt(2)
-        fidelity = float(np.real(bell_state.T.conj() @ rho @ bell_state))
+        fidelity = np.real(bell_state.T.conj() @ rho @ bell_state).item()
 
         fig = plot_ghz_state_tomography(
-            rho=rho,
+            rho=np.asarray(rho, dtype=np.complex64),
             qubits=[control_qubit, target_qubit],
             fidelity=fidelity,
             plot=plot,

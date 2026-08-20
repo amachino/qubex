@@ -126,7 +126,7 @@ def mle_fit_density_matrix(
 
 
 def plot_ghz_state_tomography(
-    rho: NDArray,
+    rho: NDArray[np.complex64],
     qubits: list[str],
     fidelity: float,
     width: int,

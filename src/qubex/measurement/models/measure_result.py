@@ -153,7 +153,7 @@ class MeasureData:
     def times(self) -> NDArray[np.float64]:
         """Return capture times for the measurement mode."""
         if self.mode in (MeasureMode.SINGLE, MeasureMode.AVG):
-            return np.arange(self.length) * self.sampling_period
+            return np.arange(self.length, dtype=np.float64) * self.sampling_period
         raise ValueError(f"Invalid mode: {self.mode}")
 
     @cached_property

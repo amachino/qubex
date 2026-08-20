@@ -157,6 +157,10 @@ class Quel1BackendController(BackendController):
         """Return connected box configuration cache."""
         return self._connection_manager.get_box_config_cache()
 
+    def json_safe_box_config(self) -> dict[str, Any]:
+        """Return JSON-safe box configuration for measurement results."""
+        return self._connection_manager.get_json_safe_box_config_cache()
+
     @property
     def boxpool(self) -> BoxPool:
         """Return connected box pool."""

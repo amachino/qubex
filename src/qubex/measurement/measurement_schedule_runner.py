@@ -92,11 +92,16 @@ class MeasurementScheduleRunner:
         if isinstance(backend_result, MeasurementResult):
             return backend_result
 
-        box_config = getattr(self._backend_controller, "box_config", None)
-        if isinstance(box_config, Mapping):
-            device_config: dict[str, Any] = dict(box_config)
+        json_safe_box_config = getattr(
+            self._backend_controller,
+            "json_safe_box_config",
+            None,
+        )
+        if callable(json_safe_box_config):
+            device_config = cast(dict[str, Any], json_safe_box_config())
         else:
-            device_config = {}
+            box_config = getattr(self._backend_controller, "box_config", None)
+            device_config = dict(box_config) if isinstance(box_config, Mapping) else {}
 
         capture_decimation_factor = getattr(
             self._backend_controller,
