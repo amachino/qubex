@@ -33,6 +33,10 @@ from .gf_calibration import (
     gf_ramsey_experiment,
     obtain_gf_rabi_params,
 )
+from .mcm_randomized_benchmarking import (
+    mcm_randomized_benchmarking,
+    mcm_rb_sequence,
+)
 from .measure_efh_chevron_pattern import (
     estimate_ef_frequency_from_chevron,
     estimate_ef_frequency_from_chevron_adaptive,
@@ -141,6 +145,8 @@ __all__ = [
     "ghz_state_tomography",
     "interleaved_purity_benchmarking",
     "ipb_experiment",
+    "mcm_randomized_benchmarking",
+    "mcm_rb_sequence",
     "measure_1d_cluster_state",
     "measure_bell_state_fidelities",
     "measure_bell_states",
