@@ -156,6 +156,44 @@ def test_experiment_rejects_mismatched_trial_and_seed_counts(
         )
 
 
+@pytest.mark.parametrize("shot_interval", [0.0, -1.0, np.nan, np.inf])
+def test_experiment_rejects_nonpositive_or_nonfinite_shot_interval(
+    fake_experiment: Any,
+    shot_interval: float,
+) -> None:
+    """The workflow should reject a nonpositive or nonfinite shot interval."""
+    with pytest.raises(ValueError, match="shot_interval"):
+        mcm_randomized_benchmarking(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            n_cliffords_range=[0, 1, 2],
+            n_trials=1,
+            seeds=[3],
+            protocols="mcm-rep",
+            shot_interval=shot_interval,
+            plot=False,
+            save_image=False,
+        )
+
+
+def test_experiment_rejects_boolean_shot_interval(fake_experiment: Any) -> None:
+    """A boolean shot interval should not be interpreted as a number."""
+    with pytest.raises(TypeError, match="shot_interval"):
+        mcm_randomized_benchmarking(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            n_cliffords_range=[0, 1, 2],
+            n_trials=1,
+            seeds=[3],
+            protocols="mcm-rep",
+            shot_interval=True,
+            plot=False,
+            save_image=False,
+        )
+
+
 def test_experiment_generates_each_random_clifford_sequence_once(
     monkeypatch: pytest.MonkeyPatch,
     fake_experiment: Any,

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from qubex.contrib.experiment.mcm_randomized_benchmarking import mcm_rb_sequence
-from qubex.pulse import Blank, Rect
+from qubex.pulse import Blank, FlatTop, PulseArray, Rect
 
 
 def test_protocols_match_duration_for_the_same_random_sequence(
@@ -86,6 +86,117 @@ def test_control_echo_places_two_pi_pulses_symmetrically_in_each_measurement(
     assert isinstance(measurement_block[4], Blank)
 
 
+def test_control_echo_uses_quarters_of_ramp_trimmed_active_readout(
+    fake_experiment: Any,
+) -> None:
+    """Echo pulse centers should quarter the ramp-trimmed active interval."""
+    measurement = PulseArray(
+        [
+            Blank(duration=16.0, sampling_period=2.0),
+            FlatTop(
+                duration=64.0,
+                amplitude=0.25,
+                tau=16.0,
+                sampling_period=2.0,
+            ).padded(total_duration=80.0),
+        ]
+    )
+
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        protocol="mcm-rep",
+        n_cliffords=1,
+        seed=17,
+        control_echo=True,
+        measurement_waveform=measurement,
+    )
+
+    measurement_block = schedule.get_sequence("Q0").flattened_elements[1:6]
+
+    assert [element.duration for element in measurement_block] == [
+        28.0,
+        16.0,
+        8.0,
+        16.0,
+        28.0,
+    ]
+
+
+def test_control_echo_rejects_all_zero_measurement_waveform(
+    fake_experiment: Any,
+) -> None:
+    """Echo construction should require an identifiable active readout interval."""
+    with pytest.raises(ValueError, match="active readout interval"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            control_echo=True,
+            measurement_waveform=Blank(duration=64.0, sampling_period=2.0),
+        )
+
+
+def test_control_echo_rejects_ramp_off_sampling_grid(fake_experiment: Any) -> None:
+    """Echo construction should require a readout ramp on the sampling grid."""
+    measurement = FlatTop(
+        duration=64.0,
+        amplitude=0.25,
+        tau=3.0,
+        sampling_period=2.0,
+    )
+
+    with pytest.raises(ValueError, match="ramp duration"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            control_echo=True,
+            measurement_waveform=measurement,
+        )
+
+
+def test_control_echo_rejects_multiple_active_flat_top_pulses(
+    fake_experiment: Any,
+) -> None:
+    """Echo construction should reject an ambiguous multi-pulse active interval."""
+    measurement = PulseArray(
+        [
+            FlatTop(
+                duration=32.0,
+                amplitude=0.25,
+                tau=4.0,
+                sampling_period=2.0,
+            ),
+            FlatTop(
+                duration=32.0,
+                amplitude=0.25,
+                tau=4.0,
+                sampling_period=2.0,
+            ),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="at most one FlatTop"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            control_echo=True,
+            measurement_waveform=measurement,
+        )
+
+
 def test_control_echo_rejects_measurements_shorter_than_two_pi_pulses(
     fake_experiment: Any,
 ) -> None:
@@ -105,10 +216,10 @@ def test_control_echo_rejects_measurements_shorter_than_two_pi_pulses(
 
 
 def test_control_echo_rejects_asymmetric_sampling_grid(fake_experiment: Any) -> None:
-    """Echo construction should reject free time that cannot split into quarters."""
+    """Echo construction should reject centers off the pulse sampling grid."""
     fake_experiment.pulse.measurement_duration = 66.0
 
-    with pytest.raises(ValueError, match="four equal"):
+    with pytest.raises(ValueError, match="sampling grid"):
         mcm_rb_sequence(
             fake_experiment,
             "Q0",
@@ -117,6 +228,24 @@ def test_control_echo_rejects_asymmetric_sampling_grid(fake_experiment: Any) -> 
             n_cliffords=1,
             seed=17,
             control_echo=True,
+        )
+
+
+def test_sequence_rejects_nested_waveform_sampling_period_mismatch(
+    fake_experiment: Any,
+) -> None:
+    """Sequence construction should validate every physical pulse sampling grid."""
+    measurement = PulseArray([Rect(duration=64.0, amplitude=0.25, sampling_period=1.0)])
+
+    with pytest.raises(ValueError, match="sampling period"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            measurement_waveform=measurement,
         )
 
 

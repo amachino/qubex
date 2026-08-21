@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass
+from numbers import Real
 from typing import Literal, TypedDict, cast
 
 import numpy as np
@@ -21,7 +22,7 @@ from qubex.experiment.experiment_constants import (
 )
 from qubex.experiment.models import Result
 from qubex.measurement.models.measure_result import MultipleMeasureResult
-from qubex.pulse import Blank, PulseArray, PulseSchedule, VirtualZ, Waveform
+from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, VirtualZ, Waveform
 
 MCMRBProtocol = Literal["mcm-rb", "delay-rb", "mcm-rep"]
 
@@ -55,6 +56,15 @@ class _CompiledCliffordSequence:
 
     cliffords: tuple[PulseArray, ...]
     inverse: PulseArray
+
+
+@dataclass(frozen=True)
+class _ReadoutTiming:
+    """Active readout interval and ramp length on the sampling grid."""
+
+    active_start_samples: int
+    active_length_samples: int
+    ramp_length_samples: int
 
 
 class _TargetAnalysis(TypedDict):
@@ -101,6 +111,16 @@ def _validate_positive_integer(value: object, *, name: str) -> int:
     return resolved
 
 
+def _validate_positive_real(value: object, *, name: str) -> float:
+    """Return a positive finite scalar real after rejecting booleans."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        raise TypeError(f"`{name}` must be a real number.")
+    resolved = float(value)
+    if not np.isfinite(resolved) or resolved <= 0:
+        raise ValueError(f"`{name}` must be positive and finite.")
+    return resolved
+
+
 def _resolve_qubit_pair(
     exp: Experiment,
     control: str,
@@ -134,10 +154,78 @@ def _validate_waveform(
     if waveform.duration <= 0:
         raise ValueError(f"`{name}` must have positive duration.")
 
+    if not isinstance(waveform, PulseArray):
+        return
+    for nested_waveform in waveform.get_flattened_waveforms(apply_frame_shifts=False):
+        if not np.isclose(
+            nested_waveform.sampling_period,
+            expected_sampling_period,
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise ValueError(
+                f"Every pulse in `{name}` must use the experiment sampling period: "
+                f"{nested_waveform.sampling_period} ns != "
+                f"{expected_sampling_period} ns."
+            )
+
 
 def _blank(duration: float, sampling_period: float) -> Blank:
     """Build a blank pulse on the active sampling grid."""
     return Blank(duration=duration, sampling_period=sampling_period)
+
+
+def _infer_readout_timing(measurement: Waveform) -> _ReadoutTiming:
+    """Infer the active readout interval and FlatTop ramp in samples."""
+    active_indices = np.flatnonzero(np.asarray(measurement.values) != 0.0)
+    if active_indices.size == 0:
+        raise ValueError(
+            "The active readout interval cannot be inferred from an all-zero "
+            "measurement waveform."
+        )
+    active_start_samples = int(active_indices[0])
+    active_length_samples = int(active_indices[-1]) - active_start_samples + 1
+
+    if isinstance(measurement, PulseArray):
+        flat_tops = [
+            element
+            for element in measurement.flattened_elements
+            if isinstance(element, FlatTop)
+        ]
+    elif isinstance(measurement, FlatTop):
+        flat_tops = [measurement]
+    else:
+        flat_tops = []
+    if len(flat_tops) > 1:
+        raise ValueError(
+            "Echo timing requires a measurement waveform with at most one "
+            "FlatTop pulse."
+        )
+
+    ramp_length_samples = 0
+    if flat_tops:
+        ramp_samples = flat_tops[0].tau / measurement.sampling_period
+        ramp_length_samples = round(ramp_samples)
+        if not np.isclose(
+            ramp_samples,
+            ramp_length_samples,
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise ValueError(
+                "The readout ramp duration must align with the measurement "
+                "sampling grid."
+            )
+        if 2 * ramp_length_samples > active_length_samples:
+            raise ValueError(
+                "The active readout duration must be at least twice the ramp duration."
+            )
+
+    return _ReadoutTiming(
+        active_start_samples=active_start_samples,
+        active_length_samples=active_length_samples,
+        ramp_length_samples=ramp_length_samples,
+    )
 
 
 def _measurement_control_block(
@@ -146,31 +234,60 @@ def _measurement_control_block(
     sampling_period: float,
     echo_x180: Waveform | None,
 ) -> Waveform:
-    """Build an idle or symmetric X-X echo matching one measurement window."""
+    """Build an idle or active-readout-aligned X-X echo block."""
     if echo_x180 is None:
         return _blank(measurement.duration, sampling_period)
 
-    free_samples = measurement.length - 2 * echo_x180.length
-    if free_samples < 0:
+    if measurement.length < 2 * echo_x180.length:
         raise ValueError(
             "The measurement duration must be at least twice the echo X180 "
             "pulse duration."
         )
-    if free_samples % 4 != 0:
+    timing = _infer_readout_timing(measurement)
+
+    # Trim half a ramp from each side of the active interval, then align the
+    # X180 centers with the quarter and three-quarter points of that interval.
+    # Quarter-sample units keep half-ramp and quarter-interval arithmetic exact.
+    first_center_quarters = (
+        4 * timing.active_start_samples
+        + timing.active_length_samples
+        + timing.ramp_length_samples
+    )
+    second_center_quarters = (
+        4 * timing.active_start_samples
+        + 3 * timing.active_length_samples
+        - timing.ramp_length_samples
+    )
+    leading_quarters = first_center_quarters - 2 * echo_x180.length
+    middle_quarters = (
+        second_center_quarters - first_center_quarters - 4 * echo_x180.length
+    )
+    trailing_quarters = (
+        4 * measurement.length - second_center_quarters - 2 * echo_x180.length
+    )
+    blank_quarters = (leading_quarters, middle_quarters, trailing_quarters)
+    if any(samples < 0 for samples in blank_quarters):
         raise ValueError(
-            "The free time in an echoed measurement block must be divisible "
-            "into four equal sampling-grid intervals."
+            "The measurement timing does not provide enough room for two "
+            "nonoverlapping echo X180 pulses at the ramp-trimmed active "
+            "readout quarter points."
+        )
+    if any(samples % 4 != 0 for samples in blank_quarters):
+        raise ValueError(
+            "The ramp-trimmed active readout quarter points do not align the "
+            "echo X180 pulses to the sampling grid."
         )
 
-    edge_duration = free_samples // 4 * sampling_period
-    middle_duration = free_samples // 2 * sampling_period
+    leading_duration, middle_duration, trailing_duration = (
+        samples // 4 * sampling_period for samples in blank_quarters
+    )
     return PulseArray(
         [
-            _blank(edge_duration, sampling_period),
+            _blank(leading_duration, sampling_period),
             echo_x180,
             _blank(middle_duration, sampling_period),
             echo_x180,
-            _blank(edge_duration, sampling_period),
+            _blank(trailing_duration, sampling_period),
         ]
     )
 
@@ -345,11 +462,16 @@ def mcm_rb_sequence(
         Nonnegative seed used to generate the one-qubit Clifford sequence.
     control_echo
         Whether to apply an X-X echo to the control during every measurement
-        or reference-delay window.
+        or reference-delay window. The X180 centers are placed at the quarter
+        and three-quarter points of the active readout interval after trimming
+        half a ramp duration from each end.
     x90
         Optional control X90 waveform override.
     measurement_waveform
-        Optional ancilla readout waveform override.
+        Optional ancilla readout waveform override. With `control_echo=True`,
+        the active interval is inferred from its nonzero samples. At most one
+        FlatTop pulse may be present; other pulse shapes are treated as having
+        zero ramp duration.
     echo_x180
         Optional control X180 waveform override used by the X-X echo. Ignored
         when `control_echo=False`.
@@ -748,19 +870,25 @@ def mcm_randomized_benchmarking(
         `"mcm-rep"`. The same generated Clifford sequence is shared across
         protocols for each sequence length and seed.
     control_echo
-        Whether to insert a symmetric X-X echo on the control during every
-        measurement or duration-matched delay window.
+        Whether to insert an X-X echo on the control during every measurement
+        or duration-matched delay window. The X180 centers are placed at the
+        quarter and three-quarter points of the active readout interval after
+        trimming half a ramp duration from each end.
     x90
         Optional control X90 waveform override.
     measurement_waveform
-        Optional ancilla readout waveform override.
+        Optional ancilla readout waveform override. With `control_echo=True`,
+        the active interval is inferred from its nonzero samples. At most one
+        FlatTop pulse may be present; other pulse shapes are treated as having
+        zero ramp duration.
     echo_x180
         Optional control X180 waveform override for echoed measurement blocks.
         Ignored when `control_echo=False`.
     n_shots
         Number of shots per schedule. Defaults to the experiment default.
     shot_interval
-        Interval between shots in ns. Defaults to the experiment default.
+        Positive finite interval between shots in ns. Defaults to the
+        experiment default.
     time_integration
         Whether to integrate each capture over time.
     xaxis_type
@@ -810,8 +938,9 @@ def mcm_randomized_benchmarking(
         DEFAULT_SHOTS if n_shots is None else n_shots,
         name="n_shots",
     )
-    resolved_shot_interval = (
-        DEFAULT_INTERVAL if shot_interval is None else float(shot_interval)
+    resolved_shot_interval = _validate_positive_real(
+        DEFAULT_INTERVAL if shot_interval is None else shot_interval,
+        name="shot_interval",
     )
     resolved_plot = True if plot is None else plot
     resolved_save_image = False if save_image is None else save_image
