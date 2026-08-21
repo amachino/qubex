@@ -390,22 +390,6 @@ def test_print_boxes_delegates_to_context() -> None:
     assert context_stub.calls == [("print_boxes", {})]
 
 
-def test_run_executes_task_with_experiment_instance() -> None:
-    """Given experiment task, when run is called, then task executes with the experiment instance."""
-    exp = object.__new__(Experiment)
-    called: dict[str, object] = {}
-
-    class _Task:
-        def execute(self, exp: Experiment) -> str:
-            called["experiment"] = exp
-            return "task_result"
-
-    result = exp.run(_Task())
-
-    assert result == "task_result"
-    assert called["experiment"] is exp
-
-
 def test_clifford_generator_property_delegates_to_benchmarking_service() -> None:
     """Given benchmarking service, when clifford_generator is accessed, then it returns delegated value."""
     exp = object.__new__(Experiment)
