@@ -49,6 +49,169 @@ def test_protocols_match_duration_for_the_same_random_sequence(
     )
 
 
+def test_randomized_ancilla_uses_seeded_flips_and_parity_recovery(
+    fake_experiment: Any,
+) -> None:
+    """Randomized ancilla should follow a seeded I/X pattern and recover its parity."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        protocol="mcm-rb",
+        n_cliffords=5,
+        seed=3,
+        ancilla_mode="randomized",
+    )
+
+    ancilla_elements = schedule.get_sequence("Q1").flattened_elements
+    pulse_starts: list[float] = []
+    recovery = None
+    elapsed = 0.0
+    for element in ancilla_elements:
+        if elapsed == 456.0:
+            recovery = element
+        if isinstance(element, Rect):
+            pulse_starts.append(elapsed)
+        elapsed += element.duration
+
+    assert schedule.labels == ["Q0", "Q1", "RQ1"]
+    assert schedule.duration == 480.0
+    assert schedule.is_valid()
+    assert pulse_starts == [8.0, 104.0, 288.0, 456.0]
+    assert isinstance(recovery, Rect)
+
+
+def test_randomized_ancilla_uses_blank_recovery_for_even_parity(
+    fake_experiment: Any,
+) -> None:
+    """An even randomized flip parity should end with a duration-matched blank."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        protocol="mcm-rb",
+        n_cliffords=5,
+        seed=18,
+        ancilla_mode="randomized",
+    )
+
+    ancilla_elements = schedule.get_sequence("Q1").flattened_elements
+    recovery = None
+    elapsed = 0.0
+    for element in ancilla_elements:
+        if elapsed == 456.0:
+            recovery = element
+        elapsed += element.duration
+
+    assert sum(isinstance(element, Rect) for element in ancilla_elements) == 2
+    assert isinstance(recovery, Blank)
+    assert recovery.duration == 16.0
+
+
+def test_randomized_ancilla_pattern_is_shared_by_mcm_and_delay_protocols(
+    fake_experiment: Any,
+) -> None:
+    """MCM and delay references should share the same randomized ancilla gates."""
+    schedules = {
+        protocol: mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol=protocol,
+            n_cliffords=5,
+            seed=3,
+            ancilla_mode="randomized",
+        )
+        for protocol in ("mcm-rb", "delay-rb")
+    }
+
+    assert schedules["mcm-rb"].duration == schedules["delay-rb"].duration
+    assert (
+        schedules["mcm-rb"].get_sequence("Q1").values.tolist()
+        == schedules["delay-rb"].get_sequence("Q1").values.tolist()
+    )
+
+
+def test_randomized_ancilla_rejects_mcm_repetition(fake_experiment: Any) -> None:
+    """Randomized ancilla mode should require a Clifford-bearing protocol."""
+    with pytest.raises(ValueError, match="mcm-rep"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rep",
+            n_cliffords=1,
+            seed=3,
+            ancilla_mode="randomized",
+        )
+
+
+def test_randomized_ancilla_validates_x180_override(fake_experiment: Any) -> None:
+    """Randomized ancilla mode should validate its X180 pulse sampling grid."""
+    with pytest.raises(ValueError, match="ancilla_x180"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=3,
+            ancilla_mode="randomized",
+            ancilla_x180=Rect(
+                duration=16.0,
+                amplitude=1.0,
+                sampling_period=1.0,
+            ),
+        )
+
+
+def test_randomized_ancilla_uses_x180_override(fake_experiment: Any) -> None:
+    """Randomized ancilla gates and recovery should use the X180 override."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        protocol="mcm-rb",
+        n_cliffords=1,
+        seed=3,
+        ancilla_mode="randomized",
+        ancilla_x180=Rect(
+            duration=12.0,
+            amplitude=0.8,
+            sampling_period=2.0,
+        ),
+    )
+
+    ancilla_pulses = [
+        element
+        for element in schedule.get_sequence("Q1").flattened_elements
+        if isinstance(element, Rect)
+    ]
+
+    assert [pulse.duration for pulse in ancilla_pulses] == [12.0, 12.0]
+    assert schedule.duration == 104.0
+
+
+def test_standard_ancilla_ignores_x180_override(fake_experiment: Any) -> None:
+    """Standard mode should not resolve or validate an unused ancilla X180."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        protocol="mcm-rb",
+        n_cliffords=1,
+        seed=3,
+        ancilla_x180=Rect(
+            duration=16.0,
+            amplitude=1.0,
+            sampling_period=1.0,
+        ),
+    )
+
+    assert schedule.labels == ["Q0", "RQ1"]
+    assert schedule.duration == 80.0
+
+
 def test_control_echo_places_two_pi_pulses_symmetrically_in_each_measurement(
     fake_experiment: Any,
 ) -> None:
@@ -295,4 +458,18 @@ def test_invalid_protocol_is_rejected(fake_experiment: Any, protocol: str) -> No
             protocol=protocol,  # type: ignore[arg-type]
             n_cliffords=1,
             seed=17,
+        )
+
+
+def test_invalid_ancilla_mode_is_rejected(fake_experiment: Any) -> None:
+    """Sequence construction should reject unknown ancilla modes."""
+    with pytest.raises(ValueError, match="ancilla_mode"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            ancilla_mode="unknown",  # type: ignore[arg-type]
         )

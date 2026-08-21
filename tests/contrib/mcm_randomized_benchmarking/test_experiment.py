@@ -50,10 +50,12 @@ class FakeMeasurementService:
 class ConstantMeasurementService:
     """Return fixed terminal captures for real pulse schedules."""
 
-    @staticmethod
-    def execute(sequence: Any, **options: Any) -> Any:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, dict[str, Any]]] = []
+
+    def execute(self, sequence: Any, **options: Any) -> Any:
         """Return one terminal capture for each test qubit."""
-        del sequence, options
+        self.calls.append((sequence, options))
 
         def capture(value: float) -> Any:
             return SimpleNamespace(kerneled=np.asarray([value + 0.0j]))
@@ -121,6 +123,7 @@ def test_experiment_uses_terminal_captures_and_reports_induced_error(
         rel=1e-12,
         abs=1e-12,
     )
+    assert result.data["measurement_induced_ancilla_population_error"] is None
     assert fake_experiment.ctx.reset_calls == [{"Q0", "Q1"}]
     assert len(measurement_service.calls) == 18
     assert all(
@@ -139,6 +142,90 @@ def test_experiment_uses_terminal_captures_and_reports_induced_error(
     }
 
 
+def test_randomized_ancilla_analyzes_both_targets_with_matched_references(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_experiment: Any,
+) -> None:
+    """Randomized mode should fit both targets and compare matched MCM and delays."""
+    measurement_service = ConstantMeasurementService()
+    fake_experiment.measurement_service = measurement_service
+
+    def fake_fit_rb(*, target: str, title: str, **options: Any) -> FitResult:
+        del options
+        protocol = title.split()[0]
+        p = {
+            ("mcm-rb", "Q0"): 0.96,
+            ("delay-rb", "Q0"): 0.98,
+            ("mcm-rb", "Q1"): 0.90,
+            ("delay-rb", "Q1"): 0.95,
+        }[(protocol, target)]
+        return FitResult(
+            status=FitStatus.SUCCESS,
+            data={"p": p, "p_err": 0.01},
+            figure=go.Figure(),
+        )
+
+    monkeypatch.setattr(mcm_module.fitting, "fit_rb", fake_fit_rb)
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[3],
+        ancilla_mode="randomized",
+        plot=False,
+        save_image=False,
+    )
+
+    assert tuple(result.data["protocols"]) == ("mcm-rb", "delay-rb")
+    assert set(result.data["protocols"]["mcm-rb"]) == {"Q0", "Q1"}
+    assert result.data["measurement_induced_control_error"]["value"] == pytest.approx(
+        0.5 * (1.0 - 0.96 / 0.98),
+        rel=1e-12,
+        abs=1e-12,
+    )
+    assert result.data["measurement_induced_ancilla_population_error"][
+        "value"
+    ] == pytest.approx(
+        0.5 * (1.0 - 0.90 / 0.95),
+        rel=1e-12,
+        abs=1e-12,
+    )
+    assert result.data["metadata"]["ancilla_mode"] == "randomized"
+    assert result.data["metadata"]["ancilla_x180_duration"] == 16.0
+    assert len(measurement_service.calls) == 6
+    for mcm_call, delay_call in zip(
+        measurement_service.calls[::2],
+        measurement_service.calls[1::2],
+        strict=True,
+    ):
+        assert (
+            mcm_call[0].get_sequence("Q1").values.tolist()
+            == delay_call[0].get_sequence("Q1").values.tolist()
+        )
+
+
+def test_randomized_ancilla_experiment_rejects_mcm_repetition(
+    fake_experiment: Any,
+) -> None:
+    """Randomized mode should reject an incompatible MCM-repetition request."""
+    with pytest.raises(ValueError, match="mcm-rep"):
+        mcm_randomized_benchmarking(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            n_cliffords_range=[0, 1, 2],
+            n_trials=1,
+            seeds=[3],
+            protocols=("mcm-rb", "mcm-rep"),
+            ancilla_mode="randomized",
+            plot=False,
+            save_image=False,
+        )
+
+
 def test_experiment_rejects_mismatched_trial_and_seed_counts(
     fake_experiment: Any,
 ) -> None:
@@ -154,6 +241,57 @@ def test_experiment_rejects_mismatched_trial_and_seed_counts(
             plot=False,
             save_image=False,
         )
+
+
+@pytest.mark.parametrize("seed", [1.0, "1", 1 + 0j])
+def test_experiment_rejects_noninteger_seeds(
+    fake_experiment: Any,
+    seed: object,
+) -> None:
+    """Seed arrays should contain integer values, not coercible values."""
+    with pytest.raises(TypeError, match=r"seeds.*integers"):
+        mcm_randomized_benchmarking(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            n_cliffords_range=[0, 1, 2],
+            n_trials=1,
+            seeds=[seed],
+            protocols="mcm-rep",
+            plot=False,
+            save_image=False,
+        )
+
+
+def test_experiment_preserves_large_integer_seed(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_experiment: Any,
+) -> None:
+    """Seed validation should not lose precision through floating-point conversion."""
+    fake_experiment.measurement_service = ConstantMeasurementService()
+    monkeypatch.setattr(
+        mcm_module.fitting,
+        "fit_rb",
+        lambda **options: FitResult(
+            status=FitStatus.ERROR,
+            message=f"Skipped fit for {options['target']}",
+        ),
+    )
+    seed = 2**53 + 1
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[seed],
+        protocols="mcm-rep",
+        plot=False,
+        save_image=False,
+    )
+
+    assert result.data["seeds"].tolist() == [seed]
 
 
 @pytest.mark.parametrize("shot_interval", [0.0, -1.0, np.nan, np.inf])
