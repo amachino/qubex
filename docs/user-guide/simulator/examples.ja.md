@@ -12,6 +12,10 @@
 - [量子ビットと共振器](../../examples/simulator/3_qubit_resonator.ipynb): 量子ビット-共振器系の振る舞いをハミルトニアンレベルで調べます。
 - [複数制御](../../examples/simulator/4_multi_control.ipynb): 1 つの simulation setup で複数 control channel を扱います。
 
+## モデル比較
+
+- [cosine モデルによる transmon](../../examples/simulator/10_cosine_model.ipynb): 電荷基底の cosine ハミルトニアンから切り詰めたエネルギー基底への変換を追い、強駆動下で Duffing モデルと比較します。
+
 ## 較正寄りの解析
 
 - [π パルス](../../examples/simulator/5_pi_pulse.ipynb): 目的の回転を実現する pulse を調整します。

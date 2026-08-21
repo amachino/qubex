@@ -12,6 +12,10 @@ The notebooks below provide focused examples and calibration studies.
 - [Qubit resonator](../../examples/simulator/3_qubit_resonator.ipynb): Study coupled qubit-resonator behavior at the Hamiltonian level.
 - [Multi control](../../examples/simulator/4_multi_control.ipynb): Explore multiple control channels in one simulation setup.
 
+## Model studies
+
+- [Cosine transmon model](../../examples/simulator/10_cosine_model.ipynb): Trace the charge-basis cosine Hamiltonian into the truncated energy basis, then compare it with the Duffing model under strong drive.
+
 ## Calibration-oriented studies
 
 - [Pi pulse](../../examples/simulator/5_pi_pulse.ipynb): Tune a pulse that implements a target rotation.
