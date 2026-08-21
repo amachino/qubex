@@ -69,7 +69,7 @@ def test_transmon_derives_default_anharmonicity_after_unit_normalization() -> No
 
 
 def test_cosine_transmon_uses_default_charge_cutoff() -> None:
-    """Cosine transmon should default its charge-basis cutoff to 25."""
+    """Cosine transmon should default its charge-basis cutoff to 15."""
     transmon = Transmon(
         label="Q0",
         dimension=4,
@@ -79,7 +79,7 @@ def test_cosine_transmon_uses_default_charge_cutoff() -> None:
     )
 
     assert transmon.model == "cosine"
-    assert transmon.charge_cutoff == 25
+    assert transmon.charge_cutoff == 15
     assert transmon.offset_charge == 0.0
 
 

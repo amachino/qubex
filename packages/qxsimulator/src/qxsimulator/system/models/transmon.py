@@ -36,7 +36,7 @@ class Transmon(Object):
     charge_cutoff : int | None, optional
         Positive charge-basis cutoff for the cosine model, which retains charge
         numbers from `-charge_cutoff` through `+charge_cutoff`. The cosine
-        default is 25; the Duffing model does not use this value.
+        default is 15; the Duffing model does not use this value.
     offset_charge : float, optional
         Dimensionless offset charge `n_g` in Cooper-pair units for the cosine
         model. The default is 0. Integer shifts are equivalent at compilation.
@@ -113,7 +113,7 @@ class Transmon(Object):
                     "anharmonicity must be negative for a cosine transmon."
                 )
             if charge_cutoff is None:
-                charge_cutoff = 25
+                charge_cutoff = 15
             if charge_cutoff < 1:
                 raise ValueError("charge_cutoff must be at least 1.")
             if 2 * charge_cutoff + 1 < max(dimension, 3):
