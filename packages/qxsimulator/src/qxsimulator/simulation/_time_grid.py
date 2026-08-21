@@ -239,7 +239,7 @@ def _create_uniform_times(
     if len(times) > 0 and times[-1] > duration:
         times = times[:-1]
 
-    if len(times) == 0 or not np.isclose(times[-1], duration, atol=1e-12):
+    if len(times) == 0 or not np.isclose(times[-1], duration, rtol=0.0, atol=1e-12):
         times = np.append(times, duration)
     else:
         times[-1] = duration
