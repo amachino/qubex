@@ -392,6 +392,89 @@ def test_build_measurement_result_averages_shot_samples() -> None:
     assert result.config["sampling_period_ns"] == pytest.approx(0.8)
 
 
+def test_build_measurement_result_scales_averaged_value_to_time_sum() -> None:
+    """Given a time-averaged value, result should use the equivalent time sum."""
+    payload = _make_payload(mode="avg", n_iterations=4)
+    timeline = payload.fixed_timelines["alias-rq00"]
+    capture_window = timeline.capture_windows[0]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-rq00": replace(
+                timeline,
+                capture_windows=(replace(capture_window, length_ns=2.0),),
+            )
+        },
+    )
+    averaged_waveform = np.array(
+        [1.0 + 2.0j, 2.0 + 3.0j, 3.0 + 4.0j],
+        dtype=np.complex128,
+    )
+    shot_samples = {
+        "alias-rq00": {
+            "capture_0": [
+                np.array([np.mean(averaged_waveform)], dtype=np.complex128),
+            ]
+        }
+    }
+
+    result = Quel3ExecutionManager._build_measurement_result(
+        payload=payload,
+        shot_samples=shot_samples,
+        capture_sampling_period_ns=0.8,
+        backend_sampling_period_ns=0.4,
+        capture_decimation_factor=1,
+    )
+
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.array([np.sum(averaged_waveform)], dtype=np.complex128),
+    )
+
+
+def test_build_measurement_result_scales_values_per_iter_to_time_sums() -> None:
+    """Given per-iteration time averages, result should expose per-shot time sums."""
+    payload = _make_payload(mode="single", n_iterations=2)
+    timeline = payload.fixed_timelines["alias-rq00"]
+    capture_window = timeline.capture_windows[0]
+    payload = replace(
+        payload,
+        fixed_timelines={
+            "alias-rq00": replace(
+                timeline,
+                capture_windows=(replace(capture_window, length_ns=2.0),),
+            )
+        },
+    )
+    raw_waveforms = np.array(
+        [
+            [0.0 + 1.0j, 1.0 + 2.0j, 2.0 + 3.0j],
+            [2.0 + 3.0j, 3.0 + 4.0j, 4.0 + 5.0j],
+        ],
+        dtype=np.complex128,
+    )
+    shot_samples = {
+        "alias-rq00": {
+            "capture_0": [
+                np.mean(raw_waveforms, axis=1),
+            ]
+        }
+    }
+
+    result = Quel3ExecutionManager._build_measurement_result(
+        payload=payload,
+        shot_samples=shot_samples,
+        capture_sampling_period_ns=0.8,
+        backend_sampling_period_ns=0.4,
+        capture_decimation_factor=1,
+    )
+
+    assert np.array_equal(
+        result.data["alias-rq00"][0],
+        np.sum(raw_waveforms, axis=1),
+    )
+
+
 def test_build_measurement_result_keeps_backend_alias_labels() -> None:
     """Given backend flow result, measurement labels remain instrument aliases."""
     payload = _make_payload(mode="single", n_iterations=1)

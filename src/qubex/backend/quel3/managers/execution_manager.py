@@ -839,19 +839,6 @@ class Quel3ExecutionManager:
         else:
             raise ValueError(f"Unsupported capture mode: {payload.capture_mode}")
 
-        measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
-        for alias, timeline in payload.fixed_timelines.items():
-            for window in timeline.capture_windows:
-                samples = shot_samples.get(alias, {}).get(window.name, [])
-                if len(samples) == 0:
-                    measurement_data[alias].append(np.array([], dtype=np.complex128))
-                    continue
-                if is_averaged:
-                    values = np.stack(samples, axis=0)
-                    measurement_data[alias].append(np.mean(values, axis=0))
-                else:
-                    measurement_data[alias].append(samples[0])
-
         base_sampling_period_ns = capture_sampling_period_ns
         if base_sampling_period_ns is None:
             base_sampling_period_ns = backend_sampling_period_ns
@@ -861,11 +848,48 @@ class Quel3ExecutionManager:
             else base_sampling_period_ns
         )
 
+        measurement_data: dict[str, list[np.ndarray]] = defaultdict(list)
+        for alias, timeline in payload.fixed_timelines.items():
+            for window in timeline.capture_windows:
+                samples = shot_samples.get(alias, {}).get(window.name, [])
+                if len(samples) == 0:
+                    measurement_data[alias].append(np.array([], dtype=np.complex128))
+                    continue
+                if is_averaged:
+                    stacked_samples = np.stack(samples, axis=0)
+                    capture_data = np.mean(stacked_samples, axis=0)
+                else:
+                    capture_data = samples[0]
+                if payload.capture_mode in (
+                    Quel3CaptureMode.AVERAGED_VALUE,
+                    Quel3CaptureMode.VALUES_PER_ITER,
+                ):
+                    capture_data = capture_data * (
+                        Quel3ExecutionManager._resolve_capture_sample_count(
+                            window=window,
+                            sampling_period_ns=effective_sampling_period_ns,
+                        )
+                    )
+                measurement_data[alias].append(capture_data)
+
         return Quel3BackendExecutionResult(
             status={},
             data=dict(measurement_data),
             config={"sampling_period_ns": effective_sampling_period_ns},
         )
+
+    @staticmethod
+    def _resolve_capture_sample_count(
+        *,
+        window: Quel3CaptureWindow,
+        sampling_period_ns: float,
+    ) -> int:
+        """Resolve the number of time samples after capture-grid ceiling."""
+        samples = window.length_ns / sampling_period_ns
+        rounded_samples = round(samples)
+        if np.isclose(samples, rounded_samples, rtol=0.0, atol=1e-3):
+            return max(1, rounded_samples)
+        return max(1, int(np.ceil(samples)))
 
     def _load_quelware_api(
         self,
