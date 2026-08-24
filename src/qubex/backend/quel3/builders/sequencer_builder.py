@@ -110,7 +110,8 @@ class Quel3SequencerBuilder:
                         sampling_period_fs,
                     ),
                     gain=event.gain,
-                    phase_offset_deg=event.phase_offset_deg,
+                    # Invert sign
+                    phase_offset_deg=-event.phase_offset_deg,
                 )
 
             for capture_window in timeline.capture_windows:
