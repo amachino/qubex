@@ -23,7 +23,9 @@ logs, and rerun-file generation.
      and measurement or backend flows that require live instruments, backend
      services, or private config
 2. Prepare a log directory.
-   - Store outputs under `.tmp/examples-auto-run/<timestamp>/`
+   - Store outputs under `tmp/examples-auto-run/<timestamp>/`.
+   - Keep this generated directory ignored by Git so executed notebooks and
+     rerun scripts do not dirty the worktree.
 3. Execute notebooks through the bundled script.
    - `uv run python .agents/skills/examples-auto-run/scripts/run_notebooks_auto.py <selected-notebooks-or-directories> --logs-dir <log-dir> --write-rerun`
    - Add `--timeout 600` or another explicit timeout when needed.
@@ -38,6 +40,7 @@ logs, and rerun-file generation.
    - Prefer a representative set over every notebook if the change is narrow.
    - Do not mutate checked-in notebooks unless the user explicitly asks for
      output updates.
+   - Confirm that notebook execution did not add tracked or unignored files.
 
 ## Bundled script
 

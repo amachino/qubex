@@ -49,9 +49,12 @@ def run_git(*args: str) -> str:
     return process.stdout.strip()
 
 
-def list_tags() -> list[str]:
-    """Return tags sorted by creation date descending."""
-    output = run_git("tag", "--sort=-creatordate")
+def list_tags(*, merged_ref: str | None = None) -> list[str]:
+    """Return release tags sorted by version descending."""
+    args = ["tag", "--sort=-version:refname", "--list", "v[0-9]*"]
+    if merged_ref is not None:
+        args.extend(["--merged", merged_ref])
+    output = run_git(*args)
     return [line for line in output.splitlines() if line]
 
 
@@ -75,6 +78,7 @@ def resolve_exact_head_tag(target_ref: str) -> str | None:
 def resolve_base_tag(
     *,
     tags: list[str],
+    merged_tags: list[str],
     base_tag: str | None,
     current_tag: str | None,
     target_ref: str,
@@ -87,11 +91,15 @@ def resolve_base_tag(
 
     resolved_current_tag = current_tag or resolve_exact_head_tag(target_ref)
     if resolved_current_tag is None:
-        return tags[0]
+        if len(merged_tags) == 0:
+            raise ValueError(f"No release tags are reachable from {target_ref}.")
+        return merged_tags[0]
     try:
         current_index = tags.index(resolved_current_tag)
-    except ValueError:
-        return tags[0]
+    except ValueError as error:
+        raise ValueError(
+            f"Current release tag is not a version tag: {resolved_current_tag}."
+        ) from error
     previous_index = current_index + 1
     if previous_index >= len(tags):
         raise ValueError(f"No previous tag found after {resolved_current_tag}.")
@@ -102,8 +110,10 @@ def main() -> int:
     """Run the CLI."""
     args = parse_args()
     tags = list_tags()
+    merged_tags = list_tags(merged_ref=args.target_ref)
     base_tag = resolve_base_tag(
         tags=tags,
+        merged_tags=merged_tags,
         base_tag=args.base_tag,
         current_tag=args.current_tag,
         target_ref=args.target_ref,
