@@ -124,6 +124,10 @@ def test_experiment_uses_terminal_captures_and_reports_induced_error(
         abs=1e-12,
     )
     assert result.data["measurement_induced_ancilla_population_error"] is None
+    assert (
+        result.data["measurement_induced_ancilla_population_error_with_idle_control"]
+        is None
+    )
     assert fake_experiment.ctx.reset_calls == [{"Q0", "Q1"}]
     assert len(measurement_service.calls) == 18
     assert all(
@@ -207,23 +211,106 @@ def test_randomized_ancilla_analyzes_both_targets_with_matched_references(
         )
 
 
-def test_randomized_ancilla_experiment_rejects_mcm_repetition(
+def test_randomized_ancilla_reports_active_and_idle_control_induced_errors(
+    monkeypatch: pytest.MonkeyPatch,
     fake_experiment: Any,
 ) -> None:
-    """Randomized mode should reject an incompatible MCM-repetition request."""
-    with pytest.raises(ValueError, match="mcm-rep"):
-        mcm_randomized_benchmarking(
-            fake_experiment,
-            "Q0",
-            "Q1",
-            n_cliffords_range=[0, 1, 2],
-            n_trials=1,
-            seeds=[3],
-            protocols=("mcm-rb", "mcm-rep"),
-            ancilla_mode="randomized",
-            plot=False,
-            save_image=False,
+    """Matched RB and repetition pairs should report their ancilla errors."""
+    measurement_service = ConstantMeasurementService()
+    fake_experiment.measurement_service = measurement_service
+
+    def fake_fit_rb(*, target: str, title: str, **options: Any) -> FitResult:
+        del options
+        protocol = title.split()[0]
+        p = {
+            ("mcm-rb", "Q0"): 0.96,
+            ("delay-rb", "Q0"): 0.98,
+            ("mcm-rb", "Q1"): 0.90,
+            ("delay-rb", "Q1"): 0.95,
+            ("mcm-rep", "Q0"): 0.97,
+            ("delay-rep", "Q0"): 0.99,
+            ("mcm-rep", "Q1"): 0.88,
+            ("delay-rep", "Q1"): 0.92,
+        }[(protocol, target)]
+        return FitResult(
+            status=FitStatus.SUCCESS,
+            data={"p": p, "p_err": 0.01},
+            figure=go.Figure(),
         )
+
+    monkeypatch.setattr(mcm_module.fitting, "fit_rb", fake_fit_rb)
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[3],
+        protocols=("mcm-rb", "delay-rb", "mcm-rep", "delay-rep"),
+        ancilla_mode="randomized",
+        plot=False,
+        save_image=False,
+    )
+
+    assert tuple(result.data["protocols"]) == (
+        "mcm-rb",
+        "delay-rb",
+        "mcm-rep",
+        "delay-rep",
+    )
+    assert result.data["measurement_induced_control_error"]["value"] == pytest.approx(
+        0.5 * (1.0 - 0.96 / 0.98), rel=1e-12, abs=1e-12
+    )
+    assert result.data["measurement_induced_ancilla_population_error"][
+        "value"
+    ] == pytest.approx(0.5 * (1.0 - 0.90 / 0.95), rel=1e-12, abs=1e-12)
+    assert result.data[
+        "measurement_induced_ancilla_population_error_with_idle_control"
+    ]["value"] == pytest.approx(
+        0.5 * (1.0 - 0.88 / 0.92),
+        rel=1e-12,
+        abs=1e-12,
+    )
+    assert len(measurement_service.calls) == 12
+
+
+def test_randomized_mcm_repetition_does_not_report_unmatched_induced_error(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_experiment: Any,
+) -> None:
+    """MCM repetition alone should expose its fit without an induced error."""
+    fake_experiment.measurement_service = ConstantMeasurementService()
+    monkeypatch.setattr(
+        mcm_module.fitting,
+        "fit_rb",
+        lambda **options: FitResult(
+            status=FitStatus.SUCCESS,
+            data={"p": 0.95, "p_err": 0.01},
+            figure=go.Figure(),
+        ),
+    )
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[3],
+        protocols="mcm-rep",
+        ancilla_mode="randomized",
+        plot=False,
+        save_image=False,
+    )
+
+    assert result.data["protocols"]["mcm-rep"]["Q1"]["decay_parameter"] == 0.95
+    assert result.data["measurement_induced_control_error"] is None
+    assert result.data["measurement_induced_ancilla_population_error"] is None
+    assert (
+        result.data["measurement_induced_ancilla_population_error_with_idle_control"]
+        is None
+    )
 
 
 def test_experiment_rejects_mismatched_trial_and_seed_counts(
@@ -243,6 +330,22 @@ def test_experiment_rejects_mismatched_trial_and_seed_counts(
         )
 
 
+def test_experiment_rejects_invalid_xaxis_type(fake_experiment: Any) -> None:
+    """The workflow should reject unsupported fit-axis scales."""
+    with pytest.raises(ValueError, match="xaxis_type"):
+        mcm_randomized_benchmarking(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            n_cliffords_range=[0, 1, 2],
+            n_trials=1,
+            seeds=[1],
+            xaxis_type="symlog",  # type: ignore[arg-type]
+            plot=False,
+            save_image=False,
+        )
+
+
 @pytest.mark.parametrize("seed", [1.0, "1", 1 + 0j])
 def test_experiment_rejects_noninteger_seeds(
     fake_experiment: Any,
@@ -256,7 +359,7 @@ def test_experiment_rejects_noninteger_seeds(
             "Q1",
             n_cliffords_range=[0, 1, 2],
             n_trials=1,
-            seeds=[seed],
+            seeds=[seed],  # type: ignore[arg-type]
             protocols="mcm-rep",
             plot=False,
             save_image=False,

@@ -1,4 +1,4 @@
-"""Measurement-crosstalk randomized benchmarking experiments."""
+"""MCM randomized-benchmarking and repetition experiments."""
 
 from __future__ import annotations
 
@@ -22,18 +22,41 @@ from qubex.experiment.experiment_constants import (
 )
 from qubex.experiment.models import Result
 from qubex.measurement.models.measure_result import MultipleMeasureResult
-from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, VirtualZ, Waveform
+from qubex.pulse import (
+    Blank,
+    FlatTop,
+    PulseArray,
+    PulseSchedule,
+    VirtualZ,
+    Waveform,
+    set_sampling_period,
+)
 
-MCMRBProtocol = Literal["mcm-rb", "delay-rb", "mcm-rep"]
+MCMRBProtocol = Literal["mcm-rb", "delay-rb", "mcm-rep", "delay-rep"]
 _AncillaMode = Literal["standard", "randomized"]
 
 _MCM_RB: MCMRBProtocol = "mcm-rb"
 _DELAY_RB: MCMRBProtocol = "delay-rb"
 _MCM_REP: MCMRBProtocol = "mcm-rep"
-_MCM_RB_PROTOCOLS: tuple[MCMRBProtocol, ...] = (_MCM_RB, _DELAY_RB, _MCM_REP)
+_DELAY_REP: MCMRBProtocol = "delay-rep"
+# The suffix selects the control operation (Clifford or matched delay), while
+# the prefix selects the ancilla operation (readout or matched delay).
+_SUPPORTED_PROTOCOLS: tuple[MCMRBProtocol, ...] = (
+    _MCM_RB,
+    _DELAY_RB,
+    _MCM_REP,
+    _DELAY_REP,
+)
+_STANDARD_DEFAULT_PROTOCOLS: tuple[MCMRBProtocol, ...] = (
+    _MCM_RB,
+    _DELAY_RB,
+    _MCM_REP,
+)
+_RANDOMIZED_DEFAULT_PROTOCOLS: tuple[MCMRBProtocol, ...] = (_MCM_RB, _DELAY_RB)
+_CONTROL_DELAY_PROTOCOLS: tuple[MCMRBProtocol, ...] = (_MCM_REP, _DELAY_REP)
+_READOUT_DELAY_PROTOCOLS: tuple[MCMRBProtocol, ...] = (_DELAY_RB, _DELAY_REP)
 _STANDARD_ANCILLA: _AncillaMode = "standard"
 _RANDOMIZED_ANCILLA: _AncillaMode = "randomized"
-_RANDOMIZED_ANCILLA_PROTOCOLS: tuple[MCMRBProtocol, ...] = (_MCM_RB, _DELAY_RB)
 _ANCILLA_RANDOMIZATION_SPAWN_KEY = (1,)
 
 
@@ -100,9 +123,9 @@ _ProtocolResults = dict[MCMRBProtocol, dict[str, _TargetAnalysis]]
 
 def _validate_protocol(protocol: str) -> MCMRBProtocol:
     """Validate and narrow one protocol name."""
-    if protocol not in _MCM_RB_PROTOCOLS:
+    if protocol not in _SUPPORTED_PROTOCOLS:
         raise ValueError(
-            f"Invalid `protocol`: {protocol!r}. Expected one of {_MCM_RB_PROTOCOLS}."
+            f"Invalid `protocol`: {protocol!r}. Expected one of {_SUPPORTED_PROTOCOLS}."
         )
     return cast(MCMRBProtocol, protocol)
 
@@ -117,17 +140,11 @@ def _validate_ancilla_mode(ancilla_mode: str) -> _AncillaMode:
     return cast(_AncillaMode, ancilla_mode)
 
 
-def _validate_protocol_for_ancilla_mode(
-    protocol: MCMRBProtocol,
-    *,
-    ancilla_mode: _AncillaMode,
-) -> None:
-    """Reject protocols incompatible with randomized ancilla recovery."""
-    if ancilla_mode == _RANDOMIZED_ANCILLA and protocol == _MCM_REP:
-        raise ValueError(
-            "`mcm-rep` is not supported when `ancilla_mode='randomized'`; "
-            "use `mcm-rb` and `delay-rb` as a matched pair."
-        )
+def _validate_xaxis_type(xaxis_type: str) -> Literal["linear", "log"]:
+    """Validate and narrow the fit-figure x-axis scale."""
+    if xaxis_type not in ("linear", "log"):
+        raise ValueError("`xaxis_type` must be either `linear` or `log`.")
+    return cast(Literal["linear", "log"], xaxis_type)
 
 
 def _validate_nonnegative_integer(value: object, *, name: str) -> int:
@@ -345,6 +362,7 @@ def _resolve_sequence_resources(
     sampling_period = float(exp.ctx.measurement.sampling_period)
     if not np.isfinite(sampling_period) or sampling_period <= 0:
         raise ValueError("The experiment sampling period must be positive and finite.")
+    set_sampling_period(sampling_period)
 
     x90_waveform = x90 if x90 is not None else exp.pulse.x90(control)
     measurement = (
@@ -479,7 +497,7 @@ def _build_protocol_schedule(
     with PulseSchedule(schedule_labels) as schedule:
         for cycle_index, clifford in enumerate(clifford_sequence.cliffords):
             control_operation: Waveform
-            if protocol == _MCM_REP:
+            if protocol in _CONTROL_DELAY_PROTOCOLS:
                 control_operation = _blank(
                     clifford.duration,
                     resources.sampling_period,
@@ -497,7 +515,7 @@ def _build_protocol_schedule(
                 schedule.barrier()
 
             measurement_operation: Waveform
-            if protocol == _DELAY_RB:
+            if protocol in _READOUT_DELAY_PROTOCOLS:
                 measurement_operation = _blank(
                     resources.measurement.duration,
                     resources.sampling_period,
@@ -516,7 +534,7 @@ def _build_protocol_schedule(
             schedule.barrier()
 
         final_control_operation: Waveform
-        if protocol == _MCM_REP:
+        if protocol in _CONTROL_DELAY_PROTOCOLS:
             final_control_operation = _blank(
                 clifford_sequence.inverse.duration,
                 resources.sampling_period,
@@ -544,32 +562,41 @@ def mcm_rb_sequence(
     ancilla_x180: Waveform | None = None,
 ) -> PulseSchedule:
     """
-    Build one MCM-RB, delay-RB, or MCM-repetition pulse schedule.
+    Build one MCM-RB, delay-RB, MCM-repetition, or delay-repetition schedule.
 
     Parameters
     ----------
     exp
         Experiment instance that provides pulse and Clifford services.
     control
-        Qubit receiving the randomized Clifford sequence.
+        Control or spectator qubit. RB protocols apply randomized Cliffords
+        and their inverse; repetition protocols replace them with
+        duration-matched delays.
     ancilla
-        Qubit measured during every randomized-benchmarking cycle.
+        Ancilla or readout-target qubit. MCM protocols apply its intermediate
+        readout; delay protocols replace that readout with a duration-matched
+        delay.
     protocol
-        Sequence variant: `"mcm-rb"`, `"delay-rb"`, or `"mcm-rep"`.
+        Sequence variant: `"mcm-rb"`, `"delay-rb"`, `"mcm-rep"`, or
+        `"delay-rep"`. Repetition protocols replace the control Cliffords with
+        duration-matched delays. Delay protocols replace the intermediate
+        readout pulses with duration-matched delays.
     n_cliffords
-        Number of randomized cycles. Must be nonnegative.
+        Number of protocol cycles. Must be nonnegative.
     seed
-        Nonnegative seed used to generate the one-qubit Clifford sequence.
+        Nonnegative seed for the Clifford sequence and the independent
+        randomized-ancilla I/X180 stream. Repetition protocols use the
+        generated Clifford durations only.
     control_echo
         Whether to apply an X-X echo to the control during every measurement
         or reference-delay window. The X180 centers are placed at the quarter
         and three-quarter points of the active readout interval after trimming
-        half a ramp duration from each end.
+        half a ramp duration from each end. Repetition protocols therefore
+        contain control pulses during these windows when this option is `True`.
     ancilla_mode
         Ancilla sequence mode. `"standard"` preserves the original protocol.
         `"randomized"` inserts a seeded I/X180 before every measurement or
-        reference delay and applies a final parity recovery. Randomized mode
-        supports only `"mcm-rb"` and `"delay-rb"`.
+        reference delay and applies a final parity recovery.
     x90
         Optional control X90 waveform override.
     measurement_waveform
@@ -599,21 +626,21 @@ def mcm_rb_sequence(
 
     Notes
     -----
-    In standard mode, `mcm-rep` replaces every randomized Clifford and the
-    final inverse with duration-matched delays. All selected protocols have
-    equal total duration for the same Clifford sequence and seed.
+    The `mcm-rep` and `delay-rep` protocols replace every randomized Clifford
+    and the final inverse with duration-matched delays. All four protocols have
+    equal total duration when built with the same cycle count, seed, ancilla
+    mode, and echo options.
 
     In randomized mode, the seed determines both the Clifford sequence and a
     separate ancilla I/X180 random stream. The final ancilla recovery is X180
     exactly when the programmed sequence has odd parity. One static I/X180
     sequence is encoded in the returned schedule.
+
+    Construction synchronizes the global pulse-library sampling period with
+    `exp.ctx.measurement.sampling_period`.
     """
     resolved_protocol = _validate_protocol(protocol)
     resolved_ancilla_mode = _validate_ancilla_mode(ancilla_mode)
-    _validate_protocol_for_ancilla_mode(
-        resolved_protocol,
-        ancilla_mode=resolved_ancilla_mode,
-    )
     resolved_n_cliffords = _validate_nonnegative_integer(
         n_cliffords,
         name="n_cliffords",
@@ -700,11 +727,11 @@ def _resolve_protocols(
     *,
     ancilla_mode: _AncillaMode,
 ) -> tuple[MCMRBProtocol, ...]:
-    """Return unique protocol names in caller-specified order."""
+    """Return unique protocol names in input iteration order."""
     if protocols is None:
         if ancilla_mode == _RANDOMIZED_ANCILLA:
-            return _RANDOMIZED_ANCILLA_PROTOCOLS
-        return _MCM_RB_PROTOCOLS
+            return _RANDOMIZED_DEFAULT_PROTOCOLS
+        return _STANDARD_DEFAULT_PROTOCOLS
     candidates = [protocols] if isinstance(protocols, str) else list(protocols)
     if not candidates:
         raise ValueError("`protocols` must not be empty.")
@@ -714,11 +741,6 @@ def _resolve_protocols(
     )
     if len(resolved) != len(set(resolved)):
         raise ValueError("`protocols` must not contain duplicate values.")
-    for protocol in resolved:
-        _validate_protocol_for_ancilla_mode(
-            protocol,
-            ancilla_mode=ancilla_mode,
-        )
     return resolved
 
 
@@ -870,8 +892,8 @@ def _fit_protocol_target(
         y=mean,
         error_y=std if trials.shape[1] > 1 else None,
         bounds=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
-        title=f"{protocol} randomized benchmarking",
-        xlabel="Number of Clifford/measurement cycles",
+        title=f"{protocol} measurement-crosstalk benchmarking",
+        xlabel="Number of protocol cycles",
         ylabel="Ground-state probability",
         xaxis_type=xaxis_type,
         yaxis_type="linear",
@@ -941,28 +963,34 @@ def _measurement_induced_error(
     protocol_results: _ProtocolResults,
     *,
     target: str,
+    measurement_protocol: MCMRBProtocol,
+    reference_protocol: MCMRBProtocol,
 ) -> dict[str, float] | None:
-    """Calculate one target's MCM-induced error relative to delay-RB."""
-    if _MCM_RB not in protocol_results or _DELAY_RB not in protocol_results:
-        return None
-    mcm_result = protocol_results[_MCM_RB][target]
-    delay_result = protocol_results[_DELAY_RB][target]
-    p_mcm = mcm_result["decay_parameter"]
-    p_mcm_err = mcm_result["decay_parameter_err"]
-    p_delay = delay_result["decay_parameter"]
-    p_delay_err = delay_result["decay_parameter_err"]
+    """Calculate one target's induced error from a matched protocol pair."""
     if (
-        p_mcm is None
-        or p_mcm_err is None
-        or p_delay is None
-        or p_delay_err is None
-        or p_delay == 0.0
+        measurement_protocol not in protocol_results
+        or reference_protocol not in protocol_results
+    ):
+        return None
+    measurement_result = protocol_results[measurement_protocol][target]
+    reference_result = protocol_results[reference_protocol][target]
+    p_measurement = measurement_result["decay_parameter"]
+    p_measurement_err = measurement_result["decay_parameter_err"]
+    p_reference = reference_result["decay_parameter"]
+    p_reference_err = reference_result["decay_parameter_err"]
+    if (
+        p_measurement is None
+        or p_measurement_err is None
+        or p_reference is None
+        or p_reference_err is None
+        or p_reference == 0.0
     ):
         return None
 
-    value = 0.5 * (1.0 - p_mcm / p_delay)
+    value = 0.5 * (1.0 - p_measurement / p_reference)
     error = 0.5 * np.sqrt(
-        (p_mcm_err / p_delay) ** 2 + (p_mcm * p_delay_err / p_delay**2) ** 2
+        (p_measurement_err / p_reference) ** 2
+        + (p_measurement * p_reference_err / p_reference**2) ** 2
     )
     return {"value": float(value), "error": float(error)}
 
@@ -998,34 +1026,38 @@ def mcm_randomized_benchmarking(
     exp
         Experiment instance used to generate and execute the schedules.
     control
-        Qubit receiving randomized Cliffords.
+        Control or spectator qubit. RB protocols apply randomized Cliffords;
+        repetition protocols apply duration-matched delays instead.
     ancilla
-        Qubit measured during every randomized-benchmarking cycle.
+        Ancilla or readout-target qubit. MCM protocols apply its intermediate
+        readout; delay protocols replace that readout with a duration-matched
+        delay.
     n_cliffords_range
         Strictly increasing nonnegative cycle counts. Defaults to 0 followed
         by 14 geometrically spaced values from 1 through 150.
     n_trials
-        Number of random Clifford trials per cycle count. Defaults to 30.
+        Number of seed trials per cycle count. Defaults to 30.
     seeds
         One nonnegative integer seed for every trial. Defaults to generated
         seeds. Values must have integer types and fit in signed 64 bits.
     protocols
         Protocols to run. Defaults to all of `"mcm-rb"`, `"delay-rb"`, and
         `"mcm-rep"` in standard mode and to the matched `"mcm-rb"` and
-        `"delay-rb"` pair in randomized mode. The same generated Clifford and
-        ancilla I/X180 sequences are shared across protocols for each sequence
-        length and seed.
+        `"delay-rb"` pair in randomized mode. `"mcm-rep"` and `"delay-rep"`
+        are opt-in in randomized mode; `"delay-rep"` is opt-in in both modes.
+        The same generated Clifford and ancilla I/X180 sequences are shared
+        across protocols for each sequence length and seed.
     control_echo
         Whether to insert an X-X echo on the control during every measurement
         or duration-matched delay window. The X180 centers are placed at the
         quarter and three-quarter points of the active readout interval after
-        trimming half a ramp duration from each end.
+        trimming half a ramp duration from each end. Repetition protocols omit
+        randomized Cliffords but are not strictly idle when echo is enabled.
     ancilla_mode
         Ancilla sequence mode. `"standard"` preserves the original suite.
         `"randomized"` inserts a seeded I/X180 before every measurement or
         reference delay, followed by an X180 for odd parity or a
-        duration-matched blank for even parity. Randomized mode does not
-        support `"mcm-rep"`.
+        duration-matched blank for even parity.
     x90
         Optional control X90 waveform override.
     measurement_waveform
@@ -1059,9 +1091,14 @@ def mcm_randomized_benchmarking(
     -------
     Result
         Raw terminal probabilities, per-protocol statistics and fits, the
-        MCM-induced control error, optional randomized-ancilla population
-        error, metadata, and named fit figures. Protocol results are stored
-        under `result.data["protocols"][protocol][target]`.
+        optional MCM-induced control error, randomized-ancilla population
+        errors with Clifford-driven or delayed control, metadata, and named
+        fit figures.
+        Protocol results are stored under
+        `result.data["protocols"][protocol][target]`. The Clifford-driven and
+        control-delay ancilla estimates are stored as
+        `measurement_induced_ancilla_population_error` and
+        `measurement_induced_ancilla_population_error_with_idle_control`.
 
     Raises
     ------
@@ -1075,15 +1112,21 @@ def mcm_randomized_benchmarking(
     Notes
     -----
     Intermediate MCM outcomes are intentionally discarded. Only the terminal
-    capture for the control and ancilla is normalized and fitted. When both
-    MCM-RB and delay-RB succeed, the reported induced error is
-    `(1 - p_mcm / p_delay) / 2`.
+    capture for the control and ancilla is normalized and fitted. A matched
+    measurement/reference pair reports `(1 - p_measurement / p_reference) / 2`.
+    MCM-RB and delay-RB form the Clifford-driven pair. In randomized mode,
+    MCM-repetition and delay-repetition form the control-delay pair.
+    MCM-repetition without delay-repetition does not produce a ratio-based
+    induced-error estimate. With `control_echo=True`, the control-delay pair
+    still contains the requested X-X echoes.
 
     Control-qubit MCM-RB and delay-RB have the standard
     randomized-benchmarking exponential form under the usual assumptions.
-    MCM-repetition is fitted to the same form for comparison, but its decay is
-    not generally guaranteed to be exponential because the ancilla is not
-    Clifford twirled.
+    Every protocol/target pair is fitted to the same exponential form for
+    comparison. The repetition-protocol fit is not a standard RB fit: the
+    control is not Clifford twirled, and standard-mode ancilla population is
+    not I/X180 twirled. Its `error_per_cycle` is therefore a decay metric rather
+    than a general average gate error.
 
     Randomized mode benchmarks ancilla computational-basis population
     preservation, not general single-qubit or state-assignment fidelity. Its
@@ -1096,6 +1139,9 @@ def mcm_randomized_benchmarking(
     The ancilla I/X180 choices are generated once per sequence length and
     trial seed, then reused for every shot of that schedule. Randomization is
     averaged across trials rather than varied shot by shot.
+
+    The experiment synchronizes the global pulse-library sampling period with
+    `exp.ctx.measurement.sampling_period` before constructing schedules.
     """
     resolved_ancilla_mode = _validate_ancilla_mode(ancilla_mode)
     resolved_n_cliffords = _resolve_n_cliffords_range(n_cliffords_range)
@@ -1118,8 +1164,7 @@ def mcm_randomized_benchmarking(
     )
     resolved_plot = True if plot is None else plot
     resolved_save_image = False if save_image is None else save_image
-    if xaxis_type not in ("linear", "log"):
-        raise ValueError("`xaxis_type` must be either `linear` or `log`.")
+    resolved_xaxis_type = _validate_xaxis_type(xaxis_type)
 
     control_qubit, ancilla_qubit = _resolve_qubit_pair(exp, control, ancilla)
     exp.pulse.validate_rabi_params([control_qubit, ancilla_qubit])
@@ -1151,7 +1196,7 @@ def mcm_randomized_benchmarking(
         n_cliffords=resolved_n_cliffords,
         plot=resolved_plot,
         save_image=resolved_save_image,
-        xaxis_type=xaxis_type,
+        xaxis_type=resolved_xaxis_type,
     )
 
     return Result(
@@ -1162,11 +1207,25 @@ def mcm_randomized_benchmarking(
             "measurement_induced_control_error": _measurement_induced_error(
                 protocol_results,
                 target=control_qubit,
+                measurement_protocol=_MCM_RB,
+                reference_protocol=_DELAY_RB,
             ),
             "measurement_induced_ancilla_population_error": (
                 _measurement_induced_error(
                     protocol_results,
                     target=ancilla_qubit,
+                    measurement_protocol=_MCM_RB,
+                    reference_protocol=_DELAY_RB,
+                )
+                if resolved_ancilla_mode == _RANDOMIZED_ANCILLA
+                else None
+            ),
+            "measurement_induced_ancilla_population_error_with_idle_control": (
+                _measurement_induced_error(
+                    protocol_results,
+                    target=ancilla_qubit,
+                    measurement_protocol=_MCM_REP,
+                    reference_protocol=_DELAY_REP,
                 )
                 if resolved_ancilla_mode == _RANDOMIZED_ANCILLA
                 else None

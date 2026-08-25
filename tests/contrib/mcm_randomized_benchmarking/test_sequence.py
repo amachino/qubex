@@ -7,11 +7,20 @@ from typing import Any
 import pytest
 
 from qubex.contrib.experiment.mcm_randomized_benchmarking import mcm_rb_sequence
-from qubex.pulse import Blank, FlatTop, PulseArray, Rect
+from qubex.pulse import (
+    Blank,
+    FlatTop,
+    PulseArray,
+    Rect,
+    get_sampling_period,
+    set_sampling_period,
+)
 
 
+@pytest.mark.parametrize("control_echo", [False, True])
 def test_protocols_match_duration_for_the_same_random_sequence(
     fake_experiment: Any,
+    control_echo: bool,
 ) -> None:
     """All protocols should preserve the same total duration for one seed and length."""
     schedules = {
@@ -22,8 +31,9 @@ def test_protocols_match_duration_for_the_same_random_sequence(
             protocol=protocol,
             n_cliffords=2,
             seed=17,
+            control_echo=control_echo,
         )
-        for protocol in ("mcm-rb", "delay-rb", "mcm-rep")
+        for protocol in ("mcm-rb", "delay-rb", "mcm-rep", "delay-rep")
     }
 
     assert {schedule.duration for schedule in schedules.values()} == {160.0}
@@ -47,6 +57,37 @@ def test_protocols_match_duration_for_the_same_random_sequence(
         )
         == 2
     )
+    assert all(
+        isinstance(element, Blank)
+        for element in schedules["delay-rep"].get_sequence("RQ1").elements
+    )
+
+
+def test_sequence_synchronizes_the_global_pulse_sampling_period(
+    fake_experiment: Any,
+) -> None:
+    """Sequence construction should use the experiment sampling period globally."""
+    original_sampling_period = get_sampling_period()
+    try:
+        set_sampling_period(1.0)
+
+        schedule = mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+        )
+
+        assert get_sampling_period() == 2.0
+        assert schedule.duration == 80.0
+        assert schedule.is_valid()
+        assert {
+            schedule.get_sequence(label).sampling_period for label in schedule.labels
+        } == {2.0}
+    finally:
+        set_sampling_period(original_sampling_period)
 
 
 def test_randomized_ancilla_uses_seeded_flips_and_parity_recovery(
@@ -68,6 +109,7 @@ def test_randomized_ancilla_uses_seeded_flips_and_parity_recovery(
     recovery = None
     elapsed = 0.0
     for element in ancilla_elements:
+        assert isinstance(element, (Blank, Rect))
         if elapsed == 456.0:
             recovery = element
         if isinstance(element, Rect):
@@ -99,6 +141,7 @@ def test_randomized_ancilla_uses_blank_recovery_for_even_parity(
     recovery = None
     elapsed = 0.0
     for element in ancilla_elements:
+        assert isinstance(element, (Blank, Rect))
         if elapsed == 456.0:
             recovery = element
         elapsed += element.duration
@@ -108,10 +151,10 @@ def test_randomized_ancilla_uses_blank_recovery_for_even_parity(
     assert recovery.duration == 16.0
 
 
-def test_randomized_ancilla_pattern_is_shared_by_mcm_and_delay_protocols(
+def test_randomized_ancilla_pattern_is_shared_by_all_protocols(
     fake_experiment: Any,
 ) -> None:
-    """MCM and delay references should share the same randomized ancilla gates."""
+    """All protocols should share ancilla gates, recovery, and total duration."""
     schedules = {
         protocol: mcm_rb_sequence(
             fake_experiment,
@@ -122,28 +165,43 @@ def test_randomized_ancilla_pattern_is_shared_by_mcm_and_delay_protocols(
             seed=3,
             ancilla_mode="randomized",
         )
-        for protocol in ("mcm-rb", "delay-rb")
+        for protocol in ("mcm-rb", "delay-rb", "mcm-rep", "delay-rep")
     }
 
-    assert schedules["mcm-rb"].duration == schedules["delay-rb"].duration
+    assert len({schedule.duration for schedule in schedules.values()}) == 1
     assert (
-        schedules["mcm-rb"].get_sequence("Q1").values.tolist()
-        == schedules["delay-rb"].get_sequence("Q1").values.tolist()
-    )
-
-
-def test_randomized_ancilla_rejects_mcm_repetition(fake_experiment: Any) -> None:
-    """Randomized ancilla mode should require a Clifford-bearing protocol."""
-    with pytest.raises(ValueError, match="mcm-rep"):
-        mcm_rb_sequence(
-            fake_experiment,
-            "Q0",
-            "Q1",
-            protocol="mcm-rep",
-            n_cliffords=1,
-            seed=3,
-            ancilla_mode="randomized",
+        len(
+            {
+                tuple(schedule.get_sequence("Q1").values.tolist())
+                for schedule in schedules.values()
+            }
         )
+        == 1
+    )
+    expected_control_durations = [
+        duration
+        for clifford_duration in (8.0, 16.0, 8.0, 16.0, 8.0)
+        for duration in (clifford_duration, 16.0, 64.0)
+    ] + [16.0, 8.0]
+    for protocol in ("mcm-rep", "delay-rep"):
+        control_elements = schedules[protocol].get_sequence("Q0").flattened_elements
+        assert all(isinstance(element, Blank) for element in control_elements)
+        assert [
+            element.duration
+            for element in control_elements
+            if isinstance(element, Blank)
+        ] == expected_control_durations
+    assert all(
+        isinstance(element, Blank)
+        for element in schedules["delay-rep"].get_sequence("RQ1").elements
+    )
+    assert (
+        sum(
+            isinstance(element, Rect)
+            for element in schedules["mcm-rep"].get_sequence("RQ1").elements
+        )
+        == 5
+    )
 
 
 def test_randomized_ancilla_validates_x180_override(fake_experiment: Any) -> None:
@@ -249,6 +307,35 @@ def test_control_echo_places_two_pi_pulses_symmetrically_in_each_measurement(
     assert isinstance(measurement_block[4], Blank)
 
 
+def test_delay_repetition_keeps_control_echo_in_reference_windows(
+    fake_experiment: Any,
+) -> None:
+    """Delay repetition should retain control echo while blanking readout pulses."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        protocol="delay-rep",
+        n_cliffords=2,
+        seed=17,
+        control_echo=True,
+        ancilla_mode="randomized",
+    )
+
+    control_elements = schedule.get_sequence("Q0").flattened_elements
+
+    assert (
+        sum(
+            isinstance(element, Rect) and element.duration == 16.0
+            for element in control_elements
+        )
+        == 4
+    )
+    assert all(
+        isinstance(element, Blank) for element in schedule.get_sequence("RQ1").elements
+    )
+
+
 def test_control_echo_uses_quarters_of_ramp_trimmed_active_readout(
     fake_experiment: Any,
 ) -> None:
@@ -278,7 +365,12 @@ def test_control_echo_uses_quarters_of_ramp_trimmed_active_readout(
 
     measurement_block = schedule.get_sequence("Q0").flattened_elements[1:6]
 
-    assert [element.duration for element in measurement_block] == [
+    assert all(isinstance(element, (Blank, Rect)) for element in measurement_block)
+    assert [
+        element.duration
+        for element in measurement_block
+        if isinstance(element, (Blank, Rect))
+    ] == [
         28.0,
         16.0,
         8.0,
