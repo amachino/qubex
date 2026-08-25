@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from numbers import Real
@@ -10,6 +11,9 @@ from typing import Literal, TypedDict, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from plotly.graph_objects import Figure
+from rich.console import Console
+from rich.table import Table
+from scipy.optimize import OptimizeWarning, curve_fit
 from tqdm import tqdm
 
 import qubex.visualization as viz
@@ -31,6 +35,8 @@ from qubex.pulse import (
     Waveform,
     set_sampling_period,
 )
+
+console = Console()
 
 MCMRBProtocol = Literal["mcm-rb", "delay-rb", "mcm-rep", "delay-rep"]
 _AncillaMode = Literal["standard", "randomized"]
@@ -59,8 +65,14 @@ _STANDARD_ANCILLA: _AncillaMode = "standard"
 _RANDOMIZED_ANCILLA: _AncillaMode = "randomized"
 _CONTROL_RANDOMIZATION_SPAWN_KEY = (0,)
 _ANCILLA_RANDOMIZATION_SPAWN_KEY = (1,)
+_DEFAULT_N_BOOTSTRAP = 1_000
+_DEFAULT_BOOTSTRAP_CONFIDENCE_LEVEL = 0.95
+_DEFAULT_MIN_FIT_R_SQUARED = 0.9
+_MIN_BOOTSTRAP_SUCCESS_RATE = 0.8
 
 _WaveformOverride = Waveform | Mapping[str, Waveform] | None
+_MeasurementScale = float | Mapping[str, float] | None
+_MeasurementSource = Literal["calibrated", "scaled_calibrated", "custom"]
 
 
 @dataclass(frozen=True)
@@ -73,6 +85,8 @@ class _SequenceResources:
     sampling_period: float
     x90s: Mapping[str, Waveform]
     measurements: Mapping[str, Waveform]
+    measurement_scales: Mapping[str, float | None]
+    measurement_sources: Mapping[str, _MeasurementSource]
     controls_during_measurement: Mapping[str, Waveform]
     ancilla_x180s: Mapping[str, Waveform]
 
@@ -122,25 +136,71 @@ class _TargetAnalysis(TypedDict):
     trials: NDArray[np.float64]
     mean: NDArray[np.float64]
     std: NDArray[np.float64]
-    fit_result: FitResult
+    fit: FitResult
     decay_parameter: float | None
-    decay_parameter_err: float | None
+    decay_parameter_uncertainty: float | None
+    uncertainty_method: Literal["paired_bootstrap", "fit_covariance", "unavailable"]
     error_per_cycle: float | None
-    error_per_cycle_err: float | None
+    error_per_cycle_uncertainty: float | None
+    bootstrap: _BootstrapSummary
+    fit_validity: _FitValidity
+
+
+class _BootstrapSummary(TypedDict):
+    """Bootstrap availability, success fraction, and uncertainty summary."""
+
+    successful_resamples: int
+    success_rate: float | None
+    standard_error: float | None
+    confidence_interval: tuple[float, float] | None
+    unavailable_reason: str | None
+
+
+class _FitValidity(TypedDict):
+    """Diagnostics that distinguish optimizer convergence from fit validity."""
+
+    is_valid: bool
+    reasons: tuple[str, ...]
+    r_squared: float | None
+
+
+class _PairedFitValidity(TypedDict):
+    """Combined fit validity for a measurement/reference protocol pair."""
+
+    is_valid: bool
+    reasons: tuple[str, ...]
+    measurement_protocol: MCMRBProtocol
+    reference_protocol: MCMRBProtocol
 
 
 class _ErrorEstimate(TypedDict):
-    """Value and propagated uncertainty for one induced-error estimate."""
+    """Value, uncertainty, and validity for one induced-error estimate."""
 
     value: float
-    error: float
+    uncertainty: float | None
+    uncertainty_method: Literal[
+        "paired_bootstrap", "independent_fit_propagation", "unavailable"
+    ]
+    bootstrap: _BootstrapSummary
+    fit_validity: _PairedFitValidity
+
+
+_TargetErrorEstimates = dict[str, _ErrorEstimate | None]
+
+
+class _MeasurementInducedErrors(TypedDict):
+    """All ratio-based error estimates reported by the experiment."""
+
+    control: _TargetErrorEstimates
+    ancilla_population_with_cliffords: _TargetErrorEstimates
+    ancilla_population_with_control_delay: _TargetErrorEstimates
 
 
 _TrialData = dict[MCMRBProtocol, dict[str, NDArray[np.float64]]]
 _ProtocolResults = dict[MCMRBProtocol, dict[str, _TargetAnalysis]]
+_BootstrapDecayParameters = dict[MCMRBProtocol, dict[str, NDArray[np.float64]]]
 _CompiledCliffordSequences = Mapping[str, _CompiledCliffordSequence]
 _CompiledAncillaSequences = Mapping[str, _CompiledAncillaSequence]
-_TargetErrorPayload = _ErrorEstimate | dict[str, _ErrorEstimate | None] | None
 
 
 def _validate_protocol(protocol: str) -> MCMRBProtocol:
@@ -194,6 +254,26 @@ def _validate_positive_real(value: object, *, name: str) -> float:
     resolved = float(value)
     if not np.isfinite(resolved) or resolved <= 0:
         raise ValueError(f"`{name}` must be positive and finite.")
+    return resolved
+
+
+def _validate_open_unit_interval(value: object, *, name: str) -> float:
+    """Return a finite scalar strictly between zero and one."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        raise TypeError(f"`{name}` must be a real number.")
+    resolved = float(value)
+    if not np.isfinite(resolved) or not 0.0 < resolved < 1.0:
+        raise ValueError(f"`{name}` must be finite and strictly between 0 and 1.")
+    return resolved
+
+
+def _validate_fit_r_squared_threshold(value: object) -> float:
+    """Return a finite fit-validity threshold in the closed unit interval."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        raise TypeError("`min_fit_r_squared` must be a real number or None.")
+    resolved = float(value)
+    if not np.isfinite(resolved) or not 0.0 <= resolved <= 1.0:
+        raise ValueError("`min_fit_r_squared` must be finite and between 0 and 1.")
     return resolved
 
 
@@ -370,6 +450,106 @@ def _normalize_waveform_overrides(
     return overrides
 
 
+def _normalize_measurement_scales(
+    exp: Experiment,
+    *,
+    targets: tuple[str, ...],
+    measurement_scale: _MeasurementScale,
+) -> dict[str, float]:
+    """Normalize scalar or target-keyed readout scales to resolved labels."""
+    if measurement_scale is None:
+        return {}
+    if isinstance(measurement_scale, Real):
+        scale = _validate_positive_real(
+            measurement_scale,
+            name="measurement_scale",
+        )
+        return dict.fromkeys(targets, scale)
+    if not isinstance(measurement_scale, Mapping):
+        raise TypeError(
+            "`measurement_scale` must be a real number or target-keyed mapping."
+        )
+
+    scales: dict[str, float] = {}
+    for label, value in measurement_scale.items():
+        if not isinstance(label, str):
+            raise TypeError(
+                "`measurement_scale` mapping keys must be qubit-label strings."
+            )
+        target = exp.ctx.resolve_qubit_label(label)
+        if target not in targets:
+            raise ValueError(
+                "`measurement_scale` contains a value for unselected target "
+                f"{target!r}."
+            )
+        if target in scales:
+            raise ValueError(
+                f"`measurement_scale` contains duplicate values for target {target!r}."
+            )
+        scales[target] = _validate_positive_real(
+            value,
+            name=f"measurement_scale[{target}]",
+        )
+    return scales
+
+
+def _resolve_measurements(
+    exp: Experiment,
+    *,
+    targets: tuple[str, ...],
+    measurement_waveform: _WaveformOverride,
+    measurement_scale: _MeasurementScale,
+    sampling_period: float,
+) -> tuple[
+    dict[str, Waveform],
+    dict[str, float | None],
+    dict[str, _MeasurementSource],
+]:
+    """Resolve intermediate readouts and record how each waveform was obtained."""
+    if measurement_waveform is not None and measurement_scale is not None:
+        raise ValueError(
+            "`measurement_waveform` and `measurement_scale` are mutually exclusive."
+        )
+
+    waveform_overrides = _normalize_waveform_overrides(
+        exp,
+        targets=targets,
+        override=measurement_waveform,
+        name="measurement_waveform",
+    )
+    scale_overrides = _normalize_measurement_scales(
+        exp,
+        targets=targets,
+        measurement_scale=measurement_scale,
+    )
+    measurements: dict[str, Waveform] = {}
+    scales: dict[str, float | None] = {}
+    sources: dict[str, _MeasurementSource] = {}
+    for target in targets:
+        custom_waveform = waveform_overrides.get(target)
+        if custom_waveform is not None:
+            waveform = custom_waveform
+            scale: float | None = None
+            source: _MeasurementSource = "custom"
+        else:
+            waveform = exp.pulse.readout(target)
+            scale = scale_overrides.get(target, 1.0)
+            if target in scale_overrides:
+                waveform = waveform.scaled(scale)
+                source = "scaled_calibrated"
+            else:
+                source = "calibrated"
+        _validate_waveform(
+            waveform,
+            expected_sampling_period=sampling_period,
+            name=f"measurement_waveform[{target}]",
+        )
+        measurements[target] = waveform
+        scales[target] = scale
+        sources[target] = source
+    return measurements, scales, sources
+
+
 def _blank(duration: float, sampling_period: float) -> Blank:
     """Build a blank pulse on the active sampling grid."""
     return Blank(duration=duration, sampling_period=sampling_period)
@@ -496,8 +676,6 @@ def _validate_matching_readout_intervals(
     measurements: Mapping[str, Waveform],
 ) -> None:
     """Require equal ramp-trimmed active intervals for multiple readouts."""
-    if len(measurements) == 1:
-        return
     intervals_half_samples = {
         target: _infer_readout_timing(measurement).ramp_trimmed_interval_half_samples
         for target, measurement in measurements.items()
@@ -525,6 +703,7 @@ def _resolve_sequence_resources(
     ancilla_mode: _AncillaMode,
     x90: _WaveformOverride,
     measurement_waveform: _WaveformOverride,
+    measurement_scale: _MeasurementScale,
     echo_x180: _WaveformOverride,
     ancilla_x180: _WaveformOverride,
 ) -> _SequenceResources:
@@ -542,13 +721,12 @@ def _resolve_sequence_resources(
         sampling_period=sampling_period,
         name="x90",
     )
-    measurements = _resolve_waveforms(
+    measurements, measurement_scales, measurement_sources = _resolve_measurements(
         exp,
         targets=ancillas,
-        override=measurement_waveform,
-        default_factory=exp.pulse.readout,
+        measurement_waveform=measurement_waveform,
+        measurement_scale=measurement_scale,
         sampling_period=sampling_period,
-        name="measurement_waveform",
     )
     _validate_matching_readout_intervals(measurements)
     reference_measurement = next(iter(measurements.values()))
@@ -588,6 +766,8 @@ def _resolve_sequence_resources(
         sampling_period=sampling_period,
         x90s=x90s,
         measurements=measurements,
+        measurement_scales=measurement_scales,
+        measurement_sources=measurement_sources,
         controls_during_measurement={
             target: _measurement_control_block(
                 measurement=reference_measurement,
@@ -839,6 +1019,7 @@ def mcm_rb_sequence(
     ancilla_mode: Literal["standard", "randomized"] = "standard",
     x90: Waveform | Mapping[str, Waveform] | None = None,
     measurement_waveform: Waveform | Mapping[str, Waveform] | None = None,
+    measurement_scale: float | Mapping[str, float] | None = None,
     echo_x180: Waveform | Mapping[str, Waveform] | None = None,
     ancilla_x180: Waveform | Mapping[str, Waveform] | None = None,
 ) -> PulseSchedule:
@@ -866,10 +1047,10 @@ def mcm_rb_sequence(
     n_cliffords
         Number of protocol cycles. Must be nonnegative.
     seed
-        Nonnegative root seed. Multiple controls receive independent derived
-        Clifford streams, and multiple randomized ancillas receive independent
-        derived I/X180 streams. Repetition protocols use the generated
-        Clifford durations only.
+        Optional nonnegative root seed. Multiple controls receive independent
+        derived Clifford streams, and randomized ancillas receive independent
+        derived I/X180 streams. `None` requests nondeterministic streams.
+        Repetition protocols use the generated Clifford durations only.
     control_echo
         Whether to apply an X-X echo to every control during every measurement
         or reference-delay window. The X180 centers are placed at the quarter
@@ -892,6 +1073,12 @@ def mcm_rb_sequence(
         differ. Active intervals are inferred from nonzero samples; at most one
         FlatTop pulse may be present in each waveform, and other shapes are
         treated as having zero ramp duration.
+    measurement_scale
+        Optional positive scale for each intermediate ancilla readout. A scalar
+        scales every selected ancilla's own calibrated readout; a target-keyed
+        mapping scales only listed ancillas and leaves other ancillas at 1.0.
+        This option is mutually exclusive with `measurement_waveform`. The
+        returned schedule does not contain terminal measurements.
     echo_x180
         Optional control X180 override used by the X-X echo. Pass a waveform
         for one control or a target-keyed mapping for multiple controls.
@@ -955,6 +1142,7 @@ def mcm_rb_sequence(
         ancilla_mode=resolved_ancilla_mode,
         x90=x90,
         measurement_waveform=measurement_waveform,
+        measurement_scale=measurement_scale,
         echo_x180=echo_x180,
         ancilla_x180=ancilla_x180,
     )
@@ -1171,12 +1359,205 @@ def _acquire_trials(
     return trials
 
 
+def _fit_decay_parameter(
+    n_cliffords: NDArray[np.int64],
+    probabilities: NDArray[np.float64],
+) -> float | None:
+    """Fit one bootstrap mean curve and return only its decay parameter."""
+
+    def decay(
+        n_cycles: NDArray[np.int64],
+        amplitude: float,
+        decay_parameter: float,
+        offset: float,
+    ) -> NDArray[np.float64]:
+        return amplitude * decay_parameter**n_cycles + offset
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", OptimizeWarning)
+            parameters, _ = curve_fit(
+                decay,
+                n_cliffords,
+                probabilities,
+                p0=(0.5, 1.0, 0.5),
+                bounds=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+                maxfev=20_000,
+            )
+    except (FloatingPointError, RuntimeError, ValueError):
+        return None
+    decay_parameter = float(parameters[1])
+    if not np.isfinite(decay_parameter):
+        return None
+    return decay_parameter
+
+
+def _bootstrap_plan(
+    *,
+    n_sequence_lengths: int,
+    n_trials: int,
+    n_resamples: int,
+    seed: int | None,
+) -> tuple[NDArray[np.int64] | None, str | None]:
+    """Return shared trial-column resamples or an availability diagnosis."""
+    if n_resamples == 0:
+        return None, "disabled"
+    if n_sequence_lengths <= 3:
+        return None, "at_least_four_sequence_lengths_required"
+    if n_trials < 2:
+        return None, "at_least_two_trials_required"
+    indices = np.random.default_rng(seed).integers(
+        0,
+        n_trials,
+        size=(n_resamples, n_trials),
+        dtype=np.int64,
+    )
+    return indices, None
+
+
+def _bootstrap_decay_parameters(
+    n_cliffords: NDArray[np.int64],
+    trials: NDArray[np.float64],
+    bootstrap_indices: NDArray[np.int64] | None,
+) -> NDArray[np.float64]:
+    """Fit decay parameters after resampling complete trial columns."""
+    if bootstrap_indices is None:
+        return np.empty(0, dtype=np.float64)
+    decay_parameters = np.full(len(bootstrap_indices), np.nan, dtype=np.float64)
+    for index, trial_indices in enumerate(bootstrap_indices):
+        probabilities = np.mean(trials[:, trial_indices], axis=1)
+        decay_parameter = _fit_decay_parameter(n_cliffords, probabilities)
+        if decay_parameter is not None:
+            decay_parameters[index] = decay_parameter
+    return decay_parameters
+
+
+def _bootstrap_summary(
+    samples: NDArray[np.float64],
+    *,
+    requested_resamples: int,
+    confidence_level: float,
+    unavailable_reason: str | None,
+) -> _BootstrapSummary:
+    """Summarize finite bootstrap samples without exposing every resample."""
+    finite_samples = samples[np.isfinite(samples)]
+    n_successful = len(finite_samples)
+    standard_error: float | None = None
+    confidence_interval: tuple[float, float] | None = None
+    reason = unavailable_reason
+    if n_successful >= 2:
+        alpha = (1.0 - confidence_level) / 2.0
+        quantiles = np.quantile(finite_samples, [alpha, 1.0 - alpha])
+        standard_error = float(np.std(finite_samples, ddof=1))
+        confidence_interval = (float(quantiles[0]), float(quantiles[1]))
+    elif reason is None:
+        reason = "fewer_than_two_successful_resamples"
+    success_rate = (
+        float(n_successful / requested_resamples)
+        if requested_resamples > 0 and unavailable_reason is None
+        else None
+    )
+    if (
+        reason is None
+        and success_rate is not None
+        and success_rate < _MIN_BOOTSTRAP_SUCCESS_RATE
+    ):
+        reason = "success_rate_below_threshold"
+    return {
+        "successful_resamples": n_successful,
+        "success_rate": success_rate,
+        "standard_error": standard_error,
+        "confidence_interval": confidence_interval,
+        "unavailable_reason": reason,
+    }
+
+
+def _optional_finite_float(value: object) -> float | None:
+    """Return a finite scalar float or None for missing and invalid values."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        return None
+    resolved = float(value)
+    return resolved if np.isfinite(resolved) else None
+
+
+def _fit_validity(
+    fit_result: FitResult,
+    *,
+    n_sequence_lengths: int,
+    min_r_squared: float | None,
+) -> _FitValidity:
+    """Diagnose whether a converged bounded exponential fit is interpretable."""
+    reasons: list[str] = []
+    if fit_result.status is not FitStatus.SUCCESS:
+        reasons.append("fit_not_successful")
+    if n_sequence_lengths <= 3:
+        reasons.append("insufficient_sequence_lengths")
+
+    amplitude = _optional_finite_float(fit_result.data.get("A"))
+    amplitude_err = _optional_finite_float(fit_result.data.get("A_err"))
+    offset = _optional_finite_float(fit_result.data.get("C"))
+    offset_err = _optional_finite_float(fit_result.data.get("C_err"))
+    if amplitude is None:
+        reasons.append("amplitude_unavailable")
+    elif np.isclose(amplitude, 0.0, rtol=0.0, atol=1e-8) or np.isclose(
+        amplitude,
+        1.0,
+        rtol=0.0,
+        atol=1e-8,
+    ):
+        reasons.append("amplitude_at_fit_bound")
+    if amplitude_err is None or amplitude_err < 0.0:
+        reasons.append("amplitude_uncertainty_unavailable")
+    if offset is None:
+        reasons.append("offset_unavailable")
+    elif np.isclose(offset, 0.0, rtol=0.0, atol=1e-8) or np.isclose(
+        offset,
+        1.0,
+        rtol=0.0,
+        atol=1e-8,
+    ):
+        reasons.append("offset_at_fit_bound")
+    if offset_err is None or offset_err < 0.0:
+        reasons.append("offset_uncertainty_unavailable")
+
+    decay_parameter = _optional_finite_float(fit_result.data.get("p"))
+    decay_parameter_err = _optional_finite_float(fit_result.data.get("p_err"))
+    if decay_parameter is None:
+        reasons.append("decay_parameter_unavailable")
+    elif np.isclose(decay_parameter, 0.0, rtol=0.0, atol=1e-8) or np.isclose(
+        decay_parameter,
+        1.0,
+        rtol=0.0,
+        atol=1e-8,
+    ):
+        reasons.append("decay_parameter_at_fit_bound")
+    if decay_parameter_err is None or decay_parameter_err < 0.0:
+        reasons.append("decay_parameter_uncertainty_unavailable")
+
+    r_squared = _optional_finite_float(fit_result.data.get("r2"))
+    if min_r_squared is not None:
+        if r_squared is None:
+            reasons.append("r_squared_unavailable")
+        elif r_squared < min_r_squared:
+            reasons.append("r_squared_below_threshold")
+    return {
+        "is_valid": not reasons,
+        "reasons": tuple(reasons),
+        "r_squared": r_squared,
+    }
+
+
 def _fit_protocol_target(
     *,
     protocol: MCMRBProtocol,
     target: str,
     n_cliffords: NDArray[np.int64],
     trials: NDArray[np.float64],
+    bootstrap_samples: NDArray[np.float64],
+    requested_bootstrap_resamples: int,
+    bootstrap_confidence_level: float,
+    bootstrap_unavailable_reason: str | None,
+    min_fit_r_squared: float | None,
     plot: bool,
     xaxis_type: Literal["linear", "log"],
 ) -> _TargetAnalysis:
@@ -1197,24 +1578,59 @@ def _fit_protocol_target(
         plot=plot,
     )
     decay_parameter: float | None = None
-    decay_parameter_err: float | None = None
+    decay_parameter_fit_err: float | None = None
     error_per_cycle: float | None = None
-    error_per_cycle_err: float | None = None
     if fit_result.status is FitStatus.SUCCESS:
-        decay_parameter = float(fit_result["p"])
-        decay_parameter_err = float(fit_result["p_err"])
-        error_per_cycle = 0.5 * (1.0 - decay_parameter)
-        error_per_cycle_err = 0.5 * decay_parameter_err
+        decay_parameter = _optional_finite_float(fit_result.data.get("p"))
+        decay_parameter_fit_err = _optional_finite_float(fit_result.data.get("p_err"))
+        if decay_parameter is not None:
+            error_per_cycle = 0.5 * (1.0 - decay_parameter)
+
+    bootstrap = _bootstrap_summary(
+        bootstrap_samples,
+        requested_resamples=requested_bootstrap_resamples,
+        confidence_level=bootstrap_confidence_level,
+        unavailable_reason=bootstrap_unavailable_reason,
+    )
+    if decay_parameter is None:
+        decay_parameter_uncertainty = None
+        uncertainty_method: Literal[
+            "paired_bootstrap", "fit_covariance", "unavailable"
+        ] = "unavailable"
+    elif (
+        bootstrap["standard_error"] is not None
+        and bootstrap["unavailable_reason"] is None
+    ):
+        decay_parameter_uncertainty = bootstrap["standard_error"]
+        uncertainty_method = "paired_bootstrap"
+    elif decay_parameter_fit_err is not None:
+        decay_parameter_uncertainty = decay_parameter_fit_err
+        uncertainty_method = "fit_covariance"
+    else:
+        decay_parameter_uncertainty = None
+        uncertainty_method = "unavailable"
+    error_per_cycle_uncertainty = (
+        None
+        if decay_parameter_uncertainty is None
+        else 0.5 * decay_parameter_uncertainty
+    )
 
     return {
         "trials": trials,
         "mean": mean,
         "std": std,
-        "fit_result": fit_result,
+        "fit": fit_result,
         "decay_parameter": decay_parameter,
-        "decay_parameter_err": decay_parameter_err,
+        "decay_parameter_uncertainty": decay_parameter_uncertainty,
+        "uncertainty_method": uncertainty_method,
         "error_per_cycle": error_per_cycle,
-        "error_per_cycle_err": error_per_cycle_err,
+        "error_per_cycle_uncertainty": error_per_cycle_uncertainty,
+        "bootstrap": bootstrap,
+        "fit_validity": _fit_validity(
+            fit_result,
+            n_sequence_lengths=len(n_cliffords),
+            min_r_squared=min_fit_r_squared,
+        ),
     }
 
 
@@ -1223,26 +1639,51 @@ def _analyze_trials(
     *,
     targets: tuple[str, ...],
     n_cliffords: NDArray[np.int64],
+    n_bootstrap: int,
+    bootstrap_seed: int | None,
+    bootstrap_confidence_level: float,
+    min_fit_r_squared: float | None,
     plot: bool,
     save_image: bool,
     xaxis_type: Literal["linear", "log"],
-) -> tuple[_ProtocolResults, dict[str, Figure]]:
+) -> tuple[_ProtocolResults, dict[str, Figure], _BootstrapDecayParameters]:
     """Fit every protocol/target pair and collect available figures."""
     protocol_results: _ProtocolResults = {}
     figures: dict[str, Figure] = {}
+    bootstrap_decay_parameters: _BootstrapDecayParameters = {}
+    first_protocol = next(iter(trials.values()))
+    first_target_trials = next(iter(first_protocol.values()))
+    bootstrap_indices, bootstrap_unavailable_reason = _bootstrap_plan(
+        n_sequence_lengths=len(n_cliffords),
+        n_trials=first_target_trials.shape[1],
+        n_resamples=n_bootstrap,
+        seed=bootstrap_seed,
+    )
     for protocol, protocol_trials in trials.items():
         target_results: dict[str, _TargetAnalysis] = {}
+        protocol_bootstrap: dict[str, NDArray[np.float64]] = {}
         for target in targets:
+            bootstrap_samples = _bootstrap_decay_parameters(
+                n_cliffords,
+                protocol_trials[target],
+                bootstrap_indices,
+            )
+            protocol_bootstrap[target] = bootstrap_samples
             target_result = _fit_protocol_target(
                 protocol=protocol,
                 target=target,
                 n_cliffords=n_cliffords,
                 trials=protocol_trials[target],
+                bootstrap_samples=bootstrap_samples,
+                requested_bootstrap_resamples=n_bootstrap,
+                bootstrap_confidence_level=bootstrap_confidence_level,
+                bootstrap_unavailable_reason=bootstrap_unavailable_reason,
+                min_fit_r_squared=min_fit_r_squared,
                 plot=plot,
                 xaxis_type=xaxis_type,
             )
             target_results[target] = target_result
-            fit_result = target_result["fit_result"]
+            fit_result = target_result["fit"]
             if fit_result.status is not FitStatus.SUCCESS or fit_result.figure is None:
                 continue
             figure_key = f"{protocol}:{target}"
@@ -1253,79 +1694,281 @@ def _analyze_trials(
                     name=f"mcm_randomized_benchmarking_{protocol}_{target}",
                 )
         protocol_results[protocol] = target_results
-    return protocol_results, figures
+        bootstrap_decay_parameters[protocol] = protocol_bootstrap
+    return protocol_results, figures, bootstrap_decay_parameters
 
 
 def _measurement_induced_error(
     protocol_results: _ProtocolResults,
+    bootstrap_decay_parameters: _BootstrapDecayParameters,
     *,
     target: str,
     measurement_protocol: MCMRBProtocol,
     reference_protocol: MCMRBProtocol,
+    requested_bootstrap_resamples: int,
+    bootstrap_confidence_level: float,
 ) -> _ErrorEstimate | None:
     """Calculate one target's induced error from a matched protocol pair."""
     measurement_result = protocol_results[measurement_protocol][target]
     reference_result = protocol_results[reference_protocol][target]
     p_measurement = measurement_result["decay_parameter"]
-    p_measurement_err = measurement_result["decay_parameter_err"]
+    p_measurement_err = _optional_finite_float(
+        measurement_result["fit"].data.get("p_err")
+    )
     p_reference = reference_result["decay_parameter"]
-    p_reference_err = reference_result["decay_parameter_err"]
-    if (
-        p_measurement is None
-        or p_measurement_err is None
-        or p_reference is None
-        or p_reference_err is None
-        or p_reference == 0.0
-    ):
+    p_reference_err = _optional_finite_float(reference_result["fit"].data.get("p_err"))
+    if p_measurement is None or p_reference is None or p_reference == 0.0:
         return None
 
     value = 0.5 * (1.0 - p_measurement / p_reference)
-    error = 0.5 * np.sqrt(
-        (p_measurement_err / p_reference) ** 2
-        + (p_measurement * p_reference_err / p_reference**2) ** 2
+    analytic_error = (
+        None
+        if p_measurement_err is None or p_reference_err is None
+        else float(
+            0.5
+            * np.sqrt(
+                (p_measurement_err / p_reference) ** 2
+                + (p_measurement * p_reference_err / p_reference**2) ** 2
+            )
+        )
     )
-    return {"value": float(value), "error": float(error)}
+    measurement_samples = bootstrap_decay_parameters[measurement_protocol][target]
+    reference_samples = bootstrap_decay_parameters[reference_protocol][target]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        bootstrap_samples = 0.5 * (1.0 - measurement_samples / reference_samples)
+    bootstrap_samples = bootstrap_samples[reference_samples != 0.0]
+    measurement_bootstrap = measurement_result["bootstrap"]
+    plan_unavailable_reason = (
+        measurement_bootstrap["unavailable_reason"]
+        if measurement_samples.size == 0
+        else None
+    )
+    bootstrap = _bootstrap_summary(
+        bootstrap_samples,
+        requested_resamples=requested_bootstrap_resamples,
+        confidence_level=bootstrap_confidence_level,
+        unavailable_reason=plan_unavailable_reason,
+    )
+    if (
+        bootstrap["standard_error"] is not None
+        and bootstrap["unavailable_reason"] is None
+    ):
+        uncertainty = bootstrap["standard_error"]
+        uncertainty_method: Literal[
+            "paired_bootstrap", "independent_fit_propagation", "unavailable"
+        ] = "paired_bootstrap"
+    elif analytic_error is not None:
+        uncertainty = analytic_error
+        uncertainty_method = "independent_fit_propagation"
+    else:
+        uncertainty = None
+        uncertainty_method = "unavailable"
+
+    validity_reasons = tuple(
+        f"{protocol}:{reason}"
+        for protocol, target_result in (
+            (measurement_protocol, measurement_result),
+            (reference_protocol, reference_result),
+        )
+        for reason in target_result["fit_validity"]["reasons"]
+    )
+    return {
+        "value": float(value),
+        "uncertainty": uncertainty,
+        "uncertainty_method": uncertainty_method,
+        "bootstrap": bootstrap,
+        "fit_validity": {
+            "is_valid": not validity_reasons,
+            "reasons": validity_reasons,
+            "measurement_protocol": measurement_protocol,
+            "reference_protocol": reference_protocol,
+        },
+    }
 
 
 def _measurement_induced_errors(
     protocol_results: _ProtocolResults,
+    bootstrap_decay_parameters: _BootstrapDecayParameters,
     *,
     targets: tuple[str, ...],
     measurement_protocol: MCMRBProtocol,
     reference_protocol: MCMRBProtocol,
-) -> _TargetErrorPayload:
-    """Return one estimate directly or multiple estimates keyed by target."""
+    requested_bootstrap_resamples: int,
+    bootstrap_confidence_level: float,
+) -> _TargetErrorEstimates:
+    """Return one target-keyed estimate for every target in the role."""
     if (
         measurement_protocol not in protocol_results
         or reference_protocol not in protocol_results
     ):
-        return None
-    estimates = {
+        return dict.fromkeys(targets)
+    return {
         target: _measurement_induced_error(
             protocol_results,
+            bootstrap_decay_parameters,
             target=target,
             measurement_protocol=measurement_protocol,
             reference_protocol=reference_protocol,
+            requested_bootstrap_resamples=requested_bootstrap_resamples,
+            bootstrap_confidence_level=bootstrap_confidence_level,
         )
         for target in targets
     }
-    if len(targets) == 1:
-        return estimates[targets[0]]
-    return estimates
 
 
-def _waveform_duration_payload(
-    waveforms: Mapping[str, Waveform],
+def _intermediate_measurement_metadata(
+    resources: _SequenceResources,
+) -> dict[str, dict[str, object]]:
+    """Describe the exact intermediate readout used for every ancilla."""
+    metadata: dict[str, dict[str, object]] = {}
+    for target in resources.ancillas:
+        measurement = resources.measurements[target]
+        timing = _infer_readout_timing(measurement)
+        interval = tuple(
+            half_samples * resources.sampling_period / 2.0
+            for half_samples in timing.ramp_trimmed_interval_half_samples
+        )
+        values = np.asarray(measurement.values)
+        metadata[target] = {
+            "source": resources.measurement_sources[target],
+            "scale": resources.measurement_scales[target],
+            "duration_ns": measurement.duration,
+            "peak_amplitude": float(np.max(np.abs(values))),
+            "integrated_power": float(
+                np.sum(np.abs(values) ** 2) * resources.sampling_period
+            ),
+            "integrated_power_units": "amplitude_squared_ns",
+            "ramp_trimmed_active_interval_ns": interval,
+        }
+    return metadata
+
+
+def _format_summary_estimate(
+    value: float | None,
+    uncertainty: float | None,
     *,
-    targets: tuple[str, ...],
-) -> float | dict[str, float] | None:
-    """Return scalar or target-keyed waveform durations for result metadata."""
-    if not waveforms:
-        return None
-    durations = {target: waveforms[target].duration for target in targets}
-    if len(targets) == 1:
-        return durations[targets[0]]
-    return durations
+    scale: float,
+    precision: int,
+) -> str:
+    """Format a value and optional uncertainty for a summary-table cell."""
+    if value is None:
+        return "—"
+    value_text = f"{scale * value:.{precision}f}"
+    if uncertainty is None:
+        return value_text
+    return f"{value_text} ± {scale * uncertainty:.{precision}f}"
+
+
+def _format_fit_validity(validity: _FitValidity | _PairedFitValidity) -> str:
+    """Format fit validity and optional R-squared for a summary-table cell."""
+    status = "[green]valid[/green]" if validity["is_valid"] else "[red]invalid[/red]"
+    r_squared = validity.get("r_squared")
+    if r_squared is None:
+        return status
+    return f"{status} (R²={r_squared:.4f})"
+
+
+def _print_summary_tables(
+    protocol_results: _ProtocolResults,
+    measurement_induced_errors: _MeasurementInducedErrors,
+    *,
+    controls: tuple[str, ...],
+    ancillas: tuple[str, ...],
+) -> None:
+    """Print compact protocol-fit and induced-error summary tables."""
+    protocol_table = Table(
+        title="MCM randomized benchmarking: protocol fits",
+        header_style="bold",
+    )
+    protocol_table.add_column("Protocol")
+    protocol_table.add_column("Target")
+    protocol_table.add_column("p ± uncertainty", justify="right")
+    protocol_table.add_column("Error/cycle [%]", justify="right")
+    protocol_table.add_column("Uncertainty")
+    protocol_table.add_column("Fit validity")
+    for protocol, target_results in protocol_results.items():
+        for target, target_result in target_results.items():
+            protocol_table.add_row(
+                protocol,
+                target,
+                _format_summary_estimate(
+                    target_result["decay_parameter"],
+                    target_result["decay_parameter_uncertainty"],
+                    scale=1.0,
+                    precision=6,
+                ),
+                _format_summary_estimate(
+                    target_result["error_per_cycle"],
+                    target_result["error_per_cycle_uncertainty"],
+                    scale=100.0,
+                    precision=4,
+                ),
+                target_result["uncertainty_method"],
+                _format_fit_validity(target_result["fit_validity"]),
+            )
+    console.print(protocol_table)
+
+    error_table = Table(
+        title="MCM randomized benchmarking: measurement-induced errors",
+        header_style="bold",
+    )
+    error_table.add_column("Quantity")
+    error_table.add_column("Target")
+    error_table.add_column("Error [%/cycle]", justify="right")
+    error_table.add_column("Protocol pair")
+    error_table.add_column("Uncertainty")
+    error_table.add_column("Fit validity")
+    error_groups = (
+        (
+            "control",
+            controls,
+            measurement_induced_errors["control"],
+            _MCM_RB,
+            _DELAY_RB,
+        ),
+        (
+            "ancilla population with Cliffords",
+            ancillas,
+            measurement_induced_errors["ancilla_population_with_cliffords"],
+            _MCM_RB,
+            _DELAY_RB,
+        ),
+        (
+            "ancilla population with control delay",
+            ancillas,
+            measurement_induced_errors["ancilla_population_with_control_delay"],
+            _MCM_REP,
+            _DELAY_REP,
+        ),
+    )
+    has_error_rows = False
+    for (
+        quantity,
+        targets,
+        estimates,
+        measurement_protocol,
+        reference_protocol,
+    ) in error_groups:
+        for target in targets:
+            estimate = estimates[target]
+            if estimate is None:
+                continue
+            has_error_rows = True
+            error_table.add_row(
+                quantity,
+                target,
+                _format_summary_estimate(
+                    estimate["value"],
+                    estimate["uncertainty"],
+                    scale=100.0,
+                    precision=4,
+                ),
+                f"{measurement_protocol} / {reference_protocol}",
+                estimate["uncertainty_method"],
+                _format_fit_validity(estimate["fit_validity"]),
+            )
+    if has_error_rows:
+        console.print(error_table)
 
 
 def mcm_randomized_benchmarking(
@@ -1341,15 +1984,21 @@ def mcm_randomized_benchmarking(
     ancilla_mode: Literal["standard", "randomized"] = "standard",
     x90: Waveform | Mapping[str, Waveform] | None = None,
     measurement_waveform: Waveform | Mapping[str, Waveform] | None = None,
+    measurement_scale: float | Mapping[str, float] | None = None,
     echo_x180: Waveform | Mapping[str, Waveform] | None = None,
     ancilla_x180: Waveform | Mapping[str, Waveform] | None = None,
     n_shots: int | None = None,
     shot_interval: float | None = None,
     time_integration: bool = True,
+    n_bootstrap: int = _DEFAULT_N_BOOTSTRAP,
+    bootstrap_seed: int | None = 0,
+    bootstrap_confidence_level: float = _DEFAULT_BOOTSTRAP_CONFIDENCE_LEVEL,
+    min_fit_r_squared: float | None = _DEFAULT_MIN_FIT_R_SQUARED,
     xaxis_type: Literal["linear", "log"] = "linear",
     plot: bool | None = None,
     save_image: bool | None = None,
-    enable_tqdm: bool = False,
+    print_summary: bool = True,
+    enable_tqdm: bool = True,
 ) -> Result:
     """
     Run selected measurement-crosstalk randomized-benchmarking protocols.
@@ -1367,10 +2016,10 @@ def mcm_randomized_benchmarking(
         MCM protocols read all ancillas simultaneously; delay protocols
         replace every readout with a duration-matched delay.
     n_cliffords_range
-        Strictly increasing nonnegative cycle counts. Defaults to 0 followed
-        by 14 geometrically spaced values from 1 through 150.
+        At least three strictly increasing nonnegative cycle counts. Defaults
+        to 0 followed by 14 geometrically spaced values from 1 through 150.
     n_trials
-        Number of seed trials per cycle count. Defaults to 30.
+        Positive number of seed trials per cycle count. Defaults to 30.
     seeds
         One nonnegative integer seed for every trial. Defaults to generated
         seeds. Values must have integer types and fit in signed 64 bits.
@@ -1403,7 +2052,14 @@ def mcm_randomized_benchmarking(
         durations may differ. Omitted mapping entries use calibrated defaults.
         Active intervals are inferred from nonzero samples; at most one FlatTop
         pulse may be present in each waveform, and other shapes have zero
-        inferred ramp duration.
+        inferred ramp duration. The override affects only intermediate
+        readouts; terminal measurements use calibrated defaults.
+    measurement_scale
+        Optional positive scale for each intermediate ancilla readout. A scalar
+        scales every selected ancilla's own calibrated readout; a target-keyed
+        mapping scales only listed ancillas and leaves other ancillas at 1.0.
+        This option is mutually exclusive with `measurement_waveform`. Terminal
+        measurements continue to use calibrated default readouts.
     echo_x180
         Optional control X180 override for echoed measurement blocks. Use a
         waveform for one control or a target-keyed mapping for multiple
@@ -1420,30 +2076,48 @@ def mcm_randomized_benchmarking(
         experiment default.
     time_integration
         Whether to integrate each capture over time.
+    n_bootstrap
+        Number of paired trial-column bootstrap resamples. Defaults to 1000.
+        Set to 0 to disable bootstrap uncertainty. Bootstrap requires at least
+        four sequence lengths and two trials. Fit-covariance uncertainty is
+        used if fewer than 80% of resampled fits succeed.
+    bootstrap_seed
+        Nonnegative seed for paired bootstrap resampling. Defaults to 0 for
+        reproducible analysis. Pass `None` for nondeterministic resampling.
+    bootstrap_confidence_level
+        Percentile-bootstrap confidence level strictly between 0 and 1.
+        Defaults to 0.95.
+    min_fit_r_squared
+        Minimum R-squared for a fit to be marked valid. Defaults to 0.9. Pass
+        `None` to omit the R-squared threshold while retaining other checks.
     xaxis_type
         X-axis scale used by fit figures.
     plot
         Whether to display fit figures. Defaults to `True`.
     save_image
         Whether to save successful fit figures. Defaults to `False`.
+    print_summary
+        Whether to print protocol-fit and measurement-induced-error summary
+        tables. This is independent of `plot` and defaults to `True`.
     enable_tqdm
-        Whether to show schedule-execution progress.
+        Whether to show schedule-execution progress. Defaults to `True`.
 
     Returns
     -------
     Result
         Raw terminal probabilities, per-protocol statistics and fits, the
-        optional MCM-induced control error, randomized-ancilla population
-        errors with Clifford-driven or delayed control, metadata, and named
-        fit figures.
+        MCM-induced error estimates, fit-validity and bootstrap diagnostics,
+        metadata, and named fit figures.
         Protocol results are stored under
-        `result.data["protocols"][protocol][target]`. The Clifford-driven and
-        control-delay ancilla estimates are stored as
-        `measurement_induced_ancilla_population_error` and
-        `measurement_induced_ancilla_population_error_with_idle_control`.
-        Each induced-error field contains one estimate for a single target, a
-        target-keyed mapping when that role contains multiple targets, or
-        `None` when its matched protocol pair was not run.
+        `result.data["protocol_results"][protocol][target]`. Induced errors are
+        grouped under `result.data["measurement_induced_errors"]` as
+        `control`, `ancilla_population_with_cliffords`, and
+        `ancilla_population_with_control_delay`.
+        Every induced-error field is a target-keyed mapping regardless of the
+        number of targets. Its value is `None` when the matched protocol pair
+        was not run or its decay ratio cannot be evaluated. An otherwise valid
+        ratio is retained with `uncertainty=None` when no uncertainty estimate
+        is available.
 
     Raises
     ------
@@ -1478,10 +2152,20 @@ def mcm_randomized_benchmarking(
     Randomized mode benchmarks ancilla computational-basis population
     preservation, not general single-qubit or state-assignment fidelity. Its
     induced ancilla error estimate assumes the randomized I/X180 and
-    measurement channels produce compatible exponential decays. The
-    uncertainty of an induced-error estimate treats the two fitted decay
-    parameters as independent even though matched random sequences can
-    correlate them.
+    measurement channels produce compatible exponential decays. Paired
+    bootstrap resampling preserves correlations by resampling the same complete
+    trial/root-seed columns for all sequence lengths, protocols, and targets.
+    When bootstrap is unavailable, induced-error uncertainty falls back to
+    independent propagation of fit-covariance uncertainties.
+    Per-protocol `decay_parameter_uncertainty` likewise prefers the bootstrap
+    standard error. The covariance-based parameter uncertainty remains
+    available as `fit.data["p_err"]`.
+
+    Optimizer convergence alone does not make a fit valid. Each protocol result
+    reports checks for sequence-count sufficiency, finite parameters and
+    uncertainty, a decay parameter at its bound, and the optional R-squared
+    threshold. Estimates remain available when a check fails, but callers should
+    inspect `fit_validity` before interpreting them.
 
     Independent control and ancilla random streams are assigned in resolved
     input order. Ancilla I/X180 choices are generated once per sequence length
@@ -1515,6 +2199,24 @@ def mcm_randomized_benchmarking(
         DEFAULT_INTERVAL if shot_interval is None else shot_interval,
         name="shot_interval",
     )
+    resolved_n_bootstrap = _validate_nonnegative_integer(
+        n_bootstrap,
+        name="n_bootstrap",
+    )
+    resolved_bootstrap_seed = (
+        None
+        if bootstrap_seed is None
+        else _validate_nonnegative_integer(bootstrap_seed, name="bootstrap_seed")
+    )
+    resolved_bootstrap_confidence_level = _validate_open_unit_interval(
+        bootstrap_confidence_level,
+        name="bootstrap_confidence_level",
+    )
+    resolved_min_fit_r_squared = (
+        None
+        if min_fit_r_squared is None
+        else _validate_fit_r_squared_threshold(min_fit_r_squared)
+    )
     resolved_plot = True if plot is None else plot
     resolved_save_image = False if save_image is None else save_image
     resolved_xaxis_type = _validate_xaxis_type(xaxis_type)
@@ -1529,6 +2231,7 @@ def mcm_randomized_benchmarking(
         ancilla_mode=resolved_ancilla_mode,
         x90=x90,
         measurement_waveform=measurement_waveform,
+        measurement_scale=measurement_scale,
         echo_x180=echo_x180,
         ancilla_x180=ancilla_x180,
     )
@@ -1543,70 +2246,111 @@ def mcm_randomized_benchmarking(
         time_integration=time_integration,
         enable_tqdm=enable_tqdm,
     )
-    protocol_results, figures = _analyze_trials(
+    protocol_results, figures, bootstrap_decay_parameters = _analyze_trials(
         trials,
         targets=resources.targets,
         n_cliffords=resolved_n_cliffords,
+        n_bootstrap=resolved_n_bootstrap,
+        bootstrap_seed=resolved_bootstrap_seed,
+        bootstrap_confidence_level=resolved_bootstrap_confidence_level,
+        min_fit_r_squared=resolved_min_fit_r_squared,
         plot=resolved_plot,
         save_image=resolved_save_image,
         xaxis_type=resolved_xaxis_type,
     )
 
-    return Result(
+    control_error = _measurement_induced_errors(
+        protocol_results,
+        bootstrap_decay_parameters,
+        targets=control_qubits,
+        measurement_protocol=_MCM_RB,
+        reference_protocol=_DELAY_RB,
+        requested_bootstrap_resamples=resolved_n_bootstrap,
+        bootstrap_confidence_level=resolved_bootstrap_confidence_level,
+    )
+    ancilla_population_error: _TargetErrorEstimates = (
+        _measurement_induced_errors(
+            protocol_results,
+            bootstrap_decay_parameters,
+            targets=ancilla_qubits,
+            measurement_protocol=_MCM_RB,
+            reference_protocol=_DELAY_RB,
+            requested_bootstrap_resamples=resolved_n_bootstrap,
+            bootstrap_confidence_level=resolved_bootstrap_confidence_level,
+        )
+        if resolved_ancilla_mode == _RANDOMIZED_ANCILLA
+        else dict.fromkeys(ancilla_qubits)
+    )
+    ancilla_population_error_with_control_delay: _TargetErrorEstimates = (
+        _measurement_induced_errors(
+            protocol_results,
+            bootstrap_decay_parameters,
+            targets=ancilla_qubits,
+            measurement_protocol=_MCM_REP,
+            reference_protocol=_DELAY_REP,
+            requested_bootstrap_resamples=resolved_n_bootstrap,
+            bootstrap_confidence_level=resolved_bootstrap_confidence_level,
+        )
+        if resolved_ancilla_mode == _RANDOMIZED_ANCILLA
+        else dict.fromkeys(ancilla_qubits)
+    )
+    measurement_induced_errors: _MeasurementInducedErrors = {
+        "control": control_error,
+        "ancilla_population_with_cliffords": ancilla_population_error,
+        "ancilla_population_with_control_delay": (
+            ancilla_population_error_with_control_delay
+        ),
+    }
+
+    result = Result(
         data={
             "n_cliffords": resolved_n_cliffords,
             "seeds": resolved_seeds,
-            "protocols": protocol_results,
-            "measurement_induced_control_error": _measurement_induced_errors(
-                protocol_results,
-                targets=control_qubits,
-                measurement_protocol=_MCM_RB,
-                reference_protocol=_DELAY_RB,
-            ),
-            "measurement_induced_ancilla_population_error": (
-                _measurement_induced_errors(
-                    protocol_results,
-                    targets=ancilla_qubits,
-                    measurement_protocol=_MCM_RB,
-                    reference_protocol=_DELAY_RB,
-                )
-                if resolved_ancilla_mode == _RANDOMIZED_ANCILLA
-                else None
-            ),
-            "measurement_induced_ancilla_population_error_with_idle_control": (
-                _measurement_induced_errors(
-                    protocol_results,
-                    targets=ancilla_qubits,
-                    measurement_protocol=_MCM_REP,
-                    reference_protocol=_DELAY_REP,
-                )
-                if resolved_ancilla_mode == _RANDOMIZED_ANCILLA
-                else None
-            ),
+            "protocol_results": protocol_results,
+            "measurement_induced_errors": measurement_induced_errors,
             "metadata": {
-                "control": control_qubits[0] if len(control_qubits) == 1 else None,
-                "ancilla": ancilla_qubits[0] if len(ancilla_qubits) == 1 else None,
                 "controls": control_qubits,
                 "ancillas": ancilla_qubits,
-                "protocols": resolved_protocols,
                 "control_echo": control_echo,
                 "ancilla_mode": resolved_ancilla_mode,
-                "n_trials": resolved_n_trials,
-                "n_shots": resolved_n_shots,
-                "shot_interval": resolved_shot_interval,
-                "time_integration": time_integration,
-                "measurement_duration": _waveform_duration_payload(
-                    resources.measurements,
-                    targets=ancilla_qubits,
-                ),
-                "ancilla_x180_duration": _waveform_duration_payload(
-                    resources.ancilla_x180s,
-                    targets=ancilla_qubits,
-                ),
+                "acquisition": {
+                    "n_trials": resolved_n_trials,
+                    "n_shots": resolved_n_shots,
+                    "shot_interval_ns": resolved_shot_interval,
+                    "time_integration": time_integration,
+                },
+                "analysis": {
+                    "n_bootstrap": resolved_n_bootstrap,
+                    "bootstrap_seed": resolved_bootstrap_seed,
+                    "bootstrap_confidence_level": resolved_bootstrap_confidence_level,
+                    "min_bootstrap_success_rate": _MIN_BOOTSTRAP_SUCCESS_RATE,
+                    "min_fit_r_squared": resolved_min_fit_r_squared,
+                },
+                "pulses": {
+                    "intermediate_measurements": (
+                        _intermediate_measurement_metadata(resources)
+                    ),
+                    "terminal_measurements": {
+                        "targets": resources.targets,
+                        "source": "calibrated_default",
+                    },
+                    "ancilla_x180_durations_ns": {
+                        target: waveform.duration
+                        for target, waveform in resources.ancilla_x180s.items()
+                    },
+                },
             },
         },
         figures=figures or None,
     )
+    if print_summary:
+        _print_summary_tables(
+            protocol_results,
+            measurement_induced_errors,
+            controls=control_qubits,
+            ancillas=ancilla_qubits,
+        )
+    return result
 
 
 __all__ = [

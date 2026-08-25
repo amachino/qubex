@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pytest
 
 from qubex.contrib.experiment.mcm_randomized_benchmarking import (
@@ -267,6 +268,115 @@ def test_multiple_ancillas_require_matching_ramp_trimmed_active_windows(
                 "Q1": Rect(duration=64.0, amplitude=0.25, sampling_period=2.0),
                 "Q2": Rect(duration=80.0, amplitude=0.25, sampling_period=2.0),
             },
+        )
+
+
+def test_measurement_scale_uses_each_ancillas_own_calibrated_readout(
+    fake_experiment: Any,
+) -> None:
+    """A scalar scale should multiply each selected ancilla's own readout pulse."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        ["Q1", "Q2"],
+        protocol="mcm-rb",
+        n_cliffords=1,
+        seed=17,
+        measurement_scale=2.0,
+    )
+
+    assert np.max(np.abs(schedule.get_sequence("RQ1").values)) == pytest.approx(
+        0.4, rel=0.0, abs=1e-12
+    )
+    assert np.max(np.abs(schedule.get_sequence("RQ2").values)) == pytest.approx(
+        0.6, rel=0.0, abs=1e-12
+    )
+
+
+def test_measurement_scale_mapping_defaults_unlisted_ancillas_to_one(
+    fake_experiment: Any,
+) -> None:
+    """A partial scale mapping should leave unlisted ancillas calibrated."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        ["Q1", "Q2"],
+        protocol="mcm-rb",
+        n_cliffords=1,
+        seed=17,
+        measurement_scale={"Q1": 1.5},
+    )
+
+    assert np.max(np.abs(schedule.get_sequence("RQ1").values)) == pytest.approx(
+        0.3, rel=0.0, abs=1e-12
+    )
+    assert np.max(np.abs(schedule.get_sequence("RQ2").values)) == pytest.approx(
+        0.3, rel=0.0, abs=1e-12
+    )
+
+
+def test_measurement_scale_and_waveform_override_are_mutually_exclusive(
+    fake_experiment: Any,
+) -> None:
+    """Scaling and replacing the intermediate readout should be unambiguous."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            measurement_scale=2.0,
+            measurement_waveform=Rect(
+                duration=64.0,
+                amplitude=0.25,
+                sampling_period=2.0,
+            ),
+        )
+
+
+def test_measurement_scale_rejects_unselected_or_duplicate_targets(
+    fake_experiment: Any,
+) -> None:
+    """Scale mappings should refer uniquely to selected ancillas."""
+    with pytest.raises(ValueError, match="unselected target"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            measurement_scale={"Q2": 2.0},
+        )
+    with pytest.raises(ValueError, match="duplicate values"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            measurement_scale={"Q1": 1.5, "RQ1": 2.0},
+        )
+
+
+@pytest.mark.parametrize("scale", [True, 0.0, -1.0, np.nan, np.inf])
+def test_measurement_scale_rejects_invalid_values(
+    fake_experiment: Any,
+    scale: object,
+) -> None:
+    """Measurement scales should be positive finite real numbers."""
+    with pytest.raises((TypeError, ValueError), match="measurement_scale"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            measurement_scale=scale,  # type: ignore[arg-type]
         )
 
 

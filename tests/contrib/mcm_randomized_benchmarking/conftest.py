@@ -63,11 +63,11 @@ class FakePulseService:
         return Rect(duration=16.0, amplitude=1.0, sampling_period=2.0)
 
     def readout(self, target: str) -> Rect:
-        """Return a fixed-duration readout pulse."""
-        del target
+        """Return a target-specific fixed-duration readout pulse."""
+        target_index = int(target.removeprefix("Q"))
         return Rect(
             duration=self.measurement_duration,
-            amplitude=0.25,
+            amplitude=0.1 * (target_index + 1),
             sampling_period=2.0,
         )
 
