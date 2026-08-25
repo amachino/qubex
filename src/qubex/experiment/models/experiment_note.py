@@ -69,6 +69,7 @@ class ExperimentNote:
         ValueError
             If the value is not JSON serializable.
         """
+        value = self._sanitize_for_json(value)
         if not self._is_json_serializable(value):
             raise ValueError(f"Value for key '{key}' is not JSON serializable.")
 
@@ -77,9 +78,6 @@ class ExperimentNote:
         if isinstance(old_value, dict) and isinstance(value, dict):
             self._update_dict_recursively(old_value, value)
         else:
-            # Replace any non-finite float (NaN, Infinity, -Infinity) with None
-            if isinstance(value, (float, np.floating)) and not np.isfinite(value):
-                value = None
             self._dict[key] = value
 
         if old_value is not None:
@@ -307,20 +305,26 @@ class ExperimentNote:
 
     def _sanitize_for_json(self, obj: Any) -> Any:
         """
-        Recursively replace non-finite float values with None.
+        Recursively convert NumPy scalars and non-finite floats for JSON.
 
         Resulting structure conforms to RFC 8259 (no NaN/Infinity values).
 
 
-        Returns a sanitized copy of the object (dicts/lists are recreated).
+        Returns a sanitized copy of the object (containers are recreated).
         """
+        # NumPy scalars -> corresponding Python scalars
+        if isinstance(obj, np.generic):
+            obj = obj.item()
+
         # dict -> sanitize each value
         if isinstance(obj, dict):
             return {k: self._sanitize_for_json(v) for k, v in obj.items()}
 
-        # list/tuple -> sanitize each element (tuples become lists for JSON)
-        if isinstance(obj, (list, tuple)):
+        # list/tuple -> sanitize each element while preserving the container type
+        if isinstance(obj, list):
             return [self._sanitize_for_json(v) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(self._sanitize_for_json(v) for v in obj)
 
         # floats (including numpy floats): convert non-finite to None
         if isinstance(obj, (float, np.floating)):
