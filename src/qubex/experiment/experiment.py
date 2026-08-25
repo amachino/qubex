@@ -10,7 +10,7 @@ import warnings
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -82,7 +82,6 @@ from .models.experiment_result import (
     T1Data,
     T2Data,
 )
-from .models.experiment_task import ExperimentTask, ExperimentTaskResult
 from .models.rabi_param import RabiParam
 from .models.result import Result
 from .services import (
@@ -94,8 +93,6 @@ from .services import (
     PulseService,
     SessionService,
 )
-
-T = TypeVar("T", bound=ExperimentTaskResult)
 
 
 class Experiment:
@@ -256,24 +253,6 @@ class Experiment:
     def ctx(self) -> ExperimentContext:
         """Return the experiment context."""
         return self._experiment_context
-
-    def run(self, task: ExperimentTask[T]) -> T:
-        """
-        Run an experiment task.
-
-        Parameters
-        ----------
-        task : ExperimentTask[T]
-            Experiment task to run.
-
-
-        Returns
-        -------
-        T
-            Experiment result.
-
-        """
-        return task.execute(self)
 
     @classmethod
     def _resolve_deprecated_option(

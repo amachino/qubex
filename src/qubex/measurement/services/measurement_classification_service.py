@@ -57,12 +57,15 @@ class MeasurementClassificationService:
         npt.NDArray
             Kronecker-product confusion matrix.
         """
+        if len(targets) == 0:
+            return np.array([[1.0]], dtype=np.float64)
+
         target_list = list(targets)
-        confusion_matrices = []
+        confusion_matrices: list[NDArray[np.float64]] = []
         for target in target_list:
             cm = self.classifiers[target].confusion_matrix
             confusion_matrices.append(_normalize_confusion_matrix_rows(cm))
-        return reduce(np.kron, confusion_matrices)
+        return np.asarray(reduce(np.kron, confusion_matrices), np.float64)
 
     def get_inverse_confusion_matrix(
         self,

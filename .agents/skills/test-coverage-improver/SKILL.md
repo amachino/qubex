@@ -14,8 +14,13 @@ recent regressions. By default this is a report-first workflow.
 ## Workflow
 
 1. Run coverage in the project environment.
-   - `make coverage`
-   - or `uv run pytest --cov=qubex --cov-report=term-missing`
+   - For the top-level `qubex` package, use `make coverage` or
+     `uv run pytest --cov=qubex --cov-report=term-missing`.
+   - When a workspace package changes, select its import package and relevant
+     tests explicitly, for example
+     `uv run pytest <test-paths> --cov=<package> --cov-report=term-missing`.
+   - Do not present top-level `qubex` coverage as coverage of all workspace
+     packages.
 2. Interpret gaps by risk.
    - Start with changed files and public APIs.
    - Then inspect low-coverage runtime modules with user-visible behavior.

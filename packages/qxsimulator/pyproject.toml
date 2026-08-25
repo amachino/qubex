@@ -12,17 +12,16 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
-    "ipython >= 7.0",
-    "jax >= 0.4",
     "networkx >= 2.7",
     "numpy >= 1.22",
-    "optax >= 0.2",
     "plotly >= 5.23",
     "qctrl-visualizer >= 8.0",
-    "qutip >= 5.0",
+    "qutip[runtime-compilation] >= 5.0.1",
+    "qxcore == 1.5.0rc2",
     "qxpulse == 1.5.0rc2",
     "qxvisualizer == 1.5.0rc2",
     "scipy >= 1.0",
+    "typing_extensions >= 4.5",
 ]
 
 [tool.setuptools.package-data]

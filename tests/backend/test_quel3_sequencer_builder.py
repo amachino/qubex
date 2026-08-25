@@ -194,7 +194,7 @@ def test_builder_registers_waveforms_and_forwards_events() -> None:
             waveform_name=waveform_name,
             start_offset_ns=12.0,
             gain=0.5,
-            phase_offset_deg=90.0,
+            phase_offset_deg=-90.0,
         )
     ]
     assert sequencer.capture_windows == [
