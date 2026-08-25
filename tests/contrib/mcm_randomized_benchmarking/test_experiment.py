@@ -61,10 +61,7 @@ class ConstantMeasurementService:
             return SimpleNamespace(kerneled=np.asarray([value + 0.0j]))
 
         return SimpleNamespace(
-            data={
-                "RQ0": [capture(0.9)],
-                "RQ1": [capture(0.8)],
-            }
+            data={f"RQ{index}": [capture(0.9 - 0.05 * index)] for index in range(5)}
         )
 
 
@@ -211,6 +208,62 @@ def test_randomized_ancilla_analyzes_both_targets_with_matched_references(
         )
 
 
+def test_multiple_controls_and_ancillas_report_per_target_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_experiment: Any,
+) -> None:
+    """Multiple controls and ancillas should be acquired and analyzed together."""
+    measurement_service = ConstantMeasurementService()
+    fake_experiment.measurement_service = measurement_service
+
+    def fake_fit_rb(*, target: str, title: str, **options: Any) -> FitResult:
+        del options
+        protocol = title.split()[0]
+        base = {"Q0": 0.96, "Q1": 0.92, "Q2": 0.94, "Q3": 0.90}[target]
+        p = base if protocol == "mcm-rb" else base + 0.02
+        return FitResult(
+            status=FitStatus.SUCCESS,
+            data={"p": p, "p_err": 0.01},
+            figure=go.Figure(),
+        )
+
+    monkeypatch.setattr(mcm_module.fitting, "fit_rb", fake_fit_rb)
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        ["Q0", "Q2"],
+        ["Q1", "Q3"],
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[3],
+        ancilla_mode="randomized",
+        plot=False,
+        save_image=False,
+    )
+
+    assert set(result.data["protocols"]["mcm-rb"]) == {"Q0", "Q1", "Q2", "Q3"}
+    assert set(result.data["measurement_induced_control_error"]) == {"Q0", "Q2"}
+    assert set(result.data["measurement_induced_ancilla_population_error"]) == {
+        "Q1",
+        "Q3",
+    }
+    assert result.data["measurement_induced_control_error"]["Q0"][
+        "value"
+    ] == pytest.approx(0.5 * (1.0 - 0.96 / 0.98), rel=1e-12, abs=1e-12)
+    assert result.data["metadata"]["controls"] == ("Q0", "Q2")
+    assert result.data["metadata"]["ancillas"] == ("Q1", "Q3")
+    assert result.data["metadata"]["control"] is None
+    assert result.data["metadata"]["ancilla"] is None
+    assert fake_experiment.pulse.validated_targets == ["Q0", "Q2", "Q1", "Q3"]
+    assert fake_experiment.ctx.reset_calls == [{"Q0", "Q1", "Q2", "Q3"}]
+    assert len(measurement_service.calls) == 6
+    assert set(result.figures or {}) == {
+        f"{protocol}:{target}"
+        for protocol in ("mcm-rb", "delay-rb")
+        for target in ("Q0", "Q2", "Q1", "Q3")
+    }
+
+
 def test_randomized_ancilla_reports_active_and_idle_control_induced_errors(
     monkeypatch: pytest.MonkeyPatch,
     fake_experiment: Any,
@@ -305,6 +358,43 @@ def test_randomized_mcm_repetition_does_not_report_unmatched_induced_error(
     )
 
     assert result.data["protocols"]["mcm-rep"]["Q1"]["decay_parameter"] == 0.95
+    assert result.data["measurement_induced_control_error"] is None
+    assert result.data["measurement_induced_ancilla_population_error"] is None
+    assert (
+        result.data["measurement_induced_ancilla_population_error_with_idle_control"]
+        is None
+    )
+
+
+def test_multiple_targets_do_not_report_unmatched_induced_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_experiment: Any,
+) -> None:
+    """Unmatched protocols should return no induced-error field for any group size."""
+    fake_experiment.measurement_service = ConstantMeasurementService()
+    monkeypatch.setattr(
+        mcm_module.fitting,
+        "fit_rb",
+        lambda **options: FitResult(
+            status=FitStatus.SUCCESS,
+            data={"p": 0.95, "p_err": 0.01},
+            figure=go.Figure(),
+        ),
+    )
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        ["Q0", "Q2"],
+        ["Q1", "Q3"],
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[3],
+        protocols="mcm-rep",
+        ancilla_mode="randomized",
+        plot=False,
+        save_image=False,
+    )
+
     assert result.data["measurement_induced_control_error"] is None
     assert result.data["measurement_induced_ancilla_population_error"] is None
     assert (

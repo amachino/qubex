@@ -6,7 +6,10 @@ from typing import Any
 
 import pytest
 
-from qubex.contrib.experiment.mcm_randomized_benchmarking import mcm_rb_sequence
+from qubex.contrib.experiment.mcm_randomized_benchmarking import (
+    MCMRBProtocol,
+    mcm_rb_sequence,
+)
 from qubex.pulse import (
     Blank,
     FlatTop,
@@ -88,6 +91,324 @@ def test_sequence_synchronizes_the_global_pulse_sampling_period(
         } == {2.0}
     finally:
         set_sampling_period(original_sampling_period)
+
+
+@pytest.mark.parametrize("protocol", ["mcm-rb", "delay-rb", "mcm-rep", "delay-rep"])
+def test_one_ancilla_with_multiple_controls_builds_matched_schedules(
+    fake_experiment: Any,
+    protocol: MCMRBProtocol,
+) -> None:
+    """One ancilla should support simultaneous independently randomized controls."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        ["Q0", "Q2"],
+        "Q1",
+        protocol=protocol,
+        n_cliffords=2,
+        seed=17,
+    )
+
+    assert schedule.labels == ["Q0", "Q2", "RQ1"]
+    assert schedule.duration == 160.0
+    assert schedule.is_valid()
+    for control in ("Q0", "Q2"):
+        control_elements = schedule.get_sequence(control).flattened_elements
+        if protocol.endswith("rep"):
+            assert all(isinstance(element, Blank) for element in control_elements)
+        else:
+            assert any(isinstance(element, Rect) for element in control_elements)
+
+
+def test_multiple_controls_use_reproducible_independent_clifford_seeds(
+    fake_experiment: Any,
+) -> None:
+    """Each simultaneous control should receive a reproducible independent seed."""
+    generator = fake_experiment.benchmarking_service.clifford_generator
+
+    mcm_rb_sequence(
+        fake_experiment,
+        ["Q0", "Q2"],
+        "Q1",
+        protocol="mcm-rb",
+        n_cliffords=2,
+        seed=17,
+    )
+    first_calls = list(generator.calls)
+    generator.calls.clear()
+    mcm_rb_sequence(
+        fake_experiment,
+        ["Q0", "Q2"],
+        "Q1",
+        protocol="mcm-rb",
+        n_cliffords=2,
+        seed=17,
+    )
+
+    assert generator.calls == first_calls
+    assert len(first_calls) == 2
+    assert first_calls[0][2] != first_calls[1][2]
+
+
+def test_protocols_match_when_controls_have_different_clifford_durations(
+    fake_experiment: Any,
+) -> None:
+    """Protocol matching should use the longest simultaneous control layer."""
+
+    class SeedDependentCliffordGenerator:
+        """Generate a seed-dependent physical Clifford duration."""
+
+        @staticmethod
+        def create_rb_sequences(
+            n: int,
+            type: str,
+            seed: int | None,
+        ) -> tuple[list[list[str]], list[str]]:
+            assert type == "1Q"
+            assert seed is not None
+            clifford = ["X90"] * (seed % 5 + 1)
+            return [clifford for _ in range(n)], ["X90"]
+
+    fake_experiment.benchmarking_service.clifford_generator = (
+        SeedDependentCliffordGenerator()
+    )
+
+    schedules = {
+        protocol: mcm_rb_sequence(
+            fake_experiment,
+            ["Q0", "Q2"],
+            "Q1",
+            protocol=protocol,
+            n_cliffords=1,
+            seed=17,
+        )
+        for protocol in ("mcm-rb", "delay-rb", "mcm-rep", "delay-rep")
+    }
+
+    assert {schedule.duration for schedule in schedules.values()} == {112.0}
+    assert all(schedule.is_valid() for schedule in schedules.values())
+
+
+def test_multiple_randomized_ancillas_use_independent_recoverable_streams(
+    fake_experiment: Any,
+) -> None:
+    """Each simultaneous ancilla should use an independent seeded I/X stream."""
+    schedule = mcm_rb_sequence(
+        fake_experiment,
+        "Q0",
+        ["Q1", "Q2"],
+        protocol="mcm-rb",
+        n_cliffords=12,
+        seed=3,
+        ancilla_mode="randomized",
+    )
+
+    assert schedule.labels == ["Q0", "Q1", "Q2", "RQ1", "RQ2"]
+    assert schedule.is_valid()
+    assert (
+        schedule.get_sequence("Q1").values.tolist()
+        != schedule.get_sequence("Q2").values.tolist()
+    )
+    for ancilla in ("Q1", "Q2"):
+        assert schedule.get_sequence(ancilla).duration == schedule.duration
+        assert (
+            sum(
+                isinstance(element, Rect)
+                for element in schedule.get_sequence(ancilla).flattened_elements
+            )
+            % 2
+            == 0
+        )
+
+
+def test_multiple_controls_and_ancillas_preserve_duration_with_echo(
+    fake_experiment: Any,
+) -> None:
+    """Many-to-many schedules should match duration and echo every control."""
+    schedules = {
+        protocol: mcm_rb_sequence(
+            fake_experiment,
+            ["Q0", "Q2"],
+            ["Q1", "Q3"],
+            protocol=protocol,
+            n_cliffords=2,
+            seed=17,
+            control_echo=True,
+            ancilla_mode="randomized",
+        )
+        for protocol in ("mcm-rb", "delay-rb", "mcm-rep", "delay-rep")
+    }
+
+    assert len({schedule.duration for schedule in schedules.values()}) == 1
+    assert all(schedule.is_valid() for schedule in schedules.values())
+    for schedule in schedules.values():
+        for control in ("Q0", "Q2"):
+            assert (
+                sum(
+                    isinstance(element, Rect) and element.duration == 16.0
+                    for element in schedule.get_sequence(control).flattened_elements
+                )
+                >= 4
+            )
+
+
+def test_multiple_ancillas_require_matching_ramp_trimmed_active_windows(
+    fake_experiment: Any,
+) -> None:
+    """Multiple ancillas should reject mismatched ramp-trimmed active windows."""
+    with pytest.raises(ValueError, match="ramp-trimmed active intervals"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            ["Q1", "Q2"],
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            measurement_waveform={
+                "Q1": Rect(duration=64.0, amplitude=0.25, sampling_period=2.0),
+                "Q2": Rect(duration=80.0, amplitude=0.25, sampling_period=2.0),
+            },
+        )
+
+
+def test_multiple_ancillas_reject_shifted_active_windows_with_equal_duration(
+    fake_experiment: Any,
+) -> None:
+    """Equal readout durations should not hide shifted ancilla active windows."""
+    measurement_waveforms = {
+        "Q1": PulseArray(
+            [
+                Blank(duration=8.0, sampling_period=2.0),
+                Rect(duration=64.0, amplitude=0.25, sampling_period=2.0),
+                Blank(duration=24.0, sampling_period=2.0),
+            ]
+        ),
+        "Q2": PulseArray(
+            [
+                Blank(duration=16.0, sampling_period=2.0),
+                Rect(duration=64.0, amplitude=0.25, sampling_period=2.0),
+                Blank(duration=16.0, sampling_period=2.0),
+            ]
+        ),
+    }
+
+    with pytest.raises(ValueError, match=r"Q1.*8\.0.*72\.0.*Q2.*16\.0.*80\.0"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            ["Q1", "Q2"],
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            measurement_waveform=measurement_waveforms,
+        )
+
+
+def test_matching_active_windows_allow_different_readout_slot_durations(
+    fake_experiment: Any,
+) -> None:
+    """Matching active windows should allow different trailing readout margins."""
+    original_sampling_period = get_sampling_period()
+    try:
+        set_sampling_period(2.0)
+        common_active_pulse = FlatTop(
+            duration=64.0,
+            amplitude=0.25,
+            tau=8.0,
+            sampling_period=2.0,
+        )
+        measurement_waveforms = {
+            "Q1": PulseArray(
+                [
+                    Blank(duration=8.0, sampling_period=2.0),
+                    common_active_pulse,
+                    Blank(duration=8.0, sampling_period=2.0),
+                ]
+            ),
+            "Q2": PulseArray(
+                [
+                    Blank(duration=8.0, sampling_period=2.0),
+                    common_active_pulse,
+                    Blank(duration=24.0, sampling_period=2.0),
+                ]
+            ),
+        }
+
+        schedule = mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            ["Q1", "Q2"],
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            control_echo=True,
+            measurement_waveform=measurement_waveforms,
+        )
+
+        assert schedule.duration == 112.0
+        assert schedule.is_valid()
+        assert schedule.get_sequence("RQ1").duration == 112.0
+        assert schedule.get_sequence("RQ2").duration == 112.0
+    finally:
+        set_sampling_period(original_sampling_period)
+
+
+def test_multiple_targets_require_target_keyed_waveform_overrides(
+    fake_experiment: Any,
+) -> None:
+    """A scalar override should be rejected for a multiple-target role."""
+    with pytest.raises(ValueError, match=r"x90.*mapping"):
+        mcm_rb_sequence(
+            fake_experiment,
+            ["Q0", "Q2"],
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+            x90=Rect(duration=8.0, amplitude=0.5, sampling_period=2.0),
+        )
+
+
+@pytest.mark.parametrize(
+    ("control", "ancilla", "message"),
+    [
+        ([], ["Q1"], "control.*at least one"),
+        (["Q0", "RQ0"], ["Q1"], "control.*duplicate"),
+        (["Q0"], ["Q0", "Q1"], "disjoint"),
+    ],
+)
+def test_multiple_target_validation_rejects_ambiguous_groups(
+    fake_experiment: Any,
+    control: list[str],
+    ancilla: list[str],
+    message: str,
+) -> None:
+    """Multiple-target inputs should be nonempty, unique, and role-disjoint."""
+    with pytest.raises(ValueError, match=message):
+        mcm_rb_sequence(
+            fake_experiment,
+            control,
+            ancilla,
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+        )
+
+
+def test_target_validation_rejects_shared_terminal_readout_labels(
+    fake_experiment: Any,
+) -> None:
+    """Simultaneous targets should require distinct terminal readout labels."""
+    fake_experiment.experiment_system.resolve_read_label = lambda target: "RSHARED"
+
+    with pytest.raises(ValueError, match="distinct readout labels"):
+        mcm_rb_sequence(
+            fake_experiment,
+            "Q0",
+            "Q1",
+            protocol="mcm-rb",
+            n_cliffords=1,
+            seed=17,
+        )
 
 
 def test_randomized_ancilla_uses_seeded_flips_and_parity_recovery(

@@ -45,7 +45,7 @@ class FakePulseService:
 
     def __init__(self, *, measurement_duration: float = 64.0) -> None:
         self.measurement_duration = measurement_duration
-        self.rabi_params = {"Q0": FakeRabiParam(), "Q1": FakeRabiParam()}
+        self.rabi_params = {f"Q{index}": FakeRabiParam() for index in range(5)}
         self.validated_targets: list[str] | None = None
 
     def validate_rabi_params(self, targets: list[str]) -> None:
