@@ -45,8 +45,6 @@ _MCM_RB: MCMRBProtocol = "mcm-rb"
 _DELAY_RB: MCMRBProtocol = "delay-rb"
 _MCM_REP: MCMRBProtocol = "mcm-rep"
 _DELAY_REP: MCMRBProtocol = "delay-rep"
-# The suffix selects the control operation (Clifford or matched delay), while
-# the prefix selects the ancilla operation (readout or matched delay).
 _SUPPORTED_PROTOCOLS: tuple[MCMRBProtocol, ...] = (
     _MCM_RB,
     _DELAY_RB,
@@ -415,10 +413,10 @@ def _normalize_waveform_overrides(
     exp: Experiment,
     *,
     targets: tuple[str, ...],
-    override: _WaveformOverride,
+    override: object,
     name: str,
 ) -> dict[str, Waveform]:
-    """Normalize waveform overrides to resolved target labels."""
+    """Validate and normalize waveform overrides to resolved target labels."""
     if override is None:
         return {}
     if isinstance(override, Waveform):
@@ -454,9 +452,9 @@ def _normalize_measurement_scales(
     exp: Experiment,
     *,
     targets: tuple[str, ...],
-    measurement_scale: _MeasurementScale,
+    measurement_scale: object,
 ) -> dict[str, float]:
-    """Normalize scalar or target-keyed readout scales to resolved labels."""
+    """Validate and normalize readout scales to resolved target labels."""
     if measurement_scale is None:
         return {}
     if isinstance(measurement_scale, Real):
@@ -1028,44 +1026,44 @@ def mcm_rb_sequence(
 
     Parameters
     ----------
-    exp
+    exp : Experiment
         Experiment instance that provides pulse and Clifford services.
-    control
+    control : Collection[str] | str
         One control/spectator label or an ordered collection of labels. RB
         protocols apply independently randomized Cliffords and inverses to
         the controls; repetition protocols replace them with duration-matched
         delays.
-    ancilla
+    ancilla : Collection[str] | str
         One ancilla/readout-target label or an ordered collection of labels.
         MCM protocols read all ancillas simultaneously; delay protocols
         replace every readout with a duration-matched delay.
-    protocol
+    protocol : MCMRBProtocol
         Sequence variant: `"mcm-rb"`, `"delay-rb"`, `"mcm-rep"`, or
         `"delay-rep"`. Repetition protocols replace the control Cliffords with
         duration-matched delays. Delay protocols replace the intermediate
         readout pulses with duration-matched delays.
-    n_cliffords
+    n_cliffords : int
         Number of protocol cycles. Must be nonnegative.
-    seed
+    seed : int | None
         Optional nonnegative root seed. Multiple controls receive independent
         derived Clifford streams, and randomized ancillas receive independent
         derived I/X180 streams. `None` requests nondeterministic streams.
         Repetition protocols use the generated Clifford durations only.
-    control_echo
+    control_echo : bool
         Whether to apply an X-X echo to every control during every measurement
         or reference-delay window. The X180 centers are placed at the quarter
         and three-quarter points of the common ramp-trimmed active readout
         interval. Repetition protocols therefore contain control pulses during
         these windows when this option is `True`.
-    ancilla_mode
+    ancilla_mode : Literal["standard", "randomized"]
         Ancilla sequence mode. `"standard"` preserves the original protocol.
         `"randomized"` inserts a seeded I/X180 before every measurement or
         reference delay and applies a final parity recovery.
-    x90
+    x90 : Waveform | Mapping[str, Waveform] | None
         Optional control X90 override. Pass a waveform for one control or a
         target-keyed mapping for multiple controls. Omitted mapping entries use
         calibrated defaults.
-    measurement_waveform
+    measurement_waveform : Waveform | Mapping[str, Waveform] | None
         Optional ancilla readout override. Pass a waveform for one ancilla or a
         target-keyed mapping for multiple ancillas. Omitted mapping entries use
         calibrated defaults. Multiple ancillas must have identical
@@ -1073,18 +1071,18 @@ def mcm_rb_sequence(
         differ. Active intervals are inferred from nonzero samples; at most one
         FlatTop pulse may be present in each waveform, and other shapes are
         treated as having zero ramp duration.
-    measurement_scale
+    measurement_scale : float | Mapping[str, float] | None
         Optional positive scale for each intermediate ancilla readout. A scalar
         scales every selected ancilla's own calibrated readout; a target-keyed
         mapping scales only listed ancillas and leaves other ancillas at 1.0.
         This option is mutually exclusive with `measurement_waveform`. The
         returned schedule does not contain terminal measurements.
-    echo_x180
+    echo_x180 : Waveform | Mapping[str, Waveform] | None
         Optional control X180 override used by the X-X echo. Pass a waveform
         for one control or a target-keyed mapping for multiple controls.
         Omitted mapping entries use calibrated defaults. Ignored when
         `control_echo=False`.
-    ancilla_x180
+    ancilla_x180 : Waveform | Mapping[str, Waveform] | None
         Optional ancilla X180 override used for randomized I/X180 operations
         and parity recovery. Pass a waveform for one ancilla or a target-keyed
         mapping for multiple ancillas. Omitted mapping entries use calibrated
@@ -1384,7 +1382,7 @@ def _fit_decay_parameter(
                 bounds=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
                 maxfev=20_000,
             )
-    except (FloatingPointError, RuntimeError, ValueError):
+    except (FloatingPointError, RuntimeError, ValueError, np.linalg.LinAlgError):
         return None
     decay_parameter = float(parameters[1])
     if not np.isfinite(decay_parameter):
@@ -1480,6 +1478,14 @@ def _optional_finite_float(value: object) -> float | None:
     return resolved if np.isfinite(resolved) else None
 
 
+def _optional_nonnegative_finite_float(value: object) -> float | None:
+    """Return a nonnegative finite float or None for an invalid uncertainty."""
+    resolved = _optional_finite_float(value)
+    if resolved is None or resolved < 0.0:
+        return None
+    return resolved
+
+
 def _fit_validity(
     fit_result: FitResult,
     *,
@@ -1564,25 +1570,33 @@ def _fit_protocol_target(
     """Aggregate and fit one target's terminal survival probabilities."""
     mean = np.mean(trials, axis=1)
     std = np.std(trials, axis=1)
-    fit_result = fitting.fit_rb(
-        target=target,
-        x=n_cliffords,
-        y=mean,
-        error_y=std if trials.shape[1] > 1 else None,
-        bounds=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
-        title=f"{protocol} measurement-crosstalk benchmarking",
-        xlabel="Number of protocol cycles",
-        ylabel="Ground-state probability",
-        xaxis_type=xaxis_type,
-        yaxis_type="linear",
-        plot=plot,
-    )
+    if np.all(np.isfinite(trials)):
+        fit_result = fitting.fit_rb(
+            target=target,
+            x=n_cliffords,
+            y=mean,
+            error_y=std if trials.shape[1] > 1 else None,
+            bounds=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+            title=f"{protocol} measurement-crosstalk benchmarking",
+            xlabel="Number of protocol cycles",
+            ylabel="Ground-state probability",
+            xaxis_type=xaxis_type,
+            yaxis_type="linear",
+            plot=plot,
+        )
+    else:
+        fit_result = FitResult(
+            status=FitStatus.ERROR,
+            message="RB fitting failed: terminal probabilities contain non-finite values.",
+        )
     decay_parameter: float | None = None
     decay_parameter_fit_err: float | None = None
     error_per_cycle: float | None = None
     if fit_result.status is FitStatus.SUCCESS:
         decay_parameter = _optional_finite_float(fit_result.data.get("p"))
-        decay_parameter_fit_err = _optional_finite_float(fit_result.data.get("p_err"))
+        decay_parameter_fit_err = _optional_nonnegative_finite_float(
+            fit_result.data.get("p_err")
+        )
         if decay_parameter is not None:
             error_per_cycle = 0.5 * (1.0 - decay_parameter)
 
@@ -1712,11 +1726,13 @@ def _measurement_induced_error(
     measurement_result = protocol_results[measurement_protocol][target]
     reference_result = protocol_results[reference_protocol][target]
     p_measurement = measurement_result["decay_parameter"]
-    p_measurement_err = _optional_finite_float(
+    p_measurement_err = _optional_nonnegative_finite_float(
         measurement_result["fit"].data.get("p_err")
     )
     p_reference = reference_result["decay_parameter"]
-    p_reference_err = _optional_finite_float(reference_result["fit"].data.get("p_err"))
+    p_reference_err = _optional_nonnegative_finite_float(
+        reference_result["fit"].data.get("p_err")
+    )
     if p_measurement is None or p_reference is None or p_reference == 0.0:
         return None
 
@@ -2005,47 +2021,49 @@ def mcm_randomized_benchmarking(
 
     Parameters
     ----------
-    exp
+    exp : Experiment
         Experiment instance used to generate and execute the schedules.
-    control
+    control : Collection[str] | str
         One control/spectator label or an ordered collection of labels. RB
         protocols apply independently randomized Cliffords to all controls;
         repetition protocols apply duration-matched delays instead.
-    ancilla
+    ancilla : Collection[str] | str
         One ancilla/readout-target label or an ordered collection of labels.
         MCM protocols read all ancillas simultaneously; delay protocols
         replace every readout with a duration-matched delay.
-    n_cliffords_range
+    n_cliffords_range : ArrayLike | None
         At least three strictly increasing nonnegative cycle counts. Defaults
         to 0 followed by 14 geometrically spaced values from 1 through 150.
-    n_trials
+        Four or more values are required for a fit to pass the sequence-count
+        validity check.
+    n_trials : int | None
         Positive number of seed trials per cycle count. Defaults to 30.
-    seeds
+    seeds : ArrayLike | None
         One nonnegative integer seed for every trial. Defaults to generated
         seeds. Values must have integer types and fit in signed 64 bits.
-    protocols
+    protocols : Collection[MCMRBProtocol] | MCMRBProtocol | None
         Protocols to run. Defaults to all of `"mcm-rb"`, `"delay-rb"`, and
         `"mcm-rep"` in standard mode and to the matched `"mcm-rb"` and
         `"delay-rb"` pair in randomized mode. `"mcm-rep"` and `"delay-rep"`
         are opt-in in randomized mode; `"delay-rep"` is opt-in in both modes.
         The same per-target Clifford and ancilla I/X180 sequences are shared
         across protocols for each sequence length and root seed.
-    control_echo
+    control_echo : bool
         Whether to insert an X-X echo on every control during each measurement
         or duration-matched delay window. The X180 centers are placed at the
         quarter and three-quarter points of the common ramp-trimmed active
         readout interval. Repetition protocols omit randomized Cliffords but
         are not strictly idle when echo is enabled.
-    ancilla_mode
+    ancilla_mode : Literal["standard", "randomized"]
         Ancilla sequence mode. `"standard"` preserves the original suite.
         `"randomized"` inserts a seeded I/X180 before every measurement or
         reference delay, followed by an X180 for odd parity or a
         duration-matched blank for even parity.
-    x90
+    x90 : Waveform | Mapping[str, Waveform] | None
         Optional control X90 override. Use a waveform for one control or a
         target-keyed mapping for multiple controls. Omitted mapping entries use
         calibrated defaults.
-    measurement_waveform
+    measurement_waveform : Waveform | Mapping[str, Waveform] | None
         Optional ancilla readout override. Use a waveform for one ancilla or a
         target-keyed mapping for multiple ancillas. Multiple ancillas must have
         identical ramp-trimmed active intervals, although their total slot
@@ -2054,52 +2072,52 @@ def mcm_randomized_benchmarking(
         pulse may be present in each waveform, and other shapes have zero
         inferred ramp duration. The override affects only intermediate
         readouts; terminal measurements use calibrated defaults.
-    measurement_scale
+    measurement_scale : float | Mapping[str, float] | None
         Optional positive scale for each intermediate ancilla readout. A scalar
         scales every selected ancilla's own calibrated readout; a target-keyed
         mapping scales only listed ancillas and leaves other ancillas at 1.0.
         This option is mutually exclusive with `measurement_waveform`. Terminal
         measurements continue to use calibrated default readouts.
-    echo_x180
+    echo_x180 : Waveform | Mapping[str, Waveform] | None
         Optional control X180 override for echoed measurement blocks. Use a
         waveform for one control or a target-keyed mapping for multiple
         controls. Omitted mapping entries use calibrated defaults. Ignored when
         `control_echo=False`.
-    ancilla_x180
+    ancilla_x180 : Waveform | Mapping[str, Waveform] | None
         Optional ancilla X180 override used by randomized mode. Use a waveform
         for one ancilla or a target-keyed mapping for multiple ancillas. Omitted
         mapping entries use calibrated defaults. Ignored in standard mode.
-    n_shots
+    n_shots : int | None
         Number of shots per schedule. Defaults to the experiment default.
-    shot_interval
+    shot_interval : float | None
         Positive finite interval between shots in ns. Defaults to the
         experiment default.
-    time_integration
+    time_integration : bool
         Whether to integrate each capture over time.
-    n_bootstrap
+    n_bootstrap : int
         Number of paired trial-column bootstrap resamples. Defaults to 1000.
         Set to 0 to disable bootstrap uncertainty. Bootstrap requires at least
         four sequence lengths and two trials. Fit-covariance uncertainty is
         used if fewer than 80% of resampled fits succeed.
-    bootstrap_seed
+    bootstrap_seed : int | None
         Nonnegative seed for paired bootstrap resampling. Defaults to 0 for
         reproducible analysis. Pass `None` for nondeterministic resampling.
-    bootstrap_confidence_level
+    bootstrap_confidence_level : float
         Percentile-bootstrap confidence level strictly between 0 and 1.
         Defaults to 0.95.
-    min_fit_r_squared
+    min_fit_r_squared : float | None
         Minimum R-squared for a fit to be marked valid. Defaults to 0.9. Pass
         `None` to omit the R-squared threshold while retaining other checks.
-    xaxis_type
+    xaxis_type : Literal["linear", "log"]
         X-axis scale used by fit figures.
-    plot
+    plot : bool | None
         Whether to display fit figures. Defaults to `True`.
-    save_image
+    save_image : bool | None
         Whether to save successful fit figures. Defaults to `False`.
-    print_summary
+    print_summary : bool
         Whether to print protocol-fit and measurement-induced-error summary
         tables. This is independent of `plot` and defaults to `True`.
-    enable_tqdm
+    enable_tqdm : bool
         Whether to show schedule-execution progress. Defaults to `True`.
 
     Returns
@@ -2165,7 +2183,9 @@ def mcm_randomized_benchmarking(
     reports checks for sequence-count sufficiency, finite parameters and
     uncertainty, a decay parameter at its bound, and the optional R-squared
     threshold. Estimates remain available when a check fails, but callers should
-    inspect `fit_validity` before interpreting them.
+    inspect `fit_validity` before interpreting them. Numerical fitting failures
+    are recorded as unsuccessful `FitResult` objects so the acquired trial data
+    remain available for offline analysis.
 
     Independent control and ancilla random streams are assigned in resolved
     input order. Ancilla I/X180 choices are generated once per sequence length
@@ -2176,6 +2196,10 @@ def mcm_randomized_benchmarking(
     simultaneous combined readout and is not an attribution to any individual
     ancilla. Per-target fits are marginal analyses of averaged terminal IQ;
     they do not quantify correlated multi-qubit errors.
+
+    The workflow resets the selected AWG and capture resources once before
+    acquisition. When `save_image=True`, successful fit figures are written
+    through the configured visualization output path.
 
     The experiment synchronizes the global pulse-library sampling period with
     `exp.ctx.measurement.sampling_period` before constructing schedules.

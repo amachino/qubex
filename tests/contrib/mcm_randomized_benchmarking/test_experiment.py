@@ -453,6 +453,88 @@ def test_failed_primary_fit_does_not_report_an_orphaned_bootstrap_uncertainty(
     assert target_result["bootstrap"]["successful_resamples"] == 8
 
 
+def test_nonfinite_probabilities_retain_acquired_trial_data(
+    fake_experiment: Any,
+) -> None:
+    """Nonfinite probabilities should return acquired data with a failed fit."""
+
+    def execute_nonfinite(sequence: Any, **options: Any) -> Any:
+        del sequence, options
+        capture = SimpleNamespace(kerneled=np.asarray([complex(np.nan)]))
+        return SimpleNamespace(data={"RQ0": [capture], "RQ1": [capture]})
+
+    fake_experiment.measurement_service = SimpleNamespace(execute=execute_nonfinite)
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[3],
+        protocols="mcm-rep",
+        n_bootstrap=0,
+        plot=False,
+        print_summary=False,
+        enable_tqdm=False,
+    )
+
+    target_result = result.data["protocol_results"]["mcm-rep"]["Q0"]
+    assert target_result["trials"].shape == (3, 1)
+    assert target_result["fit"].status is FitStatus.ERROR
+    assert target_result["decay_parameter"] is None
+    assert "non-finite" in target_result["fit"].message
+    assert result.figures is None
+
+
+def test_negative_fit_uncertainty_is_not_reported(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_experiment: Any,
+) -> None:
+    """A negative covariance uncertainty should be treated as unavailable."""
+    fake_experiment.measurement_service = ConstantMeasurementService()
+
+    def fake_fit_rb(*, title: str, **_: Any) -> FitResult:
+        protocol = title.split()[0]
+        return FitResult(
+            status=FitStatus.SUCCESS,
+            data={
+                "A": 0.4,
+                "A_err": 0.01,
+                "p": {"mcm-rb": 0.96, "delay-rb": 0.98}[protocol],
+                "p_err": -0.01,
+                "C": 0.5,
+                "C_err": 0.01,
+                "r2": 0.99,
+            },
+            figure=go.Figure(),
+        )
+
+    monkeypatch.setattr(mcm_module.fitting, "fit_rb", fake_fit_rb)
+
+    result = mcm_randomized_benchmarking(
+        fake_experiment,
+        "Q0",
+        "Q1",
+        n_cliffords_range=[0, 1, 2],
+        n_trials=1,
+        seeds=[3],
+        protocols=("mcm-rb", "delay-rb"),
+        n_bootstrap=0,
+        plot=False,
+        print_summary=False,
+        enable_tqdm=False,
+    )
+
+    target_result = result.data["protocol_results"]["mcm-rb"]["Q0"]
+    induced_error = result.data["measurement_induced_errors"]["control"]["Q0"]
+    assert target_result["decay_parameter_uncertainty"] is None
+    assert target_result["error_per_cycle_uncertainty"] is None
+    assert target_result["uncertainty_method"] == "unavailable"
+    assert induced_error["uncertainty"] is None
+    assert induced_error["uncertainty_method"] == "unavailable"
+
+
 def test_fit_validity_reports_insufficient_points_and_low_r_squared(
     monkeypatch: pytest.MonkeyPatch,
     fake_experiment: Any,
