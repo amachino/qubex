@@ -49,6 +49,8 @@ class _FakeCaptureMode(Enum):
 class _FakeInstrumentDefinition:
     role: str
     alias: str = ""
+    mode: None = None
+    profile: None = None
 
 
 @dataclass(frozen=True)
@@ -92,7 +94,13 @@ class _FakeInstrumentResolver:
     def resolve(self, aliases: list[str]) -> list[str]:
         return aliases
 
-    def find_inst_info_by_alias(self, alias: str) -> _FakeInstrumentInfo:
+    def find_inst_info_by_alias(
+        self,
+        alias: str,
+        *,
+        unit: str | None = None,
+    ) -> _FakeInstrumentInfo:
+        del unit
         if alias not in self._alias_to_info:
             raise ValueError(alias)
         return self._alias_to_info[alias]
@@ -966,12 +974,22 @@ def test_resolve_payload_rejects_unqualified_alias_binding() -> None:
 def test_execute_resolves_unit_prefixed_alias_binding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Given unit-prefixed alias binding, execute should resolve with the unit label."""
+    """A transmitter binding should drive four suffixed instruments identically."""
     payload = _make_payload()
+    timeline = payload.fixed_timelines["alias-rq00"]
     payload = replace(
         payload,
-        fixed_timelines={"Q00": payload.fixed_timelines["alias-rq00"]},
-        instrument_bindings={"Q00": "alias:quel3-02-a01:Q00"},
+        fixed_timelines={
+            "Q00": replace(
+                timeline,
+                events=(
+                    replace(timeline.events[0], gain=0.375, phase_offset_deg=12.0),
+                ),
+                capture_windows=(),
+                frequency_hz=4.25e9,
+            )
+        },
+        instrument_bindings={"Q00": "alias:quel3-02-a01:Q00-0"},
     )
     manager = Quel3ExecutionManager(
         runtime_config=Quel3RuntimeConfig(),
@@ -1007,19 +1025,38 @@ def test_execute_resolves_unit_prefixed_alias_binding(
             unit: str | None = None,
         ) -> _InstrumentInfo:
             self.find_calls.append((alias, unit))
-            if (alias, unit) != ("Q00", "quel3-02-a01"):
+            if unit != "quel3-02-a01" or alias not in {
+                "Q00-0",
+                "Q00-1",
+                "Q00-2",
+                "Q00-3",
+            }:
                 raise ValueError(alias)
             return _InstrumentInfo(
-                id="inst-q00",
+                id=f"inst-{alias.lower()}",
                 port_id="quel3-02-a01:tx_p04",
                 definition=_Definition(
-                    alias="Q00",
+                    alias=alias,
                     role="TRANSMITTER",
                 ),
             )
 
     resolver = _UnitAwareResolver()
-    driver = _FakeInstrumentDriver()
+    drivers = {f"Q00-{index}": _FakeInstrumentDriver() for index in range(4)}
+    sequencer_events: list[tuple[str, float, float]] = []
+
+    class _RecordingSequencer(_FakeSequencer):
+        def add_event(
+            self,
+            instrument_alias: str,
+            waveform_name: str,
+            start_offset_ns: float,
+            gain: float = 1.0,
+            phase_offset_deg: float = 0.0,
+        ) -> None:
+            del waveform_name, start_offset_ns
+            sequencer_events.append((instrument_alias, gain, phase_offset_deg))
+
     session = _FakeSession()
     client = _FakeClient(session)
 
@@ -1029,7 +1066,10 @@ def test_execute_resolves_unit_prefixed_alias_binding(
         lambda: _make_fake_execution_api(
             client_factory=lambda endpoint, port: client,
             instrument_resolver_factory=lambda: resolver,
-            fixed_timeline_driver_factory=lambda _session, _instrument_info: driver,
+            fixed_timeline_driver_factory=lambda _session, instrument_info: drivers[
+                instrument_info.definition.alias
+            ],
+            sequencer_factory=_RecordingSequencer,
         ),
     )
 
@@ -1037,15 +1077,21 @@ def test_execute_resolves_unit_prefixed_alias_binding(
         manager.execute_async(request=BackendExecutionRequest(payload=payload))
     )
 
-    assert resolver.find_calls == [("Q00", "quel3-02-a01")]
-    assert driver.apply_calls == [
-        [
-            ("capture_mode", _FakeCaptureMode.AVERAGED_VALUE),
-            ("timeline", "quel3-02-a01:Q00"),
+    physical_aliases = [f"quel3-02-a01:Q00-{index}" for index in range(4)]
+    assert set(resolver.find_calls) >= {
+        (f"Q00-{index}", "quel3-02-a01") for index in range(4)
+    }
+    assert sequencer_events == [(alias, 0.375, -12.0) for alias in physical_aliases]
+    for index, physical_alias in enumerate(physical_aliases):
+        assert drivers[f"Q00-{index}"].apply_calls == [
+            [
+                ("frequency", 4.25e9),
+                ("capture_mode", _FakeCaptureMode.AVERAGED_VALUE),
+                ("timeline", physical_alias),
+            ]
         ]
-    ]
-    assert session.trigger_calls == [["inst-q00"]]
-    assert "quel3-02-a01:Q00" in result.data
+    assert session.trigger_calls == [[f"inst-q00-{index}" for index in range(4)]]
+    assert result.data == {}
 
 
 def test_execute_rejects_invalid_payload_before_opening_session(

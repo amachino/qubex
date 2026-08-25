@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.instrument_groups import (
+    build_transmitter_aliases,
+    is_transmitter_role,
+    split_transmitter_alias,
+)
 from qubex.backend.quel3.interfaces.client import (
     FixedTimelineProfileFactory,
     InstrumentDefinitionFactory,
@@ -205,8 +210,7 @@ class Quel3ConfigurationManager:
         backend_settings: Mapping[str, dict],
     ) -> None:
         """Restore instrument alias caches from normalized backend settings."""
-        deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
-        target_alias_map: dict[TargetAliasKey, str] = {}
+        entries: list[tuple[str | None, str, str, InstrumentInfoProtocol]] = []
 
         for box_id, box_config in backend_settings.items():
             instruments = box_config.get("instruments")
@@ -231,15 +235,14 @@ class Quel3ConfigurationManager:
                     alias=definition.alias,
                     port_id=port_id,
                 )
-                deployed[alias] = (
-                    _CachedInstrumentInfo(
-                        id=resource_id,
-                        port_id=port_id,
-                        definition=definition,
-                    ),
+                instrument_info = _CachedInstrumentInfo(
+                    id=resource_id,
+                    port_id=port_id,
+                    definition=definition,
                 )
-                target_alias_map[(box_id, local_alias)] = runtime_alias
+                entries.append((box_id, local_alias, runtime_alias, instrument_info))
 
+        deployed, target_alias_map = self._group_instrument_cache_entries(entries)
         self._last_deployed_instrument_infos = deployed
         self._target_alias_map = target_alias_map
 
@@ -377,18 +380,27 @@ class Quel3ConfigurationManager:
     ) -> _PortDeployResult:
         """Deploy one port batch through the active quelware session."""
         definitions: list[InstrumentDefinitionProtocol] = []
+        alias_groups: list[tuple[InstrumentDeployRequest, tuple[str, ...]]] = []
         for request in port_requests:
+            aliases = (
+                build_transmitter_aliases(request.alias)
+                if request.role == "TRANSMITTER"
+                else (request.alias,)
+            )
+            alias_groups.append((request, aliases))
             profile = instrument_entities.fixed_timeline_profile_factory(
                 frequency_range_min=request.frequency_range_min_hz,
                 frequency_range_max=request.frequency_range_max_hz,
             )
-            definitions.append(
+            role = instrument_entities.role_value(request.role)
+            definitions.extend(
                 instrument_entities.instrument_definition_factory(
-                    alias=request.alias,
+                    alias=alias,
                     mode=instrument_entities.instrument_mode_namespace.FIXED_TIMELINE,
-                    role=instrument_entities.role_value(request.role),
+                    role=role,
                     profile=profile,
                 )
+                for alias in aliases
             )
 
         instrument_infos = await session.deploy_instruments(
@@ -398,30 +410,24 @@ class Quel3ConfigurationManager:
             # truth for this port's selected instruments.
             append=False,
         )
-        instrument_infos_by_alias: dict[str, list[InstrumentInfoProtocol]] = (
-            defaultdict(list)
-        )
+        instrument_infos_by_alias: dict[str, InstrumentInfoProtocol] = {}
         for instrument_info in instrument_infos:
             local_alias, _runtime_alias = self._split_alias_for_port(
                 alias=instrument_info.definition.alias,
                 port_id=instrument_info.port_id,
             )
-            instrument_infos_by_alias[local_alias].append(instrument_info)
+            instrument_infos_by_alias[local_alias] = instrument_info
 
         deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
         target_alias_map: dict[TargetAliasKey, str] = {}
-        for request in port_requests:
+        for request, aliases in alias_groups:
             matched_instrument_infos = tuple(
-                instrument_infos_by_alias.get(request.alias, ())
+                instrument_infos_by_alias[alias] for alias in aliases
             )
-            if len(matched_instrument_infos) != 1:
-                raise ValueError(
-                    "quelware did not return the deployed instrument info for one request."
-                )
             deployed[request.alias] = matched_instrument_infos
             runtime_alias = self._runtime_alias_from_instrument_info(
                 instrument_info=matched_instrument_infos[0],
-                fallback_alias=request.alias,
+                fallback_alias=aliases[0],
             )
             for target_label in request.target_labels:
                 target_alias_map[(request.box_id, target_label)] = runtime_alias
@@ -445,20 +451,53 @@ class Quel3ConfigurationManager:
                 unit_labels=None,
             )
 
-        deployed: dict[str, tuple[InstrumentInfoProtocol, ...]] = {}
+        entries: list[tuple[str | None, str, str, InstrumentInfoProtocol]] = []
         for instrument_info in instrument_infos:
             alias = instrument_info.definition.alias
             if len(alias.strip()) == 0:
                 continue
-            local_alias, _runtime_alias = self._split_alias_for_port(
+            local_alias, runtime_alias = self._split_alias_for_port(
                 alias=alias,
                 port_id=instrument_info.port_id,
             )
-            deployed[local_alias] = (instrument_info,)
+            entries.append((None, local_alias, runtime_alias, instrument_info))
 
+        deployed, _target_alias_map = self._group_instrument_cache_entries(entries)
         self._last_deployed_instrument_infos = deployed
         self._target_alias_map = {}
         return dict(deployed)
+
+    @classmethod
+    def _group_instrument_cache_entries(
+        cls,
+        entries: Sequence[tuple[str | None, str, str, InstrumentInfoProtocol]],
+    ) -> tuple[
+        dict[str, tuple[InstrumentInfoProtocol, ...]],
+        dict[TargetAliasKey, str],
+    ]:
+        """Group suffixed transmitter cache entries under logical aliases."""
+        grouped_infos: dict[str, list[InstrumentInfoProtocol]] = defaultdict(list)
+        target_alias_map: dict[TargetAliasKey, str] = {}
+        for box_id, local_alias, runtime_alias, instrument_info in entries:
+            logical_alias = local_alias
+            base_alias, suffix_index = split_transmitter_alias(local_alias)
+            if is_transmitter_role(
+                getattr(instrument_info.definition, "role", None)
+            ) and (suffix_index is not None):
+                logical_alias = base_alias
+                runtime_alias = cls._runtime_alias_for_port(
+                    alias=build_transmitter_aliases(base_alias)[0],
+                    port_id=str(instrument_info.port_id),
+                )
+            grouped_infos[logical_alias].append(instrument_info)
+            if box_id is not None:
+                target_alias_map[(box_id, logical_alias)] = runtime_alias
+
+        deployed = {
+            alias: tuple(sorted(infos, key=lambda info: info.definition.alias))
+            for alias, infos in grouped_infos.items()
+        }
+        return deployed, target_alias_map
 
     def _load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""

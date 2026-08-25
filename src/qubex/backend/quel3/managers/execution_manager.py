@@ -14,6 +14,11 @@ import numpy as np
 
 from qubex.backend.quel3.builders.sequencer_builder import Quel3SequencerBuilder
 from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
+from qubex.backend.quel3.instrument_groups import (
+    build_transmitter_aliases,
+    is_transmitter_role,
+    split_transmitter_alias,
+)
 from qubex.backend.quel3.interfaces import (
     CaptureModeNamespaceProtocol,
     CaptureModeProtocol,
@@ -86,8 +91,6 @@ class _PayloadExecutionPlan:
     """Resolved payload and runtime aliases required for one execution."""
 
     resolved_payload: Quel3ExecutionPayload
-    aliases: tuple[str, ...]
-    aliases_with_captures: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -339,21 +342,26 @@ class Quel3ExecutionManager:
                     quelware_api=quelware_api,
                     force_resolver_refresh=attempt > 0,
                 )
-                alias_to_instrument_info = {
-                    alias: self._find_instrument_info_by_alias(
+                resolved_payload, alias_to_instrument_info = (
+                    self._resolve_payload_instruments(
+                        payload=payload_plan.resolved_payload,
                         resolver=resolver,
-                        alias=alias,
                     )
-                    for alias in payload_plan.aliases
-                }
+                )
+                aliases = tuple(sorted(resolved_payload.fixed_timelines))
+                aliases_with_captures = frozenset(
+                    alias
+                    for alias, timeline in resolved_payload.fixed_timelines.items()
+                    if len(timeline.capture_windows) > 0
+                )
                 session_state = await self._open_payload_execution_session(
                     alias_to_instrument_info=alias_to_instrument_info,
-                    aliases=payload_plan.aliases,
-                    aliases_with_captures=payload_plan.aliases_with_captures,
+                    aliases=aliases,
+                    aliases_with_captures=aliases_with_captures,
                     quelware_api=quelware_api,
                 )
                 return await self._execute_resolved_payload(
-                    payload=payload_plan.resolved_payload,
+                    payload=resolved_payload,
                     session_state=session_state,
                     quelware_api=quelware_api,
                     parallel=parallel,
@@ -608,13 +616,63 @@ class Quel3ExecutionManager:
         resolved_payload = cls._resolve_payload(payload=runnable_payload)
         return _PayloadExecutionPlan(
             resolved_payload=resolved_payload,
-            aliases=tuple(sorted(resolved_payload.fixed_timelines)),
-            aliases_with_captures=frozenset(
-                alias
-                for alias, timeline in resolved_payload.fixed_timelines.items()
-                if len(timeline.capture_windows) > 0
-            ),
         )
+
+    @classmethod
+    def _resolve_payload_instruments(
+        cls,
+        *,
+        payload: Quel3ExecutionPayload,
+        resolver: InstrumentResolverProtocol,
+    ) -> tuple[Quel3ExecutionPayload, dict[str, InstrumentInfoProtocol]]:
+        """Expand resolved transmitter timelines to four physical aliases."""
+        physical_timelines: dict[str, Quel3FixedTimeline] = {}
+        alias_to_instrument_info: dict[str, InstrumentInfoProtocol] = {}
+        for requested_alias, timeline in payload.fixed_timelines.items():
+            resolved_group = cls._resolve_instrument_group(
+                resolver=resolver,
+                requested_alias=requested_alias,
+            )
+            for physical_alias, instrument_info in resolved_group.items():
+                physical_timelines[physical_alias] = timeline
+                alias_to_instrument_info[physical_alias] = instrument_info
+        return (
+            replace(payload, fixed_timelines=physical_timelines),
+            alias_to_instrument_info,
+        )
+
+    @classmethod
+    def _resolve_instrument_group(
+        cls,
+        *,
+        resolver: InstrumentResolverProtocol,
+        requested_alias: str,
+    ) -> dict[str, InstrumentInfoProtocol]:
+        """Resolve one binding to a transmitter quartet or one other instrument."""
+        instrument_info = cls._find_instrument_info_by_alias(
+            resolver=resolver,
+            alias=requested_alias,
+        )
+        if not is_transmitter_role(instrument_info.definition.role):
+            return {requested_alias: instrument_info}
+
+        base_alias, suffix_index = split_transmitter_alias(requested_alias)
+        if suffix_index is None:
+            raise ValueError(
+                "QuEL-3 transmitter must use aliases ending in `-0` through `-3`."
+            )
+
+        return {
+            alias: (
+                instrument_info
+                if alias == requested_alias
+                else cls._find_instrument_info_by_alias(
+                    resolver=resolver,
+                    alias=alias,
+                )
+            )
+            for alias in build_transmitter_aliases(base_alias)
+        }
 
     @classmethod
     def _resolve_payload(
