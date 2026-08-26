@@ -559,6 +559,30 @@ def test_apply_voltages_validates_idle_targets_before_applying_bias(
     assert applied == []
 
 
+def test_apply_voltages_rejects_invalid_bias_without_idle_cleanup() -> None:
+    """An invalid bias target should cause no hardware writes or cleanup."""
+    _reset_fake_devices()
+
+    def validate_voltage(voltage: float) -> None:
+        if not 0.0 <= voltage <= 4.0:
+            raise ValueError("voltage outside safe range")
+
+    controller = DCVoltageController(
+        device_factory=_FakeDCVoltageDevice,
+        validate_voltage=validate_voltage,
+    )
+    profile = DCVoltageProfile(channel=1, idle_voltage_v=0.0)
+
+    with (
+        pytest.raises(ValueError, match="outside safe range"),
+        controller.apply_voltages({1: (-0.1, profile)}),
+    ):
+        pass
+
+    assert _FakeDCVoltageDevice.instances == []
+    assert _FakeDCVoltageDevice.calls == []
+
+
 def test_apply_channels_validates_every_target_before_opening_device() -> None:
     """An invalid bulk target should prevent every hardware operation."""
     _reset_fake_devices()
@@ -964,6 +988,66 @@ def test_turn_off_channels_skips_switch_for_devices_without_one(
     assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.0)
     assert all(call[0] != "off" for call in _FakeDCVoltageDevice.calls)
     assert _FakeDCVoltageDevice.instances[0].closed is True
+
+
+def test_turn_off_channels_disables_output_before_recovering_unsafe_voltage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shutdown should switch off before resetting an unsafe starting voltage."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 4.5}
+
+    def validate_voltage(voltage: float) -> None:
+        if not 0.0 <= voltage <= 4.0:
+            raise ValueError("voltage outside safe range")
+
+    controller = DCVoltageController(
+        device_factory=_FakeDCVoltageDevice,
+        validate_voltage=validate_voltage,
+    )
+    profile = DCVoltageProfile(channel=1, reset_voltage_v=0.0)
+
+    controller.turn_off_channels({1: profile})
+
+    off_index = _FakeDCVoltageDevice.calls.index(("off", 1))
+    set_index = _FakeDCVoltageDevice.calls.index(("set_voltage", 1, 0.0))
+    assert off_index < set_index
+    assert _FakeDCVoltageDevice.output_states[1] is False
+    assert _FakeDCVoltageDevice.voltages[1] == pytest.approx(0.0)
+
+
+def test_software_ramp_verifies_target_reached_by_intermediate_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Software ramps should read back an exact final intermediate setpoint."""
+    _reset_fake_devices()
+    monkeypatch.setattr(
+        "qubex.external_devices.dc_voltage.controller.time.sleep",
+        lambda _: None,
+    )
+    _FakeDCVoltageDevice.output_states = {1: True}
+    _FakeDCVoltageDevice.voltages = {1: 0.0}
+    controller = DCVoltageController(device_factory=_FakeDCVoltageDevice)
+    profile = DCVoltageProfile(
+        channel=1,
+        ramp_rate_v_per_s=1.0,
+        ramp_step_size_v=0.01,
+        ramp_wait_s=0.01,
+    )
+
+    controller.apply_voltage(channel=1, voltage=0.04, profile=profile)
+
+    final_set_index = max(
+        index
+        for index, call in enumerate(_FakeDCVoltageDevice.calls)
+        if call == ("set_voltage", 1, 0.04)
+    )
+    assert ("get_voltage", 1) in _FakeDCVoltageDevice.calls[final_set_index + 1 :]
 
 
 def test_idle_channels_ramps_each_channel_on_one_connection(

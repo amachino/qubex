@@ -1300,8 +1300,18 @@ class ExperimentContext:
         if muxes is None:
             return list(self._get_active_dc_muxes())
         if isinstance(muxes, (int, str)):
-            muxes = [muxes]
-        return [self.experiment_system.get_mux(mux).index for mux in muxes]
+            selectors = [muxes]
+        else:
+            selectors = list(muxes)
+        for selector in selectors:
+            if isinstance(selector, str):
+                continue
+            if type(selector) is not int or selector < 0:
+                raise ValueError(
+                    "Each DC voltage mux selector must be a non-negative integer "
+                    "or a valid mux label."
+                )
+        return [self.experiment_system.get_mux(mux).index for mux in selectors]
 
     def reset_dc_voltages(
         self,

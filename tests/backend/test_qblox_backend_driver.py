@@ -142,6 +142,20 @@ def test_connection_config_rejects_invalid_settings(
         QbloxBackendConnectionConfig.from_dict("QBLOX1", connection)
 
 
+def test_connection_config_rejects_duplicate_device_names() -> None:
+    """Logical channels should not share one Qblox backend device name."""
+    with pytest.raises(ValueError, match=r"device names.*unique"):
+        QbloxBackendConnectionConfig.from_dict(
+            "QBLOX1",
+            {
+                "host": "server",
+                "port": 1,
+                "device_names": {1: "Qblox-A", 2: "Qblox-A"},
+            },
+            device_channels=(1, 2),
+        )
+
+
 def test_device_sends_existing_set_voltage_protocol() -> None:
     """Voltage setting should use command 0x62 and a little-endian double."""
     fake_socket = _FakeSocket([b"\x00"])

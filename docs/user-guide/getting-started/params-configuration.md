@@ -223,10 +223,11 @@ data:
 
 This file holds calibrated values only. `bias_voltage` has no default:
 `measurement.apply_dc_voltages()` skips muxes without one, so a system
-without this file performs no DC voltage operations. `idle_voltage` is
-optional; without it a mux idles at the configured reset voltage. The
-control policy lives in `external_devices.yaml` (see the system
-configuration guide).
+without this file performs no automatic bias application. Direct voltage
+contexts and the reset, idle, and shutdown operations remain available from
+`external_devices.yaml`; reset can enable supported outputs. `idle_voltage` is
+optional; without it a mux idles at the configured reset voltage. The control
+policy lives in `external_devices.yaml` (see the system configuration guide).
 
 `bias_voltage` is the canonical key. The former `dc_voltage` key remains a
 deprecated alias and emits `DeprecationWarning`. Rename existing configurations

@@ -334,10 +334,30 @@ class DCVoltageController:
                     profile.reset_voltage_v,
                 )
                 continue
+            start = device.get_voltage(channel)
+            try:
+                self._validate_voltages((start,))
+            except ValueError:
+                if not device.supports_output_switch:
+                    raise
+                device.off(channel)
+                logger.warning(
+                    "DC channel %d: output switched off before recovering "
+                    "unsafe readback %+.3f V.",
+                    channel,
+                    start,
+                )
+                self._set_voltage_verified(
+                    device,
+                    channel=channel,
+                    voltage=profile.reset_voltage_v,
+                    profile=profile,
+                )
+                continue
             self._ramp_voltage(
                 device,
                 channel=channel,
-                start=device.get_voltage(channel),
+                start=start,
                 voltage=profile.reset_voltage_v,
                 profile=profile,
             )
@@ -412,6 +432,7 @@ class DCVoltageController:
         no connection is held while the caller's block runs.
         """
         profiles = {channel: profile for channel, (_, profile) in requests.items()}
+        self._validate_voltages(voltage for voltage, _ in requests.values())
         self._validate_voltages(profile.idle_voltage_v for profile in profiles.values())
         try:
             self.apply_channels(requests)
@@ -527,14 +548,13 @@ class DCVoltageController:
             current += direction * step
             device.set_voltage(channel, current)
             time.sleep(wait)
-        if current != voltage:
-            self._set_voltage_verified(
-                device,
-                channel=channel,
-                voltage=float(voltage),
-                profile=profile,
-            )
-            time.sleep(wait)
+        self._set_voltage_verified(
+            device,
+            channel=channel,
+            voltage=float(voltage),
+            profile=profile,
+        )
+        time.sleep(wait)
 
     def _set_voltage_verified(
         self,

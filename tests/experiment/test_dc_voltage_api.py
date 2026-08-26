@@ -619,6 +619,30 @@ def test_bulk_operations_accept_a_mux_selection() -> None:
     assert ("turn_off_channels", (8,)) in dc_controller.calls
 
 
+@pytest.mark.parametrize("selector", [-1, True, [-1], [True]])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "bias_dc_voltages",
+        "reset_dc_voltages",
+        "idle_dc_voltages",
+        "shutdown_dc_voltages",
+    ],
+)
+def test_bulk_operations_reject_unsafe_integer_mux_selectors(
+    operation: str,
+    selector: object,
+) -> None:
+    """Bulk writes should reject negative and boolean mux selectors."""
+    dc_controller = _DCVoltageController()
+    ctx = _ContextForTest(mux_labels=["MUX06", "MUX07"], dc_controller=dc_controller)
+
+    with pytest.raises(ValueError, match="mux selector"):
+        getattr(ctx, operation)(muxes=selector, confirm=False)
+
+    assert dc_controller.calls == []
+
+
 def test_bias_raises_for_an_explicitly_selected_uncalibrated_mux() -> None:
     """Explicit selection of an uncalibrated mux should fail, not skip."""
     dc_controller = _DCVoltageController()

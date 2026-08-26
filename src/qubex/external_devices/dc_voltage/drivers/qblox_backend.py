@@ -126,6 +126,8 @@ def _parse_device_names(
         if "\x00" in device_name:
             raise ValueError("Qblox server device names must not contain NUL bytes.")
         names[channel] = device_name
+    if len(set(names.values())) != len(names):
+        raise ValueError("Qblox server device names must be unique across channels.")
     if device_channels is not None:
         missing = sorted(set(device_channels) - set(names))
         if missing:

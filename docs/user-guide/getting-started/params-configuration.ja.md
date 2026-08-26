@@ -220,9 +220,11 @@ data:
 
 このfileには較正値だけを置きます。`bias_voltage` にdefaultはなく、
 `measurement.apply_dc_voltages()` は較正のない mux を skip するため、この
-fileが無い system ではDC電圧操作は行われません。`idle_voltage` は任意で、
-無い mux は reset 電圧で待機します。制御ポリシーは
-`external_devices.yaml` に置きます (システム設定ガイド参照)。
+fileが無い system では bias 電圧は自動印加されません。ただし、直接の電圧
+contextと reset・idle・shutdown 操作は `external_devices.yaml` の設定だけで
+利用でき、reset は対応機器の出力を ON にします。`idle_voltage` は任意で、
+無い mux は reset 電圧で待機します。制御ポリシーは `external_devices.yaml`
+に置きます (システム設定ガイド参照)。
 
 正規の key は `bias_voltage` です。旧 `dc_voltage` key は deprecated alias として
 引き続き読み込めますが、`DeprecationWarning` が発生します。既存設定を
