@@ -1117,13 +1117,13 @@ class MeasurementExecutionService:
 
     def _can_use_batch_execution(self) -> bool:
         """Return whether backend batch execution can be used safely."""
+        run_measurement_func = getattr(self.run_measurement, "__func__", None)
+        if run_measurement_func is not MeasurementExecutionService.run_measurement:
+            return False
         execute_batch_async = getattr(
             self.backend_controller, "execute_batch_async", None
         )
         if not callable(execute_batch_async):
-            return False
-        run_measurement_func = getattr(self.run_measurement, "__func__", None)
-        if run_measurement_func is not MeasurementExecutionService.run_measurement:
             return False
         try:
             _ = self.experiment_system

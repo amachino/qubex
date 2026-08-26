@@ -42,7 +42,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --dev --group docs --extra backend
+        run: uv sync --locked --dev --group docs --extra backend --extra quel3
 
       - name: Check release version drift
         run: uv run python scripts/check_release_version.py
