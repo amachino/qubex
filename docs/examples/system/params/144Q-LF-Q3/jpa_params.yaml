@@ -4,8 +4,8 @@ data:
   0:
     pump_frequency: 6.0
     pump_amplitude: 0.1
-    bias_voltage: 0.0
+    optimal_voltage: 0.0
   1:
     pump_frequency: 6.01
     pump_amplitude: 0.105
-    bias_voltage: 0.0
+    optimal_voltage: 0.0

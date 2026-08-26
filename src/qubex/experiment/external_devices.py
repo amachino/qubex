@@ -98,7 +98,7 @@ class ExternalDevices:
         Ramp the selected calibrated muxes to their bias voltages.
 
         When `muxes` is omitted, every active wired mux with a calibrated
-        `bias_voltage` in `jpa_params.yaml` is biased and the rest are
+        `optimal_voltage` in `jpa_params.yaml` is biased and the rest are
         skipped; an explicitly selected mux without one raises. Ramp back
         with `idle_dc_voltages()`.
 

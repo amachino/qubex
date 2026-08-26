@@ -236,7 +236,7 @@ ramp selected outputs back to `reset_voltage` and switch them off when the
 device supports it. Normal experiment contexts return to idle instead.
 `get_dc_voltage_states()` reads every active wired mux on one connection;
 `reset_dc_voltages()` brings muxes to their reset voltages with the outputs
-on, `bias_dc_voltages()` ramps calibrated muxes to their bias voltages,
+on, `bias_dc_voltages()` ramps calibrated muxes to their optimal voltages,
 `idle_dc_voltages()` ramps them back to idle, and
 `shutdown_dc_voltages()` switches them off when supported. Like box operations,
 these methods take an optional `muxes` selection (indices or labels; all active
@@ -246,7 +246,7 @@ Each bulk write and its resulting readback share one device connection.
 An empty selection or a declined confirmation returns `{}` without opening a
 device connection.
 
-To bias every active wired mux with a calibrated `bias_voltage` outside a
+To bias every active wired mux with a calibrated `optimal_voltage` outside a
 temporary context, use the bulk operation.
 
 ```python

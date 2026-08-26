@@ -259,20 +259,20 @@ class ControlParameterDefaults:
                 "pump_amplitude": self.pump_amplitude,
             }
         if "dc_voltage" in value:
-            if "bias_voltage" in value:
+            if "optimal_voltage" in value:
                 raise ValueError(
                     "JPA parameters cannot define both deprecated `dc_voltage` "
-                    "and `bias_voltage`."
+                    "and `optimal_voltage`."
                 )
             warnings.warn(
-                "JPA parameter `dc_voltage` is deprecated; use `bias_voltage` "
+                "JPA parameter `dc_voltage` is deprecated; use `optimal_voltage` "
                 "instead. Deprecated in v1.5.0.",
                 DeprecationWarning,
                 stacklevel=3,
             )
         raw_pump_frequency = value.get("pump_frequency")
         raw_pump_amplitude = value.get("pump_amplitude")
-        raw_bias_voltage = value.get("bias_voltage", value.get("dc_voltage"))
+        raw_optimal_voltage = value.get("optimal_voltage", value.get("dc_voltage"))
         raw_idle_voltage = value.get("idle_voltage")
         resolved: JPAParameters = {
             "pump_frequency": (
@@ -286,8 +286,8 @@ class ControlParameterDefaults:
                 else self.pump_amplitude
             ),
         }
-        if raw_bias_voltage is not None:
-            resolved["bias_voltage"] = float(raw_bias_voltage)
+        if raw_optimal_voltage is not None:
+            resolved["optimal_voltage"] = float(raw_optimal_voltage)
         if raw_idle_voltage is not None:
             resolved["idle_voltage"] = float(raw_idle_voltage)
         return resolved

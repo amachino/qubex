@@ -16,7 +16,7 @@ _ValueT = TypeVar("_ValueT")
 class JPAParameters(TypedDict):
     """Resolved JPA parameters for one mux."""
 
-    bias_voltage: NotRequired[float]
+    optimal_voltage: NotRequired[float]
     idle_voltage: NotRequired[float]
     pump_frequency: float
     pump_amplitude: float
@@ -139,26 +139,26 @@ class ControlParameters(MutableModel):
         """Return the materialized pump amplitude for a mux."""
         return self.jpa_params[mux]["pump_amplitude"]
 
-    def has_bias_voltage(self, mux: int) -> bool:
-        """Return whether a mux has a calibrated bias (operating) voltage."""
-        return "bias_voltage" in self.jpa_params.get(mux, {})
+    def has_optimal_voltage(self, mux: int) -> bool:
+        """Return whether a mux has a calibrated optimal operating voltage."""
+        return "optimal_voltage" in self.jpa_params.get(mux, {})
 
-    def get_bias_voltage(self, mux: int) -> float:
-        """Return the calibrated bias (operating) voltage for a mux."""
-        value = self.jpa_params.get(mux, {}).get("bias_voltage")
+    def get_optimal_voltage(self, mux: int) -> float:
+        """Return the calibrated optimal operating voltage for a mux."""
+        value = self.jpa_params.get(mux, {}).get("optimal_voltage")
         if value is None:
             raise ValueError(
-                f"Mux {mux} has no calibrated `bias_voltage` in `jpa_params.yaml`."
+                f"Mux {mux} has no calibrated `optimal_voltage` in `jpa_params.yaml`."
             )
         return value
 
     @deprecated(
-        "`get_dc_voltage()` is deprecated; use `get_bias_voltage()` instead. "
+        "`get_dc_voltage()` is deprecated; use `get_optimal_voltage()` instead. "
         "Deprecated in v1.5.0."
     )
     def get_dc_voltage(self, mux: int) -> float:
-        """Return the calibrated bias voltage through the deprecated API."""
-        return self.get_bias_voltage(mux)
+        """Return the optimal voltage through the deprecated API."""
+        return self.get_optimal_voltage(mux)
 
     def get_idle_voltage(self, mux: int) -> float | None:
         """Return the calibrated idle voltage for a mux, if any."""

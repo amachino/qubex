@@ -21,20 +21,20 @@ class _Mux:
 
 
 class _ControlParams:
-    def __init__(self, bias_voltages: dict[int, float] | None = None) -> None:
-        self.bias_voltages = (
-            bias_voltages if bias_voltages is not None else {6: 0.76, 7: 0.42}
+    def __init__(self, optimal_voltages: dict[int, float] | None = None) -> None:
+        self.optimal_voltages = (
+            optimal_voltages if optimal_voltages is not None else {6: 0.76, 7: 0.42}
         )
 
-    def has_bias_voltage(self, mux: int) -> bool:
-        return mux in self.bias_voltages
+    def has_optimal_voltage(self, mux: int) -> bool:
+        return mux in self.optimal_voltages
 
-    def get_bias_voltage(self, mux: int) -> float:
-        if mux not in self.bias_voltages:
+    def get_optimal_voltage(self, mux: int) -> float:
+        if mux not in self.optimal_voltages:
             raise ValueError(
-                f"Mux {mux} has no calibrated `bias_voltage` in `jpa_params.yaml`."
+                f"Mux {mux} has no calibrated `optimal_voltage` in `jpa_params.yaml`."
             )
-        return self.bias_voltages[mux]
+        return self.optimal_voltages[mux]
 
 
 class _ExperimentSystem:
@@ -512,14 +512,14 @@ def test_bias_confirmation_uses_bias_vocabulary(
 
 
 def test_bias_dc_voltages_skips_uncalibrated_muxes() -> None:
-    """Muxes without a calibrated dc_voltage should not be biased."""
+    """Muxes without a calibrated optimal voltage should not be biased."""
     dc_controller = _DCVoltageController()
     ctx = _ContextForTest(
         mux_labels=["MUX06"],
         dc_controller=dc_controller,
         mux_to_channel={6: 1, 7: 4},
     )
-    # mux 7 has no calibrated bias_voltage
+    # mux 7 has no calibrated optimal_voltage
     ctx.system_manager.experiment_system.control_params = _ControlParams({6: 0.76})
 
     states = ctx.bias_dc_voltages(confirm=False)
@@ -652,5 +652,5 @@ def test_bias_raises_for_an_explicitly_selected_uncalibrated_mux() -> None:
     )
     ctx.system_manager.experiment_system.control_params = _ControlParams({6: 0.76})
 
-    with pytest.raises(ValueError, match="no calibrated `bias_voltage`"):
+    with pytest.raises(ValueError, match="no calibrated `optimal_voltage`"):
         ctx.bias_dc_voltages(muxes=[6, 7], confirm=False)

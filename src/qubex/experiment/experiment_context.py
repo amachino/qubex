@@ -1355,11 +1355,11 @@ class ExperimentContext:
         requests: dict[int, tuple[float, DCVoltageProfile]] = {}
         plan: dict[int, float] = {}
         for mux_index in self._resolve_dc_target_muxes(muxes):
-            if muxes is None and not control_params.has_bias_voltage(mux_index):
+            if muxes is None and not control_params.has_optimal_voltage(mux_index):
                 continue
             profile = system_manager.resolve_dc_voltage_profile(mux_index)
             # Explicitly selected muxes must be calibrated: raise otherwise.
-            voltage = control_params.get_bias_voltage(mux_index)
+            voltage = control_params.get_optimal_voltage(mux_index)
             requests[profile.channel] = (voltage, profile)
             plan[mux_index] = voltage
         if not requests:

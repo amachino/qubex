@@ -181,7 +181,7 @@ data:
 | `pump_fsc.yaml` | mux | integer or `null` | Pump-line full-scale current setting for backends that support it. | `params.yaml:<chip_id>.pump_fsc` |
 | `capture_delay.yaml` | mux | backend-specific | Capture timing offset. QuEL-1 requires `meta.unit: ndelay`; QuEL-3 requires `meta.unit: ns`. | `params.yaml:<chip_id>.capture_delay` |
 | `capture_delay_word.yaml` | mux | `word` or `words` | QuEL-1 capture-delay word offset. This file is not supported for QuEL-3. | `params.yaml:<chip_id>.capture_delay_word` |
-| `jpa_params.yaml` | mux | internal units | JPA parameters. Each mux entry may contain `pump_frequency` in `GHz`, `pump_amplitude`, the operating-point `bias_voltage`, and an optional resting-point `idle_voltage`. Missing pump fields are filled from backend defaults; `bias_voltage` has no default — a mux without it is skipped by DC voltage application — and a missing `idle_voltage` falls back to the configured reset voltage. | `params.yaml:<chip_id>.jpa_params` |
+| `jpa_params.yaml` | mux | internal units | JPA parameters. Each mux entry may contain `pump_frequency` in `GHz`, `pump_amplitude`, the calibrated operating-point `optimal_voltage`, and an optional resting-point `idle_voltage`. Missing pump fields are filled from backend defaults; `optimal_voltage` has no default — a mux without it is skipped by DC voltage application — and a missing `idle_voltage` falls back to the configured reset voltage. | `params.yaml:<chip_id>.jpa_params` |
 
 QuEL-1 materializes defaults for VATT, FSC, capture delay, and JPA fields.
 QuEL-3 materializes `null` for unsupported VATT/FSC/capture-delay-word settings
@@ -217,11 +217,11 @@ data:
   0:
     pump_frequency: 6.000
     pump_amplitude: 0.10
-    bias_voltage: 0.27
+    optimal_voltage: 0.27
     idle_voltage: 0.05
 ```
 
-This file holds calibrated values only. `bias_voltage` has no default:
+This file holds calibrated values only. `optimal_voltage` has no default:
 `measurement.apply_dc_voltages()` skips muxes without one, so a system
 without this file performs no automatic bias application. Direct voltage
 contexts and the reset, idle, and shutdown operations remain available from
@@ -229,9 +229,9 @@ contexts and the reset, idle, and shutdown operations remain available from
 optional; without it a mux idles at the configured reset voltage. The control
 policy lives in `external_devices.yaml` (see the system configuration guide).
 
-`bias_voltage` is the canonical key. The former `dc_voltage` key remains a
+`optimal_voltage` is the canonical key. The former `dc_voltage` key remains a
 deprecated alias and emits `DeprecationWarning`. Rename existing configurations
-to `bias_voltage`.
+to `optimal_voltage`.
 
 ### Measurement defaults
 

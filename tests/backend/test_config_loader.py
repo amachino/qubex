@@ -121,7 +121,7 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
                 0: {
                     "pump_frequency": 12.3,
                     "pump_amplitude": 0.1,
-                    "bias_voltage": 0.2,
+                    "optimal_voltage": 0.2,
                     "idle_voltage": -0.05,
                 },
                 1: None,
@@ -558,19 +558,19 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     assert cp.jpa_params.get(0) == {
         "pump_frequency": 12.3,
         "pump_amplitude": 0.1,
-        "bias_voltage": 0.2,
+        "optimal_voltage": 0.2,
         "idle_voltage": -0.05,
     }
     assert cp.jpa_params.get(1) == {
         "pump_frequency": DEFAULT_PUMP_FREQUENCY_GHZ,
         "pump_amplitude": 0.0,
     }
-    assert cp.has_bias_voltage(0) is True
-    assert cp.has_bias_voltage(1) is False
+    assert cp.has_optimal_voltage(0) is True
+    assert cp.has_optimal_voltage(1) is False
     assert cp.get_idle_voltage(0) == pytest.approx(-0.05)
     assert cp.get_idle_voltage(1) is None
-    with pytest.raises(ValueError, match="no calibrated `bias_voltage`"):
-        cp.get_bias_voltage(1)
+    with pytest.raises(ValueError, match="no calibrated `optimal_voltage`"):
+        cp.get_optimal_voltage(1)
     assert math.isclose(cp.get_pump_frequency(0), 12.3, rel_tol=0, abs_tol=1e-12)
     assert math.isclose(
         cp.get_pump_frequency(1),
@@ -585,8 +585,10 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
     )
 
 
-def test_legacy_dc_voltage_name_warns_and_maps_to_bias_voltage(tmp_path: Path) -> None:
-    """Legacy dc_voltage should warn and remain available as bias_voltage."""
+def test_legacy_dc_voltage_name_warns_and_maps_to_optimal_voltage(
+    tmp_path: Path,
+) -> None:
+    """Legacy dc_voltage should warn and remain available as optimal_voltage."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     _write_yaml(
         params_dir / "jpa_params.yaml",
@@ -598,7 +600,7 @@ def test_legacy_dc_voltage_name_warns_and_maps_to_bias_voltage(tmp_path: Path) -
 
     with pytest.warns(
         DeprecationWarning,
-        match=r"`dc_voltage`.*`bias_voltage`",
+        match=r"`dc_voltage`.*`optimal_voltage`",
     ) as config_warnings:
         loader = ConfigLoader(
             system_id=chip_id,
@@ -608,10 +610,10 @@ def test_legacy_dc_voltage_name_warns_and_maps_to_bias_voltage(tmp_path: Path) -
     assert "v1.6.0" not in str(config_warnings[0].message)
 
     control_parameters = loader.get_experiment_system().control_params
-    assert control_parameters.get_bias_voltage(0) == pytest.approx(0.2)
+    assert control_parameters.get_optimal_voltage(0) == pytest.approx(0.2)
     with pytest.warns(
         DeprecationWarning,
-        match=r"get_dc_voltage.*get_bias_voltage",
+        match=r"get_dc_voltage.*get_optimal_voltage",
     ) as api_warnings:
         assert control_parameters.get_dc_voltage(0) == pytest.approx(0.2)
     assert "v1.6.0" not in str(api_warnings[0].message)
@@ -1464,7 +1466,7 @@ def test_load_resolves_quel3_control_parameters_with_quel3_defaults(
     assert control_parameters.get_pump_frequency(1) == pytest.approx(
         DEFAULT_QUEL3_PUMP_FREQUENCY_GHZ
     )
-    assert control_parameters.has_bias_voltage(1) is False
+    assert control_parameters.has_optimal_voltage(1) is False
 
 
 def test_load_preserves_quel3_capture_delay_ns_without_ndelay_side_effect(
