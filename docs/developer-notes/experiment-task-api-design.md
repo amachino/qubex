@@ -4,11 +4,12 @@
 
 - State: `PROPOSED`
 - Created: `2026-08-24`
-- Updated: `2026-08-24`
+- Updated: `2026-08-27`
 - Scope: task-based experiment execution below the `Experiment` facade
 - Discussion:
   - [Qubex issue #357](https://github.com/amachino/qubex/issues/357)
   - [QDash pull request #1363](https://github.com/oqtopus-team/qdash/pull/1363)
+  - [Runtime and backend boundary discussion](https://quantummiddleware.slack.com/archives/C070D6DDH6D/p1787803320352839)
 
 This document is a design proposal for team discussion. It does not introduce
 a public API or change the compatibility contract. If the proposal is
@@ -31,6 +32,13 @@ such as applying calibrated values to `CalibrationNote`, creating figures, and
 adapting a task-specific result to the current `Result` contract. External
 workflow systems can construct the same Task with explicit parameters and
 consume its result without mutating Qubex session state.
+
+The Task and runtime contracts should also support a client-side library that
+can be installed independently of the backend execution engine. A Task depends
+on an `ExperimentRuntime` capability interface, not on a concrete backend,
+hardware driver, or transport. A backend implementation or remote adapter
+provides those capabilities. Exact repository, package, and deployment
+boundaries remain open.
 
 ## Motivation
 
@@ -66,6 +74,12 @@ re-execution harder to reason about.
   coupling them to the complete `ExperimentContext`.
 - Support the temporary hardware-control operations required within experiment
   flows through narrowly scoped runtime capabilities.
+- Allow the Task and runtime contracts to be distributed independently of a
+  concrete backend execution engine.
+- Keep backend-specific operations available through explicit capabilities
+  without coupling portable Tasks to backend implementations.
+- Distinguish experiment-protocol Tasks from lower-level sweep-measurement
+  request and result schemas.
 
 ## Non-goals
 
@@ -74,6 +88,10 @@ re-execution harder to reason about.
   method.
 - Replace or break the current `Experiment` or `Result` public contracts.
 - Define the serialization format for tasks, parameters, or results.
+- Choose the final repository, distribution-package, transport, or process
+  boundary between a client library and backend engine.
+- Reduce every backend to one lowest-common-denominator capability set or hide
+  all meaningful backend differences from Task authors.
 - Implement the task layer in this documentation change.
 - Require one migration of all calibration, characterization, and benchmarking
   methods at once.
@@ -135,6 +153,72 @@ The runtime may therefore expose narrowly scoped measurement and temporary
 system-control capabilities. It must not expose the complete
 `ExperimentContext`, `CalibrationNote`, visualization, or persistence services.
 
+### Invert the dependency at the Task-runtime boundary
+
+The client-facing Task contract owns the `ExperimentRuntime` capability
+interface that Tasks consume. A Task must not import a concrete measurement
+implementation, hardware driver, backend service object, or transport client.
+A backend runtime or remote adapter provides the required capabilities.
+
+Conceptually, the dependency direction is:
+
+```text
+Experiment -> Task -> ExperimentRuntime interface <- runtime implementation
+```
+
+This boundary permits the client-facing library and backend execution engine to
+live in separate distributions or repositories. It does not require that they
+do so immediately, and it does not decide whether `Task.run()` executes in the
+client process against a remote runtime proxy or in the backend process against
+a direct runtime implementation. Both deployment models should preserve the
+same Task and capability contracts.
+
+If execution crosses a process or network boundary, the in-process
+`ExperimentRuntime` interface and the serialized transport contract are
+separate concerns. A client-side proxy may implement `ExperimentRuntime` while
+using a backend API internally. Tasks must remain unaware of that transport.
+
+### Make backend capabilities explicit
+
+Backend independence means that a Task does not know a backend's implementation
+details. It does not mean that the client must be unaware of every capability
+that a backend provides.
+
+Common experiment flows should depend on small, stable capability interfaces.
+Optional or backend-specific operations should use explicit extension
+capabilities. A specialized Task declares the capabilities it requires, and
+runtime compatibility must be checked before measurement starts. This avoids
+both a single oversized runtime interface and a lowest-common-denominator API.
+
+Operations that are intentionally backend-specific and cannot support a stable
+experiment-level contract may remain available through a clearly identified
+low-level escape hatch. Such operations must not become hidden dependencies of
+otherwise portable Tasks.
+
+### Keep Tasks above sweep-measurement schemas
+
+An experiment Task represents a physical experiment protocol. Its parameters
+are protocol-specific, such as Ramsey detuning, delay times, and whether an
+echo is used, or the amplitude range of a Rabi experiment. Its result is also
+protocol-specific, such as an estimated frequency or coherence time.
+
+[`SweepMeasurementConfig`](https://github.com/amachino/qubex/blob/develop/packages/qxschema/src/qxschema/sweep_measurement_config.py)
+is a lower-level measurement schema. It describes a parametric pulse sequence,
+frequencies, sweep axes, and data-acquisition conditions. Its corresponding
+result carries generic measurement data and metadata. The schema does not
+itself execute a measurement or define a physical experiment protocol.
+
+A single Task may issue one or more lower-level sweep measurements through its
+runtime:
+
+```text
+ExperimentTask
+  -> ExperimentRuntime measurement capability
+  -> SweepMeasurementConfig / SweepMeasurementResult
+  -> backend execution engine
+  -> control hardware
+```
+
 ## Proposed responsibility split
 
 ```text
@@ -158,8 +242,15 @@ Task
   - Does not own visualization or persistence policy
 
 ExperimentRuntime
+  - Is the client-facing capability interface consumed by Tasks
   - Provides only the measurement and temporary system-control capabilities
     required to run a Task
+  - Makes optional backend capabilities explicit and preflightable
+
+Runtime implementation
+  - Implements the capabilities for a concrete backend or remote adapter
+  - Performs or delegates measurement and temporary system control
+  - Keeps hardware drivers, transport, and backend internals outside Tasks
 ```
 
 There are two supported construction paths:
@@ -177,6 +268,8 @@ External workflow -> Task(explicit parameters) -> Task.run(runtime)
 ```
 
 Both paths must execute the same Task implementation after construction.
+The supplied runtime may be a direct backend implementation or a remote proxy;
+the Task must not depend on which deployment is used.
 
 ## Parameter lifecycle
 
@@ -354,9 +447,35 @@ execution with presentation and persistence policy.
 
 The proposal keeps these responsibilities in the Service or external caller.
 
+### Let Tasks import concrete backend implementations
+
+This makes backend-specific operations immediately available, but it couples
+Task definitions, tests, and distribution to one execution engine. It also
+makes a client-side installation or alternate backend require conditional
+imports throughout the Task library.
+
+The proposal instead makes required backend capabilities explicit through the
+`ExperimentRuntime` boundary. Concrete implementations remain behind that
+interface.
+
+### Hide all backend differences from Tasks
+
+This maximizes superficial portability, but it either limits every backend to
+the smallest shared feature set or pushes backend-specific behavior into hidden
+conditionals. Both outcomes make experiment requirements harder to inspect.
+
+The proposal standardizes common capabilities while allowing explicit optional
+capability interfaces and a separate low-level escape hatch for intentionally
+backend-specific work.
+
 ## Open questions
 
-- Where should the common Task, parameter, result, and runtime contracts live?
+- Which repository and distribution package should own the common Task,
+  parameter, result, and runtime contracts?
+- Should canonical Task execution occur in the client process against a remote
+  runtime proxy, in the backend process after serialization, or support both?
+- Which schemas define the transport boundary when client and backend run in
+  separate processes?
 - Should `ParametersT` use one structured model, explicit Task fields, or a
   combination of domain-specific submodels?
 - How should parameter source provenance be represented and inspected?
@@ -366,6 +485,11 @@ The proposal keeps these responsibilities in the Service or external caller.
   one canonical implementation?
 - Which temporary system-control capabilities belong in
   `ExperimentRuntime`, and what cleanup contract should each capability have?
+- Which capabilities are common, which are optional extensions, and how should
+  a Task declare and preflight its requirements?
+- Which operations should remain in a backend-specific low-level escape hatch?
+- How should `SweepMeasurementConfig` and related result schemas evolve as the
+  lower-level measurement boundary used by Tasks?
 - What API should validate and atomically apply accepted task results to
   `CalibrationNote`?
 - Which Task types and fields are stable public contracts for external systems,
@@ -384,6 +508,14 @@ This proposal is ready to move to `ACCEPTED` when the team agrees that:
   remain outside the Task;
 - `ExperimentRuntime` exposes restricted execution capabilities instead of the
   complete `ExperimentContext`;
+- Tasks depend on runtime capability interfaces rather than concrete backend,
+  transport, or hardware implementations;
+- backend-specific capabilities are explicit and can be validated before
+  measurement starts;
+- experiment-protocol Tasks remain distinct from lower-level
+  `SweepMeasurementConfig` request and result schemas;
+- the dependency boundary permits independent client and backend deployment
+  without requiring the package layout to be finalized in this proposal;
 - the same Task implementation serves interactive and external workflows; and
 - unresolved API details can be decided incrementally without weakening these
   boundaries.
@@ -393,11 +525,13 @@ This proposal is ready to move to `ACCEPTED` when the team agrees that:
 1. Select one reference experiment and define its exact parameter and result
    models.
 2. Define the minimum `ExperimentRuntime` capability protocols required by the
-   reference experiment.
+   reference experiment and map them to lower-level measurement schemas.
 3. Add contract tests for construction, pre-execution validation, state
    isolation, and cleanup on failure.
 4. Implement Service delegation while preserving the current facade and
    `Result` behavior.
-5. Validate the explicit construction path with an external workflow consumer.
+5. Validate the explicit construction path with an external workflow consumer,
+   including capability preflight and at least one client/backend deployment
+   boundary.
 6. Use the reference slice to refine the common contracts before migrating
    additional experiments.
