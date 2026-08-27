@@ -22,9 +22,9 @@ Introduce a common task-based execution layer below the human-facing
 
 An experiment Task contains the fully resolved parameters and
 experiment-specific execution flow. It exposes the effective parameters before
-execution and runs against an `ExperimentRuntime` that provides only the
-capabilities needed by that Task. It does not read or update `CalibrationNote`
-during execution.
+execution and runs asynchronously against an `ExperimentRuntime` that provides
+only the capabilities needed by that Task. It does not read or update
+`CalibrationNote` during execution.
 
 `Experiment` remains a concise entry point for interactive use. A Service
 constructs a Task from the current context, runs it, and owns optional policy
@@ -74,6 +74,8 @@ re-execution harder to reason about.
   coupling them to the complete `ExperimentContext`.
 - Support the temporary hardware-control operations required within experiment
   flows through narrowly scoped runtime capabilities.
+- Use one async-first Task execution path while keeping synchronous
+  compatibility adapters outside the Task layer.
 - Allow the Task and runtime contracts to be distributed independently of a
   concrete backend execution engine.
 - Keep backend-specific operations available through explicit capabilities
@@ -101,7 +103,7 @@ re-execution harder to reason about.
 ### Resolve before execution
 
 A Task must contain all values that affect its measurement conditions,
-sweeps, search initial values, and analysis behavior before `run()` starts.
+sweeps, search initial values, and analysis behavior before execution begins.
 Required values that remain unresolved must produce an error before hardware
 execution.
 
@@ -153,6 +155,23 @@ The runtime may therefore expose narrowly scoped measurement and temporary
 system-control capabilities. It must not expose the complete
 `ExperimentContext`, `CalibrationNote`, visualization, or persistence services.
 
+### Keep Task execution async-first
+
+The canonical Task API is asynchronous because measurement and temporary
+system-control operations are asynchronous. Calling `run(runtime)` returns an
+awaitable; `await task.run(runtime)` produces the ordinary task-specific
+`ResultT`. The result object itself is not an asynchronous result or job handle.
+
+If an existing `Experiment` or Service API must remain synchronous for backward
+compatibility, its adapter may bridge to the canonical asynchronous path. That
+bridge belongs outside the Task and must not create a second Task execution
+implementation.
+
+A backend that queues remote work may additionally need a submission API that
+returns a job handle for status, cancellation, and later result retrieval. That
+distributed job model is separate from the Task result contract and remains an
+open design question.
+
 ### Invert the dependency at the Task-runtime boundary
 
 The client-facing Task contract owns the `ExperimentRuntime` capability
@@ -168,10 +187,10 @@ Experiment -> Task -> ExperimentRuntime interface <- runtime implementation
 
 This boundary permits the client-facing library and backend execution engine to
 live in separate distributions or repositories. It does not require that they
-do so immediately, and it does not decide whether `Task.run()` executes in the
-client process against a remote runtime proxy or in the backend process against
-a direct runtime implementation. Both deployment models should preserve the
-same Task and capability contracts.
+do so immediately, and it does not decide whether `await Task.run()` executes
+in the client process against a remote runtime proxy or in the backend process
+against a direct runtime implementation. Both deployment models should
+preserve the same Task and capability contracts.
 
 If execution crosses a process or network boundary, the in-process
 `ExperimentRuntime` interface and the serialized transport contract are
@@ -258,12 +277,12 @@ There are two supported construction paths:
 ```text
 Interactive use
 
-Experiment -> Service -> Task.from_context(...) -> Task.run(runtime)
+Experiment -> Service -> Task.from_context(...) -> await Task.run(runtime)
                        -> Service-side adaptation and optional state update
 
 System-facing use
 
-External workflow -> Task(explicit parameters) -> Task.run(runtime)
+External workflow -> Task(explicit parameters) -> await Task.run(runtime)
                   -> workflow-owned validation and persistence
 ```
 
@@ -303,8 +322,8 @@ grouped models, explicit fields, or a combination is not decided here.
 ### Execution
 
 After construction, the Task's effective parameters are stable and available
-through `task.parameters`. `run(runtime)` uses only those parameters and the
-narrow capabilities supplied by the runtime.
+through `task.parameters`. `await task.run(runtime)` uses only those parameters
+and the narrow capabilities supplied by the runtime.
 
 The implementation must define cleanup semantics for temporary system changes.
 An execution failure must not leave an LO, NCO, or other temporary setting in
@@ -324,7 +343,7 @@ calibration state merely because the Task ran.
 ## Illustrative API shape
 
 The following examples explain the responsibility boundary. They do not freeze
-names, signatures, inheritance, synchronization style, or package layout.
+names, exact signatures, inheritance, or package layout.
 
 ```python
 class ExperimentTask[ParametersT, ResultT]:
@@ -332,7 +351,7 @@ class ExperimentTask[ParametersT, ResultT]:
     def parameters(self) -> ParametersT:
         ...
 
-    def run(self, runtime: ExperimentRuntime) -> ResultT:
+    async def run(self, runtime: ExperimentRuntime) -> ResultT:
         ...
 ```
 
@@ -353,7 +372,7 @@ task = QubitSpectroscopyTask.from_context(
 # Inspect every realized value before execution.
 task.parameters
 
-task_result = task.run(runtime)
+task_result = await task.run(runtime)
 ```
 
 An external workflow supplies the complete input set directly:
@@ -372,22 +391,26 @@ task = QubitSpectroscopyTask(
 )
 
 task.parameters
-task_result = task.run(runtime)
+task_result = await task.run(runtime)
 ```
 
 The Service preserves the existing interactive contract around the Task:
 
 ```python
 class CharacterizationService:
-    def qubit_spectroscopy(...) -> Result:
+    async def _execute_qubit_spectroscopy(...) -> Result:
         task = QubitSpectroscopyTask.from_context(self.ctx, ...)
-        task_result = task.run(self._runtime)
+        task_result = await task.run(self._runtime)
 
         figure = self._make_qubit_spectroscopy_figure(task_result)
         self._show_or_save_figure(figure, ...)
 
         return self._to_result(task_result, figure)
 ```
+
+An existing synchronous facade method can call this canonical async path
+through a compatibility adapter, while an async facade method can await it
+directly.
 
 ## Compatibility and migration
 
@@ -481,8 +504,8 @@ backend-specific work.
 - How should parameter source provenance be represented and inspected?
 - Which result data and execution metadata must be serializable for replay and
   audit?
-- Should Task execution be synchronous, asynchronous, or support both through
-  one canonical implementation?
+- If a remote backend queues execution, should `await task.run(runtime)` wait
+  for the final result, or should a separate submission API return a job handle?
 - Which temporary system-control capabilities belong in
   `ExperimentRuntime`, and what cleanup contract should each capability have?
 - Which capabilities are common, which are optional extensions, and how should
@@ -504,6 +527,8 @@ This proposal is ready to move to `ACCEPTED` when the team agrees that:
 - direct system-facing Task construction has no implicit calibration-state
   fallback;
 - Task execution cannot access or mutate `CalibrationNote`;
+- canonical Task execution is async-first, with any synchronous compatibility
+  adapter outside the Task layer;
 - visualization, persistence, result adaptation, and calibration-state updates
   remain outside the Task;
 - `ExperimentRuntime` exposes restricted execution capabilities instead of the
@@ -527,7 +552,7 @@ This proposal is ready to move to `ACCEPTED` when the team agrees that:
 2. Define the minimum `ExperimentRuntime` capability protocols required by the
    reference experiment and map them to lower-level measurement schemas.
 3. Add contract tests for construction, pre-execution validation, state
-   isolation, and cleanup on failure.
+   isolation, cancellation, and cleanup on failure.
 4. Implement Service delegation while preserving the current facade and
    `Result` behavior.
 5. Validate the explicit construction path with an external workflow consumer,
