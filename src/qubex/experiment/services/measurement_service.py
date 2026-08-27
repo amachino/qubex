@@ -899,7 +899,10 @@ class MeasurementService:
         """Prepare given states and measure readout results."""
         if mode is None:
             mode = "single"
-        if time_integration is None:
+        if (
+            time_integration is None
+            and deprecated_options.get("enable_dsp_sum") is None
+        ):
             time_integration = True
         if plot is None:
             plot = False

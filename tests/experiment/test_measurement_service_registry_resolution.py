@@ -458,3 +458,17 @@ def test_measure_state_can_disable_time_integration() -> None:
 
     measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
     assert measure_calls[0]["time_integration"] is False
+
+
+def test_measure_state_preserves_legacy_time_integration_opt_out() -> None:
+    """Given legacy integration disabled, measure_state should defer alias resolution."""
+    service, captured = _make_service()
+
+    service.measure_state(
+        states={"custom-target": "g"},
+        enable_dsp_sum=False,
+    )
+
+    measure_calls = cast(list[dict[str, object]], captured["measure_calls"])
+    assert measure_calls[0]["time_integration"] is None
+    assert measure_calls[0]["enable_dsp_sum"] is False
