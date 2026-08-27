@@ -63,6 +63,10 @@ class _MeasurementServiceStub:
         self.calls.append(("measure", {"sequence": sequence, **kwargs}))
         return "measure_result"
 
+    def measure_state(self, states: object, **kwargs: Any) -> str:
+        self.calls.append(("measure_state", {"states": states, **kwargs}))
+        return "measure_state_result"
+
     def capture_loopback(self, schedule: object, **kwargs: Any) -> str:
         self.calls.append(("capture_loopback", {"schedule": schedule, **kwargs}))
         return "capture_loopback_result"
@@ -628,6 +632,32 @@ def test_measure_delegates_time_integration_to_measurement_service() -> None:
             },
         )
     ]
+
+
+def test_measure_state_delegates_unset_time_integration_by_default() -> None:
+    """Given no integration option, measure_state should delegate it as unset."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+
+    result = exp.measure_state(states={"Q00": "g"})
+
+    assert result == "measure_state_result"
+    assert measurement_stub.calls[0][0] == "measure_state"
+    assert measurement_stub.calls[0][1]["time_integration"] is None
+
+
+def test_measure_state_delegates_disabled_time_integration() -> None:
+    """Given integration disabled, measure_state should delegate the waveform opt-out."""
+    exp = object.__new__(Experiment)
+    measurement_stub = _MeasurementServiceStub()
+    exp.__dict__["_measurement_service"] = measurement_stub
+
+    result = exp.measure_state(states={"Q00": "g"}, time_integration=False)
+
+    assert result == "measure_state_result"
+    assert measurement_stub.calls[0][0] == "measure_state"
+    assert measurement_stub.calls[0][1]["time_integration"] is False
 
 
 def test_build_measurement_schedule_delegates_to_measurement_service() -> None:

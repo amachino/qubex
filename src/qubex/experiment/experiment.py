@@ -2073,6 +2073,7 @@ class Experiment:
         mode: MeasurementMode | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -2094,6 +2095,9 @@ class Experiment:
             Number of shots.
         shot_interval : float, optional
             Interval between shots in ns.
+        time_integration : bool, optional
+            Whether to integrate captured waveforms over time. Defaults to True when
+            omitted or None.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional
@@ -2127,6 +2131,7 @@ class Experiment:
             mode=mode,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            time_integration=time_integration,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,

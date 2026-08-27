@@ -887,6 +887,7 @@ class MeasurementService:
         mode: MeasurementMode | None = None,
         n_shots: int | None = None,
         shot_interval: float | None = None,
+        time_integration: bool | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -898,6 +899,11 @@ class MeasurementService:
         """Prepare given states and measure readout results."""
         if mode is None:
             mode = "single"
+        if (
+            time_integration is None
+            and deprecated_options.get("enable_dsp_sum") is None
+        ):
+            time_integration = True
         if plot is None:
             plot = False
 
@@ -927,6 +933,7 @@ class MeasurementService:
             mode=mode,
             n_shots=n_shots,
             shot_interval=shot_interval,
+            time_integration=time_integration,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
