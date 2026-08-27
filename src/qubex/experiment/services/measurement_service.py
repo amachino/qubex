@@ -1580,11 +1580,16 @@ class MeasurementService:
             rabi_data = {}
             rabi_params = {}
             for target in targets:
+                target_frequencies = (
+                    {target: frequencies[target]}
+                    if frequencies is not None and target in frequencies
+                    else None
+                )
                 data = self.rabi_experiment(
                     amplitudes={target: amplitudes[target]},
                     time_range=time_range,
                     ramptime=ramptime,
-                    frequencies=frequencies,
+                    frequencies=target_frequencies,
                     is_damped=is_damped,
                     fit_threshold=fit_threshold,
                     n_shots=n_shots,
