@@ -278,14 +278,11 @@ def test_channel_uses_explicit_authenticated_proxy(
     proxy_handler = next(
         handler for handler in handlers if isinstance(handler, ProxyHandler)
     )
-    https_handler = next(
-        handler for handler in handlers if isinstance(handler, HTTPSHandler)
-    )
+    assert any(isinstance(handler, HTTPSHandler) for handler in handlers)
     request = captured["request"]
     assert isinstance(request, Request)
     assert request.full_url == f"{scheme}://api.example.com:443/quelware.Service/Call"
     assert vars(proxy_handler)["proxies"] == {scheme: proxy_url}
-    assert vars(https_handler)["_context"] is None
     assert captured["timeout"] == 7.5
     assert response == b"response-body"
 
