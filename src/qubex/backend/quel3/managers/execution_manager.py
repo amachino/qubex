@@ -543,8 +543,12 @@ class Quel3ExecutionManager:
             alias_to_directives[alias] = directives
 
         drivers = tuple(session_state.alias_to_driver.values())
+        # Initializing drivers in parallel is currently unreliable, so initialize
+        # them serially as a workaround.
+        for driver in drivers:
+            await driver.initialize()
+
         if parallel:
-            await asyncio.gather(*(driver.initialize() for driver in drivers))
             await asyncio.gather(
                 *(
                     session_state.alias_to_driver[alias].apply(
@@ -554,8 +558,6 @@ class Quel3ExecutionManager:
                 )
             )
         else:
-            for driver in drivers:
-                await driver.initialize()
             for alias in aliases:
                 await session_state.alias_to_driver[alias].apply(
                     alias_to_directives[alias]
