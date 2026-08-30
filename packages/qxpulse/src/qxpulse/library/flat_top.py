@@ -17,7 +17,7 @@ from .multi_derivative import MultiDerivative
 from .raised_cosine import RaisedCosine
 from .ramp_type import RampType
 from .sintegral import Sintegral
-from .squad import Squad
+from .squad import Squad, _resolve_window
 
 
 class FlatTop(Pulse):
@@ -35,6 +35,15 @@ class FlatTop(Pulse):
     beta : float, optional
         DRAG correction coefficient. Default is None.
 
+    Notes
+    -----
+    flat-top period = duration - 2 * tau
+
+    For `type="Squad"`, `window` accepts the string or dictionary settings
+    documented by `Squad`, for example
+    `window={"type": "tukey", "rise_end": 0.2, "fall_start": 0.7}`.
+    Window dictionaries are validated and copied on construction.
+
     Examples
     --------
     >>> pulse = FlatTop(
@@ -43,9 +52,6 @@ class FlatTop(Pulse):
     ...     tau=10,
     ... )
 
-    Notes
-    -----
-    flat-top period = duration - 2 * tau
     """
 
     def __init__(
@@ -69,6 +75,14 @@ class FlatTop(Pulse):
         shape_kwargs = {
             key: value for key, value in kwargs.items() if key not in pulse_kwargs
         }
+        window = shape_kwargs.get("window")
+        if type == "Squad" and isinstance(window, dict):
+            _resolve_window(
+                window,
+                shape_kwargs.get("beta_mode", 1.0 / 3.0),
+                shape_kwargs.get("beta_sum", 5.0),
+            )
+            shape_kwargs["window"] = window.copy()
         super().__init__(
             duration=duration,
             **pulse_kwargs,
