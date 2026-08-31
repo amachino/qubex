@@ -392,12 +392,30 @@ def test_budget_validation() -> None:
     assert budget.requested == 7
 
 
+class RidgeCounts(SyntheticCounts):
+    """Synthetic narrow response ridge, without a hardware interpretation."""
+
+    center_frequency = 4.61
+    confirmation_visibility: float | None = None
+
+    def acquire(self, gates: Any, *args: Any, **kwargs: Any) -> Any:
+        """Apply bounded depolarization about a known sloping carrier ridge."""
+        kind = "bswap" if gates[0] == "BSWAP" else "sqrt_bswap"
+        recipe = kwargs["recipes"][kind]
+        center = self.center_frequency - 0.2 * (recipe["amplitude"] - 0.9)
+        offset = (recipe["frequency_ghz"] - center) / 0.00045
+        self.maximum_visibility = 0.98 * np.exp(-0.5 * offset**2)
+        if self.confirmation_visibility is not None and "candidate_" in args[1]:
+            self.maximum_visibility = self.confirmation_visibility
+        return super().acquire(gates, *args, **kwargs)
+
+
 @pytest.mark.parametrize("kind", ["bswap", "sqrt_bswap"])
 def test_local_recenter_executes_fixed_duration_coherence_aware_map(
     tmp_path: Path, kind: str
 ) -> None:
     """Local recenter executes fixed duration coherence aware map."""
-    port = SyntheticCounts(phi=0.0)
+    port = RidgeCounts(phi=0.0)
     base = deepcopy(port.recipes[kind])
     result, summary = recenter_amplitude_frequency(
         port, kind, base, tmp_path, shots=1024
@@ -407,11 +425,186 @@ def test_local_recenter_executes_fixed_duration_coherence_aware_map(
     assert result["amplitude"] == pytest.approx(0.9, abs=0.001)
     assert abs(result["frequency_ghz"] - 4.61) < 0.0001
     assert summary["fit"]["reduced_chi2"] < 5
-    assert summary["population"]["minimum_population_agreement"] > 0.99
+    assert summary["fit"]["qualified_ridge"]
+    assert summary["fit"]["gp_allowed"]
+    assert summary["confirmation"]["passed"]
+    assert summary["population"]["minimum_population_agreement"] > 0.97
     assert {r["recipes"][kind]["duration_ns"] for r in port.calls} == {
         base["duration_ns"]
     }
-    assert len(port.calls) == (36 if kind == "bswap" else 164)
+    assert len(port.calls) == (50 if kind == "bswap" else 234)
+    assert summary["plan"]["initial_points"] == 21
+    assert summary["plan"]["amplitude_step"] == 0.0005
+    assert summary["budget"]["requested_shots"] <= summary["plan"]["maximum_shots"]
+    assert base == port.recipes[kind]
+    for call in port.calls:
+        observed = call["recipes"][kind]
+        for key in (
+            "duration_ns",
+            "ramp_ns",
+            "design_delta_scale",
+            "cd_strength",
+            "window",
+            "cancel_amplitude_ratio",
+            "cancel_phase_rad",
+            "gate_start_ns",
+        ):
+            assert observed[key] == base[key]
+    assert summary["plan"]["fixed_rabi_scale"] == port.rabi_scale
+
+
+def test_recenter_root_plateau_retains_seed_without_gp(tmp_path: Path) -> None:
+    """A root plateau retains its independent seed without qualifying a ridge."""
+    port = SyntheticCounts(phi=0.0)
+    base = deepcopy(port.recipes["sqrt_bswap"])
+    result, summary = recenter_amplitude_frequency(
+        port, "sqrt_bswap", base, tmp_path, shots=1024
+    )
+    assert result["frequency_ghz"] == base["frequency_ghz"]
+    assert result["amplitude"] == base["amplitude"]
+    assert summary["fit"]["plateau"]["accepted"]
+    assert not summary["fit"]["qualified_ridge"]
+    assert not summary["fit"]["gp_allowed"]
+    assert summary["confirmation"]["passed"]
+    assert len(port.calls) == 234
+
+
+def test_recenter_rejects_full_flat_response_with_saved_evidence(
+    tmp_path: Path,
+) -> None:
+    """A full-gate flat response cannot bypass the ridge qualification."""
+    port = SyntheticCounts(phi=0.0)
+    with pytest.raises(QualificationError, match="response ridge"):
+        recenter_amplitude_frequency(
+            port,
+            "bswap",
+            port.recipes["bswap"],
+            tmp_path,
+            shots=1024,
+            max_extension_rounds=0,
+        )
+    evidence = json.loads((tmp_path / "local_fit.json").read_text())
+    assert not evidence["qualified_ridge"]
+    assert not evidence["plateau"]["accepted"]
+    assert len(port.calls) == 42
+    assert not (tmp_path / "recentered_recipe.json").exists()
+
+
+def test_recenter_shot_budget_remains_hard(tmp_path: Path) -> None:
+    """Recenter cannot reinterpret a shot-budget failure as a scientific fallback."""
+    port = RidgeCounts(phi=0.0)
+    with pytest.raises(QualificationError, match="budget exhausted"):
+        recenter_amplitude_frequency(
+            port,
+            "bswap",
+            port.recipes["bswap"],
+            tmp_path,
+            shots=256,
+            budget=ShotBudget(256),
+        )
+    assert len(port.calls) == 1
+    assert not (tmp_path / "recentered_recipe.json").exists()
+
+
+def test_recenter_extends_boundary_rows_within_fixed_bounds(tmp_path: Path) -> None:
+    """Missing peak coverage gets bounded added frequencies, not a fake peak."""
+    port = RidgeCounts(phi=0.0)
+    port.center_frequency = 4.6108
+    result, summary = recenter_amplitude_frequency(
+        port, "bswap", port.recipes["bswap"], tmp_path, shots=2048
+    )
+    assert summary["fit"]["qualified_ridge"]
+    assert summary["fit"]["extensions"]
+    assert 21 < summary["fit"]["observed_points"] <= 84
+    observed = json.loads((tmp_path / "local_observations.json").read_text())
+    points = {(row["amplitude"], row["frequency_ghz"]) for row in observed}
+    assert len(points) == len(observed)
+    assert all(4.608 <= frequency <= 4.612 for _, frequency in points)
+    assert (result["amplitude"], result["frequency_ghz"]) in points
+    assert {call["recipes"]["bswap"]["ramp_ns"] for call in port.calls} == {16}
+
+
+def test_recenter_point_cap_rejects_without_promotion(tmp_path: Path) -> None:
+    """Exhausted frequency coverage is saved and cannot exceed the point cap."""
+    port = RidgeCounts(phi=0.0)
+    port.center_frequency = 4.6115
+    with pytest.raises(QualificationError, match="response ridge"):
+        recenter_amplitude_frequency(
+            port,
+            "bswap",
+            port.recipes["bswap"],
+            tmp_path,
+            shots=1024,
+            max_scout_points=24,
+        )
+    evidence = json.loads((tmp_path / "local_fit.json").read_text())
+    assert evidence["observed_points"] == 24
+    assert not evidence["qualified_ridge"]
+    assert any(row["limited_by_point_cap"] for row in evidence["extensions"])
+    assert len(port.calls) == 48
+    assert not (tmp_path / "recentered_recipe.json").exists()
+
+
+def test_recenter_rejects_changed_conversion_scale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A changed measured K terminates before another fixed-family request."""
+    port = RidgeCounts(phi=0.0)
+    acquire = port.acquire
+
+    def change_scale(*args: Any, **kwargs: Any) -> Any:
+        result = acquire(*args, **kwargs)
+        port.rabi_scale = 0.7
+        return result
+
+    monkeypatch.setattr(port, "acquire", change_scale)
+    with pytest.raises(ValueError, match="Rabi scale changed"):
+        recenter_amplitude_frequency(
+            port, "bswap", port.recipes["bswap"], tmp_path, shots=1024
+        )
+    assert len(port.calls) == 1
+    assert not (tmp_path / "recentered_recipe.json").exists()
+
+
+@pytest.mark.parametrize("visibility", [0.2, 0.85])
+def test_recenter_rejects_fresh_score_failure(
+    tmp_path: Path, visibility: float
+) -> None:
+    """Low absolute score or a resolved fresh degradation rejects the candidate."""
+    port = RidgeCounts(phi=0.0)
+    port.confirmation_visibility = visibility
+    with pytest.raises(QualificationError, match="score confirmation failed"):
+        recenter_amplitude_frequency(
+            port, "bswap", port.recipes["bswap"], tmp_path, shots=2048
+        )
+    confirmation = json.loads((tmp_path / "confirmation.json").read_text())
+    assert not confirmation["passed"]
+    assert len(port.calls) == 46
+    assert not (tmp_path / "recentered_recipe.json").exists()
+
+
+@pytest.mark.parametrize(
+    "controls",
+    [
+        {"frequency_points": 6},
+        {"frequency_points": 8},
+        {"max_scout_points": 20},
+        {"amplitude_step": float("nan")},
+        {"max_extension_rounds": -1},
+        {"confirmation_shots": 0},
+        {"minimum_score_lower_bound": float("nan")},
+        {"frequency_search_half_width_mhz": 0.1},
+    ],
+)
+def test_recenter_invalid_controls_never_acquire(tmp_path: Path, controls: Any) -> None:
+    """Malformed production controls fail before any count request."""
+    port = RidgeCounts(phi=0.0)
+    with pytest.raises(ValueError, match=r"integer|bounds|finite"):
+        recenter_amplitude_frequency(
+            port, "bswap", port.recipes["bswap"], tmp_path, **controls
+        )
+    assert not port.calls
 
 
 def test_selected_on_shape_requalifies_exact_waveform_sizzle_null(

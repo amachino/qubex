@@ -22,7 +22,13 @@ from typing import Any, NoReturn
 import numpy as np
 from scipy.optimize import minimize
 
-from .local_fit import fit_local_map
+from .local_optimization import (
+    estimate_response_ridge,
+    plan_frequency_extensions,
+    propose_gp_point,
+    ridge_scout_points,
+    select_conservative_plateau,
+)
 from .measurements import save_json, zero_phase_recipe
 from .pulses import ideal_circuit_unitary, make_squad_pulse, measured_phase_vectors
 from .tomography import (
@@ -390,6 +396,58 @@ def _population_check(
     return result
 
 
+def _recenter_score(
+    measurements: Any,
+    kind: str,
+    recipe: Mapping[str, Any],
+    directory: Path,
+    label: str,
+    *,
+    shots: int,
+    budget: ShotBudget,
+) -> dict[str, Any]:
+    bases = ("ZZ",) if kind == "bswap" else SQRT_BASES
+    selected = _selected(measurements, kind, recipe, uncorrected=True)
+    rabi_scale = measurements.rabi_scale
+    scores, variances, rows = [], [], []
+    for direction, prepared in enumerate((("0", "0"), ("1", "1"))):
+        counts = []
+        for basis in bases:
+            row = _acquire(
+                measurements,
+                [_gate(kind)],
+                directory,
+                f"{label}_{direction}_{basis}",
+                prepared=prepared,
+                basis=basis,
+                recipes=selected,
+                shots=shots,
+                budget=budget,
+            )
+            if measurements.rabi_scale != rabi_scale:
+                raise ValueError(
+                    "Measured Rabi scale changed during fixed-family recenter"
+                )
+            counts.append(row["counts"])
+            rows.append(row)
+        if kind == "bswap":
+            score = counts[0][3 if direction == 0 else 0] / shots
+            variance = max(score * (1 - score) / shots, 1 / (4 * shots**2))
+        else:
+            score, variance = sqrt_score(counts)
+        scores.append(float(score))
+        variances.append(float(variance))
+    return {
+        "amplitude": float(recipe["amplitude"]),
+        "frequency_ghz": float(recipe["frequency_ghz"]),
+        "score": float(np.mean(scores)),
+        "variance": float(np.sum(variances) / 4),
+        "direction_scores": scores,
+        "direction_variances": variances,
+        "measurements": rows,
+    }
+
+
 def recenter_amplitude_frequency(
     measurements: Any,
     kind: str,
@@ -397,14 +455,21 @@ def recenter_amplitude_frequency(
     directory: str | Path,
     *,
     shots: int = 256,
-    amplitude_span: float = 0.012,
+    amplitude_step: float = 0.0005,
     frequency_span_mhz: float = 0.6,
     max_amplitude: float = 0.99,
-    grid_points: int = 4,
+    frequency_points: int = 7,
+    frequency_search_half_width_mhz: float = 2.0,
+    max_extension_rounds: int = 2,
+    max_scout_points: int = 84,
+    confirmation_shots: int | None = None,
+    minimum_score_lower_bound: float = 0.65,
+    maximum_confirmed_degradation: float = 0.02,
+    maximum_population_error: float = 0.30,
     budget: ShotBudget | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
-    Fit a bounded local map at fixed complete duration and ramp.
+    Recenter a narrow response ridge at fixed complete duration and ramp.
 
     Parameters
     ----------
@@ -418,14 +483,28 @@ def recenter_amplitude_frequency(
         Output directory for raw-count references, fit, and confirmation.
     shots : int, optional
         Shots per setting, default 256.
-    amplitude_span : float, optional
-        Symmetric command-amplitude span, default 0.012.
+    amplitude_step : float, optional
+        Separation of three command-amplitude rows, default 0.0005.
     frequency_span_mhz : float, optional
         Symmetric carrier span in MHz, default 0.6.
     max_amplitude : float, optional
         Maximum main command amplitude, default 0.99.
-    grid_points : int, optional
-        At least four points on each axis.
+    frequency_points : int, optional
+        Odd number of frequencies per row, at least seven, default seven.
+    frequency_search_half_width_mhz : float, optional
+        Hard carrier bounds about the supplied seed, default 2 MHz.
+    max_extension_rounds, max_scout_points : int, optional
+        Hard extension-round and total scout-point caps, default two and 84.
+    confirmation_shots : int or None, optional
+        Fresh shots per setting for both candidate and seed, default 4*shots.
+    minimum_score_lower_bound : float, optional
+        Minimum raw directional confirmation lower bound and root-plateau
+        simultaneous lower bound, default 0.65. Not a gate-fidelity threshold.
+    maximum_confirmed_degradation : float, optional
+        Reject when the candidate-minus-seed upper 95% bound is below minus
+        this margin, default 0.02. This is not a proof of noninferiority.
+    maximum_population_error : float, optional
+        Maximum four-state distribution error on fresh shots, default 0.30.
     budget : ShotBudget or None, optional
         Shared requested-shot budget.
 
@@ -437,105 +516,264 @@ def recenter_amplitude_frequency(
     Raises
     ------
     QualificationError
-        A local quadratic is unsupported by its shot residuals.
+        The bounded ridge, root plateau, confirmation, or shot budget fails.
 
     Notes
     -----
-    Performs acquisitions and writes files. Root scores include even
-    coherence; full scores use both transfers. Unresolved map modulation
-    retains the seed instead of choosing an arbitrary noise optimum.
+    Acquires a three-row scout, extends only missing frequency coverage, and
+    ranks measured points using a GP only after ridge qualification. The
+    ridge and five-point local interpolation retain reduced-chi-square <=5
+    gates. A high unresolved root-coherence plateau instead retains the
+    independent seed, without qualifying a ridge or allowing a GP. Fresh
+    candidate/seed and population checks never refit the selection. Duration,
+    ramp, design scale, CD, window, cancellation controls and measured K stay
+    fixed; only command amplitude and physical carrier change. Carrier-adaptive
+    pulse construction is unchanged. Later phase, ZZ and held-out benchmark
+    gates remain necessary. No score here is a gate-fidelity estimate.
     """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    if grid_points < 4 or amplitude_span <= 0 or frequency_span_mhz <= 0:
-        raise ValueError("Need >=4 points and positive amp/frequency spans")
+    _gate(kind)
+    recipe = deepcopy(recipe)
+    shots = ShotBudget(shots).maximum
+    confirmation_shots = ShotBudget(
+        4 * shots if confirmation_shots is None else confirmation_shots
+    ).maximum
+    for value, name, lower in (
+        (frequency_points, "frequency_points", 7),
+        (max_extension_rounds, "max_extension_rounds", 0),
+        (max_scout_points, "max_scout_points", 3 * frequency_points),
+    ):
+        if isinstance(value, bool) or int(value) != value or value < lower:
+            raise ValueError(f"{name} must be an integer >= {lower}")
+    controls = np.asarray(
+        [
+            frequency_search_half_width_mhz,
+            minimum_score_lower_bound,
+            maximum_confirmed_degradation,
+            maximum_population_error,
+        ],
+        dtype=float,
+    )
+    if (
+        not np.isfinite(controls).all()
+        or frequency_points % 2 != 1
+        or frequency_search_half_width_mhz < frequency_span_mhz
+        or not 0 < minimum_score_lower_bound <= 1
+        or not 0 <= maximum_confirmed_degradation <= 1
+        or not 0 <= maximum_population_error <= 1
+    ):
+        raise ValueError("Invalid recenter bounds or confirmation thresholds")
     bases = ("ZZ",) if kind == "bswap" else SQRT_BASES
-    budget = budget or ShotBudget((2 * grid_points**2 * len(bases) + 4) * shots)
-    aa = np.linspace(
-        max(0.01, recipe["amplitude"] - amplitude_span),
-        min(max_amplitude, recipe["amplitude"] + amplitude_span),
-        grid_points,
+    maximum_shots = (
+        2 * max_scout_points * len(bases) * shots
+        + (4 * len(bases) + 4) * confirmation_shots
     )
-    ff = (
-        recipe["frequency_ghz"]
-        + np.linspace(-frequency_span_mhz, frequency_span_mhz, grid_points) / 1000
+    budget = budget or ShotBudget(maximum_shots)
+    f0 = float(recipe["frequency_ghz"])
+    frequency_bounds = (
+        f0 - frequency_search_half_width_mhz / 1000,
+        f0 + frequency_search_half_width_mhz / 1000,
     )
-    score = np.full((2, grid_points, grid_points), np.nan)
-    variance = np.full_like(score, np.nan)
-    requests = [
-        (d, a, f)
-        for d in range(2)
-        for a in range(grid_points)
-        for f in range(grid_points)
-    ]
-    for index in np.random.default_rng(891).permutation(len(requests)):
-        d, a, f = requests[index]
-        candidate = {
-            **deepcopy(recipe),
-            "amplitude": float(aa[a]),
-            "frequency_ghz": float(ff[f]),
-        }
-        selected = _selected(measurements, kind, candidate, uncorrected=True)
-        counts = []
-        for basis in bases:
-            row = _acquire(
-                measurements,
-                [_gate(kind)],
-                directory,
-                f"map_{d}_{a}_{f}_{basis}",
-                prepared=(("0", "0"), ("1", "1"))[d],
-                basis=basis,
-                recipes=selected,
-                budget=budget,
-                shots=shots,
+    scout = ridge_scout_points(
+        recipe["amplitude"],
+        f0,
+        amplitude_step=amplitude_step,
+        frequency_half_width_mhz=frequency_span_mhz,
+        frequency_points=frequency_points,
+        amplitude_bounds=(0.01, max_amplitude),
+        frequency_bounds_ghz=frequency_bounds,
+    )
+    fixed_family = {
+        key: deepcopy(value)
+        for key, value in recipe.items()
+        if key not in ("amplitude", "frequency_ghz", "phase_calibration")
+    }
+    plan = {
+        "scout": scout,
+        "initial_points": len(scout["points"]),
+        "amplitude_step": amplitude_step,
+        "max_scout_points": max_scout_points,
+        "max_extension_rounds": max_extension_rounds,
+        "frequency_bounds_ghz": frequency_bounds,
+        "shots": shots,
+        "confirmation_shots": confirmation_shots,
+        "maximum_shots": maximum_shots,
+        "fixed_family": fixed_family,
+        "fixed_rabi_scale": measurements.rabi_scale,
+        "fixed_family_fingerprint": _hash_recipe(fixed_family),
+        "minimum_score_lower_bound": minimum_score_lower_bound,
+        "maximum_confirmed_degradation": maximum_confirmed_degradation,
+        "maximum_population_error": maximum_population_error,
+        "gp_acquisition_points": 0,
+    }
+    save_json(directory / "recenter_plan.json", plan)
+
+    def require_fixed_scale() -> None:
+        if measurements.rabi_scale != plan["fixed_rabi_scale"]:
+            raise ValueError("Measured Rabi scale changed during fixed-family recenter")
+
+    observations: list[dict[str, Any]] = []
+    extensions = []
+    points = scout["points"]
+    fit: dict[str, Any] = {}
+    for round_index in range(max_extension_rounds + 1):
+        for index in np.random.default_rng(891 + round_index).permutation(len(points)):
+            require_fixed_scale()
+            amplitude, frequency = points[index]
+            candidate = {
+                **deepcopy(recipe),
+                "amplitude": amplitude,
+                "frequency_ghz": frequency,
+            }
+            observations.append(
+                _recenter_score(
+                    measurements,
+                    kind,
+                    candidate,
+                    directory,
+                    f"map_{len(observations):03d}",
+                    shots=shots,
+                    budget=budget,
+                )
             )
-            counts.append(row["counts"])
-        if kind == "bswap":
-            p = counts[0][3 if d == 0 else 0] / shots
-            score[d, a, f], variance[d, a, f] = (
-                p,
-                max(p * (1 - p) / shots, 1 / (4 * shots**2)),
+            save_json(directory / "local_observations.json", observations)
+            np.savez_compressed(
+                directory / "local_map_partial.npz",
+                amplitudes=[r["amplitude"] for r in observations],
+                frequencies_ghz=[r["frequency_ghz"] for r in observations],
+                scores=[r["direction_scores"] for r in observations],
+                variances=[r["direction_variances"] for r in observations],
             )
-        else:
-            score[d, a, f], variance[d, a, f] = sqrt_score(counts)
-        np.savez_compressed(
-            directory / "local_map_partial.npz",
-            amplitudes=aa,
-            frequencies_ghz=ff,
-            scores=score,
-            variances=variance,
+        values = tuple(
+            np.asarray([row[key] for row in observations])
+            for key in (
+                "amplitude",
+                "frequency_ghz",
+                "score",
+                "variance",
+            )
         )
-    try:
-        fit = fit_local_map(aa, ff, score, shots, score_variance=variance)
-    except ValueError as error:
-        raise QualificationError(
-            f"Local amplitude/frequency fit failed: {error}"
-        ) from error
-    save_json(directory / "local_fit.json", fit)
-    if fit["reduced_chi2"] > 5 or not np.isfinite(fit["ranking_score"]):
-        _reject("Local quadratic map is not supported by its shot residuals")
-    resolved = np.ptp(fit["prediction"]) > 2 * np.sqrt(np.median(variance))
+        ridge = estimate_response_ridge(
+            *values,
+            reference_amplitude=recipe["amplitude"],
+            frequency_bounds_ghz=frequency_bounds,
+            maximum_reduced_chi2=5.0,
+        )
+        plateau = select_conservative_plateau(
+            *values,
+            gate_kind=kind,
+            seed_amplitude=recipe["amplitude"],
+            seed_frequency_ghz=f0,
+            minimum_lower_confidence=minimum_score_lower_bound,
+            frequency_neighborhood_mhz=frequency_span_mhz,
+        )
+        fit = {
+            "ridge": ridge,
+            "plateau": plateau,
+            "qualified_ridge": ridge["qualified"],
+            "gp_allowed": ridge["qualified"],
+            "extensions": extensions,
+            "observed_points": len(observations),
+            "reduced_chi2": ridge.get("reduced_chi2"),
+            "claim": "raw response selection, not Hamiltonian resonance or gate fidelity",
+        }
+        save_json(directory / "local_fit.json", fit)
+        if ridge["qualified"] or plateau["accepted"]:
+            break
+        extension = plan_frequency_extensions(
+            *values,
+            ridge=ridge,
+            frequency_bounds_ghz=frequency_bounds,
+            round_index=round_index,
+            max_rounds=max_extension_rounds,
+            frequency_points=frequency_points,
+            frequency_half_width_mhz=frequency_span_mhz,
+        )
+        remaining = max_scout_points - len(observations)
+        points = extension["points"][:remaining]
+        extension["acquired_point_plan"] = points
+        extension["limited_by_point_cap"] = len(points) < len(extension["points"])
+        extensions.append(extension)
+        save_json(directory / "local_fit.json", fit)
+        if not points:
+            _reject(
+                "No qualified response ridge or conservative root plateau within the declared budget"
+            )
     record = deepcopy(recipe)
-    if resolved:
-        record.update(amplitude=fit["amplitude"], frequency_ghz=fit["frequency_ghz"])
-    fit["selection"] = (
-        "quadratic lower-bound maximum"
-        if resolved
-        else "retain seed: local modulation unresolved"
-    )
+    if fit["qualified_ridge"]:
+        ranking = propose_gp_point(
+            *values,
+            ridge=fit["ridge"],
+            amplitude_bounds=(float(values[0].min()), float(values[0].max())),
+            frequency_bounds_ghz=frequency_bounds,
+            frequency_half_width_mhz=frequency_span_mhz,
+            amplitude_scale=amplitude_step,
+            candidates=np.column_stack(values[:2]),
+            allow_repeats=True,
+        )
+        selected = ranking["best_observed"]
+        if not np.isfinite(selected["ranking_score"]):
+            _reject("Nonfinite response-ridge candidate ranking")
+        record.update(
+            amplitude=selected["amplitude"], frequency_ghz=selected["frequency_ghz"]
+        )
+        fit.update(selection="measured GP lower-bound incumbent", ranking=ranking)
+    else:
+        fit["selection"] = "retain independent seed: conservative root plateau, no GP"
     save_json(directory / "local_fit.json", fit)
+    checks = {}
+    for name, candidate in (("seed", recipe), ("candidate", record)):
+        require_fixed_scale()
+        checks[name] = _recenter_score(
+            measurements,
+            kind,
+            candidate,
+            directory / "confirmation",
+            name,
+            shots=confirmation_shots,
+            budget=budget,
+        )
+    candidate_check, seed_check = checks["candidate"], checks["seed"]
+    lower = np.asarray(candidate_check["direction_scores"]) - 1.96 * np.sqrt(
+        candidate_check["direction_variances"]
+    )
+    difference_upper = float(
+        candidate_check["score"]
+        - seed_check["score"]
+        + 1.96 * np.sqrt(candidate_check["variance"] + seed_check["variance"])
+    )
+    confirmation = {
+        **checks,
+        "minimum_direction_lower_bound": float(lower.min()),
+        "candidate_minus_seed_upper95": difference_upper,
+        "passed": bool(
+            lower.min() >= minimum_score_lower_bound
+            and difference_upper >= -maximum_confirmed_degradation
+        ),
+        "claim": "fresh raw-score checks; no noninferiority or gate-fidelity claim",
+    }
+    save_json(directory / "confirmation.json", confirmation)
+    if not confirmation["passed"]:
+        _reject("Independent recenter score confirmation failed")
+    require_fixed_scale()
     population = _population_check(
         measurements,
         kind,
         record,
         directory / "confirmation",
-        shots=shots,
+        shots=confirmation_shots,
         budget=budget,
     )
+    if population["minimum_population_agreement"] < 1 - maximum_population_error:
+        _reject("Independent recenter population check failed")
+    require_fixed_scale()
     record["local_refinement_directory"] = str(directory)
     save_json(directory / "recentered_recipe.json", record)
     return record, {
         "fit": fit,
+        "plan": plan,
+        "confirmation": confirmation,
         "population": population,
         "duration_fixed_ns": recipe["duration_ns"],
         "budget": budget.report(),
