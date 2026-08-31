@@ -33,6 +33,37 @@ imports, the upgrade is usually straightforward.
 - Replace simulator `Control` interpolation with explicitly sampled waveforms
 - Remove hardcoded `2 ns` assumptions from sweeps, plots, and timing utilities
 
+## SQUAD window arguments and units
+
+Standalone `beta_mode` and `beta_sum` arguments have been removed from
+`Squad`, `Squad.func`, and the SQUAD paths of `FlatTop` and `FlatTop.func`.
+They now raise `TypeError`, including explicitly supplied former defaults.
+There is no deprecation period. Replace them with a window dictionary:
+
+```python
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12, factor=0,
+    window={"type": "beta", "mode": 0.4, "sum": 6.0},
+)
+```
+
+The string `window="beta"` still uses mode 1/3 and sum 5.
+Tukey settings continue to use the same dictionary interface.
+
+Amplitude is an envelope level, not the carrier frequency. Amplitude and
+design delta (transition minus drive) must use the same units. Delta does not
+set the carrier. For time in ns, the analytic CD coefficient magnitude is 1
+with angular-rate inputs (rad/ns), `1/(2*pi)` with cyclic-rate inputs (GHz),
+or `1/(2*pi*r)` with command amplitudes and Rabi conversion r in GHz/command.
+In the last case, pass `delta=(f_transition-f_drive)/r`.
+Direct `Squad.factor` has the opposite sign to `FlatTop.correction_factor`
+for the same CD quadrature. Pulse arithmetic and sign conventions are unchanged.
+
+Recompute delta per drive frequency for carrier-adaptive SQUAD design.
+Holding delta fixed instead deliberately scans one waveform's carrier;
+regenerating the waveform changes the interpretation of a chevron.
+See the API docstrings for the complete conventions.
+
 ## Installation and environment changes
 
 The `v1.5.0` repository workflow assumes a `uv`-managed environment.

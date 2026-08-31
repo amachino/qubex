@@ -17,23 +17,35 @@ from .multi_derivative import MultiDerivative
 from .raised_cosine import RaisedCosine
 from .ramp_type import RampType
 from .sintegral import Sintegral
-from .squad import Squad, _resolve_window
+from .squad import Squad, _reject_removed_window_options, _resolve_window
 
 
 class FlatTop(Pulse):
     """
-    A class to represent a raised cosine flat-top pulse.
+    Flat-top pulse with configurable ramps and optional quadrature correction.
 
     Parameters
     ----------
     duration : float
         Duration of the pulse in ns.
     amplitude : float
-        Amplitude of the pulse.
+        Flat-top in-phase envelope level, not a carrier frequency. For SQUAD
+        or delta-based correction, use the same units as `delta`.
     tau : float
         Rise and fall time of the pulse in ns.
     beta : float, optional
         DRAG correction coefficient. Default is None.
+    delta : float, optional
+        Transition frequency minus drive frequency, in the same units as
+        `amplitude`. Required for SQUAD ramps or delta-based correction.
+        Shapes the waveform; does not set or shift its carrier frequency.
+    type : RampType, optional
+        Ramp shape, default "RaisedCosine". Use "Squad" for SQUAD.
+    correction_type : {"DRAG", "CD"}, optional
+        Quadrature correction. None (default) disables delta-based correction.
+    correction_factor : float, optional
+        Signed coefficient for delta-based correction. None defaults to 1.0
+        when correction is enabled. Units and sign are described in Notes.
 
     Notes
     -----
@@ -43,6 +55,26 @@ class FlatTop(Pulse):
     documented by `Squad`, for example
     `window={"type": "tukey", "rise_end": 0.2, "fall_start": 0.7}`.
     Window dictionaries are validated and copied on construction.
+    Beta settings likewise use `window={"type": "beta", "mode": 0.4, "sum": 6}`;
+    standalone `beta_mode` and `beta_sum` are no longer accepted for SQUAD.
+
+    Before generic Pulse transforms, the envelope is `I + i*Q`. CD uses
+    `Q = -correction_factor * delta * dI/dt / (delta**2 + I**2)` and DRAG uses
+    `Q = -correction_factor * dI/dt / delta`. Thus weak-drive CD approaches
+    DRAG with the same signed delta and coefficient. Using the negative
+    anharmonicity as delta for EF relative to a GE drive follows this convention.
+    Direct `Squad` uses the opposite factor sign for equivalent quadrature.
+
+    Time is in ns. With angular-rate amplitude/delta (rad/ns), the analytic
+    CD coefficient is 1; with cyclic-rate amplitude/delta (GHz), it is
+    `1/(2*pi)`. With command amplitude and Rabi conversion r (GHz/command),
+    use `delta = (f_transition - f_drive)/r` and coefficient `1/(2*pi*r)`.
+    No unit inference or conversion is performed. These coefficients describe
+    the design model, not a hardware calibration. See `Squad` for details.
+
+    Configure the carrier separately. Recompute delta at each drive frequency
+    for carrier-adaptive SQUAD design; keep a fixed design delta only when
+    intentionally scanning one fixed waveform's carrier.
 
     Examples
     --------
@@ -76,12 +108,10 @@ class FlatTop(Pulse):
             key: value for key, value in kwargs.items() if key not in pulse_kwargs
         }
         window = shape_kwargs.get("window")
+        if type == "Squad":
+            _reject_removed_window_options(shape_kwargs)
         if type == "Squad" and isinstance(window, dict):
-            _resolve_window(
-                window,
-                shape_kwargs.get("beta_mode", 1.0 / 3.0),
-                shape_kwargs.get("beta_sum", 5.0),
-            )
+            _resolve_window(window)
             shape_kwargs["window"] = window.copy()
         super().__init__(
             duration=duration,
@@ -143,13 +173,21 @@ class FlatTop(Pulse):
         duration : float
             Duration of the pulse in ns.
         amplitude : float
-            Amplitude of the pulse.
+            In-phase level in the same units as `delta`, not carrier frequency.
         tau : float
             Rise and fall time of the pulse in ns.
         beta : float, optional
             DRAG correction coefficient. Default is None.
         type : RampType | None, optional
             Type of the pulse. Default is "RaisedCosine".
+        delta : float, optional
+            Signed transition-minus-drive design detuning. See `FlatTop`
+            for conversion between angular rates, GHz, and command units.
+        correction_type : {"DRAG", "CD"}, optional
+            Delta-based quadrature correction; None disables it.
+        correction_factor : float, optional
+            Signed, unit-dependent coefficient; None defaults to 1.0.
+            See `FlatTop` for the CD formula and sign relative to `Squad`.
 
         Returns
         -------
@@ -158,6 +196,9 @@ class FlatTop(Pulse):
         """
         if type is None:
             type = "RaisedCosine"
+        if type == "Squad":
+            _reject_removed_window_options(kwargs)
+            _resolve_window(kwargs.get("window"))
 
         t = np.asarray(t)
         T = 2 * tau
