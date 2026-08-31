@@ -410,6 +410,67 @@ class RidgeCounts(SyntheticCounts):
         return super().acquire(gates, *args, **kwargs)
 
 
+class CurvedRidgeCounts(RidgeCounts):
+    """Three individually resolved row peaks without a valid linear ridge."""
+
+    def acquire(self, gates: Any, *args: Any, **kwargs: Any) -> Any:
+        """Curve only the synthetic peak coordinate, preserving valid count generation."""
+        kind = "bswap" if gates[0] == "BSWAP" else "sqrt_bswap"
+        amplitude = kwargs["recipes"][kind]["amplitude"]
+        self.center_frequency = 4.61 + 1200 * (amplitude - 0.9) ** 2
+        return super().acquire(gates, *args, **kwargs)
+
+
+@pytest.mark.parametrize("kind", ["bswap", "sqrt_bswap"])
+def test_recenter_uses_physical_gp_without_promoting_rejected_linear_ridge(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    """Resolved row peaks allow physical-coordinate selection despite a rejected linear ridge."""
+    port = CurvedRidgeCounts(phi=0.0)
+    result, summary = recenter_amplitude_frequency(
+        port,
+        kind,
+        port.recipes[kind],
+        tmp_path,
+        shots=8192,
+    )
+    fit = summary["fit"]
+    assert all(row["interior_peak"] for row in fit["ridge"]["rows"])
+    assert fit["ridge"]["reduced_chi2"] > 5
+    assert not fit["ridge"]["qualified"]
+    assert not fit["qualified_ridge"]
+    assert fit["coordinate_mode"] == "physical"
+    assert fit["ranking"]["coordinate_mode"] == "physical"
+    assert not fit["ranking"]["qualified_ridge"]
+    assert fit["ranking"]["ridge_diagnostic"] == fit["ridge"]
+    assert summary["confirmation"]["passed"]
+    assert summary["fit"]["observed_points"] == 21
+    assert 0.8995 <= result["amplitude"] <= 0.9005
+    assert 4.6094 <= result["frequency_ghz"] <= 4.6106
+    assert len(port.calls) == (50 if kind == "bswap" else 234)
+
+
+def test_physical_recenter_still_rejects_independent_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Changing the GP coordinates never bypasses fresh candidate confirmation."""
+    port = CurvedRidgeCounts(phi=0.0)
+    port.confirmation_visibility = 0.2
+    with pytest.raises(QualificationError, match="score confirmation failed"):
+        recenter_amplitude_frequency(
+            port,
+            "bswap",
+            port.recipes["bswap"],
+            tmp_path,
+            shots=8192,
+        )
+    fit = json.loads((tmp_path / "local_fit.json").read_text())
+    assert fit["coordinate_mode"] == "physical"
+    assert not fit["qualified_ridge"]
+    assert not (tmp_path / "recentered_recipe.json").exists()
+
+
 @pytest.mark.parametrize("kind", ["bswap", "sqrt_bswap"])
 def test_local_recenter_executes_fixed_duration_coherence_aware_map(
     tmp_path: Path, kind: str
@@ -467,6 +528,33 @@ def test_recenter_root_plateau_retains_seed_without_gp(tmp_path: Path) -> None:
     assert not summary["fit"]["gp_allowed"]
     assert summary["confirmation"]["passed"]
     assert len(port.calls) == 234
+
+
+def test_recenter_retains_plateau_priority_over_physical_gp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An accepted conservative root plateau keeps its original no-GP selection route."""
+    port = SyntheticCounts(phi=0.0)
+
+    def rejected_linear_ridge(*args: Any, **kwargs: Any) -> Any:
+        return {
+            "qualified": False,
+            "reduced_chi2": 19.706,
+            "rows": [{"interior_peak": True}] * 3,
+        }
+
+    monkeypatch.setattr(module, "estimate_response_ridge", rejected_linear_ridge)
+    _, summary = recenter_amplitude_frequency(
+        port,
+        "sqrt_bswap",
+        port.recipes["sqrt_bswap"],
+        tmp_path,
+        shots=1024,
+    )
+    assert summary["fit"]["plateau"]["accepted"]
+    assert not summary["fit"]["gp_allowed"]
+    assert summary["fit"]["coordinate_mode"] is None
 
 
 def test_recenter_rejects_full_flat_response_with_saved_evidence(

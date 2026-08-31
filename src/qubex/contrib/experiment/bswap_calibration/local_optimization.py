@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -356,7 +357,8 @@ def propose_gp_point(
     scores: ArrayLike,
     shot_variances: ArrayLike,
     *,
-    ridge: Mapping[str, Any],
+    ridge: Mapping[str, Any] | None = None,
+    coordinate_mode: Literal["ridge", "physical"] = "ridge",
     amplitude_bounds: Sequence[float],
     frequency_bounds_ghz: Sequence[float],
     frequency_half_width_mhz: float = 0.6,
@@ -378,13 +380,20 @@ def propose_gp_point(
     ----------
     amplitudes, frequencies_ghz, scores, shot_variances : ArrayLike
         Existing observations and known positive shot variances.
-    ridge : Mapping[str, Any]
-        Qualified response-ridge estimate. Missing scout coverage must be
-        resolved before using a GP, not hidden by a nonquadratic model.
+    ridge : Mapping[str, Any] or None, optional
+        Qualified response-ridge estimate, required in ridge mode. Physical
+        mode does not require this model and preserves any supplied rejected
+        estimate as diagnostic metadata without changing its qualification.
+    coordinate_mode : {"ridge", "physical"}, optional
+        Default ridge mode subtracts the qualified linear response ridge.
+        Physical mode uses scaled amplitude and carrier coordinates directly,
+        intersecting the requested bounds with the observed amplitude/carrier
+        box. It cannot propose or select an incumbent outside that box.
     amplitude_bounds, frequency_bounds_ghz : Sequence[float]
         Explicit permitted physical-control intervals; never expanded here.
     frequency_half_width_mhz : float, optional
         Candidate residual-frequency band about the ridge, default 0.6 MHz.
+        In physical mode this is only a conditioning scale, not a search band.
     amplitude_scale : float, optional
         GP amplitude-coordinate scale in command units, default 0.0015.
     acquisition : {"ei", "ucb"}, optional
@@ -420,9 +429,18 @@ def propose_gp_point(
     acquisition, anchor and independent-validation budgets, while duration
     and ramp remain fixed. Materialize a new pulse at the physical carrier
     using the caller's declared carrier-adaptive design policy.
+    Physical mode makes no linear-ridge assumption and does not establish a
+    resonance, optimum, stationarity, or gate fidelity. Remaining inside the
+    observed bounding box does not guarantee locally dense data or accuracy
+    between sparse points. The caller still owns coverage and independent
+    confirmation gates; changing coordinates never supplies that evidence.
     """
     a, f, y, noise = _observations(amplitudes, frequencies_ghz, scores, shot_variances)
-    if not ridge.get("qualified", False):
+    if coordinate_mode not in ("ridge", "physical"):
+        raise ValueError("coordinate_mode must be ridge or physical")
+    if coordinate_mode == "ridge" and (
+        ridge is None or not ridge.get("qualified", False)
+    ):
         raise ValueError(
             "A qualified response ridge is required; first resolve missing scout coverage"
         )
@@ -430,11 +448,28 @@ def propose_gp_point(
     fmin, fmax = _bounds(frequency_bounds_ghz, "frequency_bounds_ghz")
     if not 0 <= amin < amax <= 1:
         raise ValueError("Command amplitude bounds must lie within [0,1]")
+    observed_box = {
+        "amplitude_bounds": [float(a.min()), float(a.max())],
+        "frequency_bounds_ghz": [float(f.min()), float(f.max())],
+    }
+    if coordinate_mode == "physical":
+        amin, amax = max(amin, float(a.min())), min(amax, float(a.max()))
+        fmin, fmax = max(fmin, float(f.min())), min(fmax, float(f.max()))
+        if amin >= amax or fmin >= fmax:
+            raise ValueError(
+                "Physical GP requires a nonempty two-dimensional observed box"
+            )
+        origins = [(amin + amax) / 2, (fmin + fmax) / 2, 0.0]
+    else:
+        ridge_parameters = cast(Mapping[str, Any], ridge)
+        origins = [
+            ridge_parameters["reference_amplitude"],
+            ridge_parameters["frequency_ghz"],
+            ridge_parameters["slope_ghz_per_amplitude"],
+        ]
     controls = _numeric(
         [
-            ridge["reference_amplitude"],
-            ridge["frequency_ghz"],
-            ridge["slope_ghz_per_amplitude"],
+            *origins,
             amplitude_scale,
             frequency_half_width_mhz,
             exploration,
@@ -461,15 +496,31 @@ def propose_gp_point(
             ]
         )
 
+    def eligible_points(points: NDArray) -> NDArray:
+        admitted = (
+            (points[:, 0] >= amin)
+            & (points[:, 0] <= amax)
+            & (points[:, 1] >= fmin)
+            & (points[:, 1] <= fmax)
+        )
+        if coordinate_mode == "ridge":
+            admitted &= abs(coordinates(points)[:, 1]) <= 1 + 1e-10
+        return admitted
+
     observed = np.column_stack([a, f])
     if candidates is None:
         if len(grid_size) != 2 or any(
             isinstance(n, bool) or int(n) != n or n < 2 for n in grid_size
         ):
             raise ValueError("grid_size requires two integer dimensions >=2")
+        frequency_grid = (
+            np.linspace(fmin - f0, fmax - f0, grid_size[1])
+            if coordinate_mode == "physical"
+            else np.linspace(-width, width, grid_size[1])
+        )
         aa, offsets = np.meshgrid(
             np.linspace(amin, amax, grid_size[0]),
-            np.linspace(-width, width, grid_size[1]),
+            frequency_grid,
             indexing="ij",
         )
         proposed = np.column_stack(
@@ -479,14 +530,7 @@ def propose_gp_point(
         proposed = _numeric(candidates, "candidates")
         if proposed.ndim != 2 or proposed.shape[1] != 2:
             raise ValueError("candidates must have shape (N,2)")
-    admitted = (
-        (proposed[:, 0] >= amin)
-        & (proposed[:, 0] <= amax)
-        & (proposed[:, 1] >= fmin)
-        & (proposed[:, 1] <= fmax)
-        & (abs(coordinates(proposed)[:, 1]) <= 1 + 1e-10)
-    )
-    proposed = proposed[admitted]
+    proposed = proposed[eligible_points(proposed)]
     repeats = np.any(
         (abs(proposed[:, None, 0] - a[None, :]) < 1e-10)
         & (abs(proposed[:, None, 1] - f[None, :]) < 1e-12),
@@ -526,16 +570,10 @@ def propose_gp_point(
         tuple[NDArray, NDArray], gp.predict(coordinates(observed), return_std=True)
     )
     measured_mean, measured_std = location + scale * measured_mean, scale * measured_std
-    eligible = (
-        (a >= amin)
-        & (a <= amax)
-        & (f >= fmin)
-        & (f <= fmax)
-        & (abs(coordinates(observed)[:, 1]) <= 1 + 1e-10)
-    )
+    eligible = eligible_points(observed)
     if not eligible.any():
         raise ValueError(
-            "No observed incumbent lies within the permitted box and ridge band"
+            "No observed incumbent lies within the permitted coordinate domain"
         )
     conservative = np.where(eligible, measured_mean - 1.96 * measured_std, -np.inf)
     best = int(np.argmax(conservative))
@@ -566,7 +604,10 @@ def propose_gp_point(
         "at_boundary": bool(
             np.isclose(point[0], [amin, amax], atol=1e-12, rtol=0).any()
             or np.isclose(point[1], [fmin, fmax], atol=1e-12, rtol=0).any()
-            or abs(coordinates(point[None, :])[0, 1]) >= 1 - 1e-10
+            or (
+                coordinate_mode == "ridge"
+                and abs(coordinates(point[None, :])[0, 1]) >= 1 - 1e-10
+            )
         ),
     }
     anchor = (
@@ -588,9 +629,25 @@ def propose_gp_point(
         "requested_shots": 0,
         "validation_required": True,
         "fixed_duration_and_ramp": True,
-        "coordinate_model": "amplitude and offset from fixed-duration response ridge",
+        "coordinate_mode": coordinate_mode,
+        "coordinate_model": (
+            "amplitude and offset from fixed-duration response ridge"
+            if coordinate_mode == "ridge"
+            else "scaled physical amplitude and carrier frequency"
+        ),
+        "qualified_ridge": bool(ridge is not None and ridge.get("qualified", False)),
+        "ridge_diagnostic": deepcopy(ridge),
+        "observed_box": observed_box,
+        "effective_bounds": {
+            "amplitude_bounds": [amin, amax],
+            "frequency_bounds_ghz": [fmin, fmax],
+        },
         "budget_scope": "proposal only; acquisition, anchors and fresh validation are separate caller budgets",
-        "uncertainty_scope": "conditional on the frozen ridge and fitted kernel; supplied shot noise included, ridge/model systematics excluded",
+        "uncertainty_scope": (
+            "conditional on the frozen ridge and fitted kernel; supplied shot noise included, ridge/model systematics excluded"
+            if coordinate_mode == "ridge"
+            else "conditional on the physical-coordinate kernel; supplied shot noise included, model/drift systematics excluded"
+        ),
     }
 
 

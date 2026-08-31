@@ -521,9 +521,12 @@ def recenter_amplitude_frequency(
     Notes
     -----
     Acquires a three-row scout, extends only missing frequency coverage, and
-    ranks measured points using a GP only after ridge qualification. The
-    ridge and five-point local interpolation retain reduced-chi-square <=5
-    gates. A high unresolved root-coherence plateau instead retains the
+    ranks measured points using ridge coordinates after ridge qualification.
+    If all three row peaks are interior but the linear ridge is rejected,
+    an explicit physical-coordinate GP instead ranks within the observed
+    control box, preserving the rejected ridge as diagnostic evidence. The
+    ridge-mode and five-point local interpolation reduced-chi-square <=5
+    gates are unchanged. A high unresolved root-coherence plateau retains the
     independent seed, without qualifying a ridge or allowing a GP. Fresh
     candidate/seed and population checks never refit the selection. Duration,
     ramp, design scale, CD, window, cancellation controls and measured K stay
@@ -668,18 +671,31 @@ def recenter_amplitude_frequency(
             minimum_lower_confidence=minimum_score_lower_bound,
             frequency_neighborhood_mhz=frequency_span_mhz,
         )
+        physical_gp_allowed = bool(
+            not ridge["qualified"]
+            and not plateau["accepted"]
+            and len(ridge["rows"]) >= 3
+            and all(row["interior_peak"] for row in ridge["rows"])
+            and np.isfinite(ridge.get("reduced_chi2", np.nan))
+            and ridge["reduced_chi2"] > 5.0
+        )
         fit = {
             "ridge": ridge,
             "plateau": plateau,
             "qualified_ridge": ridge["qualified"],
-            "gp_allowed": ridge["qualified"],
+            "gp_allowed": bool(ridge["qualified"] or physical_gp_allowed),
+            "coordinate_mode": "ridge"
+            if ridge["qualified"]
+            else "physical"
+            if physical_gp_allowed
+            else None,
             "extensions": extensions,
             "observed_points": len(observations),
             "reduced_chi2": ridge.get("reduced_chi2"),
             "claim": "raw response selection, not Hamiltonian resonance or gate fidelity",
         }
         save_json(directory / "local_fit.json", fit)
-        if ridge["qualified"] or plateau["accepted"]:
+        if fit["gp_allowed"] or plateau["accepted"]:
             break
         extension = plan_frequency_extensions(
             *values,
@@ -701,10 +717,11 @@ def recenter_amplitude_frequency(
                 "No qualified response ridge or conservative root plateau within the declared budget"
             )
     record = deepcopy(recipe)
-    if fit["qualified_ridge"]:
+    if fit["gp_allowed"]:
         ranking = propose_gp_point(
             *values,
             ridge=fit["ridge"],
+            coordinate_mode=fit["coordinate_mode"],
             amplitude_bounds=(float(values[0].min()), float(values[0].max())),
             frequency_bounds_ghz=frequency_bounds,
             frequency_half_width_mhz=frequency_span_mhz,
@@ -718,7 +735,10 @@ def recenter_amplitude_frequency(
         record.update(
             amplitude=selected["amplitude"], frequency_ghz=selected["frequency_ghz"]
         )
-        fit.update(selection="measured GP lower-bound incumbent", ranking=ranking)
+        fit.update(
+            selection=f"measured {fit['coordinate_mode']}-coordinate GP lower-bound incumbent",
+            ranking=ranking,
+        )
     else:
         fit["selection"] = "retain independent seed: conservative root plateau, no GP"
     save_json(directory / "local_fit.json", fit)

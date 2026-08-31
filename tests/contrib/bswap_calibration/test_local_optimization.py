@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 import numpy as np
@@ -404,3 +405,127 @@ def test_observed_incumbent_and_anchor_obey_the_same_residual_band_as_candidates
             point["amplitude"] - ridge["reference_amplitude"]
         )
         assert abs(point["frequency_ghz"] - center) <= 0.0006 + 1e-12
+
+
+def test_physical_gp_preserves_rejected_ridge_without_extrapolation() -> None:
+    """A rejected linear coordinate model need not prevent bounded physical GP planning."""
+    a, f, y, variance = _scout()
+    rejected = {"qualified": False, "reduced_chi2": 19.706, "reason": "nonlinear ridge"}
+    before = deepcopy(rejected)
+    result = propose_gp_point(
+        a,
+        f,
+        y,
+        variance,
+        ridge=rejected,
+        coordinate_mode="physical",
+        amplitude_bounds=(0.98, 1.0),
+        frequency_bounds_ghz=(4.60, 4.62),
+        optimize_kernel=False,
+        include_anchor=True,
+    )
+    assert result["coordinate_mode"] == "physical"
+    assert result["qualified_ridge"] is False
+    assert result["ridge_diagnostic"] == before == rejected
+    assert result["validation_required"] is True
+    assert result["requested_shots"] == 0
+    for point in (
+        result["candidate"],
+        result["best_observed"],
+        result["optional_anchor"],
+    ):
+        assert a.min() <= point["amplitude"] <= a.max()
+        assert f.min() <= point["frequency_ghz"] <= f.max()
+    assert not result["candidate"]["previously_measured"]
+
+
+def test_physical_gp_all_point_roles_respect_the_requested_observed_box() -> None:
+    """Neither an explicit out-of-box proposal nor a high outside incumbent is eligible."""
+    a, f, y, variance = _scout()
+    outside = int(np.argmax(f))
+    y[outside] = 9.0
+    variance[outside] = 1e-8
+    result = propose_gp_point(
+        a,
+        f,
+        y,
+        variance,
+        coordinate_mode="physical",
+        amplitude_bounds=(0.988, 0.99),
+        frequency_bounds_ghz=(4.6099, 4.6106),
+        candidates=[[0.989, 4.6101], [0.995, 4.6101], [0.989, 4.6115]],
+        include_anchor=True,
+        optimize_kernel=False,
+    )
+    assert result["best_observed"]["index"] != outside
+    for point in (
+        result["candidate"],
+        result["best_observed"],
+        result["optional_anchor"],
+    ):
+        assert 0.988 <= point["amplitude"] <= 0.99
+        assert 4.6099 <= point["frequency_ghz"] <= 4.6106
+    assert result["candidate"]["amplitude"] == 0.989
+    assert result["candidate"]["frequency_ghz"] == 4.6101
+
+
+def test_physical_gp_does_not_apply_a_ridge_residual_band() -> None:
+    """Physical coordinates use frequency scale for conditioning, not an invented ridge."""
+    a, f, y, variance = _scout()
+    point = [float(a.min()), float(f.max())]
+    result = propose_gp_point(
+        a,
+        f,
+        y,
+        variance,
+        coordinate_mode="physical",
+        amplitude_bounds=(a.min(), a.max()),
+        frequency_bounds_ghz=(f.min(), f.max()),
+        frequency_half_width_mhz=0.01,
+        candidates=[point],
+        allow_repeats=True,
+        optimize_kernel=False,
+    )
+    assert result["candidate"]["frequency_ghz"] == point[1]
+    assert result["candidate"]["at_boundary"]
+    assert result["ridge_diagnostic"] is None
+
+
+@pytest.mark.parametrize(
+    ("controls", "match"),
+    [
+        ({"coordinate_mode": "invalid"}, "coordinate_mode"),
+        (
+            {"coordinate_mode": "physical", "amplitude_bounds": (0.95, 0.96)},
+            "observed box",
+        ),
+        ({"coordinate_mode": "physical", "candidates": [[0.995, 4.61]]}, "permitted"),
+    ],
+)
+def test_physical_gp_rejects_invalid_or_empty_domains(
+    controls: Any, match: str
+) -> None:
+    """Invalid modes and empty observed-domain intersections cannot create proposals."""
+    a, f, y, variance = _scout()
+    kwargs: dict[str, Any] = {
+        "amplitude_bounds": (0.987, 0.99),
+        "frequency_bounds_ghz": (4.607, 4.615),
+        **controls,
+    }
+    with pytest.raises(ValueError, match=match):
+        propose_gp_point(a, f, y, variance, **kwargs)
+
+
+def test_physical_gp_requires_a_two_dimensional_observed_box() -> None:
+    """Single-amplitude observations cannot support a two-control physical search."""
+    a, f, y, variance = _scout()
+    with pytest.raises(ValueError, match="observed box"):
+        propose_gp_point(
+            np.full_like(a, 0.99),
+            f,
+            y,
+            variance,
+            coordinate_mode="physical",
+            amplitude_bounds=(0.98, 1.0),
+            frequency_bounds_ghz=(4.60, 4.62),
+        )
