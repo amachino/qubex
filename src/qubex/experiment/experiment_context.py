@@ -1087,9 +1087,18 @@ class ExperimentContext:
         metadata: dict[str, Any] | None = None,
         target_type: TargetType | None = None,
         update_backend_settings: bool | None = None,
+        confirm: bool = True,
         **deprecated_options: Any,
     ) -> None:
-        """Register a custom target with the control system."""
+        """
+        Register a custom target with the control system.
+
+        Parameters
+        ----------
+        confirm : bool, optional
+            Whether to confirm a backend settings push, by default True.
+            Ignored when `update_backend_settings` is False.
+        """
         if target_type is None:
             target_type = TargetType.CTRL_GE
         update_backend_settings = resolve_deprecated_option(
@@ -1188,7 +1197,7 @@ class ExperimentContext:
                 cnco=cnco,
             )
             channel.fnco_freq = fnco
-            self.system_manager.push(box_ids=[box_id])
+            self.system_manager.push(box_ids=[box_id], confirm=confirm)
 
     @contextmanager
     def modified_frequencies(

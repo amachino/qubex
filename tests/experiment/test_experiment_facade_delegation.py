@@ -1064,6 +1064,44 @@ def test_register_custom_target_delegates_to_context() -> None:
                 "metadata": None,
                 "target_type": None,
                 "update_backend_settings": True,
+                "confirm": True,
+            },
+        )
+    ]
+
+
+def test_register_custom_target_forwards_disabled_confirmation() -> None:
+    """The facade forwards confirm=False without changing the update request."""
+    exp = object.__new__(Experiment)
+    context_stub = _ExperimentContextStub()
+    exp.__dict__["_experiment_context"] = context_stub
+
+    exp.register_custom_target(
+        label="CUSTOM",
+        frequency=5.1,
+        box_id="B0",
+        port_number=2,
+        channel_number=0,
+        qubit_label="Q00",
+        update_backend_settings=True,
+        confirm=False,
+    )
+
+    assert context_stub.calls == [
+        (
+            "register_custom_target",
+            {
+                "label": "CUSTOM",
+                "frequency": 5.1,
+                "box_id": "B0",
+                "port_number": 2,
+                "channel_number": 0,
+                "qubit_label": "Q00",
+                "target_qubit_label": None,
+                "metadata": None,
+                "target_type": None,
+                "update_backend_settings": True,
+                "confirm": False,
             },
         )
     ]
@@ -1100,6 +1138,7 @@ def test_register_custom_target_delegates_legacy_update_lsi_to_context() -> None
                 "metadata": None,
                 "target_type": None,
                 "update_backend_settings": True,
+                "confirm": True,
             },
         )
     ]

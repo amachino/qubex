@@ -40,9 +40,11 @@ class _BackendControllerStub:
 class _SystemManagerStub:
     def __init__(self) -> None:
         self.push_calls: list[list[str]] = []
+        self.confirm_calls: list[bool] = []
 
-    def push(self, *, box_ids: list[str]) -> None:
+    def push(self, *, box_ids: list[str], confirm: bool = True) -> None:
         self.push_calls.append(box_ids)
+        self.confirm_calls.append(confirm)
 
 
 @dataclass
@@ -277,6 +279,55 @@ def test_register_custom_target_updates_backend_settings_with_official_keyword()
     )
 
     assert system_manager.push_calls == [["B0"]]
+    assert system_manager.confirm_calls == [True]
+
+
+def test_register_custom_target_can_disable_backend_update_confirmation() -> None:
+    """An explicit confirm=False reaches the backend settings push."""
+    context, _, _, system_manager = _make_context()
+
+    context.register_custom_target(
+        label="CUSTOM",
+        frequency=5.2,
+        box_id="B0",
+        port_number=2,
+        channel_number=0,
+        qubit_label="Q00",
+        update_backend_settings=True,
+        confirm=False,
+    )
+
+    assert system_manager.push_calls == [["B0"]]
+    assert system_manager.confirm_calls == [False]
+
+
+@pytest.mark.parametrize("confirm", [True, False])
+@pytest.mark.parametrize(
+    "target_type", [TargetType.CTRL_GE, TargetType.READ, TargetType.PUMP]
+)
+def test_register_custom_target_without_backend_update_never_pushes(
+    confirm: bool,
+    target_type: TargetType,
+) -> None:
+    """Software-only control, readout and pump registration never pushes settings."""
+    context, experiment_system, backend_controller, system_manager = _make_context()
+
+    context.register_custom_target(
+        label="CUSTOM",
+        frequency=5.2,
+        box_id="B0",
+        port_number=2,
+        channel_number=0,
+        qubit_label="Q00",
+        target_type=target_type,
+        update_backend_settings=False,
+        confirm=confirm,
+    )
+
+    assert len(experiment_system.added_targets) == 1
+    assert len(backend_controller.define_calls) == 1
+    assert system_manager.push_calls == []
+    assert system_manager.confirm_calls == []
 
 
 def test_register_custom_target_preserves_update_lsi_alias() -> None:
@@ -295,6 +346,7 @@ def test_register_custom_target_preserves_update_lsi_alias() -> None:
         )
 
     assert system_manager.push_calls == [["B0"]]
+    assert system_manager.confirm_calls == [True]
 
 
 def test_register_custom_target_rejects_conflicting_backend_update_keywords() -> None:

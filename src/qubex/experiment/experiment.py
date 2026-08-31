@@ -829,9 +829,18 @@ class Experiment:
         metadata: dict[str, Any] | None = None,
         target_type: TargetType | None = None,
         update_backend_settings: bool | None = None,
+        confirm: bool = True,
         **deprecated_options: Any,
     ) -> None:
-        """Register a custom target with the control system."""
+        """
+        Register a custom target with the control system.
+
+        Parameters
+        ----------
+        confirm : bool, optional
+            Whether to confirm a backend settings push, by default True.
+            Ignored when `update_backend_settings` is False.
+        """
         update_backend_settings = self._resolve_deprecated_option(
             value=update_backend_settings,
             deprecated_options=deprecated_options,
@@ -852,6 +861,7 @@ class Experiment:
             metadata=metadata,
             target_type=target_type,
             update_backend_settings=update_backend_settings,
+            confirm=confirm,
         )
 
     @contextmanager
