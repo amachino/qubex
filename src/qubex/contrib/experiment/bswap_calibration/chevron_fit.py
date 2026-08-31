@@ -8,11 +8,14 @@ count. Frequencies/rates are MHz, durations are ns. Model mismatch, SPAM and
 natural drift are not removed by this fit. No hardware or file I/O.
 """
 
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import least_squares
+
+from .duration_fit import damped_transfer
 
 PARAMETER_NAMES = (
     "center_offset_mhz",
@@ -26,6 +29,270 @@ PARAMETER_NAMES = (
     "decay_00_ns",
     "decay_11_ns",
 )
+
+_DAMPED_PARAMETER_NAMES = (
+    "rate_mhz",
+    "ramp_phase_rad",
+    "offset_00",
+    "offset_11",
+    "visibility_00",
+    "visibility_11",
+    "decay_rate_00_per_us",
+    "decay_rate_11_per_us",
+)
+_TOLERATED_OPERATIONAL_WARNING = (
+    "Residuals exceed shot noise; inspect the effective-model fit"
+)
+
+
+def select_local_operational_candidate(
+    frequencies_ghz: ArrayLike,
+    row_fits: Sequence[Mapping[str, Any]],
+    *,
+    seed_frequency_ghz: float,
+    rate_range_mhz: tuple[float, float] = (0.3, 3.0),
+    max_row_reduced_chi2: float = 3.0,
+    minimum_visibility: float = 0.6,
+    maximum_span_mhz: float = 1.0,
+) -> dict[str, Any]:
+    """
+    Select one measured local row for an independent operational holdout.
+
+    Parameters
+    ----------
+    frequencies_ghz : array_like
+        Exactly five increasing measured carrier frequencies in cyclic GHz.
+        Their total span must not exceed `maximum_span_mhz`.
+    row_fits : sequence of Mapping
+        One `fit_damped_duration` result per frequency, using both directions,
+        complete pulse durations, and the same rate/ramp/grid convention.
+    seed_frequency_ghz : float
+        Finite provenance seed used only to break exact score ties.
+    rate_range_mhz : tuple of float, optional
+        Strict interior range for every shared fitted cyclic rate, default
+        (0.3, 3.0) MHz.
+    max_row_reduced_chi2 : float, optional
+        Explicit operational candidate-generation limit, default 3. A row's
+        residual-above-shot-noise warning is still retained when chi-square is
+        between the duration helper's warning threshold and this limit.
+    minimum_visibility : float, optional
+        Minimum fitted visibility in each direction and every row, default 0.6.
+    maximum_span_mhz : float, optional
+        Largest permitted five-row frequency span, default 1 MHz.
+
+    Returns
+    -------
+    dict[str, Any]
+        All row diagnostics and, only when every row passes, an
+        `operational_response_candidate` chosen by minimum predicted
+        directional transfer, then mean transfer, seed distance and lower
+        frequency. This generates a holdout candidate; it never qualifies or
+        adopts a gate.
+
+    Raises
+    ------
+    ValueError
+        Malformed frequencies, thresholds, fit schema, native-grid duration,
+        or nonfinite numerical inputs.
+    TypeError
+        A row availability or warning field has the wrong type.
+
+    Notes
+    -----
+    This function deliberately fits no cross-frequency resonance, gap or
+    Hamiltonian curve. Each prediction is the supplied row's damped model at
+    its own first-full 2 ns candidate. Failed rows are never dropped. The
+    returned candidate requires fresh, independently acquired frequency and
+    duration holdout checks before calibration or gate adoption.
+    """
+    frequencies = np.asarray(frequencies_ghz, dtype=float)
+    if (
+        frequencies.shape != (5,)
+        or not np.isfinite(frequencies).all()
+        or np.any(np.diff(frequencies) <= 0)
+        or np.any(frequencies <= 0)
+        or np.any(frequencies > 20)
+    ):
+        raise ValueError("Need exactly five increasing finite frequency values in GHz")
+    if not np.isfinite(seed_frequency_ghz) or not 0 < seed_frequency_ghz <= 20:
+        raise ValueError("seed_frequency_ghz must be finite and in GHz")
+    lo, hi = map(float, rate_range_mhz)
+    limit = float(max_row_reduced_chi2)
+    visibility_limit = float(minimum_visibility)
+    span_limit = float(maximum_span_mhz)
+    if (
+        not np.isfinite([lo, hi, limit, visibility_limit, span_limit]).all()
+        or not 0 < lo < hi
+        or limit <= 0
+        or not 0 < visibility_limit <= 1
+        or span_limit <= 0
+    ):
+        raise ValueError("Invalid operational row-fit bounds or limits")
+    if np.ptp(frequencies) * 1000 > span_limit + 1e-12:
+        raise ValueError("The five frequency values exceed the local span in MHz")
+    if len(row_fits) != 5:
+        raise ValueError("Need exactly five row fits for the five frequency values")
+
+    diagnostics = []
+    reasons = []
+    retained_warnings: list[str] = []
+    common_ramp = None
+    for index, (frequency, fit) in enumerate(zip(frequencies, row_fits, strict=True)):
+        try:
+            parameters = fit["parameters"]
+            errors = fit["local_standard_errors"]
+            full = fit["bswap"]
+            ramp = float(fit["ramp_ns"])
+            reduced_chi2 = float(fit["reduced_chi2"])
+            rate = float(parameters["rate_mhz"])
+            rate_error = float(errors["rate_mhz"])
+            visibility = [
+                float(parameters["visibility_00"]),
+                float(parameters["visibility_11"]),
+            ]
+            available = full["available"]
+            duration = (
+                float(full["grid_duration_ns"])
+                if isinstance(available, (bool, np.bool_)) and bool(available)
+                else None
+            )
+            neighbors = (
+                np.asarray(full["neighbors_ns"], dtype=float)
+                if duration is not None
+                else np.array([], dtype=float)
+            )
+            warnings = list(fit["warnings"])
+            vector = np.array(
+                [float(parameters[name]) for name in _DAMPED_PARAMETER_NAMES]
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(
+                f"Malformed local duration fit in row {index}: {error}"
+            ) from error
+        numeric = [ramp, reduced_chi2, rate, rate_error, *visibility, *vector]
+        if duration is not None:
+            numeric.append(duration)
+        if (
+            not np.isfinite(numeric).all()
+            or ramp <= 0
+            or rate_error <= 0
+            or (
+                duration is not None
+                and (
+                    duration < 2 * ramp
+                    or not np.isfinite(neighbors).all()
+                    or not np.any(np.isclose(neighbors, duration, atol=1e-9, rtol=0))
+                    or not np.isclose(
+                        duration / 2, round(duration / 2), atol=1e-9, rtol=0
+                    )
+                )
+            )
+        ):
+            raise ValueError(
+                f"Local duration fit row {index} has nonfinite or off-grid numbers"
+            )
+        if common_ramp is None:
+            common_ramp = ramp
+        elif ramp != common_ramp:
+            raise ValueError("All five local duration fits must use the same ramp_ns")
+        if not isinstance(fit["warnings"], list) or any(
+            not isinstance(warning, str) for warning in warnings
+        ):
+            raise ValueError(f"Local duration fit row {index} warnings must be strings")
+        unsupported = [
+            warning for warning in warnings if warning != _TOLERATED_OPERATIONAL_WARNING
+        ]
+        row_reasons = []
+        if not isinstance(available, (bool, np.bool_)):
+            raise TypeError(f"Local duration fit row {index} has invalid availability")
+        if not bool(available):
+            row_reasons.append("full_candidate_unavailable")
+        if not lo < rate < hi:
+            row_reasons.append("rate_not_interior")
+        if reduced_chi2 > limit:
+            row_reasons.append("reduced_chi2_exceeds_limit")
+        if visibility[0] < visibility_limit:
+            row_reasons.append("visibility_00_below_minimum")
+        if visibility[1] < visibility_limit:
+            row_reasons.append("visibility_11_below_minimum")
+        if unsupported:
+            row_reasons.append("unsupported_fit_warning")
+        prediction = None
+        if duration is not None:
+            prediction = damped_transfer(vector, [duration - 2 * ramp])[:, 0]
+            if (
+                not np.isfinite(prediction).all()
+                or np.any(prediction < 0)
+                or np.any(prediction > 1)
+            ):
+                raise ValueError(
+                    f"Local duration fit row {index} predicts invalid probability"
+                )
+        diagnostic = dict(
+            row_index=index,
+            frequency_ghz=float(frequency),
+            rate_mhz=rate,
+            rate_local_standard_error_mhz=rate_error,
+            reduced_chi2=reduced_chi2,
+            visibility_00=visibility[0],
+            visibility_11=visibility[1],
+            full_duration_ns=duration,
+            predicted_directional_probabilities=(
+                prediction.tolist() if prediction is not None else None
+            ),
+            primary_score=float(np.min(prediction)) if prediction is not None else None,
+            secondary_score=float(np.mean(prediction))
+            if prediction is not None
+            else None,
+            warnings=warnings,
+            reasons=row_reasons,
+        )
+        diagnostics.append(diagnostic)
+        reasons.extend(f"row_{index}:{reason}" for reason in row_reasons)
+        retained_warnings.extend(
+            warning for warning in warnings if warning not in retained_warnings
+        )
+
+    passed = not reasons
+    candidate = None
+    if passed:
+        selected = min(
+            diagnostics,
+            key=lambda row: (
+                -row["primary_score"],
+                -row["secondary_score"],
+                round(abs(row["frequency_ghz"] - seed_frequency_ghz) * 1000, 12),
+                row["frequency_ghz"],
+            ),
+        )
+        candidate = {
+            key: selected[key]
+            for key in (
+                "row_index",
+                "frequency_ghz",
+                "predicted_directional_probabilities",
+                "primary_score",
+                "secondary_score",
+            )
+        }
+        candidate["duration_ns"] = selected["full_duration_ns"]
+    return dict(
+        candidate_generation_passed=passed,
+        operational_response_candidate=candidate,
+        rows=diagnostics,
+        reasons=reasons,
+        warnings=retained_warnings,
+        row_models_all_warning_free=not retained_warnings,
+        adoption_qualified=False,
+        independent_holdout_required=True,
+        ranking=(
+            "minimum predicted direction, mean predicted direction, seed distance, lower frequency"
+        ),
+        claim=(
+            "measured-row operational response candidate only; no resonance, gap, "
+            "Hamiltonian profile, gate fidelity or adoption"
+        ),
+    )
 
 
 def chevron_model(
