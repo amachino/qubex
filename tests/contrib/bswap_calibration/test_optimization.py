@@ -1,0 +1,450 @@
+"""Synthetic count-port tests, not hardware or analog-response evidence."""
+
+import json
+from copy import deepcopy
+from pathlib import Path
+from typing import Any, ClassVar
+
+import numpy as np
+import pytest
+
+from qubex.contrib.experiment.bswap_calibration.optimization import (
+    QualificationError,
+    ShotBudget,
+    calibrate_sizzle,
+    estimate_phase_cycle,
+    optimize_squad,
+    phase_cycle_zz,
+    recenter_amplitude_frequency,
+    short_gate_score,
+)
+from qubex.contrib.experiment.bswap_calibration.pulses import (
+    ideal_circuit_unitary,
+    local_xy,
+    local_z,
+    make_squad_pulse,
+)
+
+
+def _recipe(kind: str) -> Any:
+    pre = 0.31 if kind == "sqrt_bswap" else 0.0
+    return {
+        "gate_kind": kind,
+        "amplitude": 0.9,
+        "frequency_ghz": 4.61,
+        "duration_ns": 260.0 if kind == "bswap" else 140.0,
+        "ramp_ns": 16.0,
+        "design_delta_scale": 1.0,
+        "cd_strength": 1.0,
+        "window": {"type": "hann"},
+        "gate_start_ns": 24.0,
+        "cancel_amplitude_ratio": 0.0,
+        "cancel_phase_rad": 0.0,
+        "phase_calibration": {
+            "pre_active_rad": pre,
+            "post_active_rad": 0.42,
+            "post_passive_rad": -0.27,
+        },
+    }
+
+
+class SyntheticCounts:
+    """
+    Ideal reduced gate with known controllable ZZ and shape-dependent noise.
+
+    This port only generates synthetic counts. Compiler waveform tests live in
+    test_bswap_campaign_pulses; this model is not a physical-Z hardware audit.
+    """
+
+    qubits = ("Q035", "Q034")
+    rabi_scale = 0.636
+    references: ClassVar[dict[str, float]] = {"Q035": 4.4, "Q034": 4.837}
+    session_id = "synthetic-no-hardware"
+
+    def __init__(
+        self,
+        *,
+        phi: float = 0.12,
+        ratio_slope: float = 4.0,
+        shape_loss: bool = False,
+        maximum_visibility: float = 1.0,
+    ) -> None:
+        """Initialize a synthetic count port without hardware access."""
+        self.recipes = {kind: _recipe(kind) for kind in ("bswap", "sqrt_bswap")}
+        self.phi, self.ratio_slope, self.shape_loss = phi, ratio_slope, shape_loss
+        self.maximum_visibility = maximum_visibility
+        self.calls = []
+        self.fail_validation = False
+
+    def acquire(
+        self,
+        gates: Any,
+        directory: Any,
+        label: str,
+        *,
+        prepared: Any = ("0", "0"),
+        basis: str = "ZZ",
+        delay_ns: float = 0.0,
+        shots: int = 512,
+        recipes: Any = None,
+    ) -> Any:
+        """Return deterministic four-state counts from the synthetic model."""
+        recipes = self.recipes if recipes is None else recipes
+        self.calls.append(
+            {
+                "directory": str(directory),
+                "label": label,
+                "shots": shots,
+                "recipes": deepcopy(recipes),
+                "prepared": prepared,
+                "basis": basis,
+                "gates": gates,
+                "delay_ns": delay_ns,
+            }
+        )
+        vectors = {
+            "0": np.array([1, 0]),
+            "1": np.array([0, 1]),
+            "+": np.array([1, 1]) / np.sqrt(2),
+            "-": np.array([1, -1]) / np.sqrt(2),
+            "+i": np.array([1, 1j]) / np.sqrt(2),
+            "-i": np.array([1, -1j]) / np.sqrt(2),
+        }
+        vector = np.kron(*(vectors[s] for s in prepared))
+        visibility = 1.0
+        for gate in gates:
+            kind = "bswap" if gate == "BSWAP" else "sqrt_bswap"
+            rec = recipes[kind]
+            phi = self.phi - self.ratio_slope * rec.get(
+                "cancel_amplitude_ratio", 0
+            ) * np.cos(rec.get("cancel_phase_rad", 0))
+            true_pre = np.array([0.31 if kind == "sqrt_bswap" else 0.0, 0.0])
+            true_post = np.array([0.42, -0.27])
+            actual = (
+                local_z(true_post)
+                @ ideal_circuit_unitary([gate], zz_phases={kind: 2 * phi})
+                @ local_z(true_pre)
+            )
+            # Logical effect of the separately waveform-tested phase transport.
+            cal = rec["phase_calibration"]
+            pre = np.array([cal["pre_active_rad"], cal.get("pre_passive_rad", 0.0)])
+            post = np.array([cal["post_active_rad"], cal["post_passive_rad"]])
+            phase = pre.sum() / 2
+            logical = (
+                local_z(-pre - post + [phase, phase])
+                @ actual
+                @ local_z([-phase, -phase])
+            )
+            vector = logical @ vector
+            loss = 0.0
+            if self.shape_loss:
+                loss = (
+                    0.20 * (rec.get("design_delta_scale", 1) - 1.25) ** 2
+                    + 0.20 * (rec.get("cd_strength", 1) - 0.85) ** 2
+                )
+            visibility *= self.maximum_visibility - loss
+        rho = (
+            visibility * np.outer(vector, vector.conj())
+            + (1 - visibility) * np.eye(4) / 4
+        )
+        analysis = np.eye(4, dtype=complex)
+        for qi, axis in enumerate(basis):
+            if axis != "Z":
+                analysis = local_xy(qi, -np.pi / 2 if axis == "X" else 0.0) @ analysis
+        probability = np.diag(analysis @ rho @ analysis.conj().T).real
+        if self.fail_validation and "independent_zz" in str(directory):
+            probability = np.ones(4) / 4
+        probability = np.maximum(probability, 0.0)
+        probability /= probability.sum()
+        counts = np.floor(probability * shots).astype(int)
+        residual = shots - int(counts.sum())
+        counts[np.argsort(probability * shots - counts)[-residual:]] += (
+            1 if residual else 0
+        )
+        return {
+            "counts": counts.tolist(),
+            "shots": shots,
+            "label": label,
+            "prepared": prepared,
+            "basis": basis,
+            "synthetic": True,
+        }
+
+
+@pytest.mark.parametrize("kind", ["bswap", "sqrt_bswap"])
+@pytest.mark.parametrize("phi", [-0.16, 0.12])
+def test_phase_cycle_recovers_signed_integrated_zz_and_root_visibility(
+    tmp_path: Path, kind: str, phi: float
+) -> None:
+    """Phase cycle recovers signed integrated zz and root visibility."""
+    port = SyntheticCounts(phi=phi)
+    result = phase_cycle_zz(
+        port, kind, port.recipes[kind], tmp_path, shots=8192, bootstrap=40
+    )
+    estimate = result["estimate"]
+    assert estimate["Phi_ZZ_mean_rad"] == pytest.approx(phi, abs=2e-4)
+    assert estimate["zz_phase_rad"] == pytest.approx(2 * phi, abs=4e-4)
+    assert estimate["minimum_coherence_fraction"] == pytest.approx(1.0, abs=1e-3)
+    assert estimate["direction_disagreement_rad"] < 3e-4
+    assert len(port.calls) == 32
+    assert estimate["ci95_mean_rad"][0] < phi < estimate["ci95_mean_rad"][1]
+
+
+def test_phase_cycle_rejects_missing_or_noninteger_counts(tmp_path: Path) -> None:
+    """Phase cycle rejects missing or noninteger counts."""
+    port = SyntheticCounts()
+    result = phase_cycle_zz(port, "bswap", port.recipes["bswap"], tmp_path, bootstrap=8)
+    with pytest.raises(ValueError, match="32 settings"):
+        estimate_phase_cycle(result["rows"][:-1], kind="bswap", bootstrap=8)
+    rows = deepcopy(result["rows"])
+    rows[0]["counts"][0] += 0.1
+    with pytest.raises(ValueError, match="integer counts"):
+        estimate_phase_cycle(rows, kind="bswap", bootstrap=8)
+
+
+@pytest.mark.parametrize("kind", ["bswap", "sqrt_bswap"])
+def test_sizzle_qualifies_independent_null_preserving_duration_and_inputs(
+    tmp_path: Path, kind: str
+) -> None:
+    """Sizzle qualifies independent null preserving duration and inputs."""
+    port = SyntheticCounts(phi=0.12)
+    original = deepcopy(port.recipes)
+    qualified, summary = calibrate_sizzle(
+        port,
+        kind,
+        tmp_path,
+        shots=1024,
+        validation_shots=8192,
+        bootstrap=30,
+        recenter=False,
+        max_total_shots=1_000_000,
+    )
+    assert summary["qualified"]
+    assert qualified["null_shot_interval_passed"]
+    assert qualified["cancel_amplitude_ratio"] == pytest.approx(0.03, abs=0.001)
+    assert abs(qualified["cancel_phase_rad"]) < 0.01
+    assert qualified["duration_ns"] == original[kind]["duration_ns"]
+    assert qualified["ramp_ns"] == 16.0
+    assert port.recipes == original
+    assert qualified["phase_reference_session_id"] == port.session_id
+    calls = [r for r in port.calls if "independent_zz" in r["directory"]]
+    assert len(calls) == 32
+    assert all(r["shots"] == 8192 for r in calls)
+    assert summary["budget"]["requested_shots"] == sum(r["shots"] for r in port.calls)
+    with pytest.raises(FileExistsError):
+        calibrate_sizzle(port, kind, tmp_path)
+
+
+def test_sizzle_does_not_manufacture_null_without_sign_bracket(tmp_path: Path) -> None:
+    """Sizzle does not manufacture null without sign bracket."""
+    port = SyntheticCounts(phi=0.6, ratio_slope=1.0)
+    with pytest.raises(QualificationError, match="sign bracket"):
+        calibrate_sizzle(
+            port,
+            "bswap",
+            tmp_path,
+            shots=2048,
+            validation_shots=8192,
+            recenter=False,
+            bootstrap=20,
+        )
+    saved = json.loads((tmp_path / "sizzle_summary.json").read_text())
+    assert not saved["qualified"]
+    assert saved["status"] == "failed"
+    assert not (tmp_path / "qualified_recipe.json").exists()
+
+
+def test_failed_fresh_sizzle_validation_is_not_reused_for_selection(
+    tmp_path: Path,
+) -> None:
+    """Failed fresh sizzle validation is not reused for selection."""
+    port = SyntheticCounts()
+    port.fail_validation = True
+    with pytest.raises(QualificationError, match="fresh ZZ/population"):
+        calibrate_sizzle(
+            port,
+            "bswap",
+            tmp_path,
+            shots=1024,
+            validation_shots=8192,
+            recenter=False,
+            bootstrap=20,
+        )
+    assert (tmp_path / "frozen_recipe.json").exists()
+    assert not (tmp_path / "qualified_recipe.json").exists()
+    assert len([r for r in port.calls if "independent_zz" in r["directory"]]) == 32
+
+
+def test_shot_budget_stops_before_extra_hardware_request_and_saves_failure(
+    tmp_path: Path,
+) -> None:
+    """Shot budget stops before extra hardware request and saves failure."""
+    port = SyntheticCounts()
+    with pytest.raises(QualificationError, match="budget exhausted"):
+        calibrate_sizzle(
+            port,
+            "bswap",
+            tmp_path,
+            shots=512,
+            max_total_shots=513,
+            recenter=False,
+            bootstrap=8,
+        )
+    assert len(port.calls) == 1
+    summary = json.loads((tmp_path / "sizzle_summary.json").read_text())
+    assert summary["budget"]["requested_shots"] == 512
+    assert not summary["qualified"]
+
+
+def test_short_score_is_coherence_sensitive_with_unchanged_basis_populations(
+    tmp_path: Path,
+) -> None:
+    """Short score is coherence sensitive with unchanged basis populations."""
+    port = SyntheticCounts(phi=0.0)
+    good = short_gate_score(
+        port, "sqrt_bswap", port.recipes["sqrt_bswap"], tmp_path / "good", shots=4096
+    )
+    bad_port = SyntheticCounts(phi=0.0, maximum_visibility=0.5)
+    bad = short_gate_score(
+        bad_port,
+        "sqrt_bswap",
+        bad_port.recipes["sqrt_bswap"],
+        tmp_path / "bad",
+        shots=4096,
+    )
+    assert good["score"] > 0.999
+    assert bad["score"] < 0.6
+    assert good["score"] - bad["score"] > 0.4
+    assert len(good["rows"]) == 4
+
+
+def test_squad_optimizer_fixed_family_fresh_validation_and_physical_k(
+    tmp_path: Path,
+) -> None:
+    """Squad optimizer fixed family fresh validation and physical k."""
+    port = SyntheticCounts(phi=0.0, shape_loss=True)
+    original = deepcopy(port.recipes)
+    result, summary = optimize_squad(
+        port,
+        "sqrt_bswap",
+        tmp_path,
+        max_evaluations=5,
+        shots=1024,
+        validation_shots=4096,
+        max_total_shots=1_000_000,
+        recenter=False,
+        bootstrap=20,
+    )
+    assert summary["qualified"]
+    assert summary["evaluations"] <= 5
+    assert result["duration_ns"] == original["sqrt_bswap"]["duration_ns"]
+    assert result["ramp_ns"] == original["sqrt_bswap"]["ramp_ns"]
+    assert port.recipes == original
+    assert 0.6 <= result["design_delta_scale"] <= 1.6
+    assert 0.3 <= result["cd_strength"] <= 1.5
+    assert summary["rabi_conversion_fixed"] == port.rabi_scale
+    expected = make_squad_pulse(
+        result,
+        rabi_ghz_per_amplitude=port.rabi_scale,
+        transition_frequency_ghz=port.references["Q035"],
+    )
+    assert expected.scale == pytest.approx(1 / (2 * np.pi * port.rabi_scale))
+    trials = json.loads((tmp_path / "optimization_trials.json").read_text())["trials"]
+    for trial in trials:
+        if trial["status"] == "scored":
+            assert trial["recipe"]["window"] == {"type": "hann"}
+            assert (
+                trial["recipe"]["duration_ns"] == original["sqrt_bswap"]["duration_ns"]
+            )
+    assert all("independent" not in row["directory"] for row in port.calls[:36])
+    assert summary["budget"]["requested_shots"] == sum(r["shots"] for r in port.calls)
+    assert (tmp_path / "frozen_recipe.json").exists()
+
+
+def test_squad_bad_budget_and_lost_coherence_fail_closed(tmp_path: Path) -> None:
+    """Squad bad budget and lost coherence fail closed."""
+    port = SyntheticCounts(phi=0.0, maximum_visibility=0.6)
+    with pytest.raises(QualificationError):
+        optimize_squad(
+            port,
+            "bswap",
+            tmp_path,
+            max_evaluations=3,
+            shots=1024,
+            validation_shots=2048,
+            recenter=False,
+            max_total_shots=1_000_000,
+        )
+    summary = json.loads((tmp_path / "optimization_summary.json").read_text())
+    assert not summary["qualified"]
+    assert not (tmp_path / "qualified_recipe.json").exists()
+
+
+def test_budget_validation() -> None:
+    """Budget validation."""
+    with pytest.raises(ValueError, match="positive integer"):
+        ShotBudget(0)
+    budget = ShotBudget(10)
+    budget.reserve(7)
+    with pytest.raises(QualificationError):
+        budget.reserve(4)
+    assert budget.requested == 7
+
+
+@pytest.mark.parametrize("kind", ["bswap", "sqrt_bswap"])
+def test_local_recenter_executes_fixed_duration_coherence_aware_map(
+    tmp_path: Path, kind: str
+) -> None:
+    """Local recenter executes fixed duration coherence aware map."""
+    port = SyntheticCounts(phi=0.0)
+    base = deepcopy(port.recipes[kind])
+    result, summary = recenter_amplitude_frequency(
+        port, kind, base, tmp_path, shots=1024
+    )
+    assert result["duration_ns"] == base["duration_ns"]
+    assert result["ramp_ns"] == base["ramp_ns"]
+    assert result["amplitude"] == pytest.approx(0.9, abs=0.001)
+    assert abs(result["frequency_ghz"] - 4.61) < 0.0001
+    assert summary["fit"]["reduced_chi2"] < 5
+    assert summary["population"]["minimum_population_agreement"] > 0.99
+    assert {r["recipes"][kind]["duration_ns"] for r in port.calls} == {
+        base["duration_ns"]
+    }
+    assert len(port.calls) == (36 if kind == "bswap" else 164)
+
+
+def test_selected_on_shape_requalifies_exact_waveform_sizzle_null(
+    tmp_path: Path,
+) -> None:
+    """Selected on shape requalifies exact waveform sizzle null."""
+    port = SyntheticCounts(phi=0.12, shape_loss=True)
+    port.recipes["bswap"]["cancel_amplitude_ratio"] = 0.03
+    port.recipes["bswap"]["null_shot_interval_passed"] = True
+    result, summary = optimize_squad(
+        port,
+        "bswap",
+        tmp_path,
+        max_evaluations=3,
+        shots=1024,
+        validation_shots=2048,
+        null_validation_shots=8192,
+        max_total_shots=2_000_000,
+        recenter=False,
+        bootstrap=20,
+    )
+    assert summary["qualified"]
+    assert summary["sizzle_requalification"]["qualified"]
+    assert result["null_shot_interval_passed"]
+    assert result["sizzle_calibration_directory"].endswith("selected_shape_sizzle")
+    assert result["phase_reference_session_id"] == port.session_id
+    null_inputs = [
+        r["recipes"]["bswap"]
+        for r in port.calls
+        if "selected_shape_sizzle/independent_zz" in r["directory"]
+    ]
+    assert len(null_inputs) == 32
+    assert all(
+        r["design_delta_scale"] == result["design_delta_scale"]
+        and r["cd_strength"] == result["cd_strength"]
+        for r in null_inputs
+    )
