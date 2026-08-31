@@ -21,6 +21,8 @@ from numpy.typing import ArrayLike, NDArray
 from qxpulse import Waveform
 from scipy.stats import chi2
 
+from .pulses import make_bswap_pulse
+
 
 class AnchorMeasurements(Protocol):
     """Read-only calibration context and count-preserving acquisition callback."""
@@ -371,6 +373,9 @@ def record_resonance_anchor(
     No calibration recipe is updated and this
     function does not arrange subsequent anchors. All pulse design parameters
     remain frozen; only carrier frequency changes via the existing compiler.
+    SQUAD changes its design-scale bookkeeping to keep signed design delta
+    fixed. RaisedCosine I-only needs no design delta or scale; its complete
+    envelope stays fixed directly, including across zero physical detuning.
     """
     shots = _positive_integer(shots, "shots")
     npoints = _positive_integer(npoints, "npoints", minimum=7)
@@ -383,23 +388,38 @@ def record_resonance_anchor(
     recipe = recipes["bswap"]
     center = float(recipe["frequency_ghz"])
     reference = float(measurements.references[measurements.qubits[0]])
-    scale = float(recipe.get("design_delta_scale", 1.0))
-    delta_design = scale * (reference - center)
+    family = recipe.get("pulse_family", "Squad")
     frequencies = center + np.linspace(-span_mhz, span_mhz, npoints) / 1e3
-    physical_detunings = reference - frequencies
-    if (
-        not np.isfinite([center, reference, scale, delta_design]).all()
-        or scale <= 0
-        or delta_design == 0
-        or not np.isfinite(physical_detunings).all()
-        or np.any(np.sign(physical_detunings) != np.sign(delta_design))
-    ):
-        raise ValueError(
-            "Carrier probe crosses zero detuning or cannot preserve signed SQUAD design"
+    delta_design: float | None
+    if family == "Squad":
+        scale = float(recipe.get("design_delta_scale", 1.0))
+        delta_design = scale * (reference - center)
+        physical_detunings = reference - frequencies
+        if (
+            not np.isfinite([center, reference, scale, delta_design]).all()
+            or scale <= 0
+            or delta_design == 0
+            or not np.isfinite(physical_detunings).all()
+            or np.any(np.sign(physical_detunings) != np.sign(delta_design))
+        ):
+            raise ValueError(
+                "Carrier probe crosses zero detuning or cannot preserve signed SQUAD design"
+            )
+        probe_scales = delta_design / physical_detunings
+        if not np.isfinite(probe_scales).all():
+            raise ValueError("Carrier probe cannot preserve finite SQUAD design scale")
+    elif family == "RaisedCosine":
+        make_bswap_pulse(
+            recipe,
+            rabi_ghz_per_amplitude=measurements.rabi_scale,
+            transition_frequency_ghz=reference,
         )
-    probe_scales = delta_design / physical_detunings
-    if not np.isfinite(probe_scales).all():
-        raise ValueError("Carrier probe cannot preserve finite SQUAD design scale")
+        if not np.isfinite(frequencies).all():
+            raise ValueError("RaisedCosine carrier probes must remain finite")
+        delta_design = None
+        probe_scales = np.empty(0, dtype=float)
+    else:
+        raise ValueError(f"Unknown bSWAP pulse family: {family!r}")
     baseline = _baseline_context(measurements, recipes)
     started = datetime.now().astimezone()
     anchor_dir = (
@@ -421,7 +441,11 @@ def record_resonance_anchor(
         baseline_context=baseline,
         recipe_fingerprint=baseline["recipe_fingerprint"],
         recipe=recipe,
-        frozen_design_delta_rad_per_ns=float(2 * np.pi * delta_design),
+        pulse_family=family,
+        design_delta_applicable=family == "Squad",
+        frozen_design_delta_rad_per_ns=(
+            float(2 * np.pi * delta_design) if delta_design is not None else None
+        ),
         probe_design_delta_scales=probe_scales.tolist(),
         frequencies_ghz=frequencies.tolist(),
         frequency_order=order,
@@ -443,6 +467,7 @@ def record_resonance_anchor(
             counts=counts,
             timestamps=timestamps,
             probe_design_delta_scales=probe_scales,
+            pulse_family=np.asarray(family),
             frequency_order=order,
             shots=shots,
         )
@@ -455,7 +480,8 @@ def record_resonance_anchor(
             for direction in (0, 1) if position % 2 == 0 else (1, 0):
                 selected = deepcopy(recipes)
                 selected["bswap"]["frequency_ghz"] = float(frequencies[fi])
-                selected["bswap"]["design_delta_scale"] = float(probe_scales[fi])
+                if family == "Squad":
+                    selected["bswap"]["design_delta_scale"] = float(probe_scales[fi])
                 prepared = ("0", "0") if direction == 0 else ("1", "1")
                 before = datetime.now().astimezone().isoformat()
                 row = measurements.acquire(

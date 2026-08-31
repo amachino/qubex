@@ -10,6 +10,8 @@ to command units. `design_delta_scale` changes the design, never this K.
 
 Compiler validation establishes the emitted-waveform/phase contract, not an
 analog transfer function, multilevel fidelity, or hardware readiness.
+Explicit RaisedCosine recipes provide an I-only comparison family; their
+carrier is transported by the same compiler without a SQUAD design detuning.
 """
 
 from __future__ import annotations
@@ -136,6 +138,119 @@ def make_squad_pulse(
     values = pulse.values
     if not np.isfinite(values).all() or np.max(np.abs(values)) > ceiling + 1e-10:
         raise ValueError("Sampled SQUAD I+iQ exceeds the command headroom")
+    return pulse
+
+
+def make_bswap_pulse(
+    recipe: Mapping[str, Any],
+    *,
+    rabi_ghz_per_amplitude: float,
+    transition_frequency_ghz: float,
+    sampling_period_ns: float = 2.0,
+    max_command: float = 1.0,
+) -> FlatTop:
+    """
+    Materialize an explicitly selected bSWAP envelope in command units.
+
+    Parameters
+    ----------
+    recipe : Mapping[str, Any]
+        `pulse_family` is `"Squad"` by default, or explicit `"RaisedCosine"`.
+        Both use command `amplitude`, carrier `frequency_ghz`, complete
+        `duration_ns`, and per-side `ramp_ns` (default 16 ns). SQUAD delegates
+        unchanged to `make_squad_pulse`, including its default CD strength 1.
+        RaisedCosine is I-only: omitted or zero `cd_strength` disables CD;
+        nonzero corrections, `window`, and SQUAD design parameters are rejected.
+    rabi_ghz_per_amplitude : float
+        Positive cyclic Rabi conversion in GHz per command amplitude.
+    transition_frequency_ghz : float
+        Finite GE reference in GHz. Used for SQUAD's signed transition-minus-
+        carrier design detuning; RaisedCosine I-only does not depend on it.
+    sampling_period_ns : float, optional
+        Positive sampling interval; complete and per-side ramp durations must
+        lie on this grid. The campaign compiler requires the native 2 ns grid.
+    max_command : float, optional
+        Maximum finite complex sample magnitude, default 1.
+
+    Returns
+    -------
+    FlatTop
+        Complete envelope constructed with angular amplitude K*A and scaled
+        back by 1/K, where K=2*pi*r. For I-only RaisedCosine this reproduces
+        the ordinary command-amplitude FlatTop without a detuning correction.
+
+    Raises
+    ------
+    ValueError
+        Unknown family, unsupported shape/correction input, invalid units or
+        timing, or sampled command headroom violation.
+
+    Notes
+    -----
+    No hardware access or calibration mutation occurs. Family selection does
+    not establish gate quality; each family needs independent calibration.
+    The existing SQUAD function and its default behavior are unchanged.
+    """
+    family = recipe.get("pulse_family", "Squad")
+    if family == "Squad":
+        return make_squad_pulse(
+            recipe,
+            rabi_ghz_per_amplitude=rabi_ghz_per_amplitude,
+            transition_frequency_ghz=transition_frequency_ghz,
+            sampling_period_ns=sampling_period_ns,
+            max_command=max_command,
+        )
+    if family != "RaisedCosine":
+        raise ValueError(f"Unknown bSWAP pulse family: {family!r}")
+    unsupported = {
+        "window",
+        "design_delta_scale",
+        "delta",
+        "squad_delta_control",
+        "correction_type",
+        "correction_factor",
+        "factor",
+        "beta",
+        "beta_mode",
+        "beta_sum",
+        "tukey_rise_end",
+        "tukey_fall_start",
+    }.intersection(recipe)
+    if unsupported:
+        raise ValueError(
+            "RaisedCosine I-only does not accept shape/correction keys: "
+            + ", ".join(sorted(unsupported))
+        )
+    strength = _finite(recipe.get("cd_strength", 0.0), "cd_strength")
+    if strength != 0.0:
+        raise ValueError("RaisedCosine currently supports I-only cd_strength=0")
+    sample = _finite(sampling_period_ns, "sampling_period_ns")
+    if sample <= 0:
+        raise ValueError("sampling_period_ns must be positive")
+    duration = _grid_time(recipe["duration_ns"], "duration_ns", sample)
+    ramp = _grid_time(recipe.get("ramp_ns", 16.0), "ramp_ns", sample)
+    amplitude = _finite(recipe["amplitude"], "amplitude")
+    gain = _finite(rabi_ghz_per_amplitude, "rabi_ghz_per_amplitude")
+    ceiling = _finite(max_command, "max_command")
+    _finite(recipe["frequency_ghz"], "frequency_ghz")
+    _finite(transition_frequency_ghz, "transition_frequency_ghz")
+    if ramp <= 0 or duration < 2 * ramp:
+        raise ValueError("duration_ns must include two positive ramp_ns intervals")
+    if gain <= 0 or not 0 < amplitude <= ceiling:
+        raise ValueError("Require positive gain and amplitude within max_command")
+    k = 2 * np.pi * gain
+    pulse = FlatTop(
+        duration=duration,
+        amplitude=k * amplitude,
+        tau=ramp,
+        type="RaisedCosine",
+        correction_type=None,
+        scale=1 / k,
+        sampling_period=sample,
+    )
+    values = pulse.values
+    if not np.isfinite(values).all() or np.max(np.abs(values)) > ceiling + 1e-10:
+        raise ValueError("Sampled RaisedCosine I-only exceeds the command headroom")
     return pulse
 
 
@@ -379,6 +494,8 @@ def compile_campaign(
         bswap and/or sqrt_bswap records, each including measured
         phase_calibration and gate_start_ns. Optional cancel_amplitude_ratio
         and cancel_phase_rad specify a phase-coherent passive tone.
+        `pulse_family` defaults to SQUAD; explicit `"RaisedCosine"` selects
+        the I-only family described by `make_bswap_pulse`.
     qubits : Sequence[str]
         Active then passive GE target labels.
     drive_label, cancel_label : str
@@ -477,7 +594,7 @@ def compile_campaign(
             raise ValueError("Recipe gate_kind does not match its key")
         phases[kind] = measured_phase_vectors(recipe)
         starts[kind] = _grid_time(recipe["gate_start_ns"], "gate_start_ns", sample)
-        pulses[kind] = make_squad_pulse(
+        pulses[kind] = make_bswap_pulse(
             recipe,
             rabi_ghz_per_amplitude=rabi_ghz_per_amplitude,
             transition_frequency_ghz=references[qubits[0]],

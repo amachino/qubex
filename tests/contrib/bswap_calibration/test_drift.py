@@ -2,6 +2,7 @@
 
 import json
 from copy import deepcopy
+from typing import Any
 
 import numpy as np
 import pytest
@@ -12,7 +13,10 @@ from qubex.contrib.experiment.bswap_calibration.drift import (
     plot_resonance_history,
     record_resonance_anchor,
 )
-from qubex.contrib.experiment.bswap_calibration.pulses import make_squad_pulse
+from qubex.contrib.experiment.bswap_calibration.pulses import (
+    make_bswap_pulse,
+    make_squad_pulse,
+)
 
 
 class FakeMeasurements:
@@ -47,7 +51,7 @@ class FakeMeasurements:
             cancel_amplitude_ratio=0.1,
             cancel_phase_rad=0.4,
         )
-        self.recipes = {
+        self.recipes: dict[str, Any] = {
             "bswap": recipe,
             "sqrt_bswap": dict(recipe, gate_kind="sqrt_bswap", duration_ns=116.0),
         }
@@ -217,4 +221,60 @@ def test_zero_detuning_crossing_is_rejected_before_acquisition(tmp_path):
     measurements = FakeMeasurements()
     with pytest.raises(ValueError, match="zero detuning"):
         record_resonance_anchor(measurements, tmp_path, span_mhz=400.0)
+    assert not measurements.calls
+
+
+@pytest.mark.parametrize("zero_detuning", [False, True])
+def test_raised_anchor_keeps_i_only_envelope_without_squad_keys(
+    tmp_path, zero_detuning
+):
+    """RaisedCosine carrier anchors retain the exact envelope and no design delta."""
+    measurements = FakeMeasurements()
+    for record in measurements.recipes.values():
+        record.pop("window")
+        record.pop("design_delta_scale")
+        record.update(pulse_family="RaisedCosine", cd_strength=0.0, ramp_ns=30.0)
+    if zero_detuning:
+        measurements.references["A"] = measurements.recipes["bswap"]["frequency_ghz"]
+    before = deepcopy(measurements.recipes)
+    result = record_resonance_anchor(measurements, tmp_path, shots=4096)
+    nominal = make_bswap_pulse(
+        before["bswap"],
+        rabi_ghz_per_amplitude=measurements.rabi_scale,
+        transition_frequency_ghz=measurements.references["A"],
+    )
+    assert len(measurements.calls) == 18
+    assert measurements.recipes == before
+    assert result["pulse_family"] == "RaisedCosine"
+    assert not result["design_delta_applicable"]
+    assert result["frozen_design_delta_rad_per_ns"] is None
+    assert result["probe_design_delta_scales"] == []
+    for call in measurements.calls:
+        record = call["recipes"]["bswap"]
+        assert "design_delta_scale" not in record
+        assert "window" not in record
+        assert {k: v for k, v in record.items() if k != "frequency_ghz"} == {
+            k: v for k, v in before["bswap"].items() if k != "frequency_ghz"
+        }
+        pulse = make_bswap_pulse(
+            record,
+            rabi_ghz_per_amplitude=measurements.rabi_scale,
+            transition_frequency_ghz=measurements.references["A"],
+        )
+        np.testing.assert_array_equal(pulse.values, nominal.values)
+    with np.load(result["data_file"], allow_pickle=False) as saved:
+        assert saved["probe_design_delta_scales"].shape == (0,)
+        assert saved["probe_design_delta_scales"].dtype.kind == "f"
+        assert str(saved["pulse_family"]) == "RaisedCosine"
+
+
+@pytest.mark.parametrize("bad_family", ["unknown", "RaisedCosine"])
+def test_anchor_rejects_unsupported_family_or_raised_window_before_shots(
+    tmp_path, bad_family
+):
+    """Family mistakes cannot silently inject or ignore SQUAD shaping parameters."""
+    measurements = FakeMeasurements()
+    measurements.recipes["bswap"]["pulse_family"] = bad_family
+    with pytest.raises(ValueError, match=r"family|RaisedCosine"):
+        record_resonance_anchor(measurements, tmp_path)
     assert not measurements.calls
