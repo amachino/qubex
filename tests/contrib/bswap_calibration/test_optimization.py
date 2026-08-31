@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 import numpy as np
 import pytest
 
+from qubex.contrib.experiment.bswap_calibration import optimization as module
 from qubex.contrib.experiment.bswap_calibration.optimization import (
     QualificationError,
     ShotBudget,
@@ -448,3 +449,203 @@ def test_selected_on_shape_requalifies_exact_waveform_sizzle_null(
         and r["cd_strength"] == result["cd_strength"]
         for r in null_inputs
     )
+
+
+@pytest.mark.parametrize("workflow", ["sizzle", "squad"])
+@pytest.mark.parametrize("kind", ["bswap", "sqrt_bswap"])
+def test_smoke_exercises_two_real_candidates_without_qualification(
+    tmp_path: Path, workflow: str, kind: str
+) -> None:
+    """Low-quality smoke data exercises changed pulses without a null or fidelity claim."""
+    port = SyntheticCounts(phi=0.12, ratio_slope=0.0, maximum_visibility=0.4)
+    port.recipes[kind]["zz_phase_rad"] = 0.24
+    port.recipes[kind].update(
+        qualified=True,
+        scientific_qualified=True,
+        null_shot_interval_passed=True,
+        shape_validation_passed=True,
+    )
+    original = deepcopy(port.recipes)
+    function = calibrate_sizzle if workflow == "sizzle" else optimize_squad
+    result, summary = function(
+        port,
+        kind,
+        tmp_path,
+        shots=64,
+        validation_shots=128,
+        max_total_shots=20000,
+        bootstrap=8,
+        smoke_mode=True,
+    )
+    assert summary["status"] == "smoke_only"
+    assert summary["smoke_only"]
+    assert not summary["qualified"]
+    assert not summary["scientific_qualified"]
+    assert summary["evaluations"] == 2
+    assert summary["coverage"]["changed_waveform_acquired"]
+    assert summary["coverage"]["changed_waveform_returned"]
+    assert summary["coverage"]["skipped_full_optimization"]
+    assert result["smoke_only"]
+    assert not result["null_shot_interval_passed"]
+    assert not result["shape_validation_passed"]
+    assert "phase_calibration" in result
+    assert result["duration_ns"] == original[kind]["duration_ns"]
+    assert port.recipes == original
+    assert len(port.calls) == 144
+    assert len([r for r in port.calls if "/zz/" in r["directory"] + "/"]) == 64
+    assert (tmp_path / "provisional_recipe.json").exists()
+    assert not (tmp_path / "qualified_recipe.json").exists()
+    for path in tmp_path.glob("smoke_candidate_*/phase/phase_calibration.json"):
+        phase_record = json.loads(path.read_text())
+        assert all(
+            not phase_record[key]
+            for key in (
+                "qualified",
+                "scientific_qualified",
+                "null_shot_interval_passed",
+                "shape_validation_passed",
+            )
+        )
+    assert summary["budget"]["requested_shots"] == sum(r["shots"] for r in port.calls)
+
+
+def test_smoke_unidentified_changed_phase_retains_only_unchanged_seed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unidentified changed pulse is recorded but never receives invented phases."""
+    port = SyntheticCounts(phi=0.12)
+    port.recipes["bswap"]["zz_phase_rad"] = 0.24
+    original = deepcopy(port.recipes["bswap"])
+    actual_fit = module.fit_local_phases
+    calls = 0
+
+    def fit(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ValueError("synthetic unidentifiable changed phase")
+        return actual_fit(*args, **kwargs)
+
+    monkeypatch.setattr(module, "fit_local_phases", fit)
+    result, summary = calibrate_sizzle(
+        port,
+        "bswap",
+        tmp_path,
+        shots=64,
+        validation_shots=64,
+        bootstrap=8,
+        smoke_mode=True,
+    )
+    assert result["phase_calibration"] == original["phase_calibration"]
+    assert result["zz_phase_rad"] == original["zz_phase_rad"]
+    assert result["cancel_amplitude_ratio"] == original["cancel_amplitude_ratio"]
+    assert summary["selected_trial"] == 0
+    assert summary["coverage"]["changed_waveform_acquired"]
+    assert not summary["coverage"]["changed_waveform_returned"]
+    assert summary["coverage"]["unexercised_coverage"]
+    assert not summary["candidates"][1]["phase_identified"]
+    assert "phase_calibration" not in summary["candidates"][1]["recipe"]
+    assert "SMOKE_UNCHANGED_SEED" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("workflow", ["sizzle", "squad"])
+def test_smoke_budget_exhaustion_remains_hard(tmp_path: Path, workflow: str) -> None:
+    """Smoke never converts an exhausted shot budget into a successful continuation."""
+    port = SyntheticCounts()
+    function = calibrate_sizzle if workflow == "sizzle" else optimize_squad
+    with pytest.raises(QualificationError, match="budget exhausted"):
+        function(
+            port,
+            "bswap",
+            tmp_path,
+            shots=64,
+            max_total_shots=65,
+            bootstrap=8,
+            smoke_mode=True,
+        )
+    assert len(port.calls) == 1
+    filename = (
+        "sizzle_summary.json" if workflow == "sizzle" else "optimization_summary.json"
+    )
+    summary = json.loads((tmp_path / filename).read_text())
+    assert summary["status"] == "failed"
+    assert not summary["qualified"]
+
+
+def test_smoke_invalid_waveform_fails_before_measurement(tmp_path: Path) -> None:
+    """Smoke does not clip or skip an invalid physical waveform."""
+    port = SyntheticCounts()
+    port.recipes["bswap"]["amplitude"] = 1.2
+    with pytest.raises(ValueError, match="amplitude"):
+        optimize_squad(port, "bswap", tmp_path, smoke_mode=True)
+    assert port.calls == []
+
+
+def test_smoke_budget_during_phase_acquisition_is_not_softened(tmp_path: Path) -> None:
+    """The scientific phase fallback cannot catch a budget failure inside acquisition."""
+    port = SyntheticCounts()
+    with pytest.raises(QualificationError, match="budget exhausted"):
+        calibrate_sizzle(
+            port,
+            "bswap",
+            tmp_path,
+            shots=64,
+            max_total_shots=33 * 64 + 1,
+            bootstrap=8,
+            smoke_mode=True,
+        )
+    assert len(port.calls) == 33
+    assert not any("population" in row["directory"] for row in port.calls)
+
+
+@pytest.mark.parametrize("failure", ["counts", "deadline"])
+def test_smoke_data_and_deadline_errors_remain_hard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Malformed counts and execution deadlines never become smoke-quality warnings."""
+    port = SyntheticCounts()
+    original = port.acquire
+
+    def acquire(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        if failure == "deadline":
+            raise TimeoutError("synthetic deadline")
+        row = original(*args, **kwargs)
+        row["counts"][0] += 0.5
+        return row
+
+    monkeypatch.setattr(port, "acquire", acquire)
+    with pytest.raises((ValueError, TimeoutError)):
+        calibrate_sizzle(
+            port, "bswap", tmp_path, shots=64, bootstrap=8, smoke_mode=True
+        )
+    saved = json.loads((tmp_path / "sizzle_summary.json").read_text())
+    assert saved["status"] == "failed"
+    assert not (tmp_path / "provisional_recipe.json").exists()
+
+
+def test_smoke_records_bad_model_quality_without_qualifying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finite but poor phase model remains an explicitly unqualified smoke result."""
+    port = SyntheticCounts()
+    original = module.fit_local_phases
+
+    def fit(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        result = original(*args, **kwargs)
+        result["coherence_residual_rms"] = 0.25
+        return result
+
+    monkeypatch.setattr(module, "fit_local_phases", fit)
+    result, summary = optimize_squad(
+        port,
+        "bswap",
+        tmp_path,
+        shots=64,
+        validation_shots=64,
+        bootstrap=8,
+        smoke_mode=True,
+    )
+    assert summary["coverage"]["changed_waveform_returned"]
+    assert all(not row["phase_model_qualified"] for row in summary["candidates"])
+    assert result["phase_calibration"]["coherence_residual_rms"] == 0.25
+    assert not result["qualified"]

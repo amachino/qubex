@@ -24,7 +24,7 @@ from scipy.optimize import minimize
 
 from .local_fit import fit_local_map
 from .measurements import save_json, zero_phase_recipe
-from .pulses import ideal_circuit_unitary, make_squad_pulse
+from .pulses import ideal_circuit_unitary, make_squad_pulse, measured_phase_vectors
 from .tomography import (
     BASES,
     PAULI,
@@ -38,6 +38,10 @@ from .tomography import (
 
 class QualificationError(RuntimeError):
     """A measured candidate failed its predeclared scientific acceptance gate."""
+
+
+class _SmokePhaseIdentificationError(QualificationError):
+    """A smoke phase fit is unidentified despite complete well-formed counts."""
 
 
 def _reject(message: str) -> NoReturn:
@@ -546,6 +550,7 @@ def _refresh_phases(
     *,
     shots: int,
     budget: ShotBudget,
+    smoke_mode: bool = False,
 ) -> dict[str, Any]:
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -575,10 +580,14 @@ def _refresh_phases(
     try:
         fit = fit_local_phases(kind, states, rhos)
     except ValueError as error:
+        if smoke_mode:
+            raise _SmokePhaseIdentificationError(
+                f"Measured smoke phase calibration is unidentified: {error}"
+            ) from error
         raise QualificationError(
             f"Measured phase calibration failed: {error}"
         ) from error
-    if fit["coherence_residual_rms"] > 0.08:
+    if fit["coherence_residual_rms"] > 0.08 and not smoke_mode:
         _reject("Local-phase model does not describe measured coherences")
     record = deepcopy(recipe)
     record.update(
@@ -589,8 +598,256 @@ def _refresh_phases(
         phase_data_directory=str(directory),
         phase_status="measured; independent validation pending",
     )
+    if smoke_mode:
+        record.update(
+            smoke_only=True,
+            qualified=False,
+            scientific_qualified=False,
+            null_shot_interval_passed=False,
+            shape_validation_passed=False,
+            phase_model_qualified=bool(fit["coherence_residual_rms"] <= 0.08),
+            phase_status="finite measured smoke fit; scientific qualification deferred",
+        )
     save_json(directory / "phase_calibration.json", record)
     return record
+
+
+def _smoke_recipe(record: Mapping[str, Any]) -> dict[str, Any]:
+    result = deepcopy(dict(record))
+    result.update(
+        smoke_only=True,
+        qualified=False,
+        scientific_qualified=False,
+        null_shot_interval_passed=False,
+        shape_validation_passed=False,
+    )
+    return result
+
+
+def _invalid_smoke_input(message: str) -> NoReturn:
+    raise ValueError(message)
+
+
+def _smoke_candidate_workflow(
+    measurements: Any,
+    kind: str,
+    base: Mapping[str, Any],
+    changed: Mapping[str, Any],
+    directory: Path,
+    *,
+    purpose: str,
+    modified_parameters: Mapping[str, float],
+    shots: int,
+    validation_shots: int,
+    bootstrap: int,
+    budget: ShotBudget,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Exercise two exact waveforms without manufacturing a qualified calibration."""
+    summary_name = (
+        "sizzle_summary.json" if purpose == "sizzle" else "optimization_summary.json"
+    )
+    candidates: list[dict[str, Any]] = []
+    coverage: dict[str, Any] = dict(
+        planned_candidates=2,
+        acquired_candidates=0,
+        changed_waveform_acquired=False,
+        changed_waveform_returned=False,
+        skipped_full_optimization=True,
+        independent_qualification_performed=False,
+        phase_cycle_settings_per_candidate=32,
+        phase_fit_settings_per_candidate=36,
+        population_settings_per_candidate=4,
+        unexercised_coverage=[],
+    )
+    summary: dict[str, Any] = dict(
+        kind=kind,
+        smoke_only=True,
+        qualified=False,
+        scientific_qualified=False,
+        status="smoke_running",
+        purpose=purpose,
+        candidates=candidates,
+        coverage=coverage,
+        fixed_duration_ns=base["duration_ns"],
+        fixed_ramp_ns=base.get("ramp_ns", 16.0),
+        session_id=measurements.session_id,
+        shots_per_setting=shots,
+        population_shots_per_setting=validation_shots,
+        claim="bounded workflow smoke with real counts; not a ZZ null, waveform optimum, or gate fidelity",
+    )
+    save_json(directory / "protocol.json", summary)
+    try:
+        # A retained seed must have real supplied phases; never synthesize them.
+        measured_phase_vectors(base)
+        waveform_hashes = []
+        for record in (base, changed):
+            pulse = make_squad_pulse(
+                record,
+                rabi_ghz_per_amplitude=measurements.rabi_scale,
+                transition_frequency_ghz=measurements.references[
+                    measurements.qubits[0]
+                ],
+            )
+            ratio = float(record.get("cancel_amplitude_ratio", 0.0))
+            phase = float(record.get("cancel_phase_rad", 0.0))
+            if not np.isfinite([ratio, phase]).all() or not 0 <= ratio <= 1:
+                _invalid_smoke_input("Invalid cancellation waveform in smoke candidate")
+            samples = np.stack(
+                [pulse.values, ratio * pulse.values * np.exp(1j * phase)]
+            )
+            waveform_hashes.append(hashlib.sha256(samples.tobytes()).hexdigest())
+        if waveform_hashes[0] == waveform_hashes[1]:
+            _invalid_smoke_input(
+                "Smoke changed candidate must change actual sampled waveform"
+            )
+
+        for index, candidate in enumerate((base, changed)):
+            trial_dir = directory / f"smoke_candidate_{index}"
+            row: dict[str, Any] = dict(
+                index=index,
+                changed_waveform=index == 1,
+                modified_parameters=dict(modified_parameters) if index else {},
+                status="started",
+                phase_identified=False,
+                phase_model_qualified=False,
+                phase_fit=None,
+                waveform_sha256=waveform_hashes[index],
+            )
+            candidates.append(row)
+            cycle = phase_cycle_zz(
+                measurements,
+                kind,
+                candidate,
+                trial_dir / "zz",
+                shots=shots,
+                bootstrap=bootstrap,
+                seed=17100 + index,
+                budget=budget,
+            )
+            row.update(
+                zz_estimate=cycle["estimate"],
+                phase_cycle_file=str(trial_dir / "zz/phase_cycle.json"),
+            )
+            coverage["acquired_candidates"] += 1
+            if index:
+                coverage["changed_waveform_acquired"] = True
+            try:
+                refreshed = _refresh_phases(
+                    measurements,
+                    kind,
+                    candidate,
+                    trial_dir / "phase",
+                    shots=shots,
+                    budget=budget,
+                    smoke_mode=True,
+                )
+                measured_phase_vectors(refreshed)
+                if not np.isfinite(float(refreshed["zz_phase_rad"])):
+                    raise ValueError("Nonfinite measured smoke ZZ phase")
+                row.update(
+                    status="finite_phase_fit",
+                    phase_identified=True,
+                    phase_model_qualified=refreshed["phase_model_qualified"],
+                    phase_fit=deepcopy(refreshed["phase_calibration"]),
+                    recipe=_smoke_recipe(refreshed),
+                )
+                population_recipe = refreshed
+            except _SmokePhaseIdentificationError as error:
+                # This exception is specific to the final phase solve. Budget,
+                # deadline, count-schema and waveform failures are never caught.
+                incomplete = _smoke_recipe(candidate)
+                for field in (
+                    "phase_calibration",
+                    "pre_vz_rad",
+                    "post_vz_rad",
+                    "zz_phase_rad",
+                ):
+                    incomplete.pop(field, None)
+                incomplete["phase_status"] = "unidentified; diagnostic waveform only"
+                row.update(
+                    status="phase_unidentified",
+                    phase_error=str(error),
+                    recipe=incomplete,
+                )
+                population_recipe = zero_phase_recipe(candidate)
+                print(
+                    f"SMOKE_QUALITY_WARNING: candidate {index} has no identifiable new phase fit",
+                    flush=True,
+                )
+            row["population"] = _population_check(
+                measurements,
+                kind,
+                population_recipe,
+                trial_dir / "population",
+                shots=validation_shots,
+                budget=budget,
+            )
+            save_json(
+                directory / "smoke_candidates.json",
+                {"candidates": candidates, "budget": budget.report()},
+            )
+
+        if candidates[1]["phase_identified"]:
+            selected_index = 1
+            chosen = _smoke_recipe(candidates[1]["recipe"])
+            coverage["changed_waveform_returned"] = True
+            selection = (
+                "changed waveform with finite measured phases; smoke coverage only"
+            )
+        else:
+            if "zz_phase_rad" not in base or not np.isfinite(
+                float(base["zz_phase_rad"])
+            ):
+                _reject(
+                    "No unchanged seed with supplied measured phases and a finite frozen ZZ phase is available"
+                )
+            selected_index = 0
+            chosen = _smoke_recipe(base)
+            coverage["unexercised_coverage"] = [
+                "changed-waveform downstream compilation and benchmarking"
+            ]
+            if purpose == "sizzle":
+                coverage["unexercised_coverage"].append("new siZZle-ON downstream path")
+            selection = "unchanged seed with supplied measured phases retained; changed pulse phases unidentified"
+            print(
+                "SMOKE_UNCHANGED_SEED: changed-waveform downstream coverage remains untested",
+                flush=True,
+            )
+        chosen.update(
+            smoke_protocol=purpose,
+            smoke_directory=str(directory),
+            smoke_coverage=deepcopy(coverage),
+            frozen_at=datetime.now().astimezone().isoformat(),
+            status="smoke_only; not scientifically qualified",
+        )
+        summary.update(
+            status="smoke_only",
+            evaluations=len(candidates),
+            selected_trial=selected_index,
+            selection=selection,
+            budget=budget.report(),
+        )
+        save_json(directory / "frozen_recipe.json", chosen)
+        save_json(directory / "provisional_recipe.json", chosen)
+        save_json(directory / summary_name, summary)
+        print(
+            "SMOKE_QUALITY_WARNING: only low-shot workflow coverage; no null or fidelity qualification",
+            flush=True,
+        )
+    except Exception as error:
+        summary.update(
+            status="failed",
+            error=str(error),
+            error_type=type(error).__name__,
+            budget=budget.report(),
+        )
+        save_json(
+            directory / "smoke_candidates.json",
+            {"candidates": candidates, "budget": budget.report()},
+        )
+        save_json(directory / summary_name, summary)
+        raise
+    return chosen, summary
 
 
 def _interval_sign(estimate: Mapping[str, Any]) -> int:
@@ -637,6 +894,7 @@ def calibrate_sizzle(
     bootstrap: int = 400,
     recenter: bool = True,
     budget: ShotBudget | None = None,
+    smoke_mode: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Qualify a same-session exact-waveform integrated-ZZ null.
@@ -677,11 +935,18 @@ def calibrate_sizzle(
         Refit amplitude/carrier at fixed duration with the tone on.
     budget : ShotBudget or None, optional
         Shared parent budget, used instead of creating a separate budget.
+    smoke_mode : bool, optional
+        Exercise the seed and one bounded changed tone at low caller-selected
+        shots. Full 32-setting cycles, measured phases and populations are retained,
+        but optimization/null qualification is skipped and every output remains
+        smoke-only/unqualified. No `qualified_recipe.json` is written.
 
     Returns
     -------
     tuple[dict, dict]
         Independently qualified recipe and complete acceptance summary.
+        Smoke mode instead returns an unqualified provisional recipe and
+        explicit workflow-coverage summary.
 
     Raises
     ------
@@ -740,6 +1005,30 @@ def calibrate_sizzle(
     ):
         raise ValueError("Invalid predeclared exchange/coherence/direction criteria")
     budget = budget or ShotBudget(max_total_shots)
+    if smoke_mode:
+        ratio = (
+            probe_ratio
+            if not np.isclose(base.get("cancel_amplitude_ratio", 0.0), probe_ratio)
+            else probe_ratio / 2
+        )
+        changed = {
+            **deepcopy(base),
+            "cancel_amplitude_ratio": float(ratio),
+            "cancel_phase_rad": float(base.get("cancel_phase_rad", 0.0)),
+        }
+        return _smoke_candidate_workflow(
+            measurements,
+            kind,
+            base,
+            changed,
+            directory,
+            purpose="sizzle",
+            modified_parameters={"cancel_amplitude_ratio": float(ratio)},
+            shots=shots,
+            validation_shots=validation_shots,
+            bootstrap=bootstrap,
+            budget=budget,
+        )
     summary = {
         "kind": kind,
         "qualified": False,
@@ -1184,6 +1473,7 @@ def optimize_squad(
     recenter: bool = True,
     null_validation_shots: int = 8192,
     bootstrap: int = 400,
+    smoke_mode: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Optimize a fixed pulse family using measured coherent gate scores.
@@ -1215,11 +1505,18 @@ def optimize_squad(
         Fresh per-setting shots for selected-shape siZZle requalification.
     bootstrap : int, optional
         Multinomial replicates for siZZle uncertainty.
+    smoke_mode : bool, optional
+        Exercise exactly two finite waveforms: the seed and a bounded design-delta
+        perturbation. Acquire full ZZ cycles, actual phase fits and populations,
+        skipping the optimizer/recenter and independent qualification. Return a
+        smoke-only provisional recipe; never write `qualified_recipe.json`.
 
     Returns
     -------
     tuple[dict, dict]
         Frozen independently validated recipe and optimization/comparison record.
+        Smoke mode instead returns an unqualified provisional recipe and
+        explicit workflow-coverage summary.
 
     Raises
     ------
@@ -1258,6 +1555,22 @@ def optimize_squad(
     if np.any(x0 < bounds[:, 0]) or np.any(x0 > bounds[:, 1]):
         raise ValueError("Starting shape is outside the predeclared optimizer bounds")
     budget = ShotBudget(max_total_shots)
+    if smoke_mode:
+        scale = float(x0[0] + (0.05 if x0[0] <= 1.55 else -0.05))
+        changed = {**deepcopy(base), "design_delta_scale": scale}
+        return _smoke_candidate_workflow(
+            measurements,
+            kind,
+            base,
+            changed,
+            directory,
+            purpose="squad",
+            modified_parameters={"design_delta_scale": scale},
+            shots=shots,
+            validation_shots=validation_shots,
+            bootstrap=bootstrap,
+            budget=budget,
+        )
     trials, summary = (
         [],
         {
