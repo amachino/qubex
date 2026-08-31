@@ -23,6 +23,7 @@ from qubex.contrib.experiment.bswap_calibration.pulses import (
     ideal_circuit_unitary,
     local_xy,
     local_z,
+    make_bswap_pulse,
     make_squad_pulse,
 )
 
@@ -498,12 +499,14 @@ def test_local_recenter_executes_fixed_duration_coherence_aware_map(
     assert summary["plan"]["amplitude_step"] == 0.0005
     assert summary["budget"]["requested_shots"] <= summary["plan"]["maximum_shots"]
     assert base == port.recipes[kind]
+    frozen_design_delta_ghz = base["design_delta_scale"] * (
+        port.references[port.qubits[0]] - base["frequency_ghz"]
+    )
     for call in port.calls:
         observed = call["recipes"][kind]
         for key in (
             "duration_ns",
             "ramp_ns",
-            "design_delta_scale",
             "cd_strength",
             "window",
             "cancel_amplitude_ratio",
@@ -511,7 +514,128 @@ def test_local_recenter_executes_fixed_duration_coherence_aware_map(
             "gate_start_ns",
         ):
             assert observed[key] == base[key]
+        assert observed["design_delta_scale"] * (
+            port.references[port.qubits[0]] - observed["frequency_ghz"]
+        ) == pytest.approx(frozen_design_delta_ghz)
+    assert result["design_delta_scale"] * (
+        port.references[port.qubits[0]] - result["frequency_ghz"]
+    ) == pytest.approx(frozen_design_delta_ghz)
+    assert summary["plan"]["frozen_design_delta_ghz"] == pytest.approx(
+        frozen_design_delta_ghz
+    )
     assert summary["plan"]["fixed_rabi_scale"] == port.rabi_scale
+
+
+def test_squad_recenter_keeps_each_amplitude_row_waveform_fixed_across_carriers(
+    tmp_path: Path,
+) -> None:
+    """Carrier trials preserve the signed SQUAD design delta and waveform."""
+    port = RidgeCounts(phi=0.0)
+    base = deepcopy(port.recipes["bswap"])
+    result, _ = recenter_amplitude_frequency(port, "bswap", base, tmp_path, shots=1024)
+    frozen_delta = base["design_delta_scale"] * (
+        port.references[port.qubits[0]] - base["frequency_ghz"]
+    )
+    map_recipes = [
+        call["recipes"]["bswap"]
+        for call in port.calls
+        if call["label"].startswith("map_")
+    ]
+    assert len({recipe["frequency_ghz"] for recipe in map_recipes}) > 1
+    for recipe in [*map_recipes, result]:
+        assert recipe["design_delta_scale"] * (
+            port.references[port.qubits[0]] - recipe["frequency_ghz"]
+        ) == pytest.approx(frozen_delta)
+    for amplitude in sorted({recipe["amplitude"] for recipe in map_recipes}):
+        row = [recipe for recipe in map_recipes if recipe["amplitude"] == amplitude]
+        reference = make_bswap_pulse(
+            row[0],
+            rabi_ghz_per_amplitude=port.rabi_scale,
+            transition_frequency_ghz=port.references[port.qubits[0]],
+        ).values
+        for recipe in row[1:]:
+            candidate = make_bswap_pulse(
+                recipe,
+                rabi_ghz_per_amplitude=port.rabi_scale,
+                transition_frequency_ghz=port.references[port.qubits[0]],
+            ).values
+            np.testing.assert_allclose(candidate, reference, rtol=0, atol=1e-14)
+
+
+def test_recentered_squad_delta_survives_fresh_phase_measurements(
+    tmp_path: Path,
+) -> None:
+    """Fresh phase fitting does not restore the seed carrier design scale."""
+    port = RidgeCounts(phi=0.0)
+    base = deepcopy(port.recipes["bswap"])
+    result, _ = recenter_amplitude_frequency(
+        port, "bswap", base, tmp_path / "recenter", shots=1024
+    )
+    port.calls.clear()
+    refreshed = module._refresh_phases(  # noqa: SLF001 - integration invariant
+        port,
+        "bswap",
+        result,
+        tmp_path / "phase",
+        shots=8192,
+        budget=ShotBudget(36 * 8192),
+    )
+    frozen_delta = base["design_delta_scale"] * (
+        port.references[port.qubits[0]] - base["frequency_ghz"]
+    )
+    assert len(port.calls) == 36
+    assert refreshed["design_delta_scale"] == result["design_delta_scale"]
+    assert all(
+        call["recipes"]["bswap"]["design_delta_scale"]
+        * (port.references[port.qubits[0]] - call["recipes"]["bswap"]["frequency_ghz"])
+        == pytest.approx(frozen_delta)
+        for call in port.calls
+    )
+
+
+def test_raised_cosine_recenter_never_injects_squad_design_scale(
+    tmp_path: Path,
+) -> None:
+    """I-only RaisedCosine carrier trials remain free of SQUAD parameters."""
+    port = RidgeCounts(phi=0.0)
+    raised = deepcopy(port.recipes["bswap"])
+    raised.update(pulse_family="RaisedCosine", ramp_ns=30.0, cd_strength=0.0)
+    raised.pop("design_delta_scale")
+    raised.pop("window")
+    port.recipes["bswap"] = deepcopy(raised)
+    result, summary = recenter_amplitude_frequency(
+        port, "bswap", raised, tmp_path, shots=1024
+    )
+    assert result["pulse_family"] == "RaisedCosine"
+    assert "design_delta_scale" not in result
+    assert summary["plan"]["design_delta_applicable"] is False
+    assert all(
+        "design_delta_scale" not in call["recipes"]["bswap"] for call in port.calls
+    )
+
+
+@pytest.mark.parametrize("case", ["zero", "crossing", "unknown"])
+def test_recenter_rejects_invalid_design_delta_region_before_acquisition(
+    tmp_path: Path, case: str
+) -> None:
+    """Zero/crossing SQUAD detuning and unknown families fail without shots."""
+    port = RidgeCounts(phi=0.0)
+    recipe = deepcopy(port.recipes["bswap"])
+    if case == "zero":
+        recipe["frequency_ghz"] = port.references[port.qubits[0]]
+    elif case == "crossing":
+        recipe["frequency_ghz"] = port.references[port.qubits[0]] + 0.001
+    else:
+        recipe["pulse_family"] = "Other"
+    with pytest.raises(ValueError, match=r"family|zero|cross"):
+        recenter_amplitude_frequency(
+            port,
+            "bswap",
+            recipe,
+            tmp_path,
+            frequency_search_half_width_mhz=2.0,
+        )
+    assert not port.calls
 
 
 def test_recenter_root_plateau_retains_seed_without_gp(tmp_path: Path) -> None:
@@ -633,21 +757,25 @@ def test_recenter_point_cap_rejects_without_promotion(tmp_path: Path) -> None:
     assert not (tmp_path / "recentered_recipe.json").exists()
 
 
-def test_recenter_rejects_changed_conversion_scale(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("changed", ["rabi_scale", "reference"])
+def test_recenter_rejects_changed_conversion_scale_or_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
 ) -> None:
-    """A changed measured K terminates before another fixed-family request."""
+    """A changed K or GE reference stops the fixed-waveform carrier search."""
     port = RidgeCounts(phi=0.0)
+    monkeypatch.setattr(RidgeCounts, "references", dict(port.references))
     acquire = port.acquire
 
     def change_scale(*args: Any, **kwargs: Any) -> Any:
         result = acquire(*args, **kwargs)
-        port.rabi_scale = 0.7
+        if changed == "rabi_scale":
+            port.rabi_scale = 0.7
+        else:
+            port.references[port.qubits[0]] += 0.001
         return result
 
     monkeypatch.setattr(port, "acquire", change_scale)
-    with pytest.raises(ValueError, match="Rabi scale changed"):
+    with pytest.raises(ValueError, match=r"Rabi scale|GE reference"):
         recenter_amplitude_frequency(
             port, "bswap", port.recipes["bswap"], tmp_path, shots=1024
         )

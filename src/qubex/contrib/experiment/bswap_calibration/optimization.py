@@ -409,6 +409,7 @@ def _recenter_score(
     bases = ("ZZ",) if kind == "bswap" else SQRT_BASES
     selected = _selected(measurements, kind, recipe, uncorrected=True)
     rabi_scale = measurements.rabi_scale
+    reference_frequency = float(measurements.references[measurements.qubits[0]])
     scores, variances, rows = [], [], []
     for direction, prepared in enumerate((("0", "0"), ("1", "1"))):
         counts = []
@@ -428,6 +429,13 @@ def _recenter_score(
                 raise ValueError(
                     "Measured Rabi scale changed during fixed-family recenter"
                 )
+            if (
+                float(measurements.references[measurements.qubits[0]])
+                != reference_frequency
+            ):
+                raise ValueError(
+                    "Active GE reference changed during fixed-family recenter"
+                )
             counts.append(row["counts"])
             rows.append(row)
         if kind == "bswap":
@@ -437,15 +445,94 @@ def _recenter_score(
             score, variance = sqrt_score(counts)
         scores.append(float(score))
         variances.append(float(variance))
-    return {
+    family = recipe.get("pulse_family", "Squad")
+    result = {
         "amplitude": float(recipe["amplitude"]),
         "frequency_ghz": float(recipe["frequency_ghz"]),
+        "pulse_family": family,
         "score": float(np.mean(scores)),
         "variance": float(np.sum(variances) / 4),
         "direction_scores": scores,
         "direction_variances": variances,
         "measurements": rows,
     }
+    if family == "Squad":
+        transition = float(measurements.references[measurements.qubits[0]])
+        scale = float(recipe.get("design_delta_scale", 1.0))
+        result.update(
+            design_delta_scale=scale,
+            design_delta_ghz=scale * (transition - float(recipe["frequency_ghz"])),
+        )
+    return result
+
+
+def _recenter_design_context(
+    measurements: Any,
+    recipe: Mapping[str, Any],
+    frequency_bounds_ghz: tuple[float, float],
+) -> dict[str, Any]:
+    """Freeze a SQUAD design detuning across a physical-carrier search."""
+    family = recipe.get("pulse_family", "Squad")
+    if family == "RaisedCosine":
+        if "design_delta_scale" in recipe:
+            raise ValueError(
+                "RaisedCosine recenter cannot carry a SQUAD design_delta_scale"
+            )
+        return {
+            "pulse_family": family,
+            "design_delta_applicable": False,
+            "transition_frequency_ghz": None,
+            "frozen_design_delta_ghz": None,
+        }
+    if family != "Squad":
+        raise ValueError(f"Unknown bSWAP pulse family: {family!r}")
+    transition = float(measurements.references[measurements.qubits[0]])
+    seed_frequency = float(recipe["frequency_ghz"])
+    seed_scale = float(recipe.get("design_delta_scale", 1.0))
+    values = np.asarray(
+        [transition, seed_frequency, seed_scale, *frequency_bounds_ghz], dtype=float
+    )
+    if not np.isfinite(values).all() or seed_scale <= 0:
+        raise ValueError("SQUAD recenter frequencies and design scale must be finite")
+    seed_detuning = transition - seed_frequency
+    if seed_detuning == 0:
+        raise ValueError("SQUAD recenter seed design detuning cannot be zero")
+    low_detuning = transition - frequency_bounds_ghz[0]
+    high_detuning = transition - frequency_bounds_ghz[1]
+    if low_detuning * high_detuning <= 0:
+        raise ValueError(
+            "SQUAD recenter frequency bounds cannot cross zero design detuning"
+        )
+    return {
+        "pulse_family": family,
+        "design_delta_applicable": True,
+        "transition_frequency_ghz": transition,
+        "frozen_design_delta_ghz": seed_scale * seed_detuning,
+    }
+
+
+def _materialize_recenter_candidate(
+    recipe: Mapping[str, Any],
+    amplitude: float,
+    frequency_ghz: float,
+    design_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Copy one carrier trial while preserving its SQUAD design waveform."""
+    candidate = deepcopy(dict(recipe))
+    candidate.update(amplitude=float(amplitude), frequency_ghz=float(frequency_ghz))
+    if not design_context["design_delta_applicable"]:
+        candidate.pop("design_delta_scale", None)
+        return candidate
+    transition = float(design_context["transition_frequency_ghz"])
+    frozen_delta = float(design_context["frozen_design_delta_ghz"])
+    denominator = transition - float(frequency_ghz)
+    if not np.isfinite(denominator) or denominator == 0:
+        raise ValueError("SQUAD recenter carrier gives zero design detuning")
+    scale = frozen_delta / denominator
+    if not np.isfinite(scale) or scale <= 0:
+        raise ValueError("SQUAD recenter carrier crosses the signed design detuning")
+    candidate["design_delta_scale"] = float(scale)
+    return candidate
 
 
 def recenter_amplitude_frequency(
@@ -529,10 +616,12 @@ def recenter_amplitude_frequency(
     gates are unchanged. A high unresolved root-coherence plateau retains the
     independent seed, without qualifying a ridge or allowing a GP. Fresh
     candidate/seed and population checks never refit the selection. Duration,
-    ramp, design scale, CD, window, cancellation controls and measured K stay
-    fixed; only command amplitude and physical carrier change. Carrier-adaptive
-    pulse construction is unchanged. Later phase, ZZ and held-out benchmark
-    gates remain necessary. No score here is a gate-fidelity estimate.
+    ramp, signed SQUAD design detuning, CD, window, cancellation controls and
+    measured K stay fixed; only command amplitude and physical carrier change.
+    For SQUAD, design_delta_scale is therefore carrier-adaptive so that the
+    materialized I+iQ waveform is unchanged within each amplitude row. An
+    I-only RaisedCosine recipe has no design scale. Later phase, ZZ and held-out
+    benchmark gates remain necessary. No score here is a gate-fidelity estimate.
     """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -578,6 +667,7 @@ def recenter_amplitude_frequency(
         f0 - frequency_search_half_width_mhz / 1000,
         f0 + frequency_search_half_width_mhz / 1000,
     )
+    design_context = _recenter_design_context(measurements, recipe, frequency_bounds)
     scout = ridge_scout_points(
         recipe["amplitude"],
         f0,
@@ -590,7 +680,13 @@ def recenter_amplitude_frequency(
     fixed_family = {
         key: deepcopy(value)
         for key, value in recipe.items()
-        if key not in ("amplitude", "frequency_ghz", "phase_calibration")
+        if key
+        not in (
+            "amplitude",
+            "frequency_ghz",
+            "design_delta_scale",
+            "phase_calibration",
+        )
     }
     plan = {
         "scout": scout,
@@ -603,8 +699,11 @@ def recenter_amplitude_frequency(
         "confirmation_shots": confirmation_shots,
         "maximum_shots": maximum_shots,
         "fixed_family": fixed_family,
+        **design_context,
         "fixed_rabi_scale": measurements.rabi_scale,
-        "fixed_family_fingerprint": _hash_recipe(fixed_family),
+        "fixed_family_fingerprint": _hash_recipe(
+            {"fixed_family": fixed_family, "design_context": design_context}
+        ),
         "minimum_score_lower_bound": minimum_score_lower_bound,
         "maximum_confirmed_degradation": maximum_confirmed_degradation,
         "maximum_population_error": maximum_population_error,
@@ -615,6 +714,13 @@ def recenter_amplitude_frequency(
     def require_fixed_scale() -> None:
         if measurements.rabi_scale != plan["fixed_rabi_scale"]:
             raise ValueError("Measured Rabi scale changed during fixed-family recenter")
+        if design_context["design_delta_applicable"] and (
+            float(measurements.references[measurements.qubits[0]])
+            != design_context["transition_frequency_ghz"]
+        ):
+            raise ValueError(
+                "Active GE reference changed during fixed-design-delta recenter"
+            )
 
     observations: list[dict[str, Any]] = []
     extensions = []
@@ -624,11 +730,9 @@ def recenter_amplitude_frequency(
         for index in np.random.default_rng(891 + round_index).permutation(len(points)):
             require_fixed_scale()
             amplitude, frequency = points[index]
-            candidate = {
-                **deepcopy(recipe),
-                "amplitude": amplitude,
-                "frequency_ghz": frequency,
-            }
+            candidate = _materialize_recenter_candidate(
+                recipe, amplitude, frequency, design_context
+            )
             observations.append(
                 _recenter_score(
                     measurements,
@@ -641,12 +745,24 @@ def recenter_amplitude_frequency(
                 )
             )
             save_json(directory / "local_observations.json", observations)
+            design_arrays = {}
+            if design_context["design_delta_applicable"]:
+                design_arrays = {
+                    "design_delta_scales": [
+                        r["design_delta_scale"] for r in observations
+                    ],
+                    "design_delta_ghz": [r["design_delta_ghz"] for r in observations],
+                    "frozen_design_delta_ghz": design_context[
+                        "frozen_design_delta_ghz"
+                    ],
+                }
             np.savez_compressed(
                 directory / "local_map_partial.npz",
                 amplitudes=[r["amplitude"] for r in observations],
                 frequencies_ghz=[r["frequency_ghz"] for r in observations],
                 scores=[r["direction_scores"] for r in observations],
                 variances=[r["direction_variances"] for r in observations],
+                **design_arrays,
             )
         values = tuple(
             np.asarray([row[key] for row in observations])
@@ -716,7 +832,9 @@ def recenter_amplitude_frequency(
             _reject(
                 "No qualified response ridge or conservative root plateau within the declared budget"
             )
-    record = deepcopy(recipe)
+    record = _materialize_recenter_candidate(
+        recipe, recipe["amplitude"], recipe["frequency_ghz"], design_context
+    )
     if fit["gp_allowed"]:
         ranking = propose_gp_point(
             *values,
@@ -732,8 +850,11 @@ def recenter_amplitude_frequency(
         selected = ranking["best_observed"]
         if not np.isfinite(selected["ranking_score"]):
             _reject("Nonfinite response-ridge candidate ranking")
-        record.update(
-            amplitude=selected["amplitude"], frequency_ghz=selected["frequency_ghz"]
+        record = _materialize_recenter_candidate(
+            recipe,
+            selected["amplitude"],
+            selected["frequency_ghz"],
+            design_context,
         )
         fit.update(
             selection=f"measured {fit['coordinate_mode']}-coordinate GP lower-bound incumbent",
@@ -743,7 +864,10 @@ def recenter_amplitude_frequency(
         fit["selection"] = "retain independent seed: conservative root plateau, no GP"
     save_json(directory / "local_fit.json", fit)
     checks = {}
-    for name, candidate in (("seed", recipe), ("candidate", record)):
+    seed_record = _materialize_recenter_candidate(
+        recipe, recipe["amplitude"], recipe["frequency_ghz"], design_context
+    )
+    for name, candidate in (("seed", seed_record), ("candidate", record)):
         require_fixed_scale()
         checks[name] = _recenter_score(
             measurements,
