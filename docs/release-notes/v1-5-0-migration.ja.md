@@ -40,7 +40,7 @@
 
 ```python
 pulse = Squad(
-    duration=40, amplitude=0.6, delta=-0.8, tau=12, factor=0,
+    duration=40, amplitude=0.6, delta=-0.8, tau=12, correction_factor=0,
     window={"type": "beta", "mode": 0.4, "sum": 6.0},
 )
 ```
@@ -48,14 +48,52 @@ pulse = Squad(
 文字列 `window="beta"` は引き続き mode=1/3、sum=5 を使います。
 Tukey の設定も従来どおり辞書で渡します。
 
-amplitude は包絡線の振幅であり、carrier 周波数ではありません。
-amplitude と設計 delta（遷移周波数 − drive 周波数）は同じ単位で渡します。
-delta は carrier を設定しません。時間を ns とすると、解析的な CD 係数の大きさは、
-角周波数単位（rad/ns）なら 1、通常の周波数単位（GHz）なら `1/(2*pi)`、
-制御振幅単位なら Rabi 換算 r（GHz/command）に対して `1/(2*pi*r)` です。
-最後の場合は `delta=(f_transition-f_drive)/r` を渡します。
-同じ CD 直交成分を得るには、直接の `Squad.factor` と
-`FlatTop.correction_factor` の符号を反転します。波形の計算式・符号規約は変更していません。
+### CD の符号と補正強度の統一
+
+直接の `Squad` / `Squad.func` に対する破壊的変更です。
+旧 `factor` は削除し、`factor=None` を明示した場合も `TypeError` にします。
+instance 属性も `correction_factor` へ変更しました。
+
+両 SQUAD API で delta は「遷移周波数 − drive」、包絡線は `I + i*Q` とし、
+CD 式を `Q = -correction_factor * delta * dI/dt / (delta**2 + I**2)` に統一します。
+amplitude と delta は rad/ns、時間は ns で渡します。
+`correction_factor` は無次元で、1 が解析的 CD 強度、0.5 は半分、0 は CD なしです。
+carrier は別に設定します。
+
+旧 direct-SQUAD 波形を保存するには、旧 factor の符号を反転して渡します。
+
+```python
+# 旧: Squad(..., factor=x)
+# 新:
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12,
+    correction_factor=-x,
+)
+```
+
+**旧 factor 省略/None は +1 なので、旧デフォルト波形の再現には
+新 correction_factor=-1 が必要です。**
+新 correction_factor の省略/None は統一規約の +1 であり、旧デフォルトの Q と逆符号です。
+暗黙の互換 alias は設けません。
+`FlatTop` の既存 CD 式、DRAG、補正なしのデフォルト、ランプ sampling と符号は変更しません。
+直接の `Squad` は引き続きデフォルトで CD を有効にします。
+
+実機の単位換算は補正強度から分離します。
+
+```python
+K = 2 * np.pi * rabi_ghz_per_command
+pulse = FlatTop(
+    duration=40, tau=12, type="Squad",
+    amplitude=K * command_amplitude,
+    delta=2 * np.pi * (transition_ghz - drive_ghz),
+    correction_type="CD", correction_factor=1.0,
+    scale=1 / K,
+)
+```
+
+scale は I/Q の両方を制御振幅へ戻します。旧 FlatTop で delta を Rabi 換算し、
+correction_factor を K で割っていた波形と同値です。両方の換算を重ねて適用しないでください。
+Rabi 換算は呼び出し側の実機モデルであり、pulse API 自体が較正するわけではありません。
 
 drive 周波数に追従して SQUAD を設計する場合は各周波数で delta を再計算します。
 delta を固定する場合は、意図的に同じ波形の carrier のみを掃引する実験です。

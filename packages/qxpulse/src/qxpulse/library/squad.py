@@ -11,6 +11,8 @@ from typing_extensions import NotRequired, override
 
 from qxpulse.pulse import Pulse
 
+from ._corrections import _cd_quadrature, _reject_legacy_factor
+
 SmoothingType = Literal["none", "hann", "tukey", "beta"]
 
 
@@ -126,98 +128,69 @@ def _integrated_tukey(u: NDArray, *, rise_end: float, fall_start: float) -> NDAr
 
 class Squad(Pulse):
     """
-    Smooth quasi-adiabatic (SQUAD) pulse.
-
-    The pulse consists of:
-    - ramp-up on [0, tau]
-    - flat top on [tau, duration - tau]
-    - ramp-down on [duration - tau, duration]
-
-    Window types
-    ------------
-    - "none" : constant-adiabatic ramp (FAQUAD-like, ε(t) = const)
-    - "hann" : smooth adiabatic ramp using a sin^2(pi u) window
-               (integrated to g(u) = u - sin(2πu)/(2π)).
-    - "tukey" : normalized integral of a Tukey window with independent
-                rise-end and fall-start positions within each ramp.
-    - "beta" : smooth adiabatic ramp using the regularized incomplete
-               beta function I_u(α, β) with fixed shape parameters.
+    SQUAD flat-top envelope with counterdiabatic (CD) quadrature.
 
     Parameters
     ----------
     duration : float
-        Total duration of the pulse in ns.
+        Complete pulse duration in ns, including both ramps.
     amplitude : float
-        Flat-top in-phase envelope level, not the carrier frequency. Use the
-        same units as `delta`; there is no automatic unit conversion.
+        Flat-top in-phase amplitude in rad/ns, before Pulse scaling.
     delta : float
-        Signed design detuning, transition frequency minus drive frequency,
-        expressed in the same units as `amplitude`. Shapes the envelope and
-        CD quadrature; does not set or shift the carrier. See Notes for units.
+        Signed design detuning in rad/ns: transition frequency minus drive
+        frequency. Must be nonzero for a meaningful SQUAD ramp. This shapes
+        the envelope; it does not set the carrier frequency.
     tau : float
-        Rise and fall time (each side) in ns.
-    factor : float, optional
-        Signed CD coefficient; 0 disables CD and None defaults to 1.0.
-        Its magnitude depends on the amplitude units. Its sign is opposite
-        to `FlatTop.correction_factor` for equivalent quadrature (see Notes).
+        Duration of each ramp in ns; the flat top lasts duration - 2*tau.
+    correction_factor : float, optional
+        Dimensionless CD strength. None defaults to 1.0; 0 disables CD and
+        0.5 halves it. Negative values reverse the correction.
     window : str or WindowConfig, optional
-        Window type or dictionary with a required `type` key. Default is
-        "hann". String choices are "none", "hann", "tukey", and "beta".
-        Tukey dictionaries accept `rise_end` and `fall_start`, both defaulting
-        to 0.5, with `0 <= rise_end <= fall_start <= 1`. These normalized
-        positions end the window's rise and begin its fall. Both at 0.5
-        reproduce Hann; (0, 1) reproduces "none". Beta dictionaries accept
-        `mode` (default 1/3, range [0, 1]) and `sum` (default 5, finite and > 2).
-        Other windows accept only `type`. Unknown keys are rejected.
-        Dictionaries are copied on construction. Standalone `beta_mode` and
-        `beta_sum` arguments have been removed; use the dictionary keys.
+        Adiabaticity window, default "hann". String choices are "none",
+        "hann", "tukey", and "beta". A dictionary requires a `type` key.
+        Tukey accepts `rise_end` and `fall_start` (default 0.5 each),
+        with `0 <= rise_end <= fall_start <= 1`. Beta accepts `mode`
+        (default 1/3, range [0, 1]) and `sum` (default 5, finite and > 2).
+        Other windows accept only `type`. Dictionaries are copied.
 
     Raises
     ------
     TypeError
-        If a dictionary's numeric settings are not real numbers, or removed
-        standalone window parameters are supplied.
+        If removed standalone options are supplied or window settings have
+        non-real numeric values.
     ValueError
-        If a window dictionary has missing/unknown keys or invalid values.
+        If a window has missing/unknown keys or invalid values.
 
     Notes
     -----
-    flat-top period = duration - 2 * tau
+    With time in ns and the envelope `I + i*Q`, both SQUAD APIs use
+    `Q = -correction_factor * delta * dI/dt / (delta**2 + I**2)`.
+    The derivative is evaluated on the supplied sampling grid. This follows
+    the drive-frame convention `H/hbar = (-delta*Z + I*X + Q*Y)/2`.
+    `FlatTop(type="Squad", correction_type="CD")` uses this same convention;
+    the coefficient never needs an API-dependent sign change.
 
-    Before any generic Pulse scale/phase/detuning transforms, the envelope
-    is `I + i*Q` with `Q = factor * delta * dI/dt / (delta**2 + I**2)`.
-    `FlatTop(type="Squad", correction_type="CD")` uses the opposite sign:
-    set `factor = -correction_factor` to match it on the same sampling grid.
+    For command amplitude A and Rabi scale r in GHz/command, set
+    `K = 2*pi*r`, pass `amplitude=K*A` and
+    `delta=2*pi*(f_transition-f_drive)`, then use `scale=1/K` to convert
+    the completed I/Q back to command units. Keep `correction_factor`
+    dimensionless; no Rabi calibration or unit conversion is inferred here.
 
-    Time is in ns. If K is the angular Rabi rate in rad/ns per numeric
-    amplitude unit, the analytic CD coefficient magnitude is `1/K`.
-    For angular-rate inputs (rad/ns), use magnitude 1. For cyclic-rate
-    inputs (GHz = cycles/ns), use `1/(2*pi)`. For command amplitudes with
-    calibrated Rabi conversion r in GHz per command unit, pass
-    `delta = (f_transition - f_drive)/r` and use magnitude `1/(2*pi*r)`.
-    For example, amplitude 0.99 in command units must not be combined with
-    an unconverted GHz detuning. Qubit Rabi conversion is a model input,
-    not a guarantee of strong-drive hardware response. qxsimulator expects
-    angular-rate envelopes even though Control.frequency uses cyclic GHz.
+    The window is integrated and normalized before the SQUAD mapping.
+    Positions describe normalized time inside each ramp, not outer pulse
+    durations. The falling ramp is the time reverse of the rising ramp.
+    Tukey (0.5, 0.5) reproduces Hann and (0, 1) reproduces "none".
 
-    The carrier is configured separately. For carrier-adaptive pulse design,
-    recompute `delta` from each drive frequency and regenerate the waveform.
-    Holding a design delta fixed instead scans the carrier of a fixed
-    waveform; these are different experiments. In particular, adapting delta
-    changes the waveform throughout a chevron and its fit interpretation.
-
-    Window positions refer to normalized time `u=t/tau` inside the rising
-    SQUAD ramp, not to the full pulse. The falling SQUAD ramp is its time
-    reverse, including the window. Thus an asymmetric Tukey window does not
-    change the equal outer ramp durations `tau` or the pulse's flat top.
-    The window is integrated and normalized before the SQUAD mapping; it
-    does not multiply the final I/Q envelope.
+    Configure the carrier separately. Recompute delta when intentionally
+    redesigning the waveform for each carrier, or hold design delta fixed
+    when scanning one fixed waveform. These are different experiments.
 
     Examples
     --------
     >>> pulse = Squad(
-    ...     duration=40, amplitude=0.6, delta=0.8, tau=12,
-    ...     window={"type": "tukey", "rise_end": 0.2, "fall_start": 0.7},
+    ...     duration=40, amplitude=0.6, delta=-0.8, tau=12,
+    ...     correction_factor=1.0,
+    ...     window={"type": "beta", "mode": 0.4, "sum": 6},
     ... )
     """
 
@@ -228,10 +201,11 @@ class Squad(Pulse):
         amplitude: float,
         delta: float,
         tau: float,
-        factor: float | None = None,
+        correction_factor: float | None = None,
         window: WindowSpec | None = None,
         **kwargs,
     ):
+        _reject_legacy_factor(kwargs)
         _reject_removed_window_options(kwargs)
         _resolve_window(window)
         super().__init__(
@@ -242,7 +216,7 @@ class Squad(Pulse):
         self.amplitude: Final = amplitude
         self.delta: Final = delta
         self.tau: Final = tau
-        self.factor: Final = factor
+        self.correction_factor: Final = correction_factor
         self.window: Final = window.copy() if isinstance(window, dict) else window
         self._finalize_initialization()
 
@@ -258,7 +232,7 @@ class Squad(Pulse):
             amplitude=self.amplitude,
             delta=self.delta,
             tau=self.tau,
-            factor=self.factor,
+            correction_factor=self.correction_factor,
             window=self.window,
         )
 
@@ -407,26 +381,16 @@ class Squad(Pulse):
         amplitude: float,
         tau: float,
         delta: float,
-        factor: float | None = None,
+        correction_factor: float | None = None,
         window: WindowSpec | None = None,
     ) -> NDArray:
         """
-        Compute the full complex SQUAD pulse.
+        Sample the SQUAD envelope as I + i*Q, before generic Pulse transforms.
 
-        Returns `I(t) + i Q(t)`, where `I(t)` is the flat-top envelope with
-        chosen SQUAD ramps and `Q(t)` is the scaled counter-diabatic quadrature.
-
-        A window dictionary such as
-        `{"type": "tukey", "rise_end": 0.2, "fall_start": 0.7}` sets the
-        normalized positions within each ramp. Omitted positions default to
-        0.5 (Hann). See `Squad` for validation and time-reversal conventions.
-
-        `t`, `duration`, and `tau` are in ns. `amplitude` and signed `delta`
-        (transition minus drive) must share units. Delta does not shift the
-        carrier. `Q = factor * delta * dI/dt / (delta**2 + I**2)`; see `Squad`
-        for the unit-dependent factor and its sign relative to `FlatTop`.
-        Beta settings use `window={"type": "beta", "mode": 0.4, "sum": 6}`;
-        standalone beta arguments are not accepted.
+        `t`, `duration`, and `tau` are in ns. `amplitude` and signed
+        `delta` (transition minus drive) are in rad/ns. `correction_factor`
+        is dimensionless: None means 1, 0 disables CD, and 0.5 halves it.
+        See `Squad` for the shared CD formula, windows and hardware scaling.
         """
         _resolve_window(window)
         t = np.asarray(t, dtype=float)
@@ -434,8 +398,8 @@ class Squad(Pulse):
         if duration <= 0:
             return np.zeros_like(t, dtype=np.complex128)
 
-        if factor is None:
-            factor = 1.0
+        if correction_factor is None:
+            correction_factor = 1.0
 
         # In-phase component
         I = Squad._squad_flat_top_envelope(
@@ -447,7 +411,7 @@ class Squad(Pulse):
             window=window,
         )
 
-        if factor == 0:
+        if correction_factor == 0:
             return I.astype(np.complex128)
 
         # Numerical derivative dI/dt
@@ -459,6 +423,11 @@ class Squad(Pulse):
         # Avoid division by zero if Δ=0 and I=0 everywhere
         Q = np.zeros_like(I.real)
         nonzero = denom != 0.0
-        Q[nonzero] = (factor * Δ * dI_dt[nonzero]) / denom[nonzero]
+        Q[nonzero] = _cd_quadrature(
+            I.real[nonzero],
+            dI_dt[nonzero],
+            delta=Δ,
+            correction_factor=correction_factor,
+        )
 
         return I.real + 1j * Q

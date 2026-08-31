@@ -79,9 +79,9 @@ def test_removed_beta_defaults_with_dictionary_are_rejected(api):
 
 @pytest.mark.parametrize("api", ["squad", "flat_top"])
 def test_documented_squad_unit_conversions_preserve_iq(api):
-    """Angular, cyclic-GHz and command-unit inputs agree with the documented CD scaling."""
+    """Legacy numeric-unit conversions remain algebraically equivalent after the sign change."""
 
-    def sample(amplitude, delta, factor):
+    def sample(amplitude, delta, correction_factor):
         kwargs: dict[str, Any] = dict(
             duration=80,
             tau=16,
@@ -91,12 +91,15 @@ def test_documented_squad_unit_conversions_preserve_iq(api):
             sampling_period=2,
         )
         if api == "squad":
-            return Squad(**kwargs, factor=factor).values
+            return Squad(**kwargs, correction_factor=correction_factor).values
         return FlatTop(
-            **kwargs, type="Squad", correction_type="CD", correction_factor=factor
+            **kwargs,
+            type="Squad",
+            correction_type="CD",
+            correction_factor=correction_factor,
         ).values
 
-    sign = -1 if api == "squad" else 1
+    sign = 1
     rabi_ghz_per_command = 0.5
     angular = sample(2 * np.pi * 0.2, 2 * np.pi * (-0.25), sign)
     cyclic = sample(0.2, -0.25, sign / (2 * np.pi))
@@ -113,15 +116,15 @@ def test_documented_squad_unit_conversions_preserve_iq(api):
 
 @pytest.mark.parametrize("sampling_period", [0.1, 2.0])
 @pytest.mark.parametrize("delta", [-0.8, 0.8])
-@pytest.mark.parametrize("factor", [None, 0.0, 1.0, -1.0])
-def test_tukey_midpoints_match_hann(sampling_period, delta, factor):
+@pytest.mark.parametrize("correction_factor", [None, 0.0, 1.0, -1.0])
+def test_tukey_midpoints_match_hann(sampling_period, delta, correction_factor):
     """Tukey positions (0.5, 0.5) reproduce the full sampled Hann I/Q pulse."""
     kwargs: dict[str, Any] = dict(
         duration=40.0,
         amplitude=0.6,
         delta=delta,
         tau=12.0,
-        factor=factor,
+        correction_factor=correction_factor,
     )
     hann = Squad(**kwargs, window="hann", sampling_period=sampling_period)
     tukey = Squad(
@@ -193,7 +196,7 @@ def test_tukey_matches_independent_window_integral(rise_end, fall_start):
         amplitude=0.6,
         delta=0.8,
         tau=12,
-        factor=0,
+        correction_factor=0,
         window={"type": "tukey", "rise_end": rise_end, "fall_start": fall_start},
     )
 
@@ -222,7 +225,7 @@ def test_tukey_constructor_matches_func_and_preserves_pulse_symmetry(lazy):
         amplitude=0.6,
         delta=0.8,
         tau=12,
-        factor=0.7,
+        correction_factor=0.7,
         window={"type": "tukey", "rise_end": 0.2, "fall_start": 0.6},
     )
     pulse = Squad(**kwargs, sampling_period=0.1, lazy=lazy)
@@ -236,9 +239,9 @@ def test_tukey_constructor_matches_func_and_preserves_pulse_symmetry(lazy):
 
 
 @pytest.mark.parametrize("delta", [-0.8, 0.8])
-@pytest.mark.parametrize("factor", [-1.0, 0.0, 1.0])
-def test_tukey_preserves_direct_cd_sign(delta, factor):
-    """Direct SQUAD keeps Q = factor * delta * dI/dt / (delta**2 + I**2)."""
+@pytest.mark.parametrize("correction_factor", [-1.0, 0.0, 1.0])
+def test_tukey_uses_shared_cd_sign(delta, correction_factor):
+    """Direct SQUAD uses Q = -correction_factor * delta * dI/dt / (delta**2 + I**2)."""
     t = np.linspace(0, 40, 401)
     values = Squad.func(
         t,
@@ -246,18 +249,21 @@ def test_tukey_preserves_direct_cd_sign(delta, factor):
         amplitude=0.6,
         delta=delta,
         tau=12,
-        factor=factor,
+        correction_factor=correction_factor,
         window={"type": "tukey", "rise_end": 0.2, "fall_start": 0.7},
     )
     expected_q = (
-        factor * delta * np.gradient(values.real, t) / (delta**2 + values.real**2)
+        -correction_factor
+        * delta
+        * np.gradient(values.real, t)
+        / (delta**2 + values.real**2)
     )
     assert_allclose(values.imag, expected_q, rtol=1e-12, atol=1e-14)
 
 
 @pytest.mark.parametrize("sampling_period", [0.1, 2.0])
 def test_flat_top_forwards_tukey_positions_with_existing_cd_mapping(sampling_period):
-    """FlatTop forwards the window positions and retains its opposite CD factor convention."""
+    """FlatTop forwards the window positions and uses the shared CD correction_factor convention."""
     kwargs: dict[str, Any] = dict(
         duration=40,
         amplitude=0.6,
@@ -265,12 +271,12 @@ def test_flat_top_forwards_tukey_positions_with_existing_cd_mapping(sampling_per
         tau=12,
         window={"type": "tukey", "rise_end": 0.2, "fall_start": 0.7},
     )
-    direct = Squad(**kwargs, factor=1, sampling_period=sampling_period)
+    direct = Squad(**kwargs, correction_factor=1, sampling_period=sampling_period)
     flat = FlatTop(
         **kwargs,
         type="Squad",
         correction_type="CD",
-        correction_factor=-1,
+        correction_factor=1,
         sampling_period=sampling_period,
     )
     assert_allclose(flat.values, direct.values, rtol=1e-12, atol=1e-14)
@@ -299,7 +305,7 @@ def test_tukey_rejects_invalid_positions_at_public_entry_points(
         amplitude=0.6,
         delta=0.8,
         tau=0,
-        factor=0,
+        correction_factor=0,
         window={"type": "tukey", "rise_end": rise_end, "fall_start": fall_start},
     )
     message = r"0 <= rise_end <= fall_start <= 1"
@@ -412,7 +418,7 @@ def test_custom_beta_dictionary_matches_independent_integral(api):
     g = np.array([quad(density, 0, t / 12, epsabs=1e-13)[0] / area for t in times])
     sine = np.sin(np.arctan(0.6 / -0.8)) * g
     expected = -0.8 * sine / np.sqrt(1 - sine**2)
-    options = {"factor": 0} if api == "squad" else {}
+    options = {"correction_factor": 0} if api == "squad" else {}
     values = _sample_public_squad_api(
         api, window={"type": "beta", "mode": 0.4, "sum": 6.0}, **options
     )
