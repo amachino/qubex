@@ -358,6 +358,7 @@ def compile_campaign(
     x90: Mapping[str, Any],
     xpi: Mapping[str, Any],
     global_start_ns: float = 0.0,
+    backend_preamble_ns: float = 0.0,
     prepared: Sequence[str] | None = ("0", "0"),
     basis: str | None = "ZZ",
     delay_ns: float = 0.0,
@@ -392,6 +393,10 @@ def compile_campaign(
         Fresh native-grid production DRAG pulses for both qubits.
     global_start_ns : float, optional
         Absolute start of the returned parent schedule.
+    backend_preamble_ns : float, optional
+        Extra prefix inserted after compilation by the measurement backend.
+        Used only for carrier-offset phase compensation; no blank is inserted
+        and the logical placement/calibration time origin is unchanged.
     prepared : Sequence[str] or None, optional
         Input states, default 00. None omits state preparation.
     basis : str or None, optional
@@ -427,8 +432,10 @@ def compile_campaign(
     phi=k*(absolute_start-calibrated_start)+sum(P-F)/2 and F_after=F-P-Q.
     Here k=pi*(2*f_drive-f_active_ref-f_passive_ref), and local XY axes are
     requested_axis-F[q]. Because Pulse.detuned(df) uses local time, its
-    source phase also includes -2*pi*df*absolute_start. Main and cancel
-    carriers receive the same logical phase, preserving relative phase.
+    source phase also includes -2*pi*df*(absolute_start+backend_preamble_ns).
+    Main and cancel carriers receive the same logical phase, preserving
+    relative phase. The QuEL-1 adapter conjugates U/default envelopes before
+    positive-exponent backend modulation; do not reverse the detuned sign.
 
     Acquire with these same fixed target reference frequencies. Passing a
     recipe carrier again to Experiment.measure would double-detune it.
@@ -443,6 +450,7 @@ def compile_campaign(
     if sample != 2.0:
         raise ValueError("This campaign compiler requires the native 2 ns grid")
     origin = _grid_time(global_start_ns, "global_start_ns", sample)
+    backend_preamble = _grid_time(backend_preamble_ns, "backend_preamble_ns", sample)
     delay = _grid_time(delay_ns, "delay_ns", sample)
     frame = np.asarray(initial_frame, dtype=float).copy()
     if frame.shape != (2,) or not np.isfinite(frame).all():
@@ -616,7 +624,9 @@ def compile_campaign(
                             "Recipe carrier exceeds permitted source frequency offset"
                         )
                     source_phase = (
-                        logical_phase + phase_delta - 2 * np.pi * offset * start
+                        logical_phase
+                        + phase_delta
+                        - 2 * np.pi * offset * (start + backend_preamble)
                     )
                     emitted = (
                         pulse.scaled(amplitude_scale)
@@ -692,6 +702,7 @@ def compile_campaign(
         "events": records,
         "duration_ns": float(schedule.duration),
         "global_start_ns": origin,
+        "backend_preamble_ns": backend_preamble,
         "preparation_window_ns": prep_window,
         "final_frame_rad": frame.tolist(),
         "terminal_frame_exported": bool(terminal_frame),

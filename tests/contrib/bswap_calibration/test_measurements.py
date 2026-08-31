@@ -2,6 +2,7 @@
 
 import json
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,9 @@ from qubex.contrib.experiment.bswap_calibration.pulses import (
 )
 from qubex.contrib.experiment.bswap_calibration.tomography import state_vector
 from qubex.experiment.experiment import Experiment
+from qubex.measurement.measurement_constraint_profile import (
+    MeasurementConstraintProfile,
+)
 
 
 class _Classifier:
@@ -43,6 +47,11 @@ class _Classifier:
 
 class _Experiment:
     def __init__(self) -> None:
+        self.ctx = SimpleNamespace(
+            measurement=SimpleNamespace(
+                constraint_profile=MeasurementConstraintProfile.quel1()
+            )
+        )
         self.classifiers = {q: _Classifier() for q in ("A", "P")}
         self.pulse = SimpleNamespace(
             get_drag_hpi_pulse=lambda _: Rect(duration=16, amplitude=0.1),
@@ -92,8 +101,13 @@ def _recipes() -> dict[str, dict[str, Any]]:
     }
 
 
-def _measurements(tmp_path: Path) -> tuple[CampaignMeasurements, _Experiment]:
+def _measurements(
+    tmp_path: Path, *, workaround: bool = True
+) -> tuple[CampaignMeasurements, _Experiment]:
     exp = _Experiment()
+    exp.ctx.measurement.constraint_profile = replace(
+        exp.ctx.measurement.constraint_profile, require_workaround_capture=workaround
+    )
     measurements = CampaignMeasurements(
         cast(Experiment, exp),
         tmp_path / "no_metadata_needed",
@@ -115,6 +129,17 @@ def test_acquire_uses_frozen_target_references(tmp_path: Path) -> None:
     assert exp.calls[0]["enable_dsp_classification"] is False
     assert row["counts"] == [16, 0, 0, 0]
     assert not measurements.run.exists()
+
+
+@pytest.mark.parametrize("workaround", [True, False])
+def test_acquire_derives_backend_preamble_from_public_profile(
+    tmp_path: Path, workaround: bool
+) -> None:
+    """Only the enabled backend prefix contributes to source carrier compensation."""
+    measurements, _ = _measurements(tmp_path, workaround=workaround)
+    row = measurements.acquire(["BSWAP"], tmp_path, "backend_preamble", shots=16)
+    assert row["compiled"]["backend_preamble_ns"] == (40.0 if workaround else 0.0)
+    assert row["compiled"]["global_start_ns"] == 0.0
 
 
 @pytest.mark.parametrize("failure", ["exception", "fractional"])

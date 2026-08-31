@@ -88,6 +88,8 @@ class CampaignMeasurements:
     Notes
     -----
     Target frequencies and production pulse waveforms are captured at construction.
+    The public measurement constraint profile supplies any backend-only prefix
+    for carrier phase compensation, without changing the calibrated logical origin.
     The caller must keep the associated RF, classifier and calibration state valid.
     Prepared-state normalization is combined SPAM, not an independent detector model.
     """
@@ -128,6 +130,12 @@ class CampaignMeasurements:
             label: float(exp.targets[label].frequency)
             for label in (self.drive_label, self.cancel_label)
         }
+        profile = exp.ctx.measurement.constraint_profile
+        self.backend_preamble_ns = (
+            profile.extra_capture_duration_ns
+            if profile.require_workaround_capture
+            else 0.0
+        )
         self.deadline = deadline
         if deadline is not None and deadline.tzinfo is None:
             raise ValueError("deadline must include a timezone")
@@ -204,6 +212,7 @@ class CampaignMeasurements:
             prepared=prepared,
             basis=basis,
             delay_ns=delay_ns,
+            backend_preamble_ns=self.backend_preamble_ns,
         )
         # All tones were materialized relative to these fixed target frequencies.
         result = self.exp.measure(
