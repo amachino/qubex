@@ -4,7 +4,7 @@
 
 - State: `PROPOSED`
 - Created: `2026-08-24`
-- Updated: `2026-08-27`
+- Updated: `2026-08-31`
 - Scope: task-based experiment execution below the `Experiment` facade
 - Discussion:
   - [Qubex issue #357](https://github.com/amachino/qubex/issues/357)
@@ -398,19 +398,28 @@ The Service preserves the existing interactive contract around the Task:
 
 ```python
 class CharacterizationService:
-    async def _execute_qubit_spectroscopy(...) -> Result:
+    def qubit_spectroscopy(self, ...) -> Result:
         task = QubitSpectroscopyTask.from_context(self.ctx, ...)
-        task_result = await task.run(self._runtime)
+        task_result = self.async_bridge.run(
+            lambda: task.run(self.runtime)
+        )
 
-        figure = self._make_qubit_spectroscopy_figure(task_result)
-        self._show_or_save_figure(figure, ...)
-
-        return self._to_result(task_result, figure)
+        # Create a figure from task_result and display or save it
+        # according to the existing settings.
+        # Adapt task_result to the existing Result contract.
+        return Result(...)
 ```
 
-An existing synchronous facade method can call this canonical async path
-through a compatibility adapter, while an async facade method can await it
-directly.
+The existing synchronous `qubit_spectroscopy(...) -> Result` API remains
+unchanged. The Service delegates execution to the asynchronous Task through a
+compatibility bridge, without introducing a private execution method. The
+`Experiment.qubit_spectroscopy(...)` facade continues to delegate to this
+Service method, so existing callers do not need to use `await`.
+
+This schematic example omits the existing arguments and their forwarding,
+figure and result construction, and bridge initialization and lifecycle
+management. Existing argument defaults, result semantics, and display and
+save behavior remain part of the compatibility contract.
 
 ## Compatibility and migration
 
