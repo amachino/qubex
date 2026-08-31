@@ -31,6 +31,36 @@
 - simulator の `Control` 補間を、明示的に sample した waveform へ置き換える
 - sweep、plot、timing utility で固定 `2 ns` を使わないようにする
 
+## SQUAD の window 引数と単位
+
+`Squad`、`Squad.func`、および `FlatTop` / `FlatTop.func` の SQUAD 経路から、
+単独の `beta_mode` / `beta_sum` 引数を削除しました。
+旧デフォルト値を明示した場合も `TypeError` になります。
+非推奨期間は設けません。window 辞書へ置き換えてください。
+
+```python
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12, factor=0,
+    window={"type": "beta", "mode": 0.4, "sum": 6.0},
+)
+```
+
+文字列 `window="beta"` は引き続き mode=1/3、sum=5 を使います。
+Tukey の設定も従来どおり辞書で渡します。
+
+amplitude は包絡線の振幅であり、carrier 周波数ではありません。
+amplitude と設計 delta（遷移周波数 − drive 周波数）は同じ単位で渡します。
+delta は carrier を設定しません。時間を ns とすると、解析的な CD 係数の大きさは、
+角周波数単位（rad/ns）なら 1、通常の周波数単位（GHz）なら `1/(2*pi)`、
+制御振幅単位なら Rabi 換算 r（GHz/command）に対して `1/(2*pi*r)` です。
+最後の場合は `delta=(f_transition-f_drive)/r` を渡します。
+同じ CD 直交成分を得るには、直接の `Squad.factor` と
+`FlatTop.correction_factor` の符号を反転します。波形の計算式・符号規約は変更していません。
+
+drive 周波数に追従して SQUAD を設計する場合は各周波数で delta を再計算します。
+delta を固定する場合は、意図的に同じ波形の carrier のみを掃引する実験です。
+波形を再生成する場合は chevron の解釈も変わります。詳細は API docstring を参照してください。
+
 ## インストールと実行環境の変更
 
 `v1.5.0` の repository workflow は `uv` 管理環境を前提にしています。

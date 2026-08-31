@@ -40,6 +40,20 @@ WindowConfig: TypeAlias = SimpleWindowConfig | TukeyWindowConfig | BetaWindowCon
 WindowSpec: TypeAlias = SmoothingType | WindowConfig
 
 
+def _reject_removed_window_options(options: dict) -> None:
+    """Reject removed standalone window parameters before lazy sampling."""
+    removed = {
+        "beta_mode",
+        "beta_sum",
+        "tukey_rise_end",
+        "tukey_fall_start",
+    }.intersection(options)
+    if removed:
+        raise TypeError(
+            f"Unexpected SQUAD options {sorted(removed)}; use a window dictionary."
+        )
+
+
 def _real_window_parameter(value: object, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, Real):
         raise TypeError(f"window {name} must be a real number.")
@@ -48,10 +62,10 @@ def _real_window_parameter(value: object, name: str) -> float:
 
 def _resolve_window(
     window: object,
-    beta_mode: float = 1.0 / 3.0,
-    beta_sum: float = 5.0,
 ) -> tuple[SmoothingType, float, float, float, float]:
     """Resolve a window without modifying the caller's configuration."""
+    beta_mode = 1.0 / 3.0
+    beta_sum = 5.0
     if window is None:
         return "hann", beta_mode, beta_sum, 0.5, 0.5
     if isinstance(window, str):
@@ -71,11 +85,6 @@ def _resolve_window(
         allowed.update(("mode", "sum"))
     if any(key not in allowed for key in window):
         raise ValueError(f"Unexpected window keys for {kind}: {set(window) - allowed}")
-    if beta_mode != 1.0 / 3.0 or beta_sum != 5.0:
-        raise ValueError(
-            "A window dictionary cannot be combined with nondefault beta_mode or beta_sum."
-        )
-
     rise_end = fall_start = 0.5
     if kind == "tukey":
         rise_end = _real_window_parameter(window.get("rise_end", 0.5), "rise_end")
@@ -139,16 +148,18 @@ class Squad(Pulse):
     duration : float
         Total duration of the pulse in ns.
     amplitude : float
-        Flat-top amplitude of the pulse.
+        Flat-top in-phase envelope level, not the carrier frequency. Use the
+        same units as `delta`; there is no automatic unit conversion.
     delta : float
-        Signed detuning parameter in the same units as `amplitude`.
-        For qxsimulator, both are angular rates in rad/ns. The caller is
-        responsible for mapping the detuning and quadrature sign conventions.
+        Signed design detuning, transition frequency minus drive frequency,
+        expressed in the same units as `amplitude`. Shapes the envelope and
+        CD quadrature; does not set or shift the carrier. See Notes for units.
     tau : float
         Rise and fall time (each side) in ns.
     factor : float, optional
-        Strength of the quadrature (Q) component. If 0, no CD term.
-        If None, defaults to 1.0.
+        Signed CD coefficient; 0 disables CD and None defaults to 1.0.
+        Its magnitude depends on the amplitude units. Its sign is opposite
+        to `FlatTop.correction_factor` for equivalent quadrature (see Notes).
     window : str or WindowConfig, optional
         Window type or dictionary with a required `type` key. Default is
         "hann". String choices are "none", "hann", "tukey", and "beta".
@@ -158,24 +169,42 @@ class Squad(Pulse):
         reproduce Hann; (0, 1) reproduces "none". Beta dictionaries accept
         `mode` (default 1/3, range [0, 1]) and `sum` (default 5, finite and > 2).
         Other windows accept only `type`. Unknown keys are rejected.
-        Dictionaries are copied on construction and cannot be combined with
-        nondefault `beta_mode` or `beta_sum` arguments.
-    beta_mode : float, optional
-        Mode of the beta distribution for window="beta". Default is 1/3.
-    beta_sum : float, optional
-        Sum of alpha and beta parameters for window="beta". Default is 5.0.
+        Dictionaries are copied on construction. Standalone `beta_mode` and
+        `beta_sum` arguments have been removed; use the dictionary keys.
 
     Raises
     ------
     TypeError
-        If a dictionary's numeric settings are not real numbers.
+        If a dictionary's numeric settings are not real numbers, or removed
+        standalone window parameters are supplied.
     ValueError
-        If a window dictionary has missing/unknown keys, invalid values,
-        or conflicts with separate beta arguments.
+        If a window dictionary has missing/unknown keys or invalid values.
 
     Notes
     -----
     flat-top period = duration - 2 * tau
+
+    Before any generic Pulse scale/phase/detuning transforms, the envelope
+    is `I + i*Q` with `Q = factor * delta * dI/dt / (delta**2 + I**2)`.
+    `FlatTop(type="Squad", correction_type="CD")` uses the opposite sign:
+    set `factor = -correction_factor` to match it on the same sampling grid.
+
+    Time is in ns. If K is the angular Rabi rate in rad/ns per numeric
+    amplitude unit, the analytic CD coefficient magnitude is `1/K`.
+    For angular-rate inputs (rad/ns), use magnitude 1. For cyclic-rate
+    inputs (GHz = cycles/ns), use `1/(2*pi)`. For command amplitudes with
+    calibrated Rabi conversion r in GHz per command unit, pass
+    `delta = (f_transition - f_drive)/r` and use magnitude `1/(2*pi*r)`.
+    For example, amplitude 0.99 in command units must not be combined with
+    an unconverted GHz detuning. Qubit Rabi conversion is a model input,
+    not a guarantee of strong-drive hardware response. qxsimulator expects
+    angular-rate envelopes even though Control.frequency uses cyclic GHz.
+
+    The carrier is configured separately. For carrier-adaptive pulse design,
+    recompute `delta` from each drive frequency and regenerate the waveform.
+    Holding a design delta fixed instead scans the carrier of a fixed
+    waveform; these are different experiments. In particular, adapting delta
+    changes the waveform throughout a chevron and its fit interpretation.
 
     Window positions refer to normalized time `u=t/tau` inside the rising
     SQUAD ramp, not to the full pulse. The falling SQUAD ramp is its time
@@ -201,16 +230,10 @@ class Squad(Pulse):
         tau: float,
         factor: float | None = None,
         window: WindowSpec | None = None,
-        beta_mode: float = 1.0 / 3.0,
-        beta_sum: float = 5.0,
         **kwargs,
     ):
-        removed = {"tukey_rise_end", "tukey_fall_start"}.intersection(kwargs)
-        if removed:
-            raise TypeError(
-                f"Unexpected SQUAD options {sorted(removed)}; use a window dictionary."
-            )
-        _resolve_window(window, beta_mode, beta_sum)
+        _reject_removed_window_options(kwargs)
+        _resolve_window(window)
         super().__init__(
             duration=duration,
             **kwargs,
@@ -221,8 +244,6 @@ class Squad(Pulse):
         self.tau: Final = tau
         self.factor: Final = factor
         self.window: Final = window.copy() if isinstance(window, dict) else window
-        self.beta_mode: Final = beta_mode
-        self.beta_sum: Final = beta_sum
         self._finalize_initialization()
 
     @override
@@ -239,8 +260,6 @@ class Squad(Pulse):
             tau=self.tau,
             factor=self.factor,
             window=self.window,
-            beta_mode=self.beta_mode,
-            beta_sum=self.beta_sum,
         )
 
     # ------------------------------------------------------------------
@@ -254,8 +273,6 @@ class Squad(Pulse):
         amplitude: float,
         delta: float,
         window: WindowSpec | None = None,
-        beta_mode: float = 1.0 / 3.0,
-        beta_sum: float = 5.0,
     ) -> NDArray:
         """
         Rising (or falling, if t is time-reversed) SQUAD ramp.
@@ -264,9 +281,7 @@ class Squad(Pulse):
             sin θ(t) = sin θ_max * g(u),   u = t / tau ∈ [0,1],
         for each window type.
         """
-        window, beta_mode, beta_sum, rise_end, fall_start = _resolve_window(
-            window, beta_mode, beta_sum
-        )
+        window, beta_mode, beta_sum, rise_end, fall_start = _resolve_window(window)
 
         t = np.asarray(t, dtype=float)
         values = np.zeros_like(t, dtype=float)
@@ -334,8 +349,6 @@ class Squad(Pulse):
         delta: float,
         tau: float,
         window: WindowSpec | None = None,
-        beta_mode: float = 1.0 / 3.0,
-        beta_sum: float = 5.0,
     ) -> NDArray:
         """Compute the flat-top constant-adiabaticity pulse envelope (I component only)."""
         t = np.asarray(t, dtype=float)
@@ -362,8 +375,6 @@ class Squad(Pulse):
                 amplitude=amplitude,
                 delta=delta,
                 window=window,
-                beta_mode=beta_mode,
-                beta_sum=beta_sum,
             )
 
         # Flat-top
@@ -381,8 +392,6 @@ class Squad(Pulse):
                 amplitude=amplitude,
                 delta=delta,
                 window=window,
-                beta_mode=beta_mode,
-                beta_sum=beta_sum,
             )
 
         return values
@@ -400,8 +409,6 @@ class Squad(Pulse):
         delta: float,
         factor: float | None = None,
         window: WindowSpec | None = None,
-        beta_mode: float = 1.0 / 3.0,
-        beta_sum: float = 5.0,
     ) -> NDArray:
         """
         Compute the full complex SQUAD pulse.
@@ -413,8 +420,15 @@ class Squad(Pulse):
         `{"type": "tukey", "rise_end": 0.2, "fall_start": 0.7}` sets the
         normalized positions within each ramp. Omitted positions default to
         0.5 (Hann). See `Squad` for validation and time-reversal conventions.
+
+        `t`, `duration`, and `tau` are in ns. `amplitude` and signed `delta`
+        (transition minus drive) must share units. Delta does not shift the
+        carrier. `Q = factor * delta * dI/dt / (delta**2 + I**2)`; see `Squad`
+        for the unit-dependent factor and its sign relative to `FlatTop`.
+        Beta settings use `window={"type": "beta", "mode": 0.4, "sum": 6}`;
+        standalone beta arguments are not accepted.
         """
-        _resolve_window(window, beta_mode, beta_sum)
+        _resolve_window(window)
         t = np.asarray(t, dtype=float)
 
         if duration <= 0:
@@ -431,8 +445,6 @@ class Squad(Pulse):
             delta=delta,
             tau=tau,
             window=window,
-            beta_mode=beta_mode,
-            beta_sum=beta_sum,
         )
 
         if factor == 0:

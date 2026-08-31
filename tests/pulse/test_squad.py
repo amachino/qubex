@@ -1,5 +1,6 @@
 """Tests for SQUAD ramp windows and sampled CD conventions."""
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -8,6 +9,106 @@ from numpy.testing import assert_allclose
 from qxpulse import FlatTop
 from qxpulse.library.squad import Squad, TukeyWindowConfig
 from scipy.integrate import quad
+
+
+def _sample_public_squad_api(api, **options):
+    """Sample one public constructor or function on the same time grid."""
+    kwargs: dict[str, Any] = dict(
+        duration=40.0, amplitude=0.6, delta=-0.8, tau=12.0, **options
+    )
+    times = np.arange(0.5, 40.0, 1.0)
+    if api == "squad":
+        return Squad(**kwargs, sampling_period=1.0).values
+    if api == "squad_func":
+        return Squad.func(times, **kwargs)
+    if api == "flat_top":
+        return FlatTop(**kwargs, type="Squad", sampling_period=1.0).values
+    return FlatTop.func(times, **kwargs, type="Squad")
+
+
+@pytest.mark.parametrize("api", ["squad", "squad_func", "flat_top", "flat_top_func"])
+@pytest.mark.parametrize(
+    "options",
+    [{"beta_mode": 1 / 3}, {"beta_sum": 5.0}, {"beta_mode": 0.4, "beta_sum": 6.0}],
+)
+def test_removed_beta_arguments_are_rejected(api, options):
+    """Standalone beta arguments, including former defaults, are rejected at every public entry."""
+    with pytest.raises(TypeError, match=r"beta_mode|beta_sum"):
+        _sample_public_squad_api(api, window="beta", **options)
+
+
+@pytest.mark.parametrize("api", ["squad", "squad_func", "flat_top", "flat_top_func"])
+@pytest.mark.parametrize(
+    "window",
+    [None, "hann", "beta", {"type": "beta"}, {"type": "beta", "mode": 0.4, "sum": 6.0}],
+)
+def test_canonical_window_calls_do_not_warn(api, window):
+    """Calls without legacy beta keywords remain warning-free and produce finite samples."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        values = _sample_public_squad_api(api, window=window)
+    assert values.shape == (40,)
+    assert np.all(np.isfinite(values))
+
+
+@pytest.mark.parametrize("api", ["squad", "flat_top"])
+def test_removed_beta_arguments_are_rejected_before_lazy_sampling(api):
+    """Lazy pulses reject removed beta keywords at construction, not during later sampling."""
+    cls = Squad if api == "squad" else FlatTop
+    extra: dict[str, Any] = {} if api == "squad" else {"type": "Squad"}
+    with pytest.raises(TypeError, match="beta_mode"):
+        cls(
+            duration=40,
+            amplitude=0.6,
+            delta=-0.8,
+            tau=12,
+            window="beta",
+            beta_mode=0.4,
+            lazy=True,
+            **extra,
+        )
+
+
+@pytest.mark.parametrize("api", ["squad", "squad_func", "flat_top", "flat_top_func"])
+def test_removed_beta_defaults_with_dictionary_are_rejected(api):
+    """A window dictionary does not make removed top-level beta arguments acceptable."""
+    window = {"type": "beta", "mode": 0.4, "sum": 6.0}
+    with pytest.raises(TypeError, match=r"beta_mode|beta_sum"):
+        _sample_public_squad_api(api, window=window, beta_mode=1 / 3, beta_sum=5.0)
+
+
+@pytest.mark.parametrize("api", ["squad", "flat_top"])
+def test_documented_squad_unit_conversions_preserve_iq(api):
+    """Angular, cyclic-GHz and command-unit inputs agree with the documented CD scaling."""
+
+    def sample(amplitude, delta, factor):
+        kwargs: dict[str, Any] = dict(
+            duration=80,
+            tau=16,
+            amplitude=amplitude,
+            delta=delta,
+            window={"type": "beta", "mode": 0.4, "sum": 6.0},
+            sampling_period=2,
+        )
+        if api == "squad":
+            return Squad(**kwargs, factor=factor).values
+        return FlatTop(
+            **kwargs, type="Squad", correction_type="CD", correction_factor=factor
+        ).values
+
+    sign = -1 if api == "squad" else 1
+    rabi_ghz_per_command = 0.5
+    angular = sample(2 * np.pi * 0.2, 2 * np.pi * (-0.25), sign)
+    cyclic = sample(0.2, -0.25, sign / (2 * np.pi))
+    command = sample(
+        0.2 / rabi_ghz_per_command,
+        -0.25 / rabi_ghz_per_command,
+        sign / (2 * np.pi * rabi_ghz_per_command),
+    )
+    assert_allclose(angular, 2 * np.pi * cyclic, rtol=1e-12, atol=1e-14)
+    assert_allclose(
+        angular, 2 * np.pi * rabi_ghz_per_command * command, rtol=1e-12, atol=1e-14
+    )
 
 
 @pytest.mark.parametrize("sampling_period", [0.1, 2.0])
@@ -298,19 +399,39 @@ def test_single_tukey_position_defaults_the_other_to_half(position):
     )
 
 
-def test_beta_dict_matches_legacy_parameters():
-    """Beta dictionary settings reproduce the existing beta_mode and beta_sum API."""
+@pytest.mark.parametrize("api", ["squad", "flat_top"])
+def test_custom_beta_dictionary_matches_independent_integral(api):
+    """Nondefault beta shape parameters reproduce a numerically integrated beta density."""
+    times = np.arange(0.5, 12, 1.0)
+    alpha, beta = 2.6, 3.4  # mode 0.4, sum 6
+
+    def density(u):
+        return u ** (alpha - 1) * (1 - u) ** (beta - 1)
+
+    area = quad(density, 0, 1, epsabs=1e-13)[0]
+    g = np.array([quad(density, 0, t / 12, epsabs=1e-13)[0] / area for t in times])
+    sine = np.sin(np.arctan(0.6 / -0.8)) * g
+    expected = -0.8 * sine / np.sqrt(1 - sine**2)
+    options = {"factor": 0} if api == "squad" else {}
+    values = _sample_public_squad_api(
+        api, window={"type": "beta", "mode": 0.4, "sum": 6.0}, **options
+    )
+    assert_allclose(values[:12], expected, rtol=1e-10, atol=1e-13)
+
+
+def test_beta_dict_matches_default_string_window():
+    """An explicit default beta dictionary matches the parameter-free beta window string."""
     kwargs: dict[str, Any] = dict(duration=40, amplitude=0.6, delta=0.8, tau=12)
     assert_allclose(
-        Squad(**kwargs, window={"type": "beta", "mode": 0.4, "sum": 6.0}).values,
-        Squad(**kwargs, window="beta", beta_mode=0.4, beta_sum=6.0).values,
+        Squad(**kwargs, window={"type": "beta", "mode": 1 / 3, "sum": 5.0}).values,
+        Squad(**kwargs, window="beta").values,
         rtol=0,
         atol=0,
     )
 
 
 @pytest.mark.parametrize("options", [{"beta_mode": 0.4}, {"beta_sum": 6.0}])
-def test_dictionary_rejects_conflicting_legacy_beta_options(options):
+def test_dictionary_rejects_removed_beta_options(options):
     """Dictionary settings cannot silently override separate nondefault beta arguments."""
     kwargs: dict[str, Any] = dict(
         duration=40,
@@ -320,7 +441,7 @@ def test_dictionary_rejects_conflicting_legacy_beta_options(options):
         window={"type": "beta", "mode": 0.2},
         **options,
     )
-    with pytest.raises(ValueError, match=r"beta_mode.*beta_sum"):
+    with pytest.raises(TypeError, match=r"beta_mode|beta_sum"):
         Squad(**kwargs)
 
 
