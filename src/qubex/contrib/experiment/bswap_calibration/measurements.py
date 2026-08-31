@@ -13,6 +13,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -187,6 +188,10 @@ class CampaignMeasurements:
         -----
         Fixed custom-target references are supplied to both compiler and measure.
         No persistent calibration or hardware configuration is changed here.
+        Acquisition start/end timestamps bracket the measure call; its elapsed
+        duration uses a monotonic clock. They are not individual-shot hardware
+        timestamps. The existing timestamp still records the later classified
+        row creation time. Timing and IQ survive a subsequent classifier failure.
         """
         if self.deadline is not None and datetime.now(
             self.deadline.tzinfo
@@ -215,6 +220,8 @@ class CampaignMeasurements:
             backend_preamble_ns=self.backend_preamble_ns,
         )
         # All tones were materialized relative to these fixed target frequencies.
+        acquisition_started_at = datetime.now().astimezone().isoformat()
+        acquisition_start_clock = perf_counter()
         result = self.exp.measure(
             sequence,
             frequencies=self.targets,
@@ -224,13 +231,19 @@ class CampaignMeasurements:
             enable_dsp_classification=False,
             plot=False,
         )
+        acquisition_duration_seconds = perf_counter() - acquisition_start_clock
+        timing = dict(
+            acquisition_started_at=acquisition_started_at,
+            acquisition_ended_at=datetime.now().astimezone().isoformat(),
+            acquisition_duration_seconds=acquisition_duration_seconds,
+        )
         iq = np.stack(
             [np.asarray(result.data[q].kerneled).reshape(-1) for q in self.qubits]
         )
         self.serial += 1
         path = directory / f"{self.session_id}_{self.serial:06d}_{label}.npz"
         np.savez_compressed(
-            path, iq=iq, qubits=self.qubits, prepared=prepared, basis=basis
+            path, iq=iq, qubits=self.qubits, prepared=prepared, basis=basis, **timing
         )
         labels = np.stack(
             [self.classifiers[q].predict(iq[i]) for i, q in enumerate(self.qubits)]
@@ -256,6 +269,7 @@ class CampaignMeasurements:
             delay_ns=delay_ns,
             compiled=compiled,
             timestamp=datetime.now().astimezone().isoformat(),
+            **timing,
         )
         row["raw_probabilities"] = (counts / shots).tolist()
         if self.assignment is not None:
@@ -586,6 +600,16 @@ def acquire_irb(
     tuple[dict[str, Any], dict[str, NDArray]]
         Raw IRB analysis and raw reference/interleaved survival arrays.
         Unclipped prepared-state normalization is a separate diagnostic only.
+
+    Notes
+    -----
+    Randomize (seed, depth) pair units, acquiring REF/IRB adjacently with
+    randomized, globally balanced first conditions. Circuit seeds and shot
+    counts are unchanged. A saved manifest and raw rows retain pair identity,
+    acquisition index, block identity and measure-call timing. Here a block
+    is one adjacent pair, not an independent complete temporal replicate.
+    The existing bootstrap still resamples paired circuit seeds across depths;
+    its conditional statistical interval is not a drift-robust time-block CI.
     """
     if np.asarray(depths).ndim != 1 or np.asarray(seeds).ndim != 1:
         raise ValueError("depths and seeds must be one-dimensional")
@@ -596,23 +620,77 @@ def acquire_irb(
         for mode in ("reference", "interleaved")
     }
     mitigated = {mode: np.full((len(seeds), len(depths)), np.nan) for mode in arrays}
-    requests = [
-        (s, d, mode)
-        for s in range(len(seeds))
-        for d in range(len(depths))
-        for mode in arrays
-    ]
-    for index in np.random.default_rng(82391).permutation(len(requests)):
-        s, d, mode = requests[index]
+    pairs = [(s, d) for s in range(len(seeds)) for d in range(len(depths))]
+    order_seed = 82391
+    rng = np.random.default_rng(order_seed)
+    pair_order = rng.permutation(len(pairs))
+    first_modes = (np.arange(len(pairs)) + rng.integers(2)) % 2
+    rng.shuffle(first_modes)
+    modes = ("reference", "interleaved")
+    requests: list[dict[str, Any]] = []
+    for block_id, (pair_index, first) in enumerate(
+        zip(pair_order, first_modes, strict=True)
+    ):
+        s, d = pairs[int(pair_index)]
+        for mode in (modes[int(first)], modes[1 - int(first)]):
+            requests.append(
+                dict(
+                    pair_id=f"seed_index_{s}_depth_index_{d}",
+                    block_id=block_id,
+                    acquisition_index=len(requests),
+                    seed_index=s,
+                    depth_index=d,
+                    seed=int(seeds[s]),
+                    depth=int(depths[d]),
+                    mode=mode,
+                    status="planned",
+                )
+            )
+    manifest_file = directory / "irb_acquisition_manifest.json"
+    manifest = dict(
+        order_seed=order_seed,
+        pair_count=len(pairs),
+        circuit_count=len(requests),
+        shots=shots,
+        depths=list(depths),
+        seeds=list(seeds),
+        gate_name=gate_name,
+        order="shuffled seed/depth pairs; adjacent REF/IRB with balanced randomized first condition",
+        block_definition="one adjacent REF/IRB pair, not a complete temporal replicate",
+        bootstrap_unit="paired circuit seed across depths and conditions, not time blocks",
+        drift_robust_interval=False,
+        requests=requests,
+    )
+    save_json(manifest_file, manifest)
+    for request in requests:
+        s, d, mode = request["seed_index"], request["depth_index"], request["mode"]
         gates = make_irb_circuit(
             cache,
             int(depths[d]),
             int(seeds[s]),
             gate_name if mode == "interleaved" else None,
         )
+        request["status"] = "acquiring"
+        save_json(manifest_file, manifest)
         row = measurements.acquire(
             gates, directory, f"{mode}_s{seeds[s]}_d{depths[d]}", shots=shots
         )
+        request.update(
+            status="completed",
+            **{
+                key: row[key]
+                for key in (
+                    "iq_file",
+                    "timestamp",
+                    "acquisition_started_at",
+                    "acquisition_ended_at",
+                    "acquisition_duration_seconds",
+                )
+            },
+        )
+        row.update(request, acquisition_manifest=str(manifest_file))
+        save_json(Path(row["iq_file"]).with_suffix(".json"), row)
+        save_json(manifest_file, manifest)
         arrays[mode][s, d] = row["counts"][0] / shots
         if "mitigated_probabilities_unclipped" in row:
             mitigated[mode][s, d] = row["mitigated_probabilities_unclipped"][0]
@@ -627,6 +705,9 @@ def acquire_irb(
     summary = analyze_irb(depths, arrays["reference"], arrays["interleaved"])
     summary["target"] = f"ideal {gate_name}; residual ZZ counts as error"
     summary["interleaved_block"] = gate_name
+    summary["acquisition_manifest"] = str(manifest_file)
+    summary["bootstrap_unit"] = manifest["bootstrap_unit"]
+    summary["drift_robust_interval"] = False
     if all(np.isfinite(values).all() for values in mitigated.values()):
         fits = {
             mode: fit_unclipped_decay(depths, values)

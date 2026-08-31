@@ -131,6 +131,28 @@ def test_acquire_uses_frozen_target_references(tmp_path: Path) -> None:
     assert not measurements.run.exists()
 
 
+def test_acquire_records_measure_call_times_without_replacing_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Measurement-call timing is explicit and the existing record timestamp remains."""
+    measurements, _ = _measurements(tmp_path)
+    clock = iter([10.0, 10.25])
+    monkeypatch.setattr(module, "perf_counter", lambda: next(clock))
+    row = measurements.acquire([], tmp_path, "timed", shots=16)
+    start = datetime.fromisoformat(row["acquisition_started_at"])
+    end = datetime.fromisoformat(row["acquisition_ended_at"])
+    assert start.tzinfo is not None
+    assert start <= end <= datetime.fromisoformat(row["timestamp"])
+    assert row["acquisition_duration_seconds"] == 0.25
+    with np.load(row["iq_file"]) as saved:
+        assert saved["acquisition_started_at"].item() == row["acquisition_started_at"]
+        assert saved["acquisition_ended_at"].item() == row["acquisition_ended_at"]
+        assert saved["acquisition_duration_seconds"].item() == 0.25
+    saved_row = json.loads(Path(row["iq_file"]).with_suffix(".json").read_text())
+    assert saved_row["timestamp"] == row["timestamp"]
+
+
 @pytest.mark.parametrize("workaround", [True, False])
 def test_acquire_derives_backend_preamble_from_public_profile(
     tmp_path: Path, workaround: bool
@@ -156,6 +178,8 @@ def test_raw_iq_survives_classifier_failure(tmp_path: Path, failure: str) -> Non
     assert len(paths) == 1
     with np.load(paths[0]) as saved:
         assert saved["iq"].shape == (2, 16)
+        assert datetime.fromisoformat(saved["acquisition_started_at"].item()).tzinfo
+        assert float(saved["acquisition_duration_seconds"]) >= 0
 
 
 def test_assignment_columns_and_unclipped_normalization(tmp_path: Path) -> None:
@@ -275,18 +299,19 @@ def test_irb_primary_analysis_never_receives_normalized_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Raw IRB and out-of-range combined-SPAM diagnostics stay separate."""
-    measurements, _ = _measurements(tmp_path)
+    measurements, exp = _measurements(tmp_path)
     captured: dict[str, Any] = {}
+    original_acquire = measurements.acquire
 
     def acquire(
         gates: list[str], directory: Path, label: str, *, shots: int
     ) -> dict[str, Any]:
         raw = 80 if label.startswith("reference") else 70
         normalized = 1.2 if label.startswith("reference") else -0.2
-        return {
-            "counts": [raw, shots - raw, 0, 0],
-            "mitigated_probabilities_unclipped": [normalized, 0, 0, 0],
-        }
+        exp.counts = [[raw, shots - raw, 0, 0]]
+        row = original_acquire(gates, directory, label, shots=shots)
+        row["mitigated_probabilities_unclipped"] = [normalized, 0, 0, 0]
+        return row
 
     def analyze(
         depths: list[int], reference: np.ndarray, interleaved: np.ndarray
@@ -324,6 +349,137 @@ def test_irb_primary_analysis_never_receives_normalized_values(
     assert normalized["fits"]["interleaved"]["input_min"] == -0.2
     assert "fidelity_estimate" not in normalized
     assert summary["fidelity_estimate"] == 0.91
+
+
+@pytest.mark.parametrize("seed_count", [3, 4])
+def test_irb_randomizes_adjacent_pairs_with_balanced_first_condition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    seed_count: int,
+) -> None:
+    """Circuit pairing is adjacent, balanced and recorded without changing the scan size."""
+    measurements, exp = _measurements(tmp_path)
+    depths, seeds = [0, 1, 4], list(range(1001, 1001 + seed_count))
+    original_acquire = measurements.acquire
+
+    def coordinate_counts(
+        gates: list[str],
+        directory: Path,
+        label: str,
+        *,
+        shots: int,
+    ) -> dict[str, Any]:
+        mode, seed_label, depth_label = label.split("_")
+        s = seeds.index(int(seed_label[1:]))
+        d = depths.index(int(depth_label[1:]))
+        count = 1 + s + seed_count * d + (mode == "interleaved")
+        exp.counts = [[count, shots - count, 0, 0]]
+        return original_acquire(gates, directory, label, shots=shots)
+
+    monkeypatch.setattr(measurements, "acquire", coordinate_counts)
+    monkeypatch.setattr(module, "make_irb_circuit", lambda *args: [])
+    monkeypatch.setattr(
+        module, "analyze_irb", lambda *args: {"claim": "conditional seed interval"}
+    )
+    summary, arrays = acquire_irb(
+        measurements,
+        cast(NativeBSWAPCache, SimpleNamespace()),
+        "BSWAP",
+        tmp_path,
+        depths=depths,
+        seeds=seeds,
+        shots=16,
+    )
+    manifest = json.loads((tmp_path / "irb_acquisition_manifest.json").read_text())
+    rows = manifest["requests"]
+    assert len(exp.calls) == len(rows) == 2 * len(depths) * len(seeds)
+    assert [row["acquisition_index"] for row in rows] == list(range(len(rows)))
+    pair_coordinates, first_modes = [], []
+    for index in range(0, len(rows), 2):
+        first, second = rows[index : index + 2]
+        assert first["pair_id"] == second["pair_id"]
+        assert first["block_id"] == second["block_id"] == index // 2
+        assert (first["seed"], first["depth"]) == (second["seed"], second["depth"])
+        assert {first["mode"], second["mode"]} == {"reference", "interleaved"}
+        pair_coordinates.append((first["seed"], first["depth"]))
+        first_modes.append(first["mode"])
+    assert sorted(pair_coordinates) == sorted(
+        (seed, depth) for seed in seeds for depth in depths
+    )
+    assert pair_coordinates != [(seed, depth) for seed in seeds for depth in depths]
+    assert abs(first_modes.count("reference") - first_modes.count("interleaved")) <= 1
+    for row in rows:
+        assert row["status"] == "completed"
+        saved = json.loads(Path(row["iq_file"]).with_suffix(".json").read_text())
+        for key in (
+            "pair_id",
+            "block_id",
+            "acquisition_index",
+            "seed",
+            "depth",
+            "mode",
+            "acquisition_started_at",
+            "acquisition_ended_at",
+            "acquisition_duration_seconds",
+        ):
+            assert saved[key] == row[key]
+        assert saved["shots"] == 16
+    assert summary["claim"] == "conditional seed interval"
+    assert summary["drift_robust_interval"] is False
+    assert "not time blocks" in summary["bootstrap_unit"]
+    assert (
+        arrays["reference"].shape
+        == arrays["interleaved"].shape
+        == (len(seeds), len(depths))
+    )
+    expected = np.array(
+        [
+            [1 + s + seed_count * d for d in range(len(depths))]
+            for s in range(seed_count)
+        ]
+    )
+    np.testing.assert_array_equal(arrays["reference"], expected / 16)
+    np.testing.assert_array_equal(arrays["interleaved"], (expected + 1) / 16)
+    expected_pair_order = np.random.default_rng(manifest["order_seed"]).permutation(
+        len(pair_coordinates)
+    )
+    original_pairs = [(seed, depth) for seed in seeds for depth in depths]
+    assert pair_coordinates == [original_pairs[int(i)] for i in expected_pair_order]
+
+
+def test_irb_partial_manifest_retains_first_member_when_second_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An interrupted pair retains its completed member and pending acquisition identity."""
+    measurements, exp = _measurements(tmp_path)
+    original_measure = exp.measure
+
+    def fail_second(sequence: PulseSchedule, **options: Any) -> SimpleNamespace:
+        if exp.calls:
+            raise TimeoutError("synthetic hard stop")
+        return original_measure(sequence, **options)
+
+    monkeypatch.setattr(exp, "measure", fail_second)
+    monkeypatch.setattr(module, "make_irb_circuit", lambda *args: [])
+    with pytest.raises(TimeoutError, match="synthetic hard stop"):
+        acquire_irb(
+            measurements,
+            cast(NativeBSWAPCache, SimpleNamespace()),
+            "BSWAP",
+            tmp_path,
+            depths=[0, 1],
+            seeds=[1, 2],
+            shots=16,
+        )
+    manifest = json.loads((tmp_path / "irb_acquisition_manifest.json").read_text())
+    first, second = manifest["requests"][:2]
+    assert first["status"] == "completed"
+    assert second["status"] == "acquiring"
+    assert first["pair_id"] == second["pair_id"]
+    assert first["acquisition_started_at"]
+    assert len(exp.calls) == 1
+    assert not (tmp_path / "irb_analysis.json").exists()
 
 
 def test_unclipped_decay_retains_out_of_range_data() -> None:
