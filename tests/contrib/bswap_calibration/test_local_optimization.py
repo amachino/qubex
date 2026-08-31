@@ -350,3 +350,57 @@ def test_plateau_rejects_unsupported_fallbacks(case: str) -> None:
     assert result["accepted"] is False
     assert result["candidate"] is None
     assert result["reasons"]
+
+
+def test_resolved_shoulders_support_a_five_point_peak_when_top_three_are_noisy() -> (
+    None
+):
+    """Available shoulders resolve peak curvature without changing the confidence threshold."""
+    a = np.repeat([0.3, 0.4, 0.5], 7)
+    f = np.tile(5.0 + np.linspace(-0.0006, 0.0006, 7), 3)
+    y = np.tile([0.585, 0.700, 0.742, 0.787, 0.782, 0.749, 0.710], 3)
+    variance = np.full(len(a), 0.0002)
+    ridge = estimate_response_ridge(a, f, y, variance)
+    assert ridge["qualified"] is True
+    assert all(row["fit_points"] == 5 for row in ridge["rows"])
+    assert all(row["local_fit_reduced_chi2"] < 5 for row in ridge["rows"])
+    assert all(row["ci95_ghz"][1] < 5.0002 for row in ridge["rows"])
+
+
+def test_five_point_peak_is_rejected_when_its_model_disagrees_with_shot_noise() -> None:
+    """A wider fit cannot qualify a noisy top if its shoulders violate the quadratic model."""
+    a = np.repeat([0.3, 0.4, 0.5], 7)
+    f = np.tile(5.0 + np.linspace(-0.0006, 0.0006, 7), 3)
+    y = np.tile([0.4, 0.1, 0.80, 0.81, 0.80, 0.75, 0.4], 3)
+    ridge = estimate_response_ridge(a, f, y, np.full(len(a), 0.0002))
+    assert ridge["qualified"] is False
+    assert all("model" in row["reason"] for row in ridge["rows"])
+
+
+def test_observed_incumbent_and_anchor_obey_the_same_residual_band_as_candidates() -> (
+    None
+):
+    """A high observed score outside the ridge band cannot become the constrained incumbent."""
+    a, f, y, variance = _scout()
+    ridge = estimate_response_ridge(a, f, y, variance)
+    a = np.r_[a, 0.9885]
+    f = np.r_[f, 4.610675 + 0.0011]
+    y = np.r_[y, 1.0]
+    variance = np.r_[variance, 1e-8]
+    result = propose_gp_point(
+        a,
+        f,
+        y,
+        variance,
+        ridge=ridge,
+        amplitude_bounds=(0.987, 0.99),
+        frequency_bounds_ghz=(4.607, 4.615),
+        optimize_kernel=False,
+        include_anchor=True,
+    )
+    assert result["best_observed"]["index"] != len(a) - 1
+    for point in (result["best_observed"], result["optional_anchor"]):
+        center = ridge["frequency_ghz"] + ridge["slope_ghz_per_amplitude"] * (
+            point["amplitude"] - ridge["reference_amplitude"]
+        )
+        assert abs(point["frequency_ghz"] - center) <= 0.0006 + 1e-12

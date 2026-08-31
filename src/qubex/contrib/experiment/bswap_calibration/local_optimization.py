@@ -177,36 +177,68 @@ def _row_peak(
             "extension_centers_ghz": centers,
             "extension_direction_resolved": bool(directional),
         }
-    local = slice(index - 1, index + 2)
-    origin, scale = f[index], (f[index + 1] - f[index - 1]) / 2
-    x = (f[local] - origin) / scale
-    design = np.column_stack([np.ones(3), x, x * x])
-    weighted = design / np.sqrt(v[local, None])
-    covariance = np.linalg.inv(weighted.T @ weighted)
-    coefficient = covariance @ (design.T @ (y[local] / v[local]))
-    b, c = coefficient[1:]
-    if c + 1.96 * np.sqrt(covariance[2, 2]) >= 0:
-        return {
-            "interior_peak": False,
-            "reason": "negative local curvature is not resolved",
-        }
-    peak = -b / (2 * c)
-    gradient = np.array([0.0, -1 / (2 * c), b / (2 * c * c)])
-    error = float(scale * np.sqrt(max(gradient @ covariance @ gradient, 0)))
-    frequency = float(origin + scale * peak)
-    interval = [frequency - 1.96 * error, frequency + 1.96 * error]
-    interior = bool(f[index - 1] < interval[0] < interval[1] < f[index + 1])
-    return {
-        "interior_peak": interior,
-        "reason": "qualified local peak"
-        if interior
-        else "peak uncertainty reaches local bracket",
-        "frequency_ghz": frequency,
-        "standard_error_ghz": error,
-        "ci95_ghz": interval,
-        "local_frequency_bracket_ghz": [float(f[index - 1]), float(f[index + 1])],
-        "uncertainty": "conditional three-point quadratic interpolation and supplied shot variance; not model-systematic coverage",
+    failure: dict[str, Any] = {
+        "interior_peak": False,
+        "reason": "negative local curvature is not resolved",
     }
+    attempts = []
+    for radius in (1, 2):
+        if index - radius < 0 or index + radius >= len(f):
+            break
+        local = slice(index - radius, index + radius + 1)
+        size = 2 * radius + 1
+        origin, scale = f[index], (f[index + radius] - f[index - radius]) / 2
+        x = (f[local] - origin) / scale
+        design = np.column_stack([np.ones(size), x, x * x])
+        weighted = design / np.sqrt(v[local, None])
+        covariance = np.linalg.inv(weighted.T @ weighted)
+        coefficient = covariance @ (design.T @ (y[local] / v[local]))
+        b, c = coefficient[1:]
+        reduced_chi2 = (
+            float(
+                np.sum((y[local] - design @ coefficient) ** 2 / v[local]) / (size - 3)
+            )
+            if size > 3
+            else None
+        )
+        curvature_upper = float(c + 1.96 * np.sqrt(covariance[2, 2]))
+        attempts.append(
+            {
+                "fit_points": size,
+                "curvature_upper95": curvature_upper,
+                "local_fit_reduced_chi2": reduced_chi2,
+            }
+        )
+        if reduced_chi2 is not None and reduced_chi2 > 5.0:
+            failure["reason"] = (
+                "expanded local peak model is inconsistent with shot variance"
+            )
+            break
+        if curvature_upper >= 0:
+            continue
+        peak = -b / (2 * c)
+        gradient = np.array([0.0, -1 / (2 * c), b / (2 * c * c)])
+        error = float(scale * np.sqrt(max(gradient @ covariance @ gradient, 0)))
+        frequency = float(origin + scale * peak)
+        interval = [frequency - 1.96 * error, frequency + 1.96 * error]
+        # Keep the original immediate-neighbor bracket even for a five-point
+        # fit: using measured shoulders must not relax the interior criterion.
+        interior = bool(f[index - 1] < interval[0] < interval[1] < f[index + 1])
+        return {
+            "interior_peak": interior,
+            "reason": "qualified local peak"
+            if interior
+            else "peak uncertainty reaches local bracket",
+            "frequency_ghz": frequency,
+            "standard_error_ghz": error,
+            "ci95_ghz": interval,
+            "local_frequency_bracket_ghz": [float(f[index - 1]), float(f[index + 1])],
+            "fit_points": size,
+            "local_fit_reduced_chi2": reduced_chi2,
+            "fit_attempts": attempts,
+            "uncertainty": "conditional local quadratic interpolation and supplied shot variance; window-selection and model systematics excluded",
+        }
+    return {**failure, "fit_attempts": attempts}
 
 
 def estimate_response_ridge(
@@ -245,8 +277,13 @@ def estimate_response_ridge(
     -----
     An interior raw maximum only locates three interpolation samples; it is
     not itself the selected peak. Require resolved downward curvature and an
-    interior peak confidence interval. A fixed-duration score maximum is not
-    necessarily an independently measured Hamiltonian resonance.
+    interior peak confidence interval. If those three samples do not resolve
+    curvature, use the five already measured neighboring samples when available,
+    additionally requiring reduced chi-square <=5. The curvature confidence
+    threshold and original immediate-neighbor peak bracket are unchanged.
+    An inadequate wider model still fails; adding denser points must not be
+    confused with increasing curvature precision. A fixed-duration score
+    maximum is not necessarily a Hamiltonian resonance.
     """
     a, f, y, variance = _observations(
         amplitudes, frequencies_ghz, scores, shot_variances
@@ -489,9 +526,17 @@ def propose_gp_point(
         tuple[NDArray, NDArray], gp.predict(coordinates(observed), return_std=True)
     )
     measured_mean, measured_std = location + scale * measured_mean, scale * measured_std
-    eligible = (a >= amin) & (a <= amax) & (f >= fmin) & (f <= fmax)
+    eligible = (
+        (a >= amin)
+        & (a <= amax)
+        & (f >= fmin)
+        & (f <= fmax)
+        & (abs(coordinates(observed)[:, 1]) <= 1 + 1e-10)
+    )
     if not eligible.any():
-        raise ValueError("No observed incumbent lies within the permitted bounds")
+        raise ValueError(
+            "No observed incumbent lies within the permitted box and ridge band"
+        )
     conservative = np.where(eligible, measured_mean - 1.96 * measured_std, -np.inf)
     best = int(np.argmax(conservative))
     if acquisition == "ucb":
