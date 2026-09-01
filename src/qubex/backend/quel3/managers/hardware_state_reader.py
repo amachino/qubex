@@ -14,6 +14,8 @@ from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces import (
     QuelwareClientFactory,
     QuelwareClientProtocol,
+    UnitConfigurationProtocol,
+    UnitControlSpecProtocol,
 )
 from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.backend.quel3.models import (
@@ -23,6 +25,7 @@ from qubex.backend.quel3.models import (
     Quel3InstrumentState,
     Quel3PortDiagnostic,
     Quel3PortState,
+    Quel3UnitControlState,
     Quel3UnitState,
 )
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
@@ -34,6 +37,7 @@ T = TypeVar("T")
 class _HardwareStateCollectionPlan:
     """Describe hardware-state sections required for one collection."""
 
+    collect_unit_configuration: bool
     collect_ports: bool
     collect_instruments: bool
     collect_diagnostics: bool
@@ -58,6 +62,7 @@ class _HardwareStateCollectionPlan:
         collect_ports = view in (None, "summary", "ports", "diagnostics", "all")
         collect_instruments = view in (None, "summary", "instruments", "all")
         return cls(
+            collect_unit_configuration=view in (None, "units", "all"),
             collect_ports=collect_ports or include_diagnostics,
             collect_instruments=collect_instruments,
             collect_diagnostics=include_diagnostics,
@@ -183,6 +188,7 @@ class Quel3HardwareStateReader:
             unit_labels=tuple(unit_labels_by_box_id.values()),
             include_diagnostics=False,
             parallel=True if parallel is None else parallel,
+            view="instruments",
         )
         return self.project_backend_settings(
             state=state,
@@ -221,7 +227,12 @@ class Quel3HardwareStateReader:
                 discovered_unit_labels=discovered_unit_labels,
                 selected_unit_labels=selected_unit_labels,
             )
-            units = tuple(Quel3UnitState(label=label) for label in visible_unit_labels)
+            units, unit_issues = await self._collect_units(
+                client=client,
+                unit_labels=visible_unit_labels,
+                include_configuration=collection_plan.collect_unit_configuration,
+                parallel=parallel,
+            )
             resource_infos: list[object] = []
             if collection_plan.collect_ports or needs_instrument_lookup:
                 resource_infos = [
@@ -290,6 +301,7 @@ class Quel3HardwareStateReader:
             )
 
         issues = (
+            *unit_issues,
             *port_issues,
             *instrument_issues,
             *diagnostic_issues,
@@ -324,6 +336,46 @@ class Quel3HardwareStateReader:
             issues=issues,
         )
 
+    async def _collect_units(
+        self,
+        *,
+        client: QuelwareClientProtocol,
+        unit_labels: tuple[str, ...],
+        include_configuration: bool,
+        parallel: bool,
+    ) -> tuple[tuple[Quel3UnitState, ...], tuple[Quel3HardwareStateIssue, ...]]:
+        """Collect unit configuration and preserve per-unit failures as issues."""
+        if not include_configuration:
+            return tuple(Quel3UnitState(label=label) for label in unit_labels), ()
+
+        async def _fetch(unit_label: str) -> Quel3UnitState:
+            configuration = await _resolve(client.get_unit_configuration(unit_label))
+            return self._unit_state(
+                unit_label=unit_label,
+                configuration=configuration,
+            )
+
+        results = await self._collect_resource_results(
+            resource_ids=unit_labels,
+            fetch=_fetch,
+            parallel=parallel,
+        )
+        units: list[Quel3UnitState] = []
+        issues: list[Quel3HardwareStateIssue] = []
+        for unit_label, result in zip(unit_labels, results, strict=True):
+            if isinstance(result, BaseException):
+                issues.append(
+                    self._resource_issue(
+                        operation="get_unit_configuration",
+                        resource_id=unit_label,
+                        exc=result,
+                    )
+                )
+                units.append(Quel3UnitState(label=unit_label))
+                continue
+            units.append(result)
+        return tuple(units), tuple(issues)
+
     async def _collect_ports(
         self,
         *,
@@ -333,10 +385,20 @@ class Quel3HardwareStateReader:
         parallel: bool,
     ) -> tuple[tuple[Quel3PortState, ...], tuple[Quel3HardwareStateIssue, ...]]:
         """Collect port states and preserve per-resource failures as issues."""
-        port_resource_ids = tuple(
+        all_port_resource_ids = tuple(
             self._resource_id(resource_info)
             for resource_info in resource_infos
             if self._category_name(getattr(resource_info, "category", None)) == "PORT"
+        )
+        monitor_port_ids = tuple(
+            resource_id
+            for resource_id in all_port_resource_ids
+            if self._is_monitor_port_id(resource_id)
+        )
+        port_resource_ids = tuple(
+            resource_id
+            for resource_id in all_port_resource_ids
+            if not self._is_monitor_port_id(resource_id)
         )
 
         async def _fetch(resource_id: str) -> Quel3PortState:
@@ -347,7 +409,14 @@ class Quel3HardwareStateReader:
             fetch=_fetch,
             parallel=parallel,
         )
-        ports: list[Quel3PortState] = []
+        ports = [
+            Quel3PortState(
+                id=resource_id,
+                unit_label=self._unit_label(resource_id),
+                role=None,
+            )
+            for resource_id in monitor_port_ids
+        ]
         issues: list[Quel3HardwareStateIssue] = []
         for resource_id, result in zip(port_resource_ids, results, strict=True):
             if isinstance(result, BaseException):
@@ -913,6 +982,36 @@ class Quel3HardwareStateReader:
         return []
 
     @classmethod
+    def _unit_state(
+        cls,
+        *,
+        unit_label: str,
+        configuration: UnitConfigurationProtocol,
+    ) -> Quel3UnitState:
+        """Build one unit state from a quelware unit configuration."""
+        controls = tuple(
+            sorted(
+                (
+                    cls._unit_control_state(control)
+                    for control in configuration.supported
+                ),
+                key=lambda control: control.key,
+            )
+        )
+        return Quel3UnitState(label=unit_label, controls=controls)
+
+    @staticmethod
+    def _unit_control_state(
+        control: UnitControlSpecProtocol,
+    ) -> Quel3UnitControlState:
+        """Build one unit-control state from a quelware control specification."""
+        return Quel3UnitControlState(
+            key=str(control.key),
+            allowed_values=tuple(str(value) for value in control.allowed_values),
+            current_value=str(control.current_value),
+        )
+
+    @classmethod
     def _port_state(cls, port_info: object) -> Quel3PortState:
         """Build one port state from a quelware port-info object."""
         port_info_obj = cast(Any, port_info)
@@ -1029,6 +1128,11 @@ class Quel3HardwareStateReader:
         if ":" not in resource_id:
             return resource_id
         return resource_id.split(":", maxsplit=1)[1]
+
+    @classmethod
+    def _is_monitor_port_id(cls, resource_id: str) -> bool:
+        """Return whether one qualified resource ID is the monitor port."""
+        return ":" in resource_id and cls._local_resource_id(resource_id) == "mon"
 
     @staticmethod
     def _category_name(category: object) -> str:
