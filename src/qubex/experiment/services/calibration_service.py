@@ -1116,6 +1116,8 @@ class CalibrationService:
             n_turns = 1
         if n_iterations is None:
             n_iterations = 2
+        if n_iterations <= 0:
+            raise ValueError("n_iterations must be positive.")
         if degree is None:
             degree = 3
         if r2_threshold is None:
@@ -1240,6 +1242,8 @@ class CalibrationService:
             n_turns = 1
         if n_iterations is None:
             n_iterations = 2
+        if n_iterations <= 0:
+            raise ValueError("n_iterations must be positive.")
         if degree is None:
             degree = 3
         if r2_threshold is None:
@@ -2112,6 +2116,8 @@ class CalibrationService:
         """Obtain CR parameters for a qubit pair."""
         if n_iterations is None:
             n_iterations = 4
+        if n_iterations <= 0:
+            raise ValueError("n_iterations must be positive.")
         if n_cycles is None:
             n_cycles = 2
         if n_points_per_cycle is None:
@@ -2547,17 +2553,18 @@ class CalibrationService:
             calibrated_cr_amplitude / cr_amplitude * rotary_amplitude
         )
 
-        if calibrated_cr_amplitude is not None and store_params:
-            if use_drag:
-                f_control = self.ctx.qubits[control_qubit].frequency
-                f_target = self.ctx.qubits[target_qubit].frequency
-                Delta_ct = 2 * np.pi * (f_control - f_target)
-                cr_beta = -1 / Delta_ct
-                # cancel_beta = -1 / self.ctx.qubits[target_qubit].alpha
-                cancel_beta = 0.0
-            else:
-                cr_beta = 0.0
-                cancel_beta = 0.0
+        if use_drag:
+            f_control = self.ctx.qubits[control_qubit].frequency
+            f_target = self.ctx.qubits[target_qubit].frequency
+            Delta_ct = 2 * np.pi * (f_control - f_target)
+            cr_beta = -1 / Delta_ct
+            # cancel_beta = -1 / self.ctx.qubits[target_qubit].alpha
+            cancel_beta = 0.0
+        else:
+            cr_beta = 0.0
+            cancel_beta = 0.0
+
+        if store_params:
             self.ctx.calib_note.update_cr_param(
                 cr_label,
                 {
