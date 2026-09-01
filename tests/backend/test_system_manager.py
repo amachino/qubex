@@ -13,7 +13,11 @@ import pytest
 
 from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.backend.quel1 import Quel1BackendController
-from qubex.backend.quel3 import Quel3BackendController
+from qubex.backend.quel3 import (
+    Quel3BackendController,
+    Quel3HttpTransportConfig,
+    Quel3RuntimeConfig,
+)
 from qubex.external_devices import (
     DCVoltageConfig,
     DCVoltageControllerConfig,
@@ -1422,10 +1426,7 @@ def test_load_uses_provided_backend_controller(
 ) -> None:
     """Given an injected backend controller, load should keep that controller instance."""
     manager = SystemManager.shared()
-    injected_controller = Quel3BackendController(
-        client_mode="standalone",
-        standalone_unit_label="quel3-02-a01",
-    )
+    injected_controller = Quel3BackendController()
 
     class _FakeConfigLoader:
         def __init__(self, **_: object) -> None:
@@ -1450,6 +1451,114 @@ def test_load_uses_provided_backend_controller(
     )
 
     assert manager.backend_controller is injected_controller
+
+
+def test_load_creates_quel3_controller_from_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given quel3 runtime config, when loading without injected controller, then SystemManager configures the controller."""
+    manager = SystemManager.shared()
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        @property
+        def backend_runtime_config(self) -> dict[str, object]:
+            return {
+                "endpoint": "192.0.2.10",
+                "port": 443,
+                "client_mode": "server",
+                "pat_path": "/run/secrets/quelware-pat",
+                "transport": "https",
+                "http_transport": {
+                    "base_path": "/quelware",
+                    "default_timeout_seconds": 30.0,
+                    "proxy": {
+                        "url_path": "/run/secrets/quelware-proxy-url",
+                    },
+                    "secret_header_paths": {
+                        "CF-Access-Client-Id": "/run/secrets/cf-access-client-id",
+                        "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
+                    },
+                },
+            }
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    manager.load(
+        chip_id="TEST",
+        mock_mode=True,
+    )
+
+    controller = manager.backend_controller
+    assert isinstance(controller, Quel3BackendController)
+    assert controller.quelware_endpoint == "192.0.2.10"
+    assert controller.quelware_port == 443
+    assert controller.client_mode == "server"
+    assert controller.quelware_pat_path == "/run/secrets/quelware-pat"
+    assert controller.runtime_config == Quel3RuntimeConfig(
+        endpoint="192.0.2.10",
+        port=443,
+        client_mode="server",
+        pat_path="/run/secrets/quelware-pat",
+        transport="https",
+        http_transport=Quel3HttpTransportConfig(
+            base_path="/quelware",
+            default_timeout_seconds=30.0,
+            proxy_url_path="/run/secrets/quelware-proxy-url",
+            secret_header_paths={
+                "CF-Access-Client-Id": "/run/secrets/cf-access-client-id",
+                "CF-Access-Client-Secret": "/run/secrets/cf-access-client-secret",
+            },
+        ),
+    )
+
+
+def test_load_rejects_removed_quel3_standalone_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given standalone runtime config, SystemManager load should reject it."""
+    manager = SystemManager.shared()
+
+    class _FakeConfigLoader:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def load(self, **_: object) -> None:
+            pass
+
+        @property
+        def backend_kind(self) -> str:
+            return BACKEND_KIND_QUEL3
+
+        @property
+        def backend_runtime_config(self) -> dict[str, object]:
+            return {
+                "client_mode": "standalone",
+                "standalone_unit_label": "quel3-02-a01",
+            }
+
+        def get_experiment_system(self) -> object:
+            return SimpleNamespace(hash=hash("TEST"))
+
+    monkeypatch.setattr("qubex.system.system_manager.ConfigLoader", _FakeConfigLoader)
+
+    with pytest.raises(ValueError, match="standalone_unit_label"):
+        manager.load(
+            chip_id="TEST",
+            mock_mode=True,
+        )
 
 
 def test_load_defaults_to_quel1_when_system_backend_is_missing(

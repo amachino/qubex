@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Literal
 
+from qubex.backend.backend_controller import BACKEND_KIND_QUEL1, BACKEND_KIND_QUEL3
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.system import Qubit, Target, TargetType
 from qubex.system.control_system import GenChannel, GenPort, PortType
@@ -186,3 +187,47 @@ def test_get_edge_labels_can_include_cross_mux_edges(monkeypatch) -> None:
 
     assert context.get_edge_labels(in_same_mux=False) == ["Q00-Q01", "Q00-Q02"]
     assert recorded == [False]
+
+
+def test_available_targets_filter_unavailable_targets_for_quel1(monkeypatch) -> None:
+    """Given QuEL-1 backend, when listing available targets, then unavailable targets are filtered."""
+    context = object.__new__(ExperimentContext)
+    targets = {
+        "Q00": SimpleNamespace(is_available=True),
+        "Q01": SimpleNamespace(is_available=False),
+    }
+
+    monkeypatch.setattr(
+        ExperimentContext,
+        "config_loader",
+        property(lambda self: SimpleNamespace(backend_kind=BACKEND_KIND_QUEL1)),
+    )
+    monkeypatch.setattr(
+        ExperimentContext,
+        "targets",
+        property(lambda self: targets),
+    )
+
+    assert set(context.available_targets) == {"Q00"}
+
+
+def test_available_targets_keep_unavailable_targets_for_quel3(monkeypatch) -> None:
+    """Given QuEL-3 backend, when listing available targets, then all targets are retained."""
+    context = object.__new__(ExperimentContext)
+    targets = {
+        "Q00": SimpleNamespace(is_available=True),
+        "Q01": SimpleNamespace(is_available=False),
+    }
+
+    monkeypatch.setattr(
+        ExperimentContext,
+        "config_loader",
+        property(lambda self: SimpleNamespace(backend_kind=BACKEND_KIND_QUEL3)),
+    )
+    monkeypatch.setattr(
+        ExperimentContext,
+        "targets",
+        property(lambda self: targets),
+    )
+
+    assert set(context.available_targets) == {"Q00", "Q01"}

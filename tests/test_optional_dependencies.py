@@ -24,7 +24,7 @@ def test_project_optional_dependencies_split_backend_quel1_quel3() -> None:
         re.MULTILINE,
     )
     assert re.search(
-        r'^quel3\s*=\s*\["quelware-client"\]',
+        r'^quel3\s*=\s*\["quelware-client >= 0\.6\.1"\]',
         text,
         re.MULTILINE,
     )

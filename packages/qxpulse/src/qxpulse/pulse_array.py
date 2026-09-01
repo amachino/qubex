@@ -17,7 +17,7 @@ from qxvisualizer.style import COLORS
 from .blank import Blank
 from .phase_shift import PhaseShift, VirtualZ
 from .pulse import Pulse
-from .waveform import Waveform
+from .waveform import Waveform, is_zero_within_sampling_grid
 
 logger = logging.getLogger(__name__)
 
@@ -203,11 +203,13 @@ class PulseArray(Waveform):
             Side of the zero padding.
         """
         duration = total_duration - self.duration
+        if is_zero_within_sampling_grid(duration, self.sampling_period):
+            duration = 0.0
         if duration < 0:
             raise ValueError(
                 f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
             )
-        blank = Blank(duration)
+        blank = Blank(duration, sampling_period=self.sampling_period)
         if pad_side == "right":
             self._elements.append(blank)
         elif pad_side == "left":
@@ -240,6 +242,8 @@ class PulseArray(Waveform):
             pulse-array container.
         """
         duration = total_duration - self.duration
+        if is_zero_within_sampling_grid(duration, self.sampling_period):
+            duration = 0.0
         if duration < 0:
             raise ValueError(
                 f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
@@ -248,7 +252,7 @@ class PulseArray(Waveform):
             new_array = copy.deepcopy(self)
         else:
             new_array = copy.copy(self)
-        blank = Blank(duration=duration)
+        blank = Blank(duration=duration, sampling_period=self.sampling_period)
         if pad_side == "right":
             new_elements = [*new_array._elements, blank]
         elif pad_side == "left":

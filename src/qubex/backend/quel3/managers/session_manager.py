@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Collection
+from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 
-from qubex.backend.quel3.infra.quelware_imports import (
-    Quel3ClientMode,
-    load_quelware_client_factory,
-    validate_quelware_client_runtime,
-)
+from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces import (
     QuelwareClientFactory,
     QuelwareClientProtocol,
     ResourceIdProtocol,
     SessionProtocol,
+)
+from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
+from qubex.backend.quel3.managers.session_workarounds import (
+    QuelwareSessionError,
+    enter_quelware_session_with_resource_retry,
+    quelware_session_token,
 )
 
 
@@ -24,44 +27,42 @@ class Quel3SessionManager:
     def __init__(
         self,
         *,
-        quelware_endpoint: str,
-        quelware_port: int,
-        client_mode: Quel3ClientMode = "server",
-        standalone_unit_label: str | None = None,
+        runtime_config: Quel3RuntimeConfig | None = None,
     ) -> None:
-        normalized_client_mode = validate_quelware_client_runtime(
-            client_mode=client_mode,
-            standalone_unit_label=standalone_unit_label,
+        self._runtime_config = runtime_config or Quel3RuntimeConfig()
+        self._client_cm: AbstractAsyncContextManager[QuelwareClientProtocol] | None = (
+            None
         )
-        self._quelware_endpoint = quelware_endpoint
-        self._quelware_port = quelware_port
-        self._client_mode: Quel3ClientMode = normalized_client_mode
-        self._standalone_unit_label = standalone_unit_label
-        self._client_cm = None
         self._client: QuelwareClientProtocol | None = None
-        self._session_cm = None
+        self._session_cm: AbstractAsyncContextManager[SessionProtocol] | None = None
         self._session: SessionProtocol | None = None
+        self._session_token: str | None = None
         self._resource_ids: tuple[ResourceIdProtocol, ...] | None = None
+
+    @property
+    def runtime_config(self) -> Quel3RuntimeConfig:
+        """Return the shared quelware runtime config."""
+        return self._runtime_config
 
     @property
     def quelware_endpoint(self) -> str:
         """Return quelware endpoint."""
-        return self._quelware_endpoint
+        return self._runtime_config.endpoint
 
     @property
-    def quelware_port(self) -> int:
+    def quelware_port(self) -> int | None:
         """Return quelware port."""
-        return self._quelware_port
+        return self._runtime_config.port
 
     @property
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
-        return self._client_mode
+        return self._runtime_config.client_mode_value
 
     @property
-    def standalone_unit_label(self) -> str | None:
-        """Return configured standalone unit label."""
-        return self._standalone_unit_label
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._runtime_config.pat_path
 
     @property
     def is_open(self) -> bool:
@@ -81,6 +82,11 @@ class Quel3SessionManager:
         if self._session is None:
             raise RuntimeError("QuEL-3 execution session is not open.")
         return self._session
+
+    @property
+    def session_token(self) -> str | None:
+        """Return the token captured when the current session opened."""
+        return self._session_token
 
     @property
     def resource_ids(self) -> tuple[ResourceIdProtocol, ...] | None:
@@ -107,10 +113,14 @@ class Quel3SessionManager:
                 else client_factory
             )
             self._client_cm = runtime_client_factory(
-                self._quelware_endpoint,
-                self._quelware_port,
+                self._runtime_config.endpoint,
+                self._runtime_config.port,
             )
-            self._client = await self._client_cm.__aenter__()
+            try:
+                self._client = await self._client_cm.__aenter__()
+            except Exception:
+                self._client_cm = None
+                raise
 
         if resource_ids is None:
             return None
@@ -123,23 +133,63 @@ class Quel3SessionManager:
                 )
             return self._session
 
-        self._session_cm = self._client.create_session(normalized_resource_ids)
-        self._session = await self._session_cm.__aenter__()
+        try:
+            (
+                self._session_cm,
+                self._session,
+            ) = await enter_quelware_session_with_resource_retry(
+                client=self._client,
+                resource_ids=normalized_resource_ids,
+            )
+        except Exception:
+            await self.close()
+            raise
+        self._session_token = quelware_session_token(self._session)
         self._resource_ids = normalized_resource_ids
         return self._session
 
+    async def reopen_session(
+        self,
+        resource_ids: Collection[ResourceIdProtocol] | None = None,
+    ) -> SessionProtocol | None:
+        """Close the current session and open a replacement on the same client."""
+        session_cm, session_token = self._detach_session_context()
+        if session_cm is not None:
+            try:
+                await session_cm.__aexit__(None, None, None)
+            except Exception as exc:
+                raise QuelwareSessionError(
+                    "QuEL-3 quelware session close failed before reopening",
+                    session_token=session_token,
+                    cause=exc,
+                ) from exc
+        return await self.open(resource_ids)
+
     async def close(self) -> None:
         """Close any open quelware session and client contexts."""
-        if self._session_cm is not None:
-            await self._session_cm.__aexit__(None, None, None)
+        session_cm, _ = self._detach_session_context()
+        try:
+            if session_cm is not None:
+                await session_cm.__aexit__(None, None, None)
+        finally:
+            client_cm = self._client_cm
+            self._client_cm = None
+            self._client = None
+
+            if client_cm is not None:
+                await client_cm.__aexit__(None, None, None)
+
+    def _detach_session_context(
+        self,
+    ) -> tuple[AbstractAsyncContextManager[SessionProtocol] | None, str]:
+        """Clear stored session state and return the previous context."""
+        session_cm = self._session_cm
+        session_token = self._session_token or quelware_session_token(self._session)
         self._session_cm = None
         self._session = None
+        self._session_token = None
         self._resource_ids = None
-
-        if self._client_cm is not None:
-            await self._client_cm.__aexit__(None, None, None)
-        self._client_cm = None
-        self._client = None
+        return session_cm, session_token
 
     async def __aenter__(self) -> Quel3SessionManager:
         """Open the underlying quelware client context and return self."""
@@ -158,7 +208,4 @@ class Quel3SessionManager:
 
     def load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        return load_quelware_client_factory(
-            client_mode=self._client_mode,
-            standalone_unit_label=self._standalone_unit_label,
-        )
+        return self._runtime_config.load_client_factory()

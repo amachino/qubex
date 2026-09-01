@@ -222,25 +222,86 @@ experiment.external_devices.bias_dc_voltages()
 ```yaml
 SYSTEM_A:
   chip_id: CHIP_A
-  backend: quel3
-  quel3:
-    endpoint: localhost
-    port: 50051
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10
 ```
 
 - トップレベルのキーが `system_id` です。
 - `backend` で、この system が使うバックエンド種別を選びます。
 - バックエンド固有セクションの名前は `backend` と同じにします。
 
-skew 測定やクロック同期を使う QuEL-1 system では、`quel1.clock_master` を定義してください。
+skew 測定やクロック同期を使う QuEL-1 system では、
+`quel1.clock_master` に clock master の IP address を指定してください。
+
+#### QuEL-3 を使用する場合
+
+QuEL-3 を使用する場合は、`backend` に `quel3` を指定し、`quel3` セクションに
+endpoint の接続情報を定義します。
 
 ```yaml
-SYSTEM_B:
+SYSTEM_QUEL3:
   chip_id: CHIP_A
-  backend: quel1
-  quel1:
-    clock_master: 10.0.0.10
+  backend: quel3
+  quel3:
+    endpoint: localhost
+    port: 50051
+    transport: grpc
 ```
+
+QuEL-3 では、`transport` を省略するか `grpc` にすると native gRPC を使います。
+
+#### クラウド公開された QuEL-3 に接続する場合
+
+さらに、Cloudflare Access で保護してクラウド公開した QuEL-3 に接続する場合は、
+`transport` に `https` を指定します。secret header ごとに mount した secret file
+の path を指定し、header の値を `system.yaml` に直接保存しないでください。
+
+```yaml
+SYSTEM_CLOUDFLARE:
+  chip_id: CHIP_A
+  backend: quel3
+  quel3:
+    endpoint: api.example.com
+    # port: 443
+    transport: https
+    http_transport:
+      # base_path: /your-api-base-path
+      default_timeout_seconds: 30.0
+      proxy:
+        url_path: /run/secrets/quelware-proxy-url
+      secret_header_paths:
+        CF-Access-Client-Id: /run/secrets/cf-access-client-id
+        CF-Access-Client-Secret: /run/secrets/cf-access-client-secret
+```
+
+`https` transport では、`port` を省略すると `443` を使用します。
+`http_transport.base_path` を指定しない場合、request は endpoint のルートへ
+送信されます。`http_transport.default_timeout_seconds` は HTTP request の開始から
+response body の読み取り完了までを秒単位で制限します。transport 全体の
+デフォルト値が不要なら省略してください。
+
+`secret_header_paths` は HTTPS でのみ使用できます。key には HTTP header 名、
+value にはその header の secret 値を保存した file の path を指定します。
+transport は指定された header を request ごとに送信します。Cloudflare Access を
+使用する場合は、application 側に対応する Service Auth policy を設定してください。
+HTTPS certificate は system trust store を使って検証されます。redirect は
+scheme、host、実効 port が同じ場合にのみ追跡されます。cross-origin redirect は、
+request credential を redirect 先へ送信する前に失敗します。
+
+`proxy` を省略した場合、`https` transport は標準の `HTTP_PROXY`、
+`HTTPS_PROXY`、`NO_PROXY` 環境変数を使用します。system ごとに proxy を明示
+する場合は、完全な HTTP URL を `proxy.url_path` で指定したファイルへ保存
+してください。明示 URL は `HTTP_PROXY` または `HTTPS_PROXY` より優先されます
+が、endpoint が `NO_PROXY` に一致する場合は直接接続します。
+
+Basic 認証付き proxy では、
+`http://user:password@proxy.example.com:3128` のような URL をファイルへ保存
+します。username や password の予約文字は percent-encode し、ファイルを
+secret として保護してください。URL を `system.yaml` へ直接書かないでください。
+SOCKS、NTLM、Kerberos proxy 認証および HTTPS proxy URL には対応しません。
+TLS を検査する proxy が private CA を使う場合は、その CA を system trust
+store へインストールしてください。
 
 ### `wiring.yaml`
 

@@ -89,6 +89,7 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
 
     read_request = request_by_target["RQ00"]
     assert read_request.port_id == "quel3-02-a01:trx_p00p01"
+    assert read_request.box_id == "BOX1"
     assert read_request.role == "TRANSCEIVER"
     assert read_request.alias == "RQ00"
     assert read_request.frequency_range_min_hz == pytest.approx(5.9e9)
@@ -97,6 +98,7 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
 
     ctrl_request = request_by_target["Q00"]
     assert ctrl_request.port_id == "quel3-02-a01:tx_p02"
+    assert ctrl_request.box_id == "BOX1"
     assert ctrl_request.role == "TRANSMITTER"
     assert ctrl_request.alias == "Q00"
     assert ctrl_request.frequency_range_min_hz == pytest.approx(4.10e9)
@@ -105,6 +107,7 @@ def test_build_deploy_requests_creates_one_request_per_target() -> None:
 
     cr_request = request_by_target["Q00-CR"]
     assert cr_request.port_id == "quel3-02-a01:tx_p02"
+    assert cr_request.box_id == "BOX1"
     assert cr_request.role == "TRANSMITTER"
     assert cr_request.alias == "Q00-CR"
     assert cr_request.frequency_range_min_hz == pytest.approx(4.25e9)
@@ -249,6 +252,7 @@ def test_quel3_synchronizer_plans_then_deploys_from_hardware_sync_input() -> Non
             frequency_range_max_hz=4.3e9,
             alias="Q00",
             target_labels=("Q00",),
+            box_id="BOX1",
         ),
     )
 
@@ -306,6 +310,7 @@ def test_quel3_synchronizer_defaults_parallel_deploy_to_true() -> None:
             frequency_range_max_hz=4.3e9,
             alias="Q00",
             target_labels=("Q00",),
+            box_id="BOX1",
         ),
     )
 
@@ -389,3 +394,107 @@ def test_quel3_synchronizer_does_not_cache_experiment_system_for_push() -> None:
     )
 
     assert planner_calls == [pushed_experiment_system]
+
+
+def test_quel3_synchronizer_projects_hardware_state_to_backend_settings() -> None:
+    """Given selected boxes, synchronizer should fetch backend settings from hardware state."""
+    calls: list[dict[str, object]] = []
+
+    class _FakeHardwareStateReader:
+        def fetch_backend_settings_from_hardware(
+            self,
+            *,
+            unit_labels_by_box_id: dict[str, str],
+            parallel: bool | None = None,
+        ) -> dict[str, dict]:
+            calls.append(
+                {
+                    "unit_labels_by_box_id": unit_labels_by_box_id,
+                    "parallel": parallel,
+                }
+            )
+            return {
+                "BOX1": {
+                    "instruments": {
+                        "Q00": {
+                            "resource_id": "unit-a:inst-q00",
+                            "port_id": "unit-a:tx_p01",
+                            "role": "TRANSMITTER",
+                        }
+                    }
+                }
+            }
+
+    class _FakeBackendController:
+        hardware_state_reader = _FakeHardwareStateReader()
+
+    experiment_system = SimpleNamespace(
+        get_box=lambda box_id: SimpleNamespace(id=box_id, name="unit-a"),
+    )
+    synchronizer = Quel3SystemSynchronizer(
+        backend_controller=cast(Any, _FakeBackendController()),
+    )
+
+    fetched = synchronizer.fetch_backend_settings_from_hardware(
+        experiment_system=cast(Any, experiment_system),
+        box_ids=("BOX1",),
+        parallel=False,
+    )
+
+    assert fetched == {
+        "BOX1": {
+            "instruments": {
+                "Q00": {
+                    "resource_id": "unit-a:inst-q00",
+                    "port_id": "unit-a:tx_p01",
+                    "role": "TRANSMITTER",
+                }
+            }
+        }
+    }
+    assert calls == [
+        {
+            "unit_labels_by_box_id": {"BOX1": "unit-a"},
+            "parallel": False,
+        }
+    ]
+
+
+def test_quel3_synchronizer_invalidates_resolution_after_cache_sync() -> None:
+    """Given pulled settings, synchronizer should invalidate instrument resolution."""
+    calls: list[tuple[str, object]] = []
+    backend_settings = {
+        "BOX1": {
+            "instruments": {
+                "Q00": {
+                    "resource_id": "unit-a:inst-q00",
+                    "port_id": "unit-a:tx_p01",
+                    "role": "TRANSMITTER",
+                }
+            }
+        }
+    }
+    backend_controller = SimpleNamespace(
+        configuration_manager=SimpleNamespace(
+            sync_backend_settings_to_cache=lambda *, backend_settings: calls.append(
+                ("sync-cache", backend_settings)
+            ),
+        ),
+        execution_manager=SimpleNamespace(
+            invalidate_instrument_resolver=lambda: calls.append(
+                ("invalidate-resolver", None)
+            ),
+        ),
+    )
+    synchronizer = Quel3SystemSynchronizer(
+        backend_controller=cast(Any, backend_controller),
+    )
+
+    synchronizer.sync_backend_settings_to_backend_controller(
+        backend_settings=backend_settings,
+    )
+
+    assert calls == [
+        ("sync-cache", backend_settings),
+        ("invalidate-resolver", None),
+    ]

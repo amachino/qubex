@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TypeVar
 
-from qubex.backend.quel3.interfaces import SequencerProtocol
+from qubex.backend.quel3.interfaces import (
+    SequencerFactoryProtocol,
+    SequencerProtocol,
+)
 from qubex.backend.quel3.models import Quel3ExecutionPayload
 
 T = TypeVar("T", bound=SequencerProtocol)
@@ -15,6 +18,7 @@ _QUEL3_CLOCK_FREQUENCY_HZ = 312_500_000
 _TRIGGER_GRID_TICKS = 32
 _TRIGGER_GRID_NS = _TRIGGER_GRID_TICKS * (1e9 / _QUEL3_CLOCK_FREQUENCY_HZ)
 _MIN_SHOT_INTERVAL_NS = 1_024.0
+_TIME_GRID_SAMPLE_ATOL = 1e-3
 
 
 class Quel3SequencerBuilder:
@@ -27,11 +31,26 @@ class Quel3SequencerBuilder:
             math.ceil(effective_shot_interval_ns / _TRIGGER_GRID_NS) * _TRIGGER_GRID_NS
         )
 
+    @staticmethod
+    def _ceil_to_sampling_grid_ns(time_ns: float, sampling_period_fs: int) -> float:
+        """Return time ceiled to the alias sampling grid in ns."""
+        sampling_period_ns = sampling_period_fs / 1e6
+        samples = time_ns / sampling_period_ns
+        rounded_samples = round(samples)
+        if math.isclose(
+            samples,
+            rounded_samples,
+            rel_tol=0.0,
+            abs_tol=_TIME_GRID_SAMPLE_ATOL,
+        ):
+            return float(rounded_samples) * sampling_period_ns
+        return float(math.ceil(samples)) * sampling_period_ns
+
     def build(
         self,
         *,
         payload: Quel3ExecutionPayload,
-        sequencer_factory: Callable[..., T],
+        sequencer_factory: SequencerFactoryProtocol[T],
         default_sampling_period_ns: float,
         alias_bindings: Mapping[str, tuple[int, int]],
     ) -> T:
@@ -42,8 +61,8 @@ class Quel3SequencerBuilder:
         ----------
         payload : Quel3ExecutionPayload
             QuEL-3 execution payload from measurement adapter.
-        sequencer_factory : Callable[..., T]
-            Sequencer class or factory compatible with quelware `Sequencer`.
+        sequencer_factory : SequencerFactoryProtocol[T]
+            Quelware-compatible sequencer factory.
         default_sampling_period_ns : float
             Sequencer default sampling period in ns.
         alias_bindings : Mapping[str, tuple[int, int]]
@@ -54,8 +73,14 @@ class Quel3SequencerBuilder:
         T
             Built sequencer instance.
         """
+        iter_blank_ns = (
+            self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
+            if payload.shot_interval_ns > 0
+            else 0.0
+        )
         sequencer = sequencer_factory(
-            default_sampling_period_ns=default_sampling_period_ns
+            default_sampling_period_ns=default_sampling_period_ns,
+            iter_blank_ns=iter_blank_ns,
         )
         sequencer.set_iterations(payload.n_iterations)
 
@@ -80,6 +105,7 @@ class Quel3SequencerBuilder:
             )
 
         for instrument_alias, timeline in payload.fixed_timelines.items():
+            sampling_period_fs = alias_bindings[instrument_alias][0]
             for event in timeline.events:
                 if event.waveform_name not in payload.waveform_library:
                     raise ValueError(
@@ -88,22 +114,27 @@ class Quel3SequencerBuilder:
                 sequencer.add_event(
                     instrument_alias,
                     event.waveform_name,
-                    start_offset_ns=event.start_offset_ns,
+                    start_offset_ns=self._ceil_to_sampling_grid_ns(
+                        event.start_offset_ns,
+                        sampling_period_fs,
+                    ),
                     gain=event.gain,
-                    phase_offset_deg=event.phase_offset_deg,
+                    # Invert sign
+                    phase_offset_deg=-event.phase_offset_deg,
                 )
 
             for capture_window in timeline.capture_windows:
                 sequencer.add_capture_window(
                     instrument_alias,
                     capture_window.name,
-                    start_offset_ns=capture_window.start_offset_ns,
-                    length_ns=capture_window.length_ns,
+                    start_offset_ns=self._ceil_to_sampling_grid_ns(
+                        capture_window.start_offset_ns,
+                        sampling_period_fs,
+                    ),
+                    length_ns=self._ceil_to_sampling_grid_ns(
+                        capture_window.length_ns,
+                        sampling_period_fs,
+                    ),
                 )
-
-        if payload.shot_interval_ns > 0:
-            sequencer.extend_length_ns(
-                self._resolve_effective_shot_interval_ns(payload.shot_interval_ns)
-            )
 
         return sequencer

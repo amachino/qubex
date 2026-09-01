@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 from qubex.backend.quel3.interfaces.client import (
+    FixedTimelineProfileFactory,
+    FixedTimelineProfileProtocol,
+    InstrumentDefinitionFactory,
     InstrumentDefinitionProtocol,
     InstrumentInfoProtocol,
+    InstrumentModeNamespaceProtocol,
+    InstrumentModeProtocol,
+    InstrumentRoleNamespaceProtocol,
+    InstrumentRoleProtocol,
     QuelwareClientFactory,
     QuelwareClientProtocol,
     ResourceIdProtocol,
     SessionProtocol,
+    UnitConfigurationProtocol,
+    UnitControlSpecProtocol,
 )
 from qubex.backend.quel3.interfaces.directives import (
     CaptureModeNamespaceProtocol,
     CaptureModeProtocol,
-    CaptureModeValue,
     DirectiveProtocol,
     SetCaptureModeFactory,
+    SetFrequencyFactory,
 )
 from qubex.backend.quel3.interfaces.driver import (
     InstrumentConfigProtocol,
@@ -28,26 +37,39 @@ from qubex.backend.quel3.interfaces.resolver import (
     InstrumentResolverFactory,
     InstrumentResolverProtocol,
 )
-from qubex.backend.quel3.interfaces.sequencer import SequencerProtocol
+from qubex.backend.quel3.interfaces.sequencer import (
+    SequencerFactoryProtocol,
+    SequencerProtocol,
+)
 
 __all__ = [
     "CaptureModeNamespaceProtocol",
     "CaptureModeProtocol",
-    "CaptureModeValue",
     "DirectiveProtocol",
+    "FixedTimelineProfileFactory",
+    "FixedTimelineProfileProtocol",
     "InstrumentConfigProtocol",
+    "InstrumentDefinitionFactory",
     "InstrumentDefinitionProtocol",
     "InstrumentDriverFactory",
     "InstrumentDriverProtocol",
     "InstrumentInfoProtocol",
+    "InstrumentModeNamespaceProtocol",
+    "InstrumentModeProtocol",
     "InstrumentResolverFactory",
     "InstrumentResolverProtocol",
+    "InstrumentRoleNamespaceProtocol",
+    "InstrumentRoleProtocol",
     "IqWaveformResultProtocol",
     "QuelwareClientFactory",
     "QuelwareClientProtocol",
     "ResourceIdProtocol",
     "ResultContainerProtocol",
+    "SequencerFactoryProtocol",
     "SequencerProtocol",
     "SessionProtocol",
     "SetCaptureModeFactory",
+    "SetFrequencyFactory",
+    "UnitConfigurationProtocol",
+    "UnitControlSpecProtocol",
 ]

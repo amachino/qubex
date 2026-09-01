@@ -6,9 +6,13 @@ from .quelware_imports import (
     normalize_quel3_client_mode,
     validate_quelware_client_runtime,
 )
+from .quelware_transport_config import (
+    Quel3HttpTransportConfig,
+)
 
 __all__ = [
     "Quel3ClientMode",
+    "Quel3HttpTransportConfig",
     "load_quelware_client_factory",
     "normalize_quel3_client_mode",
     "validate_quelware_client_runtime",

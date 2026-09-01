@@ -36,6 +36,8 @@ from qubex.system.target_type import TargetType
 
 from ._capture_shape import normalize_shot_averaged_capture_array
 
+InstrumentAliasMap = Mapping[tuple[str, str], str]
+
 
 def _as_read_only_array(data: object) -> np.ndarray:
     """Return read-only NumPy array view for capture payloads."""
@@ -53,7 +55,7 @@ class Quel3MeasurementBackendAdapter:
         backend_controller: Quel3BackendController,
         experiment_system: ExperimentSystem,
         constraint_profile: MeasurementConstraintProfile | None = None,
-        instrument_alias_map: Mapping[str, str] | None = None,
+        instrument_alias_map: InstrumentAliasMap | None = None,
     ) -> None:
         self._backend_controller = backend_controller
         self._experiment_system = experiment_system
@@ -67,15 +69,15 @@ class Quel3MeasurementBackendAdapter:
         self._constraint_profile = constraint_profile
 
     @property
-    def instrument_alias_map(self) -> Mapping[str, str]:
+    def instrument_alias_map(self) -> InstrumentAliasMap:
         """Return configured target-to-instrument alias mapping."""
         return self._instrument_alias_map
 
-    def set_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
+    def set_instrument_alias_map(self, alias_map: InstrumentAliasMap) -> None:
         """Replace full target-to-alias mapping in adapter layer."""
         self._instrument_alias_map = dict(alias_map)
 
-    def update_instrument_alias_map(self, alias_map: Mapping[str, str]) -> None:
+    def update_instrument_alias_map(self, alias_map: InstrumentAliasMap) -> None:
         """Update target-to-alias mapping entries in adapter layer."""
         self._instrument_alias_map.update(alias_map)
 
@@ -95,10 +97,6 @@ class Quel3MeasurementBackendAdapter:
                     )
                 if capture.duration <= 0:
                     raise ValueError(f"Capture duration must be positive: {channel}.")
-                if capture.start_time + capture.duration > pulse_schedule.duration:
-                    raise ValueError(
-                        f"Capture exceeds pulse schedule duration: {channel}."
-                    )
 
     def build_execution_request(
         self,
@@ -121,7 +119,9 @@ class Quel3MeasurementBackendAdapter:
         alias_map = self._instrument_alias_map
 
         for target in pulse_schedule.labels:
-            configured_alias = str(alias_map.get(target, "")).strip()
+            target_info = self._experiment_system.get_target(target)
+            box_id = str(target_info.channel.port.box_id).strip()
+            configured_alias = str(alias_map.get((box_id, target), "")).strip()
             if len(configured_alias) == 0:
                 raise ValueError(
                     "Missing QuEL-3 instrument alias mapping for "
@@ -130,7 +130,7 @@ class Quel3MeasurementBackendAdapter:
             instrument_bindings[target] = f"alias:{configured_alias}"
 
             sequence = pulse_schedule.get_sequence(target, copy=False)
-            target_type = self._experiment_system.get_target(target).type
+            target_type = target_info.type
             events, waveform_index = self._create_waveform_events(
                 target_is_read=(target_type is TargetType.READ),
                 sequence=sequence,
@@ -145,15 +145,24 @@ class Quel3MeasurementBackendAdapter:
                 target=target,
                 target_type=target_type,
             )
-            capture_windows = tuple(
-                Quel3CaptureWindow(
-                    name=f"{target}:{index}",
-                    start_offset_ns=capture.start_time + capture_delay_ns,
-                    length_ns=capture.duration,
+            capture_windows = []
+            for index, capture in enumerate(captures):
+                capture_windows.append(
+                    Quel3CaptureWindow(
+                        name=f"{target}:{index}",
+                        start_offset_ns=capture.start_time + capture_delay_ns,
+                        length_ns=capture.duration,
+                    )
                 )
-                for index, capture in enumerate(captures)
-            )
             timeline_length_ns = pulse_schedule.duration
+            if len(events) > 0:
+                timeline_length_ns = max(
+                    timeline_length_ns,
+                    self._resolve_event_end_ns(
+                        events=events,
+                        waveform_library=waveform_library,
+                    ),
+                )
             if len(capture_windows) > 0:
                 timeline_length_ns = max(
                     timeline_length_ns,
@@ -164,8 +173,12 @@ class Quel3MeasurementBackendAdapter:
                 )
             fixed_timelines[target] = Quel3FixedTimeline(
                 events=events,
-                capture_windows=capture_windows,
+                capture_windows=tuple(capture_windows),
                 length_ns=timeline_length_ns,
+                frequency_hz=self._resolve_timeline_frequency_hz(
+                    target=target,
+                    pulse_schedule=pulse_schedule,
+                ),
             )
             try:
                 output_target_labels_by_target[target] = str(
@@ -326,9 +339,65 @@ class Quel3MeasurementBackendAdapter:
             Quel3CaptureMode.AVERAGED_VALUE,
             Quel3CaptureMode.AVERAGED_WAVEFORM,
             Quel3CaptureMode.VALUES_PER_ITER,
+            Quel3CaptureMode.RAW_WAVEFORMS,
         ):
             return shots
         return 1
+
+    @staticmethod
+    def _resolve_event_end_ns(
+        *,
+        events: tuple[Quel3WaveformEvent, ...],
+        waveform_library: Mapping[str, Quel3Waveform],
+    ) -> float:
+        """Resolve the latest hardware event end time in ns."""
+        latest_end_ns = 0.0
+        for event in events:
+            waveform_def = waveform_library[event.waveform_name]
+            sampling_period_ns = waveform_def.sampling_period_ns
+            if sampling_period_ns is None:
+                continue
+            latest_end_ns = max(
+                latest_end_ns,
+                event.start_offset_ns + len(waveform_def.iq_array) * sampling_period_ns,
+            )
+        return latest_end_ns
+
+    def _resolve_timeline_frequency_hz(
+        self,
+        *,
+        target: str,
+        pulse_schedule: object,
+    ) -> float:
+        """Resolve fixed-timeline frequency in Hz for quelware directives."""
+        schedule_frequency_ghz = self._resolve_schedule_frequency_ghz(
+            pulse_schedule=pulse_schedule,
+            target=target,
+        )
+        if schedule_frequency_ghz is not None:
+            return schedule_frequency_ghz * 1e9
+        return self._experiment_system.get_target(target).frequency * 1e9
+
+    @staticmethod
+    def _resolve_schedule_frequency_ghz(
+        *,
+        pulse_schedule: object,
+        target: str,
+    ) -> float | None:
+        """Resolve channel frequency metadata in GHz from pulse schedule."""
+        get_frequency = getattr(pulse_schedule, "get_frequency", None)
+        if not callable(get_frequency):
+            return None
+        try:
+            frequency = get_frequency(target)
+        except KeyError:
+            return None
+        if not isinstance(frequency, (int, float)):
+            return None
+        frequency_value = float(frequency)
+        if not math.isfinite(frequency_value):
+            return None
+        return frequency_value
 
     @staticmethod
     def _build_capture_targets_by_alias(
@@ -401,6 +470,8 @@ class Quel3MeasurementBackendAdapter:
                     shape=shape,
                     sampling_period_ns=sampling_period_ns,
                 )
+                if not np.all(np.isfinite(shape.real) & np.isfinite(shape.imag)):
+                    raise ValueError("Waveform IQ values must be finite.")
                 shape_key = (
                     waveform.shape_hash,
                     round(float(sampling_period_ns) * 1e6),

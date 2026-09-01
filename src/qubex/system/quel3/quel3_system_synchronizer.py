@@ -71,6 +71,9 @@ class Quel3SystemSynchronizer:
             box_ids=box_ids,
             target_labels=target_labels,
         )
+        # Treat QuEL-3 instrument deploy as the push-time hardware sync
+        # equivalent of QuEL-1 CNCO/FNCO updates. Execution paths should only
+        # resolve and use the instruments that push configured.
         self._backend_controller.deploy_instruments(
             requests=requests,
             parallel=True if parallel is None else parallel,
@@ -87,7 +90,7 @@ class Quel3SystemSynchronizer:
         unit_labels_by_box_id = {
             box_id: experiment_system.get_box(box_id).name for box_id in box_ids
         }
-        return self._backend_controller.configuration_manager.fetch_backend_settings_from_hardware(
+        return self._backend_controller.hardware_state_reader.fetch_backend_settings_from_hardware(
             unit_labels_by_box_id=unit_labels_by_box_id,
             parallel=parallel,
         )
@@ -98,9 +101,12 @@ class Quel3SystemSynchronizer:
         backend_settings: dict[str, dict],
     ) -> None:
         """Apply hardware snapshot data to QuEL-3 alias caches."""
-        self._backend_controller.configuration_manager.sync_backend_settings_to_cache(
-            backend_settings=backend_settings,
-        )
+        try:
+            self._backend_controller.configuration_manager.sync_backend_settings_to_cache(
+                backend_settings=backend_settings,
+            )
+        finally:
+            self._backend_controller.execution_manager.invalidate_instrument_resolver()
 
     def sync_backend_settings_to_experiment_system(
         self,

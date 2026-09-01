@@ -65,7 +65,6 @@ class MeasurementClassificationService:
         for target in target_list:
             cm = self.classifiers[target].confusion_matrix
             confusion_matrices.append(_normalize_confusion_matrix_rows(cm))
-
         return np.asarray(reduce(np.kron, confusion_matrices), np.float64)
 
     def get_inverse_confusion_matrix(

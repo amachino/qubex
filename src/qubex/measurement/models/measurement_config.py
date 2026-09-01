@@ -28,12 +28,19 @@ class MeasurementConfig(Model):
     time_integration: bool
     state_classification: bool
     return_items: tuple[ReturnItem, ...] = ()
+    schedule_packing_enabled: bool = False
+    max_repeated_timeline_duration_ns: float | None = None
 
     @model_validator(mode="after")
     def _validate_invariants(self) -> MeasurementConfig:
         """Validate mode invariants and `return_items` consistency."""
         if self.n_shots <= 0:
             raise ValueError("n_shots must be positive.")
+        if (
+            self.max_repeated_timeline_duration_ns is not None
+            and self.max_repeated_timeline_duration_ns <= 0
+        ):
+            raise ValueError("max_repeated_timeline_duration_ns must be positive.")
 
         return_items = tuple(self.return_items)
         if len(return_items) == 0:
@@ -62,6 +69,11 @@ class MeasurementConfig(Model):
                 f"return_items must include required entries for this mode: {joined}."
             )
         return self
+
+    @property
+    def should_use_schedule_packing(self) -> bool:
+        """Whether multiple schedules should be packed into fewer execution requests."""
+        return self.schedule_packing_enabled
 
     @property
     def primary_return_item(self) -> ReturnItem:

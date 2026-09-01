@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-RoleName = Literal["TRANSMITTER", "TRANSCEIVER"]
+RoleName = Literal["TRANSMITTER", "TRANSCEIVER", "TRANSCEIVER_LOOPBACK", "RECEIVER"]
 
 
 @dataclass(frozen=True)
@@ -18,3 +18,4 @@ class InstrumentDeployRequest:
     frequency_range_max_hz: float
     alias: str
     target_labels: tuple[str, ...]
+    box_id: str

@@ -43,6 +43,10 @@ class _FakeFigure:
         """Accept layout updates."""
         return
 
+    def show(self) -> None:
+        """Accept show requests."""
+        return
+
 
 class _FakeSystemManager:
     """System-manager stub for electrical-delay tests."""
@@ -103,6 +107,58 @@ class _FakeContext:
         yield
 
 
+class _Quel3SystemManager:
+    """QuEL-3 system-manager stub that rejects QuEL-1 backend retunes."""
+
+    backend_kind = "quel3"
+
+    @contextmanager
+    def modified_backend_settings(self, *_args, **_kwargs):
+        """Given QuEL-3 spectroscopy, backend-settings retunes must not be used."""
+        raise AssertionError("QuEL-3 spectroscopy must not retune backend settings")
+        yield
+
+
+class _Quel3Context(_FakeContext):
+    """Experiment-context stub for QuEL-3 spectroscopy tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.params = SimpleNamespace(
+            control_amplitude={"Q00": 0.1},
+            readout_amplitude={"Q00": 0.1},
+        )
+        self.targets = {
+            "Q00": SimpleNamespace(frequency=4.9),
+            "R00": SimpleNamespace(
+                frequency=6.2,
+                sideband=None,
+                fine_frequency=6.2,
+            ),
+        }
+        self.system_manager = _Quel3SystemManager()
+        read_box = SimpleNamespace(
+            id="BOX0",
+            traits=SimpleNamespace(
+                default_readout_frequency_range=(6.15, 6.25, 0.01),
+                readout_cnco_center=None,
+                readout_ssb=None,
+            ),
+        )
+        ctrl_box = SimpleNamespace(
+            id="BOX0",
+            traits=SimpleNamespace(
+                default_control_frequency_range=(4.8, 5.0, 0.01),
+                ctrl_ssb=None,
+            ),
+        )
+        self.experiment_system = SimpleNamespace(
+            get_mux_by_qubit=lambda _qubit: SimpleNamespace(label="MUX0"),
+            get_readout_box_for_qubit=lambda _qubit: read_box,
+            get_control_box_for_qubit=lambda _qubit: ctrl_box,
+        )
+
+
 def test_measure_electrical_delay_skips_redundant_reset_when_backend_settings_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -138,6 +194,36 @@ def test_measure_electrical_delay_skips_redundant_reset_when_backend_settings_ch
 
     assert isinstance(tau, float)
     assert ctx.system_manager.modified_backend_settings_calls == 1
+    assert ctx.reset_calls == []
+
+
+def test_measure_electrical_delay_quel3_uses_direct_frequency_sweep() -> None:
+    """Given QuEL-3 backend, electrical-delay measurement avoids LO/CNCO retunes."""
+    service = cast(Any, object.__new__(CharacterizationService))
+    ctx = _Quel3Context()
+    service.__dict__["_experiment_context"] = ctx
+
+    def _fake_measure(*_args, **_kwargs):
+        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
+        return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
+
+    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+
+    tau = service.measure_electrical_delay(
+        target="Q00",
+        f_start=6.5,
+        df=0.0001,
+        n_samples=4,
+        readout_amplitude=0.1,
+        shots=1,
+        interval=0,
+        plot=False,
+        confirm=False,
+    )
+
+    assert isinstance(tau, float)
     assert ctx.reset_calls == []
 
 
@@ -266,3 +352,85 @@ def test_scan_resonator_frequencies_forwards_interval_to_electrical_delay(
             "confirm": False,
         }
     ]
+
+
+def test_scan_resonator_frequencies_quel3_uses_direct_frequency_sweep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given QuEL-3 backend, resonator spectroscopy avoids LO/CNCO retunes."""
+    service = cast(Any, object.__new__(CharacterizationService))
+    ctx = _Quel3Context()
+    service.__dict__["_experiment_context"] = ctx
+
+    def _fake_measure(*_args, **_kwargs):
+        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
+        return SimpleNamespace(data={"Q00": SimpleNamespace(kerneled=signal)})
+
+    service.__dict__["_measurement_service"] = SimpleNamespace(measure=_fake_measure)
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.viz.make_figure",
+        lambda **_kwargs: _FakeFigure(),
+    )
+    monkeypatch.setattr(
+        "scipy.signal.find_peaks",
+        lambda values, **_kwargs: (np.array([], dtype=int), {}),
+    )
+
+    result = service.scan_resonator_frequencies(
+        target="Q00",
+        frequency_range=np.array([6.15, 6.16, 6.17]),
+        electrical_delay=0.0,
+        readout_amplitude=0.1,
+        plot=False,
+        save_image=False,
+        subrange_width=0.02,
+        shots=1,
+        interval=0,
+    )
+
+    assert result.data["peaks"].size == 0
+
+
+def test_scan_qubit_frequencies_quel3_uses_direct_frequency_sweep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Given QuEL-3 backend, qubit spectroscopy avoids LO/CNCO retunes."""
+    service = cast(Any, object.__new__(CharacterizationService))
+    ctx = _Quel3Context()
+    service.__dict__["_experiment_context"] = ctx
+
+    def _fake_execute(*_args, **_kwargs):
+        signal = np.exp(-1j * 2 * np.pi * ctx.current_frequency)
+        return SimpleNamespace(data={"Q00": [SimpleNamespace(kerneled=signal)]})
+
+    service.__dict__["_measurement_service"] = SimpleNamespace(execute=_fake_execute)
+    service.__dict__["_calibration_service"] = SimpleNamespace()
+    service.__dict__["_pulse_service"] = SimpleNamespace()
+
+    monkeypatch.setattr(
+        "qubex.experiment.services.characterization_service.viz.make_figure",
+        lambda **_kwargs: _FakeFigure(),
+    )
+    monkeypatch.setattr(
+        "scipy.signal.find_peaks",
+        lambda values, **_kwargs: (np.array([], dtype=int), {}),
+    )
+
+    result = service.scan_qubit_frequencies(
+        target="Q00",
+        frequency_range=np.array([4.85, 4.86, 4.87]),
+        control_amplitude=0.1,
+        readout_amplitude=0.1,
+        readout_frequency=6.2,
+        subrange_width=0.02,
+        shots=1,
+        interval=0,
+        plot=False,
+        save_image=False,
+    )
+
+    assert result.data["peaks"].size == 0
+    assert result.data["frequency_guess"]["f_ge"] is None

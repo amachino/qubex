@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from itertools import product
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -1069,6 +1069,7 @@ class MeasurementService:
         readout_post_margin: float | None = None,
         plot: bool | None = None,
         enable_tqdm: bool | None = None,
+        sweep_execution: Literal["sequential", "batch"] | None = None,
         title: str | None = None,
         xlabel: str | None = None,
         ylabel: str | None = None,
@@ -1087,6 +1088,11 @@ class MeasurementService:
             Values to sweep over.
         repetitions
             Number of repetitions for each sweep point.
+        sweep_execution
+            Sweep execution mode. `"sequential"` measures one sweep point at a
+            time, and `"batch"` runs sweep points through batch-capable
+            measurement APIs. Defaults to `system.yaml`
+            `experiment.sweep_execution`, or `"sequential"`.
         """
         if repetitions is None:
             repetitions = 1
@@ -1096,6 +1102,13 @@ class MeasurementService:
             plot = True
         if enable_tqdm is None:
             enable_tqdm = False
+        if sweep_execution is None:
+            sweep_execution = self._resolve_sweep_parameter_execution()
+        else:
+            sweep_execution = self._validate_sweep_parameter_execution(
+                sweep_execution,
+                option_name="sweep_execution",
+            )
         if title is None:
             title = "Sweep result"
         if xlabel is None:
@@ -1112,7 +1125,13 @@ class MeasurementService:
         if rabi_level not in ("ge", "ef"):
             raise ValueError("Invalid Rabi level.")
 
-        if callable(sequence):
+        is_batch_execution = sweep_execution == "batch"
+        if is_batch_execution:
+            ordered_qubits = self._resolve_sweep_parameter_qubits(
+                sequence=sequence,
+                sweep_value=sweep_range[0],
+            )
+        elif callable(sequence):
             initial_sequence = sequence(sweep_range[0])
             if isinstance(initial_sequence, PulseSchedule):
                 sequences = [
@@ -1148,40 +1167,67 @@ class MeasurementService:
         # initialize awgs and capture units
         self.ctx.reset_awg_and_capunits(qubits=set(ordered_qubits))
 
-        with self.ctx.modified_frequencies(frequencies):
-            for seq in tqdm(
-                sequences,
-                desc="Sweeping parameters",
-                disable=not enable_tqdm,
-            ):
-                result = self.measure(
-                    seq,
-                    initial_states=initial_states,
-                    mode="avg",
-                    n_shots=n_shots,
-                    shot_interval=shot_interval,
-                    readout_amplitudes=readout_amplitudes,
-                    readout_duration=readout_duration,
-                    readout_pre_margin=readout_pre_margin,
-                    readout_post_margin=readout_post_margin,
-                    reset_awg_and_capunits=False,
-                    **deprecated_options,
+        if is_batch_execution:
+            self._run_sweep_parameter_batch(
+                sequence=sequence,
+                sweep_range=sweep_range,
+                repetitions=repetitions,
+                frequencies=frequencies,
+                initial_states=initial_states,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                enable_tqdm=enable_tqdm,
+                deprecated_options=deprecated_options,
+                ordered_qubits=ordered_qubits,
+                signals=signals,
+            )
+            if plot:
+                plotter.update(
+                    {
+                        target: np.asarray(values)
+                        for target, values in signals.items()
+                        if values
+                    }
                 )
-                for target in ordered_qubits:
-                    if target in result.data:
-                        signals[target].append(result.data[target].kerneled)
-                for target, data in result.data.items():
-                    if target in signals:
-                        continue
-                    signals[target] = [data.kerneled]
-                if plot:
-                    plotter.update(
-                        {
-                            target: np.asarray(values)
-                            for target, values in signals.items()
-                            if values
-                        }
+        else:
+            with self.ctx.modified_frequencies(frequencies):
+                for seq in tqdm(
+                    sequences,
+                    desc="Sweeping parameters",
+                    disable=not enable_tqdm,
+                ):
+                    result = self.measure(
+                        seq,
+                        initial_states=initial_states,
+                        mode="avg",
+                        n_shots=n_shots,
+                        shot_interval=shot_interval,
+                        readout_amplitudes=readout_amplitudes,
+                        readout_duration=readout_duration,
+                        readout_pre_margin=readout_pre_margin,
+                        readout_post_margin=readout_post_margin,
+                        reset_awg_and_capunits=False,
+                        **deprecated_options,
                     )
+                    for target in ordered_qubits:
+                        if target in result.data:
+                            signals[target].append(result.data[target].kerneled)
+                    for target, data in result.data.items():
+                        if target in signals:
+                            continue
+                        signals[target] = [data.kerneled]
+                    if plot:
+                        plotter.update(
+                            {
+                                target: np.asarray(values)
+                                for target, values in signals.items()
+                                if values
+                            }
+                        )
 
         if plot:
             plotter.show()
@@ -1212,6 +1258,181 @@ class MeasurementService:
             rabi_params=rabi_params,
         )
         return result
+
+    def _resolve_sweep_parameter_execution(
+        self,
+    ) -> Literal["sequential", "batch"]:
+        """Return the configured sweep execution mode."""
+        try:
+            config_loader = self.ctx.config_loader
+        except (AttributeError, ValueError):
+            return "sequential"
+        experiment_config = getattr(config_loader, "experiment_config", {})
+        if not isinstance(experiment_config, Mapping):
+            raise TypeError("`experiment` section must be a mapping.")
+
+        sweep_execution = experiment_config.get("sweep_execution", "sequential")
+        if not isinstance(sweep_execution, str):
+            raise TypeError("`experiment.sweep_execution` must be a string.")
+        return self._validate_sweep_parameter_execution(
+            sweep_execution,
+            option_name="experiment.sweep_execution",
+        )
+
+    @staticmethod
+    def _validate_sweep_parameter_execution(
+        sweep_execution: str,
+        *,
+        option_name: str,
+    ) -> Literal["sequential", "batch"]:
+        """Return a validated sweep execution mode."""
+        if sweep_execution not in ("sequential", "batch"):
+            raise ValueError(f"`{option_name}` must be 'sequential' or 'batch'.")
+        return cast(Literal["sequential", "batch"], sweep_execution)
+
+    def _resolve_sweep_parameter_qubits(
+        self,
+        *,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
+        sweep_value: SweepValue,
+    ) -> list[str]:
+        """Return ordered qubit labels touched by one sweep sequence."""
+        initial_sequence = sequence(sweep_value)
+        if isinstance(initial_sequence, PulseSchedule):
+            return self.ctx.ordered_qubit_labels(initial_sequence.labels)
+        if isinstance(initial_sequence, dict):
+            return self.ctx.ordered_qubit_labels(list(initial_sequence))
+        raise TypeError("Invalid sequence.")
+
+    def _run_sweep_parameter_batch(
+        self,
+        *,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
+        sweep_range: NDArray[Any],
+        repetitions: int,
+        frequencies: dict[str, float] | None,
+        initial_states: dict[str, str] | None,
+        n_shots: int | None,
+        shot_interval: float | None,
+        readout_amplitudes: dict[str, float] | None,
+        readout_duration: float | None,
+        readout_pre_margin: float | None,
+        readout_post_margin: float | None,
+        enable_tqdm: bool,
+        deprecated_options: dict[str, Any],
+        ordered_qubits: list[str],
+        signals: dict[str, list[object]],
+    ) -> None:
+        """Run sweep-parameter execution through the async sweep measurement path."""
+        legacy_enable_dsp_demodulation = deprecated_options.pop(
+            "enable_dsp_demodulation",
+            None,
+        )
+        normalized_options = normalize_deprecated_options(
+            values={
+                "n_shots": n_shots,
+                "shot_interval": shot_interval,
+                "readout_ramp_time": None,
+                "readout_amplification": None,
+                "time_integration": None,
+                "state_classification": None,
+            },
+            deprecated_options=deprecated_options,
+            specs=(
+                DeprecatedOptionSpec("shots", "n_shots"),
+                DeprecatedOptionSpec("interval", "shot_interval"),
+                DeprecatedOptionSpec("readout_ramptime", "readout_ramp_time"),
+                DeprecatedOptionSpec("add_pump_pulses", "readout_amplification"),
+                DeprecatedOptionSpec("enable_dsp_sum", "time_integration"),
+                DeprecatedOptionSpec(
+                    "enable_dsp_classification",
+                    "state_classification",
+                ),
+            ),
+            stacklevel=4,
+        )
+        n_shots = normalized_options["n_shots"]
+        shot_interval = normalized_options["shot_interval"]
+        readout_ramp_time = normalized_options["readout_ramp_time"]
+        readout_amplification = normalized_options["readout_amplification"]
+        time_integration = normalized_options["time_integration"]
+        state_classification = normalized_options["state_classification"]
+        if legacy_enable_dsp_demodulation is not None:
+            warnings.warn(
+                "`enable_dsp_demodulation` is deprecated and ignored because demodulation is always enabled.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            if legacy_enable_dsp_demodulation is False:
+                raise ValueError(
+                    "enable_dsp_demodulation is deprecated and always enabled; "
+                    "remove this argument or pass None."
+                )
+        if time_integration is None:
+            time_integration = True
+
+        def sweep_schedule(param: SweepValue) -> PulseSchedule:
+            sweep_sequence = sequence(param)
+            if isinstance(sweep_sequence, PulseSchedule):
+                schedule = sweep_sequence.repeated(repetitions)
+            elif isinstance(sweep_sequence, dict):
+                schedule = PulseSchedule.from_waveforms(
+                    {
+                        target: waveform.repeated(repetitions)
+                        for target, waveform in sweep_sequence.items()
+                    }
+                )
+            else:
+                raise TypeError("Invalid sequence.")
+
+            if initial_states is None:
+                return schedule
+
+            labels = self.unique_in_order([*schedule.labels, *initial_states.keys()])
+            with PulseSchedule(labels) as prepared:
+                for target, state in initial_states.items():
+                    if target in self.ctx.qubit_labels:
+                        prepared.add(
+                            target,
+                            self.pulse.get_pulse_for_state(target, state),
+                        )
+                    else:
+                        raise ValueError(f"Invalid init target: {target}")
+                prepared.barrier()
+                prepared.call(schedule)
+            return prepared
+
+        sweep_result = _run_async(
+            lambda: self.run_sweep_measurement(
+                sweep_schedule,
+                sweep_values=sweep_range,
+                frequencies=cast(dict[str, FrequencyLike] | None, frequencies),
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                readout_ramp_time=readout_ramp_time,
+                readout_amplification=readout_amplification,
+                final_measurement=True,
+                n_shots=n_shots,
+                shot_interval=shot_interval,
+                shot_averaging=True,
+                time_integration=time_integration,
+                state_classification=state_classification,
+                plot=False,
+                enable_tqdm=enable_tqdm,
+            )
+        )
+
+        for point_result in sweep_result.results:
+            result = MeasurementResultConverter.to_measure_result(point_result)
+            for target in ordered_qubits:
+                if target in result.data:
+                    signals[target].append(result.data[target].kerneled)
+            for target, data in result.data.items():
+                if target in signals:
+                    continue
+                signals[target] = [data.kerneled]
 
     def _get_sweep_rabi_params(
         self,
@@ -1366,11 +1587,16 @@ class MeasurementService:
             rabi_data = {}
             rabi_params = {}
             for target in targets:
+                target_frequencies = (
+                    {target: frequencies[target]}
+                    if frequencies is not None and target in frequencies
+                    else None
+                )
                 data = self.rabi_experiment(
                     amplitudes={target: amplitudes[target]},
                     time_range=time_range,
                     ramptime=ramptime,
-                    frequencies=frequencies,
+                    frequencies=target_frequencies,
                     is_damped=is_damped,
                     fit_threshold=fit_threshold,
                     n_shots=n_shots,

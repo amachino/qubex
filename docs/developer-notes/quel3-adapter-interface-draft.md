@@ -12,11 +12,13 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 
 ## Source snapshot (reference)
 
-- `packages/quelware-client/quelware-client/src/quelware_client/client/helpers/sequencer/__init__.py`
-- `packages/quelware-client/quelware-client/src/quelware_client/core/_client.py`
-- `packages/quelware-client/quelware-client/src/quelware_client/core/_session.py`
-- `packages/quelware-client/quelware-client/src/quelware_client/core/instrument_driver/__init__.py`
-- `packages/quelware-client/quelware-client/examples/generate_readout_pulse.py`
+- PyPI package `quelware-client`
+- Official `quelware-client` repository source tree
+- `quelware_client.client.helpers.sequencer`
+- `quelware_client.core._client`
+- `quelware_client.core._session`
+- `quelware_client.core.instrument_driver`
+- Official `generate_readout_pulse.py` example
 
 ## Integration boundary in Qubex
 
@@ -61,7 +63,7 @@ Define a concrete integration draft for QuEL-3 support using `quelware-client` w
 | capture schedule | `Sequencer.add_capture_window` | Capture windows are added in ns, then exported in samples. |
 | backend timeline export | `Sequencer.export_set_fixed_timeline_directive` | Export timeline for one bound alias; final length is aligned to sample-grid constraints. |
 | hardware execution | `InstrumentDriver.apply` + `Session.trigger(instrument_ids=...)` | Apply fixed-timeline directive, then trigger selected instruments via session API. |
-| measured data fetch | `InstrumentDriver.fetch_result` | Read `ResultContainer.iq_result` (`WaveformList` or `IqPointList`). |
+| measured data fetch | `InstrumentDriver.wait_for_result` | Read `ResultContainer.iq_result` (`WaveformList` or `IqPointList`). |
 
 ## Constraint model assumptions
 

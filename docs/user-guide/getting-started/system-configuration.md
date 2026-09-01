@@ -287,26 +287,85 @@ Create one entry per runnable setup. Multiple systems may point to the same
 ```yaml
 SYSTEM_A:
   chip_id: CHIP_A
-  backend: quel3
-  quel3:
-    endpoint: localhost
-    port: 50051
+  backend: quel1
+  quel1:
+    clock_master: 10.0.0.10
 ```
 
 - The top-level key is the `system_id`.
 - `backend` selects the backend family for this system.
 - The backend-specific section uses the same name as `backend`.
 
-For QuEL-1 systems that need skew measurement or clock synchronization, define
-`quel1.clock_master`.
+For a QuEL-1 system that uses skew measurement or clock synchronization, set
+the clock master IP address in `quel1.clock_master`.
+
+#### Using QuEL-3
+
+To use QuEL-3, set `backend` to `quel3` and define the endpoint connection in
+the `quel3` section.
 
 ```yaml
-SYSTEM_B:
+SYSTEM_QUEL3:
   chip_id: CHIP_A
-  backend: quel1
-  quel1:
-    clock_master: 10.0.0.10
+  backend: quel3
+  quel3:
+    endpoint: localhost
+    port: 50051
+    transport: grpc
 ```
+
+QuEL-3 uses native gRPC when `transport` is omitted or set to `grpc`.
+
+#### Connecting to a cloud-hosted QuEL-3
+
+To connect to a QuEL-3 endpoint hosted in the cloud and protected by
+Cloudflare Access, set `transport` to `https`. Map each secret header to its
+mounted secret file, and do not store the header values directly in `system.yaml`.
+
+```yaml
+SYSTEM_CLOUDFLARE:
+  chip_id: CHIP_A
+  backend: quel3
+  quel3:
+    endpoint: api.example.com
+    # port: 443
+    transport: https
+    http_transport:
+      # base_path: /your-api-base-path
+      default_timeout_seconds: 30.0
+      proxy:
+        url_path: /run/secrets/quelware-proxy-url
+      secret_header_paths:
+        CF-Access-Client-Id: /run/secrets/cf-access-client-id
+        CF-Access-Client-Secret: /run/secrets/cf-access-client-secret
+```
+
+For the `https` transport, omit `port` to use `443`. Requests target the
+endpoint root unless `http_transport.base_path` is set.
+`http_transport.default_timeout_seconds` limits the complete HTTP request and
+response-body read in seconds; omit it when no transport-wide default is
+needed.
+
+`secret_header_paths` is valid only for HTTPS. Each key is an HTTP header name,
+and each value is a file containing that header's secret value. The transport
+sends the configured headers on every request. For Cloudflare Access, configure
+the application with a matching Service Auth policy. HTTPS certificates are
+validated against the system trust store. Redirects are followed only within
+the same scheme, host, and effective port. A cross-origin redirect fails before
+request credentials are sent to the redirect target.
+
+The `https` transport uses the standard `HTTP_PROXY`, `HTTPS_PROXY`,
+and `NO_PROXY` environment variables when `proxy` is omitted. To set a proxy
+for one system explicitly, write its complete HTTP URL to the file named by
+`proxy.url_path`. The explicit URL takes precedence over `HTTP_PROXY` or
+`HTTPS_PROXY`, while `NO_PROXY` still bypasses it for matching endpoints.
+
+For a Basic-authenticated proxy, use a file containing a URL such as
+`http://user:password@proxy.example.com:3128`. Percent-encode reserved
+characters in the username or password, protect the file as a secret, and do
+not put the URL directly in `system.yaml`. SOCKS, NTLM, and Kerberos proxy
+authentication and HTTPS proxy URLs are not supported. A private CA used by a
+TLS-inspecting proxy must be installed in the system trust store.
 
 ### `wiring.yaml`
 

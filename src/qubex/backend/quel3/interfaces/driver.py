@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Protocol, TypeAlias
+from typing import Protocol
 
 import numpy.typing as npt
 
@@ -23,15 +23,22 @@ class IqWaveformResultProtocol(Protocol):
         ...
 
 
-CaptureResultValues: TypeAlias = Sequence[complex] | Sequence[IqWaveformResultProtocol]
-
-
 class ResultContainerProtocol(Protocol):
     """Minimal fixed-timeline result container protocol."""
 
     @property
-    def iq_result(self) -> Mapping[str, CaptureResultValues]:
-        """Return capture-window IQ results keyed by window name."""
+    def iq_waveform_result(self) -> Mapping[str, Sequence[IqWaveformResultProtocol]]:
+        """Return waveform capture-window IQ results keyed by window name."""
+        ...
+
+    @property
+    def iq_point_result(self) -> Mapping[str, Sequence[complex]]:
+        """Return point capture-window IQ results keyed by window name."""
+        ...
+
+    @property
+    def integer_result(self) -> Mapping[str, Sequence[int]]:
+        """Return integer results keyed by capture-window name."""
         ...
 
 
@@ -44,8 +51,18 @@ class InstrumentConfigProtocol(Protocol):
         ...
 
     @property
+    def bitdepth(self) -> int:
+        """Return waveform sample bit depth."""
+        ...
+
+    @property
     def timeline_step_samples(self) -> int:
         """Return timeline-step alignment size in samples."""
+        ...
+
+    @property
+    def samples_per_tick(self) -> int:
+        """Return the number of samples per hardware clock tick."""
         ...
 
 
@@ -60,8 +77,8 @@ class InstrumentDriverProtocol(Protocol):
     async def apply(
         self,
         directive: DirectiveProtocol | Sequence[DirectiveProtocol],
-    ) -> None:
-        """Apply one or more fixed-timeline directives."""
+    ) -> bool:
+        """Apply one or more fixed-timeline directives and return success."""
         ...
 
     async def initialize(self) -> None:
@@ -69,7 +86,14 @@ class InstrumentDriverProtocol(Protocol):
         ...
 
     async def fetch_result(self) -> ResultContainerProtocol:
-        """Fetch one fixed-timeline execution result."""
+        """Fetch the current fixed-timeline execution result."""
+        ...
+
+    async def wait_for_result(
+        self,
+        timeout_sec: float | None = None,
+    ) -> ResultContainerProtocol:
+        """Wait for one fixed-timeline execution result."""
         ...
 
 

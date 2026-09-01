@@ -43,6 +43,7 @@ class Quel3FixedTimeline:
     events: tuple[Quel3WaveformEvent, ...]
     capture_windows: tuple[Quel3CaptureWindow, ...]
     length_ns: float
+    frequency_hz: float | None = None
 
 
 class Quel3CaptureMode(str, Enum):

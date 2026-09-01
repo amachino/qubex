@@ -165,11 +165,24 @@ class SystemManager:
     @staticmethod
     def _create_backend_controller(
         backend_kind: BackendKind,
+        backend_runtime_config: Mapping[str, Any] | None = None,
     ) -> SystemBackendController:
         """Create a backend controller instance for one experiment session."""
         if backend_kind == BACKEND_KIND_QUEL3:
-            return Quel3BackendController()
+            return Quel3BackendController.from_config_mapping(backend_runtime_config)
         return Quel1BackendController()
+
+    @staticmethod
+    def _get_backend_runtime_config(
+        config_loader: ConfigLoader,
+    ) -> Mapping[str, Any]:
+        """Return backend runtime config from loaders that expose it."""
+        runtime_config = getattr(config_loader, "backend_runtime_config", {})
+        if runtime_config is None:
+            return {}
+        if not isinstance(runtime_config, Mapping):
+            raise TypeError("`backend_runtime_config` must be a mapping.")
+        return runtime_config
 
     @property
     def backend_kind(self) -> BackendKind | None:
@@ -391,6 +404,7 @@ class SystemManager:
         )
 
         resolved_backend_kind = next_config_loader.backend_kind
+        backend_runtime_config = self._get_backend_runtime_config(next_config_loader)
         self.set_backend_kind(resolved_backend_kind)
         if backend_controller is not None:
             self._validate_backend_controller_kind(
@@ -400,6 +414,15 @@ class SystemManager:
             self._backend_controller = backend_controller
             self._system_synchronizer = self._create_system_synchronizer(
                 backend_controller,
+            )
+            self._backend_settings = BackendSettings()
+        elif resolved_backend_kind == BACKEND_KIND_QUEL3:
+            self._backend_controller = self._create_backend_controller(
+                resolved_backend_kind,
+                backend_runtime_config=backend_runtime_config,
+            )
+            self._system_synchronizer = self._create_system_synchronizer(
+                self._backend_controller,
             )
             self._backend_settings = BackendSettings()
         self._external_devices_controller = next_external_devices_controller

@@ -78,6 +78,7 @@ class Quel3TargetDeployPlanner:
                     frequency_range_max_hz=freq_max,
                     alias=alias,
                     target_labels=(target.label,),
+                    box_id=port.box_id,
                 )
             )
         return tuple(requests)

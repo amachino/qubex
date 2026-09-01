@@ -5,12 +5,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from qubex.backend.quel3.infra.quelware_imports import (
-    Quel3ClientMode,
-    load_quelware_client_factory,
-    validate_quelware_client_runtime,
-)
+from qubex.backend.quel3.infra.quelware_imports import Quel3ClientMode
 from qubex.backend.quel3.interfaces import QuelwareClientFactory
+from qubex.backend.quel3.managers.runtime_config import Quel3RuntimeConfig
 from qubex.core.async_bridge import DEFAULT_TIMEOUT_SECONDS, get_shared_async_bridge
 
 T = TypeVar("T")
@@ -32,33 +29,20 @@ class Quel3ConnectionManager:
     def __init__(
         self,
         *,
-        quelware_endpoint: str,
-        quelware_port: int,
-        client_mode: Quel3ClientMode = "server",
-        standalone_unit_label: str | None = None,
+        runtime_config: Quel3RuntimeConfig | None = None,
     ) -> None:
-        normalized_client_mode = validate_quelware_client_runtime(
-            client_mode=client_mode,
-            standalone_unit_label=standalone_unit_label,
-        )
         self._is_connected = False
-        self._quelware_endpoint = quelware_endpoint
-        self._quelware_port = quelware_port
-        self._client_mode: Quel3ClientMode = normalized_client_mode
-        self._standalone_unit_label = standalone_unit_label
+        self._runtime_config = runtime_config or Quel3RuntimeConfig()
+
+    @property
+    def runtime_config(self) -> Quel3RuntimeConfig:
+        """Return the shared quelware runtime config."""
+        return self._runtime_config
 
     @property
     def hash(self) -> int:
         """Return stable hash for connection-side runtime state."""
-        return hash(
-            (
-                self._is_connected,
-                self._quelware_endpoint,
-                self._quelware_port,
-                self._client_mode,
-                self._standalone_unit_label,
-            )
-        )
+        return hash((self._is_connected, self._runtime_config))
 
     @property
     def is_connected(self) -> bool:
@@ -68,22 +52,22 @@ class Quel3ConnectionManager:
     @property
     def quelware_endpoint(self) -> str:
         """Return quelware endpoint."""
-        return self._quelware_endpoint
+        return self._runtime_config.endpoint
 
     @property
-    def quelware_port(self) -> int:
+    def quelware_port(self) -> int | None:
         """Return quelware port."""
-        return self._quelware_port
+        return self._runtime_config.port
 
     @property
     def client_mode(self) -> Quel3ClientMode:
         """Return configured quelware client mode."""
-        return self._client_mode
+        return self._runtime_config.client_mode_value
 
     @property
-    def standalone_unit_label(self) -> str | None:
-        """Return configured standalone unit label."""
-        return self._standalone_unit_label
+    def quelware_pat_path(self) -> str | None:
+        """Return configured quelware personal access token path."""
+        return self._runtime_config.pat_path
 
     def connect(
         self,
@@ -103,7 +87,7 @@ class Quel3ConnectionManager:
         self._is_connected = False
 
     async def _probe_quelware_connection(self) -> None:
-        """Probe quelware endpoint by listing resources once."""
+        """Probe quelware endpoint by listing units once."""
         try:
             client_factory = self.load_quelware_client_factory()
         except (ModuleNotFoundError, SyntaxError) as exc:
@@ -112,14 +96,11 @@ class Quel3ConnectionManager:
             ) from exc
 
         async with client_factory(
-            self._quelware_endpoint,
-            self._quelware_port,
+            self._runtime_config.endpoint,
+            self._runtime_config.port,
         ) as client:
-            await client.list_resource_infos()
+            client.list_unit_labels()
 
     def load_quelware_client_factory(self) -> QuelwareClientFactory:
         """Import quelware client factory lazily."""
-        return load_quelware_client_factory(
-            client_mode=self._client_mode,
-            standalone_unit_label=self._standalone_unit_label,
-        )
+        return self._runtime_config.load_client_factory()
