@@ -40,7 +40,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --all-groups --extra backend
+        run: uv sync --locked --all-groups --extra quel1 --extra quel3
 
       - name: Build site
         run: uv run mkdocs build
