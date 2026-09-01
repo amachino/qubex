@@ -9,6 +9,7 @@ from .hardware_state import (
     Quel3InstrumentState,
     Quel3PortDiagnostic,
     Quel3PortState,
+    Quel3UnitControlState,
     Quel3UnitState,
 )
 from .payload import (
@@ -35,6 +36,7 @@ __all__ = [
     "Quel3InstrumentState",
     "Quel3PortDiagnostic",
     "Quel3PortState",
+    "Quel3UnitControlState",
     "Quel3UnitState",
     "Quel3Waveform",
     "Quel3WaveformEvent",

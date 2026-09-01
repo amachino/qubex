@@ -28,7 +28,10 @@ from qubex.backend.quel3 import (
     Quel3ExecutionPayload,
     Quel3FixedTimeline,
     Quel3HardwareState,
+    Quel3PortDiagnostic,
     Quel3RuntimeConfig,
+    Quel3UnitControlState,
+    Quel3UnitState,
     Quel3Waveform,
     Quel3WaveformEvent,
 )
@@ -310,6 +313,67 @@ def test_hardware_state_print_omits_absent_endpoint_port() -> None:
 
     assert "api.example.com" in output.getvalue()
     assert "api.example.com:None" not in output.getvalue()
+
+
+def test_hardware_state_prints_diagnostics_as_raw_yaml() -> None:
+    """Diagnostic view should print YAML without Rich panels or syntax framing."""
+    diagnostic_yaml = "port:\n  id: unit-a:tx_p01\n  state: ready\n"
+    state = Quel3HardwareState(
+        generated_at="2026-07-07T00:00:00+00:00",
+        endpoint="localhost",
+        port=50051,
+        selected_unit_labels=("unit-a",),
+        units=(),
+        ports=(),
+        instruments=(),
+        diagnostics=(
+            Quel3PortDiagnostic(
+                port_id="unit-a:tx_p01",
+                unit_label="unit-a",
+                text=diagnostic_yaml,
+            ),
+        ),
+    )
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, width=120)
+
+    state.print(view="diagnostics", console=console)
+
+    assert output.getvalue() == diagnostic_yaml
+
+
+def test_hardware_state_prints_unit_configuration_controls() -> None:
+    """Units view should print each control's current and allowed values."""
+    state = Quel3HardwareState(
+        generated_at="2026-07-07T00:00:00+00:00",
+        endpoint="localhost",
+        port=50051,
+        selected_unit_labels=("unit-a",),
+        units=(
+            Quel3UnitState(
+                label="unit-a",
+                controls=(
+                    Quel3UnitControlState(
+                        key="quel3.monitor.mode",
+                        allowed_values=("disabled", "loopback"),
+                        current_value="loopback",
+                    ),
+                ),
+            ),
+        ),
+        ports=(),
+        instruments=(),
+    )
+    output = StringIO()
+    console = Console(file=output, force_terminal=False, width=120)
+
+    state.print(view="units", console=console)
+
+    rendered = output.getvalue()
+    assert "unit-a" in rendered
+    assert "quel3.monitor.mode" in rendered
+    assert "loopback" in rendered
+    assert "disabled, loopback" in rendered
 
 
 def test_print_hardware_state_rejects_console_kwarg() -> None:

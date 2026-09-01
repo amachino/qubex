@@ -8,7 +8,6 @@ from typing import Any, Literal, TypeAlias
 from rich import box
 from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -24,11 +23,20 @@ Quel3HardwareStateView: TypeAlias = Literal[
 
 
 @dataclass(frozen=True)
+class Quel3UnitControlState:
+    """One supported QuEL-3 unit control."""
+
+    key: str
+    allowed_values: tuple[str, ...]
+    current_value: str
+
+
+@dataclass(frozen=True)
 class Quel3UnitState:
-    """One discovered QuEL-3 unit."""
+    """One discovered QuEL-3 unit and its supported controls."""
 
     label: str
-    status: str | None = None
+    controls: tuple[Quel3UnitControlState, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -179,8 +187,18 @@ def _summary_panel(state: Quel3HardwareState) -> Panel:
 
 def _units_table(state: Quel3HardwareState) -> Table:
     """Return a table of unit states."""
-    rows = [[unit.label, unit.status or "unknown"] for unit in state.units]
-    return _table("Units", ["Unit", "Status"], rows)
+    rows = [
+        [
+            unit.label,
+            control.key,
+            control.current_value,
+            ", ".join(control.allowed_values),
+        ]
+        for unit in state.units
+        for control in unit.controls
+    ]
+    rows.extend([unit.label, "", "", ""] for unit in state.units if not unit.controls)
+    return _table("Units", ["Unit", "Control", "Current", "Allowed"], rows)
 
 
 def _ports_table(state: Quel3HardwareState) -> Table:
@@ -219,24 +237,16 @@ def _instruments_table(state: Quel3HardwareState) -> Table:
 
 
 def _diagnostics_group(state: Quel3HardwareState) -> RenderableType:
-    """Return diagnostic panels for one hardware state."""
+    """Return raw diagnostic YAML for one hardware state."""
     if not state.diagnostics:
         return Text("(no diagnostics)", style="dim")
-    panels: list[RenderableType] = [
-        Panel(
-            Syntax(
-                diagnostic.text.rstrip() or "(empty diagnostic dump)",
-                "yaml",
-                word_wrap=True,
-                background_color="default",
-            ),
-            title=f"Port {diagnostic.port_id}",
-            border_style="cyan",
-            box=box.ROUNDED,
+    diagnostics: list[RenderableType] = [
+        Text(
+            diagnostic.text.rstrip() or "(empty diagnostic dump)",
         )
         for diagnostic in state.diagnostics
     ]
-    return Group(*panels)
+    return Group(*diagnostics)
 
 
 def _issues_table(issues: tuple[Quel3HardwareStateIssue, ...]) -> Table:

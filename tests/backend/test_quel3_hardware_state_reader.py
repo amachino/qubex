@@ -62,6 +62,21 @@ class _PortInfo:
 
 
 @dataclass(frozen=True)
+class _UnitControlSpec:
+    key: str
+    allowed_values: tuple[str, ...]
+    current_value: str
+
+
+@dataclass(frozen=True)
+class _UnitConfiguration:
+    supported: tuple[_UnitControlSpec, ...]
+
+    def values(self) -> dict[str, str]:
+        return {spec.key: spec.current_value for spec in self.supported}
+
+
+@dataclass(frozen=True)
 class _InstrumentInfo:
     id: str
     port_id: str
@@ -138,6 +153,19 @@ class _FakeClient:
 
     async def dump_port_state(self, port_id: str) -> str:
         return f"state: {port_id}"
+
+    async def get_unit_configuration(self, unit_label: str) -> _UnitConfiguration:
+        return _UnitConfiguration(
+            supported=(
+                _UnitControlSpec(
+                    key="quel3.monitor.mode",
+                    allowed_values=("disabled", "loopback"),
+                    current_value=(
+                        "loopback" if unit_label == "unit-a" else "disabled"
+                    ),
+                ),
+            )
+        )
 
 
 class _UnqualifiedInstrumentResourceClient(_FakeClient):
@@ -273,6 +301,23 @@ class _MultiInstrumentClient(_FakeClient):
         )
 
 
+class _MonitorPortClient(_FakeClient):
+    def __init__(self) -> None:
+        self.get_port_info_calls: list[str] = []
+
+    async def list_resource_infos(self) -> list[_ResourceInfo]:
+        return [
+            _ResourceInfo("unit-a:tx_p01", _Category("PORT")),
+            _ResourceInfo("unit-a:mon", _Category("PORT")),
+        ]
+
+    async def get_port_info(self, resource_id: str) -> _PortInfo:
+        self.get_port_info_calls.append(resource_id)
+        if resource_id == "unit-a:mon":
+            raise RuntimeError("monitor port does not support get_port_info")
+        return await super().get_port_info(resource_id)
+
+
 class _FakeHardwareStateReader(Quel3HardwareStateReader):
     def __init__(self, client: _FakeClient) -> None:
         super().__init__()
@@ -308,6 +353,62 @@ def test_collect_state_normalizes_units_ports_and_instruments() -> None:
     assert instrument.frequency_range_max_hz == pytest.approx(4.3e9)
     assert instrument.sampling_period_fs == 400_000
     assert [issue.code for issue in state.issues].count("UNKNOWN_PORT_DEPENDENCY") == 1
+
+
+def test_collect_state_normalizes_unit_configuration_controls() -> None:
+    """Given unit configuration, hardware state should expose supported controls."""
+    reader = _make_reader(_FakeClient())
+
+    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+
+    assert [unit.label for unit in state.units] == ["unit-a"]
+    assert [
+        (control.key, control.current_value, control.allowed_values)
+        for control in state.units[0].controls
+    ] == [
+        (
+            "quel3.monitor.mode",
+            "loopback",
+            ("disabled", "loopback"),
+        )
+    ]
+
+
+def test_collect_state_records_unit_configuration_fetch_errors() -> None:
+    """Given failed unit configuration fetch, hardware state should keep an issue."""
+    client = _FakeClient()
+
+    async def _fail_unit_configuration(unit_label: str) -> _UnitConfiguration:
+        raise RuntimeError(f"failed {unit_label}")
+
+    client.get_unit_configuration = _fail_unit_configuration  # type: ignore[method-assign]
+    reader = _make_reader(client)
+
+    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+
+    assert state.units[0].controls == ()
+    assert any(
+        issue.code == "RESOURCE_FETCH_ERROR"
+        and issue.message == "get_unit_configuration failed."
+        and issue.resource_id == "unit-a"
+        for issue in state.issues
+    )
+
+
+def test_collect_state_keeps_monitor_port_without_fetching_port_info() -> None:
+    """Given a monitor port, hardware state should not request unsupported port info."""
+    client = _MonitorPortClient()
+    reader = _make_reader(client)
+
+    state = reader.collect_state(unit_labels=("unit-a",), parallel=False)
+
+    assert [port.id for port in state.ports] == ["unit-a:mon", "unit-a:tx_p01"]
+    assert state.ports[0].role is None
+    assert client.get_port_info_calls == ["unit-a:tx_p01"]
+    assert not any(
+        issue.code == "RESOURCE_FETCH_ERROR" and issue.resource_id == "unit-a:mon"
+        for issue in state.issues
+    )
 
 
 def test_collect_state_records_fetch_errors_without_raising() -> None:
@@ -493,6 +594,14 @@ def test_collect_state_rejects_old_filter_kwargs() -> None:
 def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
     """Given hardware state, backend settings projection should keep deploy cache fields."""
     client = _FakeClient()
+    configuration_calls: list[str] = []
+    get_unit_configuration = client.get_unit_configuration
+
+    async def _track_unit_configuration(unit_label: str) -> _UnitConfiguration:
+        configuration_calls.append(unit_label)
+        return await get_unit_configuration(unit_label)
+
+    client.get_unit_configuration = _track_unit_configuration  # type: ignore[method-assign]
     reader = _make_reader(client)
 
     settings = reader.fetch_backend_settings_from_hardware(
@@ -524,6 +633,7 @@ def test_backend_settings_projection_uses_hardware_state_instruments() -> None:
         },
         "BOX2": {"instruments": {}},
     }
+    assert configuration_calls == []
 
 
 def test_backend_settings_fetch_keeps_unqualified_instrument_resources() -> None:
