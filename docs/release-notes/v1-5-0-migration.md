@@ -15,6 +15,8 @@ Read this guide if any of the following apply:
 - You use contrib-heavy `Experiment` helpers such as RZX, multipartite
   entanglement, purity benchmarking, or Stark workflows
 - You wrote timing-sensitive code that assumed a fixed `2 ns` sampling period
+- You rely on simulator `Control` interpolation or mutate control segment data
+  in place
 
 If you only use the basic high-level QuEL-1 workflow through top-level
 `qubex` imports, and you do not depend on moved helper APIs or backend-side
@@ -28,7 +30,80 @@ imports, the upgrade is usually straightforward.
 - Move system-side imports from `qubex.backend` to `qubex.system`
 - Rename `shots` to `n_shots` and `interval` to `shot_interval`
 - Replace moved `Experiment` helper methods with `qubex.contrib` functions
+- Replace simulator `Control` interpolation with explicitly sampled waveforms
 - Remove hardcoded `2 ns` assumptions from sweeps, plots, and timing utilities
+
+## SQUAD window arguments and units
+
+Standalone `beta_mode` and `beta_sum` arguments have been removed from
+`Squad`, `Squad.func`, and the SQUAD paths of `FlatTop` and `FlatTop.func`.
+They now raise `TypeError`, including explicitly supplied former defaults.
+There is no deprecation period. Replace them with a window dictionary:
+
+```python
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12, correction_factor=0,
+    window={"type": "beta", "mode": 0.4, "sum": 6.0},
+)
+```
+
+The string `window="beta"` still uses mode 1/3 and sum 5.
+Tukey settings continue to use the same dictionary interface.
+
+### Unified CD sign and strength
+
+This is a breaking change to direct `Squad` / `Squad.func`:
+`factor` has been removed and is rejected with `TypeError`, including
+explicit `factor=None`. The instance attribute is now `correction_factor`.
+
+Both SQUAD entry points use transition-minus-drive delta, an `I + i*Q`
+envelope, and the same negative-sign CD formula:
+`Q = -correction_factor * delta * dI/dt / (delta**2 + I**2)`.
+Use angular-rate amplitude/delta in rad/ns and time in ns.
+`correction_factor` is dimensionless: 1 is the analytic CD strength,
+0.5 halves it, and 0 disables it. The carrier is configured separately.
+
+To preserve an old direct-SQUAD waveform, negate its old factor:
+
+```python
+# Before: Squad(..., factor=x)
+# After:
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12,
+    correction_factor=-x,
+)
+```
+
+**Old omitted/None factor meant +1: use new correction_factor=-1 to
+preserve that old waveform.** New omitted/None correction_factor means +1
+in the unified convention and therefore reverses the old default Q.
+There is no silent compatibility alias. `FlatTop`'s existing CD formula,
+DRAG behavior, correction-disabled default, ramp sampling and signs are unchanged.
+Direct `Squad` still enables CD by default.
+
+Keep hardware-unit conversion separate from correction strength:
+
+```python
+K = 2 * np.pi * rabi_ghz_per_command
+pulse = FlatTop(
+    duration=40, tau=12, type="Squad",
+    amplitude=K * command_amplitude,
+    delta=2 * np.pi * (transition_ghz - drive_ghz),
+    correction_type="CD", correction_factor=1.0,
+    scale=1 / K,
+)
+```
+
+Scale converts both I and Q to command amplitudes. This preserves older
+command-unit FlatTop waveforms that used delta divided by the Rabi scale
+and correction_factor divided by K; do not apply both conversions.
+The Rabi scale remains a caller-supplied hardware model, not a calibration
+performed by the pulse API.
+
+Recompute delta per drive frequency for carrier-adaptive SQUAD design.
+Holding delta fixed instead deliberately scans one waveform's carrier;
+regenerating the waveform changes the interpretation of a chevron.
+See the API docstrings for the complete conventions.
 
 ## Installation and environment changes
 
@@ -41,6 +116,10 @@ At minimum, update these assumptions:
 - Python `3.9` is no longer supported. Use Python `3.10` or newer.
 - Backend-enabled installs use the `backend` extra.
 - In-repository development now assumes `make sync` in a `uv` environment.
+- `qxsimulator` no longer installs JAX, Optax, or IPython. JAX and Optax were
+  used only by the deprecated `PulseOptimizer`; existing users who temporarily
+  retain that API must install those two packages separately. Its IPython
+  display integration has been removed.
 
 ## Configuration changes
 
@@ -304,6 +383,207 @@ from qubex.simulator import QuantumSystem
 If you are building reusable libraries on top of Qubex internals, consider
 importing from the companion packages directly (`qxpulse`, `qxsimulator`,
 `qxcore`, `qxvisualizer`) instead of relying on removed internal file layouts.
+
+### Update simulator `Control` sampling
+
+Simulator `Control` objects now represent finite-duration, piecewise-constant
+signals. The `interpolation` constructor argument and `interpolator` property
+have been removed. Use `get_samples()` to evaluate the zero-order-held signal.
+
+```python
+# v1.4.x
+control = Control(..., interpolation="linear")
+samples = control.interpolator(times)
+
+# v1.5.0
+control = Control(...)
+samples = control.get_samples(times)
+```
+
+At an internal segment boundary, `get_samples()` returns the segment beginning
+at that boundary. It returns zero before the control starts and after its total
+duration. If you relied on linear, cubic, or FIR-like reconstruction, generate
+the desired sampled waveform before constructing `Control` and provide the
+corresponding segment durations.
+
+`Control` copies `waveform` and `durations` and exposes them as read-only
+arrays. Construct a new `Control` instead of modifying these arrays in place.
+Every segment duration must be finite and greater than zero; an empty control
+may still use empty waveform and duration arrays.
+
+### Update `simulate()` propagation settings
+
+`QuantumSimulator.simulate()` now uses `dt` as its fixed propagation interval.
+The final interval may be shorter so evolution ends exactly at the common
+control duration. Control segment boundaries and requested output times are not
+inserted into this integration grid, so discontinuities that do not coincide
+with the fixed grid are resolved only as `dt` is reduced.
+
+The `TIME_STEP` constant has been removed. `simulate()` now declares its
+default directly as `dt=0.1`; pass `dt` explicitly when a different fixed
+propagation interval is required.
+
+Within each interval, the zero-order-held control amplitude is selected at the
+left endpoint. Continuously time-dependent carrier and coupling terms are
+evaluated at the interval midpoint. Results for detuned drives or rotating
+couplings can therefore differ from the previous left-endpoint propagation.
+
+`Control.frame_shifts` and `Control.final_frame_shift` are logical-frame
+metadata and are not applied as physical rotations to states or propagators.
+Intermediate shifts from a `PulseSchedule` are already reflected in the phases
+of subsequent waveform samples. The per-segment metadata additionally lets
+`SimulationResult` interpret the returned trajectory in the changing logical
+frame. If `n_samples` is specified, it must be at least 2 so that the initial
+and final physical evolution points are both retained. Downsampling occurs only
+after the complete fixed-step evolution, so `n_samples` does not change the
+simulated final state. Uniformly spaced trajectory indices are selected, which
+need not produce exactly uniform physical times when the terminal interval is
+shorter than `dt`. If the trajectory already contains at most `n_samples`
+points, all points are returned. A zero-duration trajectory contains only its
+initial point. If `n_samples` is omitted, every fixed-step integration point is
+returned.
+
+### Configure QuTiP solver integration with `options`
+
+The `dt` argument no longer appears in the signatures of the QuTiP-based
+`QuantumSimulator.sesolve()`, `mesolve()`, `propagator()`, `gate_fidelity()`,
+`create_simulation_parameters()`, and `create_simulation_model()` methods.
+Calls that still pass `dt` are accepted for compatibility, emit a
+`DeprecationWarning`, and ignore its value. The model time list is now the union
+of all `Control` segment boundaries, and control amplitudes use exact
+zero-order hold between those boundaries. Continuous drive-frame and coupling
+phases remain analytic QuTiP coefficients. This list is exposed as
+`SimulationModel.boundary_times` and as the `boundary_times` entry returned by
+`create_simulation_parameters()`; the previous generic `times` names are no
+longer used.
+
+For `sesolve()` and `mesolve()`, `n_samples` requests exactly that many
+uniformly spaced public output times for a positive control duration. Qubex
+passes the union of those output times and all control boundaries to QuTiP,
+then retains only the requested output trajectory. Thus every zero-order-hold
+discontinuity remains a solver checkpoint without forcing the public result
+onto the irregular control grid. A zero-duration trajectory contains only its
+initial point. If `n_samples` is omitted, all control boundaries are returned
+as before.
+
+QuTiP chooses adaptive internal integration steps. Pass solver settings such as
+`method`, `rtol`, `atol`, and `max_step` through `options`. When `max_step` is
+omitted, Qubex uses half the shortest control segment duration; an explicitly
+provided value takes precedence. When `nsteps` is omitted, Qubex allows at
+least 2500 internal steps and twice the number required by `max_step` over the
+longest solver interval. Qubex otherwise uses QuTiP's defaults, including the
+integration method and error tolerances. The `dt` argument remains meaningful
+only for `QuantumSimulator.simulate()`.
+
+`QuantumSimulator.propagator()` now returns cumulative propagators at the union
+of all `Control` segment boundaries. Use the final list element when only the
+complete evolution is needed. Advancing through every boundary also gives each
+piecewise-constant discontinuity its own solver interval. For a closed system,
+the list contains unitary operators computed in Hilbert space. For a system
+with any positive decoherence rate, it contains superoperators computed in
+Liouville space. Zero-rate relaxation and dephasing operators are no longer
+added to the model. The fidelity methods use the final propagator and accept
+either representation. They extract the computational-subspace map by default,
+accept `levels="full"` for the complete physical space, and accept a per-object
+level mapping for qudit or non-computational subspaces. This avoids the much
+larger Liouville-space integration for closed systems.
+
+`gate_fidelity()` is deprecated; use `average_gate_fidelity()` instead. The
+deprecated name remains an alias during the compatibility period.
+`process_fidelity()` returns the normalized Choi overlap of the extracted
+computational-subspace map with the target unitary. Because extraction can
+make the map trace-decreasing, `average_gate_fidelity()` counts leakage as
+failure and uses
+$F_\mathrm{avg}=(dF_\mathrm{pro}+p_\mathrm{surv})/(d+1)$, where
+$p_\mathrm{surv}=\operatorname{Tr}[\mathcal{E}_\mathrm{sub}(I)]/d$. For a
+trace-preserving map, $p_\mathrm{surv}=1$ and this reduces to QuTiP's standard
+average-gate-fidelity relation.
+
+Use `QuantumSystem.unitary()` to construct a target by object label and embed
+it in the full physical Hilbert space:
+
+```python
+from qxsimulator import gates
+
+target = system.unitary({"Q04-Q01": "CZ"})
+fidelity = simulator.average_gate_fidelity(
+    controls,
+    target_unitary={"Q04": gates.X},
+    levels={"Q04": (1, 2)},
+)
+```
+
+Named strings include the existing Qubex Clifford gate names and common static
+gates. Build parameterized gates with
+`gates.rotation(generator, angle)`, which evaluates
+`exp(-1j * angle * generator / 2)`. The `X`, `Y`, `Z`, `XX`, `YY`, `ZZ`, and
+`ZX` generators can be combined directly, for example
+`gates.rotation((gates.XX + gates.YY) / 2, angle)`. Fidelity methods accept
+these labeled gate mappings directly. A `Qobj` fidelity target may have the
+selected subspace dimensions or the full physical-system dimensions.
+
+`PulseOptimizer` is deprecated and will be removed in a future release. JAX
+and Optax are no longer installed with `qxsimulator` and must be installed
+separately to use this compatibility API. Its IPython display integration has
+been removed; ordinary simulator imports and workflows load none of these
+packages.
+
+### Request propagator trajectories explicitly
+
+`SimulationResult.states` and `SimulationResult.propagators` are lists of
+QuTiP `Qobj` instances. `SimulationResult.unitaries` is deprecated; use
+`propagators` instead. The deprecated attribute remains an alias for the same
+list during the compatibility period.
+
+`SimulationResult.control_frequencies` is also deprecated because one target
+may have controls at multiple frequencies. Inspect `SimulationResult.controls`
+directly instead. When `frame="drive"` is requested, the result infers the
+analysis frame only if the target has exactly one distinct control frequency.
+If the target has no controls or multiple tones, pass `frame_frequency`
+explicitly in GHz.
+
+`SimulationResult.get_substates()` now returns `list[Qobj]` instead of an
+object-dtype NumPy array, matching the documented result model. Bloch-vector
+and density-matrix helpers continue to return numeric NumPy arrays, with
+`float64` and `complex128` dtypes respectively.
+The `frame`, `frame_frequency`, and `apply_frame_shifts` arguments of the
+substate extraction methods are keyword-only. Update positional calls to use
+explicit argument names.
+
+`SimulationResult` now validates trajectory alignment and system dimensions at
+construction. It copies the supplied control, state, and propagator containers,
+and stores times as a copied, read-only `float64` array. Times must be finite and
+strictly increasing; invalid result objects now raise `ValueError` immediately.
+Equality is identity-based, and `repr()` reports trajectory counts without
+expanding large arrays or QuTiP objects.
+
+`QuantumSimulator.simulate()` computes propagators by default. Pass
+`compute_propagators=False` to retain only its state trajectory.
+`QuantumSimulator.sesolve()` and `mesolve()` do not compute propagators by
+default. Request them explicitly when both trajectories are required:
+
+```python
+result = simulator.sesolve(
+    controls,
+    compute_propagators=True,
+)
+```
+
+For `sesolve()`, each propagator is an operator acting on a ket. For
+`mesolve()`, each propagator is a superoperator acting on a vectorized density
+matrix. Computing a full propagator is more expensive than evolving one state,
+especially for `mesolve()`, where the superoperator contains `d ** 4` elements
+for Hilbert-space dimension `d`. An empty `propagators` list indicates that the
+trajectory was not computed.
+
+States and propagators remain in the simulator's physical rotating frame.
+Controls converted from a `PulseSchedule` retain both per-segment
+`frame_shifts` and the terminal `final_frame_shift` as coordinate metadata.
+`SimulationResult.get_substates()` and the density-matrix and Bloch-vector
+helpers apply the accumulated frame shifts at every returned time by default.
+Pass `apply_frame_shifts=False` to inspect the raw physical-frame trajectory.
+At an internal boundary, the shift of the segment starting at that boundary is
+used; from the final boundary onward, the terminal shift is used.
 
 ## Timing and result-model updates
 

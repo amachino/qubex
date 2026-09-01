@@ -3,12 +3,19 @@
 This page highlights the main notebook entry points for the `QuantumSimulator` workflow.
 Use these notebooks to study pulse-level dynamics offline before moving to hardware-backed execution.
 
+The notebooks below provide focused examples and calibration studies.
+
 ## Recommended starting points
 
 - [Rabi oscillation](../../examples/simulator/1_rabi_oscillation.ipynb): Start with a single driven transmon and inspect the resulting dynamics.
 - [Two coupled qubits](../../examples/simulator/2_coupled_qubits.ipynb): Simulate interactions in a coupled multi-qubit system.
 - [Qubit resonator](../../examples/simulator/3_qubit_resonator.ipynb): Study coupled qubit-resonator behavior at the Hamiltonian level.
 - [Multi control](../../examples/simulator/4_multi_control.ipynb): Explore multiple control channels in one simulation setup.
+- [Virtual Z frame shifts](../../examples/simulator/10_virtual_z.ipynb): Compare physical I/Q samples with time-dependent logical-frame interpretation.
+
+## Model studies
+
+- [Cosine transmon model](../../examples/simulator/11_cosine_model.ipynb): Trace the charge-basis cosine Hamiltonian into the truncated energy basis, then compare it with the Duffing model under strong drive.
 
 ## Calibration-oriented studies
 

@@ -54,6 +54,8 @@ Qubex が初めてなら、まず [始め方を選ぶ](../user-guide/getting-sta
 - [CR ダイナミクス](simulator/7_cr_dynamics.ipynb)
 - [CR 較正](simulator/8_cr_calibration.ipynb)
 - [Jazz](simulator/9_jazz.ipynb)
+- [Virtual Z と frame shift](simulator/10_virtual_z.ipynb)
+- [cosine モデルによる transmon](simulator/11_cosine_model.ipynb)
 
 ## Pulse
 

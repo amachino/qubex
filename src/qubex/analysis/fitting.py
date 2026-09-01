@@ -1726,7 +1726,7 @@ def fit_rabi(
     dot_product = np.dot(data_direction, principal_component)
     ge_vector = principal_component if dot_product > 0 else -principal_component
     angle_ge = np.arctan2(ge_vector[1], ge_vector[0])
-    angle = angle_ge + np.pi / 2
+    angle = float(angle_ge + np.pi / 2)
 
     rotated = data * np.exp(-1j * angle)
     distance = float(np.mean(rotated.real))

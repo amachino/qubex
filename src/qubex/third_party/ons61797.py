@@ -254,6 +254,10 @@ class ONS61797:
         cmd = f"OUT? {channel}"
         return int(self.query(cmd=cmd))
 
+    def get_output_mode(self) -> int:
+        """Return the output on/off mode (0: independent, 1: linked)."""
+        return int(self.query(cmd="OMD?"))
+
     def set_voltage(self, channel: int, voltage: float) -> None:
         """
         Set the output voltage for the specified channel.

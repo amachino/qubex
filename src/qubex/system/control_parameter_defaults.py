@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
@@ -46,7 +47,6 @@ class ControlParameterDefaults:
     capture_delay_word: int | None
     pump_frequency: float
     pump_amplitude: float
-    dc_voltage: float
     frequency_margin_by_type: dict[str, float] | None = None
 
     def create_control_parameters(
@@ -257,12 +257,24 @@ class ControlParameterDefaults:
             return {
                 "pump_frequency": default_pump_frequency,
                 "pump_amplitude": self.pump_amplitude,
-                "dc_voltage": self.dc_voltage,
             }
+        if "dc_voltage" in value:
+            if "optimal_voltage" in value:
+                raise ValueError(
+                    "JPA parameters cannot define both deprecated `dc_voltage` "
+                    "and `optimal_voltage`."
+                )
+            warnings.warn(
+                "JPA parameter `dc_voltage` is deprecated; use `optimal_voltage` "
+                "instead. Deprecated in v1.5.0.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
         raw_pump_frequency = value.get("pump_frequency")
         raw_pump_amplitude = value.get("pump_amplitude")
-        raw_dc_voltage = value.get("dc_voltage")
-        return {
+        raw_optimal_voltage = value.get("optimal_voltage", value.get("dc_voltage"))
+        raw_idle_voltage = value.get("idle_voltage")
+        resolved: JPAParameters = {
             "pump_frequency": (
                 float(raw_pump_frequency)
                 if raw_pump_frequency is not None
@@ -273,7 +285,9 @@ class ControlParameterDefaults:
                 if raw_pump_amplitude is not None
                 else self.pump_amplitude
             ),
-            "dc_voltage": (
-                float(raw_dc_voltage) if raw_dc_voltage is not None else self.dc_voltage
-            ),
         }
+        if raw_optimal_voltage is not None:
+            resolved["optimal_voltage"] = float(raw_optimal_voltage)
+        if raw_idle_voltage is not None:
+            resolved["idle_voltage"] = float(raw_idle_voltage)
+        return resolved

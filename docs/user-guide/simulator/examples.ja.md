@@ -3,12 +3,19 @@
 このページでは、`QuantumSimulator` ワークフローの主要な notebook 入口を紹介します。
 実機ベースの実行に進む前に、パルスレベルのダイナミクスをオフラインで確認したいときに使ってください。
 
+以下の notebook は、個別の例と較正ケーススタディとして利用できます。
+
 ## 推奨する出発点
 
 - [ラビ振動](../../examples/simulator/1_rabi_oscillation.ipynb): 単一の駆動された transmon から始めて、そのダイナミクスを確認します。
 - [結合した 2 量子ビット](../../examples/simulator/2_coupled_qubits.ipynb): 結合した多体系での相互作用をシミュレーションします。
 - [量子ビットと共振器](../../examples/simulator/3_qubit_resonator.ipynb): 量子ビット-共振器系の振る舞いをハミルトニアンレベルで調べます。
 - [複数制御](../../examples/simulator/4_multi_control.ipynb): 1 つの simulation setup で複数 control channel を扱います。
+- [Virtual Z と frame shift](../../examples/simulator/10_virtual_z.ipynb): 物理 I/Q sample と時間依存する logical frame の解釈を比較します。
+
+## モデル比較
+
+- [cosine モデルによる transmon](../../examples/simulator/11_cosine_model.ipynb): 電荷基底の cosine ハミルトニアンから切り詰めたエネルギー基底への変換を追い、強駆動下で Duffing モデルと比較します。
 
 ## 較正寄りの解析
 

@@ -13,6 +13,8 @@
 - RZX、multipartite entanglement、purity benchmarking、Stark 系など、
   contrib 寄りの `Experiment` helper を使っている
 - 固定 `2 ns` を前提にした timing-sensitive な code を持っている
+- simulator の `Control` 補間に依存している、または control の segment data を
+  in-place で変更している
 
 一方、top-level の `qubex` import と QuEL-1 の基本的な
 `Experiment.measure()` / `execute()` だけを使っており、移動した helper API
@@ -26,7 +28,76 @@
 - system 側の import を `qubex.backend` から `qubex.system` へ移す
 - `shots` を `n_shots` に、`interval` を `shot_interval` に変える
 - 移動した `Experiment` helper を `qubex.contrib` 呼び出しへ置き換える
+- simulator の `Control` 補間を、明示的に sample した waveform へ置き換える
 - sweep、plot、timing utility で固定 `2 ns` を使わないようにする
+
+## SQUAD の window 引数と単位
+
+`Squad`、`Squad.func`、および `FlatTop` / `FlatTop.func` の SQUAD 経路から、
+単独の `beta_mode` / `beta_sum` 引数を削除しました。
+旧デフォルト値を明示した場合も `TypeError` になります。
+非推奨期間は設けません。window 辞書へ置き換えてください。
+
+```python
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12, correction_factor=0,
+    window={"type": "beta", "mode": 0.4, "sum": 6.0},
+)
+```
+
+文字列 `window="beta"` は引き続き mode=1/3、sum=5 を使います。
+Tukey の設定も従来どおり辞書で渡します。
+
+### CD の符号と補正強度の統一
+
+直接の `Squad` / `Squad.func` に対する破壊的変更です。
+旧 `factor` は削除し、`factor=None` を明示した場合も `TypeError` にします。
+instance 属性も `correction_factor` へ変更しました。
+
+両 SQUAD API で delta は「遷移周波数 − drive」、包絡線は `I + i*Q` とし、
+CD 式を `Q = -correction_factor * delta * dI/dt / (delta**2 + I**2)` に統一します。
+amplitude と delta は rad/ns、時間は ns で渡します。
+`correction_factor` は無次元で、1 が解析的 CD 強度、0.5 は半分、0 は CD なしです。
+carrier は別に設定します。
+
+旧 direct-SQUAD 波形を保存するには、旧 factor の符号を反転して渡します。
+
+```python
+# 旧: Squad(..., factor=x)
+# 新:
+pulse = Squad(
+    duration=40, amplitude=0.6, delta=-0.8, tau=12,
+    correction_factor=-x,
+)
+```
+
+**旧 factor 省略/None は +1 なので、旧デフォルト波形の再現には
+新 correction_factor=-1 が必要です。**
+新 correction_factor の省略/None は統一規約の +1 であり、旧デフォルトの Q と逆符号です。
+暗黙の互換 alias は設けません。
+`FlatTop` の既存 CD 式、DRAG、補正なしのデフォルト、ランプ sampling と符号は変更しません。
+直接の `Squad` は引き続きデフォルトで CD を有効にします。
+
+実機の単位換算は補正強度から分離します。
+
+```python
+K = 2 * np.pi * rabi_ghz_per_command
+pulse = FlatTop(
+    duration=40, tau=12, type="Squad",
+    amplitude=K * command_amplitude,
+    delta=2 * np.pi * (transition_ghz - drive_ghz),
+    correction_type="CD", correction_factor=1.0,
+    scale=1 / K,
+)
+```
+
+scale は I/Q の両方を制御振幅へ戻します。旧 FlatTop で delta を Rabi 換算し、
+correction_factor を K で割っていた波形と同値です。両方の換算を重ねて適用しないでください。
+Rabi 換算は呼び出し側の実機モデルであり、pulse API 自体が較正するわけではありません。
+
+drive 周波数に追従して SQUAD を設計する場合は各周波数で delta を再計算します。
+delta を固定する場合は、意図的に同じ波形の carrier のみを掃引する実験です。
+波形を再生成する場合は chevron の解釈も変わります。詳細は API docstring を参照してください。
 
 ## インストールと実行環境の変更
 
@@ -39,6 +110,10 @@
 - Python `3.9` は非対応になりました。Python `3.10` 以上を使ってください。
 - 実機向け依存関係は `backend` extra で導入します。
 - repository 内開発は `uv` 環境で `make sync` を前提にしています。
+- `qxsimulator` は JAX、Optax、IPython を install しなくなりました。JAX と Optax は
+  deprecated となった `PulseOptimizer` だけが使用していました。この API を移行期間中も
+  使用する場合は、この 2 package を別途 install してください。IPython の display 連携は
+  削除されました。
 
 ## 設定変更
 
@@ -301,6 +376,189 @@ from qubex.simulator import QuantumSystem
 Qubex internals の上に再利用ライブラリを載せている場合は、削除されやすい
 内部ファイル構成よりも `qxpulse`、`qxsimulator`、`qxcore`、
 `qxvisualizer` などの companion package を直接参照する方が安全です。
+
+### simulator の `Control` sampling を更新する
+
+simulator の `Control` は、有限時間の区分定数信号を表すようになりました。
+constructor の `interpolation` 引数と `interpolator` property は削除されています。
+zero-order hold された信号の評価には `get_samples()` を使ってください。
+
+```python
+# v1.4.x
+control = Control(..., interpolation="linear")
+samples = control.interpolator(times)
+
+# v1.5.0
+control = Control(...)
+samples = control.get_samples(times)
+```
+
+内部 segment 境界では、`get_samples()` はその境界から始まる segment を返します。
+control の開始前と全 duration を越えた時刻ではゼロを返します。linear、cubic、
+FIR 相当の再構成に依存していた場合は、`Control` を作る前に必要な細かさの waveform
+を生成し、対応する segment duration とともに渡してください。
+
+`Control` は `waveform` と `durations` を copy し、read-only array として公開します。
+これらを in-place で変更せず、新しい `Control` を作ってください。各 segment の
+duration は有限かつゼロより大きい必要があります。空の control では、空の waveform
+と duration array を引き続き使用できます。
+
+### `simulate()` の伝播設定を更新する
+
+`QuantumSimulator.simulate()` は、`dt` を固定伝播幅として使用します。共通の control
+duration で正確に時間発展を終えるため、最後の区間だけ `dt` より短くなる場合があります。
+`Control` segment 境界と要求した出力時刻は積分グリッドへ追加しません。そのため、固定
+グリッドと一致しない不連続点は、`dt` を小さくすることでのみ細かく解像されます。
+
+`TIME_STEP` 定数を削除しました。`simulate()` は default を `dt=0.1` として直接
+宣言します。異なる固定伝播幅が必要な場合は、`dt` を明示してください。
+
+各区間では、zero-order hold された control 振幅を左端点で選択します。連続的に
+時間依存する carrier 項と coupling 項は区間の中点で評価します。このため、離調した
+drive や回転する coupling の結果は、従来の左端点による伝播から変わる場合があります。
+
+`Control.frame_shifts` と `Control.final_frame_shift` は logical frame の metadata として
+保持され、states や propagators へ物理的な回転として適用されません。`PulseSchedule`
+の途中の frame shift は、後続 waveform sample の位相へすでに反映されています。segment
+ごとの metadata は、それとは別に `SimulationResult` が返却 trajectory を変化する
+logical frame で解釈するために使います。`n_samples` を指定する場合は、物理的な時間発展
+の初期点と終端点の両方を保持するため、2 以上にしてください。downsample は固定 step
+による時間発展をすべて完了した後に行うため、`n_samples` は最終状態を変えません。
+trajectory の index を等間隔に選ぶので、最後の積分区間が `dt` より短い場合、返却される
+物理時刻は厳密な等間隔にならないことがあります。trajectory がすでに `n_samples` 以下
+なら全点を返します。duration がゼロなら初期点だけを含みます。`n_samples` を省略した
+場合は、固定 step 積分のすべての点を返します。
+
+### QuTiP solver の積分設定を `options` で指定する
+
+QuTiP ベースの `QuantumSimulator.sesolve()`、`mesolve()`、`propagator()`、
+`gate_fidelity()`、`create_simulation_parameters()`、
+`create_simulation_model()` の signature から `dt` 引数を削除しました。`dt` を
+渡す既存の呼び出しは互換性のために受理され、`DeprecationWarning` を発行して
+値を無視します。model の時刻列は、すべての `Control` segment 境界の和集合に
+なりました。control 振幅は境界間で厳密な zero-order hold とし、drive frame と
+coupling の連続位相は QuTiP の解析的な coefficient として保持します。この時刻列は
+`SimulationModel.boundary_times` として公開され、
+`create_simulation_parameters()` の返却 dict では `boundary_times` entry になります。
+従来の汎用的な `times` 名は使用しません。
+
+`sesolve()` と `mesolve()` で `n_samples` を指定すると、正の control duration では
+等間隔な公開出力時刻をちょうどその個数だけ要求します。Qubex は、それらの出力時刻と
+すべての control 境界の和集合を QuTiP に渡し、要求した出力 trajectory だけを result
+に残します。したがって、zero-order hold の各不連続点を solver checkpoint として
+守りながら、公開 result を非一様な control grid に固定せずに済みます。duration が
+ゼロなら初期点だけを含みます。`n_samples` を省略した場合は、従来どおりすべての
+control 境界を返します。
+
+内部の積分幅は QuTiP が適応的に決定します。`method`、`rtol`、`atol`、
+`max_step` などの solver 設定は `options` で指定してください。`max_step` を省略
+した場合は、最短 control segment duration の半分を既定値とし、明示した値を
+優先します。`nsteps` を省略した場合は、2500 と、最長 solver interval を
+`max_step` で進むために最低限必要な step 数の 2 倍のうち、大きい方を使用します。
+それ以外の積分法や誤差許容値には QuTiP の既定値を使用します。`dt` が意味を持つ
+のは `QuantumSimulator.simulate()` だけです。
+
+`QuantumSimulator.propagator()` は、全 `Control` segment 境界の和集合における
+累積 propagator の list を返します。全時間発展だけが必要な場合は、list の最終要素を
+使用してください。各境界まで順に積分するため、区分定数 control の各不連続点も
+solver interval の境界になります。閉鎖系では list の要素は Hilbert 空間で計算した
+unitary operator であり、正の decoherence rate を1つでも持つ開放系では Liouville
+空間で計算した superoperator です。rate がゼロの relaxation operator と dephasing
+operator は model に追加しません。fidelity method は最終 propagator を使用し、
+どちらの表現も受け取ります。既定では computational subspace の map を切り出し、
+`levels="full"` では物理空間全体を、object ごとの level mapping では qudit や
+非 computational subspace を評価します。これにより、閉鎖系では大きな
+Liouville-space 積分を回避します。
+
+`gate_fidelity()` は deprecated です。代わりに `average_gate_fidelity()` を使用して
+ください。deprecated 名は互換期間中、同じ計算を行う alias として残ります。
+`process_fidelity()` は、切り出した computational-subspace map と target unitary の
+normalized Choi overlap を返します。subspace の切り出し後は map が trace-decreasing
+になり得るため、`average_gate_fidelity()` は leakage を失敗として数え、
+$F_\mathrm{avg}=(dF_\mathrm{pro}+p_\mathrm{surv})/(d+1)$ を使用します。ここで
+$p_\mathrm{surv}=\operatorname{Tr}[\mathcal{E}_\mathrm{sub}(I)]/d$ です。
+trace-preserving map では $p_\mathrm{surv}=1$ となり、QuTiP の標準的な
+average-gate-fidelity の関係式に一致します。
+
+`QuantumSystem.unitary()` を使うと、object label で target を指定し、物理 Hilbert
+空間全体へ embed できます。
+
+```python
+from qxsimulator import gates
+
+target = system.unitary({"Q04-Q01": "CZ"})
+fidelity = simulator.average_gate_fidelity(
+    controls,
+    target_unitary={"Q04": gates.X},
+    levels={"Q04": (1, 2)},
+)
+```
+
+文字列では既存の Qubex Clifford gate 名と一般的な static gate を指定できます。
+引数を持つ gate は `gates.rotation(generator, angle)` で作ります。この関数は
+`exp(-1j * angle * generator / 2)` を計算します。`X`、`Y`、`Z`、`XX`、`YY`、
+`ZZ`、`ZX` の生成子を直接組み合わせられ、例えば
+`gates.rotation((gates.XX + gates.YY) / 2, angle)` と書けます。fidelity method には
+object label の mapping を直接渡せます。`Qobj` target は、選択した subspace と
+同じ次元でも、物理 system 全体の次元でも指定できます。
+
+`PulseOptimizer` は deprecated であり、将来の release で削除予定です。JAX と Optax は
+`qxsimulator` と一緒には install されなくなったため、この互換 API を使う場合は別途
+install してください。IPython の display 連携は削除され、通常の simulator import と
+workflow ではこれらの package を読み込みません。
+
+### propagator trajectory を明示的に要求する
+
+`SimulationResult.states` と `SimulationResult.propagators` は、QuTiP の
+`Qobj` instance の list になりました。`SimulationResult.unitaries` は deprecated
+です。代わりに `propagators` を使用してください。deprecated attribute は互換期間中、
+同じ list を返す alias として残ります。
+
+`SimulationResult.control_frequencies` も deprecated です。1つの target に異なる
+周波数の Control が複数存在し得るため、代わりに `SimulationResult.controls` を直接
+確認してください。`frame="drive"` を指定した場合、対象に distinct な Control 周波数が
+ちょうど1つ存在するときだけ解析 frame を自動推定します。Control がない場合や
+multi-tone の場合は、`frame_frequency` を GHz で明示してください。
+
+`SimulationResult.get_substates()` は、object dtype の NumPy array ではなく、文書化
+された result model に合わせて `list[Qobj]` を返します。Bloch vector と density
+matrix の helper は、引き続きそれぞれ `float64` と `complex128` の数値 NumPy array
+を返します。
+substate 抽出 method の `frame`、`frame_frequency`、`apply_frame_shifts` は keyword-only
+です。positional に渡している呼び出しは、argument 名を明示する形へ更新してください。
+
+`SimulationResult` は構築時に trajectory の対応関係と system dimensions を検証します。
+渡された Control、state、propagator の container は copy し、times は copy した
+read-only の `float64` array として保持します。times は finite かつ狭義単調増加である
+必要があり、不正な result object は構築時に `ValueError` になります。等値比較は
+identity based とし、`repr()` は大きな array や QuTiP object を展開せず trajectory の
+件数を表示します。
+
+`QuantumSimulator.simulate()` は default で propagator を計算します。state
+trajectory だけを保持する場合は、`compute_propagators=False` を指定してください。
+`QuantumSimulator.sesolve()` と `mesolve()` は default では propagator を計算しません。
+両方の trajectory が必要な場合に明示的に要求します。
+
+```python
+result = simulator.sesolve(
+    controls,
+    compute_propagators=True,
+)
+```
+
+`sesolve()` の各 propagator は ket に作用する operator です。`mesolve()` の各
+propagator は vector 化した density matrix に作用する superoperator です。完全な
+propagator の計算は、1つの state の時間発展より高コストです。特に `mesolve()` の
+superoperator は Hilbert 空間の次元を `d` とすると `d ** 4` 要素を持ちます。
+`propagators` が空の list の場合、その trajectory は計算されていません。
+
+states と propagators は simulator の物理的な rotating frame に保持されます。
+`PulseSchedule` から変換した Control は、segment ごとの `frame_shifts` と終端の
+`final_frame_shift` を座標系 metadata として保持します。
+`SimulationResult.get_substates()` および density matrix・Bloch vector の helper は、
+default で各返却時刻の累積 frame shift を適用します。物理 frame の raw trajectory を
+確認するには `apply_frame_shifts=False` を指定してください。内部境界では、その境界から
+始まる segment の shift を使い、最終境界以降では終端 shift を使います。
 
 ## Timing と result model の更新
 

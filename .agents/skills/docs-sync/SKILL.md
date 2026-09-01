@@ -7,8 +7,9 @@ description: Audit Qubex documentation against code changes and report missing, 
 
 ## Overview
 
-Compare changed code against `README.md`, `docs/user-guide/**`,
-`docs/release-notes/**`, and `docs/developer-guide/**`.
+Compare changed code against `README.md`, relevant workspace-package READMEs,
+`docs/user-guide/**`, `docs/examples/**`, `docs/release-notes/**`,
+`docs/developer-guide/**`, and `docs/developer-notes/**`.
 By default this is a report-first workflow: inspect, prioritize, and explain
 the required documentation changes before editing.
 
@@ -22,13 +23,17 @@ the required documentation changes before editing.
    - release or migration surface
 2. Read only the high-signal docs.
    - Public workflow: `README.md` and relevant `docs/user-guide/**`
-   - Developer workflow: `docs/developer-guide/*.md`
+   - Package workflow: relevant `packages/*/README.md` files
+   - Examples: relevant `docs/examples/**` notebooks and index pages
+   - Developer workflow: `docs/developer-guide/*.md` and relevant
+     `docs/developer-notes/*.md`
    - Release and compatibility: `docs/release-notes/**`
 3. Check for drift.
    - renamed arguments, defaults, return shapes, warnings, and deprecations
    - install or runtime prerequisites
    - examples that no longer match the code
    - stale paths and links
+   - drift between English and `.ja.md` pages when a paired translation exists
    - generated reference pages that should instead be fixed from source docstrings
      or source comments
 4. Apply repository writing rules.
