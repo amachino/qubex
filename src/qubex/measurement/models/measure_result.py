@@ -54,6 +54,33 @@ def _format_raw_preview(raw: NDArray) -> str:
     return f"array({preview}, shape={array.shape})"
 
 
+def _has_raw_dsp_classification(data: MeasureData) -> bool:
+    """Return whether legacy raw payload already stores DSP-classified bits."""
+    return (
+        data.mode == MeasureMode.SINGLE
+        and data.classifier is None
+        and np.issubdtype(np.asarray(data.raw).dtype, np.integer)
+    )
+
+
+def _raw_dsp_labels(data: MeasureData) -> NDArray[np.int64]:
+    """Map DSP outputs to logical labels, marking `01`/`10` as rejected shots."""
+    values = np.asarray(data.raw, dtype=np.int64)
+    if values.ndim == 0:
+        values = values.reshape(1)
+    if np.any((values < 0) | (values > 3)):
+        raise ValueError(
+            "Raw DSP classification data must contain packed two-bit values: "
+            "0 (00), 1 (01), 2 (10), or 3 (11)."
+        )
+    # Values 1/2 (`01`/`10`) mean that the two decision lines disagree.  Keep
+    # them in raw data, but use -1 as in the existing soft-decision path.
+    labels = np.full(values.shape, -1, dtype=np.int64)
+    labels[values == 0] = 0
+    labels[values == 3] = 1
+    return labels
+
+
 class MeasureMode(Enum):
     """Measurement mode for result processing."""
 
@@ -110,10 +137,11 @@ class MeasureData:
     @cached_property
     def n_states(self) -> int:
         """Return the number of classifier states."""
-        if self.classifier is None:
-            raise ValueError("Classifier is not set")
-        else:
+        if self.classifier is not None:
             return self.classifier.n_states
+        if _has_raw_dsp_classification(self):
+            return 2
+        raise ValueError("Classifier is not set")
 
     @cached_property
     def kerneled(
@@ -136,8 +164,9 @@ class MeasureData:
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 return self.classifier.predict(self.kerneled)
-            else:
-                raise ValueError("Classifier is not set")
+            if _has_raw_dsp_classification(self):
+                return _raw_dsp_labels(self)
+            raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -159,10 +188,11 @@ class MeasureData:
     @cached_property
     def counts(self) -> dict[str, int]:
         """Return per-state counts for classified data."""
-        if len(self.classified) == 0:
-            raise ValueError("No classification data available")
         classified_labels = self.classified
-        count = np.bincount(classified_labels, minlength=self.n_states)
+        accepted_labels = classified_labels[classified_labels >= 0]
+        if len(accepted_labels) == 0:
+            raise ValueError("No classification data available")
+        count = np.bincount(accepted_labels, minlength=self.n_states)
         state = {str(label): count[label] for label in range(len(count))}
         return state
 
@@ -246,8 +276,11 @@ class MeasureData:
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 return self.classifier.predict_proba(self.kerneled)
-            else:
-                raise ValueError("Classifier is not set")
+            if _has_raw_dsp_classification(self):
+                raise ValueError(
+                    "Soft classification is not available for raw DSP classification data."
+                )
+            raise ValueError("Classifier is not set")
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -270,14 +303,17 @@ class MeasureData:
         """
         if threshold is None:
             return self.classified
-        else:
-            data = self.get_soft_classified_data()
-            if len(data) == 0:
-                raise ValueError("No classification data available")
-            max_probs = np.max(data, axis=1)
-            labels = np.argmax(data, axis=1)
-            result = np.where(max_probs > threshold, labels, -1)
-            return result
+        if _has_raw_dsp_classification(self):
+            raise ValueError(
+                "Thresholded classification is not supported for raw DSP classification data."
+            )
+        data = self.get_soft_classified_data()
+        if len(data) == 0:
+            raise ValueError("No classification data available")
+        max_probs = np.max(data, axis=1)
+        labels = np.argmax(data, axis=1)
+        result = np.where(max_probs > threshold, labels, -1)
+        return result
 
     def plot(
         self,
@@ -1169,9 +1205,9 @@ class MultipleMeasureResult:
             Counts per bitstring.
         """
         classified_data = self.get_classified_data(targets, threshold=threshold)
-        classified_labels = np.array(
-            ["".join(map(str, row)) for row in classified_data]
-        )
+        classified_labels = [
+            "".join(map(str, row)) for row in classified_data if all(row >= 0)
+        ]
         return Counter(classified_labels)
 
     def get_probabilities(

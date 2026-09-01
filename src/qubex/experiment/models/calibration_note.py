@@ -49,6 +49,7 @@ class StateParam(Parameter):
 
     target: str
     centers: dict[str, list[float]]
+    stddevs: dict[str, float] | None
     reference_phase: float
 
 

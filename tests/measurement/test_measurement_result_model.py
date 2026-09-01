@@ -229,6 +229,48 @@ def test_to_measure_result_propagates_sampling_period() -> None:
     assert np.array_equal(single.data["Q00"].times, np.array([0.0]))
 
 
+def test_converter_does_not_attach_classifier_to_state_series(dummy_classifier) -> None:
+    """Raw DSP state conversion should post-select disagreeing line outputs."""
+    config = MeasurementConfig(
+        n_shots=4,
+        shot_interval=100.0,
+        shot_averaging=False,
+        time_integration=True,
+        state_classification=True,
+        backend_kind="quel1",
+    )
+    result = MeasurementResult(
+        data={
+            "Q00": [
+                _make_capture(
+                    target="Q00",
+                    raw=np.array([0, 1, 2, 3], dtype=np.uint8),
+                    measurement_config=config,
+                    sampling_period=0.4,
+                )
+            ]
+        },
+        measurement_config=config,
+    )
+
+    multiple = MeasurementResultConverter.to_multiple_measure_result(
+        result,
+        classifiers={"Q00": dummy_classifier},
+    )
+    single = MeasurementResultConverter.to_measure_result(
+        result,
+        classifiers={"Q00": dummy_classifier},
+    )
+
+    assert multiple.data["Q00"][0].classifier is None
+    assert single.data["Q00"].classifier is None
+    assert multiple.data["Q00"][0].raw.tolist() == [0, 1, 2, 3]
+    assert single.data["Q00"].classified.tolist() == [0, -1, -1, 1]
+    assert single.data["Q00"].counts == {"0": 1, "1": 1}
+    assert multiple.get_counts() == {"0": 1, "1": 1}
+    assert single.get_counts() == {"0": 1, "1": 1}
+
+
 def test_json_roundtrip_preserves_capture_data() -> None:
     """Given serialized measurement result, when deserializing, then capture payload is preserved."""
     config = _make_config(mode="avg", shots=2)
@@ -728,9 +770,10 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
         shot_averaging=False,
         time_integration=True,
         state_classification=True,
+        backend_kind="quel1",
         return_items=(ReturnItem.STATE_SERIES, ReturnItem.IQ_SERIES),
     )
-    raw = np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128)
+    raw = np.array([0, 1], dtype=np.uint8)
 
     capture = CaptureData.from_primary_data(
         target="Q00",
@@ -739,9 +782,9 @@ def test_capture_data_from_primary_data_uses_mode_not_return_item_order() -> Non
         sampling_period=0.4,
     )
 
-    assert capture.payload.iq_series is not None
-    assert np.array_equal(capture.payload.iq_series, raw)
-    assert capture.payload.state_series is None
+    assert capture.payload.state_series is not None
+    assert np.array_equal(capture.payload.state_series, raw)
+    assert capture.payload.iq_series is None
     assert np.array_equal(capture.data, raw)
 
 
@@ -775,13 +818,16 @@ def test_capture_data_state_series_returns_none_when_not_provided() -> None:
         n_shots=2,
         shot_interval=100.0,
         shot_averaging=False,
-        time_integration=True,
+        time_integration=False,
         state_classification=True,
-        return_items=(ReturnItem.IQ_SERIES, ReturnItem.STATE_SERIES),
+        return_items=(ReturnItem.WAVEFORM_SERIES, ReturnItem.STATE_SERIES),
     )
     capture = CaptureData.from_primary_data(
         target="Q00",
-        data=np.array([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex128),
+        data=np.array(
+            [[1.0 + 0.0j], [2.0 + 0.0j]],
+            dtype=np.complex128,
+        ),
         config=config,
         sampling_period=0.4,
     )

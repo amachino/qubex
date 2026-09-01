@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -20,13 +20,16 @@ from qubex.measurement.measurement_constraint_profile import (
 )
 from qubex.measurement.models.capture_data import CaptureData
 from qubex.measurement.models.measure_result import MeasureMode
-from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_config import MeasurementConfig, ReturnItem
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 from qubex.measurement.models.quel1_measurement_options import Quel1MeasurementOptions
 from qubex.system import ExperimentSystem, TargetRegistry
 
 from ._capture_shape import normalize_shot_averaged_capture_array
+
+_GMM_LINEAR_DSP_NORM_EXPONENT = 32
+_GMM_LINEAR_DEMODULATION_EXPONENT_OFFSET = 14
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -44,6 +47,69 @@ def _as_read_only_array(data: object) -> np.ndarray:
     return array
 
 
+def _scale_line_const(
+    line: tuple[float, float, float] | None,
+    scale: float,
+) -> tuple[float, float, float] | None:
+    """Scale only the constant term when moving a line to backend I/Q units."""
+    if line is None:
+        return None
+    a, b, c = line
+    return (a, b, c * scale)
+
+
+def _scale_line_const_map(
+    lines: dict[str, tuple[float, float, float]] | None,
+    scale: float,
+) -> dict[str, tuple[float, float, float]] | None:
+    """Scale line constants in a per-target map."""
+    if lines is None:
+        return None
+    return {
+        target: scaled
+        for target, line in lines.items()
+        if (scaled := _scale_line_const(line, scale)) is not None
+    }
+
+
+def _build_classification_lines(
+    line_param0: dict[str, tuple[float, float, float]] | None,
+    line_param1: dict[str, tuple[float, float, float]] | None,
+) -> dict[str, Any] | None:
+    """Build qxdriver classification line sets from separate Qubex maps."""
+    if line_param0 is None and line_param1 is None:
+        return None
+    if line_param0 is None or line_param1 is None:
+        raise ValueError("Both classification_line_param0 and param1 are required.")
+    missing = sorted(set(line_param0) ^ set(line_param1))
+    if missing:
+        joined = ", ".join(missing)
+        raise ValueError(
+            f"classification_line_param0 and param1 targets differ: {joined}."
+        )
+    try:
+        from qxdriver_quel1.classification import ClassificationLineSet
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "DSP classification lines require qxdriver_quel1 classification support."
+        ) from exc
+    return {
+        target: ClassificationLineSet(
+            line0=line_param0[target],
+            line1=line_param1[target],
+        )
+        for target in line_param0
+    }
+
+
+def _gmm_linear_line_scale(*, dsp_demodulation: bool) -> float:
+    """Return c-term scale from normalized Qubex I/Q to e7awghal line units."""
+    exponent_offset = (
+        _GMM_LINEAR_DEMODULATION_EXPONENT_OFFSET if dsp_demodulation else 0
+    )
+    return 2.0 ** (_GMM_LINEAR_DSP_NORM_EXPONENT - exponent_offset)
+
+
 class Quel1MeasurementBackendAdapter:
     """QuEL-1 specific adapter from measurement models to backend request."""
 
@@ -59,6 +125,23 @@ class Quel1MeasurementBackendAdapter:
         if constraint_profile is None:
             constraint_profile = MeasurementConstraintProfile.quel1()
         self._constraint_profile = constraint_profile
+
+    def _convert_classification_lines_to_backend_iq(
+        self,
+        lines: dict[str, tuple[float, float, float]] | None,
+    ) -> dict[str, tuple[float, float, float]] | None:
+        """Convert Qubex classification lines to the backend I/Q coordinates."""
+        if lines is None:
+            return None
+        converted = dict(lines)
+        for target, (a, b, c) in lines.items():
+            try:
+                sideband = self._experiment_system.get_target(target).sideband
+            except KeyError:
+                sideband = "U"
+            if sideband == "L":
+                converted[target] = (a, -b, c)
+        return converted
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
         """Validate QuEL-1 specific pulse/capture constraints."""
@@ -256,6 +339,25 @@ class Quel1MeasurementBackendAdapter:
             if quel1_options is None or quel1_options.demodulation is None
             else quel1_options.demodulation
         )
+        line_param0 = (
+            None if quel1_options is None else quel1_options.classification_line_param0
+        )
+        line_param1 = (
+            None if quel1_options is None else quel1_options.classification_line_param1
+        )
+        if config.classification_source == "gmm_linear":
+            line_scale = _gmm_linear_line_scale(dsp_demodulation=dsp_demodulation)
+            line_param0 = _scale_line_const_map(
+                line_param0,
+                line_scale,
+            )
+            line_param1 = _scale_line_const_map(
+                line_param1,
+                line_scale,
+            )
+        line_param0 = self._convert_classification_lines_to_backend_iq(line_param0)
+        line_param1 = self._convert_classification_lines_to_backend_iq(line_param1)
+        classification_lines = _build_classification_lines(line_param0, line_param1)
 
         payload = Quel1ExecutionPayload(
             gen_sampled_sequence=gen_sampled_sequence,
@@ -267,16 +369,7 @@ class Quel1MeasurementBackendAdapter:
             dsp_demodulation=dsp_demodulation,
             enable_sum=config.time_integration,
             enable_classification=config.state_classification,
-            line_param0=(
-                None
-                if quel1_options is None
-                else quel1_options.classification_line_param0
-            ),
-            line_param1=(
-                None
-                if quel1_options is None
-                else quel1_options.classification_line_param1
-            ),
+            classification_lines=classification_lines,
         )
         return BackendExecutionRequest(
             payload=payload,
@@ -301,6 +394,41 @@ class Quel1MeasurementBackendAdapter:
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
         target_registry = getattr(self._experiment_system, "target_registry", None)
 
+        def _resolve_output_target(target: str) -> str:
+            if target_registry is not None and hasattr(
+                target_registry,
+                "measurement_output_label",
+            ):
+                return str(target_registry.measurement_output_label(target))
+            if target.startswith("R"):
+                return target[1:]
+            return target
+
+        if measurement_config.primary_return_item == ReturnItem.STATE_SERIES:
+            measure_data: dict[str, list[CaptureData]] = {}
+            for target, states in sorted(backend_result.data.items()):
+                qubit = _resolve_output_target(target)
+                values: list[CaptureData] = []
+                for index, state in enumerate(states):
+                    if skip_extra_capture and index == 0:
+                        continue
+                    values.append(
+                        CaptureData.from_primary_data(
+                            target=qubit,
+                            data=_as_read_only_array(
+                                np.asarray(state, dtype=np.uint8).reshape(-1)
+                            ),
+                            config=measurement_config,
+                            sampling_period=sampling_period,
+                        )
+                    )
+                measure_data[qubit] = values
+            return MeasurementResult(
+                data=measure_data,
+                device_config=device_config,
+                measurement_config=measurement_config,
+            )
+
         iq_data: dict[str, list[npt.ArrayLike]] = {}
         for target, iqs in sorted(backend_result.data.items()):
             sideband = "U"
@@ -318,19 +446,10 @@ class Quel1MeasurementBackendAdapter:
         measure_data: dict[str, list[CaptureData]] = {}
         if not shot_averaging:
             for target, iqs in iq_data.items():
-                if target_registry is not None and hasattr(
-                    target_registry,
-                    "measurement_output_label",
-                ):
-                    qubit = str(target_registry.measurement_output_label(target))
-                elif target.startswith("R"):
-                    qubit = target[1:]
-                else:
-                    qubit = target
+                qubit = _resolve_output_target(target)
                 values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
-                        # skip the first extra capture
                         continue
                     values.append(
                         CaptureData.from_primary_data(
@@ -345,19 +464,10 @@ class Quel1MeasurementBackendAdapter:
                 measure_data[qubit] = values
         else:
             for target, iqs in iq_data.items():
-                if target_registry is not None and hasattr(
-                    target_registry,
-                    "measurement_output_label",
-                ):
-                    qubit = str(target_registry.measurement_output_label(target))
-                elif target.startswith("R"):
-                    qubit = target[1:]
-                else:
-                    qubit = target
+                qubit = _resolve_output_target(target)
                 values: list[CaptureData] = []
                 for index, iq in enumerate(iqs):
                     if skip_extra_capture and index == 0:
-                        # skip the first extra capture
                         continue
                     values.append(
                         CaptureData.from_primary_data(

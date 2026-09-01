@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from itertools import product
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -155,6 +155,154 @@ class MeasurementService:
                 for label in labels
             ]
         )
+
+    def _resolve_gmm_readout_labels(
+        self,
+        *,
+        labels: Sequence[str],
+        include_derived_readouts: bool,
+    ) -> list[str]:
+        """Resolve only labels that produce readout captures for GMM lines."""
+        readout_labels: list[str] = []
+        for label in labels:
+            try:
+                readout_label = self.ctx.resolve_read_label(label)
+            except (KeyError, ValueError):
+                continue
+            if include_derived_readouts or readout_label == label:
+                readout_labels.append(readout_label)
+        return self.unique_in_order(readout_labels)
+
+    def _resolve_gmm_schedule_readout_labels(
+        self,
+        *,
+        schedule: PulseSchedule,
+        final_measurement: bool,
+    ) -> list[str]:
+        """Return readout labels that the schedule will actually capture."""
+        readout_labels = self._resolve_gmm_readout_labels(
+            labels=schedule.labels,
+            include_derived_readouts=final_measurement,
+        )
+        if final_measurement or not readout_labels:
+            return readout_labels
+        pulse_ranges = schedule.get_pulse_ranges(readout_labels)
+        return [label for label in readout_labels if pulse_ranges.get(label)]
+
+    def _resolve_gmm_linear_line_param_maps(
+        self,
+        *,
+        labels: Sequence[str],
+        sigma_multiplier: float,
+    ) -> tuple[
+        dict[str, tuple[float, float, float]],
+        dict[str, tuple[float, float, float]],
+    ]:
+        """Resolve per-readout DSP line pairs from stored GMM centers and sigmas."""
+        from qubex.measurement._gmm_linear_classification import (
+            build_gmm_linear_line_param_pair,
+        )
+
+        line_param0_map: dict[str, tuple[float, float, float]] = {}
+        line_param1_map: dict[str, tuple[float, float, float]] = {}
+        missing_qubits: list[str] = []
+        classifiers = getattr(self.ctx, "classifiers", {})
+        note_centers = getattr(self.ctx, "state_centers", {})
+        note_stddevs = getattr(self.ctx, "state_stddevs", {})
+
+        for qubit in self.ctx.ordered_qubit_labels(labels):
+            classifier = classifiers.get(qubit) if classifiers is not None else None
+            centers: Mapping[int | str, complex] | None = None
+            stddevs: Mapping[int | str, float] | None = None
+            if classifier is not None:
+                try:
+                    centers = cast(Mapping[int | str, complex], classifier.centers)
+                    stddevs = cast(Mapping[int | str, float], classifier.stddevs)
+                except (AttributeError, NotImplementedError):
+                    centers = None
+                    stddevs = None
+            if centers is None:
+                centers = note_centers.get(qubit)
+            if stddevs is None:
+                stddevs = note_stddevs.get(qubit)
+            if centers is None or stddevs is None:
+                missing_qubits.append(qubit)
+                continue
+
+            read_label = self.ctx.resolve_read_label(qubit)
+            line0, line1 = build_gmm_linear_line_param_pair(
+                centers,
+                stddevs,
+                sigma_multiplier=sigma_multiplier,
+            )
+            line_param0_map[read_label] = line0
+            line_param1_map[read_label] = line1
+
+        if missing_qubits:
+            joined = ", ".join(missing_qubits)
+            raise ValueError(
+                "GMM state centers/stddevs are not available for: "
+                f"{joined}. Run `build_classifier` with GMM first."
+            )
+        return line_param0_map, line_param1_map
+
+    def _resolve_classification_source_options(
+        self,
+        *,
+        labels: Sequence[str],
+        classification_source: Literal["gmm_linear"] | None,
+        classification_sigma_multiplier: float | None,
+        state_classification: bool | None,
+        classification_line_param0: dict[str, tuple[float, float, float]] | None,
+        classification_line_param1: dict[str, tuple[float, float, float]] | None,
+    ) -> tuple[
+        bool | None,
+        dict[str, tuple[float, float, float]] | None,
+        dict[str, tuple[float, float, float]] | None,
+    ]:
+        """Resolve classification source into concrete DSP line parameters."""
+        if classification_source is None:
+            return (
+                state_classification,
+                classification_line_param0,
+                classification_line_param1,
+            )
+        if classification_source != "gmm_linear":
+            raise ValueError(
+                f"Unsupported classification_source: {classification_source}."
+            )
+        if (
+            classification_line_param0 is not None
+            or classification_line_param1 is not None
+        ):
+            raise ValueError(
+                "classification_source='gmm_linear' does not accept manual line_param overrides."
+            )
+        if classification_sigma_multiplier is None:
+            classification_sigma_multiplier = 1.0
+        line_param0, line_param1 = self._resolve_gmm_linear_line_param_maps(
+            labels=labels,
+            sigma_multiplier=classification_sigma_multiplier,
+        )
+        return (
+            True,
+            line_param0,
+            line_param1,
+        )
+
+    @staticmethod
+    def _reject_removed_line_param_options(options: Mapping[str, Any]) -> None:
+        """Reject removed single-line DSP classification options."""
+        removed = sorted(
+            set(options)
+            & {
+                "line_param0",
+                "line_param1",
+            }
+        )
+        if removed:
+            joined = ", ".join(f"`{key}`" for key in removed)
+            raise TypeError(f"Unexpected keyword argument(s): {joined}")
 
     def _resolve_measurement_schedule(
         self,
@@ -598,6 +746,8 @@ class MeasurementService:
         shot_interval: float | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
+        classification_sigma_multiplier: float | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -608,8 +758,12 @@ class MeasurementService:
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
         final_measurement: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
+        classification_line_param0: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -650,9 +804,9 @@ class MeasurementService:
         final_measurement
             Whether to append final measurement windows.
         classification_line_param0
-            Optional QuEL-1 classification line parameter 0.
+            Optional QuEL-1 classification line-0 map keyed by readout target.
         classification_line_param1
-            Optional QuEL-1 classification line parameter 1.
+            Optional QuEL-1 classification line-1 map keyed by readout target.
         reset_awg_and_capunits
             Whether to reset AWGs/capture units before execution.
         plot
@@ -664,6 +818,31 @@ class MeasurementService:
             reset_awg_and_capunits = False
         if plot is None:
             plot = False
+        self._reject_removed_line_param_options(deprecated_options)
+
+        classification_labels = schedule.labels
+        if classification_source == "gmm_linear":
+            appends_final_measurement = final_measurement is True or (
+                final_measurement is None
+                and deprecated_options.get("add_last_measurement") is True
+            )
+            classification_labels = self._resolve_gmm_schedule_readout_labels(
+                schedule=schedule,
+                final_measurement=appends_final_measurement,
+            )
+
+        (
+            state_classification,
+            classification_line_param0,
+            classification_line_param1,
+        ) = self._resolve_classification_source_options(
+            labels=classification_labels,
+            classification_source=classification_source,
+            classification_sigma_multiplier=classification_sigma_multiplier,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
+        )
 
         if reset_awg_and_capunits:
             qubits = {
@@ -685,6 +864,7 @@ class MeasurementService:
                 shot_interval=shot_interval,
                 time_integration=time_integration,
                 state_classification=state_classification,
+                classification_source=classification_source,
                 mode=mode,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -727,6 +907,8 @@ class MeasurementService:
         shot_interval: float | None = None,
         time_integration: bool | None = None,
         state_classification: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
+        classification_sigma_multiplier: float | None = None,
         frequencies: dict[str, float] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -736,8 +918,12 @@ class MeasurementService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_amplification: bool | None = None,
-        classification_line_param0: tuple[float, float, float] | None = None,
-        classification_line_param1: tuple[float, float, float] | None = None,
+        classification_line_param0: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -778,9 +964,9 @@ class MeasurementService:
         readout_amplification
             Whether to insert readout amplification pulses.
         classification_line_param0
-            Optional QuEL-1 classification line parameter 0.
+            Optional QuEL-1 classification line-0 map keyed by readout target.
         classification_line_param1
-            Optional QuEL-1 classification line parameter 1.
+            Optional QuEL-1 classification line-1 map keyed by readout target.
         reset_awg_and_capunits
             Whether to reset AWGs/capture units before measurement.
         plot
@@ -792,6 +978,7 @@ class MeasurementService:
             reset_awg_and_capunits = False
         if plot is None:
             plot = False
+        self._reject_removed_line_param_options(deprecated_options)
 
         waveforms: dict[str, NDArray[np.complex128]] = {}
 
@@ -843,6 +1030,28 @@ class MeasurementService:
                     else:
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
 
+        classification_labels = tuple(waveforms)
+        if classification_source == "gmm_linear":
+            classification_labels = tuple(
+                self._resolve_gmm_readout_labels(
+                    labels=classification_labels,
+                    include_derived_readouts=True,
+                )
+            )
+
+        (
+            state_classification,
+            classification_line_param0,
+            classification_line_param1,
+        ) = self._resolve_classification_source_options(
+            labels=tuple(waveforms),
+            classification_source=classification_source,
+            classification_sigma_multiplier=classification_sigma_multiplier,
+            state_classification=state_classification,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
+        )
+
         if reset_awg_and_capunits:
             qubits = {self.ctx.resolve_qubit_label(target) for target in waveforms}
             self.ctx.reset_awg_and_capunits(qubits=qubits)
@@ -861,6 +1070,7 @@ class MeasurementService:
                 shot_interval=shot_interval,
                 time_integration=time_integration,
                 state_classification=state_classification,
+                classification_source=classification_source,
                 mode=mode,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -2285,17 +2495,23 @@ class MeasurementService:
                     f"  Average readout fidelity : {average_fidelities[target] * 100:.2f}%\n\n"
                 )
 
-        self.ctx.calib_note.state_params = {
-            target: {
+        state_params = {}
+        for target in targets:
+            stddevs = _get_classifier_stddevs(classifiers[target])
+            state_params[target] = {
                 "target": target,
                 "centers": {
                     str(state): [center.real, center.imag]
                     for state, center in classifiers[target].centers.items()
                 },
+                "stddevs": {
+                    str(state): float(stddev) for state, stddev in stddevs.items()
+                }
+                if stddevs is not None
+                else None,
                 "reference_phase": self.ctx.calib_note.reference_phases[target],
             }
-            for target in targets
-        }
+        self.ctx.calib_note.state_params = state_params
 
         return Result(
             data={

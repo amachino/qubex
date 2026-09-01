@@ -23,8 +23,6 @@ def _make_payload() -> Quel1ExecutionPayload:
         dsp_demodulation=True,
         enable_sum=False,
         enable_classification=False,
-        line_param0=(1.0, 0.0, 0.0),
-        line_param1=(0.0, 1.0, 0.0),
     )
 
 

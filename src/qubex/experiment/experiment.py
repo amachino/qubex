@@ -1817,6 +1817,8 @@ class Experiment:
         n_shots: int | None = None,
         shot_interval: float | None = None,
         time_integration: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
+        classification_sigma_multiplier: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1829,8 +1831,12 @@ class Experiment:
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        classification_line_param0: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -1878,6 +1884,10 @@ class Experiment:
             Whether to enable DSP summation. Defaults to None.
         enable_dsp_classification : bool, optional
             Whether to enable DSP classification. Defaults to False
+        classification_line_param0 : dict[str, tuple[float, float, float]], optional
+            QuEL-1 classification line-0 map keyed by readout target.
+        classification_line_param1 : dict[str, tuple[float, float, float]], optional
+            QuEL-1 classification line-1 map keyed by readout target.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -1905,6 +1915,8 @@ class Experiment:
             n_shots=n_shots,
             shot_interval=shot_interval,
             time_integration=time_integration,
+            classification_source=classification_source,
+            classification_sigma_multiplier=classification_sigma_multiplier,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -1917,8 +1929,8 @@ class Experiment:
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
             **deprecated_options,
@@ -1960,6 +1972,8 @@ class Experiment:
         n_shots: int | None = None,
         shot_interval: float | None = None,
         time_integration: bool | None = None,
+        classification_source: Literal["gmm_linear"] | None = None,
+        classification_sigma_multiplier: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -1971,8 +1985,12 @@ class Experiment:
         enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
         enable_dsp_classification: bool | None = None,
-        line_param0: tuple[float, float, float] | None = None,
-        line_param1: tuple[float, float, float] | None = None,
+        classification_line_param0: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
+        classification_line_param1: (
+            dict[str, tuple[float, float, float]] | None
+        ) = None,
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
         **deprecated_options: Any,
@@ -2018,6 +2036,10 @@ class Experiment:
             Whether to enable DSP summation. Defaults to None.
         enable_dsp_classification : bool, optional
             Whether to enable DSP classification. Defaults to False.
+        classification_line_param0 : dict[str, tuple[float, float, float]], optional
+            QuEL-1 classification line-0 map keyed by readout target.
+        classification_line_param1 : dict[str, tuple[float, float, float]], optional
+            QuEL-1 classification line-1 map keyed by readout target.
         reset_awg_and_capunits : bool, optional
             Whether to reset the AWG and capture units before the experiment. Defaults to False.
         plot : bool, optional
@@ -2046,6 +2068,8 @@ class Experiment:
             n_shots=n_shots,
             shot_interval=shot_interval,
             time_integration=time_integration,
+            classification_source=classification_source,
+            classification_sigma_multiplier=classification_sigma_multiplier,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -2057,8 +2081,8 @@ class Experiment:
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
+            classification_line_param0=classification_line_param0,
+            classification_line_param1=classification_line_param1,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
             **deprecated_options,
